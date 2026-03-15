@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Sidebar } from './components/layout/Sidebar'
 import { TopBar } from './components/layout/TopBar'
 import { MediaBrowser } from './components/library/MediaBrowser'
@@ -6,6 +6,7 @@ import { Dashboard } from './components/dashboard'
 import { WishlistPanel } from './components/wishlist/WishlistPanel'
 import { CompletenessPanel } from './components/library/CompletenessPanel'
 import { ChatPanel } from './components/chat/ChatPanel'
+import type { ViewContext } from './hooks/useChat'
 import { AIInsightsPanel } from './components/library/AIInsightsPanel'
 import { SourceProvider, useSources } from './contexts/SourceContext'
 import { WishlistProvider } from './contexts/WishlistContext'
@@ -323,6 +324,12 @@ function AppContent() {
     })
   }
 
+  const chatViewContext = useMemo((): ViewContext => ({
+    currentView: currentView as 'dashboard' | 'library',
+    libraryTab: currentView === 'library' ? libraryTab as 'movies' | 'tv' | 'music' : undefined,
+    activeSourceId: activeSourceId || undefined,
+  }), [currentView, libraryTab, activeSourceId])
+
   if (isLoading || onboardingComplete === null) {
     return (
       <div className="h-screen bg-background flex items-center justify-center">
@@ -413,8 +420,10 @@ function AppContent() {
                 hideHeader={true}
                 showCompletenessPanel={showCompletenessPanel}
                 showWishlistPanel={showWishlistPanel}
+                showChatPanel={showChatPanel}
                 onToggleCompleteness={handleToggleCompleteness}
                 onToggleWishlist={handleToggleWishlist}
+                onToggleChat={handleToggleChat}
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
@@ -479,6 +488,7 @@ function AppContent() {
           isOpen={showChatPanel}
           onClose={() => setShowChatPanel(false)}
           onOpenSettings={() => handleOpenSettings('services')}
+          viewContext={chatViewContext}
         />
         <AIInsightsPanel
           isOpen={showAIInsights}

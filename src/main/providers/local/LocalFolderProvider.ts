@@ -15,6 +15,7 @@ import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
 import { getMediaFileAnalyzer, type FileAnalysisResult, type AnalyzedAudioStream } from '../../services/MediaFileAnalyzer'
 import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '../../services/FileNameParser'
 import { getTMDBService } from '../../services/TMDBService'
+import { getLoggingService } from '../../services/LoggingService'
 import { getMusicBrainzService } from '../../services/MusicBrainzService'
 import { normalizeVideoCodec, normalizeResolution, normalizeAudioCodec } from '../../services/MediaNormalizer'
 import type {
@@ -612,6 +613,12 @@ export class LocalFolderProvider implements MediaProvider {
               const analysis = ffprobeResults.get(filePath)
               if (analysis?.success) {
                 metadata = this.enhanceWithFFprobeData(metadata, analysis)
+                if (analysis.video) {
+                  const v = analysis.video
+                  getLoggingService().verbose('[LocalFolderProvider]',
+                    `FFprobe: ${path.basename(filePath)} → ${v.width}x${v.height} ${v.codec} ${v.hdrFormat || 'SDR'} ${Math.round((v.bitrate || 0) / 1000)}kbps`,
+                    analysis.audioTracks.length ? `Audio: ${analysis.audioTracks.map((a) => `${a.codec} ${a.channels}ch`).join(', ')}` : undefined)
+                }
 
                 // Filter out short videos for movies (featurettes, behind-the-scenes, etc.)
                 if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) {
@@ -682,13 +689,12 @@ export class LocalFolderProvider implements MediaProvider {
 
             const id = await db.upsertMediaItem(mediaItem)
 
-            for (const version of versions) {
+            // Sync versions: delete stale, upsert current, update best version
+            const scoredVersions = versions.map(version => {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.upsertMediaItemVersion({ ...version, media_item_id: id, ...vScore } as MediaItemVersion)
-            }
-            if (versions.length > 1) {
-              db.updateBestVersion(id)
-            }
+              return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+            })
+            db.syncMediaItemVersions(id, scoredVersions)
 
             mediaItem.id = id
             const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
@@ -918,10 +924,10 @@ export class LocalFolderProvider implements MediaProvider {
 
               const id = await db.upsertMediaItem(mediaItem)
 
-              // Create version record
+              // Sync version: delete stale, upsert current, update best version
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.upsertMediaItemVersion({ ...version, media_item_id: id, ...vScore } as MediaItemVersion)
+              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
 
               // Analyze quality
               mediaItem.id = id
@@ -1270,6 +1276,7 @@ export class LocalFolderProvider implements MediaProvider {
           } else if (parser.isVideoFile(entry.name)) {
             // Skip extras/featurettes/bonus content based on filename patterns
             if (isExtrasContent(entry.name)) {
+              getLoggingService().verbose('[LocalFolderProvider]', `Skipping extras: ${entry.name}`)
               continue
             }
 
@@ -1436,6 +1443,7 @@ export class LocalFolderProvider implements MediaProvider {
         const match = await this.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year, tmdb)
 
         if (match) {
+          getLoggingService().verbose('[LocalFolderProvider]', `TMDB match: "${parsed.title}" (${parsed.year || '?'}) → "${match.title}" (tmdb:${match.tmdbId})`)
           metadata.tmdbId = match.tmdbId
           metadata.title = match.title
           metadata.year = match.year
@@ -1449,6 +1457,7 @@ export class LocalFolderProvider implements MediaProvider {
           // Cache the result
           movieTmdbCache?.set(cacheKey, match)
         } else {
+          getLoggingService().verbose('[LocalFolderProvider]', `TMDB no match: "${parsed.title}" (${parsed.year || '?'})`)
           // Cache null to avoid retrying
           movieTmdbCache?.set(cacheKey, null)
         }

@@ -1,5 +1,7 @@
-import { Bot, User, Database, Loader2 } from 'lucide-react'
-import type { ChatMessage as ChatMessageType } from '../../hooks/useChat'
+import { useState, useCallback, useMemo } from 'react'
+import { Bot, User, Database, Loader2, Star } from 'lucide-react'
+import type { ChatMessage as ChatMessageType, ActionableItem } from '../../hooks/useChat'
+import { useWishlist } from '../../contexts/WishlistContext'
 
 /** Human-readable labels for tool names */
 const TOOL_LABELS: Record<string, string> = {
@@ -13,6 +15,12 @@ const TOOL_LABELS: Record<string, string> = {
   get_music_stats: 'Loading music stats',
   get_source_list: 'Loading sources',
   get_wishlist: 'Loading wishlist',
+  search_tmdb: 'Searching TMDB',
+  discover_titles: 'Discovering titles',
+  get_similar_titles: 'Finding similar titles',
+  check_ownership: 'Checking ownership',
+  get_item_details: 'Getting item details',
+  add_to_wishlist: 'Adding to wishlist',
 }
 
 interface ChatMessageProps {
@@ -62,6 +70,18 @@ export function ChatMessage({ message, activeTools }: ChatMessageProps) {
           ) : (
             <div className="prose prose-sm prose-invert max-w-none break-words whitespace-pre-wrap [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
               <SimpleMarkdown text={message.content} />
+            </div>
+          )}
+
+          {/* Actionable items — add to wishlist buttons */}
+          {!isUser && message.actionableItems && message.actionableItems.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border/20">
+              <p className="text-[10px] text-muted-foreground mb-1.5">Add to wishlist:</p>
+              <div className="flex flex-wrap gap-1">
+                {message.actionableItems.map((item, i) => (
+                  <ChatWishlistButton key={`${item.tmdb_id || item.title}-${i}`} item={item} />
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -224,4 +244,57 @@ function InlineMarkdown({ text }: { text: string }) {
   }
 
   return <>{parts}</>
+}
+
+/** Compact wishlist button for actionable items in chat messages */
+function ChatWishlistButton({ item }: { item: ActionableItem }) {
+  const { addItem, removeItem, items } = useWishlist()
+  const [loading, setLoading] = useState(false)
+
+  const effectiveMediaType = item.media_type === 'tv' ? 'season' : 'movie'
+  const wishlistMatch = useMemo(() => {
+    if (item.tmdb_id) {
+      return items.find(w => w.tmdb_id === item.tmdb_id && w.media_type === (effectiveMediaType as string))
+    }
+    return items.find(w => w.title === item.title && w.media_type === (effectiveMediaType as string))
+  }, [items, item.tmdb_id, item.title, effectiveMediaType])
+
+  const inWishlist = !!wishlistMatch
+
+  const handleToggle = useCallback(async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      if (inWishlist && wishlistMatch) {
+        await removeItem(wishlistMatch.id)
+      } else {
+        await addItem({
+          title: item.title,
+          year: item.year,
+          tmdb_id: item.tmdb_id,
+          media_type: effectiveMediaType,
+          reason: 'missing',
+          priority: 3,
+          status: 'active',
+        })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [loading, inWishlist, wishlistMatch, removeItem, addItem, item, effectiveMediaType])
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={loading}
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+        inWishlist
+          ? 'bg-amber-400/15 text-amber-400 hover:bg-amber-400/25 cursor-pointer'
+          : 'bg-muted/30 hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer'
+      }`}
+    >
+      <Star className={`w-3 h-3 ${inWishlist ? 'fill-amber-400 text-amber-400' : ''}`} />
+      <span>{item.title}{item.year ? ` (${item.year})` : ''}</span>
+    </button>
+  )
 }

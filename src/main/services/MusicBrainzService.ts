@@ -17,6 +17,7 @@ import { retryWithBackoff } from './utils/retryWithBackoff'
 
 import axios, { AxiosInstance } from 'axios'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 import { RateLimiters, SimpleDelayRateLimiter } from './utils/RateLimiter'
 import {
   CancellableOperation,
@@ -220,6 +221,7 @@ export class MusicBrainzService extends CancellableOperation {
         backoffFactor: 2,
         retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
+          getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
           console.warn(`[MusicBrainzService] ${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
         }
       }
@@ -376,6 +378,8 @@ export class MusicBrainzService extends CancellableOperation {
     }
 
     // Default: include all releases (much faster - 2 API calls vs potentially 50+)
+    getLoggingService().verbose('[MusicBrainzService]',
+      `Discography for "${artist.name}": ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
     console.log(`[MusicBrainzService] Found ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
     return { artist, albums: allAlbums, eps: allEps, singles: allSingles }
   }
@@ -692,6 +696,9 @@ export class MusicBrainzService extends CancellableOperation {
     const completenessPercentage = totalItems > 0
       ? Math.round((ownedItems / totalItems) * 100)
       : 100
+
+    getLoggingService().verbose('[MusicBrainzService]',
+      `"${artistName}" — ${ownedAlbumsCount}/${discography.albums.length} albums, ${missingAlbums.length} missing, ${completenessPercentage}% complete`)
 
     return {
       artist_name: artistName,

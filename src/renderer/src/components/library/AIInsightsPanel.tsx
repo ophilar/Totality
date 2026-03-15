@@ -48,7 +48,7 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
   // Listen for settings changes
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged((data) => {
-      if (data.key === 'gemini_api_key') {
+      if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
         window.electronAPI.aiIsConfigured().then(setIsConfigured)
       }
     })
@@ -183,8 +183,11 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
         {/* Report selection */}
         {isConfigured !== false && !selectedReport && (
           <div className="flex-1 p-5 space-y-3">
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-xs text-muted-foreground mb-1">
               Generate AI-powered reports about your media library. Select a report type below.
+            </p>
+            <p className="text-[10px] text-muted-foreground/50 mb-4">
+              Reports send library data to Google Gemini using your API key.
             </p>
             {REPORT_OPTIONS.map((option) => {
               const Icon = option.icon

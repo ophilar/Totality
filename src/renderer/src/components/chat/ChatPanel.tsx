@@ -1,16 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Bot, X, Send, Trash2, AlertCircle, Clock, Settings } from 'lucide-react'
-import { useChat } from '../../hooks/useChat'
+import { useChat, type ViewContext } from '../../hooks/useChat'
 import { ChatMessage } from './ChatMessage'
 
 interface ChatPanelProps {
   isOpen: boolean
   onClose: () => void
   onOpenSettings?: () => void
+  viewContext?: ViewContext
 }
 
-export function ChatPanel({ isOpen, onClose, onOpenSettings }: ChatPanelProps) {
-  const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat()
+export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: ChatPanelProps) {
+  const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -26,7 +27,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings }: ChatPanelProps) {
   // Listen for settings changes to re-check configuration
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged((data) => {
-      if (data.key === 'gemini_api_key') {
+      if (data.key === 'gemini_api_key' || data.key === 'ai_enabled') {
         window.electronAPI.aiIsConfigured().then(setIsConfigured)
       }
     })
@@ -61,9 +62,39 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings }: ChatPanelProps) {
     [handleSubmit],
   )
 
+  const suggestedPrompts = useMemo(() => {
+    if (viewContext?.currentView === 'library') {
+      switch (viewContext.libraryTab) {
+        case 'movies':
+          return [
+            'What 4K upgrades am I missing?',
+            'Which Marvel movies am I missing?',
+            'Find me some great sci-fi I don\'t have',
+          ]
+        case 'tv':
+          return [
+            'Which shows are incomplete?',
+            'What are my lowest quality TV shows?',
+            'Recommend some shows similar to what I have',
+          ]
+        case 'music':
+          return [
+            'How\'s my audio quality overall?',
+            'Which artists am I missing albums from?',
+            'What lossless albums do I have?',
+          ]
+      }
+    }
+    return [
+      'How\'s my library quality overall?',
+      'What should I upgrade next?',
+      'What movies am I missing from popular franchises?',
+    ]
+  }, [viewContext?.currentView, viewContext?.libraryTab])
+
   return (
     <aside
-      className={`fixed top-[88px] bottom-4 right-4 w-96 bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[transform,opacity] duration-300 ease-out will-change-[transform,opacity] ${
+      className={`fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gradient rounded-2xl shadow-xl z-40 flex flex-col overflow-hidden transition-[transform,opacity] duration-300 ease-out will-change-[transform,opacity] ${
         isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
       }`}
       role="complementary"
@@ -126,11 +157,7 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings }: ChatPanelProps) {
                   Ask me about your media library
                 </p>
                 <div className="space-y-1.5 w-full">
-                  {[
-                    'What are my lowest quality movies?',
-                    'Which Marvel movies am I missing?',
-                    'Show me my library stats',
-                  ].map((suggestion) => (
+                  {suggestedPrompts.map((suggestion) => (
                     <button
                       key={suggestion}
                       onClick={() => {
@@ -143,6 +170,9 @@ export function ChatPanel({ isOpen, onClose, onOpenSettings }: ChatPanelProps) {
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-muted-foreground/50 mt-4">
+                  Messages are processed by Google Gemini using your API key. Chat history is not saved to disk.
+                </p>
               </div>
             )}
 

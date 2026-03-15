@@ -16,6 +16,7 @@ import {
   Network,
   Circle,
   Bot,
+  Shield,
 } from 'lucide-react'
 
 interface ServiceCardProps {
@@ -136,6 +137,7 @@ export function ServicesTab() {
   const [originalGemini, setOriginalGemini] = useState('')
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [originalGeminiModel, setOriginalGeminiModel] = useState('gemini-2.5-flash')
+  const [aiEnabled, setAiEnabled] = useState(true)
 
   // General state
   const [isLoading, setIsLoading] = useState(true)
@@ -146,6 +148,7 @@ export function ServicesTab() {
   const toggleId = useId()
   const geminiId = useId()
   const geminiModelId = useId()
+  const aiToggleId = useId()
 
   const toggleCard = (card: string) => {
     setExpandedCards((prev) => {
@@ -204,6 +207,7 @@ export function ServicesTab() {
       const model = allSettings.gemini_model || 'gemini-2.5-flash'
       setGeminiModel(model)
       setOriginalGeminiModel(model)
+      setAiEnabled(allSettings.ai_enabled !== 'false')
 
       setFfprobeAvailable(ffAvailable)
       setFfprobeBundled(ffBundled)
@@ -392,7 +396,7 @@ export function ServicesTab() {
       : 'partial'
     : 'not-configured'
   const nfsConfigured = Object.keys(nfsMappings).length > 0
-  const geminiConfigured = !!geminiApiKey.trim()
+  const geminiConfigured = !!geminiApiKey.trim() && aiEnabled
 
   const getFFprobeStatusText = () => {
     if (!ffprobeAvailable) return 'Not installed'
@@ -796,6 +800,55 @@ export function ServicesTab() {
             </select>
             <p className="text-xs text-muted-foreground">
               Flash offers the best balance of speed and free-tier limits (10 RPM, 250 RPD). No credit card required.
+            </p>
+          </div>
+
+          {/* AI Enable/Disable Toggle */}
+          {geminiApiKey.trim() && (
+            <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+              <div>
+                <label htmlFor={aiToggleId} className="text-sm font-medium">
+                  Enable AI features
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Disable chat, reports, and AI insights without removing your API key
+                </p>
+              </div>
+              <button
+                id={aiToggleId}
+                role="switch"
+                aria-checked={aiEnabled}
+                onClick={async () => {
+                  const newValue = !aiEnabled
+                  setAiEnabled(newValue)
+                  await window.electronAPI.setSetting('ai_enabled', newValue ? 'true' : 'false')
+                }}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+                  aiEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-md ring-1 ring-border/50 transition duration-200 ease-in-out ${
+                    aiEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+
+          {/* Privacy Info */}
+          <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">Data shared with Google Gemini</span>
+            </div>
+            <ul className="text-[11px] text-muted-foreground space-y-1 list-disc list-inside">
+              <li><strong className="text-foreground/70">Chat:</strong> Your messages (last 20) and library data retrieved by the AI (titles, quality details, ownership status)</li>
+              <li><strong className="text-foreground/70">Reports:</strong> Library statistics and up to 50 items with technical specs (titles, codecs, resolution, bitrates)</li>
+              <li><strong className="text-foreground/70">Not sent:</strong> File paths, server credentials, or personal information</li>
+            </ul>
+            <p className="text-[11px] text-muted-foreground/70">
+              Your API key connects directly to Google &mdash; no data passes through Totality&apos;s servers. Chat history is not saved to disk.
             </p>
           </div>
         </div>

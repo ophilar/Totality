@@ -1,5 +1,6 @@
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
+import { getLoggingService } from './LoggingService'
 import type { TMDBSeasonDetails } from '../types/tmdb'
 import {
   CancellableOperation,
@@ -187,6 +188,8 @@ export class SeriesCompletenessService extends CancellableOperation {
       skipped,
     })
 
+    getLoggingService().verbose('[SeriesCompletenessService]',
+      `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${analyzed} analyzed, ${skipped} skipped out of ${seriesNames.length} series`)
     console.log(`[SeriesCompletenessService] Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${analyzed} analyzed, ${skipped} skipped`)
     return { completed: wasCompleted, analyzed, skipped }
   }
@@ -257,6 +260,9 @@ export class SeriesCompletenessService extends CancellableOperation {
         backdrop_url: analysis.backdropUrl,
         status: analysis.status,
       }
+
+      getLoggingService().verbose('[SeriesCompletenessService]',
+        `"${seriesTitle}" (tmdb:${tmdbId}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
 
       await db.upsertSeriesCompleteness(data)
       return db.getSeriesCompletenessByTitle(seriesTitle, sourceId, libraryId)

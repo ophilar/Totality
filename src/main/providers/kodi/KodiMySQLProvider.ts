@@ -625,13 +625,12 @@ export class KodiMySQLProvider implements MediaProvider {
               const id = await db.upsertMediaItem(mediaItem)
               scannedProviderIds.add(mediaItem.plex_id)
 
-              for (const version of versions) {
+              // Sync versions: delete stale, upsert current, update best version
+              const scoredVersions = versions.map(version => {
                 const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                db.upsertMediaItemVersion({ ...version, media_item_id: id, ...vScore } as MediaItemVersion)
-              }
-              if (versions.length > 1) {
-                db.updateBestVersion(id)
-              }
+                return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+              })
+              db.syncMediaItemVersions(id, scoredVersions)
 
               mediaItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)

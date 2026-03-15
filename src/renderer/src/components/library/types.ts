@@ -317,8 +317,10 @@ export interface MediaBrowserProps {
   // External panel state control
   showCompletenessPanel?: boolean
   showWishlistPanel?: boolean
+  showChatPanel?: boolean
   onToggleCompleteness?: () => void
   onToggleWishlist?: () => void
+  onToggleChat?: () => void
   // External view tab control
   libraryTab?: MediaViewType
   onLibraryTabChange?: (tab: MediaViewType) => void

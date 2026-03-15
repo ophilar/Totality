@@ -560,14 +560,12 @@ export class PlexProvider implements MediaProvider {
                 const id = await db.upsertMediaItem(mediaItem)
                 scannedProviderIds.add(mediaItem.plex_id)
 
-                // Upsert all versions with per-version quality scoring
-                for (const version of versions) {
+                // Sync versions: delete stale, upsert current, update best version
+                const scoredVersions = versions.map(version => {
                   const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                  db.upsertMediaItemVersion({ ...version, media_item_id: id, ...vScore } as MediaItemVersion)
-                }
-                if (versions.length > 1) {
-                  db.updateBestVersion(id)
-                }
+                  return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+                })
+                db.syncMediaItemVersions(id, scoredVersions)
 
                 // Analyze quality (parent item)
                 mediaItem.id = id
@@ -767,14 +765,12 @@ export class PlexProvider implements MediaProvider {
           // Upsert will handle duplicates via unique constraint
           const itemId = db.upsertMediaItem(mediaItem)
 
-          // Upsert all versions with per-version quality scoring
-          for (const version of versions) {
+          // Sync versions: delete stale, upsert current, update best version
+          const scoredVersions = versions.map(version => {
             const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-            db.upsertMediaItemVersion({ ...version, media_item_id: itemId, ...vScore } as MediaItemVersion)
-          }
-          if (versions.length > 1) {
-            db.updateBestVersion(itemId)
-          }
+            return { ...version, media_item_id: itemId, ...vScore } as MediaItemVersion
+          })
+          db.syncMediaItemVersions(itemId, scoredVersions)
 
           // Analyze quality
           try {

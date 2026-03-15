@@ -55,6 +55,7 @@ export class GeminiService {
   private client: GoogleGenAI | null = null
   private apiKey: string | null = null
   private model: string = GeminiService.DEFAULT_MODEL
+  private enabled: boolean = true
   private rateLimitedUntil: number | null = null
   private explanationCache = new Map<string, { text: string; timestamp: number }>()
 
@@ -62,21 +63,23 @@ export class GeminiService {
     const db = getDatabase()
     this.apiKey = db.getSetting('gemini_api_key') || null
     this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
+    this.enabled = db.getSetting('ai_enabled') !== 'false'
 
-    if (this.apiKey) {
+    if (this.apiKey && this.enabled) {
       this.client = new GoogleGenAI({ apiKey: this.apiKey })
     }
   }
 
   /**
-   * Refresh API key and model from database (called when settings change)
+   * Refresh API key, model, and enabled state from database (called when settings change)
    */
   refreshApiKey(): void {
     const db = getDatabase()
     this.apiKey = db.getSetting('gemini_api_key') || null
     this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
+    this.enabled = db.getSetting('ai_enabled') !== 'false'
 
-    if (this.apiKey) {
+    if (this.apiKey && this.enabled) {
       this.client = new GoogleGenAI({ apiKey: this.apiKey })
     } else {
       this.client = null
@@ -84,10 +87,10 @@ export class GeminiService {
   }
 
   /**
-   * Check if the service is configured with an API key
+   * Check if the service is configured and enabled
    */
   isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey !== ''
+    return !!this.apiKey && this.apiKey !== '' && this.enabled
   }
 
   /**

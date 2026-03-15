@@ -151,6 +151,16 @@ export interface TMDBSearchResponse<T> {
   total_results: number
 }
 
+// Genre types (for discover endpoints)
+export interface TMDBGenre {
+  id: number
+  name: string
+}
+
+export interface TMDBGenreListResponse {
+  genres: TMDBGenre[]
+}
+
 // Error response
 export interface TMDBErrorResponse {
   success: false

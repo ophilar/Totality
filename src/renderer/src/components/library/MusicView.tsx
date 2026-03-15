@@ -53,7 +53,6 @@ export function MusicView({
   gridScale,
   viewType,
   searchQuery,
-  alphabetFilter,
   qualityFilter,
   showSourceBadge,
   onAnalyzeAlbum,
@@ -97,7 +96,6 @@ export function MusicView({
   gridScale: number
   viewType: 'grid' | 'list'
   searchQuery: string
-  alphabetFilter: string | null
   qualityFilter: 'all' | 'low' | 'medium' | 'high'
   showSourceBadge: boolean
   onAnalyzeAlbum: (albumId: number) => Promise<void>
@@ -331,19 +329,8 @@ export function MusicView({
       )
     }
 
-    // Apply alphabet filter when not viewing a specific artist
-    if (!selectedArtist && alphabetFilter) {
-      filtered = filtered.filter(album => {
-        const firstChar = album.title.charAt(0).toUpperCase()
-        if (alphabetFilter === '#') {
-          return !/[A-Z]/.test(firstChar)
-        }
-        return firstChar === alphabetFilter
-      })
-    }
-
     return filtered.sort((a, b) => (a.year || 0) - (b.year || 0))
-  }, [albums, selectedArtist, searchQuery, alphabetFilter])
+  }, [albums, selectedArtist, searchQuery])
 
   // Albums are now filtered/sorted server-side via loadPaginatedAlbums
   const allFilteredAlbums = albums
@@ -1091,15 +1078,16 @@ export function MusicView({
           {viewType === 'list' ? (
             <div className="space-y-2">
               {artists.map(artist => (
-                <ArtistListItem
-                  key={artist.id}
-                  artist={artist}
-                  completeness={artistCompleteness.get(artist.name)}
-                  onClick={() => onSelectArtist(artist)}
-                  showSourceBadge={showSourceBadge}
-                  onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
-                  onAnalyzeCompleteness={onAnalyzeArtist}
-                />
+                <div key={artist.id} data-title={artist.name}>
+                  <ArtistListItem
+                    artist={artist}
+                    completeness={artistCompleteness.get(artist.name)}
+                    onClick={() => onSelectArtist(artist)}
+                    showSourceBadge={showSourceBadge}
+                    onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                    onAnalyzeCompleteness={onAnalyzeArtist}
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -1108,14 +1096,15 @@ export function MusicView({
               style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
             >
               {artists.map(artist => (
-                <ArtistCard
-                  key={artist.id}
-                  artist={artist}
-                  onClick={() => onSelectArtist(artist)}
-                  showSourceBadge={showSourceBadge}
-                  onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
-                  onAnalyzeCompleteness={onAnalyzeArtist}
-                />
+                <div key={artist.id} data-title={artist.name}>
+                  <ArtistCard
+                    artist={artist}
+                    onClick={() => onSelectArtist(artist)}
+                    showSourceBadge={showSourceBadge}
+                    onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                    onAnalyzeCompleteness={onAnalyzeArtist}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -1218,16 +1207,17 @@ export function MusicView({
               style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
             >
               {allFilteredAlbums.map(album => (
-                <AlbumCard
-                  key={album.id}
-                  album={album}
-                  onClick={() => onSelectAlbum(album)}
-                  showArtist={true}
-                  showSourceBadge={showSourceBadge}
-                  onAnalyze={onAnalyzeAlbum}
-                  onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
-                  completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
-                />
+                <div key={album.id} data-title={album.title}>
+                  <AlbumCard
+                    album={album}
+                    onClick={() => onSelectAlbum(album)}
+                    showArtist={true}
+                    showSourceBadge={showSourceBadge}
+                    onAnalyze={onAnalyzeAlbum}
+                    onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
+                    completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
+                  />
+                </div>
               ))}
             </div>
           )}

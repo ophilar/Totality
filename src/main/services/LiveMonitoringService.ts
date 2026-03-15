@@ -19,6 +19,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { getDatabase } from '../database/getDatabase'
 import { getSourceManager } from './SourceManager'
+import { getLoggingService } from './LoggingService'
 import { safeSend } from '../ipc/utils/safeSend'
 import {
   MonitoringConfig,
@@ -555,6 +556,9 @@ export class LiveMonitoringService {
       }
 
       console.log(`[LiveMonitoring] Processing ${changedFiles.length} file changes for ${sourceId}`)
+      getLoggingService().verbose('[LiveMonitoring]',
+        `Processing file changes for ${sourceId}`,
+        changedFiles.map(f => path.basename(f)).join(', '))
 
       // Use targeted file scanning (much faster than full scan)
       await this.checkSourceWithTargetedFiles(sourceId, changedFiles)
@@ -769,12 +773,15 @@ export class LiveMonitoringService {
       this.emitDebugEvent('poll', `Polling: ${sourceName}`)
       this.lastCheckTimes.set(sourceId, new Date())
 
+      const pollStart = Date.now()
       await Promise.race([
         this.checkSource(sourceId),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Poll timed out for ${sourceName}`)), LiveMonitoringService.POLL_TIMEOUT_MS)
         ),
       ])
+      getLoggingService().verbose('[LiveMonitoring]',
+        `Poll complete: "${sourceName}" in ${((Date.now() - pollStart) / 1000).toFixed(1)}s`)
     } catch (error) {
       console.error(`[LiveMonitoring] Error polling ${sourceId}:`, error)
       this.emitDebugEvent('error', `Polling error: ${sourceId}`)

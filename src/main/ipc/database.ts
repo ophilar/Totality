@@ -7,7 +7,7 @@ import { invalidateNfsMappingsCache } from '../providers/kodi/KodiDatabaseSchema
 import { getErrorMessage, isNodeError } from './utils'
 import fs from 'fs/promises'
 import type { MediaItem } from '../types/database'
-import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema } from '../validation/schemas'
+import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 
 /**
  * Register all database-related IPC handlers
@@ -79,6 +79,16 @@ export function registerDatabaseHandlers() {
       return db.countTVEpisodes(validFilters)
     } catch (error) {
       console.error('Error counting TV episodes:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('db:getLetterOffset', async (_event, params: unknown) => {
+    try {
+      const { table, letter, sourceId, libraryId } = validateInput(LetterOffsetSchema, params, 'db:getLetterOffset')
+      return db.getLetterOffset(table, letter, { sourceId, libraryId })
+    } catch (error) {
+      console.error('Error getting letter offset:', error)
       throw error
     }
   })
@@ -187,8 +197,8 @@ export function registerDatabaseHandlers() {
         getTMDBService().refreshApiKey()
       }
 
-      // Refresh Gemini API key/model when they change (no restart needed)
-      if (validKey === 'gemini_api_key' || validKey === 'gemini_model') {
+      // Refresh Gemini API key/model/enabled when they change (no restart needed)
+      if (validKey === 'gemini_api_key' || validKey === 'gemini_model' || validKey === 'ai_enabled') {
         const { getGeminiService } = require('../services/GeminiService')
         getGeminiService().refreshApiKey()
       }

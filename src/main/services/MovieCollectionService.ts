@@ -1,5 +1,6 @@
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
+import { getLoggingService } from './LoggingService'
 import {
   CancellableOperation,
   wasRecentlyAnalyzed,
@@ -137,6 +138,8 @@ export class MovieCollectionService extends CancellableOperation {
       })
     }
 
+    getLoggingService().verbose('[MovieCollectionService]',
+      `TMDB ID lookup: ${updated} found, ${failed} failed out of ${moviesWithoutTmdb.length} movies`)
     console.log(`[MovieCollectionService] TMDB lookup complete: ${updated} updated, ${failed} failed`)
     return { updated, failed }
   }
@@ -586,6 +589,8 @@ export class MovieCollectionService extends CancellableOperation {
 
         await db.upsertMovieCollection(data)
 
+        getLoggingService().verbose('[MovieCollectionService]',
+          `"${result.collectionName}" — ${result.ownedMovies}/${result.totalMovies} owned, ${result.missingMovies.length} missing (${result.completenessPercentage}%)`)
         console.log(`[MovieCollectionService] ${result.collectionName}: ${result.ownedMovies}/${result.totalMovies} owned, ${result.missingMovies.length} missing (${result.completenessPercentage}%)`)
 
       } catch (error) {
@@ -635,6 +640,8 @@ export class MovieCollectionService extends CancellableOperation {
       skipped,
     })
 
+    getLoggingService().verbose('[MovieCollectionService]',
+      `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} collections analyzed, ${skipped} skipped, ${collectionEntries.length} total found`)
     console.log(`[MovieCollectionService] Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} analyzed, ${skipped} skipped`)
     return { completed: wasCompleted, analyzed: processedCount - skipped, skipped }
   }

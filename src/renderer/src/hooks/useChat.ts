@@ -1,12 +1,28 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 
+export interface ActionableItem {
+  title: string
+  year?: number
+  tmdb_id?: string
+  media_type: 'movie' | 'tv'
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
   toolsUsed?: string[]
+  actionableItems?: ActionableItem[]
   isLoading?: boolean
+}
+
+export interface ViewContext {
+  currentView: 'dashboard' | 'library'
+  libraryTab?: 'movies' | 'tv' | 'music'
+  selectedItem?: { title: string; type?: string; id?: number }
+  activeSourceId?: string
+  activeFilters?: string
 }
 
 interface RateLimitState {
@@ -15,7 +31,7 @@ interface RateLimitState {
   expiresAt?: number
 }
 
-export function useChat() {
+export function useChat(viewContext?: ViewContext) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeTools, setActiveTools] = useState<string[]>([])
@@ -39,6 +55,21 @@ export function useChat() {
     const cleanup = window.electronAPI.onAiToolUse?.((data) => {
       setActiveTools((prev) => [...prev, data.toolName])
       toolsForCurrentRequest.current.push(data.toolName)
+    })
+    return () => cleanup?.()
+  }, [])
+
+  // Listen for chat stream deltas (simulated streaming of final response)
+  useEffect(() => {
+    const cleanup = window.electronAPI.onAiChatStreamDelta?.((data) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.isLoading && m.role === 'assistant') {
+            return { ...m, content: m.content + data.delta }
+          }
+          return m
+        }),
+      )
     })
     return () => cleanup?.()
   }, [])
@@ -103,6 +134,7 @@ export function useChat() {
       const result = await window.electronAPI.aiChatMessage({
         messages: history,
         requestId,
+        viewContext,
       })
 
       // Update assistant message with response
@@ -116,6 +148,7 @@ export function useChat() {
                 toolsUsed: toolsForCurrentRequest.current.length > 0
                   ? [...new Set(toolsForCurrentRequest.current)]
                   : undefined,
+                actionableItems: result.actionableItems,
               }
             : m,
         ),
@@ -136,7 +169,7 @@ export function useChat() {
       setIsLoading(false)
       setActiveTools([])
     }
-  }, [isLoading, messages, startRateLimitCountdown])
+  }, [isLoading, messages, startRateLimitCountdown, viewContext])
 
   const clearHistory = useCallback(() => {
     setMessages([])

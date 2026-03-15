@@ -290,6 +290,9 @@ function LegalTab() {
             <strong className="text-foreground">Credential Security:</strong> Server credentials and API keys are encrypted using your operating system's secure storage (Windows DPAPI, macOS Keychain, or Linux Secret Service).
           </p>
           <p>
+            <strong className="text-foreground">AI Features:</strong> When enabled, AI chat and reports send library metadata (titles, quality specs, statistics) to Google&apos;s Gemini API using your personal API key. No data passes through Totality&apos;s servers. Chat history is not saved to disk.
+          </p>
+          <p>
             <strong className="text-foreground">No Analytics:</strong> Totality does not collect usage analytics, telemetry, or personal information.
           </p>
         </div>

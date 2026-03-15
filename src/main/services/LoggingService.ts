@@ -211,6 +211,13 @@ class LoggingService {
   setVerboseLogging(enabled: boolean): void {
     this.verboseEnabled = enabled
     this.addEntry('info', '[LoggingService]', `Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
+    // Persist to database
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getDatabase } = require('../database/getDatabase')
+      const db = getDatabase()
+      db.setSetting('verbose_logging_enabled', String(enabled))
+    } catch { /* DB may not be ready */ }
   }
 
   isVerboseEnabled(): boolean {
@@ -303,6 +310,10 @@ class LoggingService {
         this.fileLoggingMinLevel = minLevel as LogLevel
       }
       if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
+
+      // Restore verbose setting
+      const verbose = db.getSetting('verbose_logging_enabled')
+      if (verbose === 'true') this.verboseEnabled = true
     } catch {
       // DB may not be ready; use defaults (file logging stays disabled)
     }

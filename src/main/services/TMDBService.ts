@@ -9,8 +9,11 @@ import {
   TMDBTVSearchResult,
   TMDBCollectionSearchResult,
   TMDBConfiguration,
+  TMDBGenre,
+  TMDBGenreListResponse,
 } from '../types/tmdb'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
 import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
 
@@ -28,6 +31,8 @@ export class TMDBService {
   private static readonly MAX_CACHE_SIZE = 5000 // Max cache entries to prevent unbounded memory growth
 
   private apiKey: string | null = null
+  private movieGenres: TMDBGenre[] | null = null
+  private tvGenres: TMDBGenre[] | null = null
   private cache: Map<string, { data: unknown; timestamp: number }> = new Map()
   private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter()
   private activeRequests = 0
@@ -180,6 +185,7 @@ export class TMDBService {
     // Check cache
     const cached = this.getFromCache<T>(cacheKey)
     if (cached) {
+      getLoggingService().verbose('[TMDB]', `Cache hit: ${endpoint}`)
       return cached
     }
 
@@ -218,7 +224,8 @@ export class TMDBService {
         // Handle rate limiting with Retry-After header
         const rateLimitDelay = getRateLimitRetryAfter(response)
         if (rateLimitDelay !== null) {
-          console.warn(`[TMDB] Rate limited, retry after ${rateLimitDelay}ms`)
+          getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
+        console.warn(`[TMDB] Rate limited, retry after ${rateLimitDelay}ms`)
           const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
           error.status = 429
           throw error
@@ -405,6 +412,104 @@ export class TMDBService {
   buildImageUrl(path: string | null, size: 'w300' | 'w500' | 'original' = 'w500'): string | null {
     if (!path) return null
     return `${TMDBService.IMAGE_BASE_URL}${size}${path}`
+  }
+
+  /**
+   * Get movie genre list (cached in memory — genres rarely change)
+   */
+  async getMovieGenres(): Promise<TMDBGenre[]> {
+    if (this.movieGenres) return this.movieGenres
+    const response = await this.request<TMDBGenreListResponse>('/genre/movie/list')
+    this.movieGenres = response.genres
+    return this.movieGenres
+  }
+
+  /**
+   * Get TV genre list (cached in memory — genres rarely change)
+   */
+  async getTVGenres(): Promise<TMDBGenre[]> {
+    if (this.tvGenres) return this.tvGenres
+    const response = await this.request<TMDBGenreListResponse>('/genre/tv/list')
+    this.tvGenres = response.genres
+    return this.tvGenres
+  }
+
+  /**
+   * Discover movies by genre, year range, rating, etc.
+   */
+  async discoverMovies(params: {
+    genreId?: number
+    yearMin?: number
+    yearMax?: number
+    sortBy?: string
+    minRating?: number
+    minVoteCount?: number
+    page?: number
+  }): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
+    const queryParams: Record<string, string> = {
+      sort_by: params.sortBy || 'popularity.desc',
+      'vote_count.gte': String(params.minVoteCount || 50),
+    }
+    if (params.genreId) queryParams.with_genres = String(params.genreId)
+    if (params.yearMin) queryParams['primary_release_date.gte'] = `${params.yearMin}-01-01`
+    if (params.yearMax) queryParams['primary_release_date.lte'] = `${params.yearMax}-12-31`
+    if (params.minRating) queryParams['vote_average.gte'] = String(params.minRating)
+    if (params.page) queryParams.page = String(params.page)
+
+    return await this.request<TMDBSearchResponse<TMDBMovieSearchResult>>('/discover/movie', queryParams)
+  }
+
+  /**
+   * Discover TV shows by genre, year range, rating, etc.
+   */
+  async discoverTV(params: {
+    genreId?: number
+    yearMin?: number
+    yearMax?: number
+    sortBy?: string
+    minRating?: number
+    minVoteCount?: number
+    page?: number
+  }): Promise<TMDBSearchResponse<TMDBTVSearchResult>> {
+    const queryParams: Record<string, string> = {
+      sort_by: params.sortBy || 'popularity.desc',
+      'vote_count.gte': String(params.minVoteCount || 50),
+    }
+    if (params.genreId) queryParams.with_genres = String(params.genreId)
+    if (params.yearMin) queryParams['first_air_date.gte'] = `${params.yearMin}-01-01`
+    if (params.yearMax) queryParams['first_air_date.lte'] = `${params.yearMax}-12-31`
+    if (params.minRating) queryParams['vote_average.gte'] = String(params.minRating)
+    if (params.page) queryParams.page = String(params.page)
+
+    return await this.request<TMDBSearchResponse<TMDBTVSearchResult>>('/discover/tv', queryParams)
+  }
+
+  /**
+   * Get movies similar to a given movie
+   */
+  async getSimilarMovies(tmdbId: string): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
+    return await this.request<TMDBSearchResponse<TMDBMovieSearchResult>>(`/movie/${tmdbId}/similar`)
+  }
+
+  /**
+   * Get TV shows similar to a given show
+   */
+  async getSimilarTV(tmdbId: string): Promise<TMDBSearchResponse<TMDBTVSearchResult>> {
+    return await this.request<TMDBSearchResponse<TMDBTVSearchResult>>(`/tv/${tmdbId}/similar`)
+  }
+
+  /**
+   * Get movie recommendations based on a given movie
+   */
+  async getMovieRecommendations(tmdbId: string): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
+    return await this.request<TMDBSearchResponse<TMDBMovieSearchResult>>(`/movie/${tmdbId}/recommendations`)
+  }
+
+  /**
+   * Get TV show recommendations based on a given show
+   */
+  async getTVRecommendations(tmdbId: string): Promise<TMDBSearchResponse<TMDBTVSearchResult>> {
+    return await this.request<TMDBSearchResponse<TMDBTVSearchResult>>(`/tv/${tmdbId}/recommendations`)
   }
 
   /**

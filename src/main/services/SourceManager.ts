@@ -9,6 +9,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getPlexService } from './PlexService'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService } from './TaskQueueService'
+import { getLoggingService } from './LoggingService'
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs/promises'
@@ -439,11 +440,16 @@ export class SourceManager {
 
     // Get the (possibly updated) provider
     const currentProvider = this.providers.get(sourceId) || provider
+    const startTime = Date.now()
     const result = await currentProvider.testConnection()
+    const elapsed = Date.now() - startTime
 
     // Update connection timestamp if successful
     if (result.success) {
       await db.updateSourceConnectionTime(sourceId)
+      getLoggingService().verbose('[SourceManager]', `Connection test passed for ${currentProvider.providerType} source in ${elapsed}ms`, result.serverVersion ? `Server version: ${result.serverVersion}` : undefined)
+    } else {
+      getLoggingService().verbose('[SourceManager]', `Connection test failed for ${currentProvider.providerType} source in ${elapsed}ms`, result.error || undefined)
     }
 
     return result
@@ -622,6 +628,12 @@ export class SourceManager {
 
       const result = await provider.scanLibrary(libraryId, { onProgress: wrappedProgress })
 
+      // Verbose scan summary
+      const durationSec = (result.durationMs / 1000).toFixed(1)
+      getLoggingService().verbose('[SourceManager]',
+        `Scan complete: ${library?.name || libraryId} — ${result.itemsScanned} items (${result.itemsAdded} new, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed) in ${durationSec}s`,
+        result.errors.length > 0 ? `Errors: ${result.errors.join('; ')}` : undefined)
+
       // Check if cancelled
       if (this.scanCancelled) {
         return {
@@ -712,6 +724,8 @@ export class SourceManager {
               continue
             }
 
+            getLoggingService().verbose('[SourceManager]', `Scanning library: ${library.name} (${library.type}) from ${source.display_name}`)
+
             const result = await provider.scanLibrary(library.id, {
               onProgress: (progress) => {
                 // Check for cancellation during progress
@@ -723,6 +737,11 @@ export class SourceManager {
                 }
               }
             })
+
+            const durationSec = (result.durationMs / 1000).toFixed(1)
+            getLoggingService().verbose('[SourceManager]',
+              `Scan complete: "${source.display_name}/${library.name}" — ${result.itemsScanned} items (${result.itemsAdded} new, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed) in ${durationSec}s`,
+              result.errors.length > 0 ? `Errors:\n${result.errors.join('\n')}` : undefined)
 
             results.set(`${source.source_id}:${library.id}`, result)
           }

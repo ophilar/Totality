@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { getGeminiService, RateLimitError } from '../services/GeminiService'
-import { LIBRARY_TOOLS, executeTool } from '../services/GeminiTools'
+import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '../services/GeminiTools'
 import { LIBRARY_CHAT_SYSTEM_PROMPT } from '../services/ai-system-prompts'
 import { getGeminiAnalysisService } from '../services/GeminiAnalysisService'
 import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '../validation/schemas'
@@ -12,6 +12,17 @@ const AiChatMessageSchema = z.object({
     content: z.string().min(1).max(100000),
   })).min(1),
   requestId: z.string().min(1).max(100),
+  viewContext: z.object({
+    currentView: z.enum(['dashboard', 'library']),
+    libraryTab: z.enum(['movies', 'tv', 'music']).optional(),
+    selectedItem: z.object({
+      title: z.string(),
+      type: z.string().optional(),
+      id: z.number().optional(),
+    }).optional(),
+    activeSourceId: z.string().optional(),
+    activeFilters: z.string().optional(),
+  }).optional(),
 })
 
 /**
@@ -98,9 +109,26 @@ export function registerGeminiHandlers() {
     try {
       const validated = validateInput(AiChatMessageSchema, params, 'ai:chatMessage')
       const win = BrowserWindow.fromWebContents(event.sender)
+      const actionableItems: ActionableItem[] = []
+
+      // Inject view context into the last user message if provided
+      const messages = validated.messages.map((m, i) => {
+        if (validated.viewContext && i === validated.messages.length - 1 && m.role === 'user') {
+          const ctx = validated.viewContext
+          const parts: string[] = []
+          if (ctx.currentView === 'dashboard') parts.push('Viewing: Dashboard')
+          else if (ctx.libraryTab) parts.push(`Viewing: ${ctx.libraryTab} library`)
+          if (ctx.selectedItem) parts.push(`Selected: "${ctx.selectedItem.title}"`)
+          if (ctx.activeFilters) parts.push(`Filters: ${ctx.activeFilters}`)
+          if (parts.length > 0) {
+            return { ...m, content: `[${parts.join(' | ')}]\n${m.content}` }
+          }
+        }
+        return m
+      })
 
       const result = await getGeminiService().sendMessageWithTools({
-        messages: validated.messages,
+        messages,
         system: LIBRARY_CHAT_SYSTEM_PROMPT,
         tools: LIBRARY_TOOLS,
         maxTokens: 4096,
@@ -110,13 +138,33 @@ export function registerGeminiHandlers() {
             toolName: name,
             input,
           })
-          const result = await executeTool(name, input)
-          return result
+          return await executeTool(name, input, actionableItems)
         },
       })
 
+      // Stream the final response word-by-word for perceived responsiveness
+      if (win && result.text) {
+        const words = result.text.split(/(\s+)/)
+        const chunkSize = 3 // Send ~3 tokens at a time
+        for (let i = 0; i < words.length; i += chunkSize) {
+          const chunk = words.slice(i, i + chunkSize).join('')
+          win.webContents.send('ai:chatStreamDelta', {
+            requestId: validated.requestId,
+            delta: chunk,
+          })
+          // Small delay between chunks for streaming effect
+          if (i + chunkSize < words.length) {
+            await new Promise((r) => setTimeout(r, 15))
+          }
+        }
+        win.webContents.send('ai:chatStreamComplete', {
+          requestId: validated.requestId,
+        })
+      }
+
       return {
         text: result.text,
+        actionableItems: actionableItems.length > 0 ? actionableItems : undefined,
         usage: result.usage,
         requestId: validated.requestId,
       }

@@ -288,6 +288,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
   countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke('db:countTVEpisodes', filters),
+  getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
+    ipcRenderer.invoke('db:getLetterOffset', params),
   getMediaItemById: (id: number) => ipcRenderer.invoke('db:getMediaItemById', id),
   upsertMediaItem: (item: unknown) => ipcRenderer.invoke('db:upsertMediaItem', item),
   deleteMediaItem: (id: number) => ipcRenderer.invoke('db:deleteMediaItem', id),
@@ -660,11 +662,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiChatMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     requestId: string
+    viewContext?: {
+      currentView: 'dashboard' | 'library'
+      libraryTab?: 'movies' | 'tv' | 'music'
+      selectedItem?: { title: string; type?: string; id?: number }
+      activeSourceId?: string
+      activeFilters?: string
+    }
   }) => ipcRenderer.invoke('ai:chatMessage', params),
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; toolName: string; input: Record<string, unknown> }) => callback(data)
     ipcRenderer.on('ai:toolUse', handler)
     return () => ipcRenderer.removeListener('ai:toolUse', handler)
+  },
+  onAiChatStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
+    ipcRenderer.on('ai:chatStreamDelta', handler)
+    return () => ipcRenderer.removeListener('ai:chatStreamDelta', handler)
+  },
+  onAiChatStreamComplete: (callback: (data: { requestId: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string }) => callback(data)
+    ipcRenderer.on('ai:chatStreamComplete', handler)
+    return () => ipcRenderer.removeListener('ai:chatStreamComplete', handler)
   },
 
   // AI Analysis Reports
@@ -710,6 +729,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFileLoggingSettings: () => ipcRenderer.invoke('logs:getFileLoggingSettings'),
   setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) =>
     ipcRenderer.invoke('logs:setFileLoggingSettings', settings),
+  openLogFolder: () => ipcRenderer.invoke('logs:openLogFolder'),
   onNewLog: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => callback(entry)
     ipcRenderer.on('logs:new', handler)
@@ -1171,6 +1191,7 @@ export interface ElectronAPI {
   getTVShows: (filters?: unknown) => Promise<unknown[]>
   countTVShows: (filters?: unknown) => Promise<number>
   countTVEpisodes: (filters?: unknown) => Promise<number>
+  getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) => Promise<number>
   getMediaItemById: (id: number) => Promise<unknown | null>
   upsertMediaItem: (item: unknown) => Promise<number>
   deleteMediaItem: (id: number) => Promise<boolean>
@@ -1822,8 +1843,17 @@ export interface ElectronAPI {
   aiChatMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     requestId: string
-  }) => Promise<{ text: string; usage: { input_tokens: number; output_tokens: number }; requestId: string }>
+    viewContext?: {
+      currentView: 'dashboard' | 'library'
+      libraryTab?: 'movies' | 'tv' | 'music'
+      selectedItem?: { title: string; type?: string; id?: number }
+      activeSourceId?: string
+      activeFilters?: string
+    }
+  }) => Promise<{ text: string; usage: { input_tokens: number; output_tokens: number }; requestId: string; actionableItems?: Array<{ title: string; year?: number; tmdb_id?: string; media_type: 'movie' | 'tv' }> }>
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => () => void
+  onAiChatStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => () => void
+  onAiChatStreamComplete: (callback: (data: { requestId: string }) => void) => () => void
   aiQualityReport: (params: { requestId: string }) => Promise<{ text: string; requestId: string }>
   aiUpgradePriorities: (params: { requestId: string }) => Promise<{ text: string; requestId: string }>
   aiCompletenessInsights: (params: { requestId: string }) => Promise<{ text: string; requestId: string }>
@@ -1858,6 +1888,7 @@ export interface ElectronAPI {
   isVerboseLogging: () => Promise<boolean>
   getFileLoggingSettings: () => Promise<{ enabled: boolean; minLevel: string; retentionDays: number }>
   setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => Promise<{ success: boolean }>
+  openLogFolder: () => Promise<{ success: boolean }>
   onNewLog?: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => () => void
 }
 

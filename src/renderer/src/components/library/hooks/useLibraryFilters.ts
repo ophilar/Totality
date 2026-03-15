@@ -47,18 +47,6 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
   // Filter function for media items
   const filterItem = useCallback(
     (item: MediaItem): boolean => {
-      // Alphabet filter
-      if (alphabetFilter) {
-        const title = item.type === 'episode' && item.series_title ? item.series_title : item.title
-        const firstChar = title.charAt(0).toUpperCase()
-        if (alphabetFilter === '#') {
-          // Numbers and special characters
-          if (/[A-Z]/.test(firstChar)) return false
-        } else {
-          if (firstChar !== alphabetFilter) return false
-        }
-      }
-
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
@@ -80,7 +68,7 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
 
       return true
     },
-    [alphabetFilter, searchQuery, debouncedTierFilter, debouncedQualityFilter]
+    [searchQuery, debouncedTierFilter, debouncedQualityFilter]
   )
 
   return {

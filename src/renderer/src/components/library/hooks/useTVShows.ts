@@ -15,16 +15,14 @@ interface UseTVShowsReturn {
  *
  * Takes a flat list of episode MediaItems and organizes them into a
  * show -> season -> episode hierarchy. Also provides filtered/sorted shows
- * based on alphabet filter and search query.
+ * based on search query.
  *
  * @param items All media items (will filter to episodes)
- * @param alphabetFilter Current alphabet filter (null, '#', or 'A'-'Z')
  * @param searchQuery Current search query
  * @returns TV show organization state and data
  */
 export function useTVShows(
   items: MediaItem[],
-  alphabetFilter: string | null,
   searchQuery: string
 ): UseTVShowsReturn {
   // TV Show navigation state
@@ -85,27 +83,17 @@ export function useTVShows(
 
   const tvShows = useMemo(() => organizeShows(), [organizeShows])
 
-  // Filter TV shows by alphabet and search, then sort alphabetically
+  // Filter TV shows by search, then sort alphabetically
   const filteredShows = useMemo(
     () =>
       Array.from(tvShows.entries())
         .filter(([title]) => {
-          // Alphabet filter
-          if (alphabetFilter) {
-            const firstChar = title.charAt(0).toUpperCase()
-            if (alphabetFilter === '#') {
-              if (/[A-Z]/.test(firstChar)) return false
-            } else {
-              if (firstChar !== alphabetFilter) return false
-            }
-          }
-
           // Search filter
           if (!searchQuery.trim()) return true
           return title.toLowerCase().includes(searchQuery.toLowerCase())
         })
         .sort((a, b) => a[0].localeCompare(b[0])),
-    [tvShows, alphabetFilter, searchQuery]
+    [tvShows, searchQuery]
   )
 
   return {

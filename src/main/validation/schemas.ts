@@ -454,6 +454,17 @@ export const AiStreamMessageSchema = z.object({
 export const AiTestApiKeySchema = z.string().min(1).max(500)
 
 // ============================================================================
+// LETTER OFFSET SCHEMA
+// ============================================================================
+
+export const LetterOffsetSchema = z.object({
+  table: z.enum(['movies', 'tvshows', 'artists', 'albums']),
+  letter: z.string().min(1).max(1),
+  sourceId: z.string().optional(),
+  libraryId: z.string().optional(),
+})
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 

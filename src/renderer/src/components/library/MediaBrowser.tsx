@@ -63,8 +63,10 @@ export function MediaBrowser({
   hideHeader = false,
   showCompletenessPanel: externalShowCompletenessPanel,
   showWishlistPanel: externalShowWishlistPanel,
+  showChatPanel: externalShowChatPanel,
   onToggleCompleteness: externalToggleCompleteness,
   onToggleWishlist: externalToggleWishlist,
+  onToggleChat: externalToggleChat,
   libraryTab,
   onLibraryTabChange,
   onAutoRefreshChange
@@ -77,17 +79,20 @@ export function MediaBrowser({
   // Use extracted hooks
   const themeAccentColor = useThemeAccent()
 
-  // Panel state (completeness/wishlist panels)
+  // Panel state (completeness/wishlist/chat panels)
   const {
     showCompletenessPanel,
     showWishlistPanel,
+    showChatPanel,
     setShowCompletenessPanel,
     setShowWishlistPanel,
   } = usePanelState({
     externalShowCompletenessPanel,
     externalShowWishlistPanel,
+    externalShowChatPanel,
     onToggleCompleteness: externalToggleCompleteness,
     onToggleWishlist: externalToggleWishlist,
+    onToggleChat: externalToggleChat,
   })
 
   const [loading, setLoading] = useState(true)
@@ -169,6 +174,7 @@ export function MediaBrowser({
   const tierFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const qualityFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const alphabetFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const gridViewRef = useRef<HTMLButtonElement>(null)
   const listViewRef = useRef<HTMLButtonElement>(null)
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
@@ -458,11 +464,11 @@ export function MediaBrowser({
   }
 
   // Load paginated artists from server with current filters/sorting
-  const loadPaginatedArtists = useCallback(async (reset = true) => {
+  const loadPaginatedArtists = useCallback(async (reset = true, startOffset?: number) => {
     if (artistsLoading) return
     setArtistsLoading(true)
     try {
-      const offset = reset ? 0 : artistsOffsetRef.current
+      const offset = reset ? (startOffset ?? 0) : artistsOffsetRef.current
       const filters: Record<string, unknown> = {
         limit: ARTISTS_PAGE_SIZE,
         offset,
@@ -471,7 +477,7 @@ export function MediaBrowser({
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
+
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
 
       const [artists, count] = await Promise.all([
@@ -492,7 +498,7 @@ export function MediaBrowser({
     } finally {
       setArtistsLoading(false)
     }
-  }, [activeSourceId, activeLibraryId, alphabetFilter, searchQuery, artistsLoading])
+  }, [activeSourceId, activeLibraryId,searchQuery, artistsLoading])
 
   // Load more artists (infinite scroll callback)
   const loadMoreArtists = useCallback(() => {
@@ -515,7 +521,7 @@ export function MediaBrowser({
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
+
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
 
       const [tracks, count] = await Promise.all([
@@ -536,7 +542,7 @@ export function MediaBrowser({
     } finally {
       setTracksLoading(false)
     }
-  }, [activeSourceId, activeLibraryId, alphabetFilter, searchQuery, trackSortColumn, trackSortDirection, tracksLoading])
+  }, [activeSourceId, activeLibraryId,searchQuery, trackSortColumn, trackSortDirection, tracksLoading])
 
   // Load more tracks (infinite scroll callback)
   const loadMoreTracks = useCallback(() => {
@@ -551,14 +557,14 @@ export function MediaBrowser({
       loadPaginatedTracks(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, alphabetFilter, searchQuery, trackSortColumn, trackSortDirection])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery, trackSortColumn, trackSortDirection])
 
   // Load paginated albums from server with current filters/sorting
-  const loadPaginatedAlbums = useCallback(async (reset = true) => {
+  const loadPaginatedAlbums = useCallback(async (reset = true, startOffset?: number) => {
     if (albumsLoading) return
     setAlbumsLoading(true)
     try {
-      const offset = reset ? 0 : albumsOffsetRef.current
+      const offset = reset ? (startOffset ?? 0) : albumsOffsetRef.current
       const filters: Record<string, unknown> = {
         limit: ALBUMS_PAGE_SIZE,
         offset,
@@ -567,7 +573,7 @@ export function MediaBrowser({
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
+
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
       if (selectedArtist) filters.artistId = selectedArtist.id
 
@@ -589,7 +595,7 @@ export function MediaBrowser({
     } finally {
       setAlbumsLoading(false)
     }
-  }, [activeSourceId, activeLibraryId, alphabetFilter, searchQuery, albumSortColumn, albumSortDirection, albumsLoading, selectedArtist])
+  }, [activeSourceId, activeLibraryId,searchQuery, albumSortColumn, albumSortDirection, albumsLoading, selectedArtist])
 
   // Load more albums (infinite scroll callback)
   const loadMoreAlbums = useCallback(() => {
@@ -604,7 +610,7 @@ export function MediaBrowser({
       loadPaginatedArtists(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, alphabetFilter, searchQuery])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery])
 
   // Trigger server-side album loading when albums tab is active and filters change
   useEffect(() => {
@@ -612,14 +618,14 @@ export function MediaBrowser({
       loadPaginatedAlbums(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId, alphabetFilter, searchQuery, albumSortColumn, albumSortDirection, selectedArtist])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery, albumSortColumn, albumSortDirection, selectedArtist])
 
   // Load paginated movies from server with current filters/sorting
-  const loadPaginatedMovies = useCallback(async (reset = true) => {
+  const loadPaginatedMovies = useCallback(async (reset = true, startOffset?: number) => {
     if (moviesLoading) return
     setMoviesLoading(true)
     try {
-      const offset = reset ? 0 : moviesOffsetRef.current
+      const offset = reset ? (startOffset ?? 0) : moviesOffsetRef.current
       const filters: Record<string, unknown> = {
         type: 'movie',
         limit: MOVIES_PAGE_SIZE,
@@ -629,7 +635,7 @@ export function MediaBrowser({
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
+
       if (debouncedTierFilter !== 'all') filters.qualityTier = debouncedTierFilter
       if (debouncedQualityFilter !== 'all') filters.tierQuality = debouncedQualityFilter.toUpperCase()
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
@@ -652,7 +658,7 @@ export function MediaBrowser({
     } finally {
       setMoviesLoading(false)
     }
-  }, [activeSourceId, activeLibraryId, alphabetFilter, debouncedTierFilter, debouncedQualityFilter, searchQuery, moviesLoading])
+  }, [activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, moviesLoading])
 
   // Load more movies (infinite scroll callback)
   const loadMoreMovies = useCallback(() => {
@@ -667,14 +673,14 @@ export function MediaBrowser({
       loadPaginatedMovies(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, alphabetFilter, debouncedTierFilter, debouncedQualityFilter, searchQuery])
+  }, [view, activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery])
 
   // Load paginated TV shows from server with current filters
-  const loadPaginatedShows = useCallback(async (reset = true) => {
+  const loadPaginatedShows = useCallback(async (reset = true, startOffset?: number) => {
     if (showsLoading) return
     setShowsLoading(true)
     try {
-      const offset = reset ? 0 : showsOffsetRef.current
+      const offset = reset ? (startOffset ?? 0) : showsOffsetRef.current
       const filters: Record<string, unknown> = {
         limit: SHOWS_PAGE_SIZE,
         offset,
@@ -683,7 +689,7 @@ export function MediaBrowser({
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
-      if (alphabetFilter) filters.alphabetFilter = alphabetFilter
+
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
 
       const [newShows, count, episodeCount] = await Promise.all([
@@ -706,7 +712,7 @@ export function MediaBrowser({
     } finally {
       setShowsLoading(false)
     }
-  }, [showsLoading, activeSourceId, activeLibraryId, alphabetFilter, searchQuery])
+  }, [showsLoading, activeSourceId, activeLibraryId,searchQuery])
 
   const loadMoreShows = useCallback(() => {
     if (showsOffsetRef.current < totalShowCount && !showsLoading) {
@@ -734,7 +740,7 @@ export function MediaBrowser({
       loadPaginatedShows(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId, alphabetFilter, searchQuery])
+  }, [view, activeSourceId, activeLibraryId,searchQuery])
 
   // Load episodes when a show is selected
   useEffect(() => {
@@ -981,18 +987,6 @@ export function MediaBrowser({
   }, [selectedShow, selectedShowEpisodes])
 
   const filterItem = useCallback((item: MediaItem): boolean => {
-    // Alphabet filter
-    if (alphabetFilter) {
-      const title = item.type === 'episode' && item.series_title ? item.series_title : item.title
-      const firstChar = title.charAt(0).toUpperCase()
-      if (alphabetFilter === '#') {
-        // Numbers and special characters
-        if (/[A-Z]/.test(firstChar)) return false
-      } else {
-        if (firstChar !== alphabetFilter) return false
-      }
-    }
-
     // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
@@ -1013,7 +1007,49 @@ export function MediaBrowser({
     }
 
     return true
-  }, [alphabetFilter, searchQuery, debouncedTierFilter, debouncedQualityFilter])
+  }, [searchQuery, debouncedTierFilter, debouncedQualityFilter])
+
+  // Scroll to the first item starting with the given letter (DB-backed offset)
+  const scrollToLetter = useCallback(async (letter: string | null) => {
+    setAlphabetFilter(letter)
+    const container = scrollContainerRef.current
+
+    if (!letter || letter === '#') {
+      // '#' (non-alpha) and 'All' are at the top — reload from offset 0
+      if (view === 'movies') loadPaginatedMovies(true, 0)
+      else if (view === 'tv') loadPaginatedShows(true, 0)
+      else if (view === 'music' && musicViewMode === 'artists') loadPaginatedArtists(true, 0)
+      else if (view === 'music' && musicViewMode === 'albums') loadPaginatedAlbums(true, 0)
+      container?.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // Determine table for DB query
+    let table: 'movies' | 'tvshows' | 'artists' | 'albums'
+    if (view === 'movies') table = 'movies'
+    else if (view === 'tv') table = 'tvshows'
+    else if (view === 'music' && musicViewMode === 'albums') table = 'albums'
+    else table = 'artists'
+
+    try {
+      const offset = await window.electronAPI.getLetterOffset({
+        table,
+        letter,
+        sourceId: activeSourceId || undefined,
+        libraryId: activeLibraryId || undefined,
+      })
+
+      // Reload from that offset
+      if (view === 'movies') loadPaginatedMovies(true, offset)
+      else if (view === 'tv') loadPaginatedShows(true, offset)
+      else if (view === 'music' && musicViewMode === 'artists') loadPaginatedArtists(true, offset)
+      else if (view === 'music' && musicViewMode === 'albums') loadPaginatedAlbums(true, offset)
+
+      container?.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      console.warn('Failed to get letter offset:', err)
+    }
+  }, [setAlphabetFilter, view, musicViewMode, activeSourceId, activeLibraryId, loadPaginatedMovies, loadPaginatedShows, loadPaginatedArtists, loadPaginatedAlbums])
 
   // Movies are now loaded from the server pre-filtered/sorted/paginated
   const movies = paginatedMovies
@@ -1837,7 +1873,7 @@ export function MediaBrowser({
         className={`fixed top-[88px] bottom-4 transition-[left,right,opacity] duration-300 ease-out flex flex-col ${isRefreshing ? 'opacity-60' : 'opacity-100'}`}
         style={{
           left: sidebarCollapsed ? '96px' : '288px',
-          right: showCompletenessPanel || showWishlistPanel ? '340px' : '16px'
+          right: showCompletenessPanel || showWishlistPanel || showChatPanel ? '352px' : '16px'
         }}
         role="tabpanel"
         aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : 'Music'} library`}
@@ -2026,7 +2062,7 @@ export function MediaBrowser({
         {/* Scrollable Content Area with Alphabet Filter */}
         <div className="flex-1 relative min-h-0">
           {/* Main scrollable content */}
-          <div className="absolute inset-0 overflow-y-auto scrollbar-visible px-4 pb-4 pr-8">
+          <div ref={scrollContainerRef} className="absolute inset-0 overflow-y-auto scrollbar-visible px-4 pb-4 pr-8">
 
         {/* Content Display */}
         {showEmptyState ? (
@@ -2135,7 +2171,6 @@ export function MediaBrowser({
             gridScale={gridScale}
             viewType={viewType}
             searchQuery={searchQuery}
-            alphabetFilter={alphabetFilter}
             qualityFilter={qualityFilter}
             showSourceBadge={!activeSourceId && sources.length > 1}
             onAnalyzeAlbum={analyzeAlbumCompleteness}
@@ -2161,7 +2196,7 @@ export function MediaBrowser({
                 if (el) alphabetFilterRefs.current.set('all', el)
                 else alphabetFilterRefs.current.delete('all')
               }}
-              onClick={() => setAlphabetFilter(null)}
+              onClick={() => scrollToLetter(null)}
               className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
                 alphabetFilter === null
                   ? 'text-foreground'
@@ -2178,7 +2213,7 @@ export function MediaBrowser({
                 if (el) alphabetFilterRefs.current.set('#', el)
                 else alphabetFilterRefs.current.delete('#')
               }}
-              onClick={() => setAlphabetFilter('#')}
+              onClick={() => scrollToLetter('#')}
               className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
@@ -2197,7 +2232,7 @@ export function MediaBrowser({
                   if (el) alphabetFilterRefs.current.set(letter, el)
                   else alphabetFilterRefs.current.delete(letter)
                 }}
-                onClick={() => setAlphabetFilter(letter)}
+                onClick={() => scrollToLetter(letter)}
                 className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
                   alphabetFilter === letter
                     ? 'text-foreground'

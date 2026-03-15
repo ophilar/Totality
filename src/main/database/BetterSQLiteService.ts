@@ -251,6 +251,25 @@ export class BetterSQLiteService {
     // Populate media_item_versions from existing media_items (one version per item)
     this.migrateExistingItemsToVersions()
 
+    // Clean up orphaned records from prior cascade delete bugs
+    try {
+      const orphanedScores = this.db.prepare(
+        'DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)'
+      ).run()
+      const orphanedVersions = this.db.prepare(
+        'DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)'
+      ).run()
+      const orphanedCollections = this.db.prepare(
+        'DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)'
+      ).run()
+      const total = orphanedScores.changes + orphanedVersions.changes + orphanedCollections.changes
+      if (total > 0) {
+        console.log(`[BetterSQLite] Orphan cleanup: removed ${orphanedScores.changes} quality_scores, ${orphanedVersions.changes} versions, ${orphanedCollections.changes} collection links`)
+      }
+    } catch (err) {
+      console.warn('[BetterSQLite] Orphan cleanup skipped:', err)
+    }
+
     console.log('[BetterSQLite] Migrations completed')
   }
 
@@ -935,6 +954,7 @@ export class BetterSQLiteService {
     // Delete associated data first
     this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
     this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
+    this.db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
     this.db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
   }
 
@@ -1119,6 +1139,31 @@ export class BetterSQLiteService {
   deleteMediaItemVersions(mediaItemId: number): void {
     if (!this.db) throw new Error('Database not initialized')
     this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+  }
+
+  /**
+   * Sync versions for a media item: delete stale versions not in the current
+   * file paths, upsert current versions, and update best version + version_count.
+   */
+  syncMediaItemVersions(mediaItemId: number, versions: MediaItemVersion[]): void {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const currentFilePaths = versions.map(v => v.file_path).filter(Boolean)
+
+    if (currentFilePaths.length > 0) {
+      const placeholders = currentFilePaths.map(() => '?').join(',')
+      this.db.prepare(
+        `DELETE FROM media_item_versions WHERE media_item_id = ? AND file_path NOT IN (${placeholders})`
+      ).run(mediaItemId, ...currentFilePaths)
+    } else {
+      this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+    }
+
+    for (const version of versions) {
+      this.upsertMediaItemVersion(version)
+    }
+
+    this.updateBestVersion(mediaItemId)
   }
 
   /**
@@ -2575,6 +2620,67 @@ export class BetterSQLiteService {
     if (filters?.searchQuery) {
       sql += " AND COALESCE(m.series_title, 'Unknown Series') LIKE '%' || ? || '%'"
       params.push(filters.searchQuery)
+    }
+
+    const stmt = this.db.prepare(sql)
+    const result = stmt.get(...params) as { count: number }
+    return result?.count || 0
+  }
+
+  /**
+   * Get the offset (count of items before) a given letter for alphabet jump navigation.
+   * Returns the number of items that sort before the target letter.
+   */
+  getLetterOffset(
+    table: 'movies' | 'tvshows' | 'artists' | 'albums',
+    letter: string,
+    filters?: { sourceId?: string; libraryId?: string }
+  ): number {
+    if (!this.db) throw new Error('Database not initialized')
+
+    // '#' = non-alpha chars, which sort first → offset 0
+    if (letter === '#') return 0
+
+    const upperLetter = letter.toUpperCase()
+    let sql: string
+    const params: unknown[] = []
+
+    if (table === 'movies') {
+      sql = `
+        SELECT COUNT(*) as count FROM media_items m
+        LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
+        WHERE m.type = 'movie' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+          AND UPPER(SUBSTR(COALESCE(m.sort_title, m.title), 1, 1)) < ?
+      `
+      params.push(upperLetter)
+      if (filters?.sourceId) { sql += ' AND m.source_id = ?'; params.push(filters.sourceId) }
+      if (filters?.libraryId) { sql += ' AND m.library_id = ?'; params.push(filters.libraryId) }
+    } else if (table === 'tvshows') {
+      sql = `
+        SELECT COUNT(DISTINCT COALESCE(m.series_title, 'Unknown Series')) as count FROM media_items m
+        WHERE m.type = 'episode'
+          AND UPPER(SUBSTR(COALESCE(m.series_title, 'Unknown Series'), 1, 1)) < ?
+      `
+      params.push(upperLetter)
+      if (filters?.sourceId) { sql += ' AND m.source_id = ?'; params.push(filters.sourceId) }
+      if (filters?.libraryId) { sql += ' AND m.library_id = ?'; params.push(filters.libraryId) }
+    } else if (table === 'artists') {
+      sql = `
+        SELECT COUNT(*) as count FROM music_artists
+        WHERE UPPER(SUBSTR(COALESCE(sort_name, name), 1, 1)) < ?
+      `
+      params.push(upperLetter)
+      if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
+      if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
+    } else {
+      // albums
+      sql = `
+        SELECT COUNT(*) as count FROM music_albums
+        WHERE UPPER(SUBSTR(title, 1, 1)) < ?
+      `
+      params.push(upperLetter)
+      if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
+      if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
     }
 
     const stmt = this.db.prepare(sql)
@@ -4087,6 +4193,17 @@ WHERE m.type = 'episode' AND m.series_title = ?`
       }
     }
     return result
+  }
+
+  /**
+   * Get episode count for a TV show by its series-level TMDB ID
+   */
+  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number {
+    if (!this.db) throw new Error('Database not initialized')
+    const stmt = this.db.prepare(
+      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?"
+    )
+    return (stmt.get(seriesTmdbId) as { count: number }).count
   }
 
   /**

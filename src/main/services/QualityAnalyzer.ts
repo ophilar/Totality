@@ -1,4 +1,5 @@
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '../types/database'
 
 /**
@@ -682,11 +683,21 @@ export class QualityAnalyzer {
     const mediaItems = db.getMediaItems()
 
     let analyzed = 0
+    const tierCounts: Record<string, number> = {}
+    const qualityCounts: Record<string, number> = {}
+
+    getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
     for (const item of mediaItems) {
       try {
         const qualityScore = await this.analyzeMediaItem(item)
         await db.upsertQualityScore(qualityScore)
+
+        // Track distribution for verbose summary
+        const tier = qualityScore.quality_tier || 'SD'
+        const quality = qualityScore.tier_quality || 'MEDIUM'
+        tierCounts[tier] = (tierCounts[tier] || 0) + 1
+        qualityCounts[quality] = (qualityCounts[quality] || 0) + 1
 
         // Score individual versions and update best version selection
         if (item.id && item.version_count && item.version_count > 1) {
@@ -709,6 +720,11 @@ export class QualityAnalyzer {
         console.error(`Failed to analyze item ${item.id}:`, error)
       }
     }
+
+    const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')
+    const qualSummary = Object.entries(qualityCounts).map(([q, c]) => `${q}:${c}`).join(', ')
+    getLoggingService().verbose('[QualityAnalyzer]',
+      `Analysis complete: ${analyzed}/${mediaItems.length} items — Tiers: ${tierSummary} — Quality: ${qualSummary}`)
 
     return analyzed
   }

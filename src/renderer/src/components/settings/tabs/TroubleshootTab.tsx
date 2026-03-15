@@ -26,6 +26,10 @@ import {
   MessageSquareText,
   Copy,
   CheckSquare,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
+  HardDrive,
 } from 'lucide-react'
 
 interface LogEntry {
@@ -53,6 +57,12 @@ export function TroubleshootTab() {
   const [verboseEnabled, setVerboseEnabled] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copyFeedback, setCopyFeedback] = useState(false)
+  const [fileLoggingExpanded, setFileLoggingExpanded] = useState(false)
+  const [fileLoggingSettings, setFileLoggingSettings] = useState<{
+    enabled: boolean
+    minLevel: string
+    retentionDays: number
+  }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
   const listRef = useRef<VirtualList>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -181,12 +191,14 @@ export function TroubleshootTab() {
 
   const loadLogs = async () => {
     try {
-      const [entries, isVerbose] = await Promise.all([
+      const [entries, isVerbose, fileSettings] = await Promise.all([
         window.electronAPI.getLogs(2000),
         window.electronAPI.isVerboseLogging(),
+        window.electronAPI.getFileLoggingSettings(),
       ])
       setLogs(entries)
       setVerboseEnabled(isVerbose)
+      setFileLoggingSettings(fileSettings)
     } catch (error) {
       console.error('Failed to load logs:', error)
     } finally {
@@ -216,6 +228,12 @@ export function TroubleshootTab() {
     const newValue = !verboseEnabled
     setVerboseEnabled(newValue)
     await window.electronAPI.setVerboseLogging(newValue)
+  }
+
+  const handleFileLoggingSetting = async (update: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => {
+    const newSettings = { ...fileLoggingSettings, ...update }
+    setFileLoggingSettings(newSettings)
+    await window.electronAPI.setFileLoggingSettings(update)
   }
 
   // Toggle selection for a single entry, with shift-click range support
@@ -531,8 +549,94 @@ export function TroubleshootTab() {
         )}
       </div>
 
+      {/* File Logging Settings */}
+      <div className="mt-3 shrink-0">
+        <button
+          onClick={() => setFileLoggingExpanded(!fileLoggingExpanded)}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+        >
+          {fileLoggingExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5" />
+          )}
+          <HardDrive className="w-3.5 h-3.5" />
+          <span className="font-medium">File Logging</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded ${fileLoggingSettings.enabled ? 'bg-green-500/20 text-green-400' : 'bg-muted text-muted-foreground'}`}>
+            {fileLoggingSettings.enabled ? 'On' : 'Off'}
+          </span>
+        </button>
+
+        {fileLoggingExpanded && (
+          <div className="mt-2 p-3 bg-muted/50 rounded-lg border border-border/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Write logs to disk</span>
+              </div>
+              <button
+                onClick={() => handleFileLoggingSetting({ enabled: !fileLoggingSettings.enabled })}
+                className={`relative w-9 h-5 rounded-full transition-colors ${
+                  fileLoggingSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    fileLoggingSettings.enabled ? 'translate-x-4' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">Min level:</label>
+                <select
+                  value={fileLoggingSettings.minLevel}
+                  onChange={(e) => handleFileLoggingSetting({ minLevel: e.target.value })}
+                  disabled={!fileLoggingSettings.enabled}
+                  className="bg-muted text-foreground text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                >
+                  <option value="verbose">Verbose</option>
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warn</option>
+                  <option value="error">Error</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">Retention:</label>
+                <select
+                  value={fileLoggingSettings.retentionDays}
+                  onChange={(e) => handleFileLoggingSetting({ retentionDays: parseInt(e.target.value, 10) })}
+                  disabled={!fileLoggingSettings.enabled}
+                  className="bg-muted text-foreground text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                >
+                  <option value={3}>3 days</option>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => window.electronAPI.openLogFolder()}
+                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors ml-auto"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                Open folder
+              </button>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              Daily log files are saved to the app data folder with automatic rotation.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Footer */}
-      <div className="mt-4 pt-4 border-t border-border/30 shrink-0">
+      <div className="mt-3 pt-3 border-t border-border/30 shrink-0">
         <p className="text-xs text-muted-foreground">
           Logs are stored in memory and will be cleared when the app restarts. Export logs before
           closing the app to share with support.

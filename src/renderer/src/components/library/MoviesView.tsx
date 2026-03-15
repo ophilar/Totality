@@ -149,24 +149,26 @@ export function MoviesView({
           {displayItems.map((item) => {
             if (item.type === 'collection') {
               return (
-                <CollectionListItem
-                  key={`collection-${item.collection.id}`}
-                  collection={item.collection}
-                  onClick={() => onSelectCollection(item.collection)}
-                                 />
+                <div key={`collection-${item.collection.id}`} data-title={item.collection.collection_name}>
+                  <CollectionListItem
+                    collection={item.collection}
+                    onClick={() => onSelectCollection(item.collection)}
+                                   />
+                </div>
               )
             }
             return (
-              <MovieListItem
-                key={item.movie.id}
-                movie={item.movie}
-                onClick={() => onSelectMovie(item.movie.id, item.movie)}
-                showSourceBadge={showSourceBadge}
-                collectionData={getCollectionForMovie(item.movie)}
-                onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-                onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
-                onDismissUpgrade={onDismissUpgrade}
-                             />
+              <div key={item.movie.id} data-title={item.movie.title}>
+                <MovieListItem
+                  movie={item.movie}
+                  onClick={() => onSelectMovie(item.movie.id, item.movie)}
+                  showSourceBadge={showSourceBadge}
+                  collectionData={getCollectionForMovie(item.movie)}
+                  onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
+                  onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+                  onDismissUpgrade={onDismissUpgrade}
+                               />
+              </div>
             )
           })}
         </div>
@@ -196,24 +198,26 @@ export function MoviesView({
         {displayItems.map((item) => {
           if (item.type === 'collection') {
             return (
-              <CollectionCard
-                key={`collection-${item.collection.id}`}
-                collection={item.collection}
-                onClick={() => onSelectCollection(item.collection)}
-                             />
+              <div key={`collection-${item.collection.id}`} data-title={item.collection.collection_name}>
+                <CollectionCard
+                  collection={item.collection}
+                  onClick={() => onSelectCollection(item.collection)}
+                                 />
+              </div>
             )
           }
           return (
-            <MovieCard
-              key={item.movie.id}
-              movie={item.movie}
-              onClick={() => onSelectMovie(item.movie.id, item.movie)}
-              collectionData={getCollectionForMovie(item.movie)}
-              showSourceBadge={showSourceBadge}
-              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
-              onDismissUpgrade={onDismissUpgrade}
-                         />
+            <div key={item.movie.id} data-title={item.movie.title}>
+              <MovieCard
+                movie={item.movie}
+                onClick={() => onSelectMovie(item.movie.id, item.movie)}
+                collectionData={getCollectionForMovie(item.movie)}
+                showSourceBadge={showSourceBadge}
+                onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
+                onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+                onDismissUpgrade={onDismissUpgrade}
+                             />
+            </div>
           )
         })}
       </div>

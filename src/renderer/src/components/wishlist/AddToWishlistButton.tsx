@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
-import { Star, Check, Loader2 } from 'lucide-react'
+import { useState, useCallback, useMemo } from 'react'
+import { Star } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistReason } from '../../contexts/WishlistContext'
 
 interface AddToWishlistButtonProps {
@@ -52,99 +52,86 @@ export function AddToWishlistButton({
   currentAudioCodec,
   compact = false
 }: AddToWishlistButtonProps) {
-  const { addItem, checkExists, items } = useWishlist()
-  const [isInWishlist, setIsInWishlist] = useState(false)
+  const { addItem, removeItem, items } = useWishlist()
   const [isLoading, setIsLoading] = useState(false)
-  const [isChecking, setIsChecking] = useState(true)
 
   // For episodes, we add the season instead (can't buy individual episodes on physical media)
   const isEpisode = mediaType === 'episode'
   const effectiveMediaType: WishlistMediaType = isEpisode ? 'season' : mediaType
   const effectiveTitle = isEpisode ? (seriesTitle || title) : title
 
-  // Check if already in wishlist on mount and when dependencies change
-  // For seasons (including episodes which become seasons), check by series_title + season_number
-  // This is more accurate than tmdb_id alone since all seasons share the show's tmdb_id
-  useEffect(() => {
-    const check = async () => {
-      setIsChecking(true)
-      try {
-        // For seasons (or episodes being added as seasons), check by series + season number
-        // This handles the case where multiple seasons share the same show tmdb_id
-        if ((mediaType === 'season' || isEpisode) && seriesTitle && seasonNumber !== undefined) {
-          const seasonExists = items.some(
-            item => item.media_type === 'season' &&
-                    item.series_title === seriesTitle &&
-                    item.season_number === seasonNumber
-          )
-          if (seasonExists) {
-            setIsInWishlist(true)
-            setIsChecking(false)
-            return
-          }
-          // If not found by series+season, it's not in the wishlist
-          // Don't fall through to checkExists for seasons since tmdb_id is shared across all seasons
-          setIsInWishlist(false)
-          setIsChecking(false)
-          return
-        }
-        // For non-season items, use the standard check
-        const exists = await checkExists(tmdbId, musicbrainzId, mediaItemId)
-        setIsInWishlist(exists)
-      } catch (err) {
-        console.error('Error checking wishlist:', err)
-      } finally {
-        setIsChecking(false)
-      }
+  // Find the matching wishlist item synchronously from the local items array.
+  // Returns the item if found (for removal), or undefined if not in wishlist.
+  const wishlistMatch = useMemo(() => {
+    // Seasons: match by series_title + season_number (tmdb_id is shared across seasons)
+    if ((mediaType === 'season' || isEpisode) && seriesTitle && seasonNumber !== undefined) {
+      return items.find(
+        item => item.media_type === 'season' &&
+                item.series_title === seriesTitle &&
+                item.season_number === seasonNumber
+      )
     }
-    check()
-  }, [tmdbId, musicbrainzId, mediaItemId, seriesTitle, seasonNumber, isEpisode, mediaType, items, checkExists])
+    // Match by strongest available identifier
+    if (tmdbId) {
+      return items.find(item => item.tmdb_id === tmdbId && item.media_type === effectiveMediaType)
+    }
+    if (musicbrainzId) {
+      return items.find(item => item.musicbrainz_id === musicbrainzId)
+    }
+    if (mediaItemId) {
+      return items.find(item => item.media_item_id === mediaItemId)
+    }
+    // Fallback: match by title + media type
+    return items.find(item => item.title === effectiveTitle && item.media_type === effectiveMediaType)
+  }, [items, mediaType, isEpisode, seriesTitle, seasonNumber, tmdbId, musicbrainzId, mediaItemId, effectiveMediaType, effectiveTitle])
 
-  const handleAdd = useCallback(async () => {
-    if (isInWishlist) return
+  const isInWishlist = !!wishlistMatch
+
+  const handleToggle = useCallback(async () => {
+    if (isLoading) return
 
     setIsLoading(true)
     try {
-      await addItem({
-        media_type: effectiveMediaType,
-        title: effectiveTitle,
-        year,
-        tmdb_id: tmdbId,
-        imdb_id: imdbId,
-        musicbrainz_id: musicbrainzId,
-        series_title: seriesTitle,
-        season_number: seasonNumber,
-        // Don't include episode_number when adding a season
-        episode_number: isEpisode ? undefined : episodeNumber,
-        collection_name: collectionName,
-        artist_name: artistName,
-        album_title: albumTitle,
-        poster_url: posterUrl,
-        priority: 3, // Default priority, can be changed in wishlist panel
-        reason,
-        status: 'active', // New items are always active
-        // Upgrade-specific fields - don't link to specific episode's media_item_id for seasons
-        media_item_id: isEpisode ? undefined : mediaItemId,
-        current_quality_tier: currentQualityTier,
-        current_quality_level: currentQualityLevel,
-        current_resolution: currentResolution,
-        current_video_codec: currentVideoCodec,
-        current_audio_codec: currentAudioCodec
-      })
-      setIsInWishlist(true)
+      if (isInWishlist && wishlistMatch) {
+        await removeItem(wishlistMatch.id)
+      } else {
+        await addItem({
+          media_type: effectiveMediaType,
+          title: effectiveTitle,
+          year,
+          tmdb_id: tmdbId,
+          imdb_id: imdbId,
+          musicbrainz_id: musicbrainzId,
+          series_title: seriesTitle,
+          season_number: seasonNumber,
+          episode_number: isEpisode ? undefined : episodeNumber,
+          collection_name: collectionName,
+          artist_name: artistName,
+          album_title: albumTitle,
+          poster_url: posterUrl,
+          priority: 3,
+          reason,
+          status: 'active',
+          media_item_id: isEpisode ? undefined : mediaItemId,
+          current_quality_tier: currentQualityTier,
+          current_quality_level: currentQualityLevel,
+          current_resolution: currentResolution,
+          current_video_codec: currentVideoCodec,
+          current_audio_codec: currentAudioCodec
+        })
+      }
     } catch (err) {
-      console.error('Error adding to wishlist:', err)
+      console.error('Error toggling wishlist:', err)
     } finally {
       setIsLoading(false)
     }
   }, [
-    isInWishlist, addItem, effectiveMediaType, effectiveTitle, year, tmdbId, imdbId,
+    isLoading, isInWishlist, wishlistMatch, removeItem, addItem, effectiveMediaType, effectiveTitle, year, tmdbId, imdbId,
     musicbrainzId, seriesTitle, seasonNumber, episodeNumber, collectionName,
     artistName, albumTitle, posterUrl, reason, mediaItemId, isEpisode,
     currentQualityTier, currentQualityLevel, currentResolution, currentVideoCodec, currentAudioCodec
   ])
 
-  const ButtonIcon = Star
   // Indicate that the whole season will be added when adding an episode
   const buttonLabel = isEpisode
     ? `Add Season ${seasonNumber ?? ''} to Wishlist`
@@ -152,60 +139,39 @@ export function AddToWishlistButton({
   const inListLabel = isEpisode
     ? `Season ${seasonNumber ?? ''} in Wishlist`
     : 'In Wishlist'
-
-  if (isChecking) {
-    if (compact) {
-      return (
-        <div className="p-1">
-          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-        </div>
-      )
-    }
-    return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        <span>Checking...</span>
-      </div>
-    )
-  }
-
-  if (isInWishlist) {
-    if (compact) {
-      return (
-        <div className="p-1" title={inListLabel}>
-          <Check className="w-5 h-5 text-green-500" />
-        </div>
-      )
-    }
-    return (
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-md text-sm text-gray-700">
-        <Check className="w-4 h-4 text-green-500" />
-        <span>Added</span>
-      </div>
-    )
-  }
+  const removeLabel = isEpisode
+    ? `Remove Season ${seasonNumber ?? ''} from Wishlist`
+    : 'Remove from Wishlist'
 
   if (compact) {
     return (
       <button
-        onClick={handleAdd}
+        onClick={handleToggle}
         disabled={isLoading}
-        className="p-1 transition-colors disabled:opacity-50 text-primary hover:text-primary/80"
-        title={buttonLabel}
+        className={`p-1 transition-colors disabled:opacity-50 ${
+          isInWishlist
+            ? 'text-amber-400 hover:text-amber-500'
+            : 'text-primary hover:text-primary/80'
+        }`}
+        title={isInWishlist ? removeLabel : buttonLabel}
       >
-        <ButtonIcon className="w-5 h-5" />
+        <Star className={`w-5 h-5 ${isInWishlist ? 'fill-amber-400' : ''}`} />
       </button>
     )
   }
 
   return (
     <button
-      onClick={handleAdd}
+      onClick={handleToggle}
       disabled={isLoading}
-      className="flex items-center gap-2 px-3 py-2 rounded-md text-sm disabled:opacity-50 transition-colors bg-primary text-primary-foreground hover:bg-primary/90"
+      className={`inline-flex items-center gap-1.5 rounded-md text-sm disabled:opacity-50 transition-colors ${
+        isInWishlist
+          ? 'px-2.5 py-1.5 bg-amber-400/10 border border-amber-400/30 text-amber-500 hover:bg-amber-400/20'
+          : 'gap-2 px-3 py-2 bg-primary text-primary-foreground hover:bg-primary/90'
+      }`}
     >
-      <ButtonIcon className="w-4 h-4" />
-      <span>{buttonLabel}</span>
+      <Star className={`w-4 h-4 ${isInWishlist ? 'fill-amber-400 text-amber-400' : ''}`} />
+      <span>{isInWishlist ? inListLabel : buttonLabel}</span>
     </button>
   )
 }

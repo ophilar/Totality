@@ -1099,14 +1099,12 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
               const id = await db.upsertMediaItem(canonicalItem)
               scannedProviderIds.add(canonicalItem.plex_id)
 
-              // Upsert all versions with per-version quality scoring
-              for (const version of allVersions) {
+              // Sync versions: delete stale, upsert current, update best version
+              const scoredVersions = allVersions.map(version => {
                 const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                db.upsertMediaItemVersion({ ...version, media_item_id: id, ...vScore } as MediaItemVersion)
-              }
-              if (allVersions.length > 1) {
-                db.updateBestVersion(id)
-              }
+                return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
+              })
+              db.syncMediaItemVersions(id, scoredVersions)
 
               // Analyze quality (parent item)
               canonicalItem.id = id

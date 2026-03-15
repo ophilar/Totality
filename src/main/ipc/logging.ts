@@ -4,7 +4,7 @@
  * Provides IPC communication for log viewing and export functionality.
  */
 
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import { getLoggingService } from '../services/LoggingService'
 import type { SourceInfo, DiagnosticInfo } from '../services/LoggingService'
 import { getSourceManager } from '../services/SourceManager'
@@ -137,9 +137,9 @@ export function registerLoggingHandlers(): void {
   ipcMain.handle('logs:setFileLoggingSettings', async (_event, settings: unknown) => {
     const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
     const db = getDatabase()
-    if (valid.enabled !== undefined) db.saveSetting('file_logging_enabled', String(valid.enabled))
-    if (valid.minLevel !== undefined) db.saveSetting('file_logging_min_level', valid.minLevel)
-    if (valid.retentionDays !== undefined) db.saveSetting('log_retention_days', String(valid.retentionDays))
+    if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
+    if (valid.minLevel !== undefined) db.setSetting('file_logging_min_level', valid.minLevel)
+    if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
     getLoggingService().updateFileLoggingSettings(valid)
     return { success: true }
   })
@@ -175,6 +175,17 @@ export function registerLoggingHandlers(): void {
         await getLoggingService().exportLogsAsText(result.filePath, sourceInfo, diagnostics)
       }
       return { success: true, filePath: result.filePath }
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('logs:openLogFolder', async () => {
+    const logDir = path.join(app.getPath('userData'), 'logs')
+    try {
+      await fs.promises.mkdir(logDir, { recursive: true })
+      await shell.openPath(logDir)
+      return { success: true }
     } catch (error: unknown) {
       return { success: false, error: getErrorMessage(error) }
     }
