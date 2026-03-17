@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { useState, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
 import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff } from 'lucide-react'
+import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { QualityBadges } from './QualityBadges'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -26,7 +27,8 @@ export function MoviesView({
   totalMovieCount,
   moviesLoading,
   onLoadMoreMovies,
-  collectionsOnly = false
+  collectionsOnly = false,
+  scrollElement
 }: {
   movies: MediaItem[]
   onSelectMovie: (id: number, movie: MediaItem) => void
@@ -43,6 +45,7 @@ export function MoviesView({
   moviesLoading: boolean
   onLoadMoreMovies: () => void
   collectionsOnly?: boolean
+  scrollElement?: HTMLElement | null
 }) {
   // Map scale to minimum poster width (1=smallest, 7=largest)
   const posterMinWidth = useMemo(() => {
@@ -57,23 +60,6 @@ export function MoviesView({
     }
     return widthMap[gridScale] || widthMap[5]
   }, [gridScale])
-
-  const movieSentinelRef = useRef<HTMLDivElement>(null)
-
-  // IntersectionObserver for movie grid infinite scroll
-  useEffect(() => {
-    if (!movieSentinelRef.current) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreMovies()
-        }
-      },
-      { rootMargin: '400px' }
-    )
-    observer.observe(movieSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreMovies])
 
   // Group movies by collection - show collections as single items
   const displayItems = useMemo<MovieDisplayItem[]>(() => {
@@ -136,99 +122,126 @@ export function MoviesView({
   }
 
   const statsBar = (
-    <div className="flex items-center gap-6 text-sm text-muted-foreground">
+    <div className="flex items-center gap-6 text-sm text-muted-foreground pb-4">
       <span>{totalMovieCount.toLocaleString()} Movies</span>
+    </div>
+  )
+
+  const Footer = () => (
+    <div className="px-4 py-4 text-xs text-muted-foreground flex items-center gap-2">
+      {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
+      <span>
+        {movies.length === totalMovieCount
+          ? `${totalMovieCount.toLocaleString()} movies`
+          : `${movies.length.toLocaleString()} of ${totalMovieCount.toLocaleString()} movies`}
+      </span>
     </div>
   )
 
   if (viewType === 'list') {
     return (
-      <div>
+      <div className="h-full flex flex-col">
         {statsBar}
-        <div className="space-y-2 mt-4">
-          {displayItems.map((item) => {
-            if (item.type === 'collection') {
+        <div className="flex-1 min-h-0">
+          <Virtuoso
+            customScrollParent={scrollElement || undefined}
+            data={displayItems}
+            endReached={() => {
+              if (!moviesLoading && movies.length < totalMovieCount) {
+                onLoadMoreMovies()
+              }
+            }}
+            overscan={800}
+            itemContent={(_index, item) => {
+              if (item.type === 'collection') {
+                return (
+                  <div className="pb-2" data-title={item.collection.collection_name}>
+                    <CollectionListItem
+                      collection={item.collection}
+                      onClick={() => onSelectCollection(item.collection)}
+                    />
+                  </div>
+                )
+              }
               return (
-                <div key={`collection-${item.collection.id}`} data-title={item.collection.collection_name}>
-                  <CollectionListItem
-                    collection={item.collection}
-                    onClick={() => onSelectCollection(item.collection)}
-                                   />
+                <div className="pb-2" data-title={item.movie.title}>
+                  <MovieListItem
+                    movie={item.movie}
+                    onClick={() => onSelectMovie(item.movie.id, item.movie)}
+                    showSourceBadge={showSourceBadge}
+                    collectionData={getCollectionForMovie(item.movie)}
+                    onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
+                    onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+                    onDismissUpgrade={onDismissUpgrade}
+                  />
                 </div>
               )
-            }
-            return (
-              <div key={item.movie.id} data-title={item.movie.title}>
-                <MovieListItem
-                  movie={item.movie}
-                  onClick={() => onSelectMovie(item.movie.id, item.movie)}
-                  showSourceBadge={showSourceBadge}
-                  collectionData={getCollectionForMovie(item.movie)}
-                  onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-                  onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
-                  onDismissUpgrade={onDismissUpgrade}
-                               />
-              </div>
-            )
-          })}
-        </div>
-        <div ref={movieSentinelRef} className="h-1" />
-        <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
-          {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
-          <span>
-            {movies.length === totalMovieCount
-              ? `${totalMovieCount.toLocaleString()} movies`
-              : `${movies.length.toLocaleString()} of ${totalMovieCount.toLocaleString()} movies`}
-          </span>
+            }}
+            components={{
+              Footer
+            }}
+          />
         </div>
       </div>
     )
   }
 
-  // Grid view using standard grid (VirtualizedGrid doesn't support mixed item types well)
+  // Grid view using VirtuosoGrid
   return (
-    <div>
+    <div className="h-full flex flex-col">
       {statsBar}
-      <div
-        className="grid gap-8 mt-4"
-        style={{
-          gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`
-        }}
-      >
-        {displayItems.map((item) => {
-          if (item.type === 'collection') {
+      <div className="flex-1 min-h-0">
+        <VirtuosoGrid
+          customScrollParent={scrollElement || undefined}
+          data={displayItems}
+          endReached={() => {
+            if (!moviesLoading && movies.length < totalMovieCount) {
+              onLoadMoreMovies()
+            }
+          }}
+          overscan={800}
+          components={{
+            List: forwardRef((props, ref) => (
+              <div
+                {...props}
+                ref={ref as any}
+                className="grid gap-8"
+                style={{
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))`
+                }}
+              />
+            )),
+            Item: ({ children, ...props }) => (
+              <div {...props}>{children}</div>
+            ),
+            Footer
+          }}
+          itemContent={(_index, item) => {
+            if (item.type === 'collection') {
+              return (
+                <div data-title={item.collection.collection_name}>
+                  <CollectionCard
+                    collection={item.collection}
+                    onClick={() => onSelectCollection(item.collection)}
+                  />
+                </div>
+              )
+            }
             return (
-              <div key={`collection-${item.collection.id}`} data-title={item.collection.collection_name}>
-                <CollectionCard
-                  collection={item.collection}
-                  onClick={() => onSelectCollection(item.collection)}
-                                 />
+              <div data-title={item.movie.title}>
+                <MovieCard
+                  movie={item.movie}
+                  onClick={() => onSelectMovie(item.movie.id, item.movie)}
+                  collectionData={getCollectionForMovie(item.movie)}
+                  showSourceBadge={showSourceBadge}
+                  onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
+                  onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+                  onDismissUpgrade={onDismissUpgrade}
+                />
               </div>
             )
-          }
-          return (
-            <div key={item.movie.id} data-title={item.movie.title}>
-              <MovieCard
-                movie={item.movie}
-                onClick={() => onSelectMovie(item.movie.id, item.movie)}
-                collectionData={getCollectionForMovie(item.movie)}
-                showSourceBadge={showSourceBadge}
-                onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-                onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
-                onDismissUpgrade={onDismissUpgrade}
-                             />
-            </div>
-          )
-        })}
-      </div>
-      <div ref={movieSentinelRef} className="h-1" />
-      <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
-        {moviesLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
-        <span>
-          {movies.length === totalMovieCount
-            ? `${totalMovieCount.toLocaleString()} movies`
-            : `${movies.length.toLocaleString()} of ${totalMovieCount.toLocaleString()} movies`}
-        </span>
+          }}
+        />
       </div>
     </div>
   )

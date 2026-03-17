@@ -70,11 +70,11 @@ export const LibraryIdSchema = z.string().min(1).max(200)
 export const NonEmptyStringSchema = z.string().min(1).max(1000)
 
 /**
- * File/folder path string — must be non-empty, reasonable length, no null bytes
+ * File/folder path string — must be non-empty, reasonable length, no null bytes, and no traversal
  */
 export const FilePathSchema = z.string().min(1).max(2000).refine(
-  (val) => !val.includes('\0'),
-  { message: 'Path must not contain null bytes' }
+  (val) => !val.includes('\0') && !val.includes('..'),
+  { message: 'Path must not contain null bytes or directory traversal sequences (..)' }
 )
 
 /**

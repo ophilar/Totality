@@ -2088,6 +2088,7 @@ export function MediaBrowser({
               moviesLoading={moviesLoading}
               onLoadMoreMovies={loadMoreMovies}
               collectionsOnly={collectionsOnly}
+              scrollElement={scrollContainerRef.current}
             />
           ) : view === 'tv' ? (
           <TVShowsView
@@ -2119,6 +2120,7 @@ export function MediaBrowser({
             totalEpisodeCount={totalEpisodeCount}
             showsLoading={showsLoading}
             onLoadMoreShows={loadMoreShows}
+            scrollElement={scrollContainerRef.current}
           />
         ) : (
           <MusicView
@@ -2185,8 +2187,7 @@ export function MediaBrowser({
             }}
             includeEps={includeEps}
             includeSingles={includeSingles}
-              scrollElement={scrollContainerRef.current}
-              scrollElement={scrollContainerRef.current}
+            scrollElement={scrollContainerRef.current}
           />
         ))}
           </div>

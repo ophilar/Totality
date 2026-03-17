@@ -367,6 +367,7 @@ export function TVShowsView({
   totalEpisodeCount: number
   showsLoading: boolean
   onLoadMoreShows: () => void
+  scrollElement?: HTMLElement | null
 }) {
   // Breadcrumb navigation
   const handleBack = () => {

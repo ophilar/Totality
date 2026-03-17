@@ -1,0 +1,40 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "headerText": "Totality - Media Library Quality Analyzer Codebase",
+    "removeEmptyLines": true,
+    "showLineNumbers": true,
+    "compress": true
+  },
+  "include": [
+    "src/**/*",
+    "scripts/**/*",
+    "tests/**/*",
+    "package.json",
+    "tsconfig.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tailwind.config.js",
+    "*.md"
+  ],
+  "exclude": [
+    "node_modules/**",
+    "dist/**",
+    "dist-electron/**",
+    "release/**",
+    "resources/**",
+    "docs/screenshots/**",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.webm",
+    "**/*.ico",
+    "**/*.icns",
+    "**/*.nsh",
+    "**/*.plist",
+    ".git/**",
+    "repomix-output.xml",
+    "audit-repo.xml",
+    "tsconfig.node.tsbuildinfo"
+  ]
+}

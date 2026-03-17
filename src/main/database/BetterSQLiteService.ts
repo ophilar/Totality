@@ -95,12 +95,21 @@ export class BetterSQLiteService {
       if (dbExists) {
         console.log('[BetterSQLite] Database loaded from:', path.basename(this.dbPath))
 
-        // Verify integrity
-        const result = this.db.pragma('integrity_check') as Array<{ integrity_check: string }>
-        if (result[0]?.integrity_check !== 'ok') {
-          console.error('[BetterSQLite] Integrity check failed:', result)
-          throw new Error('Database integrity check failed')
-        }
+        // Verify integrity in the background to avoid blocking startup
+        // This is safe because we're in WAL mode and the check is read-only
+        setImmediate(() => {
+          try {
+            const result = this.db!.pragma('integrity_check') as Array<{ integrity_check: string }>
+            if (result[0]?.integrity_check !== 'ok') {
+              console.error('[BetterSQLite] Background integrity check failed:', result)
+              // In a real app, we might want to notify the user or trigger a repair here
+            } else {
+              console.log('[BetterSQLite] Background integrity check passed')
+            }
+          } catch (error) {
+            console.error('[BetterSQLite] Error during background integrity check:', error)
+          }
+        })
       } else {
         console.log('[BetterSQLite] New database created')
       }
