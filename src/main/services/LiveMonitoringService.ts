@@ -139,7 +139,7 @@ export class LiveMonitoringService {
     this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
 
     // Load per-provider intervals
-    const providerTypes: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'local']
+    const providerTypes: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local']
     for (const provider of providerTypes) {
       const interval = db.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
@@ -359,7 +359,9 @@ export class LiveMonitoringService {
     if (isLocalSource) {
       this.startFileWatcher(sourceId, sourceType, connectionConfig)
     } else {
+      // Both: Polling for background updates AND registered for focus-triggers
       this.startPolling(sourceId, sourceType)
+      console.log(`[LiveMonitoring] ${sourceId} (${sourceType}) started with background polling + focus trigger.`)
     }
   }
 
@@ -989,6 +991,33 @@ export class LiveMonitoringService {
    */
   getStatus(): { isActive: boolean } {
     return { isActive: this.isActive }
+  }
+
+  /**
+   * Force check all lazy sources (remote providers)
+   * Called on window focus to ensure library is up to date without background polling
+   */
+  async forceCheckAllLazySources(): Promise<void> {
+    if (!this.isActive || this.shouldPause()) return
+
+    const db = getDatabase()
+    const sources = db.getEnabledMediaSources()
+
+    for (const source of sources) {
+      const isRemote = source.source_type !== 'local' && source.source_type !== 'kodi-local'
+      if (isRemote) {
+        // Only check if it's been more than 30s since last check to prevent focus-spamming
+        const lastCheck = this.lastCheckTimes.get(source.source_id)
+        const now = new Date()
+        if (!lastCheck || (now.getTime() - lastCheck.getTime() > 30000)) {
+          console.log(`[LiveMonitoring] Focus trigger: checking lazy source ${source.display_name}`)
+          this.checkSource(source.source_id).catch(err => {
+            console.error(`[LiveMonitoring] Focus check failed for ${source.source_id}:`, err)
+          })
+          this.lastCheckTimes.set(source.source_id, now)
+        }
+      }
+    }
   }
 
   /**

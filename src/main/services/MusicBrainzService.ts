@@ -120,7 +120,7 @@ export class MusicBrainzService extends CancellableOperation {
         'User-Agent': this.USER_AGENT,
         'Accept': 'application/json',
       },
-      timeout: 30000,
+      timeout: 60000, // Increased from 30s to 60s
     })
   }
 
@@ -232,10 +232,14 @@ export class MusicBrainzService extends CancellableOperation {
    * Search for an artist by name
    */
   async searchArtist(name: string): Promise<MBArtist[]> {
+    // Sanitize name: replace '&' with 'AND' for better Lucene matching if needed,
+    // but first try exact name search in quotes.
+    const cleanName = name.replace(/[&]/g, 'AND').replace(/[+]/g, ' ').trim()
+
     return this.requestWithRetry(async () => {
       const response = await this.api.get<MBArtistSearchResult>('/artist', {
         params: {
-          query: `artist:${name}`,
+          query: `artist:"${name}" OR artist:"${cleanName}"`,
           fmt: 'json',
           limit: 10,
         },

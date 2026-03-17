@@ -112,6 +112,8 @@ export interface MediaItem {
   quality_tier?: 'SD' | '720p' | '1080p' | '4K'
   tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
   tier_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
   tmdb_id?: string
   issues?: string
 
@@ -361,5 +363,5 @@ export interface MatchFixModalData {
 export type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 export type QualityFilter = 'all' | 'low' | 'medium' | 'high'
 export type ViewType = 'grid' | 'list'
-export type MediaViewType = 'movies' | 'tv' | 'music'
+export type MediaViewType = 'movies' | 'tv' | 'music' | 'wishlist'
 export type MusicViewMode = 'artists' | 'albums' | 'tracks'

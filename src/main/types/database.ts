@@ -261,6 +261,10 @@ export interface QualityScore {
   bitrate_tier_score: number // 0-100 bitrate score for tier
   audio_tier_score: number // 0-100 audio score for tier
 
+  // Efficiency metrics
+  efficiency_score: number // 0-100 score (BPP based)
+  storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
+
   // Legacy scores (for backward compatibility)
   overall_score: number // Maps to tier_score
   resolution_score: number // Deprecated

@@ -9,7 +9,8 @@ import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home } from 'lucide-react'
+import { WishlistView } from './WishlistView'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, Heart } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
@@ -102,7 +103,7 @@ export function MediaBrowser({
   const hasInitialLoadRef = useRef(false) // Track if initial load is complete
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
   const [stats, setStats] = useState<LibraryStats | null>(null)
-  const [view, setView] = useState<'movies' | 'tv' | 'music'>('movies')
+  const [view, setView] = useState<'movies' | 'tv' | 'music' | 'wishlist'>('movies')
 
   // Music state
   const [musicArtists, setMusicArtists] = useState<MusicArtist[]>([])
@@ -278,6 +279,8 @@ export function MediaBrowser({
   useEffect(() => {
     onAutoRefreshChange?.(isAutoRefreshing)
   }, [isAutoRefreshing, onAutoRefreshChange])
+
+  const wishlistTabRef = useRef<HTMLButtonElement>(null)
 
   // Load libraries for active source - only include enabled libraries
   // This ensures unchecked libraries don't appear in the top menu bar
@@ -1372,7 +1375,7 @@ export function MediaBrowser({
   }
 
   // Check if we should show empty state (handled in content area below)
-  const showEmptyState = sources.length === 0
+  const showEmptyState = sources.length === 0 && view !== 'wishlist'
 
   return (
     <div className="h-screen flex flex-col">
@@ -1795,6 +1798,30 @@ export function MediaBrowser({
                   <span>Music</span>
                 </button>
 
+                {/* Wishlist Button */}
+                <button
+                  ref={wishlistTabRef}
+                  onClick={() => {
+                    setView('wishlist')
+                    onLibraryTabChange?.('wishlist')
+                    setSelectedShow(null)
+                    setSelectedSeason(null)
+                    setSelectedArtist(null)
+                    setSelectedAlbum(null)
+                  }}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                    view === 'wishlist'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                  role="tab"
+                  aria-selected={view === 'wishlist'}
+                  aria-controls="library-content"
+                >
+                  <Heart className="w-4 h-4" />
+                  <span>Wishlist</span>
+                </button>
+
                 {/* Auto-refresh indicator */}
                 {isAutoRefreshing && (
                   <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground" title="Checking for new content...">
@@ -1876,7 +1903,7 @@ export function MediaBrowser({
           right: showCompletenessPanel || showWishlistPanel || showChatPanel ? '352px' : '16px'
         }}
         role="tabpanel"
-        aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : 'Music'} library`}
+        aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : view === 'wishlist' ? 'Wishlist' : 'Music'} library`}
       >
         {/* Controls Bar - sticky within container */}
         <div className="flex-shrink-0 py-3 px-4">
@@ -2067,6 +2094,8 @@ export function MediaBrowser({
         {/* Content Display */}
         {showEmptyState ? (
           <EnhancedEmptyState />
+        ) : view === 'wishlist' ? (
+          <WishlistView />
         ) : (
           view === 'movies' ? (
             <MoviesView

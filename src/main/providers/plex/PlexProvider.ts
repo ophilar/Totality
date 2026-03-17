@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getLoggingService } from '../../services/LoggingService'
 /**
  * PlexProvider
  *
@@ -1165,7 +1166,7 @@ export class PlexProvider implements MediaProvider {
     }
 
     if (versions.length === 0) {
-      console.warn(`[PlexProvider] Skipping ${item.title}: no valid media entries found`)
+      getLoggingService().info('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
       return null
     }
 

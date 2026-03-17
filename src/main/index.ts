@@ -144,6 +144,12 @@ function createWindow() {
     show: false, // Don't show until ready
   })
 
+  win.on('focus', () => {
+    import('./services/LiveMonitoringService').then(({ getLiveMonitoringService }) => {
+      getLiveMonitoringService().forceCheckAllLazySources()
+    })
+  })
+
   // Show window when React signals it's ready (via IPC)
   const fallbackTimer = setTimeout(() => win?.show(), 3000)
   ipcMain.once('app:ready', () => {

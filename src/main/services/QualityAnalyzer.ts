@@ -512,6 +512,10 @@ export class QualityAnalyzer {
     const audioScore = this.calculateAudioScore(bestAudio.channels, bestAudio.bitrate)
     const overallScore = tierScore
 
+    // Efficiency Metrics
+    const efficiencyScore = this.calculateEfficiencyScore(mediaItem)
+    const storageDebtBytes = this.calculateStorageDebt(mediaItem)
+
     // Identify issues
     const issues: string[] = []
     const { medium: mediumThreshold } = this.videoThresholds[qualityTier]
@@ -524,6 +528,11 @@ export class QualityAnalyzer {
       )
     } else if (mediaItem.video_bitrate === 0) {
       issues.push(`Bitrate unknown for ${qualityTier}`)
+    }
+
+    if (storageDebtBytes > 2 * 1024 * 1024 * 1024) { // > 2GB debt
+      const debtGb = (storageDebtBytes / (1024 * 1024 * 1024)).toFixed(1)
+      issues.push(`Bloated file: ${debtGb} GB potential savings via modern codec`)
     }
 
     // HDR missing for 4K
@@ -556,6 +565,8 @@ export class QualityAnalyzer {
       tier_score: tierScore,
       bitrate_tier_score: bitrateTierScore,
       audio_tier_score: audioTierScore,
+      efficiency_score: efficiencyScore,
+      storage_debt_bytes: storageDebtBytes,
       overall_score: overallScore,
       resolution_score: resolutionScore,
       bitrate_score: bitrateScore,
@@ -566,6 +577,67 @@ export class QualityAnalyzer {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+  }
+
+  /**
+   * Calculate Efficiency Score (0-100) based on Bits Per Pixel (BPP)
+   */
+  private calculateEfficiencyScore(item: MediaItem): number {
+    const width = item.width || 1920
+    const height = item.height || 1080
+    const fps = item.video_frame_rate || 24
+    const bitrate = item.video_bitrate || 0
+
+    if (bitrate === 0) return 0
+
+    // BPP = (Bitrate in bits/sec) / (Width * Height * FPS)
+    const bpp = (bitrate * 1000) / (width * height * fps)
+
+    // Normalize BPP by codec efficiency (Modern codecs should have lower BPP for same quality)
+    const efficiencyMult = this.getCodecEfficiency(item.video_codec)
+    const normalizedBpp = bpp / efficiencyMult
+
+    // Ideal BPP ranges:
+    // HEVC/AV1: 0.03 - 0.07 is efficient HIGH quality
+    // H.264: 0.06 - 0.12 is efficient HIGH quality
+    // > 0.15 is generally "bloated" or "over-encoded"
+    if (normalizedBpp < 0.02) return 40 // Too low, likely low quality
+    if (normalizedBpp <= 0.08) return 100 // Perfect efficiency
+    if (normalizedBpp <= 0.12) return 85 // Good efficiency
+    if (normalizedBpp <= 0.15) return 60 // Wasteful
+    return Math.max(0, Math.round(60 - (normalizedBpp - 0.15) * 200)) // Drops rapidly
+  }
+
+  /**
+   * Calculate Storage Debt in bytes
+   * How much space is being wasted compared to a target HEVC encode of the same quality
+   */
+  private calculateStorageDebt(item: MediaItem): number {
+    if (!item.file_size || !item.duration) return 0
+
+    const tier = this.classifyTier(item.resolution, item.height)
+    const codec = item.video_codec.toLowerCase()
+    const isModern = codec.includes('h265') || codec.includes('hevc') || codec.includes('av1')
+
+    // If already using a modern codec and BPP is reasonable, debt is 0
+    if (isModern && this.calculateEfficiencyScore(item) > 70) return 0
+
+    // Target bitrates for high-quality HEVC (Mbps)
+    const targetBitrates: Record<string, number> = {
+      '4K': 15,
+      '1080p': 6,
+      '720p': 3,
+      'SD': 1.5
+    }
+
+    const targetMbps = targetBitrates[tier] || 6
+    const durationSec = item.duration / 1000
+    const targetSizeBytes = (targetMbps * 1000 * 1000 * durationSec) / 8
+
+    // If current file is already smaller than target, debt is 0
+    if (item.file_size <= targetSizeBytes) return 0
+
+    return Math.round(item.file_size - targetSizeBytes)
   }
 
   /**

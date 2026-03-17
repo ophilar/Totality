@@ -1,7 +1,5 @@
 import type { Database } from 'better-sqlite3'
-import type { MediaItem, MediaItemFilters, MediaItemVersion, MediaSource, MovieCollection, SeriesCompleteness, TVShowFilters, TVShowSummary } from '../../types/database'
-import { getCredentialEncryptionService } from '../../services/CredentialEncryptionService'
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import type { MediaItem, MediaItemFilters } from '../../types/database'
 
 export class MediaRepository {
   constructor(private db: Database) {}
@@ -10,7 +8,8 @@ export class MediaRepository {
     let sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score, q.issues
+             q.quality_tier, q.tier_quality, q.tier_score,
+             q.efficiency_score, q.storage_debt_bytes, q.issues
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id

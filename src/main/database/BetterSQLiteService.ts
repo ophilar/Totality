@@ -40,7 +40,6 @@ import type {
 } from '../types/database'
 import type {
   Notification,
-  NotificationType,
   NotificationCountResult,
   GetNotificationsOptions,
 } from '../types/monitoring'
@@ -187,6 +186,8 @@ export class BetterSQLiteService {
       'ALTER TABLE quality_scores ADD COLUMN tier_score INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE quality_scores ADD COLUMN bitrate_tier_score INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE quality_scores ADD COLUMN audio_tier_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE quality_scores ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE quality_scores ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
 
       // Media items enhancements
       'ALTER TABLE media_items ADD COLUMN episode_thumb_url TEXT',
@@ -1455,39 +1456,6 @@ export class BetterSQLiteService {
       totalAlbums: ((albumsStmt.get(...params) as { count: number }) || { count: 0 }).count,
       totalTracks: ((tracksStmt.get(...params) as { count: number }) || { count: 0 }).count,
     }
-  }
-
-  /**
-   * Update music artist counts
-   */
-  updateMusicArtistCounts(artistId: number, albumCount: number, trackCount: number): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(`
-      UPDATE music_artists SET album_count = ?, track_count = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(albumCount, trackCount, artistId)
-  }
-
-  /**
-   * Update music artist MusicBrainz ID
-   */
-  updateMusicArtistMbid(artistId: number, musicbrainzId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(`
-      UPDATE music_artists SET musicbrainz_id = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(musicbrainzId, artistId)
-  }
-
-  /**
-   * Update music album MusicBrainz ID
-   */
-  updateMusicAlbumMbid(albumId: number, musicbrainzId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(`
-      UPDATE music_albums SET musicbrainz_id = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(musicbrainzId, albumId)
   }
 
   // ============================================================================
