@@ -2185,6 +2185,8 @@ export function MediaBrowser({
             }}
             includeEps={includeEps}
             includeSingles={includeSingles}
+              scrollElement={scrollContainerRef.current}
+              scrollElement={scrollContainerRef.current}
           />
         ))}
           </div>

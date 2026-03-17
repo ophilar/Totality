@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { FixedSizeList as VirtualList } from 'react-window'
+import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -62,7 +62,8 @@ export function MusicView({
   onFixAlbumMatch,
   onRescanTrack,
   includeEps,
-  includeSingles
+  includeSingles,
+  scrollElement
 }: {
   artists: MusicArtist[]
   totalArtistCount: number
@@ -106,44 +107,15 @@ export function MusicView({
   onRescanTrack?: (track: MusicTrack) => Promise<void>
   includeEps: boolean
   includeSingles: boolean
+  scrollElement?: HTMLElement | null
 }) {
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
   const [isAnalyzingArtist, setIsAnalyzingArtist] = useState(false)
   const [trackMenuOpen, setTrackMenuOpen] = useState<string | number | null>(null)
   const [rescanningTrackId, setRescanningTrackId] = useState<string | number | null>(null)
   const trackMenuRef = useRef<HTMLDivElement>(null)
-  const albumSentinelRef = useRef<HTMLDivElement>(null)
-  const artistSentinelRef = useRef<HTMLDivElement>(null)
+    
 
-  // IntersectionObserver for artist grid infinite scroll
-  useEffect(() => {
-    if (!artistSentinelRef.current || musicViewMode !== 'artists') return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreArtists()
-        }
-      },
-      { rootMargin: '400px' }
-    )
-    observer.observe(artistSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreArtists, musicViewMode])
-
-  // IntersectionObserver for album grid infinite scroll
-  useEffect(() => {
-    if (!albumSentinelRef.current || musicViewMode !== 'albums' || viewType !== 'grid') return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMoreAlbums()
-        }
-      },
-      { rootMargin: '400px' }
-    )
-    observer.observe(albumSentinelRef.current)
-    return () => observer.disconnect()
-  }, [onLoadMoreAlbums, musicViewMode, viewType])
 
   // Click-outside and Escape key handler for track menu
   useEffect(() => {
@@ -956,11 +928,26 @@ export function MusicView({
               ))}
             </div>
           ) : (
-            <div
-              className="grid gap-6"
-              style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
-            >
-              {filteredAlbums.map(album => (
+            <VirtuosoGrid
+              style={{ height: '100%' }}
+              data={filteredAlbums}
+              useWindowScroll={!scrollElement}
+              customScrollParent={scrollElement || undefined}
+              listClassName="grid gap-6"
+              itemClassName="focus-poster-only"
+              components={{
+                List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
+                  <div
+                    ref={ref}
+                    className={className}
+                    style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+                  >
+                    {children}
+                  </div>
+                )),
+                Item: ({ children, ...props }) => <div {...props}>{children}</div>
+              }}
+              itemContent={(_index, album) => (
                 <AlbumCard
                   key={album.id}
                   album={album}
@@ -971,8 +958,8 @@ export function MusicView({
                   onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
                   completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
                 />
-              ))}
-            </div>
+              )}
+            />
           )}
         </div>
 
@@ -1011,18 +998,33 @@ export function MusicView({
                   ))}
                 </div>
               ) : (
-                <div
-                  className="grid gap-6"
-                  style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
-                >
-                  {allMissing.map((album, idx) => (
+                <VirtuosoGrid
+                  style={{ height: '100%' }}
+                  data={allMissing}
+                  useWindowScroll={!scrollElement}
+                  customScrollParent={scrollElement || undefined}
+                  listClassName="grid gap-6"
+                  itemClassName="focus-poster-only"
+                  components={{
+                    List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
+                      <div
+                        ref={ref}
+                        className={className}
+                        style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+                      >
+                        {children}
+                      </div>
+                    )),
+                    Item: ({ children, ...props }) => <div {...props}>{children}</div>
+                  }}
+                  itemContent={(index, album) => (
                     <MissingAlbumCard
-                      key={album.musicbrainz_id || idx}
+                      key={album.musicbrainz_id || index}
                       album={album}
                       artistName={selectedArtist.name}
                     />
-                  ))}
-                </div>
+                  )}
+                />
               )}
             </div>
           )
@@ -1089,11 +1091,27 @@ export function MusicView({
               ))}
             </div>
           ) : (
-            <div
-              className="grid gap-6"
-              style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
-            >
-              {artists.map(artist => (
+            <VirtuosoGrid
+              style={{ height: '100%' }}
+              data={artists}
+              useWindowScroll={!scrollElement}
+              customScrollParent={scrollElement || undefined}
+              endReached={onLoadMoreArtists}
+              listClassName="grid gap-6"
+              itemClassName="focus-poster-only"
+              components={{
+                List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
+                  <div
+                    ref={ref}
+                    className={className}
+                    style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+                  >
+                    {children}
+                  </div>
+                )),
+                Item: ({ children, ...props }) => <div {...props}>{children}</div>
+              }}
+              itemContent={(_index, artist) => (
                 <div key={artist.id} data-title={artist.name}>
                   <ArtistCard
                     artist={artist}
@@ -1103,11 +1121,11 @@ export function MusicView({
                     onAnalyzeCompleteness={onAnalyzeArtist}
                   />
                 </div>
-              ))}
-            </div>
+              )}
+            />
           )}
           {/* Infinite scroll sentinel + loading indicator */}
-          <div ref={artistSentinelRef} className="h-1" />
+          
           {artistsLoading && (
             <div className="flex justify-center py-4" aria-live="polite" role="status">
               <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" aria-label="Loading more artists" />
@@ -1160,51 +1178,48 @@ export function MusicView({
               </div>
 
               {/* Virtualized Album List */}
-              <VirtualList
-                height={Math.max(400, window.innerHeight - 280)}
-                itemCount={allFilteredAlbums.length}
-                itemSize={104}
-                width="100%"
+              <Virtuoso
+                style={{ height: Math.max(400, window.innerHeight - 280) }}
+                useWindowScroll={!scrollElement}
+                customScrollParent={scrollElement || undefined}
+                data={allFilteredAlbums}
                 className="scrollbar-visible"
-                itemData={{
-                  albums: allFilteredAlbums,
-                  onSelectAlbum,
-                  showSourceBadge,
-                  allAlbumCompleteness
-                }}
-                onItemsRendered={({ visibleStopIndex }) => {
-                  if (visibleStopIndex >= allFilteredAlbums.length - 20) {
-                    onLoadMoreAlbums()
-                  }
-                }}
-              >
-                {({ index, style, data }: { index: number; style: React.CSSProperties; data: {
-                  albums: MusicAlbum[];
-                  onSelectAlbum: (album: MusicAlbum) => void;
-                  showSourceBadge: boolean;
-                  allAlbumCompleteness: Map<number, AlbumCompletenessData>;
-                }}) => {
-                  const album = data.albums[index]
-                  return (
-                    <div style={style}>
-                      <AlbumListItem
-                        album={album}
-                        onClick={() => data.onSelectAlbum(album)}
-                        showArtist={true}
-                        showSourceBadge={data.showSourceBadge}
-                        completeness={album.id ? data.allAlbumCompleteness.get(album.id) : undefined}
-                      />
-                    </div>
-                  )
-                }}
-              </VirtualList>
+                endReached={onLoadMoreAlbums}
+                itemContent={(_index, album) => (
+                  <div style={{ height: 104 }}>
+                    <AlbumListItem
+                      album={album}
+                      onClick={() => onSelectAlbum(album)}
+                      showArtist={true}
+                      showSourceBadge={showSourceBadge}
+                      completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
+                    />
+                  </div>
+                )}
+              />
             </div>
           ) : (
-            <div
-              className="grid gap-6"
-              style={{ gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)` }}
-            >
-              {allFilteredAlbums.map(album => (
+            <VirtuosoGrid
+              style={{ height: '100%' }}
+              data={allFilteredAlbums}
+              useWindowScroll={!scrollElement}
+              customScrollParent={scrollElement || undefined}
+              endReached={onLoadMoreAlbums}
+              listClassName="grid gap-6"
+              itemClassName="focus-poster-only"
+              components={{
+                List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
+                  <div
+                    ref={ref}
+                    className={className}
+                    style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+                  >
+                    {children}
+                  </div>
+                )),
+                Item: ({ children, ...props }) => <div {...props}>{children}</div>
+              }}
+              itemContent={(_index, album) => (
                 <div key={album.id} data-title={album.title}>
                   <AlbumCard
                     album={album}
@@ -1216,11 +1231,11 @@ export function MusicView({
                     completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
                   />
                 </div>
-              ))}
-            </div>
+              )}
+            />
           )}
           {/* Sentinel for album grid infinite scroll */}
-          <div ref={albumSentinelRef} className="h-1" />
+          
           {/* Album count footer */}
           <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2" aria-live="polite" role="status">
             {albumsLoading && <RefreshCw className="w-3 h-3 animate-spin" aria-label="Loading more albums" />}
@@ -1330,48 +1345,27 @@ export function MusicView({
               </div>
 
               {/* Virtualized Track List */}
-              <VirtualList
-                height={Math.max(400, window.innerHeight - 280)}
-                itemCount={filteredTracks.length}
-                itemSize={40}
-                width="100%"
+              <Virtuoso
+                style={{ height: Math.max(400, window.innerHeight - 280) }}
+                useWindowScroll={!scrollElement}
+                customScrollParent={scrollElement || undefined}
+                data={filteredTracks}
                 className="scrollbar-visible"
-                onItemsRendered={({ visibleStopIndex }: { visibleStopIndex: number }) => {
-                  // Load more tracks when scrolling near the end
-                  if (visibleStopIndex >= filteredTracks.length - 50) {
-                    onLoadMoreTracks()
-                  }
-                }}
-                itemData={{
-                  tracks: filteredTracks,
-                  artistNameMap,
-                  albumInfoMap,
-                  columnWidths: trackColumnWidths,
-                  setSelectedTrackForQuality
-                }}
-              >
-                {({ index, style, data }: { index: number; style: React.CSSProperties; data: {
-                  tracks: MusicTrack[]
-                  artistNameMap: Map<number, string>
-                  albumInfoMap: Map<number, { title: string; artistName?: string }>
-                  columnWidths: typeof trackColumnWidths
-                  setSelectedTrackForQuality: typeof setSelectedTrackForQuality
-                }}) => {
-                  const track = data.tracks[index]
-                  const albumInfo = track.album_id ? data.albumInfoMap.get(track.album_id) : undefined
+                endReached={onLoadMoreTracks}
+                itemContent={(index, track) => {
+                  const albumInfo = track.album_id ? albumInfoMap.get(track.album_id) : undefined
                   const artistName = track.artist_id
-                    ? data.artistNameMap.get(track.artist_id)
+                    ? artistNameMap.get(track.artist_id)
                     : albumInfo?.artistName
                   return (
-                    <div style={style}>
+                    <div style={{ height: 40 }}>
                       <TrackListItem
                         track={track}
                         index={index + 1}
                         artistName={artistName}
                         albumTitle={albumInfo?.title}
-                        columnWidths={data.columnWidths}
+                        columnWidths={trackColumnWidths}
                         onClickQuality={() => {
-                          // Compute quality tier
                           const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
                           const codecLower = (track.audio_codec || '').toLowerCase()
                           const isLossless = track.is_lossless || LOSSLESS_CODECS.some(c => codecLower.includes(c))
@@ -1388,7 +1382,7 @@ export function MusicView({
                           else if (bitrateKbps > 0) qualityTier = 'low'
                           else if (codecLower.includes('mp3') || codecLower.includes('aac') || codecLower.includes('ogg')) qualityTier = 'medium'
 
-                          data.setSelectedTrackForQuality({
+                          setSelectedTrackForQuality({
                             title: track.title,
                             codec: track.audio_codec,
                             bitrate: track.audio_bitrate,
@@ -1404,7 +1398,7 @@ export function MusicView({
                     </div>
                   )
                 }}
-              </VirtualList>
+              />
               {/* Track count / loading indicator */}
               <div className="px-4 py-1.5 text-xs text-muted-foreground border-t border-border flex items-center gap-2">
                 {tracksLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
