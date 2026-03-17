@@ -44,6 +44,13 @@ import type {
   NotificationCountResult,
   GetNotificationsOptions,
 } from '../types/monitoring'
+import {
+  ConfigRepository,
+  MediaRepository,
+  MusicRepository,
+  StatsRepository,
+  NotificationRepository
+} from './repositories'
 
 // Singleton instance
 let serviceInstance: BetterSQLiteService | null = null
@@ -60,9 +67,45 @@ export class BetterSQLiteService {
   private dbPath: string
   private _isInitialized = false
 
+  private _configRepo: ConfigRepository | null = null
+  private _mediaRepo: MediaRepository | null = null
+  private _musicRepo: MusicRepository | null = null
+  private _statsRepo: StatsRepository | null = null
+  private _notificationRepo: NotificationRepository | null = null
+
   /** Check if database is initialized */
   get isInitialized(): boolean {
     return this._isInitialized
+  }
+
+  private get configRepo(): ConfigRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._configRepo) this._configRepo = new ConfigRepository(this.db)
+    return this._configRepo
+  }
+
+  private get mediaRepo(): MediaRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._mediaRepo) this._mediaRepo = new MediaRepository(this.db)
+    return this._mediaRepo
+  }
+
+  private get musicRepo(): MusicRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._musicRepo) this._musicRepo = new MusicRepository(this.db)
+    return this._musicRepo
+  }
+
+  private get statsRepo(): StatsRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._statsRepo) this._statsRepo = new StatsRepository(this.db)
+    return this._statsRepo
+  }
+
+  private get notificationRepo(): NotificationRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._notificationRepo) this._notificationRepo = new NotificationRepository(this.db)
+    return this._notificationRepo
   }
 
   constructor() {
@@ -413,91 +456,35 @@ export class BetterSQLiteService {
    * Get a setting value
    */
   getSetting(key: string): string | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?')
-    const row = stmt.get(key) as { value: string } | undefined
-
-    if (!row) return null
-
-    // Decrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      return encryption.decryptSetting(key, row.value)
-    }
-
-    return row.value
+    return this.configRepo.getSetting(key)
   }
 
   /**
    * Set a setting value
    */
   setSetting(key: string, value: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    // Encrypt sensitive settings
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
-    let storedValue = value
-    if (sensitiveKeys.includes(key)) {
-      const encryption = getCredentialEncryptionService()
-      storedValue = encryption.encryptSetting(key, value)
-    }
-
-    const stmt = this.db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `)
-    stmt.run(key, storedValue)
+    this.configRepo.setSetting(key, value)
   }
 
   /**
    * Delete a setting
    */
   deleteSetting(key: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('DELETE FROM settings WHERE key = ?')
-    stmt.run(key)
+    this.configRepo.deleteSetting(key)
   }
 
   /**
    * Get all settings
    */
   getAllSettings(): Record<string, string> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT key, value FROM settings')
-    const rows = stmt.all() as Array<{ key: string; value: string }>
-
-    const encryption = getCredentialEncryptionService()
-    const settings: Record<string, string> = {}
-
-    for (const row of rows) {
-      settings[row.key] = encryption.decryptSetting(row.key, row.value)
-    }
-
-    return settings
+    return this.configRepo.getAllSettings()
   }
 
   /**
    * Get settings by prefix
    */
   getSettingsByPrefix(prefix: string): Record<string, string> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT key, value FROM settings WHERE key LIKE ?')
-    const rows = stmt.all(prefix + '%') as Array<{ key: string; value: string }>
-
-    const encryption = getCredentialEncryptionService()
-    const settings: Record<string, string> = {}
-
-    for (const row of rows) {
-      settings[row.key] = encryption.decryptSetting(row.key, row.value)
-    }
-
-    return settings
+    return this.configRepo.getSettingsByPrefix(prefix)
   }
 
   // ============================================================================
@@ -507,145 +494,22 @@ export class BetterSQLiteService {
   /**
    * Get library statistics
    */
-  getLibraryStats(sourceId?: string): {
-    totalItems: number
-    totalMovies: number
-    totalEpisodes: number
-    totalShows: number
-    lowQualityCount: number
-    needsUpgradeCount: number
-    averageQualityScore: number
-    movieNeedsUpgradeCount: number
-    movieAverageQualityScore: number
-    tvNeedsUpgradeCount: number
-    tvAverageQualityScore: number
-  } {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const whereClause = sourceId ? ' WHERE m.source_id = ?' : ''
-    const params = sourceId ? [sourceId] : []
-
-    const sql = `
-      SELECT
-        COUNT(*) as totalItems,
-        SUM(CASE WHEN m.type = 'movie' THEN 1 ELSE 0 END) as totalMovies,
-        SUM(CASE WHEN m.type = 'episode' THEN 1 ELSE 0 END) as totalEpisodes,
-        COUNT(DISTINCT CASE WHEN m.type = 'episode' THEN m.series_title END) as totalShows,
-        SUM(CASE WHEN q.is_low_quality = 1 THEN 1 ELSE 0 END) as lowQualityCount,
-        SUM(CASE WHEN q.needs_upgrade = 1 THEN 1 ELSE 0 END) as needsUpgradeCount,
-        COALESCE(AVG(q.overall_score), 0) as averageQualityScore,
-        SUM(CASE WHEN m.type = 'movie' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as movieNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'movie' THEN q.overall_score END), 0) as movieAverageQualityScore,
-        SUM(CASE WHEN m.type = 'episode' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as tvNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'episode' THEN q.overall_score END), 0) as tvAverageQualityScore
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      ${whereClause}
-    `
-
-    const stmt = this.db.prepare(sql)
-    const row = stmt.get(...params) as Record<string, number> | undefined
-
-    if (!row) {
-      return {
-        totalItems: 0,
-        totalMovies: 0,
-        totalEpisodes: 0,
-        totalShows: 0,
-        lowQualityCount: 0,
-        needsUpgradeCount: 0,
-        averageQualityScore: 0,
-        movieNeedsUpgradeCount: 0,
-        movieAverageQualityScore: 0,
-        tvNeedsUpgradeCount: 0,
-        tvAverageQualityScore: 0,
-      }
-    }
-
-    return {
-      totalItems: row.totalItems || 0,
-      totalMovies: row.totalMovies || 0,
-      totalEpisodes: row.totalEpisodes || 0,
-      totalShows: row.totalShows || 0,
-      lowQualityCount: row.lowQualityCount || 0,
-      needsUpgradeCount: row.needsUpgradeCount || 0,
-      averageQualityScore: Math.round(row.averageQualityScore || 0),
-      movieNeedsUpgradeCount: row.movieNeedsUpgradeCount || 0,
-      movieAverageQualityScore: Math.round(row.movieAverageQualityScore || 0),
-      tvNeedsUpgradeCount: row.tvNeedsUpgradeCount || 0,
-      tvAverageQualityScore: Math.round(row.tvAverageQualityScore || 0),
-    }
+  getLibraryStats(sourceId?: string): ReturnType<StatsRepository['getLibraryStats']> {
+    return this.statsRepo.getLibraryStats(sourceId)
   }
 
   /**
    * Get media items count by source
    */
   getMediaItemsCountBySource(sourceId: string): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM media_items WHERE source_id = ?')
-    const result = stmt.get(sourceId) as { count: number }
-    return result.count
+    return this.statsRepo.getMediaItemsCountBySource(sourceId)
   }
 
   /**
    * Get aggregated stats across all sources
    */
-  getAggregatedSourceStats(): {
-    totalSources: number
-    enabledSources: number
-    totalItems: number
-    bySource: Array<{
-      sourceId: string
-      displayName: string
-      sourceType: string
-      itemCount: number
-      lastScanAt?: string
-    }>
-  } {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const totalSourcesStmt = this.db.prepare('SELECT COUNT(*) as count FROM media_sources')
-    const totalSources = (totalSourcesStmt.get() as { count: number }).count
-
-    const enabledSourcesStmt = this.db.prepare('SELECT COUNT(*) as count FROM media_sources WHERE is_enabled = 1')
-    const enabledSources = (enabledSourcesStmt.get() as { count: number }).count
-
-    const totalItemsStmt = this.db.prepare('SELECT COUNT(*) as count FROM media_items')
-    const totalItems = (totalItemsStmt.get() as { count: number }).count
-
-    const bySourceStmt = this.db.prepare(`
-      SELECT
-        s.source_id,
-        s.display_name,
-        s.source_type,
-        COUNT(m.id) as item_count,
-        s.last_scan_at
-      FROM media_sources s
-      LEFT JOIN media_items m ON s.source_id = m.source_id
-      GROUP BY s.source_id
-      ORDER BY s.display_name ASC
-    `)
-    const bySourceRows = bySourceStmt.all() as Array<{
-      source_id: string
-      display_name: string
-      source_type: string
-      item_count: number
-      last_scan_at: string | null
-    }>
-
-    return {
-      totalSources,
-      enabledSources,
-      totalItems,
-      bySource: bySourceRows.map(row => ({
-        sourceId: row.source_id,
-        displayName: row.display_name,
-        sourceType: row.source_type,
-        itemCount: row.item_count || 0,
-        lastScanAt: row.last_scan_at || undefined,
-      })),
-    }
+  getAggregatedSourceStats(): ReturnType<StatsRepository['getAggregatedSourceStats']> {
+    return this.statsRepo.getAggregatedSourceStats()
   }
 
   // ============================================================================
@@ -657,132 +521,28 @@ export class BetterSQLiteService {
    * By default, only returns items from enabled libraries
    */
   getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = `
-      SELECT m.*,
-             q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score, q.issues
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: unknown[] = []
-
-    // Filter out items from disabled libraries (unless explicitly requested)
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND (m.title LIKE ? OR m.series_title LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      sql += ' AND q.needs_upgrade = ?'
-      params.push(filters.needsUpgrade ? 1 : 0)
-      if (filters.needsUpgrade) {
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      }
-    }
-
-    // Dynamic sorting with validated column names (prevent SQL injection)
-    const sortColumnMap: Record<string, string> = {
-      'title': 'COALESCE(m.sort_title, m.title)',
-      'year': 'm.year',
-      'updated_at': 'm.updated_at',
-      'created_at': 'm.created_at',
-      'tier_score': 'q.tier_score',
-      'overall_score': 'q.overall_score'
-    }
-    const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
-    const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
-    sql += ` ORDER BY ${sortColumn} ${sortOrder}`
-
-    // Pagination
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MediaItem[]
+    return this.mediaRepo.getMediaItems(filters)
   }
 
   /**
    * Get media item by ID
    */
   getMediaItem(id: number): MediaItem | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT * FROM media_items WHERE id = ?')
-    return (stmt.get(id) as MediaItem) || null
+    return this.mediaRepo.getMediaItem(id)
   }
 
   /**
    * Get media item by file path
    */
   getMediaItemByPath(filePath: string): MediaItem | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?')
-    return (stmt.get(filePath) as MediaItem) || null
+    return this.mediaRepo.getMediaItemByPath(filePath)
   }
 
   /**
    * Get media item by provider ID
    */
   getMediaItemByProviderId(providerId: string, sourceId?: string): MediaItem | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = 'SELECT * FROM media_items WHERE plex_id = ?'
-    const params: unknown[] = [providerId]
-
-    if (sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(sourceId)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return (stmt.get(...params) as MediaItem) || null
+    return this.mediaRepo.getMediaItemByProviderId(providerId, sourceId)
   }
 
   /**
@@ -790,224 +550,28 @@ export class BetterSQLiteService {
    * Uses same filter logic as getMediaItems but returns count only
    */
   countMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = `
-      SELECT COUNT(*) as count
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: unknown[] = []
-
-    // Filter out items from disabled libraries (unless explicitly requested)
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND (m.title LIKE ? OR m.series_title LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      sql += ' AND q.needs_upgrade = ?'
-      params.push(filters.needsUpgrade ? 1 : 0)
-      if (filters.needsUpgrade) {
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      }
-    }
-
-    const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as { count: number }
-    return result.count
+    return this.mediaRepo.countMediaItems(filters)
   }
 
   /**
    * Upsert media item
    */
   upsertMediaItem(item: MediaItem): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO media_items (
-        source_id, source_type, library_id, plex_id, title, sort_title, year, type,
-        series_title, season_number, episode_number, file_path, file_size,
-        duration, resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate, video_frame_rate,
-        color_bit_depth, hdr_format, color_space, video_profile, video_level,
-        audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
-        subtitle_tracks,
-        container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
-        episode_thumb_url, season_poster_url, user_fixed_match,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
-      )
-      ON CONFLICT(source_id, plex_id) DO UPDATE SET
-        library_id = excluded.library_id,
-        title = excluded.title,
-        sort_title = excluded.sort_title,
-        year = excluded.year,
-        type = excluded.type,
-        series_title = excluded.series_title,
-        season_number = excluded.season_number,
-        episode_number = excluded.episode_number,
-        file_path = excluded.file_path,
-        file_size = excluded.file_size,
-        duration = excluded.duration,
-        resolution = excluded.resolution,
-        width = excluded.width,
-        height = excluded.height,
-        video_codec = excluded.video_codec,
-        video_bitrate = excluded.video_bitrate,
-        audio_codec = excluded.audio_codec,
-        audio_channels = excluded.audio_channels,
-        audio_bitrate = excluded.audio_bitrate,
-        video_frame_rate = excluded.video_frame_rate,
-        color_bit_depth = excluded.color_bit_depth,
-        hdr_format = excluded.hdr_format,
-        color_space = excluded.color_space,
-        video_profile = excluded.video_profile,
-        video_level = excluded.video_level,
-        audio_profile = excluded.audio_profile,
-        audio_sample_rate = excluded.audio_sample_rate,
-        has_object_audio = excluded.has_object_audio,
-        audio_tracks = excluded.audio_tracks,
-        subtitle_tracks = excluded.subtitle_tracks,
-        container = excluded.container,
-        file_mtime = excluded.file_mtime,
-        imdb_id = COALESCE(excluded.imdb_id, media_items.imdb_id),
-        tmdb_id = COALESCE(excluded.tmdb_id, media_items.tmdb_id),
-        series_tmdb_id = COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id),
-        poster_url = COALESCE(excluded.poster_url, media_items.poster_url),
-        episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
-        season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
-        user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
-        updated_at = datetime('now')
-    `)
-
-    const result = stmt.run(
-      item.source_id || 'legacy',
-      item.source_type || 'plex',
-      item.library_id || null,
-      item.plex_id,
-      item.title,
-      item.sort_title || null,
-      item.year || null,
-      item.type,
-      item.series_title || null,
-      item.season_number || null,
-      item.episode_number || null,
-      item.file_path,
-      item.file_size,
-      item.duration,
-      item.resolution,
-      item.width,
-      item.height,
-      item.video_codec,
-      item.video_bitrate,
-      item.audio_codec,
-      item.audio_channels,
-      item.audio_bitrate,
-      item.video_frame_rate || null,
-      item.color_bit_depth || null,
-      item.hdr_format || null,
-      item.color_space || null,
-      item.video_profile || null,
-      item.video_level || null,
-      item.audio_profile || null,
-      item.audio_sample_rate || null,
-      item.has_object_audio ? 1 : 0,
-      item.audio_tracks || null,
-      item.subtitle_tracks || null,
-      item.container || null,
-      item.file_mtime || null,
-      item.imdb_id || null,
-      item.tmdb_id || null,
-      item.series_tmdb_id || null,
-      item.poster_url || null,
-      item.episode_thumb_url || null,
-      item.season_poster_url || null,
-      item.user_fixed_match ? 1 : 0
-    )
-
-    // Return the ID (either new or existing)
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    // If it was an update, get the existing ID
-    const existing = this.getMediaItemByProviderId(item.plex_id, item.source_id)
-    return existing?.id || 0
+    return this.mediaRepo.upsertMediaItem(item)
   }
 
   /**
    * Delete media item
    */
   deleteMediaItem(id: number): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    // Delete associated data first
-    this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
+    this.mediaRepo.deleteMediaItem(id)
   }
 
   /**
    * Delete all media items for a source
    */
   deleteMediaItemsForSource(sourceId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    // Delete versions and quality scores first
-    this.db.prepare(`
-      DELETE FROM media_item_versions WHERE media_item_id IN (
-        SELECT id FROM media_items WHERE source_id = ?
-      )
-    `).run(sourceId)
-    this.db.prepare(`
-      DELETE FROM quality_scores WHERE media_item_id IN (
-        SELECT id FROM media_items WHERE source_id = ?
-      )
-    `).run(sourceId)
-
-    this.db.prepare('DELETE FROM media_items WHERE source_id = ?').run(sourceId)
+    this.mediaRepo.deleteMediaItemsForSource(sourceId)
   }
 
   // ============================================================================
@@ -1727,483 +1291,99 @@ export class BetterSQLiteService {
    * Get music track by file path
    */
   getMusicTrackByPath(filePath: string): MusicTrack | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE file_path = ?')
-    return (stmt.get(filePath) as MusicTrack) || null
+    return this.musicRepo.getMusicTrackByPath(filePath)
   }
 
   /**
    * Upsert music track
    */
   upsertMusicTrack(track: MusicTrack): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO music_tracks (
-        source_id, source_type, library_id, provider_id, album_id, artist_id,
-        album_name, artist_name, title, track_number, disc_number, duration,
-        file_path, file_size, container, file_mtime, audio_codec, audio_bitrate,
-        sample_rate, bit_depth, channels, is_lossless, is_hi_res,
-        musicbrainz_id, genres, added_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, provider_id) DO UPDATE SET
-        library_id = excluded.library_id,
-        album_id = excluded.album_id,
-        artist_id = excluded.artist_id,
-        album_name = excluded.album_name,
-        artist_name = excluded.artist_name,
-        title = excluded.title,
-        track_number = excluded.track_number,
-        disc_number = excluded.disc_number,
-        duration = excluded.duration,
-        file_path = excluded.file_path,
-        file_size = excluded.file_size,
-        container = excluded.container,
-        file_mtime = excluded.file_mtime,
-        audio_codec = excluded.audio_codec,
-        audio_bitrate = excluded.audio_bitrate,
-        sample_rate = excluded.sample_rate,
-        bit_depth = excluded.bit_depth,
-        channels = excluded.channels,
-        is_lossless = excluded.is_lossless,
-        is_hi_res = excluded.is_hi_res,
-        musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id),
-        genres = excluded.genres,
-        updated_at = datetime('now')
-    `)
-
-    const result = stmt.run(
-      track.source_id,
-      track.source_type,
-      track.library_id || null,
-      track.provider_id,
-      track.album_id || null,
-      track.artist_id || null,
-      track.album_name || null,
-      track.artist_name,
-      track.title,
-      track.track_number || null,
-      track.disc_number || null,
-      track.duration || null,
-      track.file_path || null,
-      track.file_size || null,
-      track.container || null,
-      track.file_mtime || null,
-      track.audio_codec,
-      track.audio_bitrate || null,
-      track.sample_rate || null,
-      track.bit_depth || null,
-      track.channels || null,
-      track.is_lossless ? 1 : 0,
-      track.is_hi_res ? 1 : 0,
-      track.musicbrainz_id || null,
-      track.genres || null,
-      track.added_at || null
-    )
-
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    // Get existing ID
-    const existing = this.db.prepare(
-      'SELECT id FROM music_tracks WHERE source_id = ? AND provider_id = ?'
-    ).get(track.source_id, track.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+    return this.musicRepo.upsertMusicTrack(track)
   }
 
   /**
    * Upsert music artist
    */
   upsertMusicArtist(artist: MusicArtist): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO music_artists (
-        source_id, source_type, library_id, provider_id, name, sort_name,
-        musicbrainz_id, genres, country, biography, thumb_url, art_url,
-        album_count, track_count, user_fixed_match, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, provider_id) DO UPDATE SET
-        library_id = excluded.library_id,
-        name = excluded.name,
-        sort_name = excluded.sort_name,
-        musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_artists.musicbrainz_id),
-        genres = excluded.genres,
-        country = excluded.country,
-        biography = excluded.biography,
-        thumb_url = COALESCE(excluded.thumb_url, music_artists.thumb_url),
-        art_url = COALESCE(excluded.art_url, music_artists.art_url),
-        album_count = excluded.album_count,
-        track_count = excluded.track_count,
-        user_fixed_match = CASE WHEN music_artists.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
-        updated_at = datetime('now')
-    `)
-
-    const result = stmt.run(
-      artist.source_id,
-      artist.source_type,
-      artist.library_id || null,
-      artist.provider_id,
-      artist.name,
-      artist.sort_name || null,
-      artist.musicbrainz_id || null,
-      artist.genres || null,
-      artist.country || null,
-      artist.biography || null,
-      artist.thumb_url || null,
-      artist.art_url || null,
-      artist.album_count || null,
-      artist.track_count || null,
-      artist.user_fixed_match ? 1 : 0
-    )
-
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    const existing = this.db.prepare(
-      'SELECT id FROM music_artists WHERE source_id = ? AND provider_id = ?'
-    ).get(artist.source_id, artist.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+    return this.musicRepo.upsertMusicArtist(artist)
   }
 
   /**
    * Upsert music album
    */
   upsertMusicAlbum(album: MusicAlbum): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO music_albums (
-        source_id, source_type, library_id, provider_id, artist_id, artist_name,
-        title, sort_title, year, musicbrainz_id, musicbrainz_release_group_id,
-        genres, studio, album_type, track_count, total_duration, total_size,
-        best_audio_codec, best_audio_bitrate, best_sample_rate, best_bit_depth,
-        avg_audio_bitrate, thumb_url, art_url, release_date, added_at,
-        user_fixed_match, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, provider_id) DO UPDATE SET
-        library_id = excluded.library_id,
-        artist_id = excluded.artist_id,
-        artist_name = excluded.artist_name,
-        title = excluded.title,
-        sort_title = excluded.sort_title,
-        year = excluded.year,
-        musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_albums.musicbrainz_id),
-        musicbrainz_release_group_id = COALESCE(excluded.musicbrainz_release_group_id, music_albums.musicbrainz_release_group_id),
-        genres = excluded.genres,
-        studio = excluded.studio,
-        album_type = excluded.album_type,
-        track_count = excluded.track_count,
-        total_duration = excluded.total_duration,
-        total_size = excluded.total_size,
-        best_audio_codec = excluded.best_audio_codec,
-        best_audio_bitrate = excluded.best_audio_bitrate,
-        best_sample_rate = excluded.best_sample_rate,
-        best_bit_depth = excluded.best_bit_depth,
-        avg_audio_bitrate = excluded.avg_audio_bitrate,
-        thumb_url = COALESCE(excluded.thumb_url, music_albums.thumb_url),
-        art_url = COALESCE(excluded.art_url, music_albums.art_url),
-        release_date = excluded.release_date,
-        user_fixed_match = CASE WHEN music_albums.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
-        updated_at = datetime('now')
-    `)
-
-    const result = stmt.run(
-      album.source_id,
-      album.source_type,
-      album.library_id || null,
-      album.provider_id,
-      album.artist_id || null,
-      album.artist_name,
-      album.title,
-      album.sort_title || null,
-      album.year || null,
-      album.musicbrainz_id || null,
-      album.musicbrainz_release_group_id || null,
-      album.genres || null,
-      album.studio || null,
-      album.album_type || null,
-      album.track_count || null,
-      album.total_duration || null,
-      album.total_size || null,
-      album.best_audio_codec || null,
-      album.best_audio_bitrate || null,
-      album.best_sample_rate || null,
-      album.best_bit_depth || null,
-      album.avg_audio_bitrate || null,
-      album.thumb_url || null,
-      album.art_url || null,
-      album.release_date || null,
-      album.added_at || null,
-      album.user_fixed_match ? 1 : 0
-    )
-
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    const existing = this.db.prepare(
-      'SELECT id FROM music_albums WHERE source_id = ? AND provider_id = ?'
-    ).get(album.source_id, album.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+    return this.musicRepo.upsertMusicAlbum(album)
   }
 
   /**
    * Update music album artwork
    */
   updateMusicAlbumArtwork(albumId: number, artworkUrl: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      UPDATE music_albums SET thumb_url = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `)
-    stmt.run(artworkUrl, albumId)
+    this.musicRepo.updateMusicAlbumArtwork(albumId, artworkUrl)
   }
 
   /**
    * Get music artists with filters
    */
   getMusicArtists(filters?: MusicFilters): MusicArtist[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = 'SELECT * FROM music_artists WHERE 1=1'
-    const params: unknown[] = []
-
-    if (filters?.sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND name LIKE ?'
-      params.push(`%${filters.searchQuery}%`)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND name NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(name, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-
-    const artistSortMap: Record<string, string> = { 'name': 'sort_name', 'title': 'sort_name', 'added_at': 'created_at' }
-    const sortCol = artistSortMap[filters?.sortBy || ''] || 'sort_name'
-    const sortDir = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'
-    sql += ` ORDER BY ${sortCol} ${sortDir}`
-
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MusicArtist[]
+    return this.musicRepo.getMusicArtists(filters)
   }
 
   countMusicArtists(filters?: MusicFilters): number {
-    if (!this.db) throw new Error('Database not initialized')
-    let sql = 'SELECT COUNT(*) as count FROM music_artists WHERE 1=1'
-    const params: unknown[] = []
-    if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-    if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
-    if (filters?.searchQuery) { sql += ' AND name LIKE ?'; params.push(`%${filters.searchQuery}%`) }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') { sql += " AND name NOT GLOB '[A-Za-z]*'" }
-      else { sql += ' AND UPPER(SUBSTR(name, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
-    }
-    const stmt = this.db.prepare(sql)
-    const row = stmt.get(...params) as { count: number } | undefined
-    return row?.count || 0
+    return this.musicRepo.countMusicArtists(filters)
   }
 
   /**
    * Get music artist by ID
    */
   getMusicArtistById(id: number): MusicArtist | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_artists WHERE id = ?')
-    return (stmt.get(id) as MusicArtist) || null
+    return this.musicRepo.getMusicArtistById(id)
   }
 
   /**
    * Get music artist by name and source
    */
   getMusicArtistByName(name: string, sourceId: string): MusicArtist | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_artists WHERE name = ? AND source_id = ?')
-    return (stmt.get(name, sourceId) as MusicArtist) || null
+    return this.musicRepo.getMusicArtistByName(name, sourceId)
   }
 
   /**
    * Get music albums with filters
    */
   getMusicAlbums(filters?: MusicFilters): MusicAlbum[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = 'SELECT * FROM music_albums WHERE 1=1'
-    const params: unknown[] = []
-
-    if (filters?.artistId) {
-      sql += ' AND artist_id = ?'
-      params.push(filters.artistId)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND (title LIKE ? OR artist_name LIKE ?)'
-      params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
-      else { sql += ' AND UPPER(SUBSTR(title, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
-    }
-    if (filters?.excludeAlbumTypes?.length) {
-      const placeholders = filters.excludeAlbumTypes.map(() => '?').join(',')
-      sql += ` AND (album_type IS NULL OR album_type NOT IN (${placeholders}))`
-      params.push(...filters.excludeAlbumTypes)
-    }
-
-    const albumSortMap: Record<string, string> = { 'title': 'COALESCE(sort_title, title)', 'artist': 'artist_name', 'year': 'year', 'added_at': 'created_at' }
-    const sortCol = albumSortMap[filters?.sortBy || ''] || 'artist_name'
-    const sortDir = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'
-    if (!filters?.sortBy || filters.sortBy === 'artist') {
-      sql += ` ORDER BY ${sortCol} ${sortDir}, year DESC`
-    } else {
-      sql += ` ORDER BY ${sortCol} ${sortDir}`
-    }
-
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MusicAlbum[]
+    return this.musicRepo.getMusicAlbums(filters)
   }
 
   countMusicAlbums(filters?: MusicFilters): number {
-    if (!this.db) throw new Error('Database not initialized')
-    let sql = 'SELECT COUNT(*) as count FROM music_albums WHERE 1=1'
-    const params: unknown[] = []
-    if (filters?.artistId) { sql += ' AND artist_id = ?'; params.push(filters.artistId) }
-    if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-    if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
-    if (filters?.searchQuery) { sql += ' AND (title LIKE ? OR artist_name LIKE ?)'; params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`) }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
-      else { sql += ' AND UPPER(SUBSTR(title, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
-    }
-    if (filters?.excludeAlbumTypes?.length) {
-      const placeholders = filters.excludeAlbumTypes.map(() => '?').join(',')
-      sql += ` AND (album_type IS NULL OR album_type NOT IN (${placeholders}))`
-      params.push(...filters.excludeAlbumTypes)
-    }
-    const stmt = this.db.prepare(sql)
-    const row = stmt.get(...params) as { count: number } | undefined
-    return row?.count || 0
+    return this.musicRepo.countMusicAlbums(filters)
   }
 
   /**
    * Get music album by ID
    */
   getMusicAlbumById(id: number): MusicAlbum | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_albums WHERE id = ?')
-    return (stmt.get(id) as MusicAlbum) || null
+    return this.musicRepo.getMusicAlbumById(id)
   }
 
   /**
    * Get music album by name and artist
    */
   getMusicAlbumByName(title: string, artistId: number): MusicAlbum | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_albums WHERE title = ? AND artist_id = ?')
-    return (stmt.get(title, artistId) as MusicAlbum) || null
+    return this.musicRepo.getMusicAlbumByName(title, artistId)
   }
 
   /**
    * Get music albums by artist name
    */
   getMusicAlbumsByArtistName(artistName: string, limit = 500): MusicAlbum[] {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_albums WHERE artist_name = ? LIMIT ?')
-    return stmt.all(artistName, limit) as MusicAlbum[]
+    return this.musicRepo.getMusicAlbumsByArtistName(artistName, limit)
   }
 
   /**
    * Get music tracks with filters
    */
   getMusicTracks(filters?: MusicFilters): MusicTrack[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = 'SELECT * FROM music_tracks WHERE 1=1'
-    const params: unknown[] = []
-
-    if (filters?.albumId) {
-      sql += ' AND album_id = ?'
-      params.push(filters.albumId)
-    }
-    if (filters?.artistId) {
-      sql += ' AND artist_id = ?'
-      params.push(filters.artistId)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND (title LIKE ? OR artist_name LIKE ? OR album_name LIKE ?)'
-      params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`, `%${filters.searchQuery}%`)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
-      else { sql += ' AND UPPER(SUBSTR(title, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
-    }
-
-    const trackSortMap: Record<string, string> = { 'title': 'title', 'artist': 'artist_name', 'album': 'album_name', 'codec': 'audio_codec', 'duration': 'duration', 'added_at': 'created_at' }
-    if (filters?.sortBy && trackSortMap[filters.sortBy]) {
-      const sortCol = trackSortMap[filters.sortBy]
-      const sortDir = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'
-      sql += ` ORDER BY ${sortCol} ${sortDir}`
-    } else if (filters?.albumId) {
-      sql += ' ORDER BY disc_number ASC, track_number ASC'
-    } else {
-      sql += ' ORDER BY title ASC'
-    }
-
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MusicTrack[]
+    return this.musicRepo.getMusicTracks(filters)
   }
 
   /**
@@ -2211,58 +1391,46 @@ export class BetterSQLiteService {
    * Returns Map of album_id → MusicTrack[]
    */
   getMusicTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> {
-    if (!this.db) throw new Error('Database not initialized')
-    const result = new Map<number, MusicTrack[]>()
-    if (albumIds.length === 0) return result
-
-    const placeholders = albumIds.map(() => '?').join(',')
-    const stmt = this.db.prepare(
-      `SELECT * FROM music_tracks WHERE album_id IN (${placeholders}) ORDER BY album_id, disc_number ASC, track_number ASC`
-    )
-    const rows = stmt.all(...albumIds) as MusicTrack[]
-
-    for (const track of rows) {
-      if (track.album_id) {
-        const list = result.get(track.album_id)
-        if (list) list.push(track)
-        else result.set(track.album_id, [track])
-      }
-    }
-    return result
+    return this.musicRepo.getMusicTracksByAlbumIds(albumIds)
   }
 
   countMusicTracks(filters?: MusicFilters): number {
-    if (!this.db) throw new Error('Database not initialized')
-    let sql = 'SELECT COUNT(*) as count FROM music_tracks WHERE 1=1'
-    const params: unknown[] = []
-    if (filters?.albumId) { sql += ' AND album_id = ?'; params.push(filters.albumId) }
-    if (filters?.artistId) { sql += ' AND artist_id = ?'; params.push(filters.artistId) }
-    if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-    if (filters?.searchQuery) { sql += ' AND (title LIKE ? OR artist_name LIKE ? OR album_name LIKE ?)'; params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`, `%${filters.searchQuery}%`) }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
-      else { sql += ' AND UPPER(SUBSTR(title, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
-    }
-    const stmt = this.db.prepare(sql)
-    const row = stmt.get(...params) as { count: number } | undefined
-    return row?.count || 0
+    return this.musicRepo.countMusicTracks(filters)
   }
 
   /**
    * Get music track by ID
    */
   getMusicTrackById(id: number): MusicTrack | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE id = ?')
-    return (stmt.get(id) as MusicTrack) || null
+    return this.musicRepo.getMusicTrackById(id)
   }
 
   /**
    * Delete music track
    */
   deleteMusicTrack(id: number): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare('DELETE FROM music_tracks WHERE id = ?').run(id)
+    this.musicRepo.deleteMusicTrack(id)
+  }
+
+  /**
+   * Update music artist counts
+   */
+  updateMusicArtistCounts(artistId: number, albumCount: number, trackCount: number): void {
+    this.musicRepo.updateMusicArtistCounts(artistId, albumCount, trackCount)
+  }
+
+  /**
+   * Update music artist MusicBrainz ID
+   */
+  updateMusicArtistMbid(artistId: number, musicbrainzId: string): void {
+    this.musicRepo.updateMusicArtistMbid(artistId, musicbrainzId)
+  }
+
+  /**
+   * Update music album MusicBrainz ID
+   */
+  updateMusicAlbumMbid(albumId: number, musicbrainzId: string): void {
+    this.musicRepo.updateMusicAlbumMbid(albumId, musicbrainzId)
   }
 
   /**
@@ -3875,167 +3043,65 @@ WHERE m.type = 'episode' AND m.series_title = ?`
    * Create a notification
    */
   createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
-    `)
-
-    const result = stmt.run(
-      notification.type,
-      notification.title,
-      notification.message,
-      notification.sourceId || null,
-      notification.sourceName || null,
-      notification.itemCount || 0,
-      notification.metadata ? JSON.stringify(notification.metadata) : '{}'
-    )
-
-    return Number(result.lastInsertRowid)
+    return this.notificationRepo.createNotification(notification)
   }
 
   /**
    * Create multiple notifications
    */
   createNotifications(notifications: Array<Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>>): number[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const ids: number[] = []
-    const stmt = this.db.prepare(`
-      INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const notification of notifications) {
-        const result = stmt.run(
-          notification.type,
-          notification.title,
-          notification.message,
-          notification.sourceId || null,
-          notification.sourceName || null,
-          notification.itemCount || 0,
-          notification.metadata ? JSON.stringify(notification.metadata) : '{}'
-        )
-        ids.push(Number(result.lastInsertRowid))
-      }
-    })
-    transaction()
-
-    return ids
+    return this.notificationRepo.createNotifications(notifications)
   }
 
   /**
    * Get notifications with optional filtering
    */
   getNotifications(options: GetNotificationsOptions = {}): Notification[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const { limit = 100, offset = 0, type, unreadOnly = false } = options
-
-    let sql = 'SELECT * FROM notifications WHERE 1=1'
-    const params: unknown[] = []
-
-    if (type) {
-      sql += ' AND type = ?'
-      params.push(type)
-    }
-    if (unreadOnly) {
-      sql += ' AND is_read = 0'
-    }
-
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    params.push(limit, offset)
-
-    const stmt = this.db.prepare(sql)
-    const rows = stmt.all(...params) as Array<{
-      id: number
-      type: string
-      title: string
-      message: string
-      source_id: string | null
-      source_name: string | null
-      item_count: number
-      metadata: string
-      is_read: number
-      created_at: string
-      read_at: string | null
-    }>
-
-    return rows.map(row => ({
-      id: row.id,
-      type: row.type as NotificationType,
-      title: row.title,
-      message: row.message,
-      sourceId: row.source_id || undefined,
-      sourceName: row.source_name || undefined,
-      itemCount: row.item_count,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      isRead: row.is_read === 1,
-      createdAt: row.created_at,
-      readAt: row.read_at || undefined,
-    }))
+    return this.notificationRepo.getNotifications(options)
   }
 
   /**
    * Get unread notifications
    */
   getUnreadNotifications(): Notification[] {
-    return this.getNotifications({ unreadOnly: true })
+    return this.notificationRepo.getNotifications({ unreadOnly: true })
   }
 
   /**
    * Get notification count
    */
   getNotificationCount(): NotificationCountResult {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const totalStmt = this.db.prepare('SELECT COUNT(*) as count FROM notifications')
-    const unreadStmt = this.db.prepare('SELECT COUNT(*) as count FROM notifications WHERE is_read = 0')
-
-    return {
-      total: (totalStmt.get() as { count: number }).count,
-      unread: (unreadStmt.get() as { count: number }).count,
-    }
+    const unread = this.notificationRepo.getUnreadCount()
+    const totalRow = this.db!.prepare('SELECT COUNT(*) as count FROM notifications').get() as { count: number }
+    return { total: totalRow.count, unread }
   }
 
   /**
    * Mark notifications as read
    */
   markNotificationsRead(ids: number[]): void {
-    if (!this.db) throw new Error('Database not initialized')
-    if (ids.length === 0) return
-
-    const placeholders = ids.map(() => '?').join(',')
-    this.db.prepare(`UPDATE notifications SET is_read = 1, read_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids)
+    this.notificationRepo.markAsRead(ids)
   }
 
   /**
    * Mark all notifications as read
    */
   markAllNotificationsRead(): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare("UPDATE notifications SET is_read = 1, read_at = datetime('now') WHERE is_read = 0").run()
+    this.notificationRepo.markAllAsRead()
   }
 
   /**
    * Delete notifications
    */
   deleteNotifications(ids: number[]): void {
-    if (!this.db) throw new Error('Database not initialized')
-    if (ids.length === 0) return
-
-    const placeholders = ids.map(() => '?').join(',')
-    this.db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders})`).run(...ids)
+    this.notificationRepo.deleteNotifications(ids)
   }
 
   /**
    * Clear all notifications
    */
   clearAllNotifications(): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare('DELETE FROM notifications').run()
+    this.notificationRepo.deleteAllNotifications()
   }
 
   /**
