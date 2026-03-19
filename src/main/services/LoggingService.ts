@@ -243,6 +243,18 @@ class LoggingService {
     }
   }
 
+  info(source: string, message: string, details?: string): void {
+    this.addEntry('info', source, message, details)
+  }
+
+  warn(source: string, message: string, details?: string): void {
+    this.addEntry('warn', source, message, details)
+  }
+
+  error(source: string, message: string, details?: string): void {
+    this.addEntry('error', source, message, details)
+  }
+
   getSessionInfo(): { sessionId: string; startedAt: string; uptimeMs: number } {
     return {
       sessionId: this.sessionId,

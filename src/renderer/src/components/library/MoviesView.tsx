@@ -142,7 +142,7 @@ export function MoviesView({
     return (
       <div className="h-full flex flex-col">
         {statsBar}
-        <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px] gap-4 px-4 py-2 mb-2 border-b border-border/50 text-xs font-medium text-muted-foreground bg-muted/10 sticky top-0 z-10">
+        <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 px-4 py-2 mb-2 border-b border-border/50 text-xs font-medium text-muted-foreground bg-muted/10 sticky top-0 z-10">
           <div>Title</div>
           <div className="text-center">Year</div>
           <div>Resolution</div>
@@ -150,7 +150,8 @@ export function MoviesView({
           <div className="text-right">Bitrate</div>
           <div className="text-right">File Size</div>
           <div className="text-center">Efficiency</div>
-          <div className="text-right pr-2">Debt</div>
+          <div className="text-right">Debt</div>
+          <div className="text-center"></div>
         </div>
         <div className="flex-1 min-h-0">
           <Virtuoso
@@ -587,7 +588,35 @@ const MovieListItem = memo(({
   onRescan?: () => Promise<void>
   onDismissUpgrade?: (movie: MediaItem) => void
 }) => {
+  const [showMenu, setShowMenu] = useState(false)
+  const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
+
+  const handleFixMatch = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onFixMatch) onFixMatch()
+  }
+
+  const handleRescan = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onRescan) {
+      setIsRescanning(true)
+      try {
+        await onRescan()
+      } finally {
+        setIsRescanning(false)
+      }
+    }
+  }
+
+  const handleDismissUpgrade = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onDismissUpgrade) onDismissUpgrade(movie)
+  }
 
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B'
@@ -602,11 +631,14 @@ const MovieListItem = memo(({
     return `${kbps} kbps`
   }
 
+  const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
+  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
+
   return (
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px] gap-4 items-center outline-none border-b border-border/10"
+      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center outline-none border-b border-border/10"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -645,9 +677,9 @@ const MovieListItem = memo(({
 
       <div className="text-center text-sm text-muted-foreground">{movie.year || '-'}</div>
       <div className="text-sm text-muted-foreground">{movie.resolution || '-'}</div>
-      <div className="text-sm text-muted-foreground uppercase">{movie.video_codec || '-'}</div>
-      <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate(movie.video_bitrate || 0)}</div>
-      <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes(movie.file_size || 0)}</div>
+      <div className="text-sm text-muted-foreground uppercase">{(movie as any).video_codec || '-'}</div>
+      <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate((movie as any).video_bitrate || 0)}</div>
+      <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes((movie as any).file_size || 0)}</div>
 
       <div className="text-center">
         <div
@@ -661,10 +693,64 @@ const MovieListItem = memo(({
         </div>
       </div>
 
-      <div className="text-right pr-2">
+      <div className="text-right">
         <span className={`text-xs font-medium ${(movie as any).storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
           {(movie as any).storage_debt_bytes > 0 ? formatBytes((movie as any).storage_debt_bytes) : '-'}
         </span>
+      </div>
+
+      {/* Actions */}
+      <div className="relative flex justify-center">
+        {showMenuButton && (
+          <div ref={menuRef}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowMenu(!showMenu)
+              }}
+              className={`w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground transition-all ${showMenu ? 'bg-muted text-foreground' : ''}`}
+            >
+              {isRescanning ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <MoreVertical className="w-4 h-4" />
+              )}
+            </button>
+
+            {/* Dropdown menu */}
+            {showMenu && !isRescanning && (
+              <div className="absolute top-10 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px] z-50">
+                {onRescan && movie.file_path && (
+                  <button
+                    onClick={handleRescan}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Rescan File
+                  </button>
+                )}
+                {onFixMatch && (
+                  <button
+                    onClick={handleFixMatch}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Fix Match
+                  </button>
+                )}
+                {onDismissUpgrade && needsUpgrade && (
+                  <button
+                    onClick={handleDismissUpgrade}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <EyeOff className="w-3.5 h-3.5" />
+                    Dismiss Upgrade
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

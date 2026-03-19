@@ -43,7 +43,7 @@ export function WishlistView(_props: WishlistViewProps) {
         needsUpgrade: true,
         limit: 10000, 
       })
-      setUpgrades(upgradeItems)
+      setUpgrades(upgradeItems as MediaItem[])
 
       // 2. Load Missing items from Collections and SeriesCompleteness
       const [seriesData, collectionsData] = await Promise.all([

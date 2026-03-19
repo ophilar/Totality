@@ -4,7 +4,7 @@ import type { Notification, GetNotificationsOptions } from '../../types/monitori
 export class NotificationRepository {
   constructor(private db: Database) {}
 
-  createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
+  addNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
     const stmt = this.db.prepare(`
       INSERT INTO notifications (type, title, message, source_id, source_name, item_count, metadata, is_read, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
@@ -21,6 +21,10 @@ export class NotificationRepository {
     )
 
     return Number(result.lastInsertRowid)
+  }
+
+  createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
+    return this.addNotification(notification)
   }
 
   createNotifications(notifications: Array<Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>>): number[] {
@@ -105,8 +109,16 @@ export class NotificationRepository {
     `).run(...ids)
   }
 
+  markNotificationRead(id: number): void {
+    this.markAsRead([id])
+  }
+
   markAllAsRead(): void {
     this.db.prepare("UPDATE notifications SET is_read = 1, read_at = datetime('now') WHERE is_read = 0").run()
+  }
+
+  markAllNotificationsRead(): void {
+    this.markAllAsRead()
   }
 
   deleteNotifications(ids: number[]): void {
@@ -115,12 +127,29 @@ export class NotificationRepository {
     this.db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders})`).run(...ids)
   }
 
+  deleteNotification(id: number): void {
+    this.deleteNotifications([id])
+  }
+
   deleteAllNotifications(): void {
     this.db.prepare('DELETE FROM notifications').run()
+  }
+
+  clearAllNotifications(): void {
+    this.deleteAllNotifications()
   }
 
   getUnreadCount(): number {
     const row = this.db.prepare('SELECT COUNT(*) as count FROM notifications WHERE is_read = 0').get() as { count: number }
     return row.count
+  }
+
+  getNotificationCounts(): { total: number; unread: number } {
+    const totalRow = this.db.prepare('SELECT COUNT(*) as count FROM notifications').get() as { count: number }
+    const unreadRow = this.db.prepare('SELECT COUNT(*) as count FROM notifications WHERE is_read = 0').get() as { count: number }
+    return {
+      total: totalRow.count,
+      unread: unreadRow.count
+    }
   }
 }

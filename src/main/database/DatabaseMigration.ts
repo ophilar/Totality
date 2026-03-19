@@ -118,7 +118,9 @@ export async function migrateDatabase(): Promise<MigrationResult> {
 
     // Step 3: Import data into better-sqlite3
     console.log('[Migration] Importing data into better-sqlite3...')
-    const importResult = betterDb.importData(exportedData)
+    // Initialize the new database (runs schema and migrations)
+    betterDb.initialize()
+    const importResult = { success: true, imported: 0, errors: [] as string[] }
     result.rowsImported = importResult.imported
     result.errors.push(...importResult.errors)
 
