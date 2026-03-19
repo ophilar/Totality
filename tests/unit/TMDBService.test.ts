@@ -91,6 +91,7 @@ describe('TMDBService', () => {
         release_date: '1999-10-15',
         belongs_to_collection: null,
         poster_path: '/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg',
+        original_language: 'en',
       }
 
       mockFetch.mockResolvedValueOnce({
@@ -101,6 +102,7 @@ describe('TMDBService', () => {
       const result = await service.getMovieDetails('550')
 
       expect(result).toEqual(mockMovie)
+      expect(result.original_language).toBe('en')
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/movie/550'),
         expect.any(Object)
