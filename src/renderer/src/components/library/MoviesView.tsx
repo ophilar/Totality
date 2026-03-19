@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2 } from 'lucide-react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { QualityBadges } from './QualityBadges'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
@@ -47,6 +47,8 @@ export function MoviesView({
   collectionsOnly?: boolean
   scrollElement?: HTMLElement | null
 }) {
+  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
+
   // Map scale to minimum poster width (1=smallest, 7=largest)
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
@@ -101,13 +103,27 @@ export function MoviesView({
 
     // Sort all items alphabetically together (collections and movies interleaved)
     items.sort((a, b) => {
+      if (sortBy === 'efficiency') {
+        const effA = a.type === 'movie' ? (a.movie.efficiency_score ?? 100) : 100
+        const effB = b.type === 'movie' ? (b.movie.efficiency_score ?? 100) : 100
+        if (effA !== effB) return effA - effB // Low efficiency first
+      } else if (sortBy === 'waste') {
+        const wasteA = a.type === 'movie' ? (a.movie.storage_debt_bytes ?? 0) : 0
+        const wasteB = b.type === 'movie' ? (b.movie.storage_debt_bytes ?? 0) : 0
+        if (wasteA !== wasteB) return wasteB - wasteA // High waste first
+      } else if (sortBy === 'size') {
+        const sizeA = a.type === 'movie' ? (a.movie.file_size ?? 0) : 0
+        const sizeB = b.type === 'movie' ? (b.movie.file_size ?? 0) : 0
+        if (sizeA !== sizeB) return sizeB - sizeA // Largest first
+      }
+
       const titleA = a.type === 'collection' ? a.collection.collection_name : a.movie.title
       const titleB = b.type === 'collection' ? b.collection.collection_name : b.movie.title
       return titleA.localeCompare(titleB)
     })
 
     return items
-  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly])
+  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, sortBy])
 
   if (displayItems.length === 0) {
     return (
@@ -122,8 +138,40 @@ export function MoviesView({
   }
 
   const statsBar = (
-    <div className="flex items-center gap-6 text-sm text-muted-foreground pb-4">
-      <span>{totalMovieCount.toLocaleString()} Movies</span>
+    <div className="flex items-center justify-between pb-4">
+      <div className="flex items-center gap-6 text-sm text-muted-foreground">
+        <span>{totalMovieCount.toLocaleString()} Movies</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Sort by:</span>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setSortBy('title')}
+            className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+          >
+            Title
+          </button>
+          <button
+            onClick={() => setSortBy('efficiency')}
+            className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+          >
+            Efficiency
+          </button>
+          <button
+            onClick={() => setSortBy('waste')}
+            className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+          >
+            Waste
+          </button>
+          <button
+            onClick={() => setSortBy('size')}
+            className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+          >
+            Size
+          </button>
+        </div>
+      </div>
     </div>
   )
 
@@ -530,7 +578,21 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-sm truncate">{movie.title}</h4>
-          {movie.year && <p className="text-xs text-muted-foreground">{movie.year}</p>}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{movie.year}</span>
+            {movie.original_language && (
+              <>
+                <span className="text-muted-foreground/30">•</span>
+                <span className="uppercase text-[10px]">{movie.original_language}</span>
+              </>
+            )}
+            {movie.resolution && (
+              <>
+                <span className="text-muted-foreground/30">•</span>
+                <span>{movie.resolution}</span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex-shrink-0 flex items-center gap-1">
           {/* Collection Badge - shown when movie is part of a collection */}
@@ -553,6 +615,12 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
               <CircleFadingArrowUp className="w-5 h-5 text-red-500" />
             </div>
           )}
+          {/* Efficiency Trash Badge */}
+          {movie.efficiency_score != null && movie.efficiency_score < 60 && (
+            <div title={`Low Efficiency (${movie.efficiency_score}%). Upgrade recommended to save space.`}>
+              <Trash2 className="w-5 h-5 text-orange-500" />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -560,6 +628,8 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
 }, (prevProps, nextProps) => {
   // Compare all props that affect rendering
   return prevProps.movie.id === nextProps.movie.id &&
+         prevProps.movie.original_language === nextProps.movie.original_language &&
+         prevProps.movie.audio_language === nextProps.movie.audio_language &&
          prevProps.movie.tier_quality === nextProps.movie.tier_quality &&
          prevProps.movie.needs_upgrade === nextProps.movie.needs_upgrade &&
          prevProps.movie.poster_url === nextProps.movie.poster_url &&
@@ -757,6 +827,8 @@ const MovieListItem = memo(({
 }, (prevProps, nextProps) => {
   // Compare all props that affect rendering
   return prevProps.movie.id === nextProps.movie.id &&
+         prevProps.movie.original_language === nextProps.movie.original_language &&
+         prevProps.movie.audio_language === nextProps.movie.audio_language &&
          prevProps.movie.tier_quality === nextProps.movie.tier_quality &&
          prevProps.movie.needs_upgrade === nextProps.movie.needs_upgrade &&
          prevProps.collectionData?.id === nextProps.collectionData?.id &&

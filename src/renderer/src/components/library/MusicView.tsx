@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
-import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp } from 'lucide-react'
+import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2 } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
@@ -109,6 +109,7 @@ export function MusicView({
   includeSingles: boolean
   scrollElement?: HTMLElement | null
 }) {
+  const [sortBy, setSortBy] = useState<'default' | 'efficiency' | 'waste' | 'size'>('default')
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
   const [isAnalyzingArtist, setIsAnalyzingArtist] = useState(false)
   const [trackMenuOpen, setTrackMenuOpen] = useState<string | number | null>(null)
@@ -303,12 +304,47 @@ export function MusicView({
   }, [albums, selectedArtist, searchQuery])
 
   // Albums are now filtered/sorted server-side via loadPaginatedAlbums
-  const allFilteredAlbums = albums
+  const allFilteredAlbums = useMemo(() => {
+    if (sortBy === 'default') return albums
+
+    const result = [...albums]
+    result.sort((a, b) => {
+      const compA = a.id ? allAlbumCompleteness.get(a.id) : undefined
+      const compB = b.id ? allAlbumCompleteness.get(b.id) : undefined
+
+      if (sortBy === 'efficiency') {
+        const effA = (compA as any)?.efficiency_score ?? 100
+        const effB = (compB as any)?.efficiency_score ?? 100
+        if (effA !== effB) return effA - effB
+      } else if (sortBy === 'waste') {
+        const wasteA = (compA as any)?.storage_debt_bytes ?? 0
+        const wasteB = (compB as any)?.storage_debt_bytes ?? 0
+        if (wasteA !== wasteB) return wasteB - wasteA
+      } else if (sortBy === 'size') {
+        const sizeA = (compA as any)?.total_size ?? 0
+        const sizeB = (compB as any)?.total_size ?? 0
+        if (sizeA !== sizeB) return sizeB - sizeA
+      }
+      return 0
+    })
+    return result
+  }, [albums, sortBy, allAlbumCompleteness])
 
   // Tracks are now loaded from the server pre-filtered/sorted/paginated.
   // Quality filter is still applied client-side on the loaded page (lightweight).
   const filteredTracks = useMemo(() => {
-    if (qualityFilter === 'all') return allTracks
+    let result = [...allTracks]
+
+    // Apply sorting first
+    if (sortBy === 'efficiency') {
+      result.sort((a, b) => (a.efficiency_score ?? 100) - (b.efficiency_score ?? 100))
+    } else if (sortBy === 'waste') {
+      result.sort((a, b) => (b.storage_debt_bytes ?? 0) - (a.storage_debt_bytes ?? 0))
+    } else if (sortBy === 'size') {
+      result.sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0))
+    }
+
+    if (qualityFilter === 'all') return result
 
     const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
     const isLosslessCodec = (codec?: string): boolean => {
@@ -334,14 +370,14 @@ export function MusicView({
       }
       return null
     }
-    return allTracks.filter(track => {
+    return result.filter(track => {
       const tier = getTrackQualityTier(track)
       if (qualityFilter === 'high') return tier === 'ultra' || tier === 'high'
       if (qualityFilter === 'medium') return tier === 'medium'
       if (qualityFilter === 'low') return tier === 'low'
       return true
     })
-  }, [allTracks, qualityFilter])
+  }, [allTracks, qualityFilter, sortBy])
 
   // Album detail view
   if (selectedAlbum) {
@@ -1049,28 +1085,62 @@ export function MusicView({
 
   return (
     <div className="space-y-8">
-      {/* Stats Bar */}
-      {stats && (
-        <div className="flex items-center gap-6 text-sm text-muted-foreground">
-          <span>{stats.totalArtists} Artists</span>
-          <span className="text-muted-foreground/50">•</span>
-          <span>{stats.totalAlbums} Albums</span>
-          <span className="text-muted-foreground/50">•</span>
-          <span>{stats.totalTracks} Tracks</span>
-          {stats.losslessAlbums > 0 && (
-            <>
-              <span className="text-muted-foreground/50">•</span>
-              <span className="text-green-500">{stats.losslessAlbums} Lossless</span>
-            </>
-          )}
-          {stats.hiResAlbums > 0 && (
-            <>
-              <span className="text-muted-foreground/50">•</span>
-              <span className="text-purple-500">{stats.hiResAlbums} Hi-Res</span>
-            </>
-          )}
-        </div>
-      )}
+      {/* Stats Bar and Sorting */}
+      <div className="flex items-center justify-between">
+        {stats && (
+          <div className="flex items-center gap-6 text-sm text-muted-foreground">
+            <span>{stats.totalArtists} Artists</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span>{stats.totalAlbums} Albums</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span>{stats.totalTracks} Tracks</span>
+            {stats.losslessAlbums > 0 && (
+              <>
+                <span className="text-muted-foreground/50">•</span>
+                <span className="text-green-500">{stats.losslessAlbums} Lossless</span>
+              </>
+            )}
+            {stats.hiResAlbums > 0 && (
+              <>
+                <span className="text-muted-foreground/50">•</span>
+                <span className="text-purple-500">{stats.hiResAlbums} Hi-Res</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {musicViewMode === 'tracks' && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Sort:</span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setSortBy('default')}
+                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'default' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+              >
+                Default
+              </button>
+              <button
+                onClick={() => setSortBy('efficiency')}
+                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+              >
+                Efficiency
+              </button>
+              <button
+                onClick={() => setSortBy('waste')}
+                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+              >
+                Waste
+              </button>
+              <button
+                onClick={() => setSortBy('size')}
+                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+              >
+                Size
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Artists View Mode */}
       {musicViewMode === 'artists' && artists.length > 0 && (
@@ -1342,6 +1412,8 @@ export function MusicView({
                     <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
+
+                <div className="w-20 text-right pr-4">Size</div>
               </div>
 
               {/* Virtualized Track List */}
@@ -2138,9 +2210,24 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
             {qualityTierConfig[qualityTier].label}
           </span>
         )}
-        {qualityTier === 'low' && (
-          <span title="Quality upgrade recommended">
-            <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
+        {(qualityTier === 'low' || (track.efficiency_score != null && track.efficiency_score < 60)) && (
+          <span title={track.efficiency_score != null && track.efficiency_score < 60 ? `Low Efficiency (${track.efficiency_score}%). Upgrade recommended to save space.` : "Quality upgrade recommended"}>
+            {track.efficiency_score != null && track.efficiency_score < 60 ? (
+              <Trash2 className="w-4 h-4 text-orange-500" />
+            ) : (
+              <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
+            )}
+          </span>
+        )}
+        {track.file_size && (
+          <span className="text-[10px] text-muted-foreground font-mono ml-1">
+            {(() => {
+              const bytes = track.file_size
+              const k = 1024
+              const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+              const i = Math.floor(Math.log(bytes) / Math.log(k))
+              return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]
+            })()}
           </span>
         )}
       </div>
@@ -2153,6 +2240,17 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
       {/* Duration */}
       <div className="text-xs text-muted-foreground text-right" style={{ width: widths.duration }}>
         {formatDuration(track.duration)}
+      </div>
+
+      {/* Size */}
+      <div className="w-20 text-right text-[10px] text-muted-foreground font-mono">
+        {track.file_size ? (() => {
+          const bytes = track.file_size
+          const k = 1024
+          const sizes = ['B', 'KB', 'MB', 'GB']
+          const i = Math.floor(Math.log(bytes) / Math.log(k))
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]
+        })() : '-'}
       </div>
 
       {/* Add to Wishlist - for low quality tracks that need upgrade */}

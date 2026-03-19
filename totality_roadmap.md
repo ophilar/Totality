@@ -22,5 +22,7 @@
 - [x] **Storage Debt Analysis**: Implement BPP efficiency scoring and GB waste calculations.
 - [x] **Wishlist Dashboard**: Centralized view for quality upgrades and missing collection items.
 - [x] **Hybrid Monitoring**: Event-driven OS watching + focus-triggered lazy checks.
+- [x] **Stability & Resilience**: Fix DB schema integrity (NOT NULL constraints) and handle metadata provider 404s.
+- [x] **Log Standardization**: Comprehensive transition from `console.log` to structured `LoggingService`.
 - [ ] **Actionable Optimization**: Initiate local FFmpeg transcodes to pay off storage debt.
 - [ ] **Multi-user profiles** and permissions.

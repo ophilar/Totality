@@ -166,6 +166,7 @@ export interface FileAnalysisResult {
   duration?: number // milliseconds
   fileSize?: number // bytes
   overallBitrate?: number // kbps
+  audioLanguage?: string  // Primary audio language
 
   video?: AnalyzedVideoStream
   audioTracks: AnalyzedAudioStream[]
@@ -1132,9 +1133,17 @@ export class MediaFileAnalyzer {
             result.video = this.parseVideoStream(stream, result.duration)
           }
           break
-        case 'audio':
-          result.audioTracks.push(this.parseAudioStream(stream, result.duration))
+        case 'audio': {
+          const parsedAudio = this.parseAudioStream(stream, result.duration)
+          result.audioTracks.push(parsedAudio)
+          // Use language from default track, or first track if not set
+          if (!result.audioLanguage || parsedAudio.isDefault) {
+            if (parsedAudio.language && parsedAudio.language !== 'und') {
+              result.audioLanguage = parsedAudio.language
+            }
+          }
           break
+        }
         case 'subtitle':
           result.subtitleTracks.push(this.parseSubtitleStream(stream))
           break

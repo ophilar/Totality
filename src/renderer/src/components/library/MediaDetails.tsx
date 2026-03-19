@@ -68,6 +68,8 @@ interface MediaVersion {
   tier_score?: number
   bitrate_tier_score?: number
   audio_tier_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
   is_best?: boolean
 }
 
@@ -116,6 +118,8 @@ interface MediaWithQuality {
   bitrate_tier_score?: number
   audio_tier_score?: number
   overall_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
   needs_upgrade?: boolean
   issues?: string
 }
@@ -221,6 +225,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         bitrate_tier_score?: number
         audio_tier_score?: number
         overall_score?: number
+        efficiency_score?: number
+        storage_debt_bytes?: number
         needs_upgrade?: boolean
         issues?: string
       } | null
@@ -233,6 +239,8 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         bitrate_tier_score: qualityScore?.bitrate_tier_score,
         audio_tier_score: qualityScore?.audio_tier_score,
         overall_score: qualityScore?.overall_score,
+        efficiency_score: qualityScore?.efficiency_score,
+        storage_debt_bytes: qualityScore?.storage_debt_bytes,
         needs_upgrade: qualityScore?.needs_upgrade,
         issues: qualityScore?.issues
       }
@@ -630,6 +638,26 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                         <div className="text-center">
                           <div className="text-2xl font-bold">{sv?.tier_score ?? media.tier_score}</div>
                           <div className="text-xs text-muted-foreground">Score</div>
+                        </div>
+                      </>
+                    )}
+                    {(sv?.efficiency_score ?? media.efficiency_score) != null && (
+                      <>
+                        <div className="h-10 w-px bg-border" />
+                        <div className="text-center">
+                          <div className="text-2xl font-bold">{(sv?.efficiency_score ?? media.efficiency_score)}%</div>
+                          <div className="text-xs text-muted-foreground">Efficiency</div>
+                        </div>
+                      </>
+                    )}
+                    {(sv?.storage_debt_bytes ?? media.storage_debt_bytes) != null && (sv?.storage_debt_bytes ?? media.storage_debt_bytes ?? 0) > 0 && (
+                      <>
+                        <div className="h-10 w-px bg-border" />
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-500">
+                            {formatFileSize(sv?.storage_debt_bytes ?? media.storage_debt_bytes ?? 0)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Waste</div>
                         </div>
                       </>
                     )}

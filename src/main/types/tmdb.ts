@@ -9,6 +9,7 @@ export interface TMDBMovieDetails {
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   runtime: number | null
@@ -45,6 +46,7 @@ export interface TMDBCollectionPart {
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
 }
@@ -58,6 +60,7 @@ export interface TMDBTVShowDetails {
   last_air_date: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   status: string // "Returning Series", "Planned", "In Production", "Ended", "Canceled", "Pilot"
@@ -119,6 +122,7 @@ export interface TMDBMovieSearchResult {
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   popularity: number
@@ -132,6 +136,7 @@ export interface TMDBTVSearchResult {
   overview: string
   poster_path: string | null
   backdrop_path: string | null
+  original_language: string
   vote_average: number
   vote_count: number
   popularity: number

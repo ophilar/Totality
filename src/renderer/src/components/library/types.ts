@@ -49,6 +49,7 @@ export interface MusicAlbum {
   album_type?: string
   track_count?: number
   duration_ms?: number
+  total_size?: number
   thumb_url?: string
   is_lossless?: boolean
   is_hi_res?: boolean
@@ -71,11 +72,14 @@ export interface MusicTrack {
   disc_number?: number
   duration?: number // Duration in ms
   file_path?: string
+  file_size?: number
   audio_codec?: string
   audio_bitrate?: number
   sample_rate?: number
   bit_depth?: number
   channels?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
   is_lossless?: boolean
   is_hi_res?: boolean
 }
@@ -115,10 +119,13 @@ export interface MediaItem {
   efficiency_score?: number
   storage_debt_bytes?: number
   tmdb_id?: string
+  original_language?: string
+  audio_language?: string
   issues?: string
 
   // File information
   file_path?: string
+  file_size?: number
 
   // Enhanced quality metadata
   hdr_format?: string
@@ -206,6 +213,9 @@ export interface SeriesCompletenessData {
   missing_seasons: string
   missing_episodes: string
   completeness_percentage: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
   tmdb_id?: string
   poster_url?: string
   status?: string
@@ -258,6 +268,9 @@ export interface ArtistCompletenessData {
   owned_singles: number
   total_eps: number
   owned_eps: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
   missing_albums: string
   missing_singles: string
   missing_eps: string
@@ -289,6 +302,9 @@ export interface AlbumCompletenessData {
   musicbrainz_release_group_id?: string
   total_tracks: number
   owned_tracks: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
   missing_tracks: string
   completeness_percentage: number
 }

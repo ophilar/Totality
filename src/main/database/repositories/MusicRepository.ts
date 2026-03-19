@@ -47,7 +47,7 @@ export class MusicRepository {
     const result = stmt.run(
       track.source_id,
       track.source_type,
-      track.library_id || null,
+      track.library_id || '',
       track.provider_id,
       track.album_id || null,
       track.artist_id || null,
@@ -109,7 +109,7 @@ export class MusicRepository {
     const result = stmt.run(
       artist.source_id,
       artist.source_type,
-      artist.library_id || null,
+      artist.library_id || '',
       artist.provider_id,
       artist.name,
       artist.sort_name || null,
@@ -123,6 +123,7 @@ export class MusicRepository {
       artist.track_count || null,
       artist.user_fixed_match ? 1 : 0
     )
+
 
     if (result.changes > 0 && result.lastInsertRowid) {
       return Number(result.lastInsertRowid)
@@ -174,7 +175,7 @@ export class MusicRepository {
     const result = stmt.run(
       album.source_id,
       album.source_type,
-      album.library_id || null,
+      album.library_id || '',
       album.provider_id,
       album.artist_id || null,
       album.artist_name,
@@ -586,9 +587,10 @@ export class MusicRepository {
         artist_name, musicbrainz_id, total_albums, owned_albums,
         total_singles, owned_singles, total_eps, owned_eps,
         missing_albums, missing_singles, missing_eps,
-        completeness_percentage, country, active_years, artist_type,
+        completeness_percentage, efficiency_score, storage_debt_bytes, total_size,
+        country, active_years, artist_type,
         thumb_url, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(artist_name) DO UPDATE SET
         musicbrainz_id = excluded.musicbrainz_id,
         total_albums = excluded.total_albums,
@@ -601,6 +603,9 @@ export class MusicRepository {
         missing_singles = excluded.missing_singles,
         missing_eps = excluded.missing_eps,
         completeness_percentage = excluded.completeness_percentage,
+        efficiency_score = excluded.efficiency_score,
+        storage_debt_bytes = excluded.storage_debt_bytes,
+        total_size = excluded.total_size,
         country = excluded.country,
         active_years = excluded.active_years,
         artist_type = excluded.artist_type,
@@ -612,20 +617,30 @@ export class MusicRepository {
       data.artist_name, data.musicbrainz_id || null, data.total_albums, data.owned_albums,
       data.total_singles, data.owned_singles, data.total_eps, data.owned_eps,
       data.missing_albums, data.missing_singles, data.missing_eps,
-      data.completeness_percentage, data.country || null, data.active_years || null,
+      data.completeness_percentage,
+      (data as any).efficiency_score || 0,
+      (data as any).storage_debt_bytes || 0,
+      (data as any).total_size || 0,
+      data.country || null, data.active_years || null,
       data.artist_type || null, data.thumb_url || null, data.last_sync_at || null
     )
   }
 
   getArtistCompleteness(artistName: string): ArtistCompleteness | null {
-    const stmt = this.db.prepare('SELECT * FROM artist_completeness WHERE artist_name = ?')
+    const stmt = this.db.prepare(`
+      SELECT ac.*,
+             ac.efficiency_score, ac.storage_debt_bytes, ac.total_size
+      FROM artist_completeness ac 
+      WHERE ac.artist_name = ?
+    `)
     return (stmt.get(artistName) as ArtistCompleteness) || null
   }
 
   getAllArtistCompleteness(sourceId?: string): ArtistCompleteness[] {
     if (sourceId) {
       const stmt = this.db.prepare(`
-        SELECT DISTINCT ac.*
+        SELECT DISTINCT ac.*, 
+               ac.efficiency_score, ac.storage_debt_bytes, ac.total_size
         FROM artist_completeness ac
         INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
         ORDER BY ac.artist_name ASC
@@ -642,8 +657,9 @@ export class MusicRepository {
         album_id, artist_name, album_title,
         musicbrainz_release_id, musicbrainz_release_group_id,
         total_tracks, owned_tracks, missing_tracks,
-        completeness_percentage, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        completeness_percentage, efficiency_score, storage_debt_bytes, total_size,
+        last_sync_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(album_id) DO UPDATE SET
         artist_name = excluded.artist_name,
         album_title = excluded.album_title,
@@ -653,6 +669,9 @@ export class MusicRepository {
         owned_tracks = excluded.owned_tracks,
         missing_tracks = excluded.missing_tracks,
         completeness_percentage = excluded.completeness_percentage,
+        efficiency_score = excluded.efficiency_score,
+        storage_debt_bytes = excluded.storage_debt_bytes,
+        total_size = excluded.total_size,
         last_sync_at = excluded.last_sync_at,
         updated_at = datetime('now')
     `)
@@ -660,7 +679,11 @@ export class MusicRepository {
       data.album_id, data.artist_name, data.album_title,
       data.musicbrainz_release_id || null, data.musicbrainz_release_group_id || null,
       data.total_tracks, data.owned_tracks, data.missing_tracks,
-      data.completeness_percentage, data.last_sync_at || null
+      data.completeness_percentage,
+      (data as any).efficiency_score || 0,
+      (data as any).storage_debt_bytes || 0,
+      (data as any).total_size || 0,
+      data.last_sync_at || null
     )
   }
 

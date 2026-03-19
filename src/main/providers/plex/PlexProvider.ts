@@ -322,7 +322,7 @@ export class PlexProvider implements MediaProvider {
       return true
     } catch (error) {
       const reason = error instanceof Error ? error.message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, '<server>') : 'unknown error'
-      console.error(`[PlexProvider] Failed to select server: ${reason}`)
+      getLoggingService().error('[PlexProvider]', `Failed to select server: ${reason}`)
       return false
     }
   }
@@ -520,7 +520,7 @@ export class PlexProvider implements MediaProvider {
       }
 
       totalItems = itemsToProcess.length
-      console.log(`[PlexProvider ${this.sourceId}] Processing ${totalItems} items...`)
+      getLoggingService().info('[PlexProvider]', `Processing ${totalItems} items for source ${this.sourceId}...`)
 
       // Start batch mode
       db.startBatch()
@@ -531,7 +531,7 @@ export class PlexProvider implements MediaProvider {
         for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
           // Check for cancellation
           if (this.scanCancelled) {
-            console.log(`[PlexProvider ${this.sourceId}] Scan cancelled at ${scanned}/${totalItems}`)
+            getLoggingService().info('[PlexProvider]', `Scan cancelled at ${scanned}/${totalItems} for source ${this.sourceId}`)
             result.cancelled = true
             break
           }
@@ -673,13 +673,13 @@ export class PlexProvider implements MediaProvider {
 
       result.success = true
       result.durationMs = Date.now() - startTime
-      console.log(`[PlexProvider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
+      getLoggingService().info('[PlexProvider]', `Scan complete for source ${this.sourceId}: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
 
       return result
     } catch (error: unknown) {
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
-      console.error(`[PlexProvider ${this.sourceId}] Scan failed after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
+      getLoggingService().error('[PlexProvider]', `Scan failed for source ${this.sourceId} after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
       return result
     }
   }
@@ -1166,7 +1166,7 @@ export class PlexProvider implements MediaProvider {
     }
 
     if (versions.length === 0) {
-      getLoggingService().info('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
+      getLoggingService().verbose('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
       return null
     }
 
@@ -1716,14 +1716,14 @@ export class PlexProvider implements MediaProvider {
       const artists = await this.getMusicArtists(libraryId)
       const totalArtists = artists.length
 
-      console.log(`[PlexProvider ${this.sourceId}] Scanning music library: ${totalArtists} artists`)
+      getLoggingService().info('[PlexProvider]', `Scanning music library for source ${this.sourceId}: ${totalArtists} artists`)
 
       let processed = 0
 
       for (const plexArtist of artists) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[PlexProvider ${this.sourceId}] Music scan cancelled at artist ${processed}/${totalArtists}`)
+          getLoggingService().info('[PlexProvider]', `Music scan cancelled at artist ${processed}/${totalArtists} for source ${this.sourceId}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -1849,12 +1849,13 @@ export class PlexProvider implements MediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[PlexProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks (including ${totalCompilations} compilation albums)`)
+      getLoggingService().info('[PlexProvider]', `Music scan complete for source ${this.sourceId}: ${result.itemsScanned} tracks (including ${totalCompilations} compilation albums)`)
 
       return result
     } catch (error: unknown) {
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
+      getLoggingService().error('[PlexProvider]', `Music scan failed for source ${this.sourceId}: ${getErrorMessage(error)}`)
       return result
     }
   }
@@ -1868,7 +1869,7 @@ export class PlexProvider implements MediaProvider {
    */
   cancelScan(): void {
     this.scanCancelled = true
-    console.log('[PlexProvider] Library scan cancellation requested')
+    getLoggingService().info('[PlexProvider]', `Library scan cancellation requested for source ${this.sourceId}`)
   }
 
   /**
@@ -1876,7 +1877,7 @@ export class PlexProvider implements MediaProvider {
    */
   cancelMusicScan(): void {
     this.musicScanCancelled = true
-    console.log('[PlexProvider] Music library scan cancellation requested')
+    getLoggingService().info('[PlexProvider]', `Music library scan cancellation requested for source ${this.sourceId}`)
   }
 
   /**

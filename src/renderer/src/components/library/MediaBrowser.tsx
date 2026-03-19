@@ -11,6 +11,7 @@ import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
 import { WishlistView } from './WishlistView'
 import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, Heart } from 'lucide-react'
+
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
@@ -154,6 +155,7 @@ export function MediaBrowser({
   const {
     tierFilter, setTierFilter,
     qualityFilter, setQualityFilter,
+    efficiencyFilter, setEfficiencyFilter,
     alphabetFilter, setAlphabetFilter,
     debouncedTierFilter, debouncedQualityFilter,
   } = useLibraryFilters(searchInput)
@@ -2008,6 +2010,28 @@ export function MediaBrowser({
                           }`}
                         >
                           {quality.charAt(0).toUpperCase() + quality.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Efficiency Filter */}
+                {(view === 'movies' || view === 'tv' || (view === 'music' && musicViewMode === 'tracks')) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground ml-2">Efficiency</span>
+                    <div className="flex gap-1">
+                      {['all', 'high', 'medium', 'low'].map((eff) => (
+                        <button
+                          key={eff}
+                          onClick={() => setEfficiencyFilter(eff as any)}
+                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-none ${
+                            efficiencyFilter === eff
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-card text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {eff.charAt(0).toUpperCase() + eff.slice(1)}
                         </button>
                       ))}
                     </div>

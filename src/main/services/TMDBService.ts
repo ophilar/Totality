@@ -269,7 +269,8 @@ export class TMDBService {
    * Get movie details by TMDB ID
    */
   async getMovieDetails(tmdbId: string): Promise<TMDBMovieDetails> {
-    return await this.request<TMDBMovieDetails>(`/movie/${tmdbId}`)
+    const data = await this.request<TMDBMovieDetails>(`/movie/${tmdbId}`)
+    return data
   }
 
   /**
@@ -283,7 +284,8 @@ export class TMDBService {
    * Get TV show details by TMDB ID
    */
   async getTVShowDetails(tmdbId: string): Promise<TMDBTVShowDetails> {
-    return await this.request<TMDBTVShowDetails>(`/tv/${tmdbId}`)
+    const data = await this.request<TMDBTVShowDetails>(`/tv/${tmdbId}`)
+    return data
   }
 
   /**

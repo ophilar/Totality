@@ -642,6 +642,8 @@ export interface RawMediaInfo {
 
   // Container
   container?: string | null
+  originalLanguage?: string | null
+  audioLanguage?: string | null
 }
 
 export interface NormalizedMediaInfo {
@@ -665,10 +667,12 @@ export interface NormalizedMediaInfo {
   audioBitrate: number
   audioSampleRate?: number
   audioProfile?: string
+  audioLanguage?: string
   hasObjectAudio: boolean
 
   // Container
   container: string
+  originalLanguage?: string
 }
 
 /**
@@ -719,5 +723,7 @@ export function normalizeMediaInfo(raw: RawMediaInfo): NormalizedMediaInfo {
 
     // Container
     container: normalizeContainer(raw.container),
+    originalLanguage: raw.originalLanguage || undefined,
+    audioLanguage: raw.audioLanguage || undefined,
   }
 }

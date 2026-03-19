@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, X, Folder, CircleFadingArrowUp, EyeOff } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, X, Folder, CircleFadingArrowUp, EyeOff, Trash2 } from 'lucide-react'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
@@ -281,10 +281,21 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
           </span>
           <h4 className="font-semibold truncate">{episode.title}</h4>
         </div>
-        <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
+        <div className="flex gap-4 mt-2 text-sm text-muted-foreground font-mono">
           <span>{episode.resolution}</span>
           <span>{(episode.video_bitrate / 1000).toFixed(1)} Mbps</span>
           <span>{episode.audio_channels}.0 Audio</span>
+          {episode.file_size && (
+            <span>
+              {(() => {
+                const bytes = episode.file_size
+                const k = 1024
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+                const i = Math.floor(Math.log(bytes) / Math.log(k))
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+              })()}
+            </span>
+          )}
         </div>
 
         {/* Quality badges - white bg with black text */}
@@ -294,14 +305,18 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
       </div>
 
       {/* Upgrade indicator */}
-      {(episode.tier_quality === 'LOW' || !!episode.needs_upgrade) && (
-        <div
-          className="flex-shrink-0 flex items-center"
-          title="Quality upgrade recommended"
-        >
-          <CircleFadingArrowUp className="w-6 h-6 text-red-500" />
-        </div>
-      )}
+      <div className="flex-shrink-0 flex items-center gap-2">
+        {(episode.tier_quality === 'LOW' || !!episode.needs_upgrade) && (
+          <div title="Quality upgrade recommended">
+            <CircleFadingArrowUp className="w-6 h-6 text-red-500" />
+          </div>
+        )}
+        {episode.efficiency_score != null && episode.efficiency_score < 60 && (
+          <div title={`Low Efficiency (${episode.efficiency_score}%). Upgrade recommended to save space.`}>
+            <Trash2 className="w-6 h-6 text-orange-500" />
+          </div>
+        )}
+      </div>
     </div>
   )
 })
@@ -369,6 +384,34 @@ export function TVShowsView({
   onLoadMoreShows: () => void
   scrollElement?: HTMLElement | null
 }) {
+  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
+
+  const sortedShows = useMemo(() => {
+    const items = [...shows]
+    items.sort((a, b) => {
+      if (sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size') {
+        const compA = seriesCompleteness.get(a.series_title)
+        const compB = seriesCompleteness.get(b.series_title)
+
+        if (sortBy === 'efficiency') {
+          const effA = (compA as any)?.efficiency_score ?? 100
+          const effB = (compB as any)?.efficiency_score ?? 100
+          if (effA !== effB) return effA - effB
+        } else if (sortBy === 'waste') {
+          const wasteA = (compA as any)?.storage_debt_bytes ?? 0
+          const wasteB = (compB as any)?.storage_debt_bytes ?? 0
+          if (wasteA !== wasteB) return wasteB - wasteA
+        } else if (sortBy === 'size') {
+          const sizeA = (compA as any)?.total_size ?? 0
+          const sizeB = (compB as any)?.total_size ?? 0
+          if (sizeA !== sizeB) return sizeB - sizeA
+        }
+      }
+      return a.series_title.localeCompare(b.series_title)
+    })
+    return items
+  }, [shows, sortBy, seriesCompleteness])
+
   // Breadcrumb navigation
   const handleBack = () => {
     if (selectedSeason !== null) {
@@ -419,10 +462,42 @@ export function TVShowsView({
     }
 
     const statsBar = (
-      <div className="flex items-center gap-6 text-sm text-muted-foreground">
-        <span>{totalShowCount.toLocaleString()} Shows</span>
-        <span className="text-muted-foreground/50">•</span>
-        <span>{totalEpisodeCount.toLocaleString()} Episodes</span>
+      <div className="flex items-center justify-between pb-4">
+        <div className="flex items-center gap-6 text-sm text-muted-foreground">
+          <span>{totalShowCount.toLocaleString()} Shows</span>
+          <span className="text-muted-foreground/50">•</span>
+          <span>{totalEpisodeCount.toLocaleString()} Episodes</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Sort by:</span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setSortBy('title')}
+              className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+            >
+              Title
+            </button>
+            <button
+              onClick={() => setSortBy('efficiency')}
+              className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+            >
+              Efficiency
+            </button>
+            <button
+              onClick={() => setSortBy('waste')}
+              className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+            >
+              Waste
+            </button>
+            <button
+              onClick={() => setSortBy('size')}
+              className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+            >
+              Size
+            </button>
+          </div>
+        </div>
       </div>
     )
 
@@ -432,7 +507,7 @@ export function TVShowsView({
         <>
           {statsBar}
           <div className="space-y-2 mt-4">
-            {shows.map((show) => {
+            {sortedShows.map((show) => {
               const completeness = seriesCompleteness.get(show.series_title)
               return <div key={show.series_title} data-title={show.series_title}><ShowListItem show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={async () => { await onAnalyzeSeries(show.series_title) }} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
             })}
@@ -458,7 +533,7 @@ export function TVShowsView({
             gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`
           }}
         >
-          {shows.map((show) => {
+          {sortedShows.map((show) => {
             const completeness = seriesCompleteness.get(show.series_title)
             return <div key={show.series_title} data-title={show.series_title}><ShowCard show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
           })}
@@ -798,6 +873,16 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
             title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
           >
             {sourceType.charAt(0).toUpperCase()}
+          </div>
+        )}
+
+        {/* Efficiency Trash Badge */}
+        {completenessData && (completenessData as any).efficiency_score != null && (completenessData as any).efficiency_score < 60 && (
+          <div
+            className="absolute bottom-2 right-2"
+            title={`Low Efficiency (${(completenessData as any).efficiency_score}%). Upgrade recommended to save space.`}
+          >
+            <Trash2 className="w-6 h-6 text-orange-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
           </div>
         )}
 

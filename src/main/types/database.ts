@@ -171,6 +171,8 @@ export interface MediaItem {
   imdb_id?: string
   tmdb_id?: string
   series_tmdb_id?: string // Show-level TMDB ID for episodes (from Plex show metadata)
+  original_language?: string
+  audio_language?: string
   poster_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
@@ -241,6 +243,8 @@ export interface MediaItemVersion {
   tier_score?: number
   bitrate_tier_score?: number
   audio_tier_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
 
   // Best version flag
   is_best?: boolean
@@ -307,6 +311,9 @@ export interface SeriesCompleteness {
   missing_episodes: string // JSON array of MissingEpisode
 
   completeness_percentage: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
 
   // TMDB metadata
   tmdb_id?: string
@@ -527,6 +534,10 @@ export interface MusicTrack {
   bit_depth?: number
   channels?: number
 
+  // Efficiency metrics
+  efficiency_score?: number
+  storage_debt_bytes?: number
+
   // Quality flags
   is_lossless?: boolean
   is_hi_res?: boolean
@@ -565,6 +576,7 @@ export interface ArtistCompleteness {
   artist_name: string
 
   musicbrainz_id?: string
+  library_id?: string
 
   // Completeness stats
   total_albums: number
@@ -573,6 +585,10 @@ export interface ArtistCompleteness {
   owned_singles: number
   total_eps: number
   owned_eps: number
+
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
 
   // Missing items (JSON arrays)
   missing_albums: string
@@ -620,6 +636,10 @@ export interface AlbumCompleteness {
   // Track counts
   total_tracks: number
   owned_tracks: number
+
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
 
   // Missing tracks (JSON array of MissingTrack)
   missing_tracks: string

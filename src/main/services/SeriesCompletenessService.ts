@@ -243,6 +243,27 @@ export class SeriesCompletenessService extends CancellableOperation {
     try {
       const analysis = await this.calculateMissing(tmdbId, ownedEpisodes, updateArtwork ? episodes : undefined, updateArtwork ? sourceId : undefined)
 
+      // Calculate efficiency and size metrics for the series
+      let totalEfficiency = 0
+      let totalWaste = 0
+      let totalSizeBytes = 0
+      let episodeCountWithScore = 0
+
+      for (const ep of episodes) {
+        if (ep.efficiency_score != null) {
+          totalEfficiency += ep.efficiency_score
+          episodeCountWithScore++
+        }
+        if (ep.storage_debt_bytes != null) {
+          totalWaste += ep.storage_debt_bytes
+        }
+        if (ep.file_size != null) {
+          totalSizeBytes += ep.file_size
+        }
+      }
+
+      const avgEfficiency = episodeCountWithScore > 0 ? Math.round(totalEfficiency / episodeCountWithScore) : 0
+
       // Store result with source/library scope
       const data: Omit<SeriesCompleteness, 'id' | 'created_at' | 'updated_at'> = {
         series_title: seriesTitle,
@@ -255,6 +276,9 @@ export class SeriesCompletenessService extends CancellableOperation {
         missing_seasons: JSON.stringify(analysis.missingSeasons),
         missing_episodes: JSON.stringify(analysis.missingEpisodes),
         completeness_percentage: analysis.completenessPercentage,
+        efficiency_score: avgEfficiency,
+        storage_debt_bytes: totalWaste,
+        total_size: totalSizeBytes,
         tmdb_id: analysis.tmdbId,
         poster_url: analysis.posterUrl,
         backdrop_url: analysis.backdropUrl,
@@ -713,6 +737,9 @@ export class SeriesCompletenessService extends CancellableOperation {
       missing_seasons: '[]',
       missing_episodes: '[]',
       completeness_percentage: 0, // Can't calculate without TMDB data
+      efficiency_score: 0,
+      storage_debt_bytes: 0,
+      total_size: 0,
       tmdb_id: undefined,
       poster_url: undefined,
       backdrop_url: undefined,

@@ -206,9 +206,11 @@ export class BetterSQLiteService {
       'ALTER TABLE media_items ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
       'ALTER TABLE media_items ADD COLUMN audio_tracks TEXT',
       'ALTER TABLE media_items ADD COLUMN file_mtime INTEGER',
-      'ALTER TABLE media_items ADD COLUMN source_id TEXT',
-      'ALTER TABLE media_items ADD COLUMN source_type TEXT',
-      'ALTER TABLE media_items ADD COLUMN library_id TEXT',
+      "ALTER TABLE media_items ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE media_items ADD COLUMN source_type TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE media_items ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE media_items ADD COLUMN original_language TEXT',
+      'ALTER TABLE media_items ADD COLUMN audio_language TEXT',
 
       // Subtitle tracks
       'ALTER TABLE media_items ADD COLUMN subtitle_tracks TEXT',
@@ -218,20 +220,38 @@ export class BetterSQLiteService {
       'ALTER TABLE series_completeness ADD COLUMN poster_url TEXT',
       'ALTER TABLE series_completeness ADD COLUMN backdrop_url TEXT',
       'ALTER TABLE series_completeness ADD COLUMN status TEXT',
-      'ALTER TABLE series_completeness ADD COLUMN source_id TEXT',
-      'ALTER TABLE series_completeness ADD COLUMN library_id TEXT',
+      "ALTER TABLE series_completeness ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE series_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE series_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE series_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE series_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
 
       // Movie collections
-      'ALTER TABLE movie_collections ADD COLUMN source_id TEXT',
-      'ALTER TABLE movie_collections ADD COLUMN library_id TEXT',
+      "ALTER TABLE movie_collections ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE movie_collections ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
 
       // Music tables
-      'ALTER TABLE music_artists ADD COLUMN library_id TEXT',
+      "ALTER TABLE music_artists ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
       'ALTER TABLE music_artists ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
-      'ALTER TABLE music_albums ADD COLUMN library_id TEXT',
+      "ALTER TABLE music_albums ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
       'ALTER TABLE music_albums ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
-      'ALTER TABLE music_tracks ADD COLUMN library_id TEXT',
+      "ALTER TABLE music_tracks ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE artist_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE artist_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE artist_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE artist_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE music_tracks ADD COLUMN file_mtime INTEGER',
+
+      // Album completeness
+      'ALTER TABLE album_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE album_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE album_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
+
+      // Per-version enhancements
+      'ALTER TABLE media_item_versions ADD COLUMN original_language TEXT',
+      'ALTER TABLE media_item_versions ADD COLUMN audio_language TEXT',
+      'ALTER TABLE media_item_versions ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE media_item_versions ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
 
       // Wishlist
       "ALTER TABLE wishlist_items ADD COLUMN reason TEXT DEFAULT 'missing'",
@@ -847,9 +867,10 @@ export class BetterSQLiteService {
         media_item_id, quality_tier, tier_quality, tier_score,
         bitrate_tier_score, audio_tier_score, overall_score,
         resolution_score, bitrate_score, audio_score,
+        efficiency_score, storage_debt_bytes,
         is_low_quality, needs_upgrade, issues,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(media_item_id) DO UPDATE SET
         quality_tier = excluded.quality_tier,
         tier_quality = excluded.tier_quality,
@@ -860,6 +881,8 @@ export class BetterSQLiteService {
         resolution_score = excluded.resolution_score,
         bitrate_score = excluded.bitrate_score,
         audio_score = excluded.audio_score,
+        efficiency_score = excluded.efficiency_score,
+        storage_debt_bytes = excluded.storage_debt_bytes,
         is_low_quality = excluded.is_low_quality,
         needs_upgrade = excluded.needs_upgrade,
         issues = excluded.issues,
@@ -877,6 +900,8 @@ export class BetterSQLiteService {
       score.resolution_score,
       score.bitrate_score,
       score.audio_score,
+      score.efficiency_score || 0,
+      score.storage_debt_bytes || 0,
       score.is_low_quality ? 1 : 0,
       score.needs_upgrade ? 1 : 0,
       score.issues
@@ -1470,26 +1495,26 @@ export class BetterSQLiteService {
   ): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const sourceId = data.source_id || null
-    const libraryId = data.library_id || null
+    const sourceId = data.source_id || ''
+    const libraryId = data.library_id || ''
 
     // Check if record exists
     let existingId: number | null = null
-    if (sourceId === null && libraryId === null) {
+    if (sourceId === '' && libraryId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id IS NULL AND library_id IS NULL'
+        "SELECT id FROM series_completeness WHERE series_title = ? AND (source_id = '' OR source_id IS NULL) AND (library_id = '' OR library_id IS NULL)"
       )
       const row = stmt.get(data.series_title) as { id: number } | undefined
       existingId = row?.id || null
-    } else if (sourceId === null) {
+    } else if (sourceId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id IS NULL AND library_id = ?'
+        "SELECT id FROM series_completeness WHERE series_title = ? AND (source_id = '' OR source_id IS NULL) AND library_id = ?"
       )
       const row = stmt.get(data.series_title, libraryId) as { id: number } | undefined
       existingId = row?.id || null
-    } else if (libraryId === null) {
+    } else if (libraryId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id IS NULL'
+        "SELECT id FROM series_completeness WHERE series_title = ? AND source_id = ? AND (library_id = '' OR library_id IS NULL)"
       )
       const row = stmt.get(data.series_title, sourceId) as { id: number } | undefined
       existingId = row?.id || null
@@ -1976,26 +2001,26 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   ): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const sourceId = data.source_id || null
-    const libraryId = data.library_id || null
+    const sourceId = data.source_id || ''
+    const libraryId = data.library_id || ''
 
     // Check if record exists
     let existingId: number | null = null
-    if (sourceId === null && libraryId === null) {
+    if (sourceId === '' && libraryId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id IS NULL AND library_id IS NULL'
+        "SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND (source_id = '' OR source_id IS NULL) AND (library_id = '' OR library_id IS NULL)"
       )
       const row = stmt.get(data.tmdb_collection_id) as { id: number } | undefined
       existingId = row?.id || null
-    } else if (sourceId === null) {
+    } else if (sourceId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id IS NULL AND library_id = ?'
+        "SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND (source_id = '' OR source_id IS NULL) AND library_id = ?"
       )
       const row = stmt.get(data.tmdb_collection_id, libraryId) as { id: number } | undefined
       existingId = row?.id || null
-    } else if (libraryId === null) {
+    } else if (libraryId === '') {
       const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id = ? AND library_id IS NULL'
+        "SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id = ? AND (library_id = '' OR library_id IS NULL)"
       )
       const row = stmt.get(data.tmdb_collection_id, sourceId) as { id: number } | undefined
       existingId = row?.id || null
@@ -2237,14 +2262,15 @@ WHERE m.type = 'episode' AND m.series_title = ?`
 
     const stmt = this.db.prepare(`
       INSERT INTO artist_completeness (
-        artist_name, musicbrainz_id, total_albums, owned_albums,
+        artist_name, musicbrainz_id, library_id, total_albums, owned_albums,
         total_singles, owned_singles, total_eps, owned_eps,
         missing_albums, missing_singles, missing_eps,
         completeness_percentage, country, active_years, artist_type,
         thumb_url, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(artist_name) DO UPDATE SET
         musicbrainz_id = excluded.musicbrainz_id,
+        library_id = excluded.library_id,
         total_albums = excluded.total_albums,
         owned_albums = excluded.owned_albums,
         total_singles = excluded.total_singles,
@@ -2263,7 +2289,8 @@ WHERE m.type = 'episode' AND m.series_title = ?`
         updated_at = datetime('now')
     `)
     stmt.run(
-      data.artist_name, data.musicbrainz_id || null, data.total_albums, data.owned_albums,
+      data.artist_name, data.musicbrainz_id || null, data.library_id || '',
+      data.total_albums, data.owned_albums,
       data.total_singles, data.owned_singles, data.total_eps, data.owned_eps,
       data.missing_albums, data.missing_singles, data.missing_eps,
       data.completeness_percentage, data.country || null, data.active_years || null,

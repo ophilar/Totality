@@ -72,7 +72,8 @@ export class MediaRepository {
       'updated_at': 'm.updated_at',
       'created_at': 'm.created_at',
       'tier_score': 'q.tier_score',
-      'overall_score': 'q.overall_score'
+      'overall_score': 'q.overall_score',
+      'size': 'm.file_size'
     }
     const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -92,7 +93,16 @@ export class MediaRepository {
   }
 
   getMediaItem(id: number): MediaItem | null {
-    const stmt = this.db.prepare('SELECT * FROM media_items WHERE id = ?')
+    const sql = `
+      SELECT m.*,
+             q.overall_score, q.needs_upgrade,
+             q.quality_tier, q.tier_quality, q.tier_score,
+             q.efficiency_score, q.storage_debt_bytes, q.issues
+      FROM media_items m
+      LEFT JOIN quality_scores q ON m.id = q.media_item_id
+      WHERE m.id = ?
+    `
+    const stmt = this.db.prepare(sql)
     return (stmt.get(id) as MediaItem) || null
   }
 
@@ -101,7 +111,16 @@ export class MediaRepository {
   }
 
   getMediaItemByPath(filePath: string): MediaItem | null {
-    const stmt = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?')
+    const sql = `
+      SELECT m.*,
+             q.overall_score, q.needs_upgrade,
+             q.quality_tier, q.tier_quality, q.tier_score,
+             q.efficiency_score, q.storage_debt_bytes, q.issues
+      FROM media_items m
+      LEFT JOIN quality_scores q ON m.id = q.media_item_id
+      WHERE m.file_path = ?
+    `
+    const stmt = this.db.prepare(sql)
     return (stmt.get(filePath) as MediaItem) || null
   }
 
@@ -191,7 +210,7 @@ export class MediaRepository {
         audio_codec, audio_channels, audio_bitrate, video_frame_rate,
         color_bit_depth, hdr_format, color_space, video_profile, video_level,
         audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
-        subtitle_tracks,
+        subtitle_tracks, original_language, audio_language,
         container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
         episode_thumb_url, season_poster_url, user_fixed_match,
         created_at, updated_at
@@ -232,6 +251,8 @@ export class MediaRepository {
         subtitle_tracks = excluded.subtitle_tracks,
         container = excluded.container,
         file_mtime = excluded.file_mtime,
+        original_language = COALESCE(excluded.original_language, media_items.original_language),
+        audio_language = COALESCE(excluded.audio_language, media_items.audio_language),
         imdb_id = COALESCE(excluded.imdb_id, media_items.imdb_id),
         tmdb_id = COALESCE(excluded.tmdb_id, media_items.tmdb_id),
         series_tmdb_id = COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id),
@@ -276,6 +297,8 @@ export class MediaRepository {
       item.has_object_audio ? 1 : 0,
       item.audio_tracks || null,
       item.subtitle_tracks || null,
+      item.original_language || null,
+      item.audio_language || null,
       item.container || null,
       item.file_mtime || null,
       item.imdb_id || null,
@@ -536,7 +559,10 @@ export class MediaRepository {
     sourceId?: string,
     libraryId?: string
   ): MediaItem[] {
-    let sql = `SELECT m.*, q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score, q.issues
+    let sql = `SELECT m.*,
+                      q.overall_score, q.needs_upgrade,
+                      q.quality_tier, q.tier_quality, q.tier_score,
+                      q.efficiency_score, q.storage_debt_bytes, q.issues
 FROM media_items m
 LEFT JOIN quality_scores q ON m.id = q.media_item_id
 WHERE m.type = 'episode' AND m.series_title = ?`

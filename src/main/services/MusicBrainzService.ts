@@ -312,14 +312,31 @@ export class MusicBrainzService extends CancellableOperation {
   }> {
     // Get artist info with release groups in a single call for efficiency
     const artist = await this.requestWithRetry(async () => {
-      const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
-        params: {
-          fmt: 'json',
-          inc: 'release-groups',
-        },
-      })
-      return response.data
+      try {
+        const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
+          params: {
+            fmt: 'json',
+            inc: 'release-groups',
+          },
+        })
+        return response.data
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          console.warn(`[MusicBrainzService] Artist not found (404): ${musicbrainzId}`)
+          return null
+        }
+        throw error
+      }
     }, `getArtist(${musicbrainzId})`)
+
+    if (!artist) {
+      return {
+        artist: { id: musicbrainzId, name: 'Unknown', 'sort-name': 'Unknown' },
+        albums: [],
+        eps: [],
+        singles: []
+      }
+    }
 
     // Use release groups from artist response if available, otherwise fetch separately
     let releaseGroups = artist['release-groups'] || []
@@ -405,17 +422,25 @@ export class MusicBrainzService extends CancellableOperation {
     try {
       // Get releases with media and recordings in a single call (optimization)
       let releases = await this.requestWithRetry(async () => {
-        const response = await this.api.get(`/release`, {
-          params: {
-            'release-group': releaseGroupId,
-            fmt: 'json',
-            limit: 5,
-            status: 'official',
-            inc: 'media+recordings',  // Include tracks in the same request
-          },
-        })
-        interface MBReleasesResponse { releases?: MBRelease[] }
-        return (response.data as MBReleasesResponse)?.releases || []
+        try {
+          const response = await this.api.get(`/release`, {
+            params: {
+              'release-group': releaseGroupId,
+              fmt: 'json',
+              limit: 5,
+              status: 'official',
+              inc: 'media+recordings',  // Include tracks in the same request
+            },
+          })
+          interface MBReleasesResponse { releases?: MBRelease[] }
+          return (response.data as MBReleasesResponse)?.releases || []
+        } catch (error: any) {
+          if (error.response?.status === 404) {
+            console.warn(`[MusicBrainzService] Release group not found (404): ${releaseGroupId}`)
+            return []
+          }
+          throw error
+        }
       }, `getReleases(${releaseGroupId})`)
 
       // If no official releases, try without status filter

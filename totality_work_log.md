@@ -1,24 +1,17 @@
 # Totality Work Log
 
-## 2026-03-17
-- Initiated comprehensive security and performance audit.
-- Verified credential encryption using `safeStorage` (OS-level keyring).
-- Verified IPC bridge security: implemented with `contextBridge` and Zod validation.
-- Verified database layer: uses parameterized queries for all operations.
-- **Upgraded all packages in `package.json`** to their latest verified stable versions (March 2026):
-    - **Electron:** Upgraded to **v41.0.2** (latest stable).
-    - **Database:** Upgraded `better-sqlite3` to **v12.8.0** (fixes critical WAL-reset bug).
-    - **File Monitoring:** Upgraded `chokidar` to **v5.0.0** (ESM-only modern standard).
-    - **UI & Icons:** Upgraded `lucide-react` to **v0.577.0**.
-    - **Core Utils:** Verified `axios` (^1.13.6), `mysql2` (^3.20.0), and `zod` (^4.3.6).
-- **Optimized Startup Performance:** Moved blocking `PRAGMA integrity_check` to a non-blocking background task in `BetterSQLiteService.ts`.
-- **Note:** Encountered persistent local environment issues (ERESOLVE) during `npm install` due to major version jumps. Recommended fresh environment setup (`npm install --force` or clearing `node_modules`).
-- Identified minor security risk: `FilePathSchema` allows potential path traversal/probing.
-- Audited AI integration: secure tool-use sandbox and loop detection verified.
-- **Fixed Build Failures:**
-    - Resolved `MODULE_NOT_FOUND` for `esbuild` by explicitly installing it as a dev dependency.
-    - Fixed `TypeError: manualChunks is not a function` in `vite.config.ts` by converting the `manualChunks` object to a function to support Vite 8/Rolldown.
-    - Resolved `MODULE_TYPELESS_PACKAGE_JSON` warning by renaming `postcss.config.js` to `postcss.config.mjs` for native ESM support.
-    - Successfully verified a full production build (`npm run build`).
+## 2026-03-19
+- **Fixed Database Integrity Issues:**
+    - Resolved `SqliteError: NOT NULL constraint failed: series_completeness.library_id` and similar errors in `movie_collections`.
+    - Updated `BetterSQLiteService.ts` and `MusicRepository.ts` to ensure `library_id` and `source_id` are always populated with at least an empty string if undefined.
+    - Updated database migrations to ensure new columns are added with `NOT NULL DEFAULT ''` to prevent future constraint failures on existing installations.
+    - Added missing `library_id` column and index to `artist_completeness` table in `schema.ts`.
+- **Improved Music Metadata Fetching:**
+    - Modified `MusicBrainzService.ts` to gracefully handle 404 errors when fetching artist or release data, preventing them from crashing the sync process.
+    - Updated `upsertArtistCompleteness` to support the new `library_id` field for multi-library tracking.
+- **Log Noise Reduction & Standardization:**
+    - Refactored `PlexProvider.ts` to replace `console.log/warn/error` with `LoggingService`.
+    - Downgraded routine "Skipping" logs (for items without media parts) to `verbose` level to reduce clutter in standard application logs.
+    - Downgraded routine scan progress and completion messages to `verbose` or formatted them for better readability in `info` level.
 
 
