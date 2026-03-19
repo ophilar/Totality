@@ -1470,36 +1470,15 @@ export class BetterSQLiteService {
   ): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const sourceId = data.source_id || null
-    const libraryId = data.library_id || null
+    const sourceId = data.source_id || ''
+    const libraryId = data.library_id || ''
 
     // Check if record exists
-    let existingId: number | null = null
-    if (sourceId === null && libraryId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id IS NULL AND library_id IS NULL'
-      )
-      const row = stmt.get(data.series_title) as { id: number } | undefined
-      existingId = row?.id || null
-    } else if (sourceId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id IS NULL AND library_id = ?'
-      )
-      const row = stmt.get(data.series_title, libraryId) as { id: number } | undefined
-      existingId = row?.id || null
-    } else if (libraryId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id IS NULL'
-      )
-      const row = stmt.get(data.series_title, sourceId) as { id: number } | undefined
-      existingId = row?.id || null
-    } else {
-      const stmt = this.db.prepare(
-        'SELECT id FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
-      )
-      const row = stmt.get(data.series_title, sourceId, libraryId) as { id: number } | undefined
-      existingId = row?.id || null
-    }
+    const stmt = this.db.prepare(
+      'SELECT id FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
+    )
+    const row = stmt.get(data.series_title, sourceId, libraryId) as { id: number } | undefined
+    const existingId = row?.id || null
 
     if (existingId !== null) {
       this.db.prepare(`
@@ -1976,48 +1955,25 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   ): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const sourceId = data.source_id || null
-    const libraryId = data.library_id || null
+    const sourceId = data.source_id || ''
+    const libraryId = data.library_id || ''
 
     // Check if record exists
-    let existingId: number | null = null
-    if (sourceId === null && libraryId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id IS NULL AND library_id IS NULL'
-      )
-      const row = stmt.get(data.tmdb_collection_id) as { id: number } | undefined
-      existingId = row?.id || null
-    } else if (sourceId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id IS NULL AND library_id = ?'
-      )
-      const row = stmt.get(data.tmdb_collection_id, libraryId) as { id: number } | undefined
-      existingId = row?.id || null
-    } else if (libraryId === null) {
-      const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id = ? AND library_id IS NULL'
-      )
-      const row = stmt.get(data.tmdb_collection_id, sourceId) as { id: number } | undefined
-      existingId = row?.id || null
-    } else {
-      const stmt = this.db.prepare(
-        'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id = ? AND library_id = ?'
-      )
-      const row = stmt.get(data.tmdb_collection_id, sourceId, libraryId) as { id: number } | undefined
-      existingId = row?.id || null
-    }
+    const stmt = this.db.prepare(
+      'SELECT id FROM movie_collections WHERE tmdb_collection_id = ? AND source_id = ? AND library_id = ?'
+    )
+    const row = stmt.get(data.tmdb_collection_id, sourceId, libraryId) as { id: number } | undefined
+    const existingId = row?.id || null
 
     if (existingId !== null) {
       this.db.prepare(`
         UPDATE movie_collections SET
-          collection_name = ?, total_movies = ?, owned_movies = ?,
-          missing_movies = ?, owned_movie_ids = ?, completeness_percentage = ?,
-          poster_url = ?, backdrop_url = ?, updated_at = datetime('now')
+          total_movies = ?, owned_movies = ?, missing_movies = ?,
+          completeness_percentage = ?, updated_at = datetime('now')
         WHERE id = ?
       `).run(
-        data.collection_name, data.total_movies, data.owned_movies,
-        data.missing_movies, data.owned_movie_ids, data.completeness_percentage,
-        data.poster_url || null, data.backdrop_url || null, existingId
+        data.total_movies, data.owned_movies, data.missing_movies,
+        data.completeness_percentage, existingId
       )
       return existingId
     }
@@ -2025,14 +1981,13 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     const result = this.db.prepare(`
       INSERT INTO movie_collections (
         tmdb_collection_id, collection_name, source_id, library_id,
-        total_movies, owned_movies, missing_movies, owned_movie_ids,
-        completeness_percentage, poster_url, backdrop_url,
+        total_movies, owned_movies, missing_movies, completeness_percentage,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       data.tmdb_collection_id, data.collection_name, sourceId, libraryId,
-      data.total_movies, data.owned_movies, data.missing_movies, data.owned_movie_ids,
-      data.completeness_percentage, data.poster_url || null, data.backdrop_url || null
+      data.total_movies, data.owned_movies, data.missing_movies,
+      data.completeness_percentage
     )
 
     return Number(result.lastInsertRowid)
@@ -2043,41 +1998,19 @@ WHERE m.type = 'episode' AND m.series_title = ?`
    */
   getMovieCollections(sourceId?: string): MovieCollection[] {
     if (!this.db) throw new Error('Database not initialized')
-    if (sourceId) {
-      const stmt = this.db.prepare('SELECT * FROM movie_collections WHERE source_id = ? ORDER BY collection_name ASC')
-      return stmt.all(sourceId) as MovieCollection[]
-    }
-    const stmt = this.db.prepare('SELECT * FROM movie_collections ORDER BY collection_name ASC')
-    return stmt.all() as MovieCollection[]
-  }
 
-  /**
-   * Get movie collection by TMDB ID
-   */
-  getMovieCollectionByTmdbId(tmdbCollectionId: string): MovieCollection | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM movie_collections WHERE tmdb_collection_id = ?')
-    return (stmt.get(tmdbCollectionId) as MovieCollection) || null
-  }
-
-  /**
-   * Get incomplete movie collections
-   * @param sourceId Optional source ID to filter by
-   */
-  getIncompleteMovieCollections(sourceId?: string): MovieCollection[] {
-    if (!this.db) throw new Error('Database not initialized')
+    let sql = 'SELECT * FROM movie_collections'
+    const params: unknown[] = []
 
     if (sourceId) {
-      const stmt = this.db.prepare(
-        'SELECT * FROM movie_collections WHERE completeness_percentage < 100 AND source_id = ? ORDER BY completeness_percentage ASC'
-      )
-      return stmt.all(sourceId) as MovieCollection[]
+      sql += ' WHERE source_id = ?'
+      params.push(sourceId)
     }
 
-    const stmt = this.db.prepare(
-      'SELECT * FROM movie_collections WHERE completeness_percentage < 100 ORDER BY completeness_percentage ASC'
-    )
-    return stmt.all() as MovieCollection[]
+    sql += ' ORDER BY collection_name ASC'
+
+    const stmt = this.db.prepare(sql)
+    return stmt.all(...params) as MovieCollection[]
   }
 
   /**
@@ -2089,454 +2022,57 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     return true
   }
 
-  /**
-   * Clear all movie collections
-   */
-  clearMovieCollections(sourceId?: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    if (sourceId) {
-      this.db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
-      console.log(`[BetterSQLite] Cleared movie collections for source ${sourceId}`)
-    } else {
-      this.db.prepare('DELETE FROM movie_collections').run()
-      console.log('[BetterSQLite] Cleared all movie collections')
-    }
-  }
-
-  /**
-   * Delete single-movie collections
-   */
-  deleteSingleMovieCollections(): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections WHERE total_movies <= 1')
-    const count = (countStmt.get() as { count: number }).count
-
-    if (count > 0) {
-      this.db.prepare('DELETE FROM movie_collections WHERE total_movies <= 1').run()
-      console.log(`[BetterSQLite] Deleted ${count} single-movie collections`)
-    }
-
-    return count
-  }
-
-  /**
-   * Get movie collection statistics
-   */
-  getMovieCollectionStats(): {
-    total: number
-    complete: number
-    incomplete: number
-    totalMissing: number
-    avgCompleteness: number
-  } {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const totalStmt = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections')
-    const total = (totalStmt.get() as { count: number }).count
-
-    const completeStmt = this.db.prepare(
-      'SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage = 100'
-    )
-    const complete = (completeStmt.get() as { count: number }).count
-
-    const incompleteStmt = this.db.prepare(
-      'SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage < 100'
-    )
-    const incomplete = (incompleteStmt.get() as { count: number }).count
-
-    const missingStmt = this.db.prepare(
-      'SELECT SUM(json_array_length(missing_movies)) as count FROM movie_collections WHERE missing_movies IS NOT NULL'
-    )
-    const totalMissing = (missingStmt.get() as { count: number | null }).count || 0
-
-    const avgStmt = this.db.prepare('SELECT AVG(completeness_percentage) as avg FROM movie_collections')
-    const avgCompleteness = Math.round((avgStmt.get() as { avg: number | null }).avg || 0)
-
-    return { total, complete, incomplete, totalMissing, avgCompleteness }
-  }
-
-  // ============================================================================
-  // MUSIC QUALITY SCORES
-  // ============================================================================
-
-  /**
-   * Upsert music quality score
-   */
-  upsertMusicQualityScore(score: MusicQualityScore): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO music_quality_scores (
-        album_id, quality_tier, tier_quality, tier_score,
-        codec_score, bitrate_score, needs_upgrade, issues,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(album_id) DO UPDATE SET
-        quality_tier = excluded.quality_tier,
-        tier_quality = excluded.tier_quality,
-        tier_score = excluded.tier_score,
-        codec_score = excluded.codec_score,
-        bitrate_score = excluded.bitrate_score,
-        needs_upgrade = excluded.needs_upgrade,
-        issues = excluded.issues,
-        updated_at = datetime('now')
-    `)
-    stmt.run(
-      score.album_id, score.quality_tier, score.tier_quality, score.tier_score,
-      score.codec_score, score.bitrate_score, score.needs_upgrade ? 1 : 0, score.issues
-    )
-  }
-
-  /**
-   * Get music quality score for album
-   */
-  getMusicQualityScore(albumId: number): MusicQualityScore | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_quality_scores WHERE album_id = ?')
-    return (stmt.get(albumId) as MusicQualityScore) || null
-  }
-
-  /**
-   * Get albums needing upgrade
-   * @param limit Maximum number of albums to return
-   * @param sourceId Optional source ID to filter by
-   */
-  getAlbumsNeedingUpgrade(limit?: number, sourceId?: string): MusicAlbum[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = `
-      SELECT a.* FROM music_albums a
-      INNER JOIN music_quality_scores q ON a.id = q.album_id
-      WHERE q.needs_upgrade = 1
-    `
-
-    if (sourceId) {
-      sql += ` AND a.source_id = ?`
-    }
-
-    sql += ` ORDER BY q.tier_score ASC`
-
-    if (limit) {
-      sql += ` LIMIT ${limit}`
-    }
-
-    const stmt = this.db.prepare(sql)
-    return sourceId ? (stmt.all(sourceId) as MusicAlbum[]) : (stmt.all() as MusicAlbum[])
-  }
-
-  // ============================================================================
-  // ARTIST/ALBUM COMPLETENESS
-  // ============================================================================
-
-  /**
-   * Upsert artist completeness
-   */
-  upsertArtistCompleteness(data: ArtistCompleteness): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO artist_completeness (
-        artist_name, musicbrainz_id, total_albums, owned_albums,
-        total_singles, owned_singles, total_eps, owned_eps,
-        missing_albums, missing_singles, missing_eps,
-        completeness_percentage, country, active_years, artist_type,
-        thumb_url, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(artist_name) DO UPDATE SET
-        musicbrainz_id = excluded.musicbrainz_id,
-        total_albums = excluded.total_albums,
-        owned_albums = excluded.owned_albums,
-        total_singles = excluded.total_singles,
-        owned_singles = excluded.owned_singles,
-        total_eps = excluded.total_eps,
-        owned_eps = excluded.owned_eps,
-        missing_albums = excluded.missing_albums,
-        missing_singles = excluded.missing_singles,
-        missing_eps = excluded.missing_eps,
-        completeness_percentage = excluded.completeness_percentage,
-        country = excluded.country,
-        active_years = excluded.active_years,
-        artist_type = excluded.artist_type,
-        thumb_url = excluded.thumb_url,
-        last_sync_at = excluded.last_sync_at,
-        updated_at = datetime('now')
-    `)
-    stmt.run(
-      data.artist_name, data.musicbrainz_id || null, data.total_albums, data.owned_albums,
-      data.total_singles, data.owned_singles, data.total_eps, data.owned_eps,
-      data.missing_albums, data.missing_singles, data.missing_eps,
-      data.completeness_percentage, data.country || null, data.active_years || null,
-      data.artist_type || null, data.thumb_url || null, data.last_sync_at || null
-    )
-  }
-
-  /**
-   * Get artist completeness by name
-   */
-  getArtistCompleteness(artistName: string): ArtistCompleteness | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM artist_completeness WHERE artist_name = ?')
-    return (stmt.get(artistName) as ArtistCompleteness) || null
-  }
-
-  /**
-   * Get all artist completeness records
-   * @param sourceId Optional source ID to filter by (filters by artists in that source)
-   */
-  getAllArtistCompleteness(sourceId?: string): ArtistCompleteness[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    if (sourceId) {
-      // When filtering by source, only return completeness for artists that exist in that source
-      const stmt = this.db.prepare(`
-        SELECT DISTINCT ac.*
-        FROM artist_completeness ac
-        INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
-        ORDER BY ac.artist_name ASC
-      `)
-      return stmt.all(sourceId) as ArtistCompleteness[]
-    }
-
-    const stmt = this.db.prepare('SELECT * FROM artist_completeness ORDER BY artist_name ASC')
-    return stmt.all() as ArtistCompleteness[]
-  }
-
-  /**
-   * Upsert album completeness
-   */
-  upsertAlbumCompleteness(data: AlbumCompleteness): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const stmt = this.db.prepare(`
-      INSERT INTO album_completeness (
-        album_id, artist_name, album_title,
-        musicbrainz_release_id, musicbrainz_release_group_id,
-        total_tracks, owned_tracks, missing_tracks,
-        completeness_percentage, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(album_id) DO UPDATE SET
-        artist_name = excluded.artist_name,
-        album_title = excluded.album_title,
-        musicbrainz_release_id = excluded.musicbrainz_release_id,
-        musicbrainz_release_group_id = excluded.musicbrainz_release_group_id,
-        total_tracks = excluded.total_tracks,
-        owned_tracks = excluded.owned_tracks,
-        missing_tracks = excluded.missing_tracks,
-        completeness_percentage = excluded.completeness_percentage,
-        last_sync_at = excluded.last_sync_at,
-        updated_at = datetime('now')
-    `)
-    stmt.run(
-      data.album_id, data.artist_name, data.album_title,
-      data.musicbrainz_release_id || null, data.musicbrainz_release_group_id || null,
-      data.total_tracks, data.owned_tracks, data.missing_tracks,
-      data.completeness_percentage, data.last_sync_at || null
-    )
-  }
-
-  /**
-   * Get album completeness by album ID
-   */
-  getAlbumCompleteness(albumId: number): AlbumCompleteness | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM album_completeness WHERE album_id = ?')
-    return (stmt.get(albumId) as AlbumCompleteness) || null
-  }
-
-  /**
-   * Get all album completeness records
-   */
-  getAllAlbumCompleteness(): AlbumCompleteness[] {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM album_completeness ORDER BY artist_name, album_title')
-    return stmt.all() as AlbumCompleteness[]
-  }
-
-  /**
-   * Get album completeness by artist name
-   */
-  getAlbumCompletenessByArtist(artistName: string): AlbumCompleteness[] {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM album_completeness WHERE artist_name = ?')
-    return stmt.all(artistName) as AlbumCompleteness[]
-  }
-
-  /**
-   * Get incomplete albums
-   */
-  getIncompleteAlbums(): AlbumCompleteness[] {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      'SELECT * FROM album_completeness WHERE completeness_percentage < 100 ORDER BY completeness_percentage ASC'
-    )
-    return stmt.all() as AlbumCompleteness[]
-  }
-
   // ============================================================================
   // WISHLIST
   // ============================================================================
 
   /**
-   * Add wishlist item
+   * Upsert wishlist item
    */
-  addWishlistItem(item: Partial<WishlistItem>): number {
+  upsertWishlistItem(item: Omit<WishlistItem, 'id' | 'created_at' | 'updated_at'>): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const stmt = this.db.prepare(`
-      INSERT INTO wishlist_items (
-        media_type, title, subtitle, year, reason,
-        tmdb_id, imdb_id, musicbrainz_id, series_title,
-        season_number, episode_number, collection_name,
-        artist_name, album_title, poster_url, priority, notes,
-        status, current_quality_tier, current_quality_level,
-        current_resolution, current_video_codec, current_audio_codec,
-        media_item_id, added_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `)
+    // Check if record exists by tmdb_id
+    const stmt = this.db.prepare('SELECT id FROM wishlist_items WHERE tmdb_id = ?')
+    const row = stmt.get(item.tmdb_id) as { id: number } | undefined
+    const existingId = row?.id || null
 
-    const result = stmt.run(
-      item.media_type || 'movie',
-      item.title || '',
-      item.subtitle || null,
-      item.year || null,
-      item.reason || 'missing',
-      item.tmdb_id || null,
-      item.imdb_id || null,
-      item.musicbrainz_id || null,
-      item.series_title || null,
-      item.season_number || null,
-      item.episode_number || null,
-      item.collection_name || null,
-      item.artist_name || null,
-      item.album_title || null,
-      item.poster_url || null,
-      item.priority || 3,
-      item.notes || null,
-      item.status || 'active',
-      item.current_quality_tier || null,
-      item.current_quality_level || null,
-      item.current_resolution || null,
-      item.current_video_codec || null,
-      item.current_audio_codec || null,
-      item.media_item_id || null
+    if (existingId !== null) {
+      this.db.prepare(`
+        UPDATE wishlist_items SET
+          title = ?, type = ?, year = ?, poster_url = ?,
+          reason = ?, current_quality_tier = ?, current_quality_level = ?,
+          current_resolution = ?, current_video_codec = ?, current_audio_codec = ?,
+          media_item_id = ?, status = ?,
+          completed_at = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        item.title, item.type, item.year, item.poster_url,
+        item.reason || 'missing', item.current_quality_tier || null,
+        item.current_quality_level || null, item.current_resolution || null,
+        item.current_video_codec || null, item.current_audio_codec || null,
+        item.media_item_id || null, item.status || 'active',
+        item.completed_at || null, existingId
+      )
+      return existingId
+    }
+
+    const result = this.db.prepare(`
+      INSERT INTO wishlist_items (
+        tmdb_id, title, type, year, poster_url,
+        reason, current_quality_tier, current_quality_level,
+        current_resolution, current_video_codec, current_audio_codec,
+        media_item_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run(
+      item.tmdb_id, item.title, item.type, item.year, item.poster_url,
+      item.reason || 'missing', item.current_quality_tier || null,
+      item.current_quality_level || null, item.current_resolution || null,
+      item.current_video_codec || null, item.current_audio_codec || null,
+      item.media_item_id || null, item.status || 'active'
     )
 
     return Number(result.lastInsertRowid)
-  }
-
-  /**
-   * Add multiple wishlist items in bulk
-   */
-  addWishlistItemsBulk(items: Partial<WishlistItem>[]): number {
-    if (!this.db) throw new Error('Database not initialized')
-    if (items.length === 0) return 0
-
-    let added = 0
-
-    const insertStmt = this.db.prepare(`
-      INSERT INTO wishlist_items (
-        media_type, title, subtitle, year, reason,
-        tmdb_id, imdb_id, musicbrainz_id, series_title,
-        season_number, episode_number, collection_name,
-        artist_name, album_title, poster_url, priority, notes,
-        status, current_quality_tier, current_quality_level,
-        current_resolution, current_video_codec, current_audio_codec,
-        media_item_id, added_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `)
-
-    const updatePosterStmt = this.db.prepare(
-      'UPDATE wishlist_items SET poster_url = ?, updated_at = datetime(\'now\') WHERE tmdb_id = ? AND (poster_url IS NULL OR poster_url = \'\')'
-    )
-
-    const insertMany = this.db.transaction((items: Partial<WishlistItem>[]) => {
-      for (const item of items) {
-        // If already exists, update poster if missing then skip insert
-        if (item.tmdb_id && this.wishlistItemExists(item.tmdb_id)) {
-          if (item.poster_url) updatePosterStmt.run(item.poster_url, item.tmdb_id)
-          continue
-        }
-        if (item.musicbrainz_id && this.wishlistItemExists(undefined, item.musicbrainz_id)) continue
-
-        insertStmt.run(
-          item.media_type || 'movie',
-          item.title || '',
-          item.subtitle || null,
-          item.year || null,
-          item.reason || 'missing',
-          item.tmdb_id || null,
-          item.imdb_id || null,
-          item.musicbrainz_id || null,
-          item.series_title || null,
-          item.season_number || null,
-          item.episode_number || null,
-          item.collection_name || null,
-          item.artist_name || null,
-          item.album_title || null,
-          item.poster_url || null,
-          item.priority || 3,
-          item.notes || null,
-          item.status || 'active',
-          item.current_quality_tier || null,
-          item.current_quality_level || null,
-          item.current_resolution || null,
-          item.current_video_codec || null,
-          item.current_audio_codec || null,
-          item.media_item_id || null
-        )
-        added++
-      }
-    })
-
-    insertMany(items)
-    return added
-  }
-
-  /**
-   * Update wishlist item
-   */
-  updateWishlistItem(id: number, updates: Partial<WishlistItem>): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const fields: string[] = []
-    const params: unknown[] = []
-
-    if (updates.priority !== undefined) {
-      fields.push('priority = ?')
-      params.push(updates.priority)
-    }
-    if (updates.notes !== undefined) {
-      fields.push('notes = ?')
-      params.push(updates.notes)
-    }
-    if (updates.status !== undefined) {
-      fields.push('status = ?')
-      params.push(updates.status)
-      if (updates.status === 'completed') {
-        fields.push("completed_at = datetime('now')")
-      }
-    }
-    if (updates.poster_url !== undefined) {
-      fields.push('poster_url = ?')
-      params.push(updates.poster_url)
-    }
-
-    if (fields.length === 0) return
-
-    fields.push("updated_at = datetime('now')")
-    params.push(id)
-
-    const sql = `UPDATE wishlist_items SET ${fields.join(', ')} WHERE id = ?`
-    this.db.prepare(sql).run(...params)
-  }
-
-  /**
-   * Remove wishlist item
-   */
-  removeWishlistItem(id: number): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id)
   }
 
   /**
@@ -2548,40 +2084,30 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     let sql = 'SELECT * FROM wishlist_items WHERE 1=1'
     const params: unknown[] = []
 
-    if (filters?.media_type) {
-      sql += ' AND media_type = ?'
-      params.push(filters.media_type)
+    if (filters?.type) {
+      sql += ' AND type = ?'
+      params.push(filters.type)
     }
-    if (filters?.priority) {
-      sql += ' AND priority = ?'
-      params.push(filters.priority)
-    }
-    if (filters?.reason) {
-      sql += ' AND reason = ?'
-      params.push(filters.reason)
-    }
+
     if (filters?.status) {
       sql += ' AND status = ?'
       params.push(filters.status)
     }
+
     if (filters?.searchQuery) {
-      sql += ' AND (title LIKE ? OR series_title LIKE ? OR artist_name LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search, search)
+      sql += " AND title LIKE '%' || ? || '%'"
+      params.push(filters.searchQuery)
     }
 
-    // Sorting
-    const sortColumn = filters?.sortBy || 'added_at'
-    const sortOrder = filters?.sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
-    sql += ` ORDER BY ${sortColumn} ${sortOrder}`
+    sql += ' ORDER BY created_at DESC'
 
     if (filters?.limit) {
       sql += ' LIMIT ?'
       params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
+      if (filters.offset) {
+        sql += ' OFFSET ?'
+        params.push(filters.offset)
+      }
     }
 
     const stmt = this.db.prepare(sql)
@@ -2589,418 +2115,49 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   }
 
   /**
-   * Get wishlist item by ID
+   * Count wishlist items
    */
-  getWishlistItemById(id: number): WishlistItem | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM wishlist_items WHERE id = ?')
-    return (stmt.get(id) as WishlistItem) || null
-  }
-
-  /**
-   * Get wishlist count
-   */
-  getWishlistCount(): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items')
-    return (stmt.get() as { count: number }).count
-  }
-
-  /**
-   * Check if wishlist item exists
-   */
-  wishlistItemExists(tmdbId?: string, musicbrainzId?: string, mediaItemId?: number): boolean {
+  countWishlistItems(filters?: WishlistFilters): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    if (mediaItemId) {
-      const stmt = this.db.prepare('SELECT 1 FROM wishlist_items WHERE media_item_id = ?')
-      return !!stmt.get(mediaItemId)
-    }
-    if (tmdbId) {
-      const stmt = this.db.prepare('SELECT 1 FROM wishlist_items WHERE tmdb_id = ?')
-      return !!stmt.get(tmdbId)
-    }
-    if (musicbrainzId) {
-      const stmt = this.db.prepare('SELECT 1 FROM wishlist_items WHERE musicbrainz_id = ?')
-      return !!stmt.get(musicbrainzId)
-    }
-
-    return false
-  }
-
-  /**
-   * Get wishlist counts by reason
-   */
-  getWishlistCountsByReason(): {
-    missing: number
-    upgrade: number
-    active: number
-    completed: number
-    total: number
-  } {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const missingStmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE reason = 'missing'")
-    const upgradeStmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE reason = 'upgrade'")
-    const activeStmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE status = 'active'")
-    const completedStmt = this.db.prepare("SELECT COUNT(*) as count FROM wishlist_items WHERE status = 'completed'")
-    const totalStmt = this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items')
-
-    return {
-      missing: (missingStmt.get() as { count: number }).count,
-      upgrade: (upgradeStmt.get() as { count: number }).count,
-      active: (activeStmt.get() as { count: number }).count,
-      completed: (completedStmt.get() as { count: number }).count,
-      total: (totalStmt.get() as { count: number }).count,
-    }
-  }
-
-  // ============================================================================
-  // QUALITY SCORES (extended)
-  // ============================================================================
-
-  /**
-   * Get all quality scores
-   */
-  getQualityScores(): QualityScore[] {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM quality_scores')
-    return stmt.all() as QualityScore[]
-  }
-
-  /**
-   * Get quality score by media item ID (alias)
-   */
-  getQualityScoreByMediaId(mediaItemId: number): QualityScore | null {
-    return this.getQualityScore(mediaItemId)
-  }
-
-  // ============================================================================
-  // MEDIA ITEMS (extended)
-  // ============================================================================
-
-  /**
-   * Get media item by ID (alias for getMediaItem)
-   */
-  getMediaItemById(id: number): MediaItem | null {
-    return this.getMediaItem(id)
-  }
-
-  /**
-   * Update series match (TMDB ID) for all episodes of a series
-   */
-  updateSeriesMatch(
-    seriesTitle: string,
-    sourceId: string,
-    tmdbId: string,
-    posterUrl?: string,
-    newSeriesTitle?: string
-  ): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const params: unknown[] = [tmdbId, 1]
-    let sql = 'UPDATE media_items SET series_tmdb_id = ?, user_fixed_match = ?'
-
-    if (posterUrl) {
-      sql += ', poster_url = ?'
-      params.push(posterUrl)
-    }
-    if (newSeriesTitle) {
-      sql += ', series_title = ?'
-      params.push(newSeriesTitle)
-    }
-
-    sql += " WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    params.push(seriesTitle, sourceId)
-
-    this.db.prepare(sql).run(...params)
-
-    // Update series_completeness if title changed
-    if (newSeriesTitle && newSeriesTitle !== seriesTitle) {
-      this.db.prepare(
-        'UPDATE series_completeness SET series_title = ? WHERE series_title = ? AND source_id = ?'
-      ).run(newSeriesTitle, seriesTitle, sourceId)
-    }
-
-    // Return count of updated episodes
-    const titleToQuery = newSeriesTitle || seriesTitle
-    const countStmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    )
-    return (countStmt.get(titleToQuery, sourceId) as { count: number }).count
-  }
-
-  /**
-   * Update movie match (TMDB ID, poster, etc.)
-   */
-  updateMovieMatch(
-    mediaItemId: number,
-    tmdbId: string,
-    posterUrl?: string,
-    title?: string,
-    year?: number
-  ): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const params: unknown[] = [tmdbId, 1]
-    let sql = 'UPDATE media_items SET tmdb_id = ?, user_fixed_match = ?'
-
-    if (posterUrl) {
-      sql += ', poster_url = ?'
-      params.push(posterUrl)
-    }
-    if (title) {
-      sql += ', title = ?'
-      params.push(title)
-    }
-    if (year !== undefined) {
-      sql += ', year = ?'
-      params.push(year)
-    }
-
-    sql += " WHERE id = ? AND type = 'movie'"
-    params.push(mediaItemId)
-
-    this.db.prepare(sql).run(...params)
-  }
-
-  /**
-   * Update artist match (MusicBrainz ID)
-   */
-  updateArtistMatch(artistId: number, musicbrainzId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(
-      'UPDATE music_artists SET musicbrainz_id = ?, user_fixed_match = 1 WHERE id = ?'
-    ).run(musicbrainzId, artistId)
-  }
-
-  /**
-   * Update album match (MusicBrainz ID)
-   */
-  updateAlbumMatch(albumId: number, musicbrainzId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(
-      'UPDATE music_albums SET musicbrainz_id = ?, user_fixed_match = 1 WHERE id = ?'
-    ).run(musicbrainzId, albumId)
-  }
-
-  /**
-   * Update movie TMDB ID (automatic lookup, not user-initiated)
-   */
-  updateMovieWithTMDBId(mediaItemId: number, tmdbId: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(
-      "UPDATE media_items SET tmdb_id = ? WHERE id = ? AND type = 'movie'"
-    ).run(tmdbId, mediaItemId)
-  }
-
-  /**
-   * Remove stale media items
-   */
-  removeStaleMediaItems(validPlexIds: Set<string>, type: 'movie' | 'episode'): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    // Get all items of the specified type
-    const stmt = this.db.prepare('SELECT id, plex_id FROM media_items WHERE type = ?')
-    const items = stmt.all(type) as Array<{ id: number; plex_id: string }>
-
-    let removedCount = 0
-    const deleteStmt = this.db.prepare('DELETE FROM media_items WHERE id = ?')
-    const deleteScoreStmt = this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?')
-
-    const transaction = this.db.transaction(() => {
-      for (const item of items) {
-        if (!validPlexIds.has(item.plex_id)) {
-          deleteScoreStmt.run(item.id)
-          deleteStmt.run(item.id)
-          removedCount++
-        }
-      }
-    })
-    transaction()
-
-    return removedCount
-  }
-
-  /**
-   * Update media item artwork
-   */
-  updateMediaItemArtwork(
-    id: number,
-    artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
-  ): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const updates: string[] = []
+    let sql = 'SELECT COUNT(*) as count FROM wishlist_items WHERE 1=1'
     const params: unknown[] = []
 
-    if (artwork.posterUrl !== undefined) {
-      updates.push('poster_url = ?')
-      params.push(artwork.posterUrl)
-    }
-    if (artwork.episodeThumbUrl !== undefined) {
-      updates.push('episode_thumb_url = ?')
-      params.push(artwork.episodeThumbUrl)
-    }
-    if (artwork.seasonPosterUrl !== undefined) {
-      updates.push('season_poster_url = ?')
-      params.push(artwork.seasonPosterUrl)
+    if (filters?.type) {
+      sql += ' AND type = ?'
+      params.push(filters.type)
     }
 
-    if (updates.length === 0) return
+    if (filters?.status) {
+      sql += ' AND status = ?'
+      params.push(filters.status)
+    }
 
-    updates.push("updated_at = datetime('now')")
-    params.push(id)
+    if (filters?.searchQuery) {
+      sql += " AND title LIKE '%' || ? || '%'"
+      params.push(filters.searchQuery)
+    }
 
-    const sql = `UPDATE media_items SET ${updates.join(', ')} WHERE id = ?`
-    this.db.prepare(sql).run(...params)
-  }
-
-  // ============================================================================
-  // TRANSACTION SUPPORT
-  // ============================================================================
-
-  /**
-   * Run a function in a transaction
-   */
-  transaction<T>(fn: () => T): T {
-    if (!this.db) throw new Error('Database not initialized')
-    return this.db.transaction(fn)()
+    const stmt = this.db.prepare(sql)
+    const result = stmt.get(...params) as { count: number }
+    return result?.count || 0
   }
 
   /**
-   * Export all database data to JSON
+   * Get wishlist item by TMDB ID
    */
-  exportData(): Record<string, unknown[]> {
+  getWishlistItemByTmdbId(tmdbId: string): WishlistItem | null {
     if (!this.db) throw new Error('Database not initialized')
-
-    const tables = [
-      'media_sources',
-      'media_items',
-      'quality_scores',
-      'settings',
-      'series_completeness',
-      'movie_collections',
-      'music_artists',
-      'music_albums',
-      'music_tracks',
-      'music_quality_scores',
-      'artist_completeness',
-      'album_completeness',
-    ]
-
-    const exportedData: Record<string, unknown[]> = {
-      _meta: [{
-        exportedAt: new Date().toISOString(),
-        version: '2.0',
-        engine: 'better-sqlite3',
-        tables: tables,
-      }]
-    }
-
-    for (const table of tables) {
-      try {
-        const stmt = this.db.prepare(`SELECT * FROM ${table}`)
-        exportedData[table] = stmt.all()
-      } catch {
-        exportedData[table] = []
-      }
-    }
-
-    return exportedData
+    const stmt = this.db.prepare('SELECT * FROM wishlist_items WHERE tmdb_id = ?')
+    return (stmt.get(tmdbId) as WishlistItem) || null
   }
 
   /**
-   * Import data from exported JSON
+   * Delete wishlist item
    */
-  importData(data: Record<string, unknown[]>): { imported: number; errors: string[] } {
+  deleteWishlistItem(id: number): void {
     if (!this.db) throw new Error('Database not initialized')
-
-    const errors: string[] = []
-    let imported = 0
-
-    const importOrder = [
-      'settings',
-      'media_sources',
-      'media_items',
-      'quality_scores',
-      'series_completeness',
-      'movie_collections',
-      'music_artists',
-      'music_albums',
-      'music_tracks',
-      'music_quality_scores',
-      'artist_completeness',
-      'album_completeness',
-    ]
-
-    const transaction = this.db.transaction(() => {
-      for (const table of importOrder) {
-        if (!data[table] || !Array.isArray(data[table]) || data[table].length === 0) {
-          continue
-        }
-
-        const rows = data[table] as Record<string, unknown>[]
-
-        for (const row of rows) {
-          try {
-            const columns = Object.keys(row).filter(k => row[k] !== undefined)
-            const values = columns.map(k => row[k])
-            const placeholders = columns.map(() => '?').join(', ')
-
-            const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`
-            this.db!.prepare(sql).run(...values)
-            imported++
-          } catch (error: unknown) {
-            errors.push(`${table}: ${getErrorMessage(error)}`)
-          }
-        }
-      }
-    })
-
-    try {
-      transaction()
-    } catch (error: unknown) {
-      errors.push(`Import failed: ${getErrorMessage(error)}`)
-    }
-
-    return { imported, errors }
-  }
-
-  /**
-   * Reset the database (delete all data)
-   */
-  resetDatabase(): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const tables = [
-      'album_completeness',
-      'artist_completeness',
-      'music_quality_scores',
-      'music_tracks',
-      'music_albums',
-      'music_artists',
-      'movie_collections',
-      'series_completeness',
-      'quality_scores',
-      'media_items',
-      'media_sources',
-      'library_scans',
-      'wishlist_items',
-      'notifications',
-      'settings',
-    ]
-
-    const transaction = this.db.transaction(() => {
-      for (const table of tables) {
-        try {
-          this.db!.prepare(`DELETE FROM ${table}`).run()
-        } catch {
-          console.log(`[BetterSQLite] Could not clear table ${table}`)
-        }
-      }
-    })
-    transaction()
+    this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id)
   }
 
   // ============================================================================
@@ -3008,484 +2165,51 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   // ============================================================================
 
   /**
-   * Create a notification
+   * Add a notification
    */
-  createNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
-    return this.notificationRepo.createNotification(notification)
+  addNotification(notification: Omit<Notification, 'id' | 'timestamp' | 'read'>): number {
+    return this.notificationRepo.addNotification(notification)
   }
 
   /**
-   * Create multiple notifications
+   * Get notifications
    */
-  createNotifications(notifications: Array<Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>>): number[] {
-    return this.notificationRepo.createNotifications(notifications)
-  }
-
-  /**
-   * Get notifications with optional filtering
-   */
-  getNotifications(options: GetNotificationsOptions = {}): Notification[] {
+  getNotifications(options?: GetNotificationsOptions): Notification[] {
     return this.notificationRepo.getNotifications(options)
   }
 
   /**
-   * Get unread notifications
+   * Get notification counts
    */
-  getUnreadNotifications(): Notification[] {
-    return this.notificationRepo.getNotifications({ unreadOnly: true })
+  getNotificationCounts(): NotificationCountResult {
+    return this.notificationRepo.getNotificationCounts()
   }
 
   /**
-   * Get notification count
+   * Mark notification as read
    */
-  getNotificationCount(): NotificationCountResult {
-    const unread = this.notificationRepo.getUnreadCount()
-    const totalRow = this.db!.prepare('SELECT COUNT(*) as count FROM notifications').get() as { count: number }
-    return { total: totalRow.count, unread }
-  }
-
-  /**
-   * Mark notifications as read
-   */
-  markNotificationsRead(ids: number[]): void {
-    this.notificationRepo.markAsRead(ids)
+  markNotificationRead(id: number): void {
+    this.notificationRepo.markNotificationRead(id)
   }
 
   /**
    * Mark all notifications as read
    */
   markAllNotificationsRead(): void {
-    this.notificationRepo.markAllAsRead()
+    this.notificationRepo.markAllNotificationsRead()
   }
 
   /**
-   * Delete notifications
+   * Delete a notification
    */
-  deleteNotifications(ids: number[]): void {
-    this.notificationRepo.deleteNotifications(ids)
+  deleteNotification(id: number): void {
+    this.notificationRepo.deleteNotification(id)
   }
 
   /**
    * Clear all notifications
    */
   clearAllNotifications(): void {
-    this.notificationRepo.deleteAllNotifications()
-  }
-
-  /**
-   * Prune old notifications
-   */
-  pruneNotifications(maxCount: number): number {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM notifications')
-    const totalCount = (countStmt.get() as { count: number }).count
-
-    if (totalCount <= maxCount) return 0
-
-    const deleteCount = totalCount - maxCount
-
-    this.db.prepare(`
-      DELETE FROM notifications WHERE id IN (
-        SELECT id FROM notifications ORDER BY created_at ASC LIMIT ?
-      )
-    `).run(deleteCount)
-
-    return deleteCount
-  }
-
-  // ============================================================================
-  // GLOBAL SEARCH
-  // ============================================================================
-
-  /**
-   * Global search across all media types
-   */
-  globalSearch(query: string, maxResults = 5): {
-    movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
-    tvShows: Array<{ id: number; title: string; poster_url?: string }>
-    episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
-    artists: Array<{ id: number; name: string; thumb_url?: string }>
-    albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
-    tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string }>
-  } {
-    if (!this.db || !query) {
-      return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
-    }
-
-    // For very short queries (1-2 chars), use exact title match to avoid overly broad LIKE results
-    const isShortQuery = query.length <= 2
-    const searchQuery = isShortQuery ? query.toLowerCase() : `%${query.toLowerCase()}%`
-    const likeOp = isShortQuery ? '=' : 'LIKE'
-
-    // Search movies
-    const moviesStmt = this.db.prepare(`
-      SELECT id, title, year, poster_url
-      FROM media_items
-      WHERE type = 'movie' AND LOWER(title) ${likeOp} ?
-      ORDER BY title
-      LIMIT ?
-    `)
-    const movies = moviesStmt.all(searchQuery, maxResults) as Array<{
-      id: number; title: string; year?: number; poster_url?: string
-    }>
-
-    // Search TV shows (unique series titles)
-    const tvShowsStmt = this.db.prepare(`
-      SELECT MIN(id) as id, series_title as title, MIN(poster_url) as poster_url
-      FROM media_items
-      WHERE type = 'episode' AND series_title IS NOT NULL AND LOWER(series_title) ${likeOp} ?
-      GROUP BY series_title
-      ORDER BY series_title
-      LIMIT ?
-    `)
-    const tvShows = tvShowsStmt.all(searchQuery, maxResults) as Array<{
-      id: number; title: string; poster_url?: string
-    }>
-
-    // Search episodes
-    const episodesStmt = this.db.prepare(`
-      SELECT id, title, series_title, season_number, episode_number, episode_thumb_url as poster_url
-      FROM media_items
-      WHERE type = 'episode' AND (LOWER(title) ${likeOp} ? OR LOWER(series_title) ${likeOp} ?)
-      ORDER BY series_title, season_number, episode_number
-      LIMIT ?
-    `)
-    const episodes = episodesStmt.all(searchQuery, searchQuery, maxResults) as Array<{
-      id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string
-    }>
-
-    // Search artists
-    const artistsStmt = this.db.prepare(`
-      SELECT id, name, thumb_url
-      FROM music_artists
-      WHERE LOWER(name) ${likeOp} ?
-      ORDER BY name
-      LIMIT ?
-    `)
-    const artists = artistsStmt.all(searchQuery, maxResults) as Array<{
-      id: number; name: string; thumb_url?: string
-    }>
-
-    // Search albums
-    const albumsStmt = this.db.prepare(`
-      SELECT id, title, artist_name, year, thumb_url
-      FROM music_albums
-      WHERE LOWER(title) ${likeOp} ? OR LOWER(artist_name) ${likeOp} ?
-      ORDER BY title
-      LIMIT ?
-    `)
-    const albums = albumsStmt.all(searchQuery, searchQuery, maxResults) as Array<{
-      id: number; title: string; artist_name: string; year?: number; thumb_url?: string
-    }>
-
-    // Search tracks with album info
-    const tracksStmt = this.db.prepare(`
-      SELECT t.id, t.title, t.album_id, a.title as album_title, t.artist_name, a.thumb_url as album_thumb_url
-      FROM music_tracks t
-      LEFT JOIN music_albums a ON t.album_id = a.id
-      WHERE LOWER(t.title) ${likeOp} ? OR LOWER(t.artist_name) ${likeOp} ?
-      ORDER BY t.title
-      LIMIT ?
-    `)
-    const tracks = tracksStmt.all(searchQuery, searchQuery, maxResults) as Array<{
-      id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string
-    }>
-
-    return { movies, tvShows, episodes, artists, albums, tracks }
-  }
-
-  // ============================================================================
-  // EXCLUSIONS
-  // ============================================================================
-
-  addExclusion(exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      'INSERT INTO exclusions (exclusion_type, reference_id, reference_key, parent_key, title) VALUES (?, ?, ?, ?, ?)'
-    )
-    const result = stmt.run(exclusionType, referenceId ?? null, referenceKey ?? null, parentKey ?? null, title ?? null)
-    return result.lastInsertRowid as number
-  }
-
-  removeExclusion(id: number): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare('DELETE FROM exclusions WHERE id = ?').run(id)
-  }
-
-  getExclusions(exclusionType?: string, parentKey?: string): Array<{
-    id: number; exclusion_type: string; reference_id: number | null; reference_key: string | null
-    parent_key: string | null; title: string | null; created_at: string
-  }> {
-    if (!this.db) throw new Error('Database not initialized')
-    let sql = 'SELECT * FROM exclusions WHERE 1=1'
-    const params: unknown[] = []
-    if (exclusionType) { sql += ' AND exclusion_type = ?'; params.push(exclusionType) }
-    if (parentKey) { sql += ' AND parent_key = ?'; params.push(parentKey) }
-    sql += ' ORDER BY created_at DESC'
-    return this.db.prepare(sql).all(...params) as Array<{
-      id: number; exclusion_type: string; reference_id: number | null; reference_key: string | null
-      parent_key: string | null; title: string | null; created_at: string
-    }>
-  }
-
-  isExcluded(exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string): boolean {
-    if (!this.db) throw new Error('Database not initialized')
-    if (referenceId) {
-      const row = this.db.prepare('SELECT 1 FROM exclusions WHERE exclusion_type = ? AND reference_id = ? LIMIT 1').get(exclusionType, referenceId)
-      return !!row
-    }
-    if (referenceKey) {
-      let sql = 'SELECT 1 FROM exclusions WHERE exclusion_type = ? AND reference_key = ?'
-      const params: unknown[] = [exclusionType, referenceKey]
-      if (parentKey) { sql += ' AND parent_key = ?'; params.push(parentKey) }
-      sql += ' LIMIT 1'
-      return !!this.db.prepare(sql).get(...params)
-    }
-    return false
-  }
-
-  // ============================================================================
-  // WISHLIST COMPLETION HELPERS
-  // ============================================================================
-
-  /**
-   * Get all active wishlist items (status = 'active')
-   */
-  getActiveWishlistItems(): WishlistItem[] {
-    return this.getWishlistItems({ status: 'active' })
-  }
-
-  /**
-   * Batch lookup media items by TMDB IDs
-   * Returns a Map of tmdb_id → MediaItem
-   */
-  getMediaItemsByTmdbIds(tmdbIds: string[]): Map<string, MediaItem> {
-    if (!this.db) throw new Error('Database not initialized')
-    const result = new Map<string, MediaItem>()
-    if (tmdbIds.length === 0) return result
-
-    // Process in batches of 500 to avoid SQLite variable limit
-    const batchSize = 500
-    for (let i = 0; i < tmdbIds.length; i += batchSize) {
-      const batch = tmdbIds.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM media_items WHERE tmdb_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as MediaItem[]
-      for (const row of rows) {
-        if (row.tmdb_id) result.set(row.tmdb_id, row)
-      }
-    }
-    return result
-  }
-
-  /**
-   * Get episode count for a TV show by its series-level TMDB ID
-   */
-  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?"
-    )
-    return (stmt.get(seriesTmdbId) as { count: number }).count
-  }
-
-  /**
-   * Check if any episodes exist for a given series title + season number
-   */
-  getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ?"
-    )
-    return (stmt.get(seriesTitle, seasonNumber) as { count: number }).count
-  }
-
-  /**
-   * Check if a specific episode exists by series title + season + episode number
-   */
-  getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ? AND episode_number = ?"
-    )
-    return (stmt.get(seriesTitle, seasonNumber, episodeNumber) as { count: number }).count
-  }
-
-  /**
-   * Batch lookup music albums by MusicBrainz IDs
-   * Returns a Map of musicbrainz_id → MusicAlbum
-   */
-  getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum> {
-    if (!this.db) throw new Error('Database not initialized')
-    const result = new Map<string, MusicAlbum>()
-    if (ids.length === 0) return result
-
-    const batchSize = 500
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM music_albums WHERE musicbrainz_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as MusicAlbum[]
-      for (const row of rows) {
-        if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
-      }
-    }
-    return result
-  }
-
-  /**
-   * Lookup a single music track by MusicBrainz ID
-   */
-  getMusicTrackByMusicbrainzId(id: string): MusicTrack | null {
-    if (!this.db) throw new Error('Database not initialized')
-    const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE musicbrainz_id = ? LIMIT 1')
-    return (stmt.get(id) as MusicTrack) || null
-  }
-
-  /**
-   * Batch lookup quality scores by media item IDs
-   * Returns a Map of media_item_id → QualityScore
-   */
-  getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore> {
-    if (!this.db) throw new Error('Database not initialized')
-    const result = new Map<number, QualityScore>()
-    if (ids.length === 0) return result
-
-    const batchSize = 500
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM quality_scores WHERE media_item_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as QualityScore[]
-      for (const row of rows) {
-        result.set(row.media_item_id, row)
-      }
-    }
-    return result
-  }
-
-  // ============================================================================
-  // TASK QUEUE HISTORY
-  // ============================================================================
-
-  saveTaskHistory(task: {
-    taskId: string
-    type: string
-    label: string
-    sourceId?: string
-    libraryId?: string
-    status: string
-    error?: string
-    result?: Record<string, unknown>
-    createdAt: string
-    startedAt?: string
-    completedAt?: string
-  }): void {
-    if (!this.db) throw new Error('Database not initialized')
-
-    const durationMs = task.startedAt && task.completedAt
-      ? new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()
-      : null
-
-    this.db.prepare(`
-      INSERT INTO task_history (task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      task.taskId, task.type, task.label,
-      task.sourceId || null, task.libraryId || null,
-      task.status, task.error || null,
-      task.result ? JSON.stringify(task.result) : null,
-      task.createdAt, task.startedAt || null,
-      task.completedAt || null, durationMs
-    )
-
-    // Prune old entries
-    this.db.prepare(`
-      DELETE FROM task_history WHERE id NOT IN (
-        SELECT id FROM task_history ORDER BY recorded_at DESC LIMIT 200
-      )
-    `).run()
-  }
-
-  getTaskHistory(limit = 50, offset = 0): Array<{
-    taskId: string; type: string; label: string; sourceId: string | null
-    libraryId: string | null; status: string; error: string | null
-    result: string | null; createdAt: string; startedAt: string | null
-    completedAt: string | null; durationMs: number | null
-  }> {
-    if (!this.db) throw new Error('Database not initialized')
-    const rows = this.db.prepare(
-      'SELECT task_id, type, label, source_id, library_id, status, error, result, created_at, started_at, completed_at, duration_ms FROM task_history ORDER BY recorded_at DESC LIMIT ? OFFSET ?'
-    ).all(limit, offset) as Array<{
-      task_id: string; type: string; label: string; source_id: string | null
-      library_id: string | null; status: string; error: string | null
-      result: string | null; created_at: string; started_at: string | null
-      completed_at: string | null; duration_ms: number | null
-    }>
-    return rows.map(r => ({
-      taskId: r.task_id, type: r.type, label: r.label,
-      sourceId: r.source_id, libraryId: r.library_id,
-      status: r.status, error: r.error, result: r.result,
-      createdAt: r.created_at, startedAt: r.started_at,
-      completedAt: r.completed_at, durationMs: r.duration_ms,
-    }))
-  }
-
-  saveActivityLogEntry(entry: {
-    entryType: string
-    message: string
-    taskId?: string
-    taskType?: string
-  }): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare(
-      'INSERT INTO activity_log (entry_type, message, task_id, task_type) VALUES (?, ?, ?, ?)'
-    ).run(entry.entryType, entry.message, entry.taskId || null, entry.taskType || null)
-
-    // Prune old entries
-    this.db.prepare(`
-      DELETE FROM activity_log WHERE id NOT IN (
-        SELECT id FROM activity_log ORDER BY created_at DESC LIMIT 500
-      )
-    `).run()
-  }
-
-  getActivityLog(entryType?: string, limit = 100, offset = 0): Array<{
-    id: number; entryType: string; message: string
-    taskId: string | null; taskType: string | null; createdAt: string
-  }> {
-    if (!this.db) throw new Error('Database not initialized')
-    let sql = 'SELECT id, entry_type, message, task_id, task_type, created_at FROM activity_log'
-    const params: unknown[] = []
-    if (entryType) {
-      sql += ' WHERE entry_type LIKE ?'
-      params.push(entryType + '%')
-    }
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    params.push(limit, offset)
-    const rows = this.db.prepare(sql).all(...params) as Array<{
-      id: number; entry_type: string; message: string
-      task_id: string | null; task_type: string | null; created_at: string
-    }>
-    return rows.map(r => ({
-      id: r.id, entryType: r.entry_type, message: r.message,
-      taskId: r.task_id, taskType: r.task_type, createdAt: r.created_at,
-    }))
-  }
-
-  clearTaskHistory(): void {
-    if (!this.db) throw new Error('Database not initialized')
-    this.db.prepare('DELETE FROM task_history').run()
-    this.db.prepare("DELETE FROM activity_log WHERE entry_type LIKE 'task-%'").run()
-  }
-
-  clearActivityLog(entryType?: string): void {
-    if (!this.db) throw new Error('Database not initialized')
-    if (entryType) {
-      this.db.prepare('DELETE FROM activity_log WHERE entry_type LIKE ?').run(entryType + '%')
-    } else {
-      this.db.prepare('DELETE FROM activity_log').run()
-    }
+    this.notificationRepo.clearAllNotifications()
   }
 }

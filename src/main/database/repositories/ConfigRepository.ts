@@ -9,7 +9,7 @@ export class ConfigRepository {
     const row = stmt.get(key) as { value: string } | undefined
     if (!row) return null
 
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
+    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key']
     if (sensitiveKeys.includes(key)) {
       const encryption = getCredentialEncryptionService()
       return encryption.decryptSetting(key, row.value)
@@ -18,7 +18,7 @@ export class ConfigRepository {
   }
 
   setSetting(key: string, value: string): void {
-    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token']
+    const sensitiveKeys = ['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key']
     let storedValue = value
     if (sensitiveKeys.includes(key)) {
       const encryption = getCredentialEncryptionService()
