@@ -113,14 +113,14 @@ export default defineConfig({
     }
   },
   root: './src/renderer',
+  esbuild: {
+    drop: ['debugger'],
+    pure: ['console.log', 'console.debug', 'console.info'],
+  },
   build: {
     outDir: '../../dist',
     minify: 'esbuild',
     sourcemap: false,
-    esbuild: {
-      drop: ['debugger'],
-      pure: ['console.log', 'console.debug', 'console.info'],
-    },
     rollupOptions: {
       output: {
         manualChunks(id) {

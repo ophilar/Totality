@@ -1011,7 +1011,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
             }
             // Attach series sort name for sort_title
             if (seriesData.sortName) {
-              ;(item as JellyfinMediaItem & { _seriesSortName?: string })._seriesSortName = seriesData.sortName
+              (item as JellyfinMediaItem & { _seriesSortName?: string })._seriesSortName = seriesData.sortName
             }
           }
         }

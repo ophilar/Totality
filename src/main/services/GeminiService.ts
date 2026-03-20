@@ -267,7 +267,7 @@ export class GeminiService {
 
     const contents: Content[] = this.toGeminiContents(params.messages)
     const maxRounds = params.maxToolRounds || 10
-    let totalUsage = { input_tokens: 0, output_tokens: 0 }
+    const totalUsage = { input_tokens: 0, output_tokens: 0 }
     const recentToolCalls: string[] = [] // Track recent tool call signatures for loop detection
 
     for (let round = 0; round < maxRounds; round++) {

@@ -14,7 +14,7 @@ import type {
   ArtistCompleteness,
   AlbumCompleteness,
   MusicFilters,
-} from '../../types/database'
+} from '../../../types/database'
 
 /** Music library statistics */
 export interface MusicStats {
