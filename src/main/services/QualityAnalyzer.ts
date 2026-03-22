@@ -100,6 +100,22 @@ const DEFAULT_MUSIC_THRESHOLDS = {
   hiResBitDepth: 16,
 }
 
+// Default efficiency target thresholds (kbps) for HEVC
+const DEFAULT_EFFICIENCY_TARGETS = {
+  'SD': 1200,
+  '720p': 2500,
+  '1080p': 5000,
+  '4K': 15000
+}
+
+// Default bloat start thresholds (kbps) for HEVC
+const DEFAULT_BLOAT_THRESHOLDS = {
+  'SD': 2500,
+  '720p': 5000,
+  '1080p': 10000,
+  '4K': 30000
+}
+
 export class QualityAnalyzer {
   private thresholds: QualityThresholds
   private thresholdsLoaded = false
@@ -107,6 +123,8 @@ export class QualityAnalyzer {
   // Configurable settings loaded from database
   private videoThresholds = { ...DEFAULT_VIDEO_THRESHOLDS }
   private audioThresholds = { ...DEFAULT_AUDIO_THRESHOLDS }
+  private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
+  private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
   private videoWeight = 0.7 // 0-1, audio weight = 1 - videoWeight
@@ -177,6 +195,22 @@ export class QualityAnalyzer {
           medium: getNum('quality_audio_4k_medium', getNum('quality_audio_4k_good', DEFAULT_AUDIO_THRESHOLDS['4K'].medium)),
           high: getNum('quality_audio_4k_high', getNum('quality_audio_4k_excellent', DEFAULT_AUDIO_THRESHOLDS['4K'].high)),
         },
+      }
+
+      // Load efficiency target thresholds
+      this.efficiencyThresholds = {
+        'SD': getNum('quality_efficiency_sd_target', DEFAULT_EFFICIENCY_TARGETS.SD),
+        '720p': getNum('quality_efficiency_720p_target', DEFAULT_EFFICIENCY_TARGETS['720p']),
+        '1080p': getNum('quality_efficiency_1080p_target', DEFAULT_EFFICIENCY_TARGETS['1080p']),
+        '4K': getNum('quality_efficiency_4k_target', DEFAULT_EFFICIENCY_TARGETS['4K']),
+      }
+
+      // Load bloat start thresholds
+      this.bloatThresholds = {
+        'SD': getNum('quality_efficiency_sd_bloat', DEFAULT_BLOAT_THRESHOLDS.SD),
+        '720p': getNum('quality_efficiency_720p_bloat', DEFAULT_BLOAT_THRESHOLDS['720p']),
+        '1080p': getNum('quality_efficiency_1080p_bloat', DEFAULT_BLOAT_THRESHOLDS['1080p']),
+        '4K': getNum('quality_efficiency_4k_bloat', DEFAULT_BLOAT_THRESHOLDS['4K']),
       }
 
       // Load codec efficiency multipliers
@@ -521,26 +555,10 @@ export class QualityAnalyzer {
     const bitrate = item.video_bitrate || 0
     if (bitrate === 0) return 0
 
-    // Grounded "Efficient HIGH Quality" targets (Mbps) for HEVC
-    const efficientTargets: Record<QualityTier, number> = {
-      '4K': 15,
-      '1080p': 5,
-      '720p': 2.5,
-      'SD': 1.2
-    }
-
-    // Grounded "Bloat Start" thresholds (Mbps) for HEVC
-    const bloatThresholds: Record<QualityTier, number> = {
-      '4K': 30,
-      '1080p': 10,
-      '720p': 5,
-      'SD': 2.5
-    }
-
     const efficiencyMult = this.getCodecEfficiency(item.video_codec)
     const effectiveBitrate = bitrate * efficiencyMult
-    const targetKbps = efficientTargets[tier] * 1000
-    const bloatKbps = bloatThresholds[tier] * 1000
+    const targetKbps = this.efficiencyThresholds[tier]
+    const bloatKbps = this.bloatThresholds[tier]
 
     // 1. Perfect efficiency: achieves HIGH quality target with modern codec
     if (bitrate <= targetKbps && efficiencyMult >= 2.0) {
@@ -572,18 +590,10 @@ export class QualityAnalyzer {
   private calculateStorageDebt(item: MediaItem, tier: QualityTier): number {
     if (!item.file_size || !item.duration) return 0
 
-    // HEVC Efficient Target (Mbps)
-    const targetBitrates: Record<QualityTier, number> = {
-      '4K': 15,
-      '1080p': 5,
-      '720p': 2.5,
-      'SD': 1.2
-    }
-
-    const targetMbps = targetBitrates[tier]
+    const targetKbps = this.efficiencyThresholds[tier]
     const durationSec = item.duration / 1000
-    // Target size = (Target Bitrate * Duration) / 8 bits
-    const targetSizeBytes = (targetMbps * 1000 * 1000 * durationSec) / 8
+    // Target size = (Target Bitrate * 1000 * Duration) / 8 bits
+    const targetSizeBytes = (targetKbps * 1000 * durationSec) / 8
 
     // Debt only exists if current file is > 20% larger than target AND at least 500MB difference
     const bufferMult = 1.2

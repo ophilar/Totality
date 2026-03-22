@@ -899,6 +899,18 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('quality_music_hires_samplerate', '44100'),
   ('quality_music_hires_bitdepth', '16'),
 
+  -- Efficiency target thresholds (kbps) for HEVC
+  ('quality_efficiency_sd_target', '1200'),
+  ('quality_efficiency_720p_target', '2500'),
+  ('quality_efficiency_1080p_target', '5000'),
+  ('quality_efficiency_4k_target', '15000'),
+
+  -- Bloat start thresholds (kbps) for HEVC
+  ('quality_efficiency_sd_bloat', '2500'),
+  ('quality_efficiency_720p_bloat', '5000'),
+  ('quality_efficiency_1080p_bloat', '10000'),
+  ('quality_efficiency_4k_bloat', '30000'),
+
   -- Window behavior
   ('minimize_to_tray', 'false'),
   ('start_minimized_to_tray', 'false'),

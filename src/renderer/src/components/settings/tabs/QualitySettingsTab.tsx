@@ -38,6 +38,14 @@ const DEFAULT_SETTINGS = {
   quality_codec_av1: 2.5,
   quality_codec_vp9: 1.8,
   quality_video_weight: 70,
+  quality_efficiency_sd_target: 1200,
+  quality_efficiency_720p_target: 2500,
+  quality_efficiency_1080p_target: 5000,
+  quality_efficiency_4k_target: 15000,
+  quality_efficiency_sd_bloat: 2500,
+  quality_efficiency_720p_bloat: 5000,
+  quality_efficiency_1080p_bloat: 10000,
+  quality_efficiency_4k_bloat: 30000,
 }
 
 type SettingsState = typeof DEFAULT_SETTINGS
@@ -377,6 +385,50 @@ export function QualitySettingsTab() {
                 <span className="text-accent/60">Video {settings.quality_video_weight}%</span>
                 <span className="text-accent">Audio {100 - settings.quality_video_weight}%</span>
               </div>
+            </div>
+          </div>
+
+          {/* Efficiency & Bloat */}
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="text-sm font-medium mb-2">Efficiency & Bloat</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Configure targets for storage efficiency analysis. These thresholds define when a file
+              is considered "efficient" or "bloated" for its resolution tier.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <QualityThreshold
+                label="Efficiency Target"
+                mediumValue={settings[`quality_efficiency_${selectedTier}_target` as keyof SettingsState] as number}
+                highValue={settings[`quality_efficiency_${selectedTier}_target` as keyof SettingsState] as number}
+                min={VIDEO_THRESHOLDS[selectedTier].min / 2}
+                max={VIDEO_THRESHOLDS[selectedTier].max / 2}
+                step={VIDEO_THRESHOLDS[selectedTier].step / 2}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="Efficient"
+                mediumLabel="Target"
+                highLabel="Target"
+                onChange={(val) => {
+                  updateSetting(`quality_efficiency_${selectedTier}_target` as keyof SettingsState, val)
+                }}
+              />
+              <QualityThreshold
+                label="Bloat Threshold"
+                mediumValue={settings[`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState] as number}
+                highValue={settings[`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState] as number}
+                min={VIDEO_THRESHOLDS[selectedTier].min}
+                max={VIDEO_THRESHOLDS[selectedTier].max * 1.5}
+                step={VIDEO_THRESHOLDS[selectedTier].step}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="Optimal"
+                mediumLabel="Bloat"
+                highLabel="Bloat"
+                onChange={(val) => {
+                  updateSetting(`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState, val)
+                }}
+              />
             </div>
           </div>
 
