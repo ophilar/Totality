@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check, HardDrive } from 'lucide-react'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
@@ -7,6 +7,15 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
+
+// Utility to format bytes into readable strings
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
 // List item component for TV shows
 const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: {
@@ -250,6 +259,11 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
         {episode.efficiency_score != null && episode.efficiency_score < 60 && (
           <div title={`Low Efficiency (${episode.efficiency_score}%). Upgrade recommended to save space.`}>
             <Trash2 className="w-6 h-6 text-orange-500" />
+          </div>
+        )}
+        {episode.storage_debt_bytes != null && episode.storage_debt_bytes > 2 * 1024 * 1024 * 1024 && (
+          <div title={`Significant Storage Debt (${formatBytes(episode.storage_debt_bytes)}). Re-encode to save space.`}>
+            <HardDrive className="w-6 h-6 text-blue-500" />
           </div>
         )}
       </div>
@@ -935,6 +949,16 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
             title={`Low Efficiency (${(completenessData as any).efficiency_score}%). Upgrade recommended to save space.`}
           >
             <Trash2 className="w-6 h-6 text-orange-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
+          </div>
+        )}
+
+        {/* Storage Debt Badge */}
+        {completenessData && (completenessData as any).storage_debt_bytes != null && (completenessData as any).storage_debt_bytes > 10 * 1024 * 1024 * 1024 && (
+          <div
+            className="absolute bottom-2 right-10"
+            title={`Significant Storage Debt (${formatBytes((completenessData as any).storage_debt_bytes)}). Re-encode to save massive space.`}
+          >
+            <HardDrive className="w-6 h-6 text-blue-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
           </div>
         )}
 

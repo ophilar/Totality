@@ -1,11 +1,20 @@
 import { useState, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2 } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive } from 'lucide-react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { QualityBadges } from './QualityBadges'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
+
+// Utility to format bytes into readable strings
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
 // Display item type for grouped movies view
 type MovieDisplayItem =
@@ -604,6 +613,12 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           {(movie.tier_quality === 'LOW' || !!movie.needs_upgrade) && (
             <div title="Quality upgrade recommended">
               <CircleFadingArrowUp className="w-5 h-5 text-red-500" />
+            </div>
+          )}
+          {/* Storage Debt Badge */}
+          {movie.storage_debt_bytes != null && movie.storage_debt_bytes > 5 * 1024 * 1024 * 1024 && (
+            <div title={`Significant Storage Debt (${formatBytes(movie.storage_debt_bytes)}). Re-encode to save massive space.`}>
+              <HardDrive className="w-5 h-5 text-blue-500" />
             </div>
           )}
           {/* Efficiency Trash Badge */}

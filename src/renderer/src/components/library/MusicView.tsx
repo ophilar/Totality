@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
-import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check, HardDrive } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
@@ -15,6 +15,15 @@ import type {
   ArtistCompletenessData,
   AlbumCompletenessData
 } from './types'
+
+// Utility to format bytes into readable strings
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
 // ============================================================================
 // MUSIC VIEW COMPONENTS
@@ -1903,6 +1912,14 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
             {artist.source_type.charAt(0).toUpperCase()}
           </div>
         )}
+        {artistCompleteness.get(artist.name)?.storage_debt_bytes != null && artistCompleteness.get(artist.name)!.storage_debt_bytes > 1024 * 1024 * 1024 && (
+          <div
+            className="absolute bottom-2 left-2 z-10 bg-black/60 p-1 rounded-full shadow-md"
+            title={`Significant Storage Debt (${formatBytes(artistCompleteness.get(artist.name)!.storage_debt_bytes)}). Re-encode to save space.`}
+          >
+            <HardDrive className="w-4 h-4 text-blue-500" />
+          </div>
+        )}
         {artist.thumb_url ? (
           <img
             src={artist.thumb_url}
@@ -2042,10 +2059,18 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
 
         {/* Completeness badge - bottom right */}
         {hasCompleteness && (
-          <div className="absolute bottom-2 right-2 z-10">
+          <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-1 items-end">
             <div className="bg-foreground text-background text-xs font-bold px-1.5 py-0.5 rounded shadow-md">
               {completeness!.owned_tracks}/{completeness!.total_tracks}
             </div>
+            {completeness!.storage_debt_bytes != null && completeness!.storage_debt_bytes > 500 * 1024 * 1024 && (
+              <div
+                title={`Significant Storage Debt (${formatBytes(completeness!.storage_debt_bytes)}). Re-encode to save space.`}
+                className="bg-black/60 p-1 rounded-full"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-blue-500" />
+              </div>
+            )}
           </div>
         )}
 
@@ -2387,6 +2412,11 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
             ) : (
               <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
             )}
+          </span>
+        )}
+        {track.storage_debt_bytes != null && track.storage_debt_bytes > 100 * 1024 * 1024 && (
+          <span title={`Significant Storage Debt (${formatBytes(track.storage_debt_bytes)}). Re-encode to save space.`}>
+            <HardDrive className="w-4 h-4 text-blue-500" />
           </span>
         )}
         {track.file_size && (
