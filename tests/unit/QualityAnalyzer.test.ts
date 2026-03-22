@@ -363,7 +363,7 @@ function createMediaItem(overrides: Partial<MediaItem> = {}): MediaItem {
     source_id: 'test-source',
     source_type: 'plex',
     library_id: 'lib-1',
-    provider_item_id: 'test-123',
+    plex_id: 'test-123',
     type: 'movie',
     title: 'Test Movie',
     year: 2023,
@@ -374,6 +374,11 @@ function createMediaItem(overrides: Partial<MediaItem> = {}): MediaItem {
     audio_channels: 6,
     audio_bitrate: 448,
     has_object_audio: false,
+    file_path: '/path/to/test.mkv',
+    file_size: 5 * 1024 * 1024 * 1024,
+    duration: 120 * 60 * 1000,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     ...overrides,
   }
 }

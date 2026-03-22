@@ -31,39 +31,6 @@ export interface VersionQualityResult {
   audio_tier_score: number
 }
 
-/**
- * Legacy quality thresholds (kept for backward compatibility)
- */
-interface QualityThresholds {
-  resolutionExcellent: number
-  resolutionGood: number
-  resolutionPoor: number
-  bitrate4K: number
-  bitrate1080p: number
-  bitrate720p: number
-  bitrateSD: number
-  audioChannelsExcellent: number
-  audioChannelsGood: number
-  audioBitrateExcellent: number
-  audioBitrateGood: number
-  audioBitratePoor: number
-}
-
-const DEFAULT_THRESHOLDS: QualityThresholds = {
-  resolutionExcellent: 1080,
-  resolutionGood: 720,
-  resolutionPoor: 480,
-  bitrate4K: 20000,
-  bitrate1080p: 10000,
-  bitrate720p: 5000,
-  bitrateSD: 2000,
-  audioChannelsExcellent: 6,
-  audioChannelsGood: 2,
-  audioBitrateExcellent: 320,
-  audioBitrateGood: 192,
-  audioBitratePoor: 128,
-}
-
 // Default video bitrate thresholds (MEDIUM and HIGH per tier)
 // Below MEDIUM = LOW, MEDIUM to HIGH = MEDIUM, above HIGH = HIGH
 const DEFAULT_VIDEO_THRESHOLDS = {
@@ -117,7 +84,6 @@ const DEFAULT_BLOAT_THRESHOLDS = {
 }
 
 export class QualityAnalyzer {
-  private thresholds: QualityThresholds
   private thresholdsLoaded = false
 
   // Configurable settings loaded from database
@@ -132,8 +98,8 @@ export class QualityAnalyzer {
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
   private videoWeight = 0.7 // 0-1, audio weight = 1 - videoWeight
 
-  constructor(customThresholds?: Partial<QualityThresholds>) {
-    this.thresholds = { ...DEFAULT_THRESHOLDS, ...customThresholds }
+  constructor() {
+    // Legacy constructor with custom thresholds removed
   }
 
   /**
@@ -272,6 +238,35 @@ export class QualityAnalyzer {
   }
 
   /**
+   * Calculate total bitrate of audio tracks that are dubs (not original language).
+   */
+  private calculateDubBitrate(item: MediaItem): number {
+    if (!item.audio_tracks || !item.original_language) return 0
+
+    try {
+      const tracks: AudioTrack[] = JSON.parse(item.audio_tracks)
+      if (!Array.isArray(tracks)) return 0
+
+      const origLang = item.original_language.toLowerCase()
+      let dubBitrate = 0
+
+      for (const track of tracks) {
+        if (track.language) {
+          const trackLang = track.language.toLowerCase()
+          // If language is known and NOT the original language, it's a dub
+          if (trackLang !== origLang && trackLang !== 'und' && trackLang !== 'unk') {
+            dubBitrate += track.bitrate || 0
+          }
+        }
+      }
+
+      return dubBitrate
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Detect lossless audio codec
    */
   private isLosslessAudio(codec: string): boolean {
@@ -388,9 +383,6 @@ export class QualityAnalyzer {
   }
 
   /**
-   * Determine video quality tier directly from effective bitrate
-   */
-  /**
    * Calculate continuous video tier score (0-100) based on effective bitrate
    * relative to the tier's medium/high thresholds
    */
@@ -483,12 +475,6 @@ export class QualityAnalyzer {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio } =
       this.scoreQuality(mediaItem)
 
-    // Legacy scoring (for backward compatibility) - also use best audio
-    const resolutionScore = this.calculateResolutionScore(mediaItem.height)
-    const bitrateScore = this.calculateBitrateScore(mediaItem.video_bitrate, mediaItem.height)
-    const audioScore = this.calculateAudioScore(bestAudio.channels, bestAudio.bitrate)
-    const overallScore = tierScore
-
     // Efficiency Metrics
     const efficiencyScore = this.calculateEfficiencyScore(mediaItem, qualityTier)
     const storageDebtBytes = this.calculateStorageDebt(mediaItem, qualityTier)
@@ -533,6 +519,12 @@ export class QualityAnalyzer {
       issues.push(`Low audio quality: ${bestAudio.bitrate} kbps`)
     }
 
+    // Dubbed audio check
+    const dubBitrate = this.calculateDubBitrate(mediaItem)
+    if (dubBitrate > 500) { // Significant dub bloat
+      issues.push(`Dubbed audio bloat: ${this.formatBitrate(dubBitrate)} from non-original language tracks`)
+    }
+
     // Determine if needs upgrade (LOW quality only)
     const isLowQuality = tierQuality === 'LOW'
     const needsUpgrade = tierQuality === 'LOW'
@@ -546,10 +538,6 @@ export class QualityAnalyzer {
       audio_tier_score: audioTierScore,
       efficiency_score: efficiencyScore,
       storage_debt_bytes: storageDebtBytes,
-      overall_score: overallScore,
-      resolution_score: resolutionScore,
-      bitrate_score: bitrateScore,
-      audio_score: audioScore,
       is_low_quality: isLowQuality,
       needs_upgrade: needsUpgrade,
       issues: JSON.stringify(issues),
@@ -575,11 +563,13 @@ export class QualityAnalyzer {
 
     // Deduct audio allowance from bitrate for analysis (don't penalize high-quality audio)
     const audioAllowance = isLossless ? this.losslessAudioAllowance : 0
-    const analysisBitrate = Math.max(500, bitrate - audioAllowance)
+    // Penalize dubs: bitrates from non-original language tracks are considered pure bloat
+    const dubPenalty = this.calculateDubBitrate(item)
+    const analysisBitrate = Math.max(500, bitrate - audioAllowance + dubPenalty)
 
     const effectiveBitrate = analysisBitrate * efficiencyMult
     const targetKbps = this.efficiencyThresholds[tier]
-    
+
     // HDR requires slightly more bitrate for the same visual transparency
     const bloatKbps = this.bloatThresholds[tier] * (isHdr ? this.hdrOverheadMultiplier : 1.0)
 
@@ -623,10 +613,11 @@ export class QualityAnalyzer {
 
     const isLossless = this.isLosslessAudio(item.audio_codec) || (item.audio_tracks?.toLowerCase().includes('truehd') || item.audio_tracks?.toLowerCase().includes('dts-hd'))
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
+    const dubBitrate = this.calculateDubBitrate(item)
 
     // Efficient target for this tier
     let targetKbps = this.efficiencyThresholds[tier]
-    
+
     // Add allowances to the target (so we don't count these high-value bits as debt)
     if (isLossless) targetKbps += this.losslessAudioAllowance
     if (isHdr) targetKbps *= this.hdrOverheadMultiplier
@@ -677,75 +668,6 @@ export class QualityAnalyzer {
     }
 
     return 'SD'
-  }
-
-  /**
-   * Calculate resolution score (0-100) - legacy
-   */
-  private calculateResolutionScore(height: number): number {
-    if (height >= 2160) return 100
-    if (height >= this.thresholds.resolutionExcellent) return 90
-    if (height >= this.thresholds.resolutionGood) return 70
-    if (height >= this.thresholds.resolutionPoor) return 50
-    return Math.round((height / this.thresholds.resolutionPoor) * 50)
-  }
-
-  /**
-   * Calculate bitrate score (0-100) based on resolution - legacy
-   */
-  private calculateBitrateScore(bitrate: number, height: number): number {
-    const bitrateKbps = bitrate
-    let expectedBitrate: number
-    let excellentBitrate: number
-
-    if (height >= 2160) {
-      expectedBitrate = this.thresholds.bitrate4K
-      excellentBitrate = 30000
-    } else if (height >= this.thresholds.resolutionExcellent) {
-      expectedBitrate = this.thresholds.bitrate1080p
-      excellentBitrate = 15000
-    } else if (height >= this.thresholds.resolutionGood) {
-      expectedBitrate = this.thresholds.bitrate720p
-      excellentBitrate = 8000
-    } else {
-      expectedBitrate = this.thresholds.bitrateSD
-      excellentBitrate = 4000
-    }
-
-    if (bitrateKbps >= excellentBitrate) return 100
-    if (bitrateKbps >= expectedBitrate) {
-      const ratio = (bitrateKbps - expectedBitrate) / (excellentBitrate - expectedBitrate)
-      return Math.round(80 + ratio * 20)
-    }
-    const ratio = bitrateKbps / expectedBitrate
-    return Math.round(ratio * 80)
-  }
-
-  /**
-   * Calculate audio score (0-100) - legacy
-   */
-  private calculateAudioScore(channels: number, bitrate: number): number {
-    let score = 0
-
-    if (channels >= this.thresholds.audioChannelsExcellent) {
-      score += 50
-    } else if (channels >= this.thresholds.audioChannelsGood) {
-      score += 35
-    } else {
-      score += 15
-    }
-
-    if (bitrate >= this.thresholds.audioBitrateExcellent) {
-      score += 50
-    } else if (bitrate >= this.thresholds.audioBitrateGood) {
-      score += 35
-    } else if (bitrate >= this.thresholds.audioBitratePoor) {
-      score += 20
-    } else {
-      score += 10
-    }
-
-    return Math.min(score, 100)
   }
 
   /**

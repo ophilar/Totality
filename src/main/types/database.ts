@@ -270,12 +270,6 @@ export interface QualityScore {
   efficiency_score: number // 0-100 score (BPP based)
   storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
 
-  // Legacy scores (for backward compatibility)
-  overall_score: number // Maps to tier_score
-  resolution_score: number // Deprecated
-  bitrate_score: number // Maps to bitrate_tier_score
-  audio_score: number // Maps to audio_tier_score
-
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
   needs_upgrade: boolean // Maps to tier_quality === 'LOW'
