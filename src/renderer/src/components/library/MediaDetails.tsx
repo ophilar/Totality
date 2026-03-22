@@ -110,6 +110,7 @@ interface MediaWithQuality {
   audio_sample_rate?: number
   has_object_audio?: boolean
   container?: string
+  original_language?: string
   audio_tracks?: string
   subtitle_tracks?: string
   version_count?: number
@@ -447,6 +448,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const isCommentary = (track: AudioTrack): boolean => {
     if (!track.title) return false
     return track.title.toLowerCase().includes('commentary')
+  }
+
+  const isDubbed = (track: AudioTrack): boolean => {
+    if (!media?.original_language || !track.language) return false
+    const trackLang = track.language.toLowerCase()
+    const origLang = media.original_language.toLowerCase()
+    // If language is known and NOT the original language, it's a dub
+    return trackLang !== origLang && trackLang !== 'und' && trackLang !== 'unk'
   }
 
   // Determine which audio track is "primary" (used for scoring) —
@@ -857,8 +866,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className="space-y-2">
                   {svAudioTracks.map((track, idx) => {
                     const commentary = isCommentary(track)
+                    const dubbed = isDubbed(track)
                     return (
-                      <div key={idx} className={`text-sm ${idx > 0 ? 'pt-2 border-t border-border' : ''} ${commentary ? 'opacity-50' : ''}`}>
+                      <div key={idx} className={`text-sm ${idx > 0 ? 'pt-2 border-t border-border' : ''} ${commentary || dubbed ? 'opacity-50' : ''}`}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{track.codec?.toUpperCase()} {formatChannels(track.channels)}</span>
                           {isAudioBitrateLow(track, sv?.quality_tier ?? media.quality_tier) && <LowIndicator />}
@@ -867,6 +877,9 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                           )}
                           {commentary && (
                             <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded">Commentary</span>
+                          )}
+                          {dubbed && (
+                            <span className="px-1.5 py-0.5 text-xs bg-orange-500/20 text-orange-300 rounded" title="Non-original language">Dubbed</span>
                           )}
                         </div>
                         {track.title && (

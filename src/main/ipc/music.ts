@@ -235,7 +235,7 @@ export function registerMusicHandlers(): void {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countArtists')
       const db = getDatabase()
-      return db.countMusicArtists(validFilters)
+      return db.getMusicArtists(validFilters).length
     } catch (error: unknown) {
       console.error('[music:countArtists] Error:', error)
       throw error
@@ -246,7 +246,7 @@ export function registerMusicHandlers(): void {
     try {
       const validFilters = validateInput(MusicFiltersSchema, filters, 'music:countAlbums')
       const db = getDatabase()
-      return db.countMusicAlbums(validFilters)
+      return db.getMusicAlbums(validFilters).length
     } catch (error: unknown) {
       console.error('[music:countAlbums] Error:', error)
       throw error
@@ -643,7 +643,7 @@ export function registerMusicHandlers(): void {
         kodiProvider.cancelMusicScan()
       } else if (provider.providerType === 'kodi-local') {
         const kodiLocalProvider = provider as KodiLocalProvider
-        kodiLocalProvider.cancelMusicScan()
+        kodiLocalProvider.cancelScan()
       } else {
         throw new Error(`Music scan cancellation is not supported for provider type: ${provider.providerType}`)
       }

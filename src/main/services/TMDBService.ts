@@ -14,6 +14,7 @@ import {
 } from '../types/tmdb'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
+import { getGeminiService } from './GeminiService'
 import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
 import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
 
@@ -350,6 +351,138 @@ export class TMDBService {
       return { seriesTmdbId, episode, seriesName }
     } catch (error) {
       // Episode might not exist in TMDB
+      return null
+    }
+  }
+
+  /**
+   * Multi-strategy TMDB movie search with fuzzy year matching and AI disambiguation
+   */
+  async searchMovieWithFallbacks(
+    originalTitle: string,
+    normalizedTitle: string,
+    year: number | undefined
+  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
+    // Helper to find best match from results
+    const findBestMatch = (
+      results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>,
+      targetYear?: number
+    ): { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null => {
+      if (!results || results.length === 0) return null
+
+      if (targetYear) {
+        // First try exact year match
+        const exactMatch = results.find(r => r.release_date?.startsWith(String(targetYear)))
+        if (exactMatch) {
+          return {
+            tmdbId: exactMatch.id,
+            title: exactMatch.title,
+            year: exactMatch.release_date ? parseInt(exactMatch.release_date.split('-')[0], 10) : undefined,
+            posterPath: exactMatch.poster_path || undefined,
+            backdropPath: exactMatch.backdrop_path || undefined,
+          }
+        }
+
+        // Try fuzzy year match (+/- 1 year)
+        const fuzzyMatch = results.find(r => {
+          if (!r.release_date) return false
+          const resultYear = parseInt(r.release_date.split('-')[0], 10)
+          return Math.abs(resultYear - targetYear) <= 1
+        })
+        if (fuzzyMatch) {
+          console.log(`[TMDB] Fuzzy year match: "${fuzzyMatch.title}" (${fuzzyMatch.release_date?.split('-')[0]}) for target year ${targetYear}`)
+          return {
+            tmdbId: fuzzyMatch.id,
+            title: fuzzyMatch.title,
+            year: fuzzyMatch.release_date ? parseInt(fuzzyMatch.release_date.split('-')[0], 10) : undefined,
+            posterPath: fuzzyMatch.poster_path || undefined,
+            backdropPath: fuzzyMatch.backdrop_path || undefined,
+          }
+        }
+      }
+
+      // Fall back to first result
+      const first = results[0]
+      return {
+        tmdbId: first.id,
+        title: first.title,
+        year: first.release_date ? parseInt(first.release_date.split('-')[0], 10) : undefined,
+        posterPath: first.poster_path || undefined,
+        backdropPath: first.backdrop_path || undefined,
+      }
+    }
+
+    // Strategy 1: Original title with year
+    if (year) {
+      const response = await this.searchMovie(originalTitle, year)
+      const match = findBestMatch(response.results, year)
+      if (match) return match
+    }
+
+    // Strategy 2: Normalized title with year
+    if (year && normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle, year)
+      const match = findBestMatch(response.results, year)
+      if (match) return match
+    }
+
+    // Strategy 3: Original title without year (to get more results)
+    {
+      const response = await this.searchMovie(originalTitle)
+      if (response.results?.length > 1) {
+        const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
+        if (aiMatch) return aiMatch
+      }
+      const match = findBestMatch(response.results, year)
+      if (match) return match
+    }
+
+    // Strategy 4: Normalized title without year
+    if (normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle)
+      if (response.results?.length > 1) {
+        const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
+        if (aiMatch) return aiMatch
+      }
+      const match = findBestMatch(response.results, year)
+      if (match) return match
+    }
+
+    return null
+  }
+
+  /**
+   * Try AI disambiguation when multiple TMDB results exist.
+   */
+  async tryAIDisambiguation(
+    filename: string,
+    year: number | undefined,
+    results: Array<{ id: number; title: string; release_date?: string; overview?: string; poster_path?: string | null; backdrop_path?: string | null }>,
+  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
+    try {
+      const gemini = getGeminiService()
+      if (!gemini.isConfigured()) return null
+
+      const candidates = results.slice(0, 5).map((r) => ({
+        id: r.id,
+        title: r.title,
+        year: r.release_date ? parseInt(r.release_date.split('-')[0], 10) : undefined,
+        overview: r.overview?.slice(0, 100),
+      }))
+
+      const bestIndex = await gemini.disambiguateTitle(filename, year, candidates)
+      const best = results[bestIndex]
+      if (!best) return null
+
+      console.log(`[TMDB] AI disambiguation picked "${best.title}" for "${filename}"`)
+      return {
+        tmdbId: best.id,
+        title: best.title,
+        year: best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined,
+        posterPath: best.poster_path || undefined,
+        backdropPath: best.backdrop_path || undefined,
+      }
+    } catch {
       return null
     }
   }

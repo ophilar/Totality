@@ -1,8 +1,11 @@
 import type { Database } from 'better-sqlite3'
 import type { MediaItem, MediaItemFilters } from '../../types/database'
+import { BaseRepository } from './BaseRepository'
 
-export class MediaRepository {
-  constructor(private db: Database) {}
+export class MediaRepository extends BaseRepository<MediaItem> {
+  constructor(db: Database) {
+    super(db, 'media_items')
+  }
 
   getMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
     let sql = `
@@ -58,6 +61,15 @@ export class MediaRepository {
       sql += ' AND q.tier_quality = ?'
       params.push(filters.tierQuality)
     }
+    if (filters?.efficiencyFilter) {
+      if (filters.efficiencyFilter === 'low') sql += ' AND q.efficiency_score < 60'
+      else if (filters.efficiencyFilter === 'medium') sql += ' AND q.efficiency_score >= 60 AND q.efficiency_score < 85'
+      else if (filters.efficiencyFilter === 'high') sql += ' AND q.efficiency_score >= 85'
+    }
+    if (filters?.slimDown) {
+      // Show highly inefficient or heavily wasteful items
+      sql += ' AND (q.efficiency_score < 60 OR q.storage_debt_bytes > 5368709120)' // 5GB debt threshold
+    }
     if (filters?.needsUpgrade !== undefined) {
       sql += ' AND q.needs_upgrade = ?'
       params.push(filters.needsUpgrade ? 1 : 0)
@@ -73,7 +85,9 @@ export class MediaRepository {
       'created_at': 'm.created_at',
       'tier_score': 'q.tier_score',
       'overall_score': 'q.overall_score',
-      'size': 'm.file_size'
+      'size': 'm.file_size',
+      'storage_debt': 'q.storage_debt_bytes',
+      'efficiency': 'q.efficiency_score'
     }
     const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -102,8 +116,7 @@ export class MediaRepository {
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.id = ?
     `
-    const stmt = this.db.prepare(sql)
-    return (stmt.get(id) as MediaItem) || null
+    return this.queryOne<MediaItem>(sql, [id])
   }
 
   getMediaItemById(id: number): MediaItem | null {
@@ -135,70 +148,6 @@ export class MediaRepository {
 
     const stmt = this.db.prepare(sql)
     return (stmt.get(...params) as MediaItem) || null
-  }
-
-  countMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): number {
-    let sql = `
-      SELECT COUNT(*) as count
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: unknown[] = []
-
-    if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
-    }
-
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
-    if (filters?.searchQuery) {
-      sql += ' AND (m.title LIKE ? OR m.series_title LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search)
-    }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
-      }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      sql += ' AND q.needs_upgrade = ?'
-      params.push(filters.needsUpgrade ? 1 : 0)
-      if (filters.needsUpgrade) {
-        sql += ` AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
-      }
-    }
-
-    const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as { count: number }
-    return result.count
   }
 
   upsertMediaItem(item: MediaItem): number {
@@ -330,7 +279,7 @@ export class MediaRepository {
     this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
     this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
     this.db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
+    this.delete(id)
   }
 
   deleteMediaItemsForSource(sourceId: string): void {

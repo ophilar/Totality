@@ -224,6 +224,13 @@ export interface KodiSetWithDetails {
 // JOINED QUERY RESULTS
 // ============================================================================
 
+export interface KodiAudioStream {
+  idFile: number
+  codec?: string
+  channels?: number
+  language?: string
+}
+
 export interface KodiMovieWithDetails {
   idMovie: number
   idFile: number

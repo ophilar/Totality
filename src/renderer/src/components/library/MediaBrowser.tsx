@@ -105,6 +105,7 @@ export function MediaBrowser({
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [view, setView] = useState<'movies' | 'tv' | 'music' | 'wishlist'>('movies')
+  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
 
   // Music state
   const [musicArtists, setMusicArtists] = useState<MusicArtist[]>([])
@@ -155,8 +156,8 @@ export function MediaBrowser({
   const {
     tierFilter, setTierFilter,
     qualityFilter, setQualityFilter,
-    efficiencyFilter, setEfficiencyFilter,
     alphabetFilter, setAlphabetFilter,
+    slimDown, setSlimDown,
     debouncedTierFilter, debouncedQualityFilter,
   } = useLibraryFilters(searchInput)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -669,15 +670,22 @@ export function MediaBrowser({
     setMoviesLoading(true)
     try {
       const offset = reset ? (startOffset ?? 0) : moviesOffsetRef.current
+      let serverSortBy: string = 'title'
+      let serverSortOrder: 'asc' | 'desc' = 'asc'
+      if (sortBy === 'efficiency') { serverSortBy = 'efficiency'; serverSortOrder = 'asc' }
+      else if (sortBy === 'waste') { serverSortBy = 'storage_debt'; serverSortOrder = 'desc' }
+      else if (sortBy === 'size') { serverSortBy = 'size'; serverSortOrder = 'desc' }
+
       const filters: Record<string, unknown> = {
         type: 'movie',
         limit: MOVIES_PAGE_SIZE,
         offset,
-        sortBy: 'title',
-        sortOrder: 'asc',
+        sortBy: serverSortBy,
+        sortOrder: serverSortOrder,
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
+      if (slimDown) filters.slimDown = true
 
       if (debouncedTierFilter !== 'all') filters.qualityTier = debouncedTierFilter
       if (debouncedQualityFilter !== 'all') filters.tierQuality = debouncedQualityFilter.toUpperCase()
@@ -701,7 +709,7 @@ export function MediaBrowser({
     } finally {
       setMoviesLoading(false)
     }
-  }, [activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, moviesLoading])
+  }, [activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, moviesLoading, sortBy, slimDown])
 
   // Load more movies (infinite scroll callback)
   const loadMoreMovies = useCallback(() => {
@@ -716,7 +724,7 @@ export function MediaBrowser({
       loadPaginatedMovies(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery])
+  }, [view, activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, sortBy, slimDown])
 
   // Load paginated TV shows from server with current filters
   const loadPaginatedShows = useCallback(async (reset = true, startOffset?: number) => {
@@ -724,14 +732,21 @@ export function MediaBrowser({
     setShowsLoading(true)
     try {
       const offset = reset ? (startOffset ?? 0) : showsOffsetRef.current
+      let serverSortBy: string = 'title'
+      let serverSortOrder: 'asc' | 'desc' = 'asc'
+      if (sortBy === 'efficiency') { serverSortBy = 'efficiency'; serverSortOrder = 'asc' }
+      else if (sortBy === 'waste') { serverSortBy = 'storage_debt'; serverSortOrder = 'desc' }
+      else if (sortBy === 'size') { serverSortBy = 'size'; serverSortOrder = 'desc' }
+
       const filters: Record<string, unknown> = {
         limit: SHOWS_PAGE_SIZE,
         offset,
-        sortBy: 'title',
-        sortOrder: 'asc',
+        sortBy: serverSortBy,
+        sortOrder: serverSortOrder,
       }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
+      if (slimDown) filters.slimDown = true
 
       if (searchQuery.trim()) filters.searchQuery = searchQuery.trim()
 
@@ -755,7 +770,7 @@ export function MediaBrowser({
     } finally {
       setShowsLoading(false)
     }
-  }, [showsLoading, activeSourceId, activeLibraryId,searchQuery])
+  }, [showsLoading, activeSourceId, activeLibraryId,searchQuery, sortBy, slimDown])
 
   const loadMoreShows = useCallback(() => {
     if (showsOffsetRef.current < totalShowCount && !showsLoading) {
@@ -783,7 +798,7 @@ export function MediaBrowser({
       loadPaginatedShows(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, activeSourceId, activeLibraryId,searchQuery])
+  }, [view, activeSourceId, activeLibraryId, searchQuery, sortBy, slimDown])
 
   // Load episodes when a show is selected
   useEffect(() => {
@@ -1144,7 +1159,6 @@ export function MediaBrowser({
   }, [setAlphabetFilter, view, musicViewMode, activeSourceId, activeLibraryId, loadPaginatedMovies, loadPaginatedShows, loadPaginatedArtists, loadPaginatedAlbums])
 
   // Movies are now loaded from the server pre-filtered/sorted/paginated
-  const movies = paginatedMovies
 
   // Global search results for live preview (searches all content types)
   const globalSearchResults = useMemo(() => {
@@ -2109,27 +2123,19 @@ export function MediaBrowser({
                   </div>
                 )}
 
-                {/* Efficiency Filter */}
-                {(view === 'movies' || view === 'tv' || (view === 'music' && musicViewMode === 'tracks')) && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground ml-2">Efficiency</span>
-                    <div className="flex gap-1">
-                      {['all', 'high', 'medium', 'low'].map((eff) => (
-                        <button
-                          key={eff}
-                          onClick={() => setEfficiencyFilter(eff as any)}
-                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-none ${
-                            efficiencyFilter === eff
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-card text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          {eff.charAt(0).toUpperCase() + eff.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Slim Down Toggle */}
+                <div className="h-6 w-px bg-border/50" />
+                <button
+                      onClick={() => setSlimDown(!slimDown)}
+                      className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden flex items-center gap-1.5 ${
+                        slimDown
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-card text-muted-foreground hover:bg-muted'
+                      }`}
+                      title="Show media to slim down (save space)"
+                    >
+                      Slim Down
+                    </button>
 
                 {/* Collections Filter (movies only) */}
                 {view === 'movies' && movieCollections.length > 0 && (
@@ -2216,7 +2222,10 @@ export function MediaBrowser({
         ) : (
           view === 'movies' ? (
             <MoviesView
-              movies={movies}
+              movies={paginatedMovies}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              slimDown={slimDown}
               onSelectMovie={(id, _movie) => setSelectedMediaId(id)}
               onSelectCollection={(collection) => {
                 setSelectedCollection(collection)
@@ -2239,6 +2248,9 @@ export function MediaBrowser({
           ) : view === 'tv' ? (
           <TVShowsView
             shows={paginatedShows}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            slimDown={slimDown}
             selectedShow={selectedShow}
             selectedSeason={selectedSeason}
             selectedShowData={selectedShowData}
@@ -2270,6 +2282,9 @@ export function MediaBrowser({
           />
         ) : (
           <MusicView
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            slimDown={slimDown}
             artists={musicArtists}
             totalArtistCount={totalArtistCount}
             artistsLoading={artistsLoading}

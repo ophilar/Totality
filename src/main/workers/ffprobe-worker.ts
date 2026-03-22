@@ -74,7 +74,7 @@ interface WorkerTask {
   filePath: string
 }
 
-interface AnalyzedVideoStream {
+export interface AnalyzedVideoStream {
   index: number
   codec: string
   profile?: string
@@ -91,7 +91,7 @@ interface AnalyzedVideoStream {
   hdrFormat?: string
 }
 
-interface AnalyzedAudioStream {
+export interface AnalyzedAudioStream {
   index: number
   codec: string
   profile?: string
@@ -106,7 +106,7 @@ interface AnalyzedAudioStream {
   hasObjectAudio: boolean
 }
 
-interface AnalyzedSubtitleStream {
+export interface AnalyzedSubtitleStream {
   index: number
   codec: string
   language?: string
@@ -115,7 +115,7 @@ interface AnalyzedSubtitleStream {
   isForced: boolean
 }
 
-interface EmbeddedMetadataTags {
+export interface EmbeddedMetadataTags {
   title?: string
   year?: number
   description?: string
@@ -125,7 +125,7 @@ interface EmbeddedMetadataTags {
   episodeTitle?: string
 }
 
-interface FileAnalysisResult {
+export interface FileAnalysisResult {
   success: boolean
   error?: string
   filePath: string
@@ -143,6 +143,7 @@ interface FileAnalysisResult {
   }
   embeddedMetadata?: EmbeddedMetadataTags
 }
+
 
 interface WorkerResult {
   taskId: string

@@ -41,7 +41,7 @@ export function registerWishlistHandlers() {
         } catch { /* continue without poster */ }
       }
 
-      return await db.addWishlistItem(validItem)
+      return await db.addWishlistItem(validItem as any)
     } catch (error) {
       console.error('Error adding wishlist item:', error)
       throw error
@@ -56,7 +56,7 @@ export function registerWishlistHandlers() {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
       console.log('[IPC wishlist:update] id:', validId)
-      await db.updateWishlistItem(validId, validUpdates)
+      await db.updateWishlistItem(validId, validUpdates as any)
       return { success: true }
     } catch (error) {
       console.error('Error updating wishlist item:', error)
@@ -85,7 +85,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getAll', async (_event, filters?: unknown) => {
     try {
       const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
-      return db.getWishlistItems(validFilters)
+      return db.getWishlistItems(validFilters as any)
     } catch (error) {
       console.error('Error getting wishlist items:', error)
       throw error
@@ -168,7 +168,7 @@ export function registerWishlistHandlers() {
         }
       }
 
-      const added = await db.addWishlistItemsBulk(validItems)
+      const added = await db.addWishlistItemsBulk(validItems as any)
       return { success: true, added }
     } catch (error) {
       console.error('Error bulk adding wishlist items:', error)

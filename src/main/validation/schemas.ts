@@ -107,9 +107,10 @@ export const BooleanSchema = z.boolean()
 export const TVShowFiltersSchema = z.object({
   sourceId: z.string().optional(),
   libraryId: z.string().optional(),
+  slimDown: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'season_count']).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'season_count', 'storage_debt', 'efficiency', 'size']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -129,7 +130,7 @@ export const MusicFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'artist', 'album', 'codec', 'duration', 'added_at', 'name', 'year']).optional(),
+  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'album', 'artist', 'codec', 'duration', 'added_at', 'name']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   alphabetFilter: z.string().max(1).optional(),
 }).optional()
@@ -185,10 +186,10 @@ export const TaskDefinitionSchema = z.object({
  * CSV export options
  */
 export const ExportCSVOptionsSchema = z.object({
-  includeUpgrades: z.boolean().optional(),
-  includeMissingMovies: z.boolean().optional(),
-  includeMissingEpisodes: z.boolean().optional(),
-  includeMissingAlbums: z.boolean().optional(),
+  includeUpgrades: z.boolean().optional().default(true),
+  includeMissingMovies: z.boolean().optional().default(true),
+  includeMissingEpisodes: z.boolean().optional().default(true),
+  includeMissingAlbums: z.boolean().optional().default(true),
 })
 
 /**
@@ -325,7 +326,7 @@ export const MediaItemSchema = z.object({
   source_id: z.string().min(1),
   source_type: ProviderTypeSchema,
   library_id: z.string().min(1),
-  provider_item_id: z.string().min(1),
+  plex_id: z.string().min(1),
   type: MediaTypeSchema,
   title: z.string().min(1).max(500),
   year: z.number().int().min(1800).max(2100).optional().nullable(),
@@ -369,9 +370,17 @@ export const QualityScoreSchema = z.object({
   media_item_id: z.number().int().positive(),
   overall_score: z.number().min(0).max(100),
   needs_upgrade: z.boolean(),
-  quality_tier: QualityTierSchema.optional(),
+  quality_tier: QualityTierSchema,
   tier_quality: TierQualitySchema.optional(),
   tier_score: z.number().min(0).max(100).optional(),
+  bitrate_tier_score: z.number().min(0).max(100).optional(),
+  audio_tier_score: z.number().min(0).max(100).optional(),
+  resolution_score: z.number().min(0).max(100).optional(),
+  bitrate_score: z.number().min(0).max(100).optional(),
+  audio_score: z.number().min(0).max(100).optional(),
+  efficiency_score: z.number().min(0).max(100).optional(),
+  storage_debt_bytes: z.number().min(0).optional(),
+  is_low_quality: z.boolean().optional(),
   issues: z.string().optional().nullable(),
 })
 
@@ -393,12 +402,15 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score']).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency']).optional(),
+
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),
   qualityTier: z.string().optional(),
   tierQuality: z.string().optional(),
+  efficiencyFilter: z.string().optional(),
+  slimDown: z.boolean().optional(),
 })
 
 // ============================================================================

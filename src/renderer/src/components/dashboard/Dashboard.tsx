@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { FixedSizeList as VirtualList, VariableSizeList } from 'react-window'
-import { Sparkles, Library, Tv, Film, Music, Disc3, CircleFadingArrowUp, ChevronDown, Plus, EyeOff } from 'lucide-react'
+import { Sparkles, Library, Tv, Film, Music, Disc3, CircleFadingArrowUp, ChevronDown, Plus, EyeOff, Trash2 } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { MediaDetails } from '../library/MediaDetails'
 import { useSources } from '../../contexts/SourceContext'
@@ -62,7 +62,7 @@ interface DashboardProps {
   hasMusic?: boolean
 }
 
-type UpgradeTab = 'movies' | 'tv' | 'music'
+type UpgradeTab = 'movies' | 'tv' | 'music' | 'cleanup'
 
 // Item heights for virtual lists (fixed height rows)
 const MOVIE_ITEM_HEIGHT = 80  // poster height + padding
@@ -94,6 +94,7 @@ export function Dashboard({
   const [movieUpgrades, setMovieUpgrades] = useState<MediaItem[]>([])
   const [tvUpgrades, setTvUpgrades] = useState<MediaItem[]>([])
   const [musicUpgrades, setMusicUpgrades] = useState<MusicAlbumUpgrade[]>([])
+  const [storageWaste, setStorageWaste] = useState<MediaItem[]>([])
   const [collections, setCollections] = useState<MovieCollectionData[]>([])
   const [series, setSeries] = useState<SeriesCompletenessData[]>([])
   const [artists, setArtists] = useState<ArtistCompletenessData[]>([])
@@ -180,7 +181,7 @@ export function Dashboard({
       if (serSort) setSeriesSortBy(serSort as 'completeness' | 'name' | 'recent')
       if (artSort) setArtistSortBy(artSort as 'completeness' | 'name')
 
-      const [movieUpgradeData, tvUpgradeData, musicUpgradeData, collectionsData, seriesData, artistsData] = await Promise.all([
+      const [movieUpgradeData, tvUpgradeData, musicUpgradeData, collectionsData, seriesData, artistsData, storageWasteData] = await Promise.all([
         window.electronAPI.getMediaItems({
           needsUpgrade: true,
           type: 'movie',
@@ -198,15 +199,22 @@ export function Dashboard({
         window.electronAPI.musicGetAlbumsNeedingUpgrade(undefined, sourceId) as Promise<MusicAlbumUpgrade[]>,
         window.electronAPI.collectionsGetIncomplete(sourceId) as Promise<MovieCollectionData[]>,
         window.electronAPI.seriesGetIncomplete(sourceId) as Promise<SeriesCompletenessData[]>,
-        window.electronAPI.musicGetAllArtistCompleteness(sourceId) as Promise<ArtistCompletenessData[]>
+        window.electronAPI.musicGetAllArtistCompleteness(sourceId) as Promise<ArtistCompletenessData[]>,
+        window.electronAPI.getMediaItems({
+          sortBy: 'storage_debt',
+          sortOrder: 'desc',
+          limit: 50,
+          sourceId
+        }) as Promise<MediaItem[]>,
       ])
 
       // Load exclusions for completeness and upgrade filtering
-      const [collectionExclusions, seriesExclusions, artistExclusions, upgradeExclusions] = await Promise.all([
+      const [collectionExclusions, seriesExclusions, artistExclusions, upgradeExclusions, cleanupExclusions] = await Promise.all([
         window.electronAPI.getExclusions('collection_movie'),
         window.electronAPI.getExclusions('series_episode'),
         window.electronAPI.getExclusions('artist_album'),
         window.electronAPI.getExclusions('media_upgrade'),
+        window.electronAPI.getExclusions('cleanup_radar'),
       ])
 
       // Build exclusion lookup sets
@@ -214,6 +222,7 @@ export function Dashboard({
       const excludedSeriesEpisodes = new Set(seriesExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
       const excludedArtistAlbums = new Set(artistExclusions.map(e => `${e.parent_key}:${e.reference_key}`))
       const excludedUpgradeIds = new Set(upgradeExclusions.map(e => e.reference_id))
+      const excludedCleanupIds = new Set(cleanupExclusions.map(e => e.reference_id))
 
       // Filter and sort upgrades, excluding dismissed items
       setMovieUpgrades(movieUpgradeData
@@ -225,6 +234,11 @@ export function Dashboard({
         .sort((a, b) => (a.tier_score ?? 100) - (b.tier_score ?? 100))
       )
       setMusicUpgrades((musicUpgradeData || []).filter(m => !excludedUpgradeIds.has(m.id)))
+
+      // Filter storage waste: items with significant debt (> 1GB) and not excluded
+      setStorageWaste(storageWasteData
+        .filter(m => !excludedCleanupIds.has(m.id) && (m.storage_debt_bytes || 0) > 1024 * 1024 * 1024)
+      )
 
       // Filter collections: remove excluded missing movies from JSON, adjust totals
       const filteredCollections = collectionsData
@@ -616,7 +630,65 @@ export function Dashboard({
     artistsListInstanceRef.current?.resetAfterIndex(0)
   }, [artistSortBy])
 
+  const dismissCleanupItem = useCallback(async (index: number) => {
+    const item = storageWaste[index]
+    if (!item) return
+    await window.electronAPI.addExclusion('cleanup_radar', item.id, undefined, undefined, item.title)
+    setStorageWaste(prev => prev.filter((_, i) => i !== index))
+  }, [storageWaste])
+
   // Virtual list row renderers
+  const StorageWasteRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const item = storageWaste[index]
+    if (!item) return null
+    
+    const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
+    const totalGB = item.file_size ? (item.file_size / (1024 * 1024 * 1024)).toFixed(1) : '0'
+
+    return (
+      <div style={style} className="px-2">
+        <div
+          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
+          onClick={() => setSelectedMediaId(item.id)}
+        >
+          <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
+            {item.poster_url || item.episode_thumb_url ? (
+              <img src={item.poster_url || item.episode_thumb_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                {item.type === 'movie' ? <Film className="w-5 h-5 text-muted-foreground/50" /> : <Tv className="w-5 h-5 text-muted-foreground/50" />}
+              </div>
+            )}
+            <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm">
+              <Trash2 className="w-2.5 h-2.5 text-white" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm truncate">{item.title}</div>
+            <div className="text-xs text-muted-foreground truncate">
+              {item.type === 'episode' ? `${item.series_title} S${item.season_number}E${item.episode_number}` : item.year}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="text-[10px] font-bold text-red-400 bg-red-400/10 px-1 py-0.5 rounded leading-none">
+                {wasteGB}GB WASTE
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                of {totalGB}GB
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismissCleanupItem(index) }}
+            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+            title="Dismiss"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    )
+  }, [storageWaste, dismissCleanupItem])
+
   const MovieUpgradeRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const item = movieUpgrades[index]
     if (!item) return null
@@ -1228,7 +1300,7 @@ export function Dashboard({
                 </div>
               </div>
               {/* Tabs - centered, only show if multiple library types exist */}
-              {[hasMovies, hasTV, hasMusic].filter(Boolean).length > 1 && (
+              {([hasMovies, hasTV, hasMusic].filter(Boolean).length > 1 || storageWaste.length > 0) && (
                 <div className="flex flex-wrap gap-1 justify-center">
                   {hasMovies && (
                     <button
@@ -1267,6 +1339,19 @@ export function Dashboard({
                     >
                       <Disc3 className="w-3.5 h-3.5" />
                       Music
+                    </button>
+                  )}
+                  {storageWaste.length > 0 && (
+                    <button
+                      onClick={() => setUpgradeTab('cleanup')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        upgradeTab === 'cleanup'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-orange-600/20 text-orange-200 hover:bg-orange-600/30'
+                      }`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Cleanup
                     </button>
                   )}
                 </div>
@@ -1322,6 +1407,23 @@ export function Dashboard({
                       width="100%"
                     >
                       {MusicUpgradeRow}
+                    </VirtualList>
+                  )
+                )}
+                {/* Cleanup Tab Content */}
+                {upgradeTab === 'cleanup' && (
+                  storageWaste.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      No storage waste detected
+                    </div>
+                  ) : (
+                    <VirtualList
+                      height={upgradeListHeight}
+                      itemCount={storageWaste.length}
+                      itemSize={MOVIE_ITEM_HEIGHT}
+                      width="100%"
+                    >
+                      {StorageWasteRow}
                     </VirtualList>
                   )
                 )}

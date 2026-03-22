@@ -25,8 +25,8 @@ import {
 import { selectBestAudioTrack } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
-import type {
-  MediaProvider,
+import {
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
   ConnectionTestResult,
@@ -37,6 +37,7 @@ import type {
   ScanOptions,
   ProgressCallback,
   SourceConfig,
+  ProviderType,
 } from '../base/MediaProvider'
 import type {
   PlexAuthPin,
@@ -82,9 +83,8 @@ function getReliableVideoBitrate(
   return calculated || overall
 }
 
-export class PlexProvider implements MediaProvider {
-  readonly providerType = 'plex' as const
-  readonly sourceId: string
+export class PlexProvider extends BaseMediaProvider {
+  readonly providerType: ProviderType = 'plex' as ProviderType
 
   private authToken: string | null = null
   private selectedServer: PlexServer | null = null
@@ -98,7 +98,7 @@ export class PlexProvider implements MediaProvider {
   private warnedSkippedItems = new Set<string>()
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
+    super(config)
 
     this.api = axios.create({
       headers: {
@@ -114,10 +114,6 @@ export class PlexProvider implements MediaProvider {
     if (config.connectionConfig?.token) {
       this.authToken = config.connectionConfig.token
     }
-  }
-
-  private generateSourceId(): string {
-    return `plex_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   // ============================================================================
@@ -1183,7 +1179,7 @@ export class PlexProvider implements MediaProvider {
     }
 
     // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
-    const best = versions.reduce((a, b) => this.scoreVersion(b) > this.scoreVersion(a) ? b : a)
+    const best = versions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
 
     // Extract external IDs
     let imdbId: string | undefined
@@ -1272,15 +1268,6 @@ export class PlexProvider implements MediaProvider {
       },
       versions,
     }
-  }
-
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2
-      : 1
-    const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
   }
 
   // ============================================================================

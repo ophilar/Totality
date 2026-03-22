@@ -9,8 +9,8 @@ import {
 } from './ai-system-prompts'
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
+function compact(obj: any): any {
+  const result: any = {}
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined && v !== '') result[k] = v
   }
@@ -51,7 +51,7 @@ export class GeminiAnalysisService {
       '',
       '## Sample Low-Quality Items (up to 20)',
       JSON.stringify(
-        lowQualityItems.map((item: Record<string, unknown>) => compact({
+        lowQualityItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -110,7 +110,7 @@ export class GeminiAnalysisService {
       '',
       '## LOW Quality Items (up to 30)',
       JSON.stringify(
-        lowItems.map((item: Record<string, unknown>) => compact({
+        lowItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -125,7 +125,7 @@ export class GeminiAnalysisService {
       '',
       '## MEDIUM Quality Items (up to 20)',
       JSON.stringify(
-        mediumItems.map((item: Record<string, unknown>) => compact({
+        mediumItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -174,13 +174,13 @@ export class GeminiAnalysisService {
       '',
       `## Incomplete TV Series (${incompleteSeries.length} total, showing up to 30)`,
       JSON.stringify(
-        incompleteSeries.slice(0, 30).map((s: Record<string, unknown>) => {
+        incompleteSeries.slice(0, 30).map((s: any) => {
           let missingCount = 0
           let missingSample: string[] = []
           try {
             const parsed = JSON.parse((s.missing_episodes as string) || '[]')
             missingCount = parsed.length
-            missingSample = parsed.slice(0, 5).map((e: Record<string, unknown>) =>
+            missingSample = parsed.slice(0, 5).map((e: any) =>
               `S${e.season_number}E${e.episode_number}`,
             )
           } catch { /* empty */ }
@@ -198,13 +198,13 @@ export class GeminiAnalysisService {
       '',
       `## Incomplete Movie Collections (${incompleteCollections.length} total, showing up to 30)`,
       JSON.stringify(
-        incompleteCollections.slice(0, 30).map((c: Record<string, unknown>) => {
+        incompleteCollections.slice(0, 30).map((c: any) => {
           let missingCount = 0
           let missingSample: string[] = []
           try {
             const parsed = JSON.parse((c.missing_movies as string) || '[]')
             missingCount = parsed.length
-            missingSample = parsed.slice(0, 5).map((m: Record<string, unknown>) =>
+            missingSample = parsed.slice(0, 5).map((m: any) =>
               m.year ? `${m.title} (${m.year})` : `${m.title}`,
             )
           } catch { /* empty */ }
@@ -254,7 +254,7 @@ export class GeminiAnalysisService {
       '',
       `## Wishlist Items (${wishlistItems.length})`,
       JSON.stringify(
-        wishlistItems.map((item: Record<string, unknown>) => compact({
+        wishlistItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           media_type: item.media_type,

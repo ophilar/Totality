@@ -213,11 +213,10 @@ export class SeriesCompletenessService extends CancellableOperation {
     }
 
     // Extract episode info
-    const ownedEpisodes: EpisodeInfo[] = episodes.map((ep: { season_number?: number; episode_number?: number }) => ({
+    const ownedEpisodes: EpisodeInfo[] = episodes.map((ep: any) => ({
       seasonNumber: ep.season_number || 0,
       episodeNumber: ep.episode_number || 0,
     }))
-
     // Use cached TMDB ID if available, otherwise look it up
     const tmdbId = cachedTmdbId || await this.findTMDBShowId(seriesTitle, episodes)
 
@@ -249,7 +248,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       let totalSizeBytes = 0
       let episodeCountWithScore = 0
 
-      for (const ep of episodes) {
+      episodes.forEach((ep: any) => {
         if (ep.efficiency_score != null) {
           totalEfficiency += ep.efficiency_score
           episodeCountWithScore++
@@ -260,7 +259,7 @@ export class SeriesCompletenessService extends CancellableOperation {
         if (ep.file_size != null) {
           totalSizeBytes += ep.file_size
         }
-      }
+      })
 
       const avgEfficiency = episodeCountWithScore > 0 ? Math.round(totalEfficiency / episodeCountWithScore) : 0
 
@@ -583,17 +582,17 @@ export class SeriesCompletenessService extends CancellableOperation {
     let totalEpisodes = 0
 
     // Get season numbers to fetch (skip season 0 - specials, skip unaired seasons)
-    const regularSeasons = showDetails.seasons.filter((s) =>
+    const regularSeasons = showDetails.seasons.filter((s: any) =>
       s.season_number > 0 && (!s.air_date || s.air_date <= today)
     )
-    const seasonNumbers = regularSeasons.map(s => s.season_number)
+    const seasonNumbers = regularSeasons.map((s: any) => s.season_number)
 
     if (seasonNumbers.length === 0) {
       return {
         totalSeasons: 0,
         totalEpisodes: 0,
         ownedSeasons: ownedSeasonSet.size,
-        ownedEpisodes: ownedEpisodes.filter((ep) => ep.seasonNumber !== 0).length,
+        ownedEpisodes: ownedEpisodes.filter((ep: any) => ep.seasonNumber !== 0).length,
         missingSeasons: [],
         missingEpisodes: [],
         completenessPercentage: 100,
@@ -692,7 +691,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       }
     }
 
-    const ownedEpisodeCount = ownedEpisodes.filter((ep) => ep.seasonNumber !== 0).length
+    const ownedEpisodeCount = ownedEpisodes.filter((ep: any) => ep.seasonNumber !== 0).length
     const completenessPercentage =
       totalEpisodes > 0 ? Math.round((ownedEpisodeCount / totalEpisodes) * 100) : 0
 
@@ -723,8 +722,8 @@ export class SeriesCompletenessService extends CancellableOperation {
     sourceId?: string,
     libraryId?: string
   ): Omit<SeriesCompleteness, 'id' | 'created_at' | 'updated_at'> {
-    const nonSpecialEpisodes = ownedEpisodes.filter((ep) => ep.seasonNumber !== 0)
-    const uniqueSeasons = new Set(nonSpecialEpisodes.map((ep) => ep.seasonNumber))
+    const nonSpecialEpisodes = ownedEpisodes.filter((ep: any) => ep.seasonNumber !== 0)
+    const uniqueSeasons = new Set(nonSpecialEpisodes.map((ep: any) => ep.seasonNumber))
 
     return {
       series_title: seriesTitle,

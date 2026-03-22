@@ -22,8 +22,8 @@ import {
   getKodiMySQLConnectionService,
   type KodiMySQLConfig,
 } from '../../services/KodiMySQLConnectionService'
-import type {
-  MediaProvider,
+import {
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
   ConnectionTestResult,
@@ -35,8 +35,17 @@ import type {
   ProviderType,
   AudioStreamInfo,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
-import { extractVersionNames } from '../utils/VersionNaming'
+import {
+  normalizeVideoCodec,
+  normalizeAudioCodec,
+  normalizeResolution,
+  normalizeHdrFormat,
+  normalizeAudioChannels,
+  hasObjectAudio,
+} from '../../services/MediaNormalizer'
+import { estimateAudioBitrate } from '../utils/ProviderUtils'
+import { getFileNameParser } from '../../services/FileNameParser'
+import type { Pool } from 'mysql2/promise'
 import {
   KodiMovieWithDetails,
   KodiEpisodeWithDetails,
@@ -55,17 +64,8 @@ import {
   isLosslessCodec,
   calculateAlbumStats,
 } from '../base/MusicScannerUtils'
-import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
-  normalizeAudioChannels,
-  hasObjectAudio,
-} from '../../services/MediaNormalizer'
-import { estimateAudioBitrate } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
-import type { Pool } from 'mysql2/promise'
+import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
+import { extractVersionNames } from '../utils/VersionNaming'
 
 // Type for audio stream query result
 interface KodiAudioStream {
@@ -238,9 +238,8 @@ ORDER BY s.iTrack
 
 const QUERY_MUSIC_SONG_COUNT = `SELECT COUNT(*) as count FROM song`
 
-export class KodiMySQLProvider implements MediaProvider {
+export class KodiMySQLProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = 'kodi-mysql' as ProviderType
-  readonly sourceId: string
 
   private mysqlConfig: KodiMySQLConfig | null = null
   private pool: Pool | null = null
@@ -250,7 +249,7 @@ export class KodiMySQLProvider implements MediaProvider {
   private musicScanCancelled = false
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
+    super(config)
 
     // Load from connection config if provided
     if (config.connectionConfig) {
@@ -270,10 +269,6 @@ export class KodiMySQLProvider implements MediaProvider {
       this.musicDatabaseName = cc.musicDatabaseName || ''
       this.databaseVersion = cc.videoDatabaseVersion || 0
     }
-  }
-
-  private generateSourceId(): string {
-    return `kodi_mysql_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   // ============================================================================
@@ -611,7 +606,7 @@ export class KodiMySQLProvider implements MediaProvider {
               extractVersionNames(versions)
             }
 
-            const bestIdx = versions.reduce((bi, v, i) => this.scoreVersion(v) > this.scoreVersion(versions[bi]) ? i : bi, 0)
+            const bestIdx = versions.reduce((bi, v, i) => this.calculateVersionScore(v) > this.calculateVersionScore(versions[bi]) ? i : bi, 0)
             const bestMetadata = group[bestIdx]
 
             const mediaItem = this.convertMetadataToMediaItem(bestMetadata)
@@ -934,23 +929,6 @@ export class KodiMySQLProvider implements MediaProvider {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-  }
-
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
-    const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
-  }
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
   }
 
   private convertMetadataToVersion(metadata: MediaMetadata): Omit<MediaItemVersion, 'id' | 'media_item_id'> {

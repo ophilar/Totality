@@ -59,6 +59,7 @@ export const mediaApi = {
   }) => ipcRenderer.invoke('db:exportCSV', options),
   dbImport: () => ipcRenderer.invoke('db:import'),
   dbReset: () => ipcRenderer.invoke('db:reset'),
+  dbOpenFolder: () => ipcRenderer.invoke('db:openFolder'),
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
@@ -68,6 +69,8 @@ export const mediaApi = {
   seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
   seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesTitle, sourceId),
   seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
+  seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) =>
+    ipcRenderer.invoke('series:getSeasonDetails', tmdbId, seasonNumber),
   seriesGetSeasonPoster: (tmdbId: string, seasonNumber: number) =>
     ipcRenderer.invoke('series:getSeasonPoster', tmdbId, seasonNumber),
   seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) =>
@@ -88,6 +91,10 @@ export const mediaApi = {
   movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke('movie:searchTMDB', query, year),
   movieFixMatch: (mediaItemId: number, tmdbId: number) =>
     ipcRenderer.invoke('movie:fixMatch', mediaItemId, tmdbId),
+
+  // TMDB Metadata
+  tmdbGetTVShowDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getTVShowDetails', tmdbId),
+  tmdbGetMovieDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getMovieDetails', tmdbId),
 
   // Movie Collections
   collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('collections:analyzeAll', sourceId, libraryId),
@@ -179,6 +186,7 @@ export interface MediaAPI {
   }) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
   dbImport: () => Promise<{ success: boolean; imported?: number; errors?: string[]; cancelled?: boolean }>
   dbReset: () => Promise<{ success: boolean }>
+  dbOpenFolder: () => Promise<{ success: boolean }>
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ completed: boolean; analyzed: number }>
@@ -194,6 +202,12 @@ export interface MediaAPI {
   }>
   seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => Promise<unknown[]>
   seriesDelete: (id: number) => Promise<boolean>
+  seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) => Promise<{
+    overview: string | null
+    episodeCount: number
+    airDate: string | null
+    name: string | null
+  } | null>
   seriesGetSeasonPoster: (tmdbId: string, seasonNumber: number) => Promise<string | null>
   seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) => Promise<string | null>
   seriesCancelAnalysis: () => Promise<{ success: boolean }>
@@ -229,6 +243,14 @@ export interface MediaAPI {
     posterUrl?: string
     title: string
   }>
+
+  // TMDB Metadata
+  tmdbGetTVShowDetails: (tmdbId: string) => Promise<{ overview: string | null } | null>
+  tmdbGetMovieDetails: (tmdbId: string) => Promise<{
+    overview: string | null
+    releaseDate: string | null
+    runtime: number | null
+  } | null>
 
   // Movie Collections
   collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ success: boolean; completed: boolean; analyzed: number }>

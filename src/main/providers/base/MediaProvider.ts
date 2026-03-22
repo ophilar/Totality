@@ -5,12 +5,15 @@
  * (Plex, Jellyfin, Emby, Kodi)
  */
 
+import {
+  normalizeResolution,
+} from '../../services/MediaNormalizer'
+import type { MediaItemVersion, ProviderType } from '../../types/database'
+export type { ProviderType }
+
 // Import and re-export shared IPC types
 import type { ConnectionTestResult } from '../../types/ipc'
 export type { ConnectionTestResult }
-
-// Provider types supported by the application
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local'
 
 // Credentials for different provider types
 export interface ProviderCredentials {
@@ -140,46 +143,46 @@ export interface MediaMetadata {
   // Core identification
   itemId: string
   title: string
-  sortTitle?: string
+  sortTitle?: string | null
   type: 'movie' | 'episode'
-  year?: number
+  year?: number | null
 
   // Episode-specific
-  seriesTitle?: string
-  seasonNumber?: number
-  episodeNumber?: number
+  seriesTitle?: string | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
 
   // External IDs
-  imdbId?: string
-  tmdbId?: number
-  seriesTmdbId?: number
+  imdbId?: string | null
+  tmdbId?: number | null
+  seriesTmdbId?: number | null
 
   // File info
-  filePath?: string
-  fileSize?: number
-  duration?: number
-  container?: string
+  filePath?: string | null
+  fileSize?: number | null
+  duration?: number | null
+  container?: string | null
 
   // Video quality
-  resolution?: string
-  width?: number
-  height?: number
-  videoCodec?: string
-  videoBitrate?: number
-  videoFrameRate?: number
-  colorBitDepth?: number
-  hdrFormat?: string
-  colorSpace?: string
-  videoProfile?: string
-  videoLevel?: string
+  resolution?: string | null
+  width?: number | null
+  height?: number | null
+  videoCodec?: string | null
+  videoBitrate?: number | null
+  videoFrameRate?: number | null
+  colorBitDepth?: number | null
+  hdrFormat?: string | null
+  colorSpace?: string | null
+  videoProfile?: string | null
+  videoLevel?: string | null
 
   // Audio quality (primary track)
-  audioCodec?: string
-  audioChannels?: number
-  audioBitrate?: number
-  audioProfile?: string
-  audioSampleRate?: number
-  hasObjectAudio?: boolean
+  audioCodec?: string | null
+  audioChannels?: number | null
+  audioBitrate?: number | null
+  audioProfile?: string | null
+  audioSampleRate?: number | null
+  hasObjectAudio?: boolean | null
 
   // All audio tracks
   audioTracks?: AudioStreamInfo[]
@@ -188,10 +191,10 @@ export interface MediaMetadata {
   subtitleTracks?: SubtitleStreamInfo[]
 
   // Artwork
-  posterUrl?: string
-  episodeThumbUrl?: string
-  seasonPosterUrl?: string
-  backdropUrl?: string
+  posterUrl?: string | null
+  episodeThumbUrl?: string | null
+  seasonPosterUrl?: string | null
+  backdropUrl?: string | null
 
   // Original raw data for debugging
   rawData?: unknown
@@ -329,16 +332,41 @@ export abstract class BaseMediaProvider implements MediaProvider {
   abstract scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult>
   abstract getItemMetadata(itemId: string): Promise<MediaMetadata>
 
-  // Helper to normalize resolution string
-  protected normalizeResolution(width: number, height: number): string {
-    if (height >= 2160 || width >= 3840) return '4K'
-    if (height >= 1080 || width >= 1920) return '1080p'
-    if (height >= 720 || width >= 1280) return '720p'
-    if (height >= 480 || width >= 720) return '480p'
-    return 'SD'
+  /**
+   * Calculate a quality score for a media version to pick the 'best' one for display.
+   * Higher score = better quality.
+   */
+  protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
+    const res = v.resolution || 'SD'
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2 : 1
+
+    const hdrBonus = (v.hdr_format && v.hdr_format !== 'None') ? 1000 : 0
+    const bitrateScore = (v.video_bitrate || 0) / 1000 // kbps to numeric weight
+
+    return tierRank * 100000 + hdrBonus + bitrateScore
   }
 
-  // Helper to detect HDR format
+  /**
+   * Clean titles for version grouping.
+   * Removes edition names and bracketed content to find the common 'feature' name.
+   */
+  protected normalizeGroupTitle(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
+      .replace(/\s*\(\s*\)\s*$/, '') // Empty brackets
+      .trim()
+  }
+
+  // Helper to normalize resolution string using MediaNormalizer
+  protected normalizeResolution(width: number, height: number): string {
+    return normalizeResolution(width, height)
+  }
+
+  // Helper to detect HDR format (kept for backward compatibility, uses MediaNormalizer logic internally if possible)
   protected detectHdrFormat(colorSpace?: string, bitDepth?: number, profile?: string): string | undefined {
     if (!colorSpace && !profile) return undefined
 

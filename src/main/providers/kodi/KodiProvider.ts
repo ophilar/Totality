@@ -14,8 +14,8 @@ import * as fs from 'fs'
 import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
 import { getMediaFileAnalyzer, FileAnalysisResult } from '../../services/MediaFileAnalyzer'
-import type {
-  MediaProvider,
+import {
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
   ConnectionTestResult,
@@ -24,6 +24,7 @@ import type {
   ScanResult,
   ScanOptions,
   SourceConfig,
+  ProviderType,
   AudioStreamInfo,
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
@@ -161,9 +162,8 @@ interface KodiMusicSong {
   channels?: number
 }
 
-export class KodiProvider implements MediaProvider {
-  readonly providerType = 'kodi' as const
-  readonly sourceId: string
+export class KodiProvider extends BaseMediaProvider {
+  readonly providerType: ProviderType = 'kodi' as ProviderType
 
   private host: string = ''
   private port: number = 8080
@@ -176,23 +176,19 @@ export class KodiProvider implements MediaProvider {
   private musicScanCancelled = false
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
+    super(config)
 
     // Load from connection config if provided
     if (config.connectionConfig) {
-      this.host = (config.connectionConfig.host as string) || ''
-      this.port = (config.connectionConfig.port as number) || 8080
-      this.username = config.connectionConfig.username as string | undefined
-      this.password = config.connectionConfig.password as string | undefined
+      this.host = (config.connectionConfig as any).host || ''
+      this.port = (config.connectionConfig as any).port || 8080
+      this.username = (config.connectionConfig as any).username
+      this.password = (config.connectionConfig as any).password
     }
 
     this.api = axios.create({
       timeout: 30000,
     })
-  }
-
-  private generateSourceId(): string {
-    return `kodi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   private getBaseUrl(): string {
@@ -632,7 +628,7 @@ export class KodiProvider implements MediaProvider {
               extractVersionNames(versions)
             }
 
-            const bestIdx = versions.reduce((bi, v, i) => this.scoreVersion(v) > this.scoreVersion(versions[bi]) ? i : bi, 0)
+            const bestIdx = versions.reduce((bi, v, i) => this.calculateVersionScore(v) > this.calculateVersionScore(versions[bi]) ? i : bi, 0)
             const bestMetadata = group[bestIdx]
 
             const mediaItem = this.convertMetadataToMediaItem(bestMetadata)
@@ -1017,23 +1013,6 @@ export class KodiProvider implements MediaProvider {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-  }
-
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
-    const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
-  }
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
   }
 
   private convertMetadataToVersion(metadata: MediaMetadata): Omit<MediaItemVersion, 'id' | 'media_item_id'> {

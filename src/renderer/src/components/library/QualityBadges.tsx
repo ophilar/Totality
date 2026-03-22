@@ -4,15 +4,37 @@
  * Displays quality indicator badges (HDR, 10-bit, Atmos, HFR) for media items.
  */
 
+import { Trash2, HardDrive } from 'lucide-react'
 import type { MediaItem } from './types'
 
 interface QualityBadgesProps {
   item: MediaItem
   whiteBg?: boolean
+  showEfficiency?: boolean
 }
 
-export function QualityBadges({ item, whiteBg = false }: QualityBadgesProps) {
-  const badges: Array<{ label: string; coloredClass: string }> = []
+export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {
+  const badges: Array<{ label: string; coloredClass: string; icon?: any }> = []
+
+  // Efficiency "Trash" badge - show if score is below threshold (60%)
+  if (showEfficiency && item.efficiency_score !== undefined && item.efficiency_score > 0 && item.efficiency_score < 60) {
+    badges.push({ 
+      label: 'Bloated', 
+      coloredClass: 'bg-orange-600/90 text-white',
+      icon: Trash2
+    })
+  }
+
+  // Storage Debt badge - show if over 5GB for movies, 2GB for episodes
+  const debtThreshold = item.type === 'movie' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
+  if (showEfficiency && item.storage_debt_bytes && item.storage_debt_bytes > debtThreshold) {
+    const gb = Math.round(item.storage_debt_bytes / (1024 * 1024 * 1024))
+    badges.push({ 
+      label: `${gb}GB Waste`, 
+      coloredClass: 'bg-red-600/90 text-white',
+      icon: HardDrive
+    })
+  }
 
   // HDR badges - use same terminology as details page
   if (item.hdr_format === 'Dolby Vision') {
@@ -47,7 +69,11 @@ export function QualityBadges({ item, whiteBg = false }: QualityBadgesProps) {
   return (
     <div className={`flex flex-wrap gap-1 ${whiteBg ? '' : 'mt-1'}`}>
       {badges.map((badge, idx) => (
-        <span key={idx} className={`px-1.5 py-0.5 rounded text-xs font-bold ${whiteBg ? badgeClass : badge.coloredClass}`}>
+        <span 
+          key={idx} 
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${whiteBg ? badgeClass : badge.coloredClass}`}
+        >
+          {badge.icon && <badge.icon className="w-3 h-3" />}
           {badge.label}
         </span>
       ))}

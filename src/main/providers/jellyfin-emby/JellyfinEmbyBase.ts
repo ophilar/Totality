@@ -27,8 +27,8 @@ import {
 import { selectBestAudioTrack } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
-import type {
-  MediaProvider,
+import {
+  BaseMediaProvider,
   ProviderType,
   ProviderCredentials,
   AuthResult,
@@ -204,16 +204,14 @@ export interface JellyfinMusicTrack {
   PrimaryImageTag?: string
 }
 
-export abstract class JellyfinEmbyBase implements MediaProvider {
+export abstract class JellyfinEmbyBase extends BaseMediaProvider {
   abstract readonly providerType: ProviderType
-  readonly sourceId: string
 
   protected serverUrl: string = ''
   protected apiKey: string = ''
   protected userId: string = ''
   protected accessToken: string = ''
   protected api: AxiosInstance
-  protected config: SourceConfig
 
   // Cancellation support
   protected scanCancelled = false
@@ -225,8 +223,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
   protected abstract clientVersion: string
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
-    this.config = { ...config, sourceId: this.sourceId }
+    super(config)
 
     // Load from connection config if provided
     if (config.connectionConfig) {
@@ -239,10 +236,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     this.api = axios.create({
       timeout: 30000,
     })
-  }
-
-  protected generateSourceId(): string {
-    return `${this.providerType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   protected getAuthHeaders(): Record<string, string> {
@@ -1066,7 +1059,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
                 extractVersionNames(allVersions)
 
                 // Pick best version for parent item fields
-                const best = allVersions.reduce((a, b) => this.scoreVersion(b) > this.scoreVersion(a) ? b : a)
+                const best = allVersions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
                 canonicalItem.file_path = best.file_path
                 canonicalItem.file_size = best.file_size
                 canonicalItem.duration = best.duration
@@ -1494,7 +1487,7 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
     }
 
     // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
-    const best = versions.reduce((a, b) => this.scoreVersion(b) > this.scoreVersion(a) ? b : a)
+    const best = versions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
 
     const isEpisode = item.Type === 'Episode'
 
@@ -1591,24 +1584,6 @@ export abstract class JellyfinEmbyBase implements MediaProvider {
       },
       versions,
     }
-  }
-
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2
-      : 1
-    const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
-  }
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
   }
 
   /**

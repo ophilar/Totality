@@ -11,6 +11,7 @@ import * as path from 'path'
 import { app } from 'electron'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 
+
 interface WorkerTask {
   taskId: string
   filePath: string

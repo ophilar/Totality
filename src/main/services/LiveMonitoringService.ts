@@ -24,10 +24,10 @@ import { safeSend } from '../ipc/utils/safeSend'
 import {
   MonitoringConfig,
   DEFAULT_MONITORING_CONFIG,
-  ProviderType,
   SourceChangeEvent,
   ChangedItem,
 } from '../types/monitoring'
+import type { ProviderType } from '../types/database'
 
 // Media file extensions to watch
 const MEDIA_EXTENSIONS = new Set([

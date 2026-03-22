@@ -1,12 +1,15 @@
 import type { Database } from 'better-sqlite3'
 import type { MusicArtist, MusicAlbum, MusicTrack, MusicQualityScore, ArtistCompleteness, AlbumCompleteness, MusicFilters } from '../../types/database'
+import { BaseRepository } from './BaseRepository'
 
-export class MusicRepository {
-  constructor(private db: Database) {}
+export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | MusicTrack> {
+  constructor(db: Database) {
+    super(db, 'music_tracks') // Default table, methods will override as needed
+  }
 
   getMusicTrackByPath(filePath: string): MusicTrack | null {
-    const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE file_path = ?')
-    return (stmt.get(filePath) as MusicTrack) || null
+    const sql = 'SELECT * FROM music_tracks WHERE file_path = ?'
+    return this.queryOne<MusicTrack>(sql, [filePath])
   }
 
   upsertMusicTrack(track: MusicTrack): number {

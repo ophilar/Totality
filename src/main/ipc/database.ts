@@ -108,7 +108,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:upsertMediaItem', async (_event, item: unknown) => {
     try {
       const validItem = validateInput(MediaItemSchema, item, 'db:upsertMediaItem')
-      return await db.upsertMediaItem(validItem)
+      return await db.upsertMediaItem(validItem as any)
     } catch (error) {
       console.error('Error upserting media item:', error)
       throw error
@@ -162,12 +162,13 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:upsertQualityScore', async (_event, score: unknown) => {
     try {
       const validScore = validateInput(QualityScoreSchema, score, 'db:upsertQualityScore')
-      return await db.upsertQualityScore(validScore)
+      return await db.upsertQualityScore(validScore as any)
     } catch (error) {
       console.error('Error upserting quality score:', error)
       throw error
     }
   })
+
 
   // ============================================================================
   // SETTINGS

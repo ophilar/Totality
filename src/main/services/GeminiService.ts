@@ -30,7 +30,7 @@ export interface GeminiStreamComplete {
 export interface GeminiToolDefinition {
   name: string
   description?: string
-  parameters: Record<string, unknown>
+  parameters: any
 }
 
 export interface RateLimitInfo {
@@ -251,7 +251,7 @@ export class GeminiService {
     messages: GeminiMessage[]
     system?: string
     tools: GeminiToolDefinition[]
-    executeTool: (name: string, input: Record<string, unknown>) => Promise<string>
+    executeTool: (name: string, input: any) => Promise<string>
     maxTokens?: number
     maxToolRounds?: number
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
@@ -331,7 +331,7 @@ export class GeminiService {
         try {
           const resultStr = await params.executeTool(
             fc.name || '',
-            (fc.args as Record<string, unknown>) || {},
+            (fc.args as any) || {},
           )
           functionResponses.parts!.push({
             functionResponse: {

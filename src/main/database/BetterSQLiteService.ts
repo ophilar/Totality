@@ -23,6 +23,7 @@ import type {
   QualityScore,
   MediaItemFilters,
   MediaSource,
+  ProviderType,
   MusicArtist,
   MusicAlbum,
   MusicTrack,
@@ -609,7 +610,7 @@ export class BetterSQLiteService {
    * Uses same filter logic as getMediaItems but returns count only
    */
   countMediaItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): number {
-    return this.mediaRepo.countMediaItems(filters)
+    return this.mediaRepo.getMediaItems(filters).length
   }
 
   /**
@@ -842,7 +843,7 @@ export class BetterSQLiteService {
 
     // Sort by tier rank desc, then tier_score desc
     const sorted = [...versions].sort((a, b) => {
-      const rankDiff = tierRank(b.quality_tier) - tierRank(a.quality_tier)
+      const rankDiff = tierRank(b.quality_tier || 'SD') - tierRank(a.quality_tier || 'SD')
       if (rankDiff !== 0) return rankDiff
       return (b.tier_score || 0) - (a.tier_score || 0)
     })
@@ -963,11 +964,17 @@ export class BetterSQLiteService {
   /**
    * Get all media sources
    */
-  getMediaSources(): MediaSource[] {
+  getMediaSources(type?: ProviderType): MediaSource[] {
     if (!this.db) throw new Error('Database not initialized')
 
-    const stmt = this.db.prepare('SELECT * FROM media_sources ORDER BY display_name')
-    const sources = stmt.all() as MediaSource[]
+    let sources: MediaSource[]
+    if (type) {
+      const stmt = this.db.prepare('SELECT * FROM media_sources WHERE source_type = ? ORDER BY display_name')
+      sources = stmt.all(type) as MediaSource[]
+    } else {
+      const stmt = this.db.prepare('SELECT * FROM media_sources ORDER BY display_name')
+      sources = stmt.all() as MediaSource[]
+    }
     const encryption = getCredentialEncryptionService()
 
     return sources.map(source => {
@@ -1426,8 +1433,12 @@ export class BetterSQLiteService {
   /**
    * Update music album artwork
    */
-  updateMusicAlbumArtwork(albumId: number, artworkUrl: string): void {
-    this.musicRepo.updateMusicAlbumArtwork(albumId, artworkUrl)
+  updateMusicAlbumArtwork(
+    sourceIdOrAlbumId: string | number,
+    providerIdOrThumbUrl: string,
+    artwork?: { thumbUrl?: string; artUrl?: string }
+  ): void {
+    this.musicRepo.updateMusicAlbumArtwork(sourceIdOrAlbumId, providerIdOrThumbUrl, artwork)
   }
 
   /**
@@ -1767,8 +1778,12 @@ export class BetterSQLiteService {
         COUNT(DISTINCT m.season_number) as season_count,
         MAX(m.poster_url) as poster_url,
         MIN(m.source_id) as source_id,
-        MIN(m.source_type) as source_type
+        MIN(m.source_type) as source_type,
+        CAST(AVG(q.efficiency_score) AS INTEGER) as efficiency_score,
+        SUM(q.storage_debt_bytes) as storage_debt_bytes,
+        SUM(m.file_size) as total_size
       FROM media_items m
+      LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.type = 'episode'
     `
     const params: unknown[] = []
@@ -1799,6 +1814,10 @@ export class BetterSQLiteService {
 
     sql += " GROUP BY COALESCE(m.series_title, 'Unknown Series')"
 
+    if (filters?.slimDown) {
+      sql += " HAVING AVG(q.efficiency_score) < 60 OR SUM(q.storage_debt_bytes) > 5368709120"
+    }
+
     // Sorting
     const sortOrder = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'
     switch (filters?.sortBy) {
@@ -1807,6 +1826,15 @@ export class BetterSQLiteService {
         break
       case 'season_count':
         sql += ` ORDER BY season_count ${sortOrder}`
+        break
+      case 'efficiency':
+        sql += ` ORDER BY efficiency_score ${sortOrder}`
+        break
+      case 'storage_debt':
+        sql += ` ORDER BY storage_debt_bytes ${sortOrder}`
+        break
+      case 'size':
+        sql += ` ORDER BY total_size ${sortOrder}`
         break
       default:
         sql += ` ORDER BY COALESCE(sort_title, series_title) ${sortOrder}`
@@ -1833,9 +1861,11 @@ export class BetterSQLiteService {
     if (!this.db) throw new Error('Database not initialized')
 
     let sql = `
-      SELECT COUNT(DISTINCT COALESCE(m.series_title, 'Unknown Series')) as count
-      FROM media_items m
-      WHERE m.type = 'episode'
+      SELECT COUNT(*) as count FROM (
+        SELECT 1
+        FROM media_items m
+        LEFT JOIN quality_scores q ON m.id = q.media_item_id
+        WHERE m.type = 'episode'
     `
     const params: unknown[] = []
 
@@ -1862,6 +1892,14 @@ export class BetterSQLiteService {
       sql += " AND COALESCE(m.series_title, 'Unknown Series') LIKE '%' || ? || '%'"
       params.push(filters.searchQuery)
     }
+
+    sql += " GROUP BY COALESCE(m.series_title, 'Unknown Series')"
+
+    if (filters?.slimDown) {
+      sql += " HAVING AVG(q.efficiency_score) < 60 OR SUM(q.storage_debt_bytes) > 5368709120"
+    }
+    
+    sql += ")"
 
     const stmt = this.db.prepare(sql)
     const result = stmt.get(...params) as { count: number }
@@ -1875,9 +1913,11 @@ export class BetterSQLiteService {
     if (!this.db) throw new Error('Database not initialized')
 
     let sql = `
-      SELECT COUNT(*) as count
-      FROM media_items m
-      WHERE m.type = 'episode'
+      SELECT SUM(episode_count) as count FROM (
+        SELECT COUNT(*) as episode_count
+        FROM media_items m
+        LEFT JOIN quality_scores q ON m.id = q.media_item_id
+        WHERE m.type = 'episode'
     `
     const params: unknown[] = []
 
@@ -1904,6 +1944,14 @@ export class BetterSQLiteService {
       sql += " AND COALESCE(m.series_title, 'Unknown Series') LIKE '%' || ? || '%'"
       params.push(filters.searchQuery)
     }
+
+    sql += " GROUP BY COALESCE(m.series_title, 'Unknown Series')"
+
+    if (filters?.slimDown) {
+      sql += " HAVING AVG(q.efficiency_score) < 60 OR SUM(q.storage_debt_bytes) > 5368709120"
+    }
+
+    sql += ")"
 
     const stmt = this.db.prepare(sql)
     const result = stmt.get(...params) as { count: number }
@@ -2185,6 +2233,19 @@ WHERE m.type = 'episode' AND m.series_title = ?`
       'SELECT * FROM movie_collections WHERE completeness_percentage < 100 ORDER BY completeness_percentage ASC'
     )
     return stmt.all() as MovieCollection[]
+  }
+
+  /**
+   * Add a media item to a collection
+   */
+  async addMediaItemToCollection(mediaItemId: number, collectionId: number): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO media_item_collections (media_item_id, collection_id)
+      VALUES (?, ?)
+    `)
+    stmt.run(mediaItemId, collectionId)
   }
 
   /**
@@ -2940,34 +3001,28 @@ WHERE m.type = 'episode' AND m.series_title = ?`
    * Update media item artwork
    */
   updateMediaItemArtwork(
-    id: number,
-    artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
+    sourceIdOrId: string | number,
+    providerIdOrArtwork: string | { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string },
+    artwork?: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
   ): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    const updates: string[] = []
-    const params: unknown[] = []
-
-    if (artwork.posterUrl !== undefined) {
-      updates.push('poster_url = ?')
-      params.push(artwork.posterUrl)
-    }
-    if (artwork.episodeThumbUrl !== undefined) {
-      updates.push('episode_thumb_url = ?')
-      params.push(artwork.episodeThumbUrl)
-    }
-    if (artwork.seasonPosterUrl !== undefined) {
-      updates.push('season_poster_url = ?')
-      params.push(artwork.seasonPosterUrl)
+    if (typeof sourceIdOrId === 'number') {
+      const id = sourceIdOrId
+      const actualArtwork = providerIdOrArtwork as { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
+      this.mediaRepo.updateMediaItemArtwork(id, actualArtwork)
+      return
     }
 
-    if (updates.length === 0) return
+    const sourceId = sourceIdOrId
+    const providerId = providerIdOrArtwork as string
+    const actualArtwork = artwork
+    if (!actualArtwork) return
 
-    updates.push("updated_at = datetime('now')")
-    params.push(id)
-
-    const sql = `UPDATE media_items SET ${updates.join(', ')} WHERE id = ?`
-    this.db.prepare(sql).run(...params)
+    const item = this.mediaRepo.getMediaItemByProviderId(providerId, sourceId)
+    if (item?.id) {
+      this.mediaRepo.updateMediaItemArtwork(item.id, actualArtwork)
+    }
   }
 
   // ============================================================================

@@ -4,7 +4,7 @@
  * Factory for creating MediaProvider instances based on provider type.
  */
 
-import type { MediaProvider, ProviderType, SourceConfig } from './base/MediaProvider'
+import { MediaProvider, ProviderType, SourceConfig } from './base/MediaProvider'
 import { PlexProvider } from './plex/PlexProvider'
 import { JellyfinProvider } from './jellyfin-emby/JellyfinProvider'
 import { EmbyProvider } from './jellyfin-emby/EmbyProvider'

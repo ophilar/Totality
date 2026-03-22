@@ -1,12 +1,11 @@
 /**
- * IPC Handlers for Jellyfin-specific operations
+ * IPC Handlers for Jellyfin and Emby operations
  *
- * Handles server discovery, Quick Connect, and other Jellyfin features.
+ * Handles server discovery, Quick Connect, and other shared features.
  */
 
 import { ipcMain } from 'electron'
-import { getJellyfinDiscoveryService } from '../services/JellyfinDiscoveryService'
-import { getEmbyDiscoveryService } from '../services/EmbyDiscoveryService'
+import { getUdpDiscoveryService } from '../services/UdpDiscoveryService'
 import { getSourceManager } from '../services/SourceManager'
 import { JellyfinProvider } from '../providers/jellyfin-emby/JellyfinProvider'
 import { getErrorMessage } from './utils'
@@ -17,200 +16,116 @@ import {
 } from '../validation/schemas'
 
 export function registerJellyfinHandlers(): void {
-  const jellyfinDiscovery = getJellyfinDiscoveryService()
-  const embyDiscovery = getEmbyDiscoveryService()
+  const discovery = getUdpDiscoveryService()
   const manager = getSourceManager()
 
   // ============================================================================
-  // SERVER DISCOVERY
+  // SERVER DISCOVERY (Unified)
   // ============================================================================
 
   /**
-   * Discover Jellyfin servers on the local network via UDP broadcast
+   * Discover Jellyfin/Emby servers on the local network via UDP broadcast
    */
-  ipcMain.handle('jellyfin:discoverServers', async () => {
-    try {
-      console.log('[IPC] Starting Jellyfin server discovery...')
-      const servers = await jellyfinDiscovery.discoverServers()
-      return servers
-    } catch (error: unknown) {
-      console.error('Error discovering Jellyfin servers:', error)
-      throw error
-    }
-  })
+  const registerDiscovery = (type: 'jellyfin' | 'emby') => {
+    ipcMain.handle(`${type}:discoverServers`, async () => {
+      try {
+        console.log(`[IPC] Starting ${type} server discovery...`)
+        return await discovery.discoverServers(type)
+      } catch (error: unknown) {
+        console.error(`Error discovering ${type} servers:`, error)
+        throw error
+      }
+    })
 
-  /**
-   * Test a server URL to check if it's a valid Jellyfin server
-   */
-  ipcMain.handle('jellyfin:testServerUrl', async (_event, url: unknown) => {
-    try {
-      const validatedUrl = validateInput(SafeUrlSchema, url, 'jellyfin:testServerUrl')
-      return await jellyfinDiscovery.testServerUrl(validatedUrl)
-    } catch (error: unknown) {
-      console.error('Error testing server URL:', error)
-      throw error
-    }
-  })
+    ipcMain.handle(`${type}:testServerUrl`, async (_event, url: unknown) => {
+      try {
+        const validatedUrl = validateInput(SafeUrlSchema, url, `${type}:testServerUrl`)
+        return await discovery.testServerUrl(validatedUrl)
+      } catch (error: unknown) {
+        console.error(`Error testing ${type} server URL:`, error)
+        throw error
+      }
+    })
+  }
+
+  registerDiscovery('jellyfin')
+  registerDiscovery('emby')
 
   // ============================================================================
-  // EMBY SERVER DISCOVERY
+  // API KEY AUTHENTICATION
   // ============================================================================
 
-  /**
-   * Discover Emby servers on the local network via UDP broadcast
-   */
-  ipcMain.handle('emby:discoverServers', async () => {
-    try {
-      console.log('[IPC] Starting Emby server discovery...')
-      const servers = await embyDiscovery.discoverServers()
-      return servers
-    } catch (error: unknown) {
-      console.error('Error discovering Emby servers:', error)
-      throw error
-    }
-  })
+  const registerApiKeyAuth = (type: 'jellyfin' | 'emby') => {
+    ipcMain.handle(`${type}:authenticateApiKey`, async (
+      _event,
+      serverUrl: unknown,
+      apiKey: unknown,
+      displayName: unknown
+    ) => {
+      try {
+        const validated = validateInput(JellyfinApiKeyAuthSchema, {
+          serverUrl,
+          apiKey,
+          displayName,
+        }, `${type}:authenticateApiKey`)
 
-  /**
-   * Test a server URL to check if it's a valid Emby server
-   */
-  ipcMain.handle('emby:testServerUrl', async (_event, url: unknown) => {
-    try {
-      const validatedUrl = validateInput(SafeUrlSchema, url, 'emby:testServerUrl')
-      return await embyDiscovery.testServerUrl(validatedUrl)
-    } catch (error: unknown) {
-      console.error('Error testing Emby server URL:', error)
-      throw error
-    }
-  })
+        const { EmbyProvider } = await import('../providers/jellyfin-emby/EmbyProvider')
+        const ProviderClass = type === 'emby' ? EmbyProvider : JellyfinProvider
 
-  /**
-   * Authenticate with Jellyfin using an API key and create source
-   */
-  ipcMain.handle('jellyfin:authenticateApiKey', async (
-    _event,
-    serverUrl: unknown,
-    apiKey: unknown,
-    displayName: unknown
-  ) => {
-    try {
-      const validated = validateInput(JellyfinApiKeyAuthSchema, {
-        serverUrl,
-        apiKey,
-        displayName,
-      }, 'jellyfin:authenticateApiKey')
+        const provider = new ProviderClass({
+          sourceId: undefined,
+          sourceType: type,
+          displayName: validated.displayName,
+          connectionConfig: { serverUrl: validated.serverUrl, apiKey: validated.apiKey },
+        })
 
-      const provider = new JellyfinProvider({
-        sourceId: undefined, // Will be generated
-        sourceType: 'jellyfin',
-        displayName: validated.displayName,
-        connectionConfig: { serverUrl: validated.serverUrl, apiKey: validated.apiKey },
-      })
+        const testResult = await provider.testConnection()
+        if (!testResult.success) {
+          return {
+            success: false,
+            error: testResult.error || 'Failed to connect with API key',
+          }
+        }
 
-      // Test the connection with the API key
-      const testResult = await provider.testConnection()
-      if (!testResult.success) {
+        const source = await manager.addSource({
+          sourceType: type,
+          displayName: validated.displayName,
+          connectionConfig: {
+            serverUrl: validated.serverUrl,
+            apiKey: validated.apiKey,
+          },
+        })
+
+        return {
+          success: true,
+          source,
+          serverName: testResult.serverName,
+        }
+      } catch (error: unknown) {
+        console.error(`Error authenticating with ${type} API key:`, error)
         return {
           success: false,
-          error: testResult.error || 'Failed to connect with API key',
+          error: getErrorMessage(error) || 'Authentication failed',
         }
       }
+    })
+  }
 
-      // Add the source with the API key
-      const source = await manager.addSource({
-        sourceType: 'jellyfin',
-        displayName: validated.displayName,
-        connectionConfig: {
-          serverUrl: validated.serverUrl,
-          apiKey: validated.apiKey,
-        },
-      })
-
-      return {
-        success: true,
-        source,
-        serverName: testResult.serverName,
-      }
-    } catch (error: unknown) {
-      console.error('Error authenticating with Jellyfin API key:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Authentication failed',
-      }
-    }
-  })
-
-  /**
-   * Authenticate with Emby using an API key and create source
-   */
-  ipcMain.handle('emby:authenticateApiKey', async (
-    _event,
-    serverUrl: unknown,
-    apiKey: unknown,
-    displayName: unknown
-  ) => {
-    const validated = validateInput(JellyfinApiKeyAuthSchema, {
-      serverUrl, apiKey, displayName,
-    }, 'emby:authenticateApiKey')
-    try {
-      const { EmbyProvider } = await import('../providers/jellyfin-emby/EmbyProvider')
-
-      const provider = new EmbyProvider({
-        sourceId: undefined, // Will be generated
-        sourceType: 'emby',
-        displayName: validated.displayName,
-        connectionConfig: { serverUrl: validated.serverUrl, apiKey: validated.apiKey },
-      })
-
-      // Test the connection with the API key
-      const testResult = await provider.testConnection()
-      if (!testResult.success) {
-        return {
-          success: false,
-          error: testResult.error || 'Failed to connect with API key',
-        }
-      }
-
-      // Add the source with the API key
-      const source = await manager.addSource({
-        sourceType: 'emby',
-        displayName: validated.displayName,
-        connectionConfig: {
-          serverUrl: validated.serverUrl,
-          apiKey: validated.apiKey,
-        },
-      })
-
-      return {
-        success: true,
-        source,
-        serverName: testResult.serverName,
-      }
-    } catch (error: unknown) {
-      console.error('Error authenticating with Emby API key:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Authentication failed',
-      }
-    }
-  })
+  registerApiKeyAuth('jellyfin')
+  registerApiKeyAuth('emby')
 
   // ============================================================================
-  // QUICK CONNECT
+  // QUICK CONNECT (Jellyfin only)
   // ============================================================================
 
-  /**
-   * Check if Quick Connect is enabled for a Jellyfin source
-   */
   ipcMain.handle('jellyfin:isQuickConnectEnabled', async (_event, serverUrl: string) => {
     try {
-      // Create a temporary provider to check Quick Connect
       const tempProvider = new JellyfinProvider({
         sourceId: 'temp-qc-check',
         sourceType: 'jellyfin',
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
-
       return await tempProvider.isQuickConnectEnabled()
     } catch (error: unknown) {
       console.error('Error checking Quick Connect:', error)
@@ -218,9 +133,6 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  /**
-   * Initiate Quick Connect - returns code for user to enter in another client
-   */
   ipcMain.handle('jellyfin:initiateQuickConnect', async (_event, serverUrl: string) => {
     try {
       const tempProvider = new JellyfinProvider({
@@ -229,7 +141,6 @@ export function registerJellyfinHandlers(): void {
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
-
       return await tempProvider.initiateQuickConnect()
     } catch (error: unknown) {
       console.error('Error initiating Quick Connect:', error)
@@ -237,9 +148,6 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  /**
-   * Check Quick Connect status - poll until authenticated
-   */
   ipcMain.handle('jellyfin:checkQuickConnectStatus', async (_event, serverUrl: string, secret: string) => {
     try {
       const tempProvider = new JellyfinProvider({
@@ -248,7 +156,6 @@ export function registerJellyfinHandlers(): void {
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
-
       return await tempProvider.checkQuickConnectStatus(secret)
     } catch (error: unknown) {
       console.error('Error checking Quick Connect status:', error)
@@ -256,9 +163,50 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  /**
-   * Authenticate with username/password credentials and create source
-   */
+  ipcMain.handle('jellyfin:completeQuickConnect', async (
+    _event,
+    serverUrl: string,
+    secret: string,
+    displayName: string
+  ) => {
+    try {
+      const provider = new JellyfinProvider({
+        sourceId: undefined,
+        sourceType: 'jellyfin',
+        displayName,
+        connectionConfig: { serverUrl },
+      })
+
+      const authResult = await provider.completeQuickConnect(secret)
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Quick Connect failed')
+      }
+
+      const source = await manager.addSource({
+        sourceType: 'jellyfin',
+        displayName,
+        connectionConfig: {
+          serverUrl,
+          accessToken: authResult.token,
+          userId: authResult.userId,
+        },
+      })
+
+      return {
+        success: true,
+        source,
+        userName: authResult.userName,
+      }
+    } catch (error: unknown) {
+      console.error('Error completing Quick Connect:', error)
+      throw error
+    }
+  })
+
+  // ============================================================================
+  // CREDENTIALS AUTHENTICATION (Unified)
+  // ============================================================================
+
   ipcMain.handle('jellyfin:authenticateCredentials', async (
     _event,
     serverUrl: string,
@@ -273,13 +221,12 @@ export function registerJellyfinHandlers(): void {
 
       const ProviderClass = isEmby ? EmbyProvider : JellyfinProvider
       const provider = new ProviderClass({
-        sourceId: undefined, // Will be generated
+        sourceId: undefined,
         sourceType: providerType,
         displayName,
         connectionConfig: { serverUrl },
       })
 
-      // Authenticate to get access token
       const authResult = await provider.authenticate({
         serverUrl,
         username,
@@ -290,7 +237,6 @@ export function registerJellyfinHandlers(): void {
         throw new Error(authResult.error || 'Authentication failed')
       }
 
-      // Add the source with the access token (not password)
       const source = await manager.addSource({
         sourceType: providerType,
         displayName,
@@ -315,50 +261,5 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  /**
-   * Complete Quick Connect authentication and create source
-   */
-  ipcMain.handle('jellyfin:completeQuickConnect', async (
-    _event,
-    serverUrl: string,
-    secret: string,
-    displayName: string
-  ) => {
-    try {
-      const provider = new JellyfinProvider({
-        sourceId: undefined, // Will be generated
-        sourceType: 'jellyfin',
-        displayName,
-        connectionConfig: { serverUrl },
-      })
-
-      const authResult = await provider.completeQuickConnect(secret)
-
-      if (!authResult.success) {
-        throw new Error(authResult.error || 'Quick Connect failed')
-      }
-
-      // Add the source with the access token
-      const source = await manager.addSource({
-        sourceType: 'jellyfin',
-        displayName,
-        connectionConfig: {
-          serverUrl,
-          accessToken: authResult.token,
-          userId: authResult.userId,
-        },
-      })
-
-      return {
-        success: true,
-        source,
-        userName: authResult.userName,
-      }
-    } catch (error: unknown) {
-      console.error('Error completing Quick Connect:', error)
-      throw error
-    }
-  })
-
-  console.log('[IPC] Jellyfin handlers registered')
+  console.log('[IPC] Unified Jellyfin/Emby handlers registered')
 }

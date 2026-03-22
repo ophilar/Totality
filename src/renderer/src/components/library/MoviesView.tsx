@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
 import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive } from 'lucide-react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { QualityBadges } from './QualityBadges'
+import { SlimDownBanner } from './SlimDownBanner'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
@@ -23,6 +24,9 @@ type MovieDisplayItem =
 
 export function MoviesView({
   movies,
+  sortBy,
+  onSortChange,
+  slimDown,
   onSelectMovie,
   onSelectCollection,
   viewType,
@@ -40,6 +44,9 @@ export function MoviesView({
   scrollElement
 }: {
   movies: MediaItem[]
+  sortBy: 'title' | 'efficiency' | 'waste' | 'size'
+  onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
+  slimDown: boolean
   onSelectMovie: (id: number, movie: MediaItem) => void
   onSelectCollection: (collection: MovieCollectionData) => void
   viewType: 'grid' | 'list'
@@ -56,7 +63,6 @@ export function MoviesView({
   collectionsOnly?: boolean
   scrollElement?: HTMLElement | null
 }) {
-  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
 
   // Map scale to minimum poster width (1=smallest, 7=largest)
   const posterMinWidth = useMemo(() => {
@@ -156,25 +162,25 @@ export function MoviesView({
         <span className="text-xs text-muted-foreground">Sort by:</span>
         <div className="flex gap-1">
           <button
-            onClick={() => setSortBy('title')}
+            onClick={() => onSortChange('title')}
             className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
           >
             Title
           </button>
           <button
-            onClick={() => setSortBy('efficiency')}
+            onClick={() => onSortChange('efficiency')}
             className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
           >
             Efficiency
           </button>
           <button
-            onClick={() => setSortBy('waste')}
+            onClick={() => onSortChange('waste')}
             className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
           >
             Waste
           </button>
           <button
-            onClick={() => setSortBy('size')}
+            onClick={() => onSortChange('size')}
             className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
           >
             Size
@@ -195,10 +201,13 @@ export function MoviesView({
     </div>
   )
 
+  const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'
+
   if (viewType === 'list') {
     return (
       <div className="h-full flex flex-col">
         {statsBar}
+        {isSlimDownActive && <SlimDownBanner className="mb-4" />}
         <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 px-4 py-2 mb-2 border-b border-border/50 text-xs font-medium text-muted-foreground bg-muted/10 sticky top-0 z-10">
           <div>Title</div>
           <div className="text-center">Year</div>
@@ -258,6 +267,7 @@ export function MoviesView({
   return (
     <div className="h-full flex flex-col">
       {statsBar}
+      {isSlimDownActive && <SlimDownBanner className="mb-4" />}
       <div className="flex-1 min-h-0">
         <VirtuosoGrid
           customScrollParent={scrollElement || undefined}

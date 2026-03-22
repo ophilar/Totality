@@ -246,7 +246,7 @@ export class SourceManager {
       is_enabled: config.isEnabled !== false,
     }
 
-    await db.upsertMediaSource(sourceRecord)
+    await db.upsertMediaSource(sourceRecord as any)
 
     // Add to active providers
     this.providers.set(sourceId, provider)
@@ -349,7 +349,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = getDatabase()
-    return db.getMediaSources(type)
+    return db.getMediaSources(type) as any
   }
 
   /**
@@ -489,7 +489,7 @@ export class SourceManager {
         display_name: source.display_name,
         connection_config: JSON.stringify(updatedConfig),
         is_enabled: source.is_enabled,
-      })
+      } as any)
 
       // Recreate provider with new credentials
       const newProvider = createProvider(source.source_type, {

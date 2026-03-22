@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check, HardDrive } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
+import { SlimDownBanner } from './SlimDownBanner'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
 import type {
@@ -73,7 +74,10 @@ export function MusicView({
   includeEps,
   includeSingles,
   scrollElement,
-  onDismissMissingAlbum
+  onDismissMissingAlbum,
+  sortBy,
+  onSortChange,
+  slimDown
 }: {
   artists: MusicArtist[]
   totalArtistCount: number
@@ -119,8 +123,10 @@ export function MusicView({
   includeSingles: boolean
   scrollElement?: HTMLElement | null
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
+  sortBy: 'title' | 'efficiency' | 'waste' | 'size'
+  onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
+  slimDown: boolean
 }) {
-  const [sortBy, setSortBy] = useState<'default' | 'efficiency' | 'waste' | 'size'>('default')
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
   const [isAnalyzingArtist, setIsAnalyzingArtist] = useState(false)
   const [showArtistMenu, setShowArtistMenu] = useState(false)
@@ -329,7 +335,7 @@ export function MusicView({
 
   // Albums are now filtered/sorted server-side via loadPaginatedAlbums
   const allFilteredAlbums = useMemo(() => {
-    if (sortBy === 'default') return albums
+    if (sortBy === 'title') return albums
 
     const result = [...albums]
     result.sort((a, b) => {
@@ -1257,25 +1263,25 @@ export function MusicView({
             <span className="text-xs text-muted-foreground">Sort:</span>
             <div className="flex gap-1">
               <button
-                onClick={() => setSortBy('default')}
-                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'default' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+                onClick={() => onSortChange('title')}
+                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
               >
                 Default
               </button>
               <button
-                onClick={() => setSortBy('efficiency')}
+                onClick={() => onSortChange('efficiency')}
                 className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
               >
                 Efficiency
               </button>
               <button
-                onClick={() => setSortBy('waste')}
+                onClick={() => onSortChange('waste')}
                 className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
               >
                 Waste
               </button>
               <button
-                onClick={() => setSortBy('size')}
+                onClick={() => onSortChange('size')}
                 className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
               >
                 Size
@@ -1284,6 +1290,10 @@ export function MusicView({
           </div>
         )}
       </div>
+
+      {(slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size') && (
+        <SlimDownBanner className="mb-4" />
+      )}
 
       {/* Artists View Mode */}
       {musicViewMode === 'artists' && artists.length > 0 && (
@@ -1332,6 +1342,7 @@ export function MusicView({
                     showSourceBadge={showSourceBadge}
                     onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
                     onAnalyzeCompleteness={onAnalyzeArtist}
+                    artistCompleteness={artistCompleteness}
                   />
                 </div>
               )}
@@ -1824,12 +1835,13 @@ export function MusicView({
   )
 }
 
-const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnalyzeCompleteness }: {
+const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnalyzeCompleteness, artistCompleteness }: {
   artist: MusicArtist
   onClick: () => void
   showSourceBadge: boolean
   onFixMatch?: (artistId: number) => void
   onAnalyzeCompleteness?: (artistId: number) => void
+  artistCompleteness: Map<string, ArtistCompletenessData>
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -1912,14 +1924,20 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
             {artist.source_type.charAt(0).toUpperCase()}
           </div>
         )}
-        {artistCompleteness.get(artist.name)?.storage_debt_bytes != null && artistCompleteness.get(artist.name)!.storage_debt_bytes > 1024 * 1024 * 1024 && (
-          <div
-            className="absolute bottom-2 left-2 z-10 bg-black/60 p-1 rounded-full shadow-md"
-            title={`Significant Storage Debt (${formatBytes(artistCompleteness.get(artist.name)!.storage_debt_bytes)}). Re-encode to save space.`}
-          >
-            <HardDrive className="w-4 h-4 text-blue-500" />
-          </div>
-        )}
+        {(() => {
+          const comp = artistCompleteness.get(artist.name)
+          if (comp?.storage_debt_bytes != null && comp.storage_debt_bytes > 1024 * 1024 * 1024) {
+            return (
+              <div
+                className="absolute bottom-2 left-2 z-10 bg-black/60 p-1 rounded-full shadow-md"
+                title={`Significant Storage Debt (${formatBytes(comp.storage_debt_bytes)}). Re-encode to save space.`}
+              >
+                <HardDrive className="w-4 h-4 text-blue-500" />
+              </div>
+            )
+          }
+          return null
+        })()}
         {artist.thumb_url ? (
           <img
             src={artist.thumb_url}

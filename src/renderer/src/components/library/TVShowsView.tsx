@@ -3,6 +3,7 @@ import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, T
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
+import { SlimDownBanner } from './SlimDownBanner'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
@@ -315,6 +316,9 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
 
 export function TVShowsView({
   shows,
+  sortBy,
+  onSortChange,
+  slimDown,
   selectedShow,
   selectedSeason,
   selectedShowData,
@@ -340,6 +344,9 @@ export function TVShowsView({
   onLoadMoreShows,
 }: {
   shows: TVShowSummary[]
+  sortBy: 'title' | 'efficiency' | 'waste' | 'size'
+  onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
+  slimDown: boolean
   selectedShow: string | null
   selectedSeason: number | null
   selectedShowData: TVShow | null
@@ -376,8 +383,6 @@ export function TVShowsView({
   onLoadMoreShows: () => void
   scrollElement?: HTMLElement | null
 }) {
-  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
-
   const sortedShows = useMemo(() => {
     const items = [...shows]
     items.sort((a, b) => {
@@ -496,25 +501,25 @@ export function TVShowsView({
           <span className="text-xs text-muted-foreground">Sort by:</span>
           <div className="flex gap-1">
             <button
-              onClick={() => setSortBy('title')}
+              onClick={() => onSortChange('title')}
               className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
             >
               Title
             </button>
             <button
-              onClick={() => setSortBy('efficiency')}
+              onClick={() => onSortChange('efficiency')}
               className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
             >
               Efficiency
             </button>
             <button
-              onClick={() => setSortBy('waste')}
+              onClick={() => onSortChange('waste')}
               className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
             >
               Waste
             </button>
             <button
-              onClick={() => setSortBy('size')}
+              onClick={() => onSortChange('size')}
               className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
             >
               Size
@@ -524,11 +529,14 @@ export function TVShowsView({
       </div>
     )
 
+    const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'
+
     // List view
     if (viewType === 'list') {
       return (
         <>
           {statsBar}
+          {isSlimDownActive && <SlimDownBanner className="mb-4" />}
           <div className="space-y-2 mt-4">
             {sortedShows.map((show) => {
               const completeness = seriesCompleteness.get(show.series_title)
@@ -550,6 +558,7 @@ export function TVShowsView({
     return (
       <>
         {statsBar}
+        {isSlimDownActive && <SlimDownBanner className="mb-4" />}
         <div
           className="grid gap-8 mt-4"
           style={{

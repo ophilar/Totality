@@ -8,13 +8,13 @@
 
 // Minimum fields needed from a version object
 interface VersionInput {
-  file_path: string
-  edition?: string
-  label?: string
-  resolution: string
-  hdr_format?: string
-  source_type?: string
-  video_codec?: string
+  file_path: string | null | undefined
+  edition?: string | null | undefined
+  label?: string | null | undefined
+  resolution: string | null | undefined
+  hdr_format?: string | null | undefined
+  source_type?: string | null | undefined
+  video_codec?: string | null | undefined
 }
 
 // Plex {edition-X} tag format
@@ -172,7 +172,7 @@ export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] 
   for (const v of versions) {
     if (v.edition) continue // Already has edition from FileNameParser or API
 
-    const basename = getBasename(v.file_path)
+    const basename = getBasename(v.file_path || '')
     const tagMatch = basename.match(EDITION_TAG_REGEX)
     if (tagMatch) {
       v.edition = tagMatch[1].trim()
@@ -185,7 +185,7 @@ export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] 
   if (needsDiff.length >= 2) {
     // Get normalized basenames without extension
     const basenames = needsDiff.map(v => {
-      const base = getBasename(v.file_path)
+      const base = getBasename(v.file_path || '')
       const noExt = stripExtension(base)
       return normalize(noExt)
     })

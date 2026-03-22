@@ -17,10 +17,9 @@ import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '../../ser
 import { getTMDBService } from '../../services/TMDBService'
 import { getLoggingService } from '../../services/LoggingService'
 import { getMusicBrainzService } from '../../services/MusicBrainzService'
-import { getGeminiService } from '../../services/GeminiService'
 import { normalizeVideoCodec, normalizeResolution, normalizeAudioCodec } from '../../services/MediaNormalizer'
-import type {
-  MediaProvider,
+import {
+  BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
   ConnectionTestResult,
@@ -101,9 +100,9 @@ function isExtrasContent(filename: string): boolean {
   return false
 }
 
-export class LocalFolderProvider implements MediaProvider {
+export class LocalFolderProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = 'local' as ProviderType
-  readonly sourceId: string
+  // sourceId is handled by BaseMediaProvider
 
   private folderPath: string = ''
   private mediaType: 'movies' | 'tvshows' | 'music' | 'mixed' = 'mixed'
@@ -111,7 +110,7 @@ export class LocalFolderProvider implements MediaProvider {
   private customLibraries: LocalFolderConfig['customLibraries'] = undefined
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
+    super(config)
 
     // Load from connection config if provided
     if (config.connectionConfig) {
@@ -123,9 +122,7 @@ export class LocalFolderProvider implements MediaProvider {
     }
   }
 
-  private generateSourceId(): string {
-    return `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
+  // generateSourceId is handled by BaseMediaProvider
 
   // ============================================================================
   // AUTHENTICATION
@@ -613,7 +610,7 @@ export class LocalFolderProvider implements MediaProvider {
               // Apply FFprobe data if available
               const analysis = ffprobeResults.get(filePath)
               if (analysis?.success) {
-                metadata = this.enhanceWithFFprobeData(metadata, analysis)
+                metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
                 if (analysis.video) {
                   const v = analysis.video
                   getLoggingService().verbose('[LocalFolderProvider]',
@@ -674,7 +671,7 @@ export class LocalFolderProvider implements MediaProvider {
 
             // Pick best version for parent item
             const bestIdx = versions.reduce((bi, v, i) =>
-              this.scoreVersion(v) > this.scoreVersion(versions[bi]) ? i : bi, 0)
+              this.calculateVersionScore(v) > this.calculateVersionScore(versions[bi]) ? i : bi, 0)
             const bestItem = group[bestIdx]
 
             const mediaItem = this.convertMetadataToMediaItem(bestItem.metadata)
@@ -728,7 +725,7 @@ export class LocalFolderProvider implements MediaProvider {
 
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
         for (const item of existingItems) {
-          if (!scannedFilePaths.has(item.file_path)) {
+          if (item.file_path && !scannedFilePaths.has(item.file_path)) {
             if (item.id) {
               await db.deleteMediaItem(item.id)
               result.itemsRemoved++
@@ -1405,7 +1402,7 @@ export class LocalFolderProvider implements MediaProvider {
 
     const metadata: MediaMetadata = {
       providerId: this.sourceId,
-      providerType: 'local' as ProviderType,
+      providerType: this.providerType,
       itemId: this.generateItemId(filePath),
       title: parsed.title || path.basename(filePath),
       type: 'movie',
@@ -1441,19 +1438,15 @@ export class LocalFolderProvider implements MediaProvider {
         }
 
         // Multi-strategy TMDB search
-        const match = await this.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year, tmdb)
+        const match = await tmdb.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year)
 
         if (match) {
           getLoggingService().verbose('[LocalFolderProvider]', `TMDB match: "${parsed.title}" (${parsed.year || '?'}) → "${match.title}" (tmdb:${match.tmdbId})`)
           metadata.tmdbId = match.tmdbId
           metadata.title = match.title
           metadata.year = match.year
-          metadata.posterUrl = match.posterPath
-            ? `https://image.tmdb.org/t/p/w500${match.posterPath}`
-            : undefined
-          metadata.backdropUrl = match.backdropPath
-            ? `https://image.tmdb.org/t/p/w1280${match.backdropPath}`
-            : undefined
+          metadata.posterUrl = tmdb.buildImageUrl(match.posterPath || null)
+          metadata.backdropUrl = tmdb.buildImageUrl(match.backdropPath || null)
 
           // Cache the result
           movieTmdbCache?.set(cacheKey, match)
@@ -1471,152 +1464,6 @@ export class LocalFolderProvider implements MediaProvider {
     return metadata
   }
 
-  /**
-   * Multi-strategy TMDB movie search with fuzzy year matching
-   * Tries multiple strategies to find the best match:
-   * 1. Exact title + exact year
-   * 2. Normalized title + exact year
-   * 3. Normalized title + fuzzy year (+/- 1)
-   * 4. Normalized title without year (fallback)
-   */
-  private async searchMovieWithFallbacks(
-    originalTitle: string,
-    normalizedTitle: string,
-    year: number | undefined,
-    tmdb: ReturnType<typeof getTMDBService>
-  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
-    // Helper to find best match from results
-    const findBestMatch = (
-      results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>,
-      targetYear?: number
-    ): { tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null => {
-      if (!results || results.length === 0) return null
-
-      // If we have a target year, try to find an exact or close match
-      if (targetYear) {
-        // First try exact year match
-        const exactMatch = results.find(r =>
-          r.release_date?.startsWith(String(targetYear))
-        )
-        if (exactMatch) {
-          return {
-            tmdbId: exactMatch.id,
-            title: exactMatch.title,
-            year: exactMatch.release_date ? parseInt(exactMatch.release_date.split('-')[0], 10) : undefined,
-            posterPath: exactMatch.poster_path || undefined,
-            backdropPath: exactMatch.backdrop_path || undefined,
-          }
-        }
-
-        // Try fuzzy year match (+/- 1 year)
-        const fuzzyMatch = results.find(r => {
-          if (!r.release_date) return false
-          const resultYear = parseInt(r.release_date.split('-')[0], 10)
-          return Math.abs(resultYear - targetYear) <= 1
-        })
-        if (fuzzyMatch) {
-          console.log(`[LocalFolderProvider] Fuzzy year match: "${fuzzyMatch.title}" (${fuzzyMatch.release_date?.split('-')[0]}) for target year ${targetYear}`)
-          return {
-            tmdbId: fuzzyMatch.id,
-            title: fuzzyMatch.title,
-            year: fuzzyMatch.release_date ? parseInt(fuzzyMatch.release_date.split('-')[0], 10) : undefined,
-            posterPath: fuzzyMatch.poster_path || undefined,
-            backdropPath: fuzzyMatch.backdrop_path || undefined,
-          }
-        }
-      }
-
-      // Fall back to first result
-      const first = results[0]
-      return {
-        tmdbId: first.id,
-        title: first.title,
-        year: first.release_date ? parseInt(first.release_date.split('-')[0], 10) : undefined,
-        posterPath: first.poster_path || undefined,
-        backdropPath: first.backdrop_path || undefined,
-      }
-    }
-
-    // Strategy 1: Original title with year
-    if (year) {
-      const response = await tmdb.searchMovie(originalTitle, year)
-      const match = findBestMatch(response.results, year)
-      if (match) return match
-    }
-
-    // Strategy 2: Normalized title with year
-    if (year && normalizedTitle !== originalTitle) {
-      const response = await tmdb.searchMovie(normalizedTitle, year)
-      const match = findBestMatch(response.results, year)
-      if (match) return match
-    }
-
-    // Strategy 3: Original title without year (to get more results)
-    {
-      const response = await tmdb.searchMovie(originalTitle)
-      if (response.results?.length > 1) {
-        const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
-        if (aiMatch) return aiMatch
-      }
-      const match = findBestMatch(response.results, year)
-      if (match) return match
-    }
-
-    // Strategy 4: Normalized title without year
-    if (normalizedTitle !== originalTitle) {
-      const response = await tmdb.searchMovie(normalizedTitle)
-      if (response.results?.length > 1) {
-        const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
-        if (aiMatch) return aiMatch
-      }
-      const match = findBestMatch(response.results, year)
-      if (match) return match
-    }
-
-    // No match found
-    console.log(`[LocalFolderProvider] No TMDB match found for "${originalTitle}" (${year || 'no year'})`)
-    return null
-  }
-
-  /**
-   * Try AI disambiguation when multiple TMDB results exist.
-   * Uses Gemini Flash for cost efficiency. Returns null if AI is not configured
-   * or if disambiguation fails, allowing normal fallback to proceed.
-   */
-  private async tryAIDisambiguation(
-    filename: string,
-    year: number | undefined,
-    results: Array<{ id: number; title: string; release_date?: string; overview?: string; poster_path?: string | null; backdrop_path?: string | null }>,
-  ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
-    try {
-      const gemini = getGeminiService()
-      if (!gemini.isConfigured()) return null
-
-      const candidates = results.slice(0, 5).map((r) => ({
-        id: r.id,
-        title: r.title,
-        year: r.release_date ? parseInt(r.release_date.split('-')[0], 10) : undefined,
-        overview: r.overview?.slice(0, 100),
-      }))
-
-      const bestIndex = await gemini.disambiguateTitle(filename, year, candidates)
-      const best = results[bestIndex]
-      if (!best) return null
-
-      console.log(`[LocalFolderProvider] AI disambiguation picked "${best.title}" for "${filename}"`)
-      return {
-        tmdbId: best.id,
-        title: best.title,
-        year: best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined,
-        posterPath: best.poster_path || undefined,
-        backdropPath: best.backdrop_path || undefined,
-      }
-    } catch {
-      // AI not available or errored — fall through to normal matching
-      return null
-    }
-  }
-
   private async createEpisodeMetadata(
     filePath: string,
     parsed: ParsedEpisodeInfo,
@@ -1628,7 +1475,7 @@ export class LocalFolderProvider implements MediaProvider {
 
     const metadata: MediaMetadata = {
       providerId: this.sourceId,
-      providerType: 'local' as ProviderType,
+      providerType: this.providerType,
       itemId: this.generateItemId(filePath),
       title: parsed.episodeTitle || `Episode ${parsed.episodeNumber}`,
       type: 'episode',
@@ -1926,24 +1773,6 @@ export class LocalFolderProvider implements MediaProvider {
     }
     return Math.abs(hash).toString(36)
   }
-
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
-    const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
-  }
-
-  private normalizeGroupTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
-      .replace(/\s*\(\s*\)\s*$/, '')
-      .trim()
-  }
-
   private convertMetadataToVersion(metadata: MediaMetadata, parsed: ParsedMovieInfo | ParsedEpisodeInfo, fileMtime: number): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
     const audioTracks: AudioTrack[] = []
     if (metadata.audioTracks?.length) {
