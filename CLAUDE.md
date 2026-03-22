@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi) and recommends higher-quality versions. Built with Electron 27, React 18, TypeScript, Vite 5, and Tailwind CSS.
+Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi) and recommends higher-quality versions. Built with Electron 41, React 18, TypeScript, Vite 6, and Tailwind CSS 4.
 
 ## Development Commands
 
 ```bash
 npm run electron:dev     # Start Vite + Electron together (recommended for development)
 npm run build            # TypeScript compile + Vite build + Electron Builder
-npm run lint             # Run ESLint on TS/TSX files
+npm run lint             # Run ESLint (flat config, eslint.config.js)
 npm run preview          # Preview Vite production build
 npm run test             # Run Vitest in watch mode
 npm run test:run         # Run all tests once
@@ -20,6 +20,8 @@ npm run test:ui          # Open Vitest interactive UI in browser
 npm run generate-icons   # Generate app icons from source
 npm run electron:build   # Same as `npm run build` (alias)
 ```
+
+**Note:** `postinstall` runs `electron-rebuild` automatically after `npm install` to compile native modules (better-sqlite3) for Electron's Node ABI.
 
 **Single test:** `npx vitest run tests/unit/FileNameParser.test.ts` or use `-t` to filter by test name: `npx vitest run -t "parses year"`
 
@@ -189,6 +191,7 @@ registerTaskQueueHandlers()
 registerLoggingHandlers()
 registerAutoUpdateHandlers()
 registerGeminiHandlers()
+registerNotificationHandlers()
 ```
 
 **Handler Pattern** (`src/main/ipc/*.ts`):
@@ -242,13 +245,18 @@ Events: `sources:scanProgress`, `quality:analysisProgress`, `series:progress`, `
 
 **Video Quality Scoring** (`src/main/services/QualityAnalyzer.ts`):
 1. Resolution tier: SD (<720p), 720p, 1080p, 4K (≥2160p)
-2. Within tier: LOW/MEDIUM/HIGH based on bitrate and audio quality
-3. Bitrate thresholds vary by tier (e.g., 1080p: 6000-15000 kbps)
-4. Codec efficiency multipliers: H.264 (1.0x), HEVC (2.0x), AV1 (2.5x), VP9 (1.8x)
+2. Per-tier scoring: bitrate vs configurable medium/high thresholds → 0-100 score
+3. At or above high threshold = 100 (no penalty curve beyond target)
+4. Codec efficiency multipliers: H.264 (1.0x), HEVC (2.0x), AV1 (2.5x), VP9 (1.8x) — applied to effective bitrate before scoring
+5. Audio scoring: same per-tier curve, no codec bonuses — pure bitrate vs threshold
+6. Overall score = video × weight + audio × (1 - weight), configurable via `quality_video_weight` setting (default 70%)
+7. Quality label (LOW/MEDIUM/HIGH) derived from weighted overall score (≥75=HIGH, ≥50=MEDIUM, <50=LOW)
+8. Corrupt audio track detection: tracks with bitrate < channels × 32 kbps are skipped in best-track selection
 
 **Music Quality Tiers**:
 - **Ultra**: Lossless (FLAC/ALAC/WAV) with 24-bit+ OR >48kHz sample rate
 - **High**: CD-quality lossless (16-bit / 44.1-48kHz)
+- **High Lossy**: Lossy ≥256 kbps (recognized as high quality for its format)
 - **Medium**: MP3 ≥160 kbps or AAC ≥128 kbps
 - **Low**: MP3 <160 kbps or AAC <128 kbps
 
@@ -304,6 +312,24 @@ Automatic change detection:
 - Detects added/updated/removed items
 - Pauses during manual scans
 - Emits `monitoring:statusChanged` events to renderer
+- Creates `source_change` notifications for detected changes (batched per poll cycle)
+
+### Notifications
+
+**Location:** `src/main/ipc/notifications.ts`, `src/renderer/src/components/ui/ActivityPanel.tsx`
+
+Database-backed notification system (`notifications` table) with IPC handlers:
+- Types: `source_change`, `scan_complete`, `error`, `info`
+- Read/unread tracking with timestamps
+- Emitted from: TaskQueueService (scan/analysis complete, failures), LiveMonitoringService (library changes), SourceManager (add/remove, unavailable), AutoUpdateService (update available/downloaded)
+- UI: Notifications section in ActivityPanel (replaced Monitoring and History tabs)
+
+### Preference Persistence
+
+Dashboard sort preferences and MediaBrowser view preferences are persisted via `setSetting`/`getSetting`:
+- `dashboard_upgrade_sort`, `dashboard_collection_sort`, `dashboard_series_sort`, `dashboard_artist_sort`
+- `library_view_prefs` — JSON object storing per-tab `viewType` and `gridScale` for movies/tv/music
+- `quality_video_weight` — video/audio score weighting (default 70%)
 
 ### Logging & Diagnostics
 
@@ -374,6 +400,7 @@ Automatic change detection:
 - No semicolons, single quotes, 2-space indent, trailing commas (es5), 100-char line width, `arrowParens: "always"`
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix unused parameters with `_` (ESLint `argsIgnorePattern: '^_'`)
 - `@typescript-eslint/no-explicit-any` is `warn` — avoid `any` but it won't block builds
+- ESLint 9 flat config (`eslint.config.js`), `typescript-eslint` v8 (unified package), `@typescript-eslint/no-require-imports` and `@typescript-eslint/no-unused-expressions` are off, `caughtErrors: 'none'` on no-unused-vars
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 
 ## Important Patterns
