@@ -126,6 +126,8 @@ export class QualityAnalyzer {
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
   private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
   private efficiencyTrashThreshold = 60
+  private losslessAudioAllowance = 4000 // kbps (4 Mbps)
+  private hdrOverheadMultiplier = 1.10 // 10% more bitrate allowed for HDR
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
   private videoWeight = 0.7 // 0-1, audio weight = 1 - videoWeight
@@ -232,6 +234,10 @@ export class QualityAnalyzer {
 
       // Load efficiency trash threshold
       this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', 60)
+
+      // Load efficiency allowances
+      this.losslessAudioAllowance = getNum('quality_efficiency_lossless_allowance', 4000)
+      this.hdrOverheadMultiplier = getNum('quality_efficiency_hdr_overhead', 1.10)
 
       // Load music quality thresholds
       this.musicThresholds = {
@@ -555,6 +561,7 @@ export class QualityAnalyzer {
   /**
    * Calculate Efficiency Score (0-100) based on grounded tier targets.
    * Rewards modern codecs achieving high quality at efficient bitrates.
+   * Grants allowances for high-value features (Lossless Audio, HDR, 10-bit).
    * Penalizes over-encoding (bloat) beyond visually transparent thresholds.
    */
   private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number {
@@ -562,41 +569,68 @@ export class QualityAnalyzer {
     if (bitrate === 0) return 0
 
     const efficiencyMult = this.getCodecEfficiency(item.video_codec)
-    const effectiveBitrate = bitrate * efficiencyMult
+    const isLossless = this.isLosslessAudio(item.audio_codec) || (item.audio_tracks?.toLowerCase().includes('truehd') || item.audio_tracks?.toLowerCase().includes('dts-hd'))
+    const isHdr = item.hdr_format && item.hdr_format !== 'None'
+    const is10Bit = item.color_bit_depth && item.color_bit_depth >= 10
+
+    // Deduct audio allowance from bitrate for analysis (don't penalize high-quality audio)
+    const audioAllowance = isLossless ? this.losslessAudioAllowance : 0
+    const analysisBitrate = Math.max(500, bitrate - audioAllowance)
+
+    const effectiveBitrate = analysisBitrate * efficiencyMult
     const targetKbps = this.efficiencyThresholds[tier]
-    const bloatKbps = this.bloatThresholds[tier]
+    
+    // HDR requires slightly more bitrate for the same visual transparency
+    const bloatKbps = this.bloatThresholds[tier] * (isHdr ? this.hdrOverheadMultiplier : 1.0)
+
+    let score = 0
 
     // 1. Perfect efficiency: achieves HIGH quality target with modern codec
-    if (bitrate <= targetKbps && efficiencyMult >= 2.0) {
-      return 100
+    if (analysisBitrate <= targetKbps && efficiencyMult >= 2.0) {
+      score = 100
     }
-
     // 2. Good efficiency: achieves target quality but slightly higher bitrate or older codec
-    if (effectiveBitrate <= targetKbps) {
-      // Scale based on how close it is to the raw bitrate target
-      return Math.round(100 - (Math.max(0, bitrate - targetKbps) / targetKbps) * 15)
+    else if (effectiveBitrate <= targetKbps) {
+      score = Math.round(100 - (Math.max(0, analysisBitrate - targetKbps) / targetKbps) * 15)
     }
-
     // 3. Diminishing returns: bitrate exceeds efficient target but below bloat threshold
-    if (bitrate <= bloatKbps) {
+    else if (analysisBitrate <= bloatKbps) {
       const range = bloatKbps - targetKbps
-      const offset = bitrate - targetKbps
-      return Math.round(85 - (offset / range) * 25) // Drops from 85 to 60
+      const offset = analysisBitrate - targetKbps
+      score = Math.round(85 - (offset / range) * 25) // Drops from 85 to 60
+    }
+    // 4. Bloated: bitrate exceeds the visually transparent limit
+    else {
+      const overage = analysisBitrate - bloatKbps
+      score = Math.max(0, Math.round(60 - (overage / bloatKbps) * 100))
     }
 
-    // 4. Bloated: bitrate exceeds the visually transparent limit
-    const overage = bitrate - bloatKbps
-    return Math.max(0, Math.round(60 - (overage / bloatKbps) * 100))
+    // 10-bit bonus: 10-bit is more efficient at preventing artifacts
+    if (is10Bit && score < 100 && score > 0) {
+      score = Math.min(100, score + 5)
+    }
+
+    return score
   }
 
   /**
    * Calculate Storage Debt in bytes.
    * Identifies potential savings if the file were re-encoded to an efficient HIGH quality HEVC target.
+   * Factors in allowances for lossless audio and HDR.
    */
   private calculateStorageDebt(item: MediaItem, tier: QualityTier): number {
     if (!item.file_size || !item.duration) return 0
 
-    const targetKbps = this.efficiencyThresholds[tier]
+    const isLossless = this.isLosslessAudio(item.audio_codec) || (item.audio_tracks?.toLowerCase().includes('truehd') || item.audio_tracks?.toLowerCase().includes('dts-hd'))
+    const isHdr = item.hdr_format && item.hdr_format !== 'None'
+
+    // Efficient target for this tier
+    let targetKbps = this.efficiencyThresholds[tier]
+    
+    // Add allowances to the target (so we don't count these high-value bits as debt)
+    if (isLossless) targetKbps += this.losslessAudioAllowance
+    if (isHdr) targetKbps *= this.hdrOverheadMultiplier
+
     const durationSec = item.duration / 1000
     // Target size = (Target Bitrate * 1000 * Duration) / 8 bits
     const targetSizeBytes = (targetKbps * 1000 * durationSec) / 8

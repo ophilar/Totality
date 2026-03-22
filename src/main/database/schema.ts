@@ -914,6 +914,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   -- Efficiency UI thresholds
   ('quality_efficiency_trash_threshold', '60'),
 
+  -- Efficiency Allowances
+  ('quality_efficiency_lossless_allowance', '4000'),
+  ('quality_efficiency_hdr_overhead', '1.10'),
+
   -- Window behavior
   ('minimize_to_tray', 'false'),
   ('start_minimized_to_tray', 'false'),

@@ -47,6 +47,8 @@ const DEFAULT_SETTINGS = {
   quality_efficiency_1080p_bloat: 10000,
   quality_efficiency_4k_bloat: 30000,
   quality_efficiency_trash_threshold: 60,
+  quality_efficiency_lossless_allowance: 4000,
+  quality_efficiency_hdr_overhead: 1.10,
 }
 
 type SettingsState = typeof DEFAULT_SETTINGS
@@ -449,6 +451,42 @@ export function QualitySettingsTab() {
                 onChange={(val) => {
                   updateSetting(`quality_efficiency_${selectedTier}_bloat` as keyof SettingsState, val)
                 }}
+              />
+            </div>
+
+            <h4 className="text-xs font-medium mt-4 mb-2">Quality Allowances</h4>
+            <p className="text-[10px] text-muted-foreground mb-3">
+              High-value features like lossless audio and HDR require more space. These settings
+              grant "bitrate credits" so feature-rich files aren't unfairly penalized as bloat.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <QualityThreshold
+                label="Lossless Audio Allowance"
+                mediumValue={settings.quality_efficiency_lossless_allowance}
+                highValue={settings.quality_efficiency_lossless_allowance}
+                min={0}
+                max={10000}
+                step={500}
+                unit="Mbps"
+                displayDivisor={1000}
+                lowLabel="None"
+                mediumLabel="Allowance"
+                highLabel="Allowance"
+                onChange={(val) => updateSetting('quality_efficiency_lossless_allowance', val)}
+              />
+              <QualityThreshold
+                label="HDR Bloat Allowance"
+                mediumValue={Math.round(settings.quality_efficiency_hdr_overhead * 100)}
+                highValue={Math.round(settings.quality_efficiency_hdr_overhead * 100)}
+                min={100}
+                max={150}
+                step={5}
+                unit="%"
+                lowLabel="Standard"
+                mediumLabel="Allowance"
+                highLabel="Allowance"
+                onChange={(val) => updateSetting('quality_efficiency_hdr_overhead', val / 100)}
               />
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, X, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
