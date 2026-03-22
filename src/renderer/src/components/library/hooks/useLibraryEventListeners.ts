@@ -36,9 +36,9 @@ interface UseLibraryEventListenersOptions {
  */
 export function useLibraryEventListeners({
   activeSourceId,
-  scanProgressSize,
-  loadMedia,
-  loadStats,
+  scanProgressSize: _scanProgressSize,
+  loadMedia: _loadMedia,
+  loadStats: _loadStats,
   loadCompletenessData,
   loadMusicData,
   loadMusicCompletenessData,
@@ -58,9 +58,9 @@ export function useLibraryEventListeners({
 
   const handleLibraryUpdate = useCallback(
     (data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
-      // Skip expensive DB queries during active scans - will reload when scan completes via flush()
-      const hasActiveScan = scanProgressSize > 0
-      if (hasActiveScan && data.type !== 'libraryToggle') {
+      // Only handle library toggle events (enable/disable libraries)
+      // Media and music reloads are handled manually by the user navigating
+      if (data.type !== 'libraryToggle') {
         return
       }
 
@@ -69,19 +69,10 @@ export function useLibraryEventListeners({
         clearTimeout(pendingUpdateRef.current)
       }
       pendingUpdateRef.current = setTimeout(() => {
-        if (data.type === 'libraryToggle') {
-          // Refresh enabled libraries when a library is toggled
-          // Only refresh if it's the active source or no sourceId specified
-          if (!data.sourceId || data.sourceId === activeSourceId) {
-            loadActiveSourceLibraries()
-          }
-        } else if (data.type === 'media') {
-          loadMedia()
-          loadStats(activeSourceId || undefined)
-          loadCompletenessData()
-        } else if (data.type === 'music') {
-          loadMusicData()
-          loadMusicCompletenessData()
+        // Refresh enabled libraries when a library is toggled
+        // Only refresh if it's the active source or no sourceId specified
+        if (!data.sourceId || data.sourceId === activeSourceId) {
+          loadActiveSourceLibraries()
         }
         pendingUpdateRef.current = null
       }, 500) // 500ms debounce for live updates
@@ -89,12 +80,6 @@ export function useLibraryEventListeners({
     [
       activeSourceId,
       loadActiveSourceLibraries,
-      scanProgressSize,
-      loadMedia,
-      loadStats,
-      loadCompletenessData,
-      loadMusicData,
-      loadMusicCompletenessData,
     ]
   )
 
@@ -125,15 +110,11 @@ export function useLibraryEventListeners({
       setIsAutoRefreshing(false)
     })
 
-    // Listen for task queue task completion (refreshes data after queued scans complete)
+    // Listen for task queue task completion
     const cleanupTaskComplete = window.electronAPI.onTaskQueueTaskComplete?.((task: unknown) => {
       const t = task as { type: string; status: string }
-      // Refresh data when a scan task completes successfully
+      // Refresh completeness data after completeness tasks (not scans — scans don't auto-reload)
       if (t.status === 'completed') {
-        if (t.type === 'library-scan' || t.type === 'music-scan') {
-          handleLibraryUpdate({ type: t.type === 'music-scan' ? 'music' : 'media' })
-        }
-        // Refresh completeness data after completeness tasks
         if (t.type === 'series-completeness' || t.type === 'collection-completeness') {
           loadCompletenessData()
         }
@@ -197,6 +178,13 @@ export function useLibraryEventListeners({
         loadMusicCompletenessData(freshEps, freshSingles)
       }
     })
+
+    // Listen for exclusion changes (from Settings > Library tab)
+    const handleExclusionsChanged = () => {
+      loadCompletenessData()
+      loadMusicCompletenessData()
+    }
+    window.addEventListener('exclusions-changed', handleExclusionsChanged)
 
     // Listen for wishlist auto-completion
     const cleanupWishlistAutoCompleted = window.electronAPI.onWishlistAutoCompleted?.((items) => {
@@ -267,6 +255,7 @@ export function useLibraryEventListeners({
       cleanupSettingsChanged?.()
       cleanupWishlistAutoCompleted?.()
       cleanupScanCompleted?.()
+      window.removeEventListener('exclusions-changed', handleExclusionsChanged)
     }
   }, [
     handleLibraryUpdate,

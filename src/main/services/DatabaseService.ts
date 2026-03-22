@@ -784,6 +784,11 @@ export class DatabaseService {
         }
       }
 
+      // Add summary column to media_items
+      try {
+        this.db.run('ALTER TABLE media_items ADD COLUMN summary TEXT')
+      } catch { /* column may already exist */ }
+
       // Migrate existing plain-text credentials to encrypted format
       await this.migrateCredentialsToEncrypted()
 

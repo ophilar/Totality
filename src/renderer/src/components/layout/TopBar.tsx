@@ -5,9 +5,10 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot } from 'lucide-react'
+import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowBigLeft } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
+import { useNavigation } from '../../contexts/NavigationContext'
 import { ActivityPanel } from '../ui/ActivityPanel'
 import logoImage from '../../assets/totality_header_logo.png'
 import type { MediaViewType } from '../library/types'
@@ -38,6 +39,8 @@ interface TopBarProps {
   hasMovies?: boolean
   hasTV?: boolean
   hasMusic?: boolean
+  onBack?: () => void
+  canGoBack?: boolean
 }
 
 export function TopBar({
@@ -55,10 +58,13 @@ export function TopBar({
   isAutoRefreshing = false,
   hasMovies = false,
   hasTV = false,
-  hasMusic = false
+  hasMusic = false,
+  onBack,
+  canGoBack = false,
 }: TopBarProps) {
   const { sources } = useSources()
   const { count: wishlistCount } = useWishlist()
+  const { navigateTo } = useNavigation()
 
   // Theme accent color for alerts
   const [themeAccentColor, setThemeAccentColor] = useState('')
@@ -145,25 +151,37 @@ export function TopBar({
   const flattenedResults = searchResults ? [
     ...searchResults.movies.map(m => ({ type: 'movie' as const, id: m.id })),
     ...searchResults.tvShows.map(s => ({ type: 'tv' as const, id: s.id, title: s.title })),
-    ...searchResults.episodes.map(e => ({ type: 'episode' as const, id: e.id, series_title: e.series_title })),
-    ...searchResults.artists.map(a => ({ type: 'artist' as const, id: a.id })),
+    ...searchResults.episodes.map(e => ({ type: 'episode' as const, id: e.id, series_title: e.series_title, season_number: e.season_number })),
+    ...searchResults.artists.map(a => ({ type: 'artist' as const, id: a.id, name: a.name })),
     ...searchResults.albums.map(a => ({ type: 'album' as const, id: a.id })),
     ...searchResults.tracks.map(t => ({ type: 'track' as const, id: t.id, album_id: t.album_id })),
   ] : []
 
   // Handle result selection
-  const handleResultClick = (type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track', _id: number, _extra?: { series_title?: string; album_id?: number; title?: string }) => {
+  const handleResultClick = (type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track', id: number, extra?: { series_title?: string; season_number?: number; album_id?: number; title?: string; name?: string }) => {
     setShowSearchResults(false)
     setSearchInput('')
     setSearchResults(null)
 
-    // Navigate to appropriate library tab
+    // Navigate to appropriate library tab and item
     if (type === 'movie') {
       onNavigateToLibrary('movies')
-    } else if (type === 'tv' || type === 'episode') {
+      navigateTo({ type: 'movie', id })
+    } else if (type === 'tv') {
       onNavigateToLibrary('tv')
-    } else {
+      navigateTo({ type: 'tv', id: extra?.title || String(id) })
+    } else if (type === 'episode') {
+      onNavigateToLibrary('tv')
+      navigateTo({ type: 'episode', id, seriesTitle: extra?.series_title, seasonNumber: extra?.season_number })
+    } else if (type === 'artist') {
       onNavigateToLibrary('music')
+      navigateTo({ type: 'artist', id, artistName: extra?.name })
+    } else if (type === 'album') {
+      onNavigateToLibrary('music')
+      navigateTo({ type: 'album', id })
+    } else if (type === 'track') {
+      onNavigateToLibrary('music')
+      navigateTo({ type: 'track', id, albumId: extra?.album_id })
     }
   }
 
@@ -229,7 +247,7 @@ export function TopBar({
   return (
     <header
       id="top-bar"
-      className="dark fixed top-4 left-4 right-4 z-[100] bg-black rounded-2xl shadow-xl px-4 py-3"
+      className="dark fixed top-4 left-4 right-4 z-100 bg-black rounded-2xl shadow-xl px-4 py-3"
       role="banner"
       aria-label="Main navigation"
     >
@@ -237,10 +255,10 @@ export function TopBar({
         {/* Left Section: Logo + Search */}
         <div className="flex items-center gap-4 flex-1 min-w-0">
           {/* Logo */}
-          <img src={logoImage} alt="Totality" className="h-10 flex-shrink-0" />
+          <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
 
           {/* Search */}
-          <div ref={searchContainerRef} className="relative flex-shrink min-w-24 max-w-80 w-64">
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
             <input
               ref={searchInputRef}
@@ -250,7 +268,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-input border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full pl-10 pr-8 py-2 bg-input border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               aria-label="Search all libraries"
             />
             {searchInput && (
@@ -269,7 +287,7 @@ export function TopBar({
 
             {/* Search Results Dropdown */}
             {showSearchResults && searchInput.length >= 2 && (
-              <div className={`${getActiveTheme()} absolute top-full left-0 right-0 mt-2 bg-popover border border-border rounded-lg shadow-2xl overflow-hidden z-[9999] max-h-[400px] overflow-y-auto`}>
+              <div className={`${getActiveTheme()} absolute top-full left-0 right-0 mt-2 bg-popover border border-border rounded-lg shadow-2xl overflow-hidden z-9999 max-h-[400px] overflow-y-auto`}>
                 {isSearching && (
                   <div className="px-3 py-4 text-sm text-muted-foreground text-center">Searching...</div>
                 )}
@@ -297,7 +315,7 @@ export function TopBar({
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-8 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
+                              <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
                                 {movie.poster_url ? (
                                   <img src={movie.poster_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -333,7 +351,7 @@ export function TopBar({
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-8 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
+                              <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
                                 {show.poster_url ? (
                                   <img src={show.poster_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -361,12 +379,12 @@ export function TopBar({
                           return (
                             <button
                               key={`episode-${episode.id}`}
-                              onClick={() => handleResultClick('episode', episode.id, { series_title: episode.series_title })}
+                              onClick={() => handleResultClick('episode', episode.id, { series_title: episode.series_title, season_number: episode.season_number })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-8 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
+                              <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
                                 {episode.poster_url ? (
                                   <img src={episode.poster_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -399,12 +417,12 @@ export function TopBar({
                           return (
                             <button
                               key={`artist-${artist.id}`}
-                              onClick={() => handleResultClick('artist', artist.id)}
+                              onClick={() => handleResultClick('artist', artist.id, { name: artist.name })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-10 h-10 bg-muted rounded-full overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
                                 {artist.thumb_url ? (
                                   <img src={artist.thumb_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -437,7 +455,7 @@ export function TopBar({
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-10 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
                                 {album.thumb_url ? (
                                   <img src={album.thumb_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -475,7 +493,7 @@ export function TopBar({
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
-                              <div className="w-10 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
                                 {track.album_thumb_url ? (
                                   <img src={track.album_thumb_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -501,16 +519,30 @@ export function TopBar({
             )}
           </div>
 
+          {/* Back Button */}
+          <button
+            onClick={canGoBack && onBack ? onBack : undefined}
+            disabled={!canGoBack}
+            className={`p-1.5 rounded-md transition-colors shrink-0 ${
+              canGoBack
+                ? 'text-foreground hover:bg-muted cursor-pointer'
+                : 'text-muted-foreground/30 cursor-default'
+            }`}
+            title="Go back"
+          >
+            <ArrowBigLeft className="w-5 h-5 fill-current" />
+          </button>
+
         </div>
 
         {/* Library Buttons - Centered */}
         {!showEmptyState && (
-          <div className="flex-shrink-0" role="tablist" aria-label="Navigation">
+          <div className="shrink-0" role="tablist" aria-label="Navigation">
             <div className="flex gap-1">
               {/* Home Button */}
               <button
                 onClick={onNavigateHome}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                   isDashboard
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-card text-muted-foreground hover:bg-muted'
@@ -531,7 +563,7 @@ export function TopBar({
               {hasMovies && (
                 <button
                   onClick={() => onNavigateToLibrary('movies')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'movies'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -548,7 +580,7 @@ export function TopBar({
               {hasTV && (
                 <button
                   onClick={() => onNavigateToLibrary('tv')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'tv'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -565,7 +597,7 @@ export function TopBar({
               {hasMusic && (
                 <button
                   onClick={() => onNavigateToLibrary('music')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'music'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'

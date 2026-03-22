@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
-import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2 } from 'lucide-react'
+import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
@@ -63,7 +63,8 @@ export function MusicView({
   onRescanTrack,
   includeEps,
   includeSingles,
-  scrollElement
+  scrollElement,
+  onDismissMissingAlbum
 }: {
   artists: MusicArtist[]
   totalArtistCount: number
@@ -108,10 +109,24 @@ export function MusicView({
   includeEps: boolean
   includeSingles: boolean
   scrollElement?: HTMLElement | null
+  onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
 }) {
   const [sortBy, setSortBy] = useState<'default' | 'efficiency' | 'waste' | 'size'>('default')
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
   const [isAnalyzingArtist, setIsAnalyzingArtist] = useState(false)
+  const [showArtistMenu, setShowArtistMenu] = useState(false)
+  const [bioExpanded, setBioExpanded] = useState(false)
+  const [copiedTitle, setCopiedTitle] = useState(false)
+  useEffect(() => { setBioExpanded(false); setCopiedTitle(false) }, [selectedArtist])
+  const artistMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showArtistMenu) return
+    const handle = (e: MouseEvent) => {
+      if (artistMenuRef.current && !artistMenuRef.current.contains(e.target as Node)) setShowArtistMenu(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showArtistMenu])
   const [trackMenuOpen, setTrackMenuOpen] = useState<string | number | null>(null)
   const [rescanningTrackId, setRescanningTrackId] = useState<string | number | null>(null)
   const trackMenuRef = useRef<HTMLDivElement>(null)
@@ -333,7 +348,7 @@ export function MusicView({
   // Tracks are now loaded from the server pre-filtered/sorted/paginated.
   // Quality filter is still applied client-side on the loaded page (lightweight).
   const filteredTracks = useMemo(() => {
-    let result = [...allTracks]
+    const result = [...allTracks]
 
     // Apply sorting first
     if (sortBy === 'efficiency') {
@@ -351,13 +366,14 @@ export function MusicView({
       if (!codec) return false
       return LOSSLESS_CODECS.some(c => codec.toLowerCase().includes(c))
     }
-    const getTrackQualityTier = (track: MusicTrack): 'ultra' | 'high' | 'medium' | 'low' | null => {
+    const getTrackQualityTier = (track: MusicTrack): 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null => {
       const bitrateKbps = track.audio_bitrate || 0
       const sampleRate = track.sample_rate || 0
       const bitDepth = track.bit_depth || 16
       const isLossless = track.is_lossless || isLosslessCodec(track.audio_codec)
       if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) return 'ultra'
       if (isLossless) return 'high'
+      if (bitrateKbps >= 256) return 'high-lossy'
       if (track.audio_codec?.toLowerCase().includes('aac')) {
         if (bitrateKbps >= 128) return 'medium'
       } else {
@@ -396,7 +412,7 @@ export function MusicView({
 
         {/* Album Header */}
         <div className="flex items-start gap-6">
-          <div className="w-48 aspect-square bg-muted rounded-lg overflow-hidden flex-shrink-0 shadow-lg">
+          <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
             {selectedAlbum.thumb_url ? (
               <img
                 src={selectedAlbum.thumb_url}
@@ -410,7 +426,21 @@ export function MusicView({
             )}
           </div>
           <div className="flex-1">
-            <h2 className="text-2xl font-bold">{selectedAlbum.title}</h2>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-3xl font-bold">{selectedAlbum.title}</h2>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(selectedAlbum.title)
+                  setCopiedTitle(true)
+                  setTimeout(() => setCopiedTitle(false), 1500)
+                }}
+                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy title"
+              >
+                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
             <p className="text-lg text-muted-foreground">{selectedAlbum.artist_name}</p>
             {selectedAlbum.year && (
               <p className="text-sm text-muted-foreground mt-1">{selectedAlbum.year}</p>
@@ -451,7 +481,7 @@ export function MusicView({
             <button
               onClick={() => selectedAlbum.id && handleAnalyzeAlbum(selectedAlbum.id)}
               disabled={isAnalyzingAlbum}
-              className="mt-3 flex items-center gap-2 px-3 py-1.5 text-sm bg-foreground text-background hover:bg-foreground/80 rounded-md transition-colors disabled:opacity-50"
+              className="mt-3 flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isAnalyzingAlbum ? 'animate-spin' : ''}`} />
               {isAnalyzingAlbum ? 'Analyzing...' : 'Analyze for missing tracks'}
@@ -493,7 +523,7 @@ export function MusicView({
 
           // Quality tier calculation based on audio file specs
           // Tiers: Ultra (Hi-Res) > High (CD Lossless) > Medium (Transparent Lossy) > Low
-          type QualityTier = 'ultra' | 'high' | 'medium' | 'low' | null
+          type QualityTier = 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null
 
           // Lossless codecs
           const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
@@ -528,6 +558,9 @@ export function MusicView({
               return 'high'
             }
 
+            // HIGH-LOSSY: Lossy with bitrate >= 256 kbps
+            if (bitrateKbps >= 256) return 'high-lossy'
+
             // MEDIUM: Lossy with bitrate >= 160 kbps (MP3) OR AAC >= 128 kbps
             if (isAACCodec(track.codec)) {
               // AAC is more efficient - 128+ kbps is considered transparent
@@ -557,6 +590,7 @@ export function MusicView({
           const qualityTierConfig: Record<QualityTier & string, { label: string; class: string; title: string }> = {
             'ultra': { label: 'Ultra', class: 'bg-foreground text-background', title: 'Hi-Res lossless: 24-bit or >48kHz sample rate' },
             'high': { label: 'High', class: 'bg-foreground text-background', title: 'CD-quality lossless: FLAC/ALAC/WAV at 16-bit/44.1-48kHz' },
+            'high-lossy': { label: 'High', class: 'bg-foreground text-background', title: 'High bitrate lossy: 256+ kbps' },
             'medium': { label: 'Medium', class: 'bg-foreground text-background', title: 'Transparent lossy: MP3 >=160kbps or AAC >=128kbps' },
             'low': { label: 'Low', class: 'bg-foreground text-background', title: 'Low bitrate lossy: below transparent threshold' },
           }
@@ -638,53 +672,53 @@ export function MusicView({
                       }
                     }}
                   >
-                    <span className={`w-8 text-sm text-right ${
-                      track.isMissing ? 'text-muted-foreground/50' : 'text-muted-foreground'
-                    }`}>
-                      {track.track_number || '-'}
-                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h4 className={`font-medium truncate ${
+                        <span className={`text-sm font-semibold shrink-0 ${
+                          track.isMissing ? 'text-muted-foreground/50' : 'text-muted-foreground'
+                        }`}>
+                          {track.track_number || '-'}
+                        </span>
+                        <h4 className={`font-semibold truncate ${
                           track.isMissing ? 'text-muted-foreground' : ''
                         }`}>
                           {track.title}
                         </h4>
                       </div>
-                      <div className={`flex items-center gap-3 text-xs mt-0.5 ${
+                      <div className={`flex items-center gap-1 text-xs mt-0.5 ${
                         track.isMissing ? 'text-muted-foreground/50' : 'text-muted-foreground'
                       }`}>
-                        {tierConfig && (
-                          <span
-                            className={`px-1.5 py-0.5 text-xs font-bold rounded ${tierConfig.class}`}
-                            title={tierConfig.title}
-                          >
-                            {tierConfig.label}
-                          </span>
+                        <span>
+                          {[
+                            track.duration_ms ? `${Math.floor(track.duration_ms / 60000)}:${String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, '0')}` : null,
+                            !track.isMissing && track.codec ? track.codec.toUpperCase() : null,
+                            !track.isMissing && track.bitrate ? `${Math.round(track.bitrate)} kbps` : null,
+                            !track.isMissing && track.sample_rate ? (track.sample_rate >= 1000 ? `${(track.sample_rate / 1000).toFixed(1)}kHz` : `${track.sample_rate}Hz`) : null,
+                            !track.isMissing && track.bit_depth ? `${track.bit_depth}-bit` : null,
+                          ].filter(Boolean).join(' • ')}
+                        </span>
+                        {tierConfig && qualityTier === 'low' && (
+                          <>
+                            <span>•</span>
+                            <span title={tierConfig.title}><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>
+                          </>
                         )}
-                        {track.duration_ms && (
-                          <span>{Math.floor(track.duration_ms / 60000)}:{String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, '0')}</span>
-                        )}
-                        {!track.isMissing && track.codec && <span className="uppercase">{track.codec}</span>}
-                        {!track.isMissing && !!track.bitrate && <span>{Math.round(track.bitrate)} kbps</span>}
-                        {!track.isMissing && !!track.sample_rate && <span>{track.sample_rate >= 1000 ? `${(track.sample_rate / 1000).toFixed(1)}kHz` : `${track.sample_rate}Hz`}</span>}
-                        {!track.isMissing && !!track.bit_depth && <span>{track.bit_depth}-bit</span>}
                       </div>
                     </div>
                     {/* 3-dot menu for owned tracks with file_path */}
                     {!track.isMissing && track.file_path && onRescanTrack && (
-                      <div className="relative flex-shrink-0" ref={trackMenuOpen === track.id ? trackMenuRef : undefined}>
+                      <div className="relative shrink-0" ref={trackMenuOpen === track.id ? trackMenuRef : undefined}>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             setTrackMenuOpen(trackMenuOpen === track.id ? null : track.id)
                           }}
-                          className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
                         >
                           {rescanningTrackId === track.id ? (
-                            <RefreshCw className="w-3.5 h-3.5 text-white animate-spin" />
+                            <RefreshCw className="w-4 h-4 animate-spin" />
                           ) : (
-                            <MoreVertical className="w-3.5 h-3.5 text-white" />
+                            <MoreVertical className="w-4 h-4" />
                           )}
                         </button>
                         {trackMenuOpen === track.id && rescanningTrackId !== track.id && (
@@ -705,7 +739,7 @@ export function MusicView({
                     )}
                     {/* Add to wishlist button for missing tracks */}
                     {track.isMissing && (
-                      <div className="flex-shrink-0">
+                      <div className="shrink-0">
                         <AddToWishlistButton
                           mediaType="track"
                           title={track.title}
@@ -732,21 +766,23 @@ export function MusicView({
         {/* Track Quality Details Modal */}
         {selectedTrackForQuality && (() => {
           const tier = selectedTrackForQuality.qualityTier
-          const tierLabel = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
+          const bitrateKbps = selectedTrackForQuality.bitrate || 0
+          const isLossy = !selectedTrackForQuality.is_lossless
+          const isHighLossy = isLossy && bitrateKbps >= 256
+          const tierLabel = isHighLossy ? 'High' : tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
           const tierDescription = tier === 'ultra' ? 'Hi-Res Lossless' :
                                   tier === 'high' ? 'CD-Quality Lossless' :
+                                  isHighLossy ? 'High Bitrate Lossy' :
                                   tier === 'medium' ? 'Transparent Lossy' :
                                   tier === 'low' ? 'Low Bitrate Lossy' : 'Unknown'
-          const tierColor = tier === 'ultra' ? 'text-purple-500' :
-                           tier === 'high' ? 'text-green-500' :
-                           tier === 'medium' ? 'text-blue-500' :
-                           tier === 'low' ? 'text-red-500' : 'text-muted-foreground'
-
-          // Calculate a score based on the tier (for visual consistency with video modal)
+          // Calculate score within tier (not against global ceiling)
+          const sampleRate = selectedTrackForQuality.sample_rate || 44100
+          const bitDepth = selectedTrackForQuality.bit_depth || 16
           const tierScore = tier === 'ultra' ? 100 :
-                           tier === 'high' ? 85 :
-                           tier === 'medium' ? 60 :
-                           tier === 'low' ? 30 : 0
+                           tier === 'high' ? Math.round(70 + Math.min((sampleRate / 48000), 1) * 15 + Math.min((bitDepth / 24), 1) * 15) :
+                           isHighLossy ? Math.min(Math.round(90 + (bitrateKbps - 256) / 64 * 10), 100) :
+                           tier === 'medium' ? Math.round(40 + ((bitrateKbps - 128) / (256 - 128)) * 50) :
+                           tier === 'low' ? Math.round((bitrateKbps / 192) * 40) : 0
 
           // Check if bitrate is low (for lossy codecs, below 160kbps for MP3 or 128kbps for AAC)
           const isLossyCodec = !selectedTrackForQuality.is_lossless
@@ -769,86 +805,115 @@ export function MusicView({
 
           return createPortal(
             <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-6"
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-200 p-6"
               onClick={() => setSelectedTrackForQuality(null)}
             >
               <div
                 className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 p-4 border-b border-border/30 bg-black/30 rounded-t-xl">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-lg font-bold truncate">{selectedTrackForQuality.title}</h2>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {selectedTrackForQuality.artist_name && selectedTrackForQuality.album_title
-                        ? `${selectedTrackForQuality.artist_name} · ${selectedTrackForQuality.album_title}`
-                        : 'Track Quality Analysis'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    {/* Add to Wishlist Button for low quality tracks */}
-                    {(tier === 'low' || tier === 'medium') && selectedTrackForQuality.artist_name && (
-                      <AddToWishlistButton
-                        mediaType="track"
-                        title={selectedTrackForQuality.title}
-                        artistName={selectedTrackForQuality.artist_name}
-                        albumTitle={selectedTrackForQuality.album_title}
-                        posterUrl={selectedAlbum?.thumb_url || undefined}
-                        reason="upgrade"
-                      />
-                    )}
-                    <button
-                      onClick={() => setSelectedTrackForQuality(null)}
-                      className="text-muted-foreground hover:text-foreground p-1"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
+                {/* Header — matches MediaDetails pattern */}
+                <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+                  {/* Album Art */}
+                  {selectedAlbum?.thumb_url && (
+                    <img
+                      src={selectedAlbum.thumb_url}
+                      alt=""
+                      className="w-16 h-16 rounded-lg object-cover shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    />
+                  )}
+
+                  {/* Title & Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
+                        {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
+                          <p className="text-sm text-muted-foreground truncate">
+                            {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {(tier === 'low' || tier === 'medium') && (
+                          <AddToWishlistButton
+                            mediaType="track"
+                            title={selectedTrackForQuality.title}
+                            artistName={selectedTrackForQuality.artist_name}
+                            albumTitle={selectedTrackForQuality.album_title}
+                            posterUrl={selectedAlbum?.thumb_url || undefined}
+                            reason="upgrade"
+                            compact
+                          />
+                        )}
+                        {(tier === 'low' || tier === 'medium') && (
+                          <button
+                            onClick={() => setSelectedTrackForQuality(null)}
+                            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            title="Dismiss"
+                          >
+                            <EyeOff className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setSelectedTrackForQuality(null)}
+                          className="text-muted-foreground hover:text-foreground p-1"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {/* Content */}
                 <div className="p-4 space-y-4">
                   {/* Quality Score Card */}
-                  <div className="rounded-lg border border-border p-3">
+                  <div className="rounded-lg p-3">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 bg-muted/30 -ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg">
                         <div className="text-center">
                           <div className="text-2xl font-bold">{tierLabel}</div>
-                          <div className={`text-xs font-medium ${tierColor}`}>{tierDescription}</div>
+                          <div className="text-xs font-medium text-muted-foreground">{tierDescription}</div>
                         </div>
                         <div className="h-10 w-px bg-border" />
                         <div className="text-center">
                           <div className="text-2xl font-bold">{tierScore}</div>
-                          <div className="text-xs text-muted-foreground">Score</div>
+                          <div className="text-xs font-medium text-muted-foreground">Score</div>
                         </div>
                       </div>
 
-                      {/* Premium Badges */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {!!selectedTrackForQuality.is_lossless && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-500/20 text-green-400">Lossless</span>
-                        )}
+                      {/* Quality Bar + Premium Badges */}
+                      <div className="flex-1 flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-sm text-muted-foreground">Quality</span>
+                            <span className="text-sm font-medium tabular-nums">{tierScore}</span>
+                          </div>
+                          <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
+                            <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-0.5">
+                            {selectedTrackForQuality.is_lossless
+                              ? `${selectedTrackForQuality.bit_depth || 16}-bit / ${((selectedTrackForQuality.sample_rate || 44100) / 1000).toFixed(1)} kHz`
+                              : `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps`
+                            } · Target: {tier === 'ultra' ? '24-bit+ / 96+ kHz'
+                              : tier === 'high' ? '16-bit+ / 44.1+ kHz'
+                              : isHighLossy ? '256+ kbps'
+                              : tier === 'medium' ? '192-256 kbps'
+                              : '160+ kbps'}
+                          </div>
+                        </div>
                         {(selectedTrackForQuality.bit_depth ?? 0) >= 24 && (
                           <span className="px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-400">Hi-Res</span>
                         )}
                       </div>
                     </div>
 
-                    {/* Score Bar */}
-                    <div className="mt-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground w-14">Quality</span>
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
-                        </div>
-                        <span className="text-xs w-8 text-right">{tierScore}</span>
-                      </div>
-                    </div>
-
-                    {/* Issue text - shown inside quality score card */}
+                    {/* Issue text */}
                     {issueText && (
-                      <div className="mt-3 pt-3 border-t border-border">
+                      <div className="mt-3">
                         <div className="text-sm text-muted-foreground">{issueText}</div>
                       </div>
                     )}
@@ -905,8 +970,9 @@ export function MusicView({
         </button>
 
         {/* Artist Header */}
-        <div className="flex items-start gap-6">
-          <div className="w-40 h-40 bg-muted rounded-full overflow-hidden flex-shrink-0 shadow-lg">
+        <div className="flex gap-6 mb-6">
+          {/* Artist Image — larger, prominent */}
+          <div className="w-44 h-44 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
             {selectedArtist.thumb_url ? (
               <img
                 src={selectedArtist.thumb_url}
@@ -915,30 +981,96 @@ export function MusicView({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <User className="w-16 h-16 text-muted-foreground" />
+                <User className="w-20 h-20 text-muted-foreground" />
               </div>
             )}
           </div>
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold">{selectedArtist.name}</h2>
-            <p className="text-muted-foreground mt-1">
-              {selectedArtist.album_count} albums • {selectedArtist.track_count} tracks
-            </p>
-            {/* Completeness info */}
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            {/* Title */}
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-3xl font-bold">{selectedArtist.name}</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(selectedArtist.name)
+                  setCopiedTitle(true)
+                  setTimeout(() => setCopiedTitle(false), 1500)
+                }}
+                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy title"
+              >
+                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Metadata line */}
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              {selectedArtist.country && (
+                <>
+                  <span>{selectedArtist.country}</span>
+                  <span>•</span>
+                </>
+              )}
+              {selectedArtist.genres && (
+                <>
+                  <span>{(() => { try { const g = JSON.parse(selectedArtist.genres); return Array.isArray(g) ? g.join(', ') : selectedArtist.genres } catch { return selectedArtist.genres } })()}</span>
+                  <span>•</span>
+                </>
+              )}
+              <span>{selectedArtist.album_count} albums</span>
+              <span>•</span>
+              <span>{selectedArtist.track_count} tracks</span>
+            </div>
+
+            {/* Completeness */}
             {artistCompleteness.has(selectedArtist.name) && (
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-sm text-muted-foreground mt-1">
                 {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
               </p>
             )}
-            {/* Analyze button */}
-            <button
-              onClick={() => handleAnalyzeArtist(selectedArtist.id)}
-              disabled={isAnalyzingArtist}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors mt-3"
-            >
-              <RefreshCw className={`w-4 h-4 ${isAnalyzingArtist ? 'animate-spin' : ''}`} />
-              {isAnalyzingArtist ? 'Analyzing...' : 'Analyze Completeness'}
-            </button>
+
+            {/* Action buttons row */}
+            <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
+              <button
+                onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
+                disabled={isAnalyzingArtist}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                title="Analyze Completeness"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingArtist ? 'animate-spin' : ''}`} />
+                {isAnalyzingArtist ? 'Analyzing...' : 'Analyze Completeness'}
+              </button>
+              {onFixArtistMatch && (
+                <button
+                  onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  title="Fix Match"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Biography */}
+            {selectedArtist.biography && (
+              <div className="mt-3 max-w-2xl">
+                <p className={`text-sm text-muted-foreground leading-relaxed ${bioExpanded ? '' : 'line-clamp-3'}`}>
+                  {selectedArtist.biography}
+                </p>
+                <button
+                  onClick={() => setBioExpanded(!bioExpanded)}
+                  className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
+                >
+                  {bioExpanded ? (
+                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                  ) : (
+                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1020,7 +1152,7 @@ export function MusicView({
 
           return (
             <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-4 text-yellow-400">
+              <h3 className="text-lg font-semibold mb-4">
                 Missing ({allMissing.length})
               </h3>
               {viewType === 'list' ? (
@@ -1030,6 +1162,7 @@ export function MusicView({
                       key={album.musicbrainz_id || idx}
                       album={album}
                       artistName={selectedArtist.name}
+                      onDismiss={onDismissMissingAlbum ? () => onDismissMissingAlbum(album, selectedArtist.name, selectedArtist.musicbrainz_id) : undefined}
                     />
                   ))}
                 </div>
@@ -1058,6 +1191,7 @@ export function MusicView({
                       key={album.musicbrainz_id || index}
                       album={album}
                       artistName={selectedArtist.name}
+                      onDismiss={onDismissMissingAlbum ? () => onDismissMissingAlbum(album, selectedArtist.name, selectedArtist.musicbrainz_id) : undefined}
                     />
                   )}
                 />
@@ -1245,6 +1379,11 @@ export function MusicView({
                     <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
+
+                {/* Completeness column */}
+                <div className="w-20 text-center">
+                  <span>Tracks</span>
+                </div>
               </div>
 
               {/* Virtualized Album List */}
@@ -1429,13 +1568,15 @@ export function MusicView({
                   const artistName = track.artist_id
                     ? artistNameMap.get(track.artist_id)
                     : albumInfo?.artistName
+                  const albumTitle = albumInfo?.title
+
                   return (
                     <div style={{ height: 40 }}>
                       <TrackListItem
                         track={track}
                         index={index + 1}
                         artistName={artistName}
-                        albumTitle={albumInfo?.title}
+                        albumTitle={albumTitle}
                         columnWidths={trackColumnWidths}
                         onClickQuality={() => {
                           const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
@@ -1446,9 +1587,10 @@ export function MusicView({
                           const bitDepth = track.bit_depth || 16
                           const isAAC = codecLower.includes('aac')
 
-                          let qualityTier: 'ultra' | 'high' | 'medium' | 'low' | null = null
+                          let qualityTier: 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null = null
                           if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) qualityTier = 'ultra'
                           else if (isLossless) qualityTier = 'high'
+                          else if (bitrateKbps >= 256) qualityTier = 'high-lossy'
                           else if (isAAC && bitrateKbps >= 128) qualityTier = 'medium'
                           else if (!isAAC && bitrateKbps >= 160) qualityTier = 'medium'
                           else if (bitrateKbps > 0) qualityTier = 'low'
@@ -1463,7 +1605,7 @@ export function MusicView({
                             is_lossless: track.is_lossless,
                             qualityTier,
                             artist_name: artistName,
-                            album_title: albumInfo?.title
+                            album_title: albumTitle
                           })
                         }}
                       />
@@ -1496,19 +1638,23 @@ export function MusicView({
       {/* Track Quality Details Modal */}
       {selectedTrackForQuality && (() => {
         const tier = selectedTrackForQuality.qualityTier
-        const tierLabel = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
+        const bitrateKbps = selectedTrackForQuality.bitrate || 0
+        const isLossy = !selectedTrackForQuality.is_lossless
+        const isHighLossy = isLossy && bitrateKbps >= 256
+        const tierLabel = isHighLossy ? 'High' : tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
         const tierDescription = tier === 'ultra' ? 'Hi-Res Lossless' :
                                 tier === 'high' ? 'CD-Quality Lossless' :
+                                isHighLossy ? 'High Bitrate Lossy' :
                                 tier === 'medium' ? 'Transparent Lossy' :
                                 tier === 'low' ? 'Low Bitrate Lossy' : 'Unknown'
-        const tierColor = tier === 'ultra' ? 'text-purple-500' :
-                         tier === 'high' ? 'text-green-500' :
-                         tier === 'medium' ? 'text-blue-500' :
-                         tier === 'low' ? 'text-red-500' : 'text-muted-foreground'
+        // Calculate score within tier (not against global ceiling)
+        const sampleRate = selectedTrackForQuality.sample_rate || 44100
+        const bitDepth = selectedTrackForQuality.bit_depth || 16
         const tierScore = tier === 'ultra' ? 100 :
-                         tier === 'high' ? 85 :
-                         tier === 'medium' ? 60 :
-                         tier === 'low' ? 30 : 0
+                         tier === 'high' ? Math.round(70 + Math.min((sampleRate / 48000), 1) * 15 + Math.min((bitDepth / 24), 1) * 15) :
+                         isHighLossy ? Math.min(Math.round(90 + (bitrateKbps - 256) / 64 * 10), 100) :
+                         tier === 'medium' ? Math.round(40 + ((bitrateKbps - 128) / (256 - 128)) * 50) :
+                         tier === 'low' ? Math.round((bitrateKbps / 192) * 40) : 0
 
         // Check if bitrate is low (for lossy codecs, below 160kbps for MP3 or 128kbps for AAC)
         const isLossyCodec = !selectedTrackForQuality.is_lossless
@@ -1531,83 +1677,102 @@ export function MusicView({
 
         return createPortal(
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-6"
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-200 p-6"
             onClick={() => setSelectedTrackForQuality(null)}
           >
             <div
               className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
-              <div className="flex items-start justify-between gap-4 p-4 border-b border-border/30 bg-black/30 rounded-t-xl">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-bold truncate">{selectedTrackForQuality.title}</h2>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {selectedTrackForQuality.artist_name && selectedTrackForQuality.album_title
-                      ? `${selectedTrackForQuality.artist_name} · ${selectedTrackForQuality.album_title}`
-                      : 'Track Quality Analysis'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {/* Add to Wishlist Button for low quality tracks */}
-                  {(tier === 'low' || tier === 'medium') && (
-                    <AddToWishlistButton
-                      mediaType="track"
-                      title={selectedTrackForQuality.title}
-                      artistName={selectedTrackForQuality.artist_name}
-                      albumTitle={selectedTrackForQuality.album_title}
-                      reason="upgrade"
-                    />
-                  )}
-                  <button
-                    onClick={() => setSelectedTrackForQuality(null)}
-                    className="text-muted-foreground hover:text-foreground p-1"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+              {/* Header — matches MediaDetails pattern */}
+              <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
+                {/* Title & Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
+                      {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
+                        <p className="text-sm text-muted-foreground truncate">
+                          {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {(tier === 'low' || tier === 'medium') && (
+                        <AddToWishlistButton
+                          mediaType="track"
+                          title={selectedTrackForQuality.title}
+                          artistName={selectedTrackForQuality.artist_name}
+                          albumTitle={selectedTrackForQuality.album_title}
+                          reason="upgrade"
+                          compact
+                        />
+                      )}
+                      {(tier === 'low' || tier === 'medium') && (
+                        <button
+                          onClick={() => setSelectedTrackForQuality(null)}
+                          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                          title="Dismiss"
+                        >
+                          <EyeOff className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setSelectedTrackForQuality(null)}
+                        className="text-muted-foreground hover:text-foreground p-1"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Content */}
               <div className="p-4 space-y-4">
                 {/* Quality Score Card */}
-                <div className="rounded-lg border border-border p-3">
+                <div className="rounded-lg p-3">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 bg-muted/30 -ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg">
                       <div className="text-center">
                         <div className="text-2xl font-bold">{tierLabel}</div>
-                        <div className={`text-xs font-medium ${tierColor}`}>{tierDescription}</div>
+                        <div className="text-xs font-medium text-muted-foreground">{tierDescription}</div>
                       </div>
                       <div className="h-10 w-px bg-border" />
                       <div className="text-center">
                         <div className="text-2xl font-bold">{tierScore}</div>
-                        <div className="text-xs text-muted-foreground">Score</div>
+                        <div className="text-xs font-medium text-muted-foreground">Score</div>
                       </div>
                     </div>
 
-                    {/* Premium Badges */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {!!selectedTrackForQuality.is_lossless && (
-                        <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-500/20 text-green-400">Lossless</span>
-                      )}
+                    {/* Quality Bar + Premium Badges */}
+                    <div className="flex-1 flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-sm text-muted-foreground">Quality</span>
+                          <span className="text-sm font-medium tabular-nums">{tierScore}</span>
+                        </div>
+                        <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
+                          <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-0.5">
+                          {selectedTrackForQuality.is_lossless
+                            ? `${selectedTrackForQuality.bit_depth || 16}-bit / ${((selectedTrackForQuality.sample_rate || 44100) / 1000).toFixed(1)} kHz`
+                            : `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps`
+                          } · Target: {tier === 'ultra' ? '24-bit+ / 96+ kHz'
+                            : tier === 'high' ? '16-bit+ / 44.1+ kHz'
+                            : isHighLossy ? '256+ kbps'
+                            : tier === 'medium' ? '192-256 kbps'
+                            : '160+ kbps'}
+                        </div>
+                      </div>
                       {(selectedTrackForQuality.bit_depth ?? 0) >= 24 && (
                         <span className="px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-400">Hi-Res</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Score Bar */}
-                  <div className="mt-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground w-14">Quality</span>
-                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
-                      </div>
-                      <span className="text-xs w-8 text-right">{tierScore}</span>
-                    </div>
-                  </div>
-
-                  {/* Issue text - shown inside quality score card */}
+                  {/* Issue text */}
                   {issueText && (
                     <div className="mt-3 pt-3 border-t border-border">
                       <div className="text-sm text-muted-foreground">{issueText}</div>
@@ -1661,11 +1826,8 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
-  // Check if this is a local source that can have match fixed
-  const isLocalSource = artist.source_type === 'kodi-local' || artist.source_type === 'local'
-
   // Show menu if any action is available
-  const hasMenuActions = (isLocalSource && onFixMatch) || onAnalyzeCompleteness
+  const hasMenuActions = onFixMatch || onAnalyzeCompleteness
 
   const handleFixMatch = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1709,7 +1871,7 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
 
             {/* Dropdown menu */}
             {showMenu && (
-              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px]">
+              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
                 {onAnalyzeCompleteness && (
                   <button
                     onClick={handleAnalyzeCompleteness}
@@ -1720,7 +1882,7 @@ const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, onAnaly
                     {isAnalyzing ? 'Analyzing...' : 'Analyze Completeness'}
                   </button>
                 )}
-                {isLocalSource && onFixMatch && (
+                {onFixMatch && (
                   <button
                     onClick={handleFixMatch}
                     className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
@@ -1815,7 +1977,7 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
           <div ref={menuRef} className="absolute top-2 left-2 z-20">
             <button
               onClick={handleMenuClick}
-              className={`p-1 rounded-full bg-black/60 text-white transition-opacity ${
+              className={`w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white transition-opacity ${
                 showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               } hover:bg-black/80`}
             >
@@ -1828,7 +1990,7 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
 
             {/* Dropdown menu */}
             {showMenu && (
-              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px] z-30">
+              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
@@ -1861,10 +2023,10 @@ const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBadge, on
           return (
             <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 items-end">
               {isHiRes && (
-                <span className="px-1.5 py-0.5 text-xs font-bold bg-purple-600 text-white rounded shadow">Hi-Res</span>
+                <span className="px-1.5 py-0.5 text-xs font-bold bg-purple-600 text-white rounded shadow-sm">Hi-Res</span>
               )}
               {isLossless && !isHiRes && (
-                <span className="px-1.5 py-0.5 text-xs font-bold bg-green-600 text-white rounded shadow">Lossless</span>
+                <span className="px-1.5 py-0.5 text-xs font-bold bg-green-600 text-white rounded shadow-sm">Lossless</span>
               )}
             </div>
           )
@@ -1927,11 +2089,8 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
-  // Check if this is a local source that can have match fixed
-  const isLocalSource = artist.source_type === 'kodi-local' || artist.source_type === 'local'
-
   // Show menu if any action is available
-  const hasMenuActions = (isLocalSource && onFixMatch) || onAnalyzeCompleteness
+  const hasMenuActions = onFixMatch || onAnalyzeCompleteness
 
   const handleFixMatch = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1956,11 +2115,11 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
 
   return (
     <div
-      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Artist Thumbnail */}
-      <div className="w-16 h-16 bg-muted rounded-full overflow-hidden flex-shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-16 bg-muted rounded-full overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {artist.thumb_url ? (
           <img
             src={artist.thumb_url}
@@ -1974,45 +2133,6 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <User className="w-8 h-8 text-muted-foreground" />
-          </div>
-        )}
-        {/* 3-dot menu button */}
-        {hasMenuActions && (
-          <div ref={menuRef} className="absolute top-0 left-0 z-20">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(!showMenu)
-              }}
-              className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <MoreVertical className="w-3 h-3" />
-            </button>
-
-            {/* Dropdown menu */}
-            {showMenu && (
-              <div className="absolute top-7 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px]">
-                {onAnalyzeCompleteness && (
-                  <button
-                    onClick={handleAnalyzeCompleteness}
-                    disabled={isAnalyzing}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                    {isAnalyzing ? 'Analyzing...' : 'Analyze Completeness'}
-                  </button>
-                )}
-                {isLocalSource && onFixMatch && (
-                  <button
-                    onClick={handleFixMatch}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    Fix Match
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         )}
         {/* Source badge */}
@@ -2039,6 +2159,46 @@ const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, o
           </div>
         )}
       </div>
+
+      {/* 3-dot menu */}
+      {hasMenuActions && (
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(!showMenu)
+            }}
+            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {/* Dropdown menu */}
+          {showMenu && (
+            <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+              {onAnalyzeCompleteness && (
+                <button
+                  onClick={handleAnalyzeCompleteness}
+                  disabled={isAnalyzing}
+                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze Completeness'}
+                </button>
+              )}
+              {onFixMatch && (
+                <button
+                  onClick={handleFixMatch}
+                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Fix Match
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 })
@@ -2058,11 +2218,11 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
 
   return (
     <div
-      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
       onClick={onClick}
     >
       {/* Album Thumbnail */}
-      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden flex-shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {album.thumb_url ? (
           <img
             src={album.thumb_url}
@@ -2091,9 +2251,6 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
       {/* Info */}
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate">{album.title}</h4>
-        {showArtist && (
-          <p className="text-xs text-muted-foreground truncate">{album.artist_name}</p>
-        )}
         {album.year && (
           <p className="text-xs text-muted-foreground">{album.year}</p>
         )}
@@ -2104,12 +2261,23 @@ const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge
           {isLossless && !isHiRes && (
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">Lossless</span>
           )}
-          {completeness && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
-              {completeness.owned_tracks}/{completeness.total_tracks}
-            </span>
-          )}
         </div>
+      </div>
+
+      {/* Artist column */}
+      {showArtist && (
+        <div className="w-48 shrink-0">
+          <p className="text-sm text-muted-foreground truncate">{album.artist_name}</p>
+        </div>
+      )}
+
+      {/* Completeness column */}
+      <div className="w-20 shrink-0 text-center">
+        {completeness && (
+          <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
+            {completeness.owned_tracks}/{completeness.total_tracks}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -2138,7 +2306,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
     return codec.toLowerCase().includes('aac')
   }
 
-  const getQualityTier = (): 'ultra' | 'high' | 'medium' | 'low' | null => {
+  const getQualityTier = (): 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null => {
     const bitrateKbps = track.audio_bitrate || 0
     const sampleRate = track.sample_rate || 0
     const bitDepth = track.bit_depth || 16
@@ -2146,6 +2314,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
 
     if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) return 'ultra'
     if (isLossless) return 'high'
+    if (bitrateKbps >= 256) return 'high-lossy'
     if (isAACCodec(track.audio_codec)) {
       if (bitrateKbps >= 128) return 'medium'
     } else {
@@ -2165,6 +2334,7 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
   const qualityTierConfig: Record<string, { label: string; color: string }> = {
     ultra: { label: 'Ultra', color: 'bg-foreground text-background' },
     high: { label: 'High', color: 'bg-foreground text-background' },
+    'high-lossy': { label: 'High', color: 'bg-foreground text-background' },
     medium: { label: 'Mid', color: 'bg-foreground text-background' },
     low: { label: 'Low', color: 'bg-foreground text-background' }
   }
@@ -2270,9 +2440,10 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
   )
 })
 
-const MissingAlbumCard = memo(({ album, artistName }: {
+const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
   album: MissingAlbum
   artistName: string
+  onDismiss?: () => void
 }) => {
   const [imageError, setImageError] = useState(false)
 
@@ -2287,7 +2458,7 @@ const MissingAlbumCard = memo(({ album, artistName }: {
         {/* Album type badge */}
         {album.album_type !== 'album' && (
           <div className="absolute top-2 right-2 z-10">
-            <span className="px-1.5 py-0.5 text-xs font-bold bg-gray-600 text-white rounded shadow capitalize">
+            <span className="px-1.5 py-0.5 text-xs font-bold bg-gray-600 text-white rounded shadow-sm capitalize">
               {album.album_type}
             </span>
           </div>
@@ -2314,8 +2485,8 @@ const MissingAlbumCard = memo(({ album, artistName }: {
             <p className="text-xs text-muted-foreground/70">{album.year}</p>
           )}
         </div>
-        {/* Wishlist button */}
-        <div className="flex-shrink-0">
+        {/* Wishlist + Dismiss buttons */}
+        <div className="shrink-0 flex items-center gap-1">
           <AddToWishlistButton
             mediaType="album"
             title={album.title}
@@ -2325,6 +2496,15 @@ const MissingAlbumCard = memo(({ album, artistName }: {
             posterUrl={coverUrl || undefined}
             compact
           />
+          {onDismiss && (
+            <button
+              onClick={onDismiss}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              title="Dismiss"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2332,9 +2512,10 @@ const MissingAlbumCard = memo(({ album, artistName }: {
 })
 
 // List item component for missing albums
-const MissingAlbumListItem = memo(({ album, artistName }: {
+const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
   album: MissingAlbum
   artistName: string
+  onDismiss?: () => void
 }) => {
   const [imageError, setImageError] = useState(false)
 
@@ -2346,7 +2527,7 @@ const MissingAlbumListItem = memo(({ album, artistName }: {
   return (
     <div className="rounded-md overflow-hidden bg-muted/20 p-4 flex gap-4 items-center opacity-60 hover:opacity-80 transition-opacity">
       {/* Album Thumbnail */}
-      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden flex-shrink-0 relative grayscale shadow-md shadow-black/20">
+      <div className="w-16 h-16 bg-muted rounded-md overflow-hidden shrink-0 relative grayscale shadow-md shadow-black/20">
         {coverUrl && !imageError ? (
           <img
             src={coverUrl}
@@ -2368,18 +2549,17 @@ const MissingAlbumListItem = memo(({ album, artistName }: {
         {album.year && (
           <p className="text-xs text-muted-foreground/70">{album.year}</p>
         )}
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          <span className="px-2 py-0.5 text-xs font-medium bg-yellow-600 text-white rounded">Missing</span>
-          {album.album_type !== 'album' && (
+        {album.album_type !== 'album' && (
+          <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-gray-600 text-white rounded capitalize">
               {album.album_type}
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Wishlist button */}
-      <div className="flex-shrink-0">
+      {/* Wishlist + Dismiss buttons */}
+      <div className="shrink-0 flex items-center gap-1">
         <AddToWishlistButton
           mediaType="album"
           title={album.title}
@@ -2389,6 +2569,15 @@ const MissingAlbumListItem = memo(({ album, artistName }: {
           posterUrl={coverUrl || undefined}
           compact
         />
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+            title="Dismiss"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </div>
   )

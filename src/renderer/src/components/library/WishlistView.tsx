@@ -7,7 +7,7 @@ import type { MediaItem, SeriesCompletenessData, MovieCollectionData } from './t
 import { useToast } from '../../contexts/ToastContext'
 
 interface WishlistViewProps {
-  // Props can be added here if needed
+  onSelectMovie?: (id: number) => void
 }
 
 type TabType = 'upgrades' | 'missing'
@@ -57,7 +57,7 @@ export function WishlistView(_props: WishlistViewProps) {
       ;(collectionsData as MovieCollectionData[]).forEach(c => {
         try {
           const missingMovies = JSON.parse(c.missing_movies || '[]')
-          missingMovies.forEach((m: any) => {
+          missingMovies.forEach((m: { tmdb_id: string; title: string; year?: number; poster_path?: string }) => {
             missingList.push({
               id: `movie-${m.tmdb_id}`,
               title: m.title,

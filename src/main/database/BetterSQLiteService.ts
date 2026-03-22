@@ -129,7 +129,7 @@ export class BetterSQLiteService {
       // Configure for performance
       this.db.pragma('journal_mode = WAL')
       this.db.pragma('synchronous = NORMAL')
-      this.db.pragma('cache_size = -64000') // 64MB cache
+      this.db.pragma('cache_size = -32000') // 32MB cache
       this.db.pragma('foreign_keys = ON')
       this.db.pragma('temp_store = MEMORY')
       this.db.pragma('busy_timeout = 5000') // Wait up to 5s for locked database
@@ -276,6 +276,9 @@ export class BetterSQLiteService {
       // Per-version split quality scores
       'ALTER TABLE media_item_versions ADD COLUMN bitrate_tier_score INTEGER DEFAULT 0',
       'ALTER TABLE media_item_versions ADD COLUMN audio_tier_score INTEGER DEFAULT 0',
+
+      // Media item summary/description
+      'ALTER TABLE media_items ADD COLUMN summary TEXT',
     ]
 
     for (const statement of alterStatements) {
@@ -335,6 +338,41 @@ export class BetterSQLiteService {
       this.db.exec('CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL')
     } catch {
       // Indexes may already exist
+    }
+
+    // Fix music track album_id references — prior bug in upsertMusicAlbum returned
+    // stale lastInsertRowid after ON CONFLICT DO UPDATE, causing tracks to link to
+    // wrong albums. Re-link tracks by matching source_id + album_name + artist_name.
+    try {
+      const mismatchCount = (this.db.prepare(`
+        SELECT COUNT(*) as cnt FROM music_tracks t
+        WHERE t.album_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM music_albums a
+            WHERE a.id = t.album_id AND a.title = t.album_name AND a.source_id = t.source_id
+          )
+      `).get() as { cnt: number })?.cnt || 0
+
+      if (mismatchCount > 0) {
+        this.db.exec(`
+          UPDATE music_tracks SET album_id = (
+            SELECT a.id FROM music_albums a
+            WHERE a.title = music_tracks.album_name
+              AND a.artist_name = music_tracks.artist_name
+              AND a.source_id = music_tracks.source_id
+            LIMIT 1
+          )
+          WHERE EXISTS (
+            SELECT 1 FROM music_albums a
+            WHERE a.title = music_tracks.album_name
+              AND a.artist_name = music_tracks.artist_name
+              AND a.source_id = music_tracks.source_id
+          )
+        `)
+        console.log(`[BetterSQLite] Fixed ${mismatchCount} music tracks with incorrect album_id references`)
+      }
+    } catch (error: unknown) {
+      console.log('[BetterSQLite] Music track album_id fix note:', getErrorMessage(error))
     }
 
     // Populate media_item_versions from existing media_items (one version per item)
@@ -447,8 +485,8 @@ export class BetterSQLiteService {
   /**
    * End batch mode (no-op for better-sqlite3)
    */
-  endBatch(): void {
-    // No-op: better-sqlite3 auto-persists
+  async endBatch(): Promise<void> {
+    // No-op: better-sqlite3 auto-persists via WAL mode
   }
 
   /**
@@ -1048,12 +1086,56 @@ export class BetterSQLiteService {
   deleteMediaSource(sourceId: string): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    // Delete all associated data
+    console.log(`[BetterSQLite] Deleting source ${sourceId} and all associated data...`)
+
+    // Delete media item related data (versions, quality scores, collections)
     this.deleteMediaItemsForSource(sourceId)
+
+    // Delete wishlist items referencing media items from this source
+    this.db.prepare(`
+      DELETE FROM wishlist_items WHERE media_item_id IN (
+        SELECT id FROM media_items WHERE source_id = ?
+      )
+    `).run(sourceId)
+
+    // Delete music quality scores for albums from this source
+    this.db.prepare(`
+      DELETE FROM music_quality_scores WHERE album_id IN (
+        SELECT id FROM music_albums WHERE source_id = ?
+      )
+    `).run(sourceId)
+
+    // Delete album completeness data for albums from this source
+    this.db.prepare(`
+      DELETE FROM album_completeness WHERE album_id IN (
+        SELECT id FROM music_albums WHERE source_id = ?
+      )
+    `).run(sourceId)
+
+    // Delete artist completeness data for artists from this source
+    this.db.prepare(`
+      DELETE FROM artist_completeness WHERE artist_name IN (
+        SELECT name FROM music_artists WHERE source_id = ?
+      )
+    `).run(sourceId)
+
+    // Delete music tracks, albums, artists
+    this.db.prepare('DELETE FROM music_tracks WHERE source_id = ?').run(sourceId)
+    this.db.prepare('DELETE FROM music_albums WHERE source_id = ?').run(sourceId)
+    this.db.prepare('DELETE FROM music_artists WHERE source_id = ?').run(sourceId)
+
+    // Delete completeness and scan data
     this.db.prepare('DELETE FROM series_completeness WHERE source_id = ?').run(sourceId)
     this.db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
     this.db.prepare('DELETE FROM library_scans WHERE source_id = ?').run(sourceId)
+
+    // Delete notifications for this source
+    this.db.prepare('DELETE FROM notifications WHERE source_id = ?').run(sourceId)
+
+    // Delete the source itself
     this.db.prepare('DELETE FROM media_sources WHERE source_id = ?').run(sourceId)
+
+    console.log(`[BetterSQLite] Deleted source and all data: ${sourceId}`)
   }
 
   /**
@@ -2317,7 +2399,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     if (sourceId) {
       // When filtering by source, only return completeness for artists that exist in that source
       const stmt = this.db.prepare(`
-        SELECT DISTINCT ac.*
+        SELECT DISTINCT ac.*, ma.thumb_url
         FROM artist_completeness ac
         INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
         ORDER BY ac.artist_name ASC
@@ -2325,7 +2407,12 @@ WHERE m.type = 'episode' AND m.series_title = ?`
       return stmt.all(sourceId) as ArtistCompleteness[]
     }
 
-    const stmt = this.db.prepare('SELECT * FROM artist_completeness ORDER BY artist_name ASC')
+    const stmt = this.db.prepare(`
+      SELECT ac.*, ma.thumb_url
+      FROM artist_completeness ac
+      LEFT JOIN music_artists ma ON ac.artist_name = ma.name
+      ORDER BY ac.artist_name ASC
+    `)
     return stmt.all() as ArtistCompleteness[]
   }
 

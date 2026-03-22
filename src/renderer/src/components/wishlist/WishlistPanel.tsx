@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle, Sparkles } from 'lucide-react'
+import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '../../contexts/WishlistContext'
 import { WishlistItemCard } from './WishlistItemCard'
 import { WishlistEmptyState } from './WishlistEmptyState'
 
-interface WishlistPanelProps {
+export interface WishlistPanelProps {
   isOpen: boolean
   onClose: () => void
   onOpenAIAdvice?: () => void
@@ -15,7 +15,7 @@ type FilterType = WishlistMediaType | 'all'
 type CategoryType = WishlistReason | 'all'
 type StatusType = WishlistStatus | 'all'
 
-export function WishlistPanel({ isOpen, onClose, onOpenAIAdvice }: WishlistPanelProps) {
+export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
   const {
     items,
     counts,
@@ -171,22 +171,12 @@ export function WishlistPanel({ isOpen, onClose, onOpenAIAdvice }: WishlistPanel
           )}
         </div>
         <div className="flex items-center gap-1">
-          {onOpenAIAdvice && counts.total > 0 && (
-            <button
-              onClick={onOpenAIAdvice}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-none"
-              aria-label="AI shopping advice"
-              title="AI shopping advice"
-            >
-              <Sparkles className="w-4 h-4 text-primary" />
-            </button>
-          )}
           {counts.total > 0 && (
             <button
               ref={exportButtonRef}
               onClick={handleExport}
               disabled={isExporting}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-none disabled:opacity-50"
+              className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden disabled:opacity-50"
               aria-label="Export wishlist to CSV"
               title="Export to CSV"
             >
@@ -200,7 +190,7 @@ export function WishlistPanel({ isOpen, onClose, onOpenAIAdvice }: WishlistPanel
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+            className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
             aria-label="Close wishlist panel"
           >
             <X className="w-4 h-4 text-muted-foreground" />

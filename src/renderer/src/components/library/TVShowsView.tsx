@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, X, Folder, CircleFadingArrowUp, EyeOff, Trash2 } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, X, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
@@ -45,11 +45,13 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
     }
   }
 
+  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
+
   return (
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-none"
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -59,7 +61,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
       }}
     >
       {/* Poster Thumbnail */}
-      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden flex-shrink-0 relative shadow-md shadow-black/20">
+      <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {show.poster_url ? (
           <img
             src={show.poster_url}
@@ -73,50 +75,12 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
         )}
-        {/* 3-dot menu button */}
-        <div className="absolute top-1 left-1 z-20">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            {isAnalyzing ? (
-              <RefreshCw className="w-3 h-3 animate-spin" />
-            ) : (
-              <MoreVertical className="w-3 h-3" />
-            )}
-          </button>
-
-          {/* Dropdown menu */}
-          {showMenu && (
-            <div className="absolute top-7 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px]">
-              <button
-                onClick={handleAnalyze}
-                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Analyze Series
-              </button>
-              {onFixMatch && (
-                <button
-                  onClick={handleFixMatch}
-                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Fix Match
-                </button>
-              )}
-            </div>
-          )}
-        </div>
         {/* Source badge */}
         {showSourceBadge && sourceType && (
           <div
-            className={`absolute bottom-0 left-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold text-center py-0.5`}
+            className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
           >
-            {sourceType.toUpperCase()}
+            {sourceType.charAt(0).toUpperCase()}
           </div>
         )}
       </div>
@@ -126,41 +90,55 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
         <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
         <p className="text-xs text-muted-foreground mt-0.5">
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
+          {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          {completenessData && (
-            <span className="text-xs text-muted-foreground">
-              {completenessData.owned_episodes}/{completenessData.total_episodes} episodes
+        {completenessData && (
+          <div className="mt-2">
+            <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
+              {completenessData.owned_episodes}/{completenessData.total_episodes}
             </span>
-          )}
-          {completenessData?.status && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-muted rounded">
-              {getStatusBadge(completenessData.status)?.text || completenessData.status}
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Completion Badge */}
-      {completenessData && (
-        <div
-          className="flex-shrink-0 flex items-center"
-          title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
+      {/* 3-dot menu */}
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowMenu(!showMenu)
+          }}
+          className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
         >
-          {completenessData.completeness_percentage === 100 ? (
-            <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1">
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              100%
-            </div>
+          {isAnalyzing ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
           ) : (
-            <div className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border">
-              {Math.round(completenessData.completeness_percentage)}%
-            </div>
+            <MoreVertical className="w-4 h-4" />
           )}
-        </div>
-      )}
+        </button>
+
+        {/* Dropdown menu */}
+        {showMenu && (
+          <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+            <button
+              onClick={handleAnalyze}
+              className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Analyze Series
+            </button>
+            {onFixMatch && (
+              <button
+                onClick={handleFixMatch}
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Fix Match
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 })
@@ -205,7 +183,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-none"
+      className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -215,7 +193,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
       }}
     >
       {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className="w-44 aspect-video bg-muted flex-shrink-0 relative overflow-hidden rounded-md shadow-md shadow-black/20">
+      <div className="w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0">
         {episode.episode_thumb_url ? (
           <img
             src={episode.episode_thumb_url}
@@ -229,54 +207,12 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><EpisodePlaceholder className="w-10 h-10 text-muted-foreground" /></div>
         )}
-
-        {/* 3-dot menu button */}
-        {showMenuButton && (
-          <div ref={menuRef} className="absolute top-1 left-1 z-20">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(!showMenu)
-              }}
-              className={`w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity ${isRescanning ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-            >
-              {isRescanning ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <MoreVertical className="w-3 h-3" />
-              )}
-            </button>
-
-            {showMenu && !isRescanning && (
-              <div className="absolute top-7 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px]">
-                {onRescan && episode.file_path && (
-                  <button
-                    onClick={handleRescan}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Rescan File
-                  </button>
-                )}
-                {onDismissUpgrade && needsUpgrade && (
-                  <button
-                    onClick={handleDismissUpgrade}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <EyeOff className="w-3.5 h-3.5" />
-                    Dismiss Upgrade
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground flex-shrink-0">
+          <span className="text-sm font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate">{episode.title}</h4>
@@ -317,6 +253,48 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade }: {
           </div>
         )}
       </div>
+
+      {/* 3-dot menu */}
+      {showMenuButton && (
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(!showMenu)
+            }}
+            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {isRescanning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <MoreVertical className="w-4 h-4" />
+            )}
+          </button>
+
+          {showMenu && !isRescanning && (
+            <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+              {onRescan && episode.file_path && (
+                <button
+                  onClick={handleRescan}
+                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Rescan File
+                </button>
+              )}
+              {onDismissUpgrade && needsUpgrade && (
+                <button
+                  onClick={handleDismissUpgrade}
+                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                  Dismiss Upgrade
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 })
@@ -420,6 +398,37 @@ export function TVShowsView({
       onSelectShow(null)
     }
   }
+
+  // Show detail view menu
+  const [showDetailMenu, setShowDetailMenu] = useState(false)
+  const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
+  const [copiedTitle, setCopiedTitle] = useState(false)
+  useEffect(() => { setShowOverviewExpanded(false); setCopiedTitle(false) }, [selectedShow])
+  const showDetailMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showDetailMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (showDetailMenuRef.current && !showDetailMenuRef.current.contains(e.target as Node)) {
+        setShowDetailMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showDetailMenu])
+
+  // Fetch show summary from TMDB when a show is selected
+  const [showOverview, setShowOverview] = useState<string | null>(null)
+  useEffect(() => {
+    setShowOverview(null)
+    if (selectedShow && !selectedSeason) {
+      const completenessData = seriesCompleteness.get(selectedShow)
+      if (completenessData?.tmdb_id) {
+        window.electronAPI.tmdbGetTVShowDetails(completenessData.tmdb_id)
+          .then(details => { if (details?.overview) setShowOverview(details.overview) })
+          .catch(() => { /* ignore */ })
+      }
+    }
+  }, [selectedShow, selectedSeason, seriesCompleteness])
 
   // IntersectionObserver for infinite scroll
   const showSentinelRef = useRef<HTMLDivElement>(null)
@@ -609,9 +618,11 @@ export function TVShowsView({
           Back to TV Shows
         </button>
 
-        <div className="flex items-start gap-4 mb-6">
+        {/* Show Header */}
+        <div className="flex gap-6 mb-6">
+          {/* Poster */}
           {selectedShowData.poster_url && (
-            <div className="w-32 aspect-[2/3] bg-muted rounded-lg overflow-hidden flex-shrink-0 shadow-lg shadow-black/30">
+            <div className="w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
               <img
                 src={selectedShowData.poster_url}
                 alt={selectedShowData.title}
@@ -623,28 +634,76 @@ export function TVShowsView({
               />
             </div>
           )}
-          <div>
-            <h3 className="text-2xl font-bold mb-1">{selectedShowData.title}</h3>
-            {completenessData?.status && (
-              <div className="mb-2">
-                <span className="inline-block px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
-                  {getStatusBadge(completenessData.status)?.text || completenessData.status}
-                </span>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            {/* Title */}
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-3xl font-bold">{selectedShowData.title}</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(selectedShowData.title)
+                  setCopiedTitle(true)
+                  setTimeout(() => setCopiedTitle(false), 1500)
+                }}
+                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy title"
+              >
+                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Metadata line */}
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
+              {completenessData?.status && (
+                <>
+                  <span>•</span>
+                  <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
+                </>
+              )}
+            </div>
+
+            {/* Action buttons row */}
+            <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
+              <button
+                onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                title="Analyze Series"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Analyze Series
+              </button>
+              {onFixMatch && (
+                <button
+                  onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  title="Fix Match"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Overview */}
+            {showOverview && (
+              <div className="mt-3 max-w-2xl">
+                <p className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
+                  {showOverview}
+                </p>
+                <button
+                  onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
+                  className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
+                >
+                  {showOverviewExpanded ? (
+                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                  ) : (
+                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                  )}
+                </button>
               </div>
             )}
-            <p className="text-muted-foreground">
-              {ownedSeasons.length} of {totalSeasons} Seasons
-              {missingSeasonNumbers.length > 0 && (
-                <span className="text-orange-500 ml-2">({missingSeasonNumbers.length} missing)</span>
-              )}
-            </p>
-            <button
-              onClick={() => onAnalyzeSeries(selectedShow)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors mt-3"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Analyze Series
-            </button>
           </div>
         </div>
 
@@ -735,16 +794,9 @@ export function TVShowsView({
           Back to {selectedShowData.title}
         </button>
 
-        <div className="flex items-center gap-4">
-          <h3 className="text-xl font-bold">
-            {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
-          </h3>
-          {missingEpisodesForSeason.length > 0 && (
-            <span className="text-sm text-orange-500">
-              ({missingEpisodesForSeason.length} missing)
-            </span>
-          )}
-        </div>
+        <h3 className="text-xl font-bold">
+          {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
+        </h3>
 
         <div className="divide-y divide-border/50">
           {allEpisodeItems.map((item) => (
@@ -817,7 +869,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
     <div
       ref={cardRef}
       tabIndex={0}
-      className="focus-poster-only cursor-pointer hover-scale relative group outline-none"
+      className="focus-poster-only cursor-pointer hover-scale relative group outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -826,7 +878,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
         }
       }}
     >
-      <div className="aspect-[2/3] bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
         <div ref={menuRef} className="absolute top-2 left-2 z-20">
           <button
@@ -845,7 +897,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
 
           {/* Dropdown menu */}
           {showMenu && (
-            <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px]">
+            <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
               <button
                 onClick={handleAnalyze}
                 className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
@@ -911,7 +963,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
         </div>
         {completenessData && (
           <div
-            className="flex-shrink-0"
+            className="shrink-0"
             title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
           >
             {completenessData.completeness_percentage === 100 ? (
@@ -1003,7 +1055,9 @@ const MissingEpisodeRowWithArtwork = memo(({
   onDismiss?: () => void
 }) => {
   const [stillUrl, setStillUrl] = useState<string | undefined>(fallbackPosterUrl)
+  const [showMenu, setShowMenu] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
   useEffect(() => {
     if (tmdbId) {
@@ -1021,7 +1075,7 @@ const MissingEpisodeRowWithArtwork = memo(({
     <div
       ref={cardRef}
       tabIndex={0}
-      className="flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-none"
+      className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -1031,7 +1085,7 @@ const MissingEpisodeRowWithArtwork = memo(({
       }}
     >
       {/* Missing Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className="w-44 aspect-video bg-muted flex-shrink-0 relative overflow-hidden rounded-md shadow-md shadow-black/20">
+      <div className="w-44 aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20">
         {stillUrl ? (
           <img
             src={stillUrl}
@@ -1052,7 +1106,7 @@ const MissingEpisodeRowWithArtwork = memo(({
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-muted-foreground flex-shrink-0">
+          <span className="text-sm font-semibold text-muted-foreground shrink-0">
             E{episode.episode_number}
           </span>
           <h4 className="font-semibold truncate text-muted-foreground">
@@ -1060,25 +1114,38 @@ const MissingEpisodeRowWithArtwork = memo(({
           </h4>
         </div>
         {episode.air_date && (
-          <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
-            <span>Aired: {new Date(episode.air_date).toLocaleDateString()}</span>
-          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Aired: {new Date(episode.air_date).toLocaleDateString()}
+          </p>
         )}
       </div>
 
-      {/* Missing indicator and dismiss */}
-      <div className="flex-shrink-0 flex items-center gap-2">
-        <span className="text-orange-500 text-xs font-bold uppercase">Missing</span>
-        {onDismiss && (
+      {/* 3-dot menu */}
+      {onDismiss && (
+        <div ref={menuRef} className="relative shrink-0">
           <button
-            onClick={(e) => { e.stopPropagation(); onDismiss() }}
-            className="w-7 h-7 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-            title="Dismiss"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(!showMenu)
+            }}
+            className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
           >
-            <X className="w-4 h-4" />
+            <MoreVertical className="w-4 h-4" />
           </button>
-        )}
-      </div>
+
+          {showMenu && (
+            <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMenu(false); onDismiss() }}
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 })
@@ -1090,7 +1157,7 @@ const SeasonCard = memo(({ season, showTitle, onClick }: { season: SeasonInfo; s
     <div
       ref={cardRef}
       tabIndex={0}
-      className="focus-poster-only group cursor-pointer hover-scale outline-none"
+      className="focus-poster-only group cursor-pointer hover-scale outline-hidden"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -1099,7 +1166,7 @@ const SeasonCard = memo(({ season, showTitle, onClick }: { season: SeasonInfo; s
         }
       }}
     >
-      <div className="aspect-[2/3] bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {season.posterUrl ? (
           <img
             src={season.posterUrl}

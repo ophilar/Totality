@@ -182,8 +182,23 @@ export function MediaBrowser({
   const listViewRef = useRef<HTMLButtonElement>(null)
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
-  const [viewType, setViewType] = useState<'grid' | 'list'>('grid')
-  const [gridScale, setGridScale] = useState(4) // 1-7 scale for grid columns (4 = 50%)
+  const [viewType, setViewTypeState] = useState<'grid' | 'list'>('grid')
+  const [gridScale, setGridScaleState] = useState(4) // 1-7 scale for grid columns (4 = 50%)
+  const viewPrefsRef = useRef<Record<string, { viewType: 'grid' | 'list', gridScale: number }>>({})
+  const viewPrefsLoadedRef = useRef(false)
+
+  const setViewType = useCallback((vt: 'grid' | 'list') => {
+    setViewTypeState(vt)
+    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view] || { viewType: 'grid', gridScale: 4 }, viewType: vt }
+    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
+  }, [view])
+
+  const setGridScale = useCallback((gs: number) => {
+    setGridScaleState(gs)
+    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view] || { viewType: 'grid', gridScale: 4 }, gridScale: gs }
+    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
+  }, [view])
+
   const [collectionsOnly, setCollectionsOnly] = useState(false)
 
   // TV Show navigation
@@ -258,6 +273,29 @@ export function MediaBrowser({
     return () => window.removeEventListener('keydown', handleKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Handle back navigation from TopBar
+  useEffect(() => {
+    const handleBack = () => {
+      if (view === 'music') {
+        if (selectedAlbum) {
+          setSelectedAlbum(null)
+          setAlbumTracks([])
+          setSelectedAlbumCompleteness(null)
+        } else if (selectedArtist) {
+          setSelectedArtist(null)
+        }
+      } else if (view === 'tv') {
+        if (selectedSeason !== null) {
+          setSelectedSeason(null)
+        } else if (selectedShow) {
+          setSelectedShow(null)
+        }
+      }
+    }
+    window.addEventListener('navigate-back', handleBack)
+    return () => window.removeEventListener('navigate-back', handleBack)
+  }, [view, selectedAlbum, selectedArtist, selectedShow, selectedSeason])
 
   // Handle initialTab prop from dashboard navigation
   useEffect(() => {
@@ -835,11 +873,13 @@ export function MediaBrowser({
     handleDismissMissingEpisode,
     handleDismissMissingSeason,
     handleDismissCollectionMovie,
+    handleDismissMissingAlbum,
     handleDismissMissingItem,
   } = useDismissHandlers({
     setPaginatedMovies, setSelectedShowEpisodes,
     seriesCompleteness, setSeriesCompleteness,
     selectedCollection, setSelectedCollection, setMovieCollections,
+    setArtistCompleteness,
     selectedMissingItem, setSelectedMissingItem, addToast,
   })
 
@@ -847,12 +887,31 @@ export function MediaBrowser({
   // Optional overrides allow callers to pass fresh EP/Singles values to avoid stale state
   const loadMusicCompletenessData = async (overrideEps?: boolean, overrideSingles?: boolean) => {
     try {
-      const completenessData = await window.electronAPI.musicGetAllArtistCompleteness() as ArtistCompletenessData[]
+      const [completenessData, albumExclusions] = await Promise.all([
+        window.electronAPI.musicGetAllArtistCompleteness() as Promise<ArtistCompletenessData[]>,
+        window.electronAPI.getExclusions('artist_album'),
+      ])
 
-      // Index by artist name
+      // Build exclusion lookup set (by musicbrainz_id stored as ref_key)
+      const excludedAlbumIds = new Set(albumExclusions.map((e: { reference_key: string | null }) => e.reference_key ?? null))
+
+      // Filter excluded albums from missing lists
+      const filterMissingJson = (json: string | undefined): string => {
+        try {
+          const parsed = JSON.parse(json || '[]') as Array<{ musicbrainz_id?: string }>
+          return JSON.stringify(parsed.filter(item => !excludedAlbumIds.has(item.musicbrainz_id ?? null)))
+        } catch { return json || '[]' }
+      }
+
+      // Index by artist name, filtering exclusions
       const completenessMap = new Map<string, ArtistCompletenessData>()
       completenessData.forEach(c => {
-        completenessMap.set(c.artist_name, c)
+        completenessMap.set(c.artist_name, {
+          ...c,
+          missing_albums: filterMissingJson(c.missing_albums),
+          missing_eps: filterMissingJson(c.missing_eps),
+          missing_singles: filterMissingJson(c.missing_singles),
+        })
       })
       setArtistCompleteness(completenessMap)
 
@@ -867,7 +926,8 @@ export function MediaBrowser({
       // Calculate stats with real-time EP/Singles filtering
       const effectiveEps = overrideEps ?? includeEps
       const effectiveSingles = overrideSingles ?? includeSingles
-      const totalArtists = musicStats?.totalArtists ?? musicArtists.length
+      const freshStats = await window.electronAPI.musicGetStats(activeSourceId || undefined) as MusicStats | null
+      const totalArtists = freshStats?.totalArtists ?? completenessData.length
       const analyzedArtists = completenessData.length
 
       // Recalculate completeness from raw counts using current settings
@@ -953,8 +1013,35 @@ export function MediaBrowser({
     loadMusicCompletenessData()
     loadEpSingleSettings()
     checkTmdbApiKey()
+    // Load per-tab view preferences
+    if (!viewPrefsLoadedRef.current) {
+      window.electronAPI.getSetting('library_view_prefs').then(val => {
+        if (val) {
+          try {
+            const prefs = JSON.parse(val)
+            viewPrefsRef.current = prefs
+            const tabPrefs = prefs[view]
+            if (tabPrefs) {
+              setViewTypeState(tabPrefs.viewType || 'grid')
+              setGridScaleState(tabPrefs.gridScale ?? 4)
+            }
+          } catch { /* ignore bad JSON */ }
+        }
+        viewPrefsLoadedRef.current = true
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSourceId])
+
+  // Apply per-tab view preferences when switching tabs
+  useEffect(() => {
+    if (!viewPrefsLoadedRef.current) return
+    const tabPrefs = viewPrefsRef.current[view]
+    if (tabPrefs) {
+      setViewTypeState(tabPrefs.viewType || 'grid')
+      setGridScaleState(tabPrefs.gridScale ?? 4)
+    }
+  }, [view])
 
   // getCollectionForMovie, getOwnedMoviesForCollection, ownedMoviesForSelectedCollection
   // provided by useCollections hook above
@@ -1303,27 +1390,33 @@ export function MediaBrowser({
     if (type === 'movie') {
       setView('movies')
       setSelectedMediaId(typeof id === 'string' ? parseInt(id, 10) : id)
+    } else if (type === 'tv') {
+      setView('tv')
+      setSelectedShow(typeof id === 'string' ? id : String(id))
+      setSelectedSeason(null)
     } else if (type === 'episode') {
       setView('tv')
       if (pendingNavigation.seriesTitle) {
         setSelectedShow(pendingNavigation.seriesTitle)
       }
+      if (pendingNavigation.seasonNumber !== undefined) {
+        setSelectedSeason(pendingNavigation.seasonNumber)
+      }
       setSelectedMediaId(typeof id === 'string' ? parseInt(id, 10) : id)
     } else if (type === 'artist') {
       setView('music')
       setMusicViewMode('artists')
-      // Find artist by name since we may not have the ID directly
-      if (artistName) {
-        const artist = musicArtists.find(a => a.name === artistName)
-        if (artist) {
-          setSelectedArtist(artist)
-        } else {
-          // Artist not in paginated list — search server by name
-          window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
-            const artists = result as MusicArtist[]
-            if (artists.length > 0) setSelectedArtist(artists[0])
-          }).catch(err => console.error('Failed to find artist for navigation:', err))
-        }
+      // Find artist by ID first, then fall back to name search
+      const numId = typeof id === 'string' ? parseInt(id, 10) : id
+      const artist = musicArtists.find(a => a.id === numId)
+      if (artist) {
+        setSelectedArtist(artist)
+      } else if (artistName) {
+        // Artist not in paginated list — search server by name
+        window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
+          const artists = result as MusicArtist[]
+          if (artists.length > 0) setSelectedArtist(artists[0])
+        }).catch(err => console.error('Failed to find artist for navigation:', err))
       }
     } else if (type === 'album') {
       setView('music')
@@ -1385,7 +1478,7 @@ export function MediaBrowser({
       {!hideHeader && (
       <header
         id="top-bar"
-        className="dark fixed top-4 left-4 right-4 z-[100] bg-black rounded-2xl shadow-xl px-4 py-3"
+        className="dark fixed top-4 left-4 right-4 z-100 bg-black rounded-2xl shadow-xl px-4 py-3"
         role="banner"
         aria-label="Main navigation"
       >
@@ -1393,10 +1486,10 @@ export function MediaBrowser({
           {/* Left Section: Logo + Search */}
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {/* Logo - Left */}
-            <img src={logoImage} alt="Totality" className="h-10 flex-shrink-0" />
+            <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
 
           {/* Search - Flexible width with min/max constraints */}
-          <div ref={searchContainerRef} className="relative flex-shrink min-w-24 max-w-80 w-64" role="combobox" aria-expanded={showSearchResults && hasSearchResults} aria-haspopup="listbox" aria-owns="search-results-listbox">
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64" role="combobox" aria-expanded={showSearchResults && hasSearchResults} aria-haspopup="listbox" aria-owns="search-results-listbox">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" aria-hidden="true" />
             <input
               ref={searchInputRef}
@@ -1409,7 +1502,7 @@ export function MediaBrowser({
               }}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
               aria-label="Search all libraries"
               aria-autocomplete="list"
               aria-controls="search-results-listbox"
@@ -1422,7 +1515,7 @@ export function MediaBrowser({
                   setShowSearchResults(false)
                   setSearchResultIndex(-1)
                 }}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground z-10 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground z-10 focus:outline-hidden focus:ring-2 focus:ring-primary rounded"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
@@ -1435,7 +1528,7 @@ export function MediaBrowser({
                 id="search-results-listbox"
                 role="listbox"
                 aria-label="Search results"
-                className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl overflow-hidden z-[9999] max-h-[400px] overflow-y-auto"
+                className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl overflow-hidden z-9999 max-h-[400px] overflow-y-auto"
               >
                 {/* Movies */}
                 {globalSearchResults.movies.length > 0 && (
@@ -1453,7 +1546,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('movie', movie.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1471,7 +1564,7 @@ export function MediaBrowser({
                             {movie.year && <div className="text-xs text-muted-foreground">{movie.year}</div>}
                           </div>
                           {movie.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 flex-shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </button>
                       )
@@ -1495,7 +1588,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('tv', show.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1533,7 +1626,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1553,7 +1646,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {episode.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-4 h-4 text-red-500 flex-shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </button>
                       )
@@ -1577,7 +1670,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('artist', artist.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1615,7 +1708,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('album', album.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1635,7 +1728,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {album.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 flex-shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </button>
                       )
@@ -1659,7 +1752,7 @@ export function MediaBrowser({
                           role="option"
                           aria-selected={searchResultIndex === flatIndex}
                           onClick={() => handleSearchResultClick('track', track.id, { album_id: track.album_id })}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-none ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                             searchResultIndex === flatIndex
                               ? 'bg-primary/20 ring-2 ring-inset ring-primary'
                               : 'hover:bg-muted/50'
@@ -1679,7 +1772,7 @@ export function MediaBrowser({
                             </div>
                           </div>
                           {track.needs_upgrade && (
-                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 flex-shrink-0" aria-label="Upgrade recommended" />
+                            <CircleFadingArrowUp className="w-5 h-5 text-red-500 shrink-0" aria-label="Upgrade recommended" />
                           )}
                         </button>
                       )
@@ -1691,7 +1784,7 @@ export function MediaBrowser({
 
             {/* No results message */}
             {showSearchResults && searchInput.length >= 2 && !hasSearchResults && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl p-4 z-[9999]">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl p-4 z-9999">
                 <div className="text-sm text-muted-foreground text-center">No results found</div>
               </div>
             )}
@@ -1700,13 +1793,13 @@ export function MediaBrowser({
 
           {/* Library Buttons - Centered (hidden when no sources) */}
           {!showEmptyState && (
-          <div className="flex-shrink-0" role="tablist" aria-label="Library type">
+          <div className="shrink-0" role="tablist" aria-label="Library type">
             <div className="flex gap-1">
                 {/* Home Button */}
                 {onNavigateHome && (
                   <button
                     onClick={onNavigateHome}
-                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 bg-card text-muted-foreground hover:bg-muted"
                     title="Return to Dashboard"
                     aria-label="Dashboard"
                   >
@@ -1732,7 +1825,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMovies}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'movies'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1759,7 +1852,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasTV}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'tv'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1786,7 +1879,7 @@ export function MediaBrowser({
                     setSelectedAlbum(null)
                   }}
                   disabled={!hasMusic}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none flex items-center gap-2 ${
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     view === 'music'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1844,7 +1937,7 @@ export function MediaBrowser({
                 if (newState) setShowWishlistPanel(false)
                 setShowCompletenessPanel(newState)
               }}
-              className={`p-2.5 rounded-md transition-colors flex items-center gap-1 flex-shrink-0 focus:outline-none ${
+              className={`p-2.5 rounded-md transition-colors flex items-center gap-1 shrink-0 focus:outline-hidden ${
                 showCompletenessPanel
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1863,7 +1956,7 @@ export function MediaBrowser({
                 if (newState) setShowCompletenessPanel(false)
                 setShowWishlistPanel(newState)
               }}
-              className={`p-2.5 rounded-md transition-colors flex items-center gap-1.5 flex-shrink-0 focus:outline-none ${
+              className={`p-2.5 rounded-md transition-colors flex items-center gap-1.5 shrink-0 focus:outline-hidden ${
                 showWishlistPanel
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card text-muted-foreground hover:bg-muted'
@@ -1886,7 +1979,7 @@ export function MediaBrowser({
             <button
               ref={settingsButtonRef}
               onClick={() => onOpenSettings?.()}
-              className="p-2.5 rounded-md transition-colors flex-shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-none"
+              className="p-2.5 rounded-md transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted focus:outline-hidden"
               aria-label="Open settings"
             >
               <Settings className="w-4 h-4" aria-hidden="true" />
@@ -1908,7 +2001,7 @@ export function MediaBrowser({
         aria-label={`${view === 'movies' ? 'Movies' : view === 'tv' ? 'TV Shows' : view === 'wishlist' ? 'Wishlist' : 'Music'} library`}
       >
         {/* Controls Bar - sticky within container */}
-        <div className="flex-shrink-0 py-3 px-4">
+        <div className="shrink-0 py-3 px-4">
           <div className="flex flex-col gap-2">
             {/* Row 1: Filters (left) | Separator | View Controls (right) */}
             <div className="flex items-center justify-between">
@@ -1948,7 +2041,7 @@ export function MediaBrowser({
                     <select
                       value={activeLibraryId || ''}
                       onChange={(e) => setActiveLibraryId(e.target.value || null)}
-                      className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
                     >
                       <option value="">All Libraries</option>
                       {currentTypeLibraries.map(lib => (
@@ -1971,7 +2064,7 @@ export function MediaBrowser({
                             else tierFilterRefs.current.delete(tier)
                           }}
                           onClick={() => setTierFilter(tier as typeof tierFilter)}
-                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-none ${
+                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
                             tierFilter === tier
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2003,7 +2096,7 @@ export function MediaBrowser({
                             else qualityFilterRefs.current.delete(quality)
                           }}
                           onClick={() => setQualityFilter(quality as typeof qualityFilter)}
-                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-none ${
+                          className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden ${
                             qualityFilter === quality
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2044,7 +2137,7 @@ export function MediaBrowser({
                     <div className="h-6 w-px bg-border/50" />
                     <button
                       onClick={() => setCollectionsOnly(!collectionsOnly)}
-                      className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-none flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-md text-xs transition-colors focus:outline-hidden flex items-center gap-1.5 ${
                         collectionsOnly
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2083,7 +2176,7 @@ export function MediaBrowser({
                     <button
                       ref={gridViewRef}
                       onClick={() => setViewType('grid')}
-                      className={`p-1.5 rounded-md transition-colors focus:outline-none ${
+                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
                         viewType === 'grid'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2094,7 +2187,7 @@ export function MediaBrowser({
                     <button
                       ref={listViewRef}
                       onClick={() => setViewType('list')}
-                      className={`p-1.5 rounded-md transition-colors focus:outline-none ${
+                      className={`p-1.5 rounded-md transition-colors focus:outline-hidden ${
                         viewType === 'list'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-card text-muted-foreground hover:bg-muted'
@@ -2113,7 +2206,7 @@ export function MediaBrowser({
         {/* Scrollable Content Area with Alphabet Filter */}
         <div className="flex-1 relative min-h-0">
           {/* Main scrollable content */}
-          <div ref={scrollContainerRef} className="absolute inset-0 overflow-y-auto scrollbar-visible px-4 pb-4 pr-8">
+          <div ref={scrollContainerRef} className="absolute inset-0 overflow-y-auto scrollbar-visible px-4 pb-4 pr-10">
 
         {/* Content Display */}
         {showEmptyState ? (
@@ -2241,6 +2334,7 @@ export function MediaBrowser({
             includeEps={includeEps}
             includeSingles={includeSingles}
             scrollElement={scrollContainerRef.current}
+            onDismissMissingAlbum={handleDismissMissingAlbum}
           />
         ))}
           </div>
@@ -2253,7 +2347,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('all')
               }}
               onClick={() => scrollToLetter(null)}
-              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
+              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === null
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -2270,7 +2364,7 @@ export function MediaBrowser({
                 else alphabetFilterRefs.current.delete('#')
               }}
               onClick={() => scrollToLetter('#')}
-              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
+              className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                 alphabetFilter === '#'
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -2289,7 +2383,7 @@ export function MediaBrowser({
                   else alphabetFilterRefs.current.delete(letter)
                 }}
                 onClick={() => scrollToLetter(letter)}
-                className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-none ${
+                className={`w-5 h-5 flex items-center justify-center text-[10px] font-medium transition-colors focus:outline-hidden ${
                   alphabetFilter === letter
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground'

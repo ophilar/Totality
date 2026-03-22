@@ -9,13 +9,14 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 
 // Navigation target types
 export interface NavigationTarget {
-  type: 'movie' | 'episode' | 'track' | 'album' | 'artist'
+  type: 'movie' | 'tv' | 'episode' | 'track' | 'album' | 'artist'
   id: number | string
   // Additional context for navigation
   sourceId?: string
   artistName?: string
   albumId?: number
   seriesTitle?: string
+  seasonNumber?: number
 }
 
 interface NavigationContextType {

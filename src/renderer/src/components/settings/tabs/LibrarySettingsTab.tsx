@@ -64,7 +64,7 @@ function SettingsCard({
         onClick={onToggle}
         className="w-full flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors text-left"
       >
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           {status === 'configured' ? (
             <CheckCircle className="w-5 h-5 text-green-500" />
           ) : status === 'partial' ? (
@@ -73,7 +73,7 @@ function SettingsCard({
             <Circle className="w-5 h-5 text-muted-foreground/50" />
           )}
         </div>
-        <div className="flex-shrink-0 text-muted-foreground">{icon}</div>
+        <div className="shrink-0 text-muted-foreground">{icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">{title}</span>
@@ -110,7 +110,7 @@ function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
         disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
       } ${checked ? 'bg-primary' : 'bg-muted'}`}
     >
@@ -224,6 +224,8 @@ export function LibrarySettingsTab() {
       }))
       try {
         await window.electronAPI.removeExclusion(id)
+        // Notify library views to reload completeness data
+        window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
         console.error('Failed to remove exclusion:', error)
         await reloadExclusions()
@@ -239,6 +241,8 @@ export function LibrarySettingsTab() {
       setExclusions((prev) => ({ ...prev, [type]: [] }))
       try {
         await Promise.all(items.map((e) => window.electronAPI.removeExclusion(e.id)))
+        // Notify library views to reload completeness data
+        window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
         console.error('Failed to clear exclusions:', error)
         await reloadExclusions()
@@ -258,7 +262,7 @@ export function LibrarySettingsTab() {
   const totalExclusions = Object.values(exclusions).reduce((sum, list) => sum + list.length, 0)
 
   return (
-    <div className="p-6 space-y-3 overflow-y-auto h-full">
+    <div className="p-6 space-y-5 overflow-y-auto h-full">
       {/* Header */}
       <div className="mb-4">
         <p className="text-xs text-muted-foreground">
@@ -340,7 +344,7 @@ export function LibrarySettingsTab() {
                       className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                         <span className="text-sm text-foreground">{section.label}</span>
                         {items.length > 0 && (
                           <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
@@ -384,7 +388,7 @@ export function LibrarySettingsTab() {
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveExclusion(item.id, section.type)}
-                                    className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                    className="p-1 rounded-md text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                                     title="Remove exclusion"
                                   >
                                     <X className="w-3.5 h-3.5" />

@@ -94,6 +94,9 @@ export class PlexProvider implements MediaProvider {
   private scanCancelled = false
   private musicScanCancelled = false
 
+  // Track items already warned about to avoid log spam during repeated polls
+  private warnedSkippedItems = new Set<string>()
+
   constructor(config: SourceConfig) {
     this.sourceId = config.sourceId || this.generateSourceId()
 
@@ -505,6 +508,7 @@ export class PlexProvider implements MediaProvider {
           if (showTitleSort) {
             showTitleSortCache.set(item.ratingKey, showTitleSort)
           }
+
 
           // Get all episodes
           const episodes = await this.getAllEpisodes(item.ratingKey)
@@ -1166,7 +1170,10 @@ export class PlexProvider implements MediaProvider {
     }
 
     if (versions.length === 0) {
-      getLoggingService().verbose('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
+      if (!this.warnedSkippedItems.has(item.ratingKey)) {
+        getLoggingService().verbose('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
+        this.warnedSkippedItems.add(item.ratingKey)
+      }
       return null
     }
 
@@ -1255,6 +1262,7 @@ export class PlexProvider implements MediaProvider {
         poster_url: posterUrl,
         episode_thumb_url: episodeThumbUrl,
         season_poster_url: seasonPosterUrl,
+        summary: item.summary || undefined,
         created_at: item.addedAt && item.addedAt > 0
           ? new Date(item.addedAt * 1000).toISOString()
           : new Date().toISOString(),

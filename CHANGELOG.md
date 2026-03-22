@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.3.0](https://github.com/bbidwell85/totality/compare/v0.2.3...v0.3.0) (2026-03-22)
+
+
+### Features
+
+* major dependency upgrades — Electron 41, Vite 6, ESLint 9 ([22f4eda](https://github.com/bbidwell85/totality/commit/22f4edaf8e0ece79856126bd4a265817c184547d))
+* migrate to Tailwind CSS 4 and fix library scrollbar styling ([b757501](https://github.com/bbidwell85/totality/commit/b7575017c8e1d8b7380a842ba800618aaf14e916))
+* quality scoring overhaul, preference persistence, and UI improvements ([56a3343](https://github.com/bbidwell85/totality/commit/56a3343b31fe87754b09122366ca887be6363edb))
+
+### [0.2.3](https://github.com/bbidwell85/totality/compare/v0.2.2...v0.2.3) (2026-03-21)
+
+
+### Bug Fixes
+
+* resolve TypeScript build errors across all platforms ([85aa558](https://github.com/bbidwell85/totality/commit/85aa5582e3f222eceb6123f59a32c8fa9a3878df))
+
+### [0.2.2](https://github.com/bbidwell85/totality/compare/v0.2.1...v0.2.2) (2026-03-21)
+
+
+### Features
+
+* major UI consistency overhaul, search navigation, and UX improvements ([a44b04c](https://github.com/bbidwell85/totality/commit/a44b04ce9ad3092f32d14529b28ffea5184d71cd))
+* major UI polish, bug fixes, security audit fixes, and memory optimization ([ce7f1d5](https://github.com/bbidwell85/totality/commit/ce7f1d5cc748181d184aae21a31e2e944da333d3))
+
 ### [0.2.1](https://github.com/bbidwell85/totality/compare/v0.2.0...v0.2.1) (2026-03-18)
 
 

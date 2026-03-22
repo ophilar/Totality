@@ -1,7 +1,7 @@
+/* eslint-disable no-undef */
 export default {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-    ...(process.env.NODE_ENV === 'production' ? { cssnano: { preset: 'default' } } : {}),
+    '@tailwindcss/postcss': {},
+    ...(typeof process !== 'undefined' && process.env.NODE_ENV === 'production' ? { cssnano: { preset: 'default' } } : {}),
   },
 }

@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = {
   quality_codec_h265: 2.0,
   quality_codec_av1: 2.5,
   quality_codec_vp9: 1.8,
+  quality_video_weight: 70,
 }
 
 type SettingsState = typeof DEFAULT_SETTINGS
@@ -88,7 +89,7 @@ function SettingsCard({
         className="w-full flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors text-left"
       >
         {/* Icon */}
-        <div className="flex-shrink-0 text-muted-foreground">{icon}</div>
+        <div className="shrink-0 text-muted-foreground">{icon}</div>
 
         {/* Title and description */}
         <div className="flex-1 min-w-0">
@@ -132,7 +133,7 @@ export function QualitySettingsTab() {
   const [reanalyzeProgress, setReanalyzeProgress] = useState<{ current: number; total: number } | null>(null)
 
   // Expanded state for cards
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set(['video']))
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   const toggleCard = (card: string) => {
     setExpandedCards((prev) => {
@@ -288,7 +289,7 @@ export function QualitySettingsTab() {
   }
 
   return (
-    <div className="p-6 space-y-3 overflow-y-auto">
+    <div className="p-6 space-y-5 overflow-y-auto">
       {/* Video Quality Card */}
       <SettingsCard
         title="Video Quality"
@@ -349,6 +350,34 @@ export function QualitySettingsTab() {
                 updateSetting(`quality_audio_${selectedTier}_high` as keyof SettingsState, high)
               }}
             />
+            <div className="bg-background/50 rounded-lg p-3 space-y-2 col-span-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium">Score Weighting</span>
+              </div>
+              <div className="relative h-4">
+                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full overflow-hidden">
+                  <div className="absolute h-full bg-accent/40" style={{ left: 0, width: `${settings.quality_video_weight}%` }} />
+                  <div className="absolute h-full bg-accent/70" style={{ left: `${settings.quality_video_weight}%`, width: `${100 - settings.quality_video_weight}%` }} />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={settings.quality_video_weight}
+                  onChange={(e) => updateSetting('quality_video_weight', parseInt(e.target.value))}
+                  className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md border-2 border-background z-10 pointer-events-none"
+                  style={{ left: `${settings.quality_video_weight}%`, marginLeft: '-6px' }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-medium">
+                <span className="text-accent/60">Video {settings.quality_video_weight}%</span>
+                <span className="text-accent">Audio {100 - settings.quality_video_weight}%</span>
+              </div>
+            </div>
           </div>
 
           {/* Codec Efficiency */}
@@ -405,6 +434,7 @@ export function QualitySettingsTab() {
               if scores seem too harsh.
             </p>
           </div>
+
         </div>
       </SettingsCard>
 
@@ -472,11 +502,11 @@ export function QualitySettingsTab() {
       </SettingsCard>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-3">
+      <div className="flex items-center justify-end gap-2 pt-3">
         <button
           onClick={handleReset}
           disabled={isSaving}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           Reset to Defaults
@@ -676,7 +706,7 @@ function NumberInput({
           }
         }}
         aria-describedby={hint ? hintId : undefined}
-        className="w-full px-3 py-1.5 bg-background border border-border/30 rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full px-3 py-1.5 bg-background border border-border/30 rounded-md text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
       />
       {hint && <p id={hintId} className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
@@ -887,8 +917,8 @@ function HandbrakeGuide({
           onClick={() => setSelectedCodec('x265')}
           className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
             selectedCodec === 'x265'
-              ? 'bg-accent text-accent-foreground'
-              : 'bg-background/50 text-muted-foreground hover:text-foreground'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
           }`}
         >
           x265/HEVC (Recommended)
@@ -897,8 +927,8 @@ function HandbrakeGuide({
           onClick={() => setSelectedCodec('x264')}
           className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
             selectedCodec === 'x264'
-              ? 'bg-accent text-accent-foreground'
-              : 'bg-background/50 text-muted-foreground hover:text-foreground'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
           }`}
         >
           x264/H.264 (Compatibility)
@@ -1029,7 +1059,7 @@ function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
         </code>
         <button
           onClick={handleCopy}
-          className="flex-shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+          className="shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
           title="Copy to clipboard"
         >
           {copied ? (
