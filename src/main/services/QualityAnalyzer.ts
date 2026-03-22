@@ -125,6 +125,7 @@ export class QualityAnalyzer {
   private audioThresholds = { ...DEFAULT_AUDIO_THRESHOLDS }
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
   private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
+  private efficiencyTrashThreshold = 60
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
   private videoWeight = 0.7 // 0-1, audio weight = 1 - videoWeight
@@ -228,6 +229,9 @@ export class QualityAnalyzer {
       // Load video/audio weight
       const rawWeight = getNum('quality_video_weight', 70)
       this.videoWeight = Math.max(0, Math.min(100, rawWeight)) / 100
+
+      // Load efficiency trash threshold
+      this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', 60)
 
       // Load music quality thresholds
       this.musicThresholds = {
@@ -500,6 +504,8 @@ export class QualityAnalyzer {
     if (storageDebtBytes > 2 * 1024 * 1024 * 1024) { // > 2GB debt
       const debtGb = (storageDebtBytes / (1024 * 1024 * 1024)).toFixed(1)
       issues.push(`Bloated file: ${debtGb} GB potential savings via modern codec`)
+    } else if (efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
+      issues.push(`Low efficiency score (${efficiencyScore}%): bitrate is high for this tier`)
     }
 
     // HDR missing for 4K

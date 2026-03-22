@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS = {
   quality_efficiency_720p_bloat: 5000,
   quality_efficiency_1080p_bloat: 10000,
   quality_efficiency_4k_bloat: 30000,
+  quality_efficiency_trash_threshold: 60,
 }
 
 type SettingsState = typeof DEFAULT_SETTINGS
@@ -385,6 +386,26 @@ export function QualitySettingsTab() {
                 <span className="text-accent/60">Video {settings.quality_video_weight}%</span>
                 <span className="text-accent">Audio {100 - settings.quality_video_weight}%</span>
               </div>
+            </div>
+          </div>
+
+          {/* Efficiency UI Thresholds */}
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="text-sm font-medium mb-2">Efficiency UI Thresholds</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Configure when the "Efficiency Trash" icon appears in your library.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <NumberInput
+                label="Efficiency Score Trash Threshold (%)"
+                value={settings.quality_efficiency_trash_threshold}
+                min={0}
+                max={100}
+                step={5}
+                onChange={(v) => updateSetting('quality_efficiency_trash_threshold', v)}
+                hint="Items with efficiency below this will show the trash icon."
+              />
             </div>
           </div>
 

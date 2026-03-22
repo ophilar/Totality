@@ -911,6 +911,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('quality_efficiency_1080p_bloat', '10000'),
   ('quality_efficiency_4k_bloat', '30000'),
 
+  -- Efficiency UI thresholds
+  ('quality_efficiency_trash_threshold', '60'),
+
   -- Window behavior
   ('minimize_to_tray', 'false'),
   ('start_minimized_to_tray', 'false'),
