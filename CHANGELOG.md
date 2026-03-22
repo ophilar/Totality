@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.4.0](https://github.com/bbidwell85/totality/compare/v0.3.0...v0.4.0) (2026-03-22)
+
+### Fork-Specific Features
+
+* **Tier-Aware Storage Efficiency:** Overhauled the efficiency scoring engine to use grounded, resolution-specific bitrate targets (VMAF 95 grounded) for HEVC and AV1.
+* **Storage Debt Analysis:** Implemented intelligent debt calculation that identifies potential space savings by re-encoding bloated or legacy-codec files to modern standards.
+* **High-Performance Virtualization:** Complete migration to `react-virtuoso` across Movies, TV Shows, and Music views, enabling smooth interaction with libraries of 10,000+ items.
+* **Advanced Metadata:** Added support for `original_language` and best-track `audio_language` detection via TMDB and media probes.
+* **Modernized Core:** Upgraded build pipeline to Vite 8 and TypeScript 5.9.
+* **BetterSQLite3 Architecture:** Full refactor of the database layer using a modular repository pattern for improved reliability and local performance.
+
 ## [0.3.0](https://github.com/bbidwell85/totality/compare/v0.2.3...v0.3.0) (2026-03-22)
 
 
