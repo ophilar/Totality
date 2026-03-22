@@ -446,8 +446,8 @@ export class QualityAnalyzer {
     const overallScore = tierScore
 
     // Efficiency Metrics
-    const efficiencyScore = this.calculateEfficiencyScore(mediaItem)
-    const storageDebtBytes = this.calculateStorageDebt(mediaItem)
+    const efficiencyScore = this.calculateEfficiencyScore(mediaItem, qualityTier)
+    const storageDebtBytes = this.calculateStorageDebt(mediaItem, qualityTier)
 
     // Identify issues
     const issues: string[] = []
@@ -513,62 +513,82 @@ export class QualityAnalyzer {
   }
 
   /**
-   * Calculate Efficiency Score (0-100) based on Bits Per Pixel (BPP)
+   * Calculate Efficiency Score (0-100) based on grounded tier targets.
+   * Rewards modern codecs achieving high quality at efficient bitrates.
+   * Penalizes over-encoding (bloat) beyond visually transparent thresholds.
    */
-  private calculateEfficiencyScore(item: MediaItem): number {
-    const width = item.width || 1920
-    const height = item.height || 1080
-    const fps = item.video_frame_rate || 24
+  private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number {
     const bitrate = item.video_bitrate || 0
-
     if (bitrate === 0) return 0
 
-    // BPP = (Bitrate in bits/sec) / (Width * Height * FPS)
-    const bpp = (bitrate * 1000) / (width * height * fps)
+    // Grounded "Efficient HIGH Quality" targets (Mbps) for HEVC
+    const efficientTargets: Record<QualityTier, number> = {
+      '4K': 15,
+      '1080p': 5,
+      '720p': 2.5,
+      'SD': 1.2
+    }
 
-    // Normalize BPP by codec efficiency (Modern codecs should have lower BPP for same quality)
+    // Grounded "Bloat Start" thresholds (Mbps) for HEVC
+    const bloatThresholds: Record<QualityTier, number> = {
+      '4K': 30,
+      '1080p': 10,
+      '720p': 5,
+      'SD': 2.5
+    }
+
     const efficiencyMult = this.getCodecEfficiency(item.video_codec)
-    const normalizedBpp = bpp / efficiencyMult
+    const effectiveBitrate = bitrate * efficiencyMult
+    const targetKbps = efficientTargets[tier] * 1000
+    const bloatKbps = bloatThresholds[tier] * 1000
 
-    // Ideal BPP ranges:
-    // HEVC/AV1: 0.03 - 0.07 is efficient HIGH quality
-    // H.264: 0.06 - 0.12 is efficient HIGH quality
-    // > 0.15 is generally "bloated" or "over-encoded"
-    if (normalizedBpp < 0.02) return 40 // Too low, likely low quality
-    if (normalizedBpp <= 0.08) return 100 // Perfect efficiency
-    if (normalizedBpp <= 0.12) return 85 // Good efficiency
-    if (normalizedBpp <= 0.15) return 60 // Wasteful
-    return Math.max(0, Math.round(60 - (normalizedBpp - 0.15) * 200)) // Drops rapidly
+    // 1. Perfect efficiency: achieves HIGH quality target with modern codec
+    if (bitrate <= targetKbps && efficiencyMult >= 2.0) {
+      return 100
+    }
+
+    // 2. Good efficiency: achieves target quality but slightly higher bitrate or older codec
+    if (effectiveBitrate <= targetKbps) {
+      // Scale based on how close it is to the raw bitrate target
+      return Math.round(100 - (Math.max(0, bitrate - targetKbps) / targetKbps) * 15)
+    }
+
+    // 3. Diminishing returns: bitrate exceeds efficient target but below bloat threshold
+    if (bitrate <= bloatKbps) {
+      const range = bloatKbps - targetKbps
+      const offset = bitrate - targetKbps
+      return Math.round(85 - (offset / range) * 25) // Drops from 85 to 60
+    }
+
+    // 4. Bloated: bitrate exceeds the visually transparent limit
+    const overage = bitrate - bloatKbps
+    return Math.max(0, Math.round(60 - (overage / bloatKbps) * 100))
   }
 
   /**
-   * Calculate Storage Debt in bytes
-   * How much space is being wasted compared to a target HEVC encode of the same quality
+   * Calculate Storage Debt in bytes.
+   * Identifies potential savings if the file were re-encoded to an efficient HIGH quality HEVC target.
    */
-  private calculateStorageDebt(item: MediaItem): number {
+  private calculateStorageDebt(item: MediaItem, tier: QualityTier): number {
     if (!item.file_size || !item.duration) return 0
 
-    const tier = this.classifyTier(item.resolution, item.height)
-    const codec = item.video_codec.toLowerCase()
-    const isModern = codec.includes('h265') || codec.includes('hevc') || codec.includes('av1')
-
-    // If already using a modern codec and BPP is reasonable, debt is 0
-    if (isModern && this.calculateEfficiencyScore(item) > 70) return 0
-
-    // Target bitrates for high-quality HEVC (Mbps)
-    const targetBitrates: Record<string, number> = {
+    // HEVC Efficient Target (Mbps)
+    const targetBitrates: Record<QualityTier, number> = {
       '4K': 15,
-      '1080p': 6,
-      '720p': 3,
-      'SD': 1.5
+      '1080p': 5,
+      '720p': 2.5,
+      'SD': 1.2
     }
 
-    const targetMbps = targetBitrates[tier] || 6
+    const targetMbps = targetBitrates[tier]
     const durationSec = item.duration / 1000
+    // Target size = (Target Bitrate * Duration) / 8 bits
     const targetSizeBytes = (targetMbps * 1000 * 1000 * durationSec) / 8
 
-    // If current file is already smaller than target, debt is 0
-    if (item.file_size <= targetSizeBytes) return 0
+    // Debt only exists if current file is > 20% larger than target AND at least 500MB difference
+    const bufferMult = 1.2
+    if (item.file_size <= targetSizeBytes * bufferMult) return 0
+    if (item.file_size - targetSizeBytes < 500 * 1024 * 1024) return 0
 
     return Math.round(item.file_size - targetSizeBytes)
   }
