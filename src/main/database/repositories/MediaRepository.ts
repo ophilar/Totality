@@ -213,10 +213,12 @@ export class MediaRepository {
         subtitle_tracks, original_language, audio_language,
         container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
         episode_thumb_url, season_poster_url, user_fixed_match,
+        quality_tier, tier_quality, tier_score,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        datetime('now'), datetime('now')
       )
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
         library_id = excluded.library_id,
@@ -260,6 +262,9 @@ export class MediaRepository {
         episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
         season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
         user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
+        quality_tier = COALESCE(excluded.quality_tier, media_items.quality_tier),
+        tier_quality = COALESCE(excluded.tier_quality, media_items.tier_quality),
+        tier_score = COALESCE(excluded.tier_score, media_items.tier_score),
         updated_at = datetime('now')
     `)
 
@@ -307,7 +312,10 @@ export class MediaRepository {
       item.poster_url || null,
       item.episode_thumb_url || null,
       item.season_poster_url || null,
-      item.user_fixed_match ? 1 : 0
+      item.user_fixed_match ? 1 : 0,
+      item.quality_tier || null,
+      item.tier_quality || null,
+      item.tier_score || 0
     )
 
     if (result.changes > 0 && result.lastInsertRowid) {

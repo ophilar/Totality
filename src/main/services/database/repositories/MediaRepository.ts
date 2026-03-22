@@ -53,8 +53,9 @@ export class MediaRepository {
         audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
         subtitle_tracks,
         container,
-        imdb_id, tmdb_id, series_tmdb_id, poster_url, episode_thumb_url, season_poster_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        imdb_id, tmdb_id, series_tmdb_id, poster_url, episode_thumb_url, season_poster_url,
+        user_fixed_match, quality_tier, tier_quality, tier_score
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
         source_type = excluded.source_type,
         library_id = excluded.library_id,
@@ -93,7 +94,11 @@ export class MediaRepository {
         series_tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id) END,
         poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.poster_url ELSE COALESCE(excluded.poster_url, media_items.poster_url) END,
         episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
-        season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url)
+        season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
+        user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
+        quality_tier = COALESCE(excluded.quality_tier, media_items.quality_tier),
+        tier_quality = COALESCE(excluded.tier_quality, media_items.tier_quality),
+        tier_score = COALESCE(excluded.tier_score, media_items.tier_score)
     `
 
     this.db.run(sql, [
@@ -137,6 +142,10 @@ export class MediaRepository {
       item.poster_url || null,
       item.episode_thumb_url || null,
       item.season_poster_url || null,
+      item.user_fixed_match ? 1 : 0,
+      item.quality_tier || null,
+      item.tier_quality || null,
+      item.tier_score || 0
     ])
 
     let id: number

@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS media_items (
   season_poster_url TEXT,
   summary TEXT,
 
+  -- User selection tracking
+  user_fixed_match INTEGER DEFAULT 0,
+
+  -- Quality scores (denormalized for fast access)
+  quality_tier TEXT,
+  tier_quality TEXT,
+  tier_score INTEGER DEFAULT 0,
+
   -- Timestamps
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
