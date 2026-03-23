@@ -14,6 +14,7 @@ import type {
   ScanProgress,
 } from '../types/plex'
 import type { MediaItem, AudioTrack } from '../types/database'
+import { getLoggingService } from '../services/LoggingService'
 
 const PLEX_API_URL = 'https://plex.tv/api/v2'
 const PLEX_TV_URL = 'https://plex.tv'
@@ -73,7 +74,7 @@ export class PlexService {
         this.authToken = token
       }
     } catch (error) {
-      console.error('Failed to load auth token:', error)
+      getLoggingService().error('[PlexService]', 'Failed to load auth token:', error)
     }
   }
 
@@ -86,7 +87,7 @@ export class PlexService {
       await db.setSetting('plex_token', token)
       this.authToken = token
     } catch (error) {
-      console.error('Failed to save auth token:', error)
+      getLoggingService().error('[PlexService]', 'Failed to save auth token:', error)
       throw error
     }
   }
@@ -114,7 +115,7 @@ export class PlexService {
         maxDelay: 15000,
         retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
-          console.warn(`[PlexService] ${context || 'request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
+          getLoggingService().warn('[PlexService]', `${context || 'request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
         }
       }
     )
@@ -131,7 +132,7 @@ export class PlexService {
 
       return response.data as PlexAuthPin
     } catch (error) {
-      console.error('Failed to request auth PIN:', error)
+      getLoggingService().error('[PlexService]', 'Failed to request auth PIN:', error)
       throw new Error('Failed to initiate Plex authentication')
     }
   }
@@ -163,7 +164,7 @@ export class PlexService {
 
       return null
     } catch (error) {
-      console.error('Failed to check auth PIN:', error)
+      getLoggingService().error('[PlexService]', 'Failed to check auth PIN:', error)
       return null
     }
   }
@@ -187,7 +188,7 @@ export class PlexService {
 
       return false
     } catch (error) {
-      console.error('Failed to authenticate with token:', error)
+      getLoggingService().error('[PlexService]', 'Failed to authenticate with token:', error)
       return false
     }
   }
@@ -211,7 +212,7 @@ export class PlexService {
 
       return response.data as PlexUser
     } catch (error) {
-      console.error('Failed to get user info:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get user info:', error)
       return null
     }
   }
@@ -269,7 +270,7 @@ export class PlexService {
         const preferredConnection = localHttp || server.connections?.[0]
 
         if (!preferredConnection) {
-          console.warn(`No valid connection found for server ${server.name}`)
+          getLoggingService().warn('[PlexService]', `No valid connection found for server ${server.name}`)
         }
 
         return {
@@ -290,7 +291,7 @@ export class PlexService {
         }
       })
     } catch (error) {
-      console.error('Failed to get servers:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get servers:', error)
       throw new Error('Failed to fetch Plex servers')
     }
   }
@@ -377,7 +378,7 @@ export class PlexService {
 
       return (response.data as PlexMediaContainerResponse)?.MediaContainer?.Metadata || []
     } catch (error) {
-      console.error('Failed to get library items:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get library items:', error)
       throw new Error('Failed to fetch library items')
     }
   }
@@ -401,7 +402,7 @@ export class PlexService {
       const metadata = (response.data as PlexMediaContainerResponse)?.MediaContainer?.Metadata?.[0]
       return metadata || null
     } catch (error) {
-      console.error('Failed to get item metadata:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get item metadata:', error)
       return null
     }
   }
@@ -424,7 +425,7 @@ export class PlexService {
 
       return (response.data as PlexMediaContainerResponse)?.MediaContainer?.Metadata || []
     } catch (error) {
-      console.error('Failed to get episodes:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get episodes:', error)
       return []
     }
   }
@@ -448,7 +449,7 @@ export class PlexService {
       const metadata = (response.data as PlexMediaContainerResponse)?.MediaContainer?.Metadata?.[0]
       return metadata || null
     } catch (error) {
-      console.error('Failed to get season metadata:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get season metadata:', error)
       return null
     }
   }
@@ -467,7 +468,7 @@ export class PlexService {
       const baseUrl = this.selectedServer.uri
 
       // Try the /all endpoint with type=18 (collections) - more reliable
-      console.log(`[PlexService] Fetching collections with type=18 for library ${libraryKey}`)
+      getLoggingService().info('[PlexService]', `Fetching collections with type=18 for library ${libraryKey}`)
       const response = await this.api.get(
         `${baseUrl}/library/sections/${libraryKey}/all`,
         {
@@ -495,18 +496,18 @@ export class PlexService {
       }))
 
       const collections = mediaContainer?.Metadata || []
-      console.log(`[PlexService] Found ${collections.length} collections`)
+      getLoggingService().info('[PlexService]', `Found ${collections.length} collections`)
 
       if (collections.length > 0) {
-        console.log(`[PlexService] First collection:`, JSON.stringify(collections[0], null, 2))
+        getLoggingService().info('[PlexService]', `First collection:`, JSON.stringify(collections[0], null, 2))
       }
 
       return collections
     } catch (error: unknown) {
-      console.error('[PlexService] Failed to get library collections:', getErrorMessage(error))
+      getLoggingService().error('[PlexService]', '[PlexService] Failed to get library collections:', getErrorMessage(error))
       if (isAxiosError(error) && error.response) {
-        console.error('[PlexService] Response status:', error.response.status)
-        console.error('[PlexService] Response data:', JSON.stringify(error.response.data))
+        getLoggingService().error('[PlexService]', '[PlexService] Response status:', error.response.status)
+        getLoggingService().error('[PlexService]', '[PlexService] Response data:', JSON.stringify(error.response.data))
       }
       throw new Error('Failed to fetch library collections')
     }
@@ -535,7 +536,7 @@ export class PlexService {
 
       return (response.data as PlexMediaContainerResponse)?.MediaContainer?.Metadata || []
     } catch (error) {
-      console.error('Failed to get collection children:', error)
+      getLoggingService().error('[PlexService]', 'Failed to get collection children:', error)
       throw new Error('Failed to fetch collection items')
     }
   }
@@ -566,7 +567,7 @@ export class PlexService {
     // Expand TV shows into episodes, determine library type
     const { itemsToProcess, libraryType } = await this.expandShowsToEpisodes(items)
     const totalItems = itemsToProcess.length
-    console.log(`Processing ${totalItems} items...`)
+    getLoggingService().info('[PlexService]', `Processing ${totalItems} items...`)
 
     // Process all items in batches
     let scanned = 0
@@ -614,7 +615,7 @@ export class PlexService {
           }
         }
         if (showTmdbId) {
-          console.log(`Show "${item.title}" has TMDB ID: ${showTmdbId}`)
+          getLoggingService().info('[PlexService]', `Show "${item.title}" has TMDB ID: ${showTmdbId}`)
         }
 
         const episodes = await this.getAllEpisodes(item.ratingKey)
@@ -657,13 +658,13 @@ export class PlexService {
 
         try {
           if (result.status === 'rejected') {
-            console.error(`Failed to fetch metadata for ${item.title}:`, result.reason)
+            getLoggingService().error('[PlexService]', `Failed to fetch metadata for ${item.title}:`, result.reason)
             continue
           }
 
           const detailed = result.value
           if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-            console.warn(`No media info for ${item.title}, skipping`)
+            getLoggingService().warn('[PlexService]', `No media info for ${item.title}, skipping`)
             continue
           }
 
@@ -695,13 +696,13 @@ export class PlexService {
             percentage: (scanned / totalItems) * 100,
           })
         } catch (error) {
-          console.error(`Failed to process ${item.title}:`, error)
+          getLoggingService().error('[PlexService]', `Failed to process ${item.title}:`, error)
         }
       }
 
       if (scanned % 50 === 0 && scanned > 0) {
         await db.forceSave()
-        console.log(`Checkpoint saved at ${scanned} items`)
+        getLoggingService().info('[PlexService]', `Checkpoint saved at ${scanned} items`)
       }
     }
 
@@ -720,7 +721,7 @@ export class PlexService {
       const itemType = libraryType === 'show' ? 'episode' : 'movie'
       const removedCount = await db.removeStaleMediaItems(scannedPlexIds, itemType)
       if (removedCount > 0) {
-        console.log(`Removed ${removedCount} stale ${itemType}(s) no longer in Plex library`)
+        getLoggingService().info('[PlexService]', `Removed ${removedCount} stale ${itemType}(s) no longer in Plex library`)
       }
     }
   }
@@ -797,7 +798,7 @@ export class PlexService {
 
     if (!videoStream || audioStreams.length === 0) {
       const missing = !videoStream ? 'video stream' : 'audio tracks'
-      console.warn(`[PlexService] Skipping ${item.title}: no ${missing} found`)
+      getLoggingService().warn('[PlexService]', `Skipping ${item.title}: no ${missing} found`)
       return null
     }
 
@@ -872,9 +873,9 @@ export class PlexService {
         }
         if (item.parentThumb) {
           seasonPosterUrl = `${this.selectedServer.uri}${item.parentThumb}?X-Plex-Token=${this.selectedServer.accessToken}`
-          console.log(`Episode "${item.title}" - Season poster URL: ${seasonPosterUrl}`)
+          getLoggingService().info('[PlexService]', `Episode "${item.title}" - Season poster URL: ${seasonPosterUrl}`)
         } else {
-          console.log(`Episode "${item.title}" - No parentThumb available`)
+          getLoggingService().info('[PlexService]', `Episode "${item.title}" - No parentThumb available`)
         }
       }
     }

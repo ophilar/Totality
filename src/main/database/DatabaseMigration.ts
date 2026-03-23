@@ -7,6 +7,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
+import { getLoggingService } from '../services/LoggingService'
 
 interface MigrationResult {
   success: boolean
@@ -59,13 +60,13 @@ export async function migrateDatabase(): Promise<MigrationResult> {
 
   try {
     if (fs.existsSync(sqlJsDbPath)) {
-      console.log('[Migration] Legacy SQL.js database found. Backing up and requiring new scan for v0.4.0 performance features.')
+      getLoggingService().info('[DatabaseMigration]', '[Migration] Legacy SQL.js database found. Backing up and requiring new scan for v0.4.0 performance features.')
       fs.renameSync(sqlJsDbPath, backupPath)
       result.backupPath = backupPath
     }
     return result
   } catch (error) {
-    console.error('[Migration] Failed to backup legacy database:', error)
+    getLoggingService().error('[DatabaseMigration]', '[Migration] Failed to backup legacy database:', error)
     result.success = false
     result.errors.push(String(error))
     return result

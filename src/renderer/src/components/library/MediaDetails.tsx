@@ -277,7 +277,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         }
       }
     } catch (err) {
-      console.error('Error loading media details:', err)
+      window.electronAPI.log.error('[MediaDetails]', 'Error loading media details:', err)
       setError('Failed to load media details')
     } finally {
       setLoading(false)

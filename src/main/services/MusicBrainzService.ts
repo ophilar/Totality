@@ -290,11 +290,11 @@ export class MusicBrainzService extends CancellableOperation {
       }
 
       // If we only found vinyl releases, exclude this release group
-      console.log(`[MusicBrainzService] Excluding vinyl-only release group: ${releaseGroupId}`)
+      getLoggingService().info('[MusicBrainzService]', `Excluding vinyl-only release group: ${releaseGroupId}`)
       return false
     } catch (error) {
       // On error, include the release group (don't exclude based on failed API call)
-      console.warn(`[MusicBrainzService] Failed to check format for ${releaseGroupId}, including by default`)
+      getLoggingService().warn('[MusicBrainzService]', `Failed to check format for ${releaseGroupId}, including by default`)
       return true
     }
   }
@@ -322,7 +322,7 @@ export class MusicBrainzService extends CancellableOperation {
         return response.data
       } catch (error: any) {
         if (error.response?.status === 404) {
-          console.warn(`[MusicBrainzService] Artist not found (404): ${musicbrainzId}`)
+          getLoggingService().warn('[MusicBrainzService]', `Artist not found (404): ${musicbrainzId}`)
           return null
         }
         throw error
@@ -371,7 +371,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     // Only filter for digital availability if explicitly requested (slow operation)
     if (filterVinylOnly) {
-      console.log(`[MusicBrainzService] Filtering ${allAlbums.length} albums for digital availability (this may take a while)...`)
+      getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (this may take a while)...`)
 
       const albums: MBReleaseGroup[] = []
       for (const album of allAlbums) {
@@ -379,7 +379,7 @@ export class MusicBrainzService extends CancellableOperation {
           albums.push(album)
         }
       }
-      console.log(`[MusicBrainzService] ${albums.length}/${allAlbums.length} albums have digital releases`)
+      getLoggingService().info('[MusicBrainzService]', `${albums.length}/${allAlbums.length} albums have digital releases`)
 
       const eps: MBReleaseGroup[] = []
       for (const ep of allEps) {
@@ -401,7 +401,7 @@ export class MusicBrainzService extends CancellableOperation {
     // Default: include all releases (much faster - 2 API calls vs potentially 50+)
     getLoggingService().verbose('[MusicBrainzService]',
       `Discography for "${artist.name}": ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
-    console.log(`[MusicBrainzService] Found ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
+    getLoggingService().info('[MusicBrainzService]', `Found ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
     return { artist, albums: allAlbums, eps: allEps, singles: allSingles }
   }
 
@@ -436,7 +436,7 @@ export class MusicBrainzService extends CancellableOperation {
           return (response.data as MBReleasesResponse)?.releases || []
         } catch (error: any) {
           if (error.response?.status === 404) {
-            console.warn(`[MusicBrainzService] Release group not found (404): ${releaseGroupId}`)
+            getLoggingService().warn('[MusicBrainzService]', `Release group not found (404): ${releaseGroupId}`)
             return []
           }
           throw error
@@ -445,7 +445,7 @@ export class MusicBrainzService extends CancellableOperation {
 
       // If no official releases, try without status filter
       if (releases.length === 0) {
-        console.log(`[MusicBrainzService] No official releases found, trying all releases...`)
+        getLoggingService().info('[MusicBrainzService]', `No official releases found, trying all releases...`)
         releases = await this.requestWithRetry(async () => {
           const response = await this.api.get(`/release`, {
             params: {
@@ -461,7 +461,7 @@ export class MusicBrainzService extends CancellableOperation {
       }
 
       if (releases.length === 0) {
-        console.log(`[MusicBrainzService] No releases found for release group ${releaseGroupId}`)
+        getLoggingService().info('[MusicBrainzService]', `No releases found for release group ${releaseGroupId}`)
         return null
       }
 
@@ -492,10 +492,10 @@ export class MusicBrainzService extends CancellableOperation {
           Math.abs(a.trackCount - expectedTrackCount) - Math.abs(b.trackCount - expectedTrackCount)
         )
         release = ranked[0].release
-        console.log(`[MusicBrainzService] Selected release: ${release.title} (${release.id}) with ${ranked[0].trackCount} tracks (expected ~${expectedTrackCount})`)
+        getLoggingService().info('[MusicBrainzService]', `Selected release: ${release.title} (${release.id}) with ${ranked[0].trackCount} tracks (expected ~${expectedTrackCount})`)
       } else {
         release = releasesWithMedia[0] || releases[0] as MBReleaseWithMedia
-        console.log(`[MusicBrainzService] Using release: ${release.title} (${release.id})`)
+        getLoggingService().info('[MusicBrainzService]', `Using release: ${release.title} (${release.id})`)
       }
       const releaseId = release.id
 
@@ -509,12 +509,12 @@ export class MusicBrainzService extends CancellableOperation {
 
       // Extract tracks from media (discs)
       const media = release.media || []
-      console.log(`[MusicBrainzService] Release has ${media.length} media/discs`)
+      getLoggingService().info('[MusicBrainzService]', `Release has ${media.length} media/discs`)
 
       for (const disc of media) {
         const discNumber = disc.position || 1
         const discTracks = disc.tracks || []
-        console.log(`[MusicBrainzService] Disc ${discNumber} has ${discTracks.length} tracks`)
+        getLoggingService().info('[MusicBrainzService]', `Disc ${discNumber} has ${discTracks.length} tracks`)
 
         for (const track of discTracks) {
           tracks.push({
@@ -571,7 +571,7 @@ export class MusicBrainzService extends CancellableOperation {
       // Clean the album title to improve MusicBrainz matching
       const cleanedTitle = this.cleanAlbumTitleForSearch(albumTitle)
       if (cleanedTitle !== albumTitle) {
-        console.log(`[MusicBrainzService] Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
+        getLoggingService().info('[MusicBrainzService]', `Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
       }
       const query = `release:"${cleanedTitle}" AND artist:"${artistName}"`
       const releaseGroups = await this.requestWithRetry(async () => {
@@ -601,7 +601,7 @@ export class MusicBrainzService extends CancellableOperation {
         score: rg.score || 0,
       }))
     } catch (error) {
-      console.error('[MusicBrainzService] Release search failed:', error)
+      getLoggingService().error('[MusicBrainzService]', '[MusicBrainzService] Release search failed:', error)
       return []
     }
   }
@@ -787,7 +787,7 @@ export class MusicBrainzService extends CancellableOperation {
     musicbrainzReleaseGroupId: string | undefined,
     ownedTrackTitles: string[]
   ): Promise<(AlbumCompleteness & { foundMbId?: string }) | null> {
-    console.log(`[MusicBrainzService] analyzeAlbumTrackCompleteness: "${artistName}" - "${albumTitle}" (mbid: ${musicbrainzReleaseGroupId || 'none'})`)
+    getLoggingService().info('[MusicBrainzService]', `analyzeAlbumTrackCompleteness: "${artistName}" - "${albumTitle}" (mbid: ${musicbrainzReleaseGroupId || 'none'})`)
 
     let tracklist: Awaited<ReturnType<typeof this.getReleaseTracklist>> = null
     let foundMbId: string | undefined
@@ -798,18 +798,18 @@ export class MusicBrainzService extends CancellableOperation {
 
     // Try stored MBID first if available
     if (musicbrainzReleaseGroupId) {
-      console.log(`[MusicBrainzService] Trying stored MBID: ${musicbrainzReleaseGroupId}`)
+      getLoggingService().info('[MusicBrainzService]', `Trying stored MBID: ${musicbrainzReleaseGroupId}`)
       tracklist = await this.getReleaseTracklist(musicbrainzReleaseGroupId, expectedTrackCount)
     }
 
     // If no tracklist from stored MBID, search MusicBrainz
     if (!tracklist || tracklist.tracks.length === 0) {
-      console.log(`[MusicBrainzService] Stored MBID didn't work, searching MusicBrainz for "${artistName}" - "${albumTitle}"...`)
+      getLoggingService().info('[MusicBrainzService]', `Stored MBID didn't work, searching MusicBrainz for "${artistName}" - "${albumTitle}"...`)
       const searchResults = await this.searchRelease(artistName, albumTitle)
 
       // Try each search result until we find one with tracks
       for (const result of searchResults) {
-        console.log(`[MusicBrainzService] Trying search result: ${result.id} (${result.title})`)
+        getLoggingService().info('[MusicBrainzService]', `Trying search result: ${result.id} (${result.title})`)
         tracklist = await this.getReleaseTracklist(result.id, expectedTrackCount)
         if (tracklist && tracklist.tracks.length > 0) {
           musicbrainzReleaseGroupId = result.id
@@ -817,17 +817,17 @@ export class MusicBrainzService extends CancellableOperation {
           if (!originalMbId) {
             foundMbId = result.id
           }
-          console.log(`[MusicBrainzService] Found tracklist with ${tracklist.tracks.length} tracks`)
+          getLoggingService().info('[MusicBrainzService]', `Found tracklist with ${tracklist.tracks.length} tracks`)
           break
         }
       }
     }
 
     if (!tracklist || tracklist.tracks.length === 0) {
-      console.log(`[MusicBrainzService] No tracklist found for "${artistName}" - "${albumTitle}"`)
+      getLoggingService().info('[MusicBrainzService]', `No tracklist found for "${artistName}" - "${albumTitle}"`)
       return null
     }
-    console.log(`[MusicBrainzService] Using tracklist with ${tracklist.tracks.length} tracks`)
+    getLoggingService().info('[MusicBrainzService]', `Using tracklist with ${tracklist.tracks.length} tracks`)
 
     // Normalize titles for comparison
     const normalizeTitle = (title: string) =>
@@ -928,7 +928,7 @@ export class MusicBrainzService extends CancellableOperation {
           existingAlbumCompleteness.set(ac.album_id, ac.last_sync_at)
         }
       }
-      console.log(`[MusicBrainzService] Found ${existingArtistCompleteness.size} artists and ${existingAlbumCompleteness.size} albums with existing completeness data`)
+      getLoggingService().info('[MusicBrainzService]', `Found ${existingArtistCompleteness.size} artists and ${existingAlbumCompleteness.size} albums with existing completeness data`)
     }
 
     const totalItems = artists.length + albums.length
@@ -951,11 +951,11 @@ export class MusicBrainzService extends CancellableOperation {
     })
 
     // Phase 1: Analyze artist completeness
-    console.log(`[MusicBrainzService] Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
+    getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
 
     for (const artist of artists) {
       if (this.isCancelled()) {
-        console.log(`[MusicBrainzService] Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
+        getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
         return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
       }
 
@@ -1004,7 +1004,7 @@ export class MusicBrainzService extends CancellableOperation {
         if (completeness.foundMbId && !artist.musicbrainz_id && artist.id) {
           try {
             await db.updateMusicArtistMbid(artist.id, completeness.foundMbId)
-            console.log(`[MusicBrainzService] Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
+            getLoggingService().info('[MusicBrainzService]', `Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
           } catch (e) {
             // Silently ignore - method may not exist yet
           }
@@ -1012,18 +1012,18 @@ export class MusicBrainzService extends CancellableOperation {
 
         artistsAnalyzed++
       } catch (error) {
-        console.error(`[MusicBrainzService] Failed to analyze artist "${artist.name}":`, error)
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze artist "${artist.name}":`, error)
       }
 
       currentItem++
     }
 
     // Phase 2: Analyze album track completeness
-    console.log(`[MusicBrainzService] Phase 2: Analyzing ${albums.length} albums`)
+    getLoggingService().info('[MusicBrainzService]', `Phase 2: Analyzing ${albums.length} albums`)
 
     for (const album of albums) {
       if (this.isCancelled()) {
-        console.log(`[MusicBrainzService] Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
+        getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
         return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
       }
 
@@ -1070,7 +1070,7 @@ export class MusicBrainzService extends CancellableOperation {
           if (completeness.foundMbId && !album.musicbrainz_id && album.id) {
             try {
               await db.updateMusicAlbumMbid(album.id, completeness.foundMbId)
-              console.log(`[MusicBrainzService] Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
+              getLoggingService().info('[MusicBrainzService]', `Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
             } catch (e) {
               // Silently ignore - method may not exist yet
             }
@@ -1083,7 +1083,7 @@ export class MusicBrainzService extends CancellableOperation {
         }
         albumsAnalyzed++
       } catch (error) {
-        console.error(`[MusicBrainzService] Failed to analyze album "${album.title}":`, error)
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze album "${album.title}":`, error)
       }
 
       currentItem++
@@ -1101,7 +1101,7 @@ export class MusicBrainzService extends CancellableOperation {
       skipped,
     })
 
-    console.log(`[MusicBrainzService] Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped (recently analyzed)`)
+    getLoggingService().info('[MusicBrainzService]', `Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped (recently analyzed)`)
     return { completed: true, artistsAnalyzed, albumsAnalyzed, skipped }
   }
 
@@ -1127,11 +1127,11 @@ export class MusicBrainzService extends CancellableOperation {
           thumbUrl: artworkUrl,
           artUrl: this.buildCoverArtUrl(releaseGroupId, '1200'), // Large version for art_url
         })
-        console.log(`[MusicBrainzService] Updated artwork for "${album.artist_name} - ${album.title}"`)
+        getLoggingService().info('[MusicBrainzService]', `Updated artwork for "${album.artist_name} - ${album.title}"`)
       }
     } catch (error) {
       // Don't fail the whole analysis if artwork fetch fails
-      console.warn(`[MusicBrainzService] Failed to fetch artwork for "${album.title}":`, error)
+      getLoggingService().warn('[MusicBrainzService]', `Failed to fetch artwork for "${album.title}":`, error)
     }
   }
 }

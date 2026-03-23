@@ -133,7 +133,7 @@ export function AddToWishlistButton({
         })
       }
     } catch (err) {
-      console.error('Error toggling wishlist:', err)
+      window.electronAPI.log.error('[AddToWishlistButton]', 'Error toggling wishlist:', err)
     } finally {
       setIsLoading(false)
     }

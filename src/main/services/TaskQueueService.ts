@@ -27,6 +27,7 @@ import { LocalFolderProvider } from '../providers/local/LocalFolderProvider'
 import type { ScanResult } from '../providers/base/MediaProvider'
 import type { MusicTrack } from '../types/database'
 import { getWishlistCompletionService } from './WishlistCompletionService'
+import { getLoggingService } from '../services/LoggingService'
 
 // ============================================================================
 // Types
@@ -138,7 +139,7 @@ export class TaskQueueService {
     }
 
     this.queue.push(task)
-    console.log(`[TaskQueue] Added task: ${task.label} (${task.id})`)
+    getLoggingService().info('[TaskQueue]', `Added task: ${task.label} (${task.id})`)
     this.emitQueueUpdate()
 
     // Start processing if not already running
@@ -155,7 +156,7 @@ export class TaskQueueService {
     if (index === -1) return false
 
     this.queue.splice(index, 1)
-    console.log(`[TaskQueue] Removed task: ${taskId}`)
+    getLoggingService().info('[TaskQueue]', `Removed task: ${taskId}`)
     this.emitQueueUpdate()
     return true
   }
@@ -171,7 +172,7 @@ export class TaskQueueService {
     // Only reorder if all IDs matched
     if (reordered.length === this.queue.length) {
       this.queue = reordered
-      console.log(`[TaskQueue] Queue reordered`)
+      getLoggingService().info('[TaskQueue]', `Queue reordered`)
       this.emitQueueUpdate()
     }
   }
@@ -181,12 +182,12 @@ export class TaskQueueService {
    */
   clearQueue(): void {
     this.queue = []
-    console.log(`[TaskQueue] Queue cleared`)
+    getLoggingService().info('[TaskQueue]', `Queue cleared`)
     this.emitQueueUpdate()
 
     // If no task is currently running, resume monitoring
     if (!this.currentTask && this.monitoringWasPausedByUs) {
-      console.log('[TaskQueue] Queue cleared with no running task, resuming live monitoring')
+      getLoggingService().info('[TaskQueueService]', '[TaskQueue] Queue cleared with no running task, resuming live monitoring')
       this.monitoringWasPausedByUs = false
       getLiveMonitoringService().resume()
     }
@@ -197,7 +198,7 @@ export class TaskQueueService {
    */
   pauseQueue(): void {
     this.isPaused = true
-    console.log(`[TaskQueue] Queue paused`)
+    getLoggingService().info('[TaskQueue]', `Queue paused`)
     this.emitQueueUpdate()
   }
 
@@ -206,7 +207,7 @@ export class TaskQueueService {
    */
   resumeQueue(): void {
     this.isPaused = false
-    console.log(`[TaskQueue] Queue resumed`)
+    getLoggingService().info('[TaskQueue]', `Queue resumed`)
     this.emitQueueUpdate()
     this.processNext()
   }
@@ -217,7 +218,7 @@ export class TaskQueueService {
   cancelCurrentTask(): void {
     if (!this.currentTask) return
 
-    console.log(`[TaskQueue] Cancelling current task: ${this.currentTask.label}`)
+    getLoggingService().info('[TaskQueue]', `Cancelling current task: ${this.currentTask.label}`)
     this.cancelRequested = true
 
     // Also cancel in underlying services
@@ -283,7 +284,7 @@ export class TaskQueueService {
       const db = getDatabase()
       db.saveActivityLogEntry({ entryType: 'monitoring', message })
     } catch (err) {
-      console.error('[TaskQueue] Failed to persist monitoring event:', getErrorMessage(err))
+      getLoggingService().error('[TaskQueueService]', '[TaskQueue] Failed to persist monitoring event:', getErrorMessage(err))
     }
 
     this.emitHistoryUpdate()
@@ -349,9 +350,9 @@ export class TaskQueueService {
         message: row.message,
       }))
 
-      console.log(`[TaskQueue] Loaded ${this.completedTasks.length} tasks, ${this.taskHistory.length} task events, ${this.monitoringHistory.length} monitoring events from DB`)
+      getLoggingService().info('[TaskQueue]', `Loaded ${this.completedTasks.length} tasks, ${this.taskHistory.length} task events, ${this.monitoringHistory.length} monitoring events from DB`)
     } catch (err) {
-      console.error('[TaskQueue] Failed to load persisted history:', getErrorMessage(err))
+      getLoggingService().error('[TaskQueueService]', '[TaskQueue] Failed to load persisted history:', getErrorMessage(err))
     }
   }
 
@@ -396,7 +397,7 @@ export class TaskQueueService {
         })
       }
     } catch (err) {
-      console.error('[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
+      getLoggingService().error('[TaskQueueService]', '[TaskQueue] Failed to persist interrupted tasks:', getErrorMessage(err))
     }
   }
 
@@ -419,7 +420,7 @@ export class TaskQueueService {
     // Notify UI of queue change
     this.emitQueueUpdate()
 
-    console.log(`[TaskQueueService] Removed tasks for source: ${sourceId}`)
+    getLoggingService().info('[TaskQueueService]', `Removed tasks for source: ${sourceId}`)
   }
 
   // ============================================================================
@@ -434,7 +435,7 @@ export class TaskQueueService {
     if (this.isPaused || this.isProcessing || this.queue.length === 0) {
       // If queue is empty and we paused monitoring, resume it
       if (this.queue.length === 0 && this.monitoringWasPausedByUs) {
-        console.log('[TaskQueue] All tasks complete, resuming live monitoring')
+        getLoggingService().info('[TaskQueueService]', '[TaskQueue] All tasks complete, resuming live monitoring')
         this.monitoringWasPausedByUs = false
         getLiveMonitoringService().resume()
       }
@@ -445,7 +446,7 @@ export class TaskQueueService {
     if (!this.monitoringWasPausedByUs) {
       const liveMonitoring = getLiveMonitoringService()
       if (liveMonitoring.isActiveAndEnabled()) {
-        console.log('[TaskQueue] Pausing live monitoring during task execution')
+        getLoggingService().info('[TaskQueueService]', '[TaskQueue] Pausing live monitoring during task execution')
         liveMonitoring.pause()
         this.monitoringWasPausedByUs = true
       }
@@ -460,7 +461,7 @@ export class TaskQueueService {
     task.startedAt = new Date().toISOString()
     this.emitQueueUpdate()
 
-    console.log(`[TaskQueue] Starting task: ${task.label}`)
+    getLoggingService().info('[TaskQueue]', `Starting task: ${task.label}`)
 
     try {
       await this.executeTask(task)
@@ -479,12 +480,12 @@ export class TaskQueueService {
       if (isCancellation) {
         task.status = 'cancelled'
         this.addTaskHistoryEntry(task, 'task-cancelled', `Cancelled: ${task.label}`)
-        console.log(`[TaskQueue] Task cancelled: ${task.label}`)
+        getLoggingService().info('[TaskQueue]', `Task cancelled: ${task.label}`)
       } else {
         task.status = 'failed'
         task.error = errorMsg
         this.addTaskHistoryEntry(task, 'task-failed', `Failed: ${task.label} - ${task.error}`)
-        console.error(`[TaskQueue] Task failed: ${task.label}`, error)
+        getLoggingService().error('[TaskQueue]', `Task failed: ${task.label}`, error)
       }
     }
 
@@ -502,7 +503,7 @@ export class TaskQueueService {
         completedAt: task.completedAt,
       })
     } catch (err) {
-      console.error('[TaskQueue] Failed to persist task history:', getErrorMessage(err))
+      getLoggingService().error('[TaskQueueService]', '[TaskQueue] Failed to persist task history:', getErrorMessage(err))
     }
 
     // Add to completed tasks
@@ -757,7 +758,7 @@ export class TaskQueueService {
     const analyzer = getQualityAnalyzer()
     const albums = db.getMusicAlbums({ sourceId: task.sourceId })
     if (albums.length > 0) {
-      console.log(`[TaskQueue] Analyzing music quality for ${albums.length} albums...`)
+      getLoggingService().info('[TaskQueue]', `Analyzing music quality for ${albums.length} albums...`)
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
       const tracksByAlbum = 'getMusicTracksByAlbumIds' in db
         ? (db as unknown as { getMusicTracksByAlbumIds: (ids: number[]) => Map<number, unknown[]> }).getMusicTracksByAlbumIds(albumIds)
@@ -775,7 +776,7 @@ export class TaskQueueService {
       } finally {
         await db.endBatch()
       }
-      console.log(`[TaskQueue] Music quality analysis complete for ${albums.length} albums`)
+      getLoggingService().info('[TaskQueue]', `Music quality analysis complete for ${albums.length} albums`)
     }
   }
 
@@ -837,7 +838,7 @@ export class TaskQueueService {
       const db = getDatabase()
       db.saveActivityLogEntry({ entryType: type, message, taskId: task.id, taskType: task.type })
     } catch (err) {
-      console.error('[TaskQueue] Failed to persist activity log entry:', getErrorMessage(err))
+      getLoggingService().error('[TaskQueueService]', '[TaskQueue] Failed to persist activity log entry:', getErrorMessage(err))
     }
 
     this.emitHistoryUpdate()
@@ -888,7 +889,7 @@ export class TaskQueueService {
       // Check wishlist for auto-completion after items were added or updated
       if ((task.result?.itemsAdded || 0) > 0 || (task.result?.itemsUpdated || 0) > 0) {
         getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
+          getLoggingService().error('[TaskQueueService]', '[TaskQueue] Wishlist completion check failed:', getErrorMessage(err))
         })
       }
     }

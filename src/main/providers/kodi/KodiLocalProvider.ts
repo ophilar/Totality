@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getLoggingService } from '../../services/LoggingService'
 /**
  * KodiLocalProvider
  *
@@ -143,7 +144,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
       try {
         this.db.close()
       } catch (err) {
-        console.error('[KodiLocalProvider] Error closing database:', err)
+        getLoggingService().error('[KodiLocalProvider]', '[KodiLocalProvider] Error closing database:', err)
       }
       this.db = null
     }
@@ -151,7 +152,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
       try {
         this.musicDb.close()
       } catch (err) {
-        console.error('[KodiLocalProvider] Error closing music database:', err)
+        getLoggingService().error('[KodiLocalProvider]', '[KodiLocalProvider] Error closing music database:', err)
       }
       this.musicDb = null
     }
@@ -247,7 +248,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
           libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show', itemCount: episodeCount.count })
         }
       } catch (err) {
-        console.error('[KodiLocalProvider] Error reading video libraries:', err)
+        getLoggingService().error('[KodiLocalProvider]', '[KodiLocalProvider] Error reading video libraries:', err)
       }
 
       try {
@@ -259,7 +260,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
           }
         }
       } catch (err) {
-        console.log('[KodiLocalProvider] Music library not available:', getErrorMessage(err))
+        getLoggingService().info('[KodiLocalProvider]', '[KodiLocalProvider] Music library not available:', getErrorMessage(err))
       }
 
       return libraries
@@ -359,7 +360,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
       else throw new Error(`Unsupported library: ${libraryId}`)
 
       const totalItems = items.length
-      console.log(`[KodiLocalProvider] Scanning ${totalItems} items...`)
+      getLoggingService().info('[KodiLocalProvider]', `Scanning ${totalItems} items...`)
 
       // Check FFprobe
       const fileAnalyzer = getMediaFileAnalyzer()
@@ -516,7 +517,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
         }
       }
     } catch (error) {
-      console.error('[KodiLocalProvider] Collection sync failed:', error)
+      getLoggingService().error('[KodiLocalProvider]', '[KodiLocalProvider] Collection sync failed:', error)
     }
   }
 
@@ -689,7 +690,9 @@ export class KodiLocalProvider extends BaseMediaProvider {
   private getFileSize(filePath: string): number {
     try {
       if (fs.existsSync(filePath)) return fs.statSync(filePath).size
-    } catch {}
+    } catch {
+      // Ignore errors reading file size
+    }
     return 0
   }
 
@@ -767,7 +770,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
   cancelScan(): void {
     this.scanCancelled = true
     this.musicScanCancelled = true
-    console.log(`[KodiLocalProvider ${this.sourceId}] Scan cancellation requested`)
+    getLoggingService().info('[KodiLocalProvider ${this.sourceId}]', `Scan cancellation requested`)
   }
 
   cancelMusicScan(): void {

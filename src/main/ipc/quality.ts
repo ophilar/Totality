@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { getQualityAnalyzer } from '../services/QualityAnalyzer'
 import { getDatabase } from '../database/getDatabase'
 import { validateInput, PositiveIntSchema } from '../validation/schemas'
+import { getLoggingService } from '../services/LoggingService'
 
 /**
  * Register all quality analysis IPC handlers
@@ -39,7 +40,7 @@ export function registerQualityHandlers() {
 
       return count
     } catch (error) {
-      console.error('Error analyzing all media items:', error)
+      getLoggingService().error('[quality]', 'Error analyzing all media items:', error)
       throw error
     }
   })
@@ -48,7 +49,7 @@ export function registerQualityHandlers() {
     try {
       return analyzer.getQualityDistribution()
     } catch (error) {
-      console.error('Error getting quality distribution:', error)
+      getLoggingService().error('[quality]', 'Error getting quality distribution:', error)
       throw error
     }
   })
@@ -68,10 +69,10 @@ export function registerQualityHandlers() {
 
       return analyzer.getRecommendedFormat(mediaItem, currentScore)
     } catch (error) {
-      console.error('Error getting recommended format:', error)
+      getLoggingService().error('[quality]', 'Error getting recommended format:', error)
       throw error
     }
   })
 
-  console.log('Quality analysis IPC handlers registered')
+  getLoggingService().info('[quality]', 'Quality analysis IPC handlers registered')
 }

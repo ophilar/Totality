@@ -63,7 +63,7 @@ export const WishlistItemCard = memo(function WishlistItemCard({
       const links = await getStoreLinks(item)
       setStoreLinks(links)
     } catch (err) {
-      console.error('Error loading store links:', err)
+      window.electronAPI.log.error('[WishlistItemCard]', 'Error loading store links:', err)
     } finally {
       setIsLoadingLinks(false)
     }

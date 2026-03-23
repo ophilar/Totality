@@ -49,7 +49,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
 
   // Handle video error - skip to end
   const handleVideoError = () => {
-    console.warn('Splash video failed to load, skipping')
+    window.electronAPI.log.warn('[SplashScreen]', 'Splash video failed to load, skipping')
     setVideoEnded(true)
     setFadeOut(true)
   }

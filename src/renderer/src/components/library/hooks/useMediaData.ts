@@ -108,7 +108,7 @@ export function useMediaData({
       setItems(mediaItems)
       hasInitialLoadRef.current = true
     } catch (err) {
-      console.error('Error loading media:', err)
+      window.electronAPI.log.error('[useMediaData]', 'Error loading media:', err)
       setError('Failed to load media items')
     } finally {
       setLoading(false)
@@ -122,7 +122,7 @@ export function useMediaData({
       const libraryStats = await window.electronAPI.getLibraryStats(sourceId)
       setStats(libraryStats)
     } catch (err) {
-      console.warn('Failed to load library stats:', err)
+      window.electronAPI.log.warn('[useMediaData]', 'Failed to load library stats:', err)
     }
   }, [])
 
@@ -146,7 +146,7 @@ export function useMediaData({
       setSeriesStats(sStats as SeriesStats)
       setCollectionStats(cStats as CollectionStats)
     } catch (err) {
-      console.warn('Failed to load completeness data:', err)
+      window.electronAPI.log.warn('[useMediaData]', 'Failed to load completeness data:', err)
     }
   }, [])
 

@@ -45,6 +45,7 @@ import {
   isEstimatedBitrate,
 } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
+import { getLoggingService } from '../../services/LoggingService'
 
 // Kodi JSON-RPC types
 interface KodiRpcResponse<T> {
@@ -542,7 +543,7 @@ export class KodiProvider extends BaseMediaProvider {
 
       // Log incremental scan info
       if (isIncremental) {
-        console.log(`[KodiProvider ${this.sourceId}] Incremental scan: fetching items added after ${sinceTimestamp!.toISOString()}`)
+        getLoggingService().info('[KodiProvider ${this.sourceId}]', `Incremental scan: fetching items added after ${sinceTimestamp!.toISOString()}`)
       }
 
       if (libraryId === 'movies') {
@@ -559,9 +560,9 @@ export class KodiProvider extends BaseMediaProvider {
 
       const totalItems = items.length
       if (isIncremental) {
-        console.log(`[KodiProvider ${this.sourceId}] Incremental scan found ${totalItems} new/updated items`)
+        getLoggingService().info('[KodiProvider ${this.sourceId}]', `Incremental scan found ${totalItems} new/updated items`)
       } else {
-        console.log(`[KodiProvider ${this.sourceId}] Processing ${totalItems} items...`)
+        getLoggingService().info('[KodiProvider ${this.sourceId}]', `Processing ${totalItems} items...`)
       }
 
       // Start batch mode
@@ -571,7 +572,7 @@ export class KodiProvider extends BaseMediaProvider {
       const fileAnalyzer = getMediaFileAnalyzer()
       const ffprobeAvailable = await fileAnalyzer.isAvailable()
       if (ffprobeAvailable) {
-        console.log(`[KodiProvider ${this.sourceId}] FFprobe available - will enhance metadata for accessible files`)
+        getLoggingService().info('[KodiProvider ${this.sourceId}]', `FFprobe available - will enhance metadata for accessible files`)
       }
 
       try {
@@ -616,7 +617,7 @@ export class KodiProvider extends BaseMediaProvider {
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
-          console.log(`[KodiProvider ${this.sourceId}] Grouped ${items.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
+          getLoggingService().info('[KodiProvider ${this.sourceId}]', `Grouped ${items.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
         }
 
         let itemIndex = 0
@@ -777,10 +778,10 @@ export class KodiProvider extends BaseMediaProvider {
       // Estimate video portion (~85-95% of total for movies with lossless audio)
       // We'll refine this after calculating audio
       videoBitrate = Math.round(totalBitrate * 0.90)
-      console.log(`[KodiProvider] Movie "${movie.title}": fileSize=${fileSize}, duration=${durationSeconds}s, totalBitrate=${totalBitrate}kbps`)
+      getLoggingService().info('[KodiProvider]', `Movie "${movie.title}": fileSize=${fileSize}, duration=${durationSeconds}s, totalBitrate=${totalBitrate}kbps`)
     } else {
       videoBitrate = this.estimateVideoBitrate(video?.height || 0)
-      console.log(`[KodiProvider] Movie "${movie.title}": No file size, estimated bitrate=${videoBitrate}kbps from ${video?.height || 0}p`)
+      getLoggingService().info('[KodiProvider]', `Movie "${movie.title}": No file size, estimated bitrate=${videoBitrate}kbps from ${video?.height || 0}p`)
     }
 
     // Convert all audio streams to AudioStreamInfo array with object audio detection
@@ -1130,13 +1131,13 @@ export class KodiProvider extends BaseMediaProvider {
     try {
       const analysis = await fileAnalyzer.analyzeFile(filePath)
       if (!analysis.success) {
-        console.log(`[KodiProvider] FFprobe analysis failed for "${metadata.title}": ${analysis.error}`)
+        getLoggingService().info('[KodiProvider]', `FFprobe analysis failed for "${metadata.title}": ${analysis.error}`)
         return metadata
       }
 
       return this.mergeFFprobeData(metadata, analysis)
     } catch (error: unknown) {
-      console.warn(`[KodiProvider] FFprobe enhancement failed for "${metadata.title}": ${getErrorMessage(error)}`)
+      getLoggingService().warn('[KodiProvider]', `FFprobe enhancement failed for "${metadata.title}": ${getErrorMessage(error)}`)
       return metadata
     }
   }
@@ -1230,7 +1231,7 @@ export class KodiProvider extends BaseMediaProvider {
       }
     }
 
-    console.log(`[KodiProvider] Enhanced "${metadata.title}" with ffprobe data (frameRate=${enhanced.videoFrameRate}, bitDepth=${enhanced.colorBitDepth}, audioBitrate=${enhanced.audioBitrate})`)
+    getLoggingService().info('[KodiProvider]', `Enhanced "${metadata.title}" with ffprobe data (frameRate=${enhanced.videoFrameRate}, bitDepth=${enhanced.colorBitDepth}, audioBitrate=${enhanced.audioBitrate})`)
 
     return enhanced
   }
@@ -1250,7 +1251,7 @@ export class KodiProvider extends BaseMediaProvider {
 
       return result.artists || []
     } catch (error: unknown) {
-      console.error('[KodiProvider] Failed to get music artists:', error)
+      getLoggingService().error('[KodiProvider]', '[KodiProvider] Failed to get music artists:', error)
       throw new Error('Failed to fetch music artists')
     }
   }
@@ -1275,7 +1276,7 @@ export class KodiProvider extends BaseMediaProvider {
 
       return result.albums || []
     } catch (error: unknown) {
-      console.error('[KodiProvider] Failed to get music albums:', error)
+      getLoggingService().error('[KodiProvider]', '[KodiProvider] Failed to get music albums:', error)
       throw new Error('Failed to fetch music albums')
     }
   }
@@ -1301,7 +1302,7 @@ export class KodiProvider extends BaseMediaProvider {
 
       return result.songs || []
     } catch (error: unknown) {
-      console.error('[KodiProvider] Failed to get music songs:', error)
+      getLoggingService().error('[KodiProvider]', '[KodiProvider] Failed to get music songs:', error)
       throw new Error('Failed to fetch music songs')
     }
   }
@@ -1528,14 +1529,14 @@ export class KodiProvider extends BaseMediaProvider {
       const artists = await this.getMusicArtists()
       const totalArtists = artists.length
 
-      console.log(`[KodiProvider ${this.sourceId}] Scanning music library: ${totalArtists} artists`)
+      getLoggingService().info('[KodiProvider ${this.sourceId}]', `Scanning music library: ${totalArtists} artists`)
 
       let processed = 0
 
       for (const kodiArtist of artists) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[KodiProvider ${this.sourceId}] Music scan cancelled at artist ${processed}/${totalArtists}`)
+          getLoggingService().info('[KodiProvider ${this.sourceId}]', `Music scan cancelled at artist ${processed}/${totalArtists}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -1579,12 +1580,12 @@ export class KodiProvider extends BaseMediaProvider {
       }
 
       // Phase 2: Get all albums directly to catch compilations and orphaned albums (50-100% progress)
-      console.log(`[KodiProvider ${this.sourceId}] Scanning for compilations and orphaned albums...`)
+      getLoggingService().info('[KodiProvider ${this.sourceId}]', `Scanning for compilations and orphaned albums...`)
 
       const allAlbums = await this.getMusicAlbums()
       const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(String(a.albumid)))
 
-      console.log(`[KodiProvider ${this.sourceId}] Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
+      getLoggingService().info('[KodiProvider ${this.sourceId}]', `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
 
       let compilationProcessed = 0
       const totalCompilations = unprocessedAlbums.length
@@ -1592,7 +1593,7 @@ export class KodiProvider extends BaseMediaProvider {
       for (const kodiAlbum of unprocessedAlbums) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[KodiProvider ${this.sourceId}] Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
+          getLoggingService().info('[KodiProvider ${this.sourceId}]', `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -1620,11 +1621,11 @@ export class KodiProvider extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[KodiProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
+      getLoggingService().info('[KodiProvider ${this.sourceId}]', `Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
 
       return result
     } catch (error: unknown) {
-      console.error(`[KodiProvider ${this.sourceId}] Music scan failed:`, error)
+      getLoggingService().error('[KodiProvider ${this.sourceId}]', `Music scan failed:`, error)
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
       return result
@@ -1636,6 +1637,6 @@ export class KodiProvider extends BaseMediaProvider {
    */
   cancelMusicScan(): void {
     this.musicScanCancelled = true
-    console.log(`[KodiProvider ${this.sourceId}] Music scan cancellation requested`)
+    getLoggingService().info('[KodiProvider ${this.sourceId}]', `Music scan cancellation requested`)
   }
 }

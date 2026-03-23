@@ -1,3 +1,4 @@
+import { getLoggingService } from '../services/LoggingService'
 /**
  * BetterSQLiteService
  *
@@ -136,7 +137,7 @@ export class BetterSQLiteService {
       this.db.pragma('busy_timeout = 5000') // Wait up to 5s for locked database
 
       if (dbExists) {
-        console.log('[BetterSQLite] Database loaded from:', path.basename(this.dbPath))
+        getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Database loaded from:', path.basename(this.dbPath))
 
         // Verify integrity in the background to avoid blocking startup
         // This is safe because we're in WAL mode and the check is read-only
@@ -144,26 +145,26 @@ export class BetterSQLiteService {
           try {
             const result = this.db!.pragma('integrity_check') as Array<{ integrity_check: string }>
             if (result[0]?.integrity_check !== 'ok') {
-              console.error('[BetterSQLite] Background integrity check failed:', result)
+              getLoggingService().error('[BetterSQLiteService]', '[BetterSQLite] Background integrity check failed:', result)
               // In a real app, we might want to notify the user or trigger a repair here
             } else {
-              console.log('[BetterSQLite] Background integrity check passed')
+              getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Background integrity check passed')
             }
           } catch (error) {
-            console.error('[BetterSQLite] Error during background integrity check:', error)
+            getLoggingService().error('[BetterSQLiteService]', '[BetterSQLite] Error during background integrity check:', error)
           }
         })
       } else {
-        console.log('[BetterSQLite] New database created')
+        getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] New database created')
       }
 
       // Run schema and migrations
       this.runMigrations()
 
       this._isInitialized = true
-      console.log('[BetterSQLite] Database initialized successfully')
+      getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Database initialized successfully')
     } catch (error) {
-      console.error('[BetterSQLite] Failed to initialize database:', error)
+      getLoggingService().error('[BetterSQLiteService]', '[BetterSQLite] Failed to initialize database:', error)
       throw error
     }
   }
@@ -289,7 +290,7 @@ export class BetterSQLiteService {
         // Ignore "duplicate column" errors
         const msg = getErrorMessage(error)
         if (!msg?.includes('duplicate column name')) {
-          console.log(`[BetterSQLite] Migration note: ${msg}`)
+          getLoggingService().info('[BetterSQLite]', `Migration note: ${msg}`)
         }
       }
     }
@@ -321,13 +322,13 @@ export class BetterSQLiteService {
         const integrityResult = this.db.pragma('integrity_check') as Array<{ integrity_check: string }>
         const isOk = integrityResult.length === 1 && integrityResult[0].integrity_check === 'ok'
         if (!isOk) {
-          console.error('[BetterSQLite] Integrity check failed after CHECK migration:', integrityResult)
+          getLoggingService().error('[BetterSQLiteService]', '[BetterSQLite] Integrity check failed after CHECK migration:', integrityResult)
         } else {
-          console.log('[BetterSQLite] Migration: Added kodi-mysql to source_type CHECK constraints')
+          getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Migration: Added kodi-mysql to source_type CHECK constraints')
         }
       }
     } catch (error: unknown) {
-      console.log('[BetterSQLite] kodi-mysql CHECK migration note:', getErrorMessage(error))
+      getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] kodi-mysql CHECK migration note:', getErrorMessage(error))
     }
 
     // Create indexes for performance
@@ -370,10 +371,10 @@ export class BetterSQLiteService {
               AND a.source_id = music_tracks.source_id
           )
         `)
-        console.log(`[BetterSQLite] Fixed ${mismatchCount} music tracks with incorrect album_id references`)
+        getLoggingService().info('[BetterSQLite]', `Fixed ${mismatchCount} music tracks with incorrect album_id references`)
       }
     } catch (error: unknown) {
-      console.log('[BetterSQLite] Music track album_id fix note:', getErrorMessage(error))
+      getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Music track album_id fix note:', getErrorMessage(error))
     }
 
     // Populate media_item_versions from existing media_items (one version per item)
@@ -395,13 +396,13 @@ export class BetterSQLiteService {
       })
       const total = cleanupOrphans()
       if (total > 0) {
-        console.log(`[BetterSQLite] Orphan cleanup: removed ${total} orphaned records`)
+        getLoggingService().info('[BetterSQLite]', `Orphan cleanup: removed ${total} orphaned records`)
       }
     } catch (err) {
-      console.warn('[BetterSQLite] Orphan cleanup skipped:', err)
+      getLoggingService().warn('[BetterSQLiteService]', '[BetterSQLite] Orphan cleanup skipped:', err)
     }
 
-    console.log('[BetterSQLite] Migrations completed')
+    getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Migrations completed')
   }
 
   /**
@@ -418,7 +419,7 @@ export class BetterSQLiteService {
       const itemCount = (this.db.prepare('SELECT COUNT(*) as count FROM media_items').get() as { count: number }).count
       if (itemCount === 0) return // No items to migrate
 
-      console.log(`[BetterSQLite] Migrating ${itemCount} existing items to versions table...`)
+      getLoggingService().info('[BetterSQLite]', `Migrating ${itemCount} existing items to versions table...`)
 
       this.db.exec(`
         INSERT INTO media_item_versions (
@@ -441,12 +442,12 @@ export class BetterSQLiteService {
         FROM media_items
       `)
 
-      console.log(`[BetterSQLite] Migrated ${itemCount} items to versions table`)
+      getLoggingService().info('[BetterSQLite]', `Migrated ${itemCount} items to versions table`)
     } catch (error: unknown) {
       const msg = getErrorMessage(error)
       // Table might not exist yet on first run - schema handles creation
       if (!msg?.includes('no such table')) {
-        console.error('[BetterSQLite] Version migration error:', msg)
+        getLoggingService().error('[BetterSQLiteService]', '[BetterSQLite] Version migration error:', msg)
       }
     }
   }
@@ -461,7 +462,7 @@ export class BetterSQLiteService {
       this.db.close()
       this.db = null
       this._isInitialized = false
-      console.log('[BetterSQLite] Database closed')
+      getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Database closed')
     }
   }
 
@@ -1093,7 +1094,7 @@ export class BetterSQLiteService {
   deleteMediaSource(sourceId: string): void {
     if (!this.db) throw new Error('Database not initialized')
 
-    console.log(`[BetterSQLite] Deleting source ${sourceId} and all associated data...`)
+    getLoggingService().info('[BetterSQLite]', `Deleting source ${sourceId} and all associated data...`)
 
     // Delete media item related data (versions, quality scores, collections)
     this.deleteMediaItemsForSource(sourceId)
@@ -1142,7 +1143,7 @@ export class BetterSQLiteService {
     // Delete the source itself
     this.db.prepare('DELETE FROM media_sources WHERE source_id = ?').run(sourceId)
 
-    console.log(`[BetterSQLite] Deleted source and all data: ${sourceId}`)
+    getLoggingService().info('[BetterSQLite]', `Deleted source and all data: ${sourceId}`)
   }
 
   /**
@@ -2264,10 +2265,10 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     if (!this.db) throw new Error('Database not initialized')
     if (sourceId) {
       this.db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
-      console.log(`[BetterSQLite] Cleared movie collections for source ${sourceId}`)
+      getLoggingService().info('[BetterSQLite]', `Cleared movie collections for source ${sourceId}`)
     } else {
       this.db.prepare('DELETE FROM movie_collections').run()
-      console.log('[BetterSQLite] Cleared all movie collections')
+      getLoggingService().info('[BetterSQLiteService]', '[BetterSQLite] Cleared all movie collections')
     }
   }
 
@@ -2282,7 +2283,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
 
     if (count > 0) {
       this.db.prepare('DELETE FROM movie_collections WHERE total_movies <= 1').run()
-      console.log(`[BetterSQLite] Deleted ${count} single-movie collections`)
+      getLoggingService().info('[BetterSQLite]', `Deleted ${count} single-movie collections`)
     }
 
     return count
@@ -3165,7 +3166,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
         try {
           this.db!.prepare(`DELETE FROM ${table}`).run()
         } catch {
-          console.log(`[BetterSQLite] Could not clear table ${table}`)
+          getLoggingService().info('[BetterSQLite]', `Could not clear table ${table}`)
         }
       }
     })
@@ -3795,7 +3796,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
           ].join(','))
         }
       } catch (e) {
-        console.log('Error parsing missing movies JSON:', e)
+        getLoggingService().info('[BetterSQLiteService]', 'Error parsing missing movies JSON:', e)
       }
     }
 
@@ -3847,7 +3848,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
           ].join(','))
         }
       } catch (e) {
-        console.log('Error parsing missing episodes JSON:', e)
+        getLoggingService().info('[BetterSQLiteService]', 'Error parsing missing episodes JSON:', e)
       }
     }
 

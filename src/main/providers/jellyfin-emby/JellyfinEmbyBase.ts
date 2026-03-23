@@ -51,6 +51,7 @@ import {
 } from '../base/MusicScannerUtils'
 import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
 import * as fs from 'fs'
+import { getLoggingService } from '../../services/LoggingService'
 
 // Helper type for Jellyfin/Emby error responses
 interface JellyfinErrorResponse {
@@ -246,12 +247,12 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
     if (this.accessToken) {
       headers[this.authHeaderName] = this.buildAuthHeader()
-      console.log(`[${this.providerType}] Using access token auth header: ${this.authHeaderName}`)
+      getLoggingService().info('[${this.providerType}]', `Using access token auth header: ${this.authHeaderName}`)
     } else if (this.apiKey) {
       headers['X-Emby-Token'] = this.apiKey
-      console.log(`[${this.providerType}] Using API key auth`)
+      getLoggingService().info('[${this.providerType}]', `Using API key auth`)
     } else {
-      console.warn(`[${this.providerType}] No authentication credentials available!`)
+      getLoggingService().warn('[${this.providerType}]', `No authentication credentials available!`)
     }
 
     return headers
@@ -317,7 +318,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         maxDelay: 15000,
         retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
-          console.warn(`[${this.providerType}] ${context || 'Request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
+          getLoggingService().warn('[${this.providerType}]', `${context || 'Request'} - Retry ${attempt}/3 after ${delay}ms: ${error.message}`)
         }
       }
     )
@@ -383,7 +384,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return { success: false, error: 'Invalid credentials' }
     } catch (error: unknown) {
-      console.error(`${this.providerType} authentication failed:`, error)
+      getLoggingService().error('[JellyfinEmbyBase]', `${this.providerType} authentication failed:`, error)
       return {
         success: false,
         error: (isAxiosError(error) ? (error.response?.data as JellyfinErrorResponse)?.message : undefined) || getErrorMessage(error) || 'Authentication failed',
@@ -445,7 +446,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         code: response.data.Code,
       }
     } catch (error: unknown) {
-      console.error('Failed to initiate Quick Connect:', error)
+      getLoggingService().error('[JellyfinEmbyBase]', 'Failed to initiate Quick Connect:', error)
       throw new Error((isAxiosError(error) ? (error.response?.data as JellyfinErrorResponse)?.message : undefined) || 'Failed to initiate Quick Connect')
     }
   }
@@ -516,7 +517,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return { success: false, error: 'No access token received' }
     } catch (error: unknown) {
-      console.error('Quick Connect authentication failed:', error)
+      getLoggingService().error('[JellyfinEmbyBase]', 'Quick Connect authentication failed:', error)
       return {
         success: false,
         error: (isAxiosError(error) ? (error.response?.data as JellyfinErrorResponse)?.message : undefined) || getErrorMessage(error) || 'Quick Connect failed',
@@ -593,19 +594,19 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       throw new Error('Not connected to server')
     }
 
-    console.log(`[${this.providerType}] getLibraries: hasServerUrl=${!!this.serverUrl}, hasUserId=${!!this.userId}, hasToken=${!!this.accessToken}, hasApiKey=${!!this.apiKey}`)
+    getLoggingService().info('[${this.providerType}]', `getLibraries: hasServerUrl=${!!this.serverUrl}, hasUserId=${!!this.userId}, hasToken=${!!this.accessToken}, hasApiKey=${!!this.apiKey}`)
 
     try {
       // First try to get user views (works for all users)
       if (this.userId) {
         try {
-          console.log(`[${this.providerType}] Fetching user views for userId: ${this.userId}`)
+          getLoggingService().info('[${this.providerType}]', `Fetching user views for userId: ${this.userId}`)
           const response = await this.api.get<{ Items: JellyfinLibrary[] }>(
             `${this.serverUrl}/Users/${this.userId}/Views`,
             { headers: this.getAuthHeaders() }
           )
 
-          console.log(`[${this.providerType}] Got ${response.data.Items?.length || 0} views`)
+          getLoggingService().info('[${this.providerType}]', `Got ${response.data.Items?.length || 0} views`)
 
           // Filter for supported library types (video + music)
           const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed', 'boxsets', 'music']
@@ -624,27 +625,27 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
             }))
 
           if (libraries.length > 0) {
-            console.log(`[${this.providerType}] Returning ${libraries.length} libraries from user views`)
+            getLoggingService().info('[${this.providerType}]', `Returning ${libraries.length} libraries from user views`)
             return libraries
           }
 
-          console.log(`[${this.providerType}] No video libraries found in views, trying VirtualFolders`)
+          getLoggingService().info('[${this.providerType}]', `No video libraries found in views, trying VirtualFolders`)
         } catch (viewsError: unknown) {
           const status = isAxiosError(viewsError) ? viewsError.response?.status : undefined
           const data = isAxiosError(viewsError) ? viewsError.response?.data : undefined
-          console.warn(`[${this.providerType}] Failed to get user views:`, status, data || getErrorMessage(viewsError))
+          getLoggingService().warn('[${this.providerType}]', `Failed to get user views:`, status, data || getErrorMessage(viewsError))
         }
       }
 
       // Fallback to VirtualFolders (requires admin or API key)
-      console.log(`[${this.providerType}] Fetching VirtualFolders`)
+      getLoggingService().info('[${this.providerType}]', `Fetching VirtualFolders`)
       const response = await this.api.get<JellyfinLibrary[]>(
         `${this.serverUrl}/Library/VirtualFolders`,
         { headers: this.getAuthHeaders() }
       )
 
       const folders = Array.isArray(response.data) ? response.data : (response.data as { Items?: JellyfinLibrary[] }).Items || []
-      console.log(`[${this.providerType}] Got ${folders.length} virtual folders`)
+      getLoggingService().info('[${this.providerType}]', `Got ${folders.length} virtual folders`)
 
       const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'music', 'boxsets']
       return folders
@@ -657,7 +658,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           itemCount: lib.ItemCount,
         }))
     } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get libraries:`, (isAxiosError(error) ? error.response?.status : undefined), (isAxiosError(error) ? error.response?.data : undefined) || getErrorMessage(error))
+      getLoggingService().error('[${this.providerType}]', `Failed to get libraries:`, (isAxiosError(error) ? error.response?.status : undefined), (isAxiosError(error) ? error.response?.data : undefined) || getErrorMessage(error))
 
       // Provide more helpful error messages
       const status = (isAxiosError(error) ? error.response?.status : undefined)
@@ -716,7 +717,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return response.data.Items.map(item => this.convertToMediaMetadata(item))
     } catch (error: unknown) {
-      console.error('Failed to get library items:', error)
+      getLoggingService().error('[JellyfinEmbyBase]', 'Failed to get library items:', error)
       throw new Error('Failed to fetch library items')
     }
   }
@@ -739,7 +740,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return this.convertToMediaMetadata(response.data)
     } catch (error: unknown) {
-      console.error('Failed to get item metadata:', error)
+      getLoggingService().error('[JellyfinEmbyBase]', 'Failed to get item metadata:', error)
       throw error
     }
   }
@@ -776,14 +777,14 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       // Log incremental scan info
       if (isIncremental) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Incremental scan: fetching items modified after ${sinceTimestamp!.toISOString()}`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Incremental scan: fetching items modified after ${sinceTimestamp!.toISOString()}`)
       }
 
       const fieldsParam = 'Path,MediaSources,ProviderIds,DateCreated,PremiereDate,ParentId,SeriesId,SeasonId,ImageTags,SeriesPrimaryImageTag,ParentPrimaryImageItemId,ParentPrimaryImageTag,ParentThumbItemId,ParentThumbImageTag,ParentBackdropItemId,ParentBackdropImageTags,SortName,Overview'
 
       if (isBoxsets) {
         // Two-phase scan for BoxSets/Collections libraries
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning BoxSets/Collections library...`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Scanning BoxSets/Collections library...`)
 
         // Phase 1: Fetch all BoxSet containers from the library
         const boxsets: JellyfinMediaItem[] = []
@@ -814,7 +815,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }
         }
 
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${boxsets.length} BoxSets in collections library`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Found ${boxsets.length} BoxSets in collections library`)
 
         // Phase 2: For each BoxSet, fetch its child movies
         for (const boxset of boxsets) {
@@ -873,7 +874,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
                   collectionBackdropUrl = result.backdropUrl
                 }
               } catch (error) {
-                console.warn(`[${this.providerType}Provider] Failed TMDB lookup for BoxSet "${boxset.Name}":`, error)
+                getLoggingService().warn('[${this.providerType}Provider]', `Failed TMDB lookup for BoxSet "${boxset.Name}":`, error)
               }
             }
 
@@ -898,7 +899,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }
         }
 
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${allItems.length} movies across ${boxsets.length} BoxSets, created ${boxsets.length} collection(s)`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Found ${allItems.length} movies across ${boxsets.length} BoxSets, created ${boxsets.length} collection(s)`)
       } else {
         // Standard fetch with pagination for normal libraries
         let offset = 0
@@ -942,9 +943,9 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       const totalItems = allItems.length
       if (isIncremental) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Incremental scan found ${totalItems} new/updated items`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Incremental scan found ${totalItems} new/updated items`)
       } else {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Processing ${totalItems} items...`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Processing ${totalItems} items...`)
       }
 
       // For TV episodes, batch-fetch series metadata to get series TMDB IDs and image tags
@@ -962,7 +963,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }
         }
 
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Fetching metadata for ${uniqueSeriesIds.size} series...`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Fetching metadata for ${uniqueSeriesIds.size} series...`)
 
         // Batch fetch series metadata including image tags
         const seriesIds = Array.from(uniqueSeriesIds)
@@ -988,11 +989,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               })
             }
           } catch (error) {
-            console.warn(`[${this.providerType}Provider] Failed to fetch series batch:`, error)
+            getLoggingService().warn('[${this.providerType}Provider]', `Failed to fetch series batch:`, error)
           }
         }
 
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Fetched ${seriesMetadataMap.size} series metadata`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Fetched ${seriesMetadataMap.size} series metadata`)
 
         // Attach series provider IDs and image tags to episodes
         for (const item of allItems) {
@@ -1025,7 +1026,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       const groups = this.groupMovieVersions(allItems, libraryType)
       const multiVersionGroups = groups.filter(g => g.length > 1).length
       if (multiVersionGroups > 0) {
-        console.log(`[${this.providerType}Provider ${this.sourceId}] Grouped ${totalItems} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
+        getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Grouped ${totalItems} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
       }
 
       try {
@@ -1040,7 +1041,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
             for (const item of group) {
               if (!item.MediaSources || item.MediaSources.length === 0) {
-                console.warn(`[${this.providerType}Provider ${this.sourceId}] Skipping ${item.Name}: no media sources`)
+                getLoggingService().warn('[${this.providerType}Provider ${this.sourceId}]', `Skipping ${item.Name}: no media sources`)
                 continue
               }
 
@@ -1156,13 +1157,13 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
+      getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Scan complete: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
 
       return result
     } catch (error: unknown) {
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
-      console.error(`[${this.providerType}Provider ${this.sourceId}] Scan failed after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
+      getLoggingService().error('[${this.providerType}Provider ${this.sourceId}]', `Scan failed after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
       return result
     }
   }
@@ -1648,12 +1649,12 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       }
 
       if (bitrateMap.size > 0) {
-        console.log(`[${this.providerType}] Got audio bitrates via FFprobe for: ${path.basename(filePath)}`)
+        getLoggingService().info('[${this.providerType}]', `Got audio bitrates via FFprobe for: ${path.basename(filePath)}`)
       }
 
       return bitrateMap.size > 0 ? bitrateMap : null
     } catch (error) {
-      console.warn(`[${this.providerType}] FFprobe analysis failed for ${path.basename(filePath)}:`, error)
+      getLoggingService().warn('[${this.providerType}]', `FFprobe analysis failed for ${path.basename(filePath)}:`, error)
       return null
     }
   }
@@ -1702,10 +1703,10 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         hasMore = startIndex < total && items.length === batchSize
       }
 
-      console.log(`[${this.providerType}] getMusicArtists: Found ${allArtists.length} album artists`)
+      getLoggingService().info('[${this.providerType}]', `getMusicArtists: Found ${allArtists.length} album artists`)
       return allArtists
     } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music artists:`, error)
+      getLoggingService().error('[${this.providerType}]', `Failed to get music artists:`, error)
       throw new Error('Failed to fetch music artists')
     }
   }
@@ -1761,7 +1762,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return allAlbums
     } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music albums:`, error)
+      getLoggingService().error('[${this.providerType}]', `Failed to get music albums:`, error)
       throw new Error('Failed to fetch music albums')
     }
   }
@@ -1789,7 +1790,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
 
       return response.data.Items || []
     } catch (error: unknown) {
-      console.error(`[${this.providerType}] Failed to get music tracks:`, error)
+      getLoggingService().error('[${this.providerType}]', `Failed to get music tracks:`, error)
       throw new Error('Failed to fetch music tracks')
     }
   }
@@ -1872,7 +1873,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     const audioStream = mediaSource?.MediaStreams?.find(s => s.Type === 'Audio')
 
     if (!mediaSource) {
-      console.warn(`[${this.providerType}] Skipping track "${item.Name}" - no MediaSource data`)
+      getLoggingService().warn('[${this.providerType}]', `Skipping track "${item.Name}" - no MediaSource data`)
       return null
     }
 
@@ -2008,14 +2009,14 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       const artists = await this.getMusicArtists(libraryId)
       const totalArtists = artists.length
 
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning music library: ${totalArtists} artists`)
+      getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Scanning music library: ${totalArtists} artists`)
 
       let processed = 0
 
       for (const jellyfinArtist of artists) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan cancelled at artist ${processed}/${totalArtists}`)
+          getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Music scan cancelled at artist ${processed}/${totalArtists}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -2059,12 +2060,12 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       }
 
       // Phase 2: Get all albums directly to catch compilations and orphaned albums (50-100% progress)
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Scanning for compilations and orphaned albums...`)
+      getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Scanning for compilations and orphaned albums...`)
 
       const allAlbums = await this.getMusicAlbums(libraryId)
       const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(a.Id))
 
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
+      getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
 
       let compilationProcessed = 0
       const totalCompilations = unprocessedAlbums.length
@@ -2072,7 +2073,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       for (const jellyfinAlbum of unprocessedAlbums) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
+          getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -2100,11 +2101,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
+      getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Music scan complete: ${result.itemsScanned} tracks scanned in ${result.durationMs}ms`)
 
       return result
     } catch (error: unknown) {
-      console.error(`[${this.providerType}Provider ${this.sourceId}] Music scan failed:`, error)
+      getLoggingService().error('[${this.providerType}Provider ${this.sourceId}]', `Music scan failed:`, error)
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
       return result
@@ -2116,6 +2117,6 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
    */
   cancelMusicScan(): void {
     this.musicScanCancelled = true
-    console.log(`[${this.providerType}Provider ${this.sourceId}] Music scan cancellation requested`)
+    getLoggingService().info('[${this.providerType}Provider ${this.sourceId}]', `Music scan cancellation requested`)
   }
 }

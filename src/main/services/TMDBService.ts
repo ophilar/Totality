@@ -48,7 +48,7 @@ export class TMDBService {
     this.apiKey = setting || null
 
     if (!this.apiKey || this.apiKey === '') {
-      console.warn('TMDB API key not configured. Collection detection will be unavailable.')
+      getLoggingService().warn('[TMDBService]', 'TMDB API key not configured. Collection detection will be unavailable.')
     }
   }
 
@@ -208,7 +208,7 @@ export class TMDBService {
     // Make request with retry logic and timeout
     const data = await retryWithBackoff<T>(
       async () => {
-        console.log('[TMDB] Requesting:', urlForLogging)
+        getLoggingService().info('[TMDBService]', '[TMDB] Requesting:', urlForLogging)
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
 
@@ -229,7 +229,7 @@ export class TMDBService {
         const rateLimitDelay = getRateLimitRetryAfter(response)
         if (rateLimitDelay !== null) {
           getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
-          console.warn(`[TMDB] Rate limited, retry after ${rateLimitDelay}ms`)
+          getLoggingService().warn('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
           // Pass server's delay to retry backoff as minimum floor
           retryState.minRetryDelay = rateLimitDelay
           const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
@@ -239,14 +239,14 @@ export class TMDBService {
 
         if (!response.ok) {
           const errorBody = await response.json().catch(() => ({}))
-          console.error('[TMDB] Error response:', errorBody)
+          getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
           const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
           error.status = response.status
           throw error
         }
 
         const result = await response.json()
-        console.log('[TMDB] Response for', endpoint, '- total_results:', (result as { total_results?: number }).total_results)
+        getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- total_results:', (result as { total_results?: number }).total_results)
         return result as T
       },
       {
@@ -255,7 +255,7 @@ export class TMDBService {
         maxDelay: 10000,
         get minRetryDelay() { return retryState.minRetryDelay },
         onRetry: (attempt, error, delay) => {
-          console.warn(`[TMDB] Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
+          getLoggingService().warn('[TMDB]', `Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
         }
       }
     )
@@ -390,7 +390,7 @@ export class TMDBService {
           return Math.abs(resultYear - targetYear) <= 1
         })
         if (fuzzyMatch) {
-          console.log(`[TMDB] Fuzzy year match: "${fuzzyMatch.title}" (${fuzzyMatch.release_date?.split('-')[0]}) for target year ${targetYear}`)
+          getLoggingService().info('[TMDB]', `Fuzzy year match: "${fuzzyMatch.title}" (${fuzzyMatch.release_date?.split('-')[0]}) for target year ${targetYear}`)
           return {
             tmdbId: fuzzyMatch.id,
             title: fuzzyMatch.title,
@@ -474,7 +474,7 @@ export class TMDBService {
       const best = results[bestIndex]
       if (!best) return null
 
-      console.log(`[TMDB] AI disambiguation picked "${best.title}" for "${filename}"`)
+      getLoggingService().info('[TMDB]', `AI disambiguation picked "${best.title}" for "${filename}"`)
       return {
         tmdbId: best.id,
         title: best.title,
@@ -689,7 +689,7 @@ export function getTMDBService(): TMDBService {
   if (!tmdbService) {
     tmdbService = new TMDBService()
     tmdbService.initialize().catch(err => {
-      console.error('Failed to initialize TMDB service:', err)
+      getLoggingService().error('[TMDBService]', 'Failed to initialize TMDB service:', err)
     })
   }
   return tmdbService

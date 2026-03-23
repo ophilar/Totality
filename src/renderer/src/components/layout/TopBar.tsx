@@ -115,7 +115,7 @@ export function TopBar({
       const results = await window.electronAPI.mediaSearch(query)
       setSearchResults(results)
     } catch (error) {
-      console.error('Search failed:', error)
+      window.electronAPI.log.error('[TopBar]', 'Search failed:', error)
       setSearchResults(null)
     } finally {
       setIsSearching(false)

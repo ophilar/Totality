@@ -178,7 +178,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     // Load initial state
     window.electronAPI.taskQueueGetState?.().then((state: unknown) => {
       setTaskQueueState(state as TaskQueueState)
-    }).catch(console.error)
+    }).catch(err => window.electronAPI.log.error('[Sidebar]', err))
 
     // Subscribe to updates
     const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
@@ -208,7 +208,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         const enabledLibs = libsWithStatus.filter((lib) => lib.isEnabled)
         setSourceLibraries(prev => new Map(prev).set(sourceId, enabledLibs))
       } catch (err) {
-        console.error('Failed to load libraries:', err)
+        window.electronAPI.log.error('[Sidebar]', 'Failed to load libraries:', err)
       } finally {
         setLoadingLibraries(prev => {
           const next = new Set(prev)
@@ -252,7 +252,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       // Refresh library types in context so TopBar/Dashboard update
       await refreshLibraryTypes()
     } catch (err) {
-      console.error('Failed to toggle library:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to toggle library:', err)
     }
   }
 
@@ -301,7 +301,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         })
       }
     } catch (err) {
-      console.error('Failed to queue full rescan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to queue full rescan:', err)
     }
   }
 
@@ -323,7 +323,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         libraryId,
       })
     } catch (err) {
-      console.error('Failed to queue library scan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to queue library scan:', err)
     }
   }
 
@@ -338,7 +338,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         await stopScan()
       }
     } catch (err) {
-      console.error('Failed to stop scan:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to stop scan:', err)
     }
   }
 
@@ -352,7 +352,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       await window.electronAPI.sourcesUpdate(sourceId, { displayName: newName })
       await refreshSources()
     } catch (err) {
-      console.error('Failed to rename source:', err)
+      window.electronAPI.log.error('[Sidebar]', 'Failed to rename source:', err)
     } finally {
       setRenamingSourceId(null)
     }

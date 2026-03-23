@@ -180,7 +180,7 @@ export function LibrarySettingsTab() {
           artist_album: artistAlbum as ExclusionRecord[],
         })
       } catch (error) {
-        console.error('Failed to load library settings:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to load library settings:', error)
       } finally {
         setIsLoading(false)
       }
@@ -203,7 +203,7 @@ export function LibrarySettingsTab() {
         artist_album: artistAlbum as ExclusionRecord[],
       })
     } catch (error) {
-      console.error('Failed to reload exclusions:', error)
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to reload exclusions:', error)
     }
   }, [])
 
@@ -227,7 +227,7 @@ export function LibrarySettingsTab() {
         // Notify library views to reload completeness data
         window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
-        console.error('Failed to remove exclusion:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to remove exclusion:', error)
         await reloadExclusions()
       }
     },
@@ -244,7 +244,7 @@ export function LibrarySettingsTab() {
         // Notify library views to reload completeness data
         window.dispatchEvent(new CustomEvent('exclusions-changed', { detail: { type } }))
       } catch (error) {
-        console.error('Failed to clear exclusions:', error)
+        window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to clear exclusions:', error)
         await reloadExclusions()
       }
     },

@@ -1,3 +1,4 @@
+import { getLoggingService } from '../services/LoggingService'
 /**
  * IPC Handlers for Jellyfin and Emby operations
  *
@@ -29,10 +30,10 @@ export function registerJellyfinHandlers(): void {
   const registerDiscovery = (type: 'jellyfin' | 'emby') => {
     ipcMain.handle(`${type}:discoverServers`, async () => {
       try {
-        console.log(`[IPC] Starting ${type} server discovery...`)
+        getLoggingService().info('[IPC]', `Starting ${type} server discovery...`)
         return await discovery.discoverServers(type)
       } catch (error: unknown) {
-        console.error(`Error discovering ${type} servers:`, error)
+        getLoggingService().error('[jellyfin]', `Error discovering ${type} servers:`, error)
         throw error
       }
     })
@@ -42,7 +43,7 @@ export function registerJellyfinHandlers(): void {
         const validatedUrl = validateInput(SafeUrlSchema, url, `${type}:testServerUrl`)
         return await discovery.testServerUrl(validatedUrl)
       } catch (error: unknown) {
-        console.error(`Error testing ${type} server URL:`, error)
+        getLoggingService().error('[jellyfin]', `Error testing ${type} server URL:`, error)
         throw error
       }
     })
@@ -102,7 +103,7 @@ export function registerJellyfinHandlers(): void {
           serverName: testResult.serverName,
         }
       } catch (error: unknown) {
-        console.error(`Error authenticating with ${type} API key:`, error)
+        getLoggingService().error('[jellyfin]', `Error authenticating with ${type} API key:`, error)
         return {
           success: false,
           error: getErrorMessage(error) || 'Authentication failed',
@@ -128,7 +129,7 @@ export function registerJellyfinHandlers(): void {
       })
       return await tempProvider.isQuickConnectEnabled()
     } catch (error: unknown) {
-      console.error('Error checking Quick Connect:', error)
+      getLoggingService().error('[jellyfin]', 'Error checking Quick Connect:', error)
       return false
     }
   })
@@ -143,7 +144,7 @@ export function registerJellyfinHandlers(): void {
       })
       return await tempProvider.initiateQuickConnect()
     } catch (error: unknown) {
-      console.error('Error initiating Quick Connect:', error)
+      getLoggingService().error('[jellyfin]', 'Error initiating Quick Connect:', error)
       throw error
     }
   })
@@ -158,7 +159,7 @@ export function registerJellyfinHandlers(): void {
       })
       return await tempProvider.checkQuickConnectStatus(secret)
     } catch (error: unknown) {
-      console.error('Error checking Quick Connect status:', error)
+      getLoggingService().error('[jellyfin]', 'Error checking Quick Connect status:', error)
       return { authenticated: false, error: getErrorMessage(error) }
     }
   })
@@ -198,7 +199,7 @@ export function registerJellyfinHandlers(): void {
         userName: authResult.userName,
       }
     } catch (error: unknown) {
-      console.error('Error completing Quick Connect:', error)
+      getLoggingService().error('[jellyfin]', 'Error completing Quick Connect:', error)
       throw error
     }
   })
@@ -253,7 +254,7 @@ export function registerJellyfinHandlers(): void {
         userName: authResult.userName,
       }
     } catch (error: unknown) {
-      console.error('Error authenticating with credentials:', error)
+      getLoggingService().error('[jellyfin]', 'Error authenticating with credentials:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Authentication failed',
@@ -261,5 +262,5 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  console.log('[IPC] Unified Jellyfin/Emby handlers registered')
+  getLoggingService().info('[jellyfin]', '[IPC] Unified Jellyfin/Emby handlers registered')
 }

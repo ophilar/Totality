@@ -243,7 +243,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       const providers = await window.electronAPI.sourcesGetSupportedProviders()
       setSupportedProviders(providers as ProviderType[])
     } catch (err) {
-      console.error('Failed to load supported providers:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to load supported providers:', err)
     }
   }
 
@@ -253,7 +253,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       const sourceStats = await window.electronAPI.sourcesGetStats()
       setStats(sourceStats)
     } catch (err) {
-      console.error('Failed to load stats:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to load stats:', err)
     }
   }
 
@@ -332,7 +332,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       }
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load sources')
-      console.error('Failed to refresh sources:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Failed to refresh sources:', err)
     } finally {
       setIsLoading(false)
     }
@@ -460,7 +460,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
       setIsScanning(false)
       setScanProgress(new Map())
     } catch (err) {
-      console.error('Error stopping scan:', err)
+      window.electronAPI.log.error('[SourceContext]', 'Error stopping scan:', err)
     }
   }, [])
 

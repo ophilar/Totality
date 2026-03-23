@@ -210,7 +210,7 @@ export function OnboardingWizard({ onComplete, onAddSource }: OnboardingWizardPr
   const handleVideoEnd = () => setVideoEnded(true)
 
   const handleVideoError = () => {
-    console.warn('Video failed to load, showing static image')
+    window.electronAPI.log.warn('[OnboardingWizard]', 'Video failed to load, showing static image')
     setVideoEnded(true)
   }
 

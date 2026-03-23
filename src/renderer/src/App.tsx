@@ -70,7 +70,7 @@ function AppContent() {
     window.electronAPI.getSetting('onboarding_completed')
       .then(value => setOnboardingComplete(value === 'true'))
       .catch(err => {
-        console.error('Failed to load onboarding state:', err)
+        window.electronAPI.log.error('[App]', 'Failed to load onboarding state:', err)
         setOnboardingComplete(false)
       })
   }, [])
@@ -96,7 +96,7 @@ function AppContent() {
       setSeriesStats(sStats as SeriesStats)
       setCollectionStats(cStats as CollectionStats)
     } catch (err) {
-      console.warn('Failed to load completeness stats:', err)
+      window.electronAPI.log.warn('[App]', 'Failed to load completeness stats:', err)
     }
   }, [])
 
@@ -155,7 +155,7 @@ function AppContent() {
         averageCompleteness: avgCompleteness
       })
     } catch (err) {
-      console.warn('Failed to load music completeness stats:', err)
+      window.electronAPI.log.warn('[App]', 'Failed to load music completeness stats:', err)
     }
   }, [])
 
@@ -224,7 +224,7 @@ function AppContent() {
         sourceId: activeSourceId || undefined,
       })
     } catch (err) {
-      console.error('Failed to queue series analysis:', err)
+      window.electronAPI.log.error('[App]', 'Failed to queue series analysis:', err)
     }
   }
 
@@ -239,7 +239,7 @@ function AppContent() {
         sourceId: activeSourceId || undefined,
       })
     } catch (err) {
-      console.error('Failed to queue collections analysis:', err)
+      window.electronAPI.log.error('[App]', 'Failed to queue collections analysis:', err)
     }
   }
 
@@ -254,7 +254,7 @@ function AppContent() {
         sourceId: activeSourceId || undefined,
       })
     } catch (err) {
-      console.error('Failed to queue music analysis:', err)
+      window.electronAPI.log.error('[App]', 'Failed to queue music analysis:', err)
     }
   }
 
@@ -262,7 +262,7 @@ function AppContent() {
     try {
       await window.electronAPI.taskQueueCancelCurrent()
     } catch (err) {
-      console.error('Failed to cancel analysis:', err)
+      window.electronAPI.log.error('[App]', 'Failed to cancel analysis:', err)
     }
   }
 
@@ -277,7 +277,7 @@ function AppContent() {
       markSplashShown()
       setOnboardingComplete(true)
     } catch (error) {
-      console.error('Failed to save onboarding state:', error)
+      window.electronAPI.log.error('[App]', 'Failed to save onboarding state:', error)
     }
   }
 

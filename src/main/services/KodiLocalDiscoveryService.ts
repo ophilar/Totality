@@ -14,6 +14,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { getLoggingService } from '../services/LoggingService'
 
 const execAsync = promisify(exec)
 
@@ -164,11 +165,11 @@ export class KodiLocalDiscoveryService {
       const userdataPath = this.getDefaultKodiPath()
       const databaseDir = path.join(userdataPath, 'Database')
 
-      console.log('[KodiLocalDiscovery] Checking for Kodi database directory')
+      getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Checking for Kodi database directory')
 
       // Check if Database directory exists
       if (!fs.existsSync(databaseDir)) {
-        console.log('[KodiLocalDiscovery] Database directory not found')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Database directory not found')
         return null
       }
 
@@ -180,21 +181,21 @@ export class KodiLocalDiscoveryService {
 
       // Need at least one database to continue
       if (!videoDbInfo && !musicDbInfo) {
-        console.log('[KodiLocalDiscovery] No Kodi database files found')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] No Kodi database files found')
         return null
       }
 
       if (videoDbInfo) {
-        console.log(`[KodiLocalDiscovery] Found video database: ${path.basename(videoDbInfo.path)} (version ${videoDbInfo.version})`)
+        getLoggingService().info('[KodiLocalDiscovery]', `Found video database: ${path.basename(videoDbInfo.path)} (version ${videoDbInfo.version})`)
       }
       if (musicDbInfo) {
-        console.log(`[KodiLocalDiscovery] Found music database: ${path.basename(musicDbInfo.path)} (version ${musicDbInfo.version})`)
+        getLoggingService().info('[KodiLocalDiscovery]', `Found music database: ${path.basename(musicDbInfo.path)} (version ${musicDbInfo.version})`)
       }
 
       // Check if Kodi is running
       const kodiRunning = await this.isKodiRunning()
       if (kodiRunning) {
-        console.log('[KodiLocalDiscovery] Warning: Kodi is currently running')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Warning: Kodi is currently running')
       }
 
       // Check if at least one database is readable
@@ -202,7 +203,7 @@ export class KodiLocalDiscoveryService {
       const musicReadable = musicDbInfo ? this.isDatabaseReadable(musicDbInfo.path) : false
 
       if (!videoReadable && !musicReadable) {
-        console.log('[KodiLocalDiscovery] No database files are readable (may be locked)')
+        getLoggingService().info('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] No database files are readable (may be locked)')
         // Still return the installation info, but with running flag
         return {
           path: userdataPath,
@@ -223,7 +224,7 @@ export class KodiLocalDiscoveryService {
         kodiRunning,
       }
     } catch (error: unknown) {
-      console.error('[KodiLocalDiscovery] Error detecting installation:', getErrorMessage(error))
+      getLoggingService().error('[KodiLocalDiscoveryService]', '[KodiLocalDiscovery] Error detecting installation:', getErrorMessage(error))
       return null
     }
   }

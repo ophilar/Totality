@@ -6,6 +6,7 @@ import { getTMDBService } from '../services/TMDBService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
 import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '../validation/schemas'
+import { getLoggingService } from '../services/LoggingService'
 
 /**
  * Register all series completeness IPC handlers
@@ -34,7 +35,7 @@ export function registerSeriesHandlers() {
 
       return result
     } catch (error) {
-      console.error('Error analyzing series completeness:', error)
+      getLoggingService().error('[series]', 'Error analyzing series completeness:', error)
       throw error
     } finally {
       flush()
@@ -50,7 +51,7 @@ export function registerSeriesHandlers() {
       service.cancel()
       return { success: true }
     } catch (error) {
-      console.error('Error cancelling series analysis:', error)
+      getLoggingService().error('[series]', 'Error cancelling series analysis:', error)
       throw error
     }
   })
@@ -64,7 +65,7 @@ export function registerSeriesHandlers() {
       const service = getSeriesCompletenessService()
       return await service.analyzeSeries(validSeriesTitle)
     } catch (error) {
-      console.error(`Error analyzing series "${validSeriesTitle}":`, error)
+      getLoggingService().error('[series]', `Error analyzing series "${validSeriesTitle}":`, error)
       throw error
     }
   })
@@ -82,7 +83,7 @@ export function registerSeriesHandlers() {
       const db = getDatabase()
       return db.getSeriesCompleteness(validSourceId)
     } catch (error) {
-      console.error('Error getting series completeness:', error)
+      getLoggingService().error('[series]', 'Error getting series completeness:', error)
       throw error
     }
   })
@@ -97,7 +98,7 @@ export function registerSeriesHandlers() {
       const db = getDatabase()
       return db.getIncompleteSeries(validSourceId)
     } catch (error) {
-      console.error('Error getting incomplete series:', error)
+      getLoggingService().error('[series]', 'Error getting incomplete series:', error)
       throw error
     }
   })
@@ -110,7 +111,7 @@ export function registerSeriesHandlers() {
       const db = getDatabase()
       return db.getSeriesCompletenessStats()
     } catch (error) {
-      console.error('Error getting series stats:', error)
+      getLoggingService().error('[series]', 'Error getting series stats:', error)
       throw error
     }
   })
@@ -125,7 +126,7 @@ export function registerSeriesHandlers() {
       const db = getDatabase()
       return db.getEpisodesForSeries(validSeriesTitle, validSourceId)
     } catch (error) {
-      console.error(`Error getting episodes for "${validSeriesTitle}":`, error)
+      getLoggingService().error('[series]', `Error getting episodes for "${validSeriesTitle}":`, error)
       throw error
     }
   })
@@ -139,7 +140,7 @@ export function registerSeriesHandlers() {
       const db = getDatabase()
       return await db.deleteSeriesCompleteness(validId)
     } catch (error) {
-      console.error(`Error deleting series completeness ${validId}:`, error)
+      getLoggingService().error('[series]', `Error deleting series completeness ${validId}:`, error)
       throw error
     }
   })
@@ -160,7 +161,7 @@ export function registerSeriesHandlers() {
         overview: details.overview || null,
       }
     } catch (error) {
-      console.error(`Error fetching TV show details for ${validTmdbId}:`, error)
+      getLoggingService().error('[series]', `Error fetching TV show details for ${validTmdbId}:`, error)
       return null
     }
   })
@@ -179,7 +180,7 @@ export function registerSeriesHandlers() {
         runtime: details.runtime || null,
       }
     } catch (error) {
-      console.error(`Error fetching movie details for ${validTmdbId}:`, error)
+      getLoggingService().error('[series]', `Error fetching movie details for ${validTmdbId}:`, error)
       return null
     }
   })
@@ -200,7 +201,7 @@ export function registerSeriesHandlers() {
         name: seasonDetails.name || null,
       }
     } catch (error) {
-      console.error(`Error fetching season details for ${validTmdbId} S${validSeasonNumber}:`, error)
+      getLoggingService().error('[series]', `Error fetching season details for ${validTmdbId} S${validSeasonNumber}:`, error)
       return null
     }
   })
@@ -216,7 +217,7 @@ export function registerSeriesHandlers() {
       const seasonDetails = await tmdb.getSeasonDetails(validTmdbId, validSeasonNumber)
       return tmdb.buildImageUrl(seasonDetails.poster_path, 'w500')
     } catch (error) {
-      console.error(`Error fetching season poster for ${validTmdbId} S${validSeasonNumber}:`, error)
+      getLoggingService().error('[series]', `Error fetching season poster for ${validTmdbId} S${validSeasonNumber}:`, error)
       return null
     }
   })
@@ -237,7 +238,7 @@ export function registerSeriesHandlers() {
       }
       return null
     } catch (error) {
-      console.error(`Error fetching episode still for ${validTmdbId} S${validSeasonNumber}E${validEpisodeNumber}:`, error)
+      getLoggingService().error('[series]', `Error fetching episode still for ${validTmdbId} S${validSeasonNumber}E${validEpisodeNumber}:`, error)
       return null
     }
   })
@@ -266,7 +267,7 @@ export function registerSeriesHandlers() {
         vote_average: show.vote_average,
       }))
     } catch (error) {
-      console.error('Error searching TMDB for TV shows:', error)
+      getLoggingService().error('[series]', 'Error searching TMDB for TV shows:', error)
       throw error
     }
   })
@@ -309,10 +310,10 @@ export function registerSeriesHandlers() {
         newTitle: newSeriesTitle,
       }
     } catch (error) {
-      console.error('Error fixing series match:', error)
+      getLoggingService().error('[series]', 'Error fixing series match:', error)
       throw error
     }
   })
 
-  console.log('Series completeness IPC handlers registered')
+  getLoggingService().info('[series]', 'Series completeness IPC handlers registered')
 }

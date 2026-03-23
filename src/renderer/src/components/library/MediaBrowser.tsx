@@ -334,7 +334,7 @@ export function MediaBrowser({
         const enabledLibs = libsWithStatus.filter(lib => lib.isEnabled)
         setActiveSourceLibraries(enabledLibs)
       } catch (err) {
-        console.error('Failed to load active source libraries:', err)
+        window.electronAPI.log.error('[MediaBrowser]', 'Failed to load active source libraries:', err)
         // Don't reset to empty on error - keep previous libraries visible
         // This prevents buttons from disappearing when a connection check fails
       } finally {
@@ -392,7 +392,7 @@ export function MediaBrowser({
       const libraryStats = await window.electronAPI.getLibraryStats(sourceId || undefined)
       setStats(libraryStats)
     } catch (err) {
-      console.warn('Failed to load library stats:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load library stats:', err)
     }
   }
 
@@ -481,7 +481,7 @@ export function MediaBrowser({
           : 0,
       })
     } catch (err) {
-      console.warn('Failed to load completeness data:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load completeness data:', err)
     }
   }
 
@@ -501,7 +501,7 @@ export function MediaBrowser({
       const mStats = await window.electronAPI.musicGetStats(activeSourceId || undefined)
       setMusicStats(mStats as MusicStats)
     } catch (err) {
-      console.warn('Failed to load music stats:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load music stats:', err)
     }
     // Also reload paginated artists when music data refreshes
     loadPaginatedArtists(true)
@@ -538,7 +538,7 @@ export function MediaBrowser({
       }
       setTotalArtistCount(count)
     } catch (err) {
-      console.warn('Failed to load paginated artists:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load paginated artists:', err)
     } finally {
       setArtistsLoading(false)
     }
@@ -582,7 +582,7 @@ export function MediaBrowser({
       }
       setTotalTrackCount(count)
     } catch (err) {
-      console.warn('Failed to load paginated tracks:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load paginated tracks:', err)
     } finally {
       setTracksLoading(false)
     }
@@ -635,7 +635,7 @@ export function MediaBrowser({
       }
       setTotalAlbumCount(count)
     } catch (err) {
-      console.warn('Failed to load paginated albums:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load paginated albums:', err)
     } finally {
       setAlbumsLoading(false)
     }
@@ -705,7 +705,7 @@ export function MediaBrowser({
       }
       setTotalMovieCount(count)
     } catch (err) {
-      console.warn('Failed to load paginated movies:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load paginated movies:', err)
     } finally {
       setMoviesLoading(false)
     }
@@ -766,7 +766,7 @@ export function MediaBrowser({
       setTotalShowCount(count as number)
       setTotalEpisodeCount(episodeCount as number)
     } catch (err) {
-      console.error('Error loading TV shows:', err)
+      window.electronAPI.log.error('[MediaBrowser]', 'Error loading TV shows:', err)
     } finally {
       setShowsLoading(false)
     }
@@ -785,7 +785,7 @@ export function MediaBrowser({
       const episodes = await window.electronAPI.seriesGetEpisodes(showTitle, activeSourceId || undefined)
       setSelectedShowEpisodes(episodes as MediaItem[])
     } catch (err) {
-      console.error('Error loading episodes for show:', err)
+      window.electronAPI.log.error('[MediaBrowser]', 'Error loading episodes for show:', err)
       setSelectedShowEpisodes([])
     } finally {
       setSelectedShowEpisodesLoading(false)
@@ -817,7 +817,7 @@ export function MediaBrowser({
       const tracks = await window.electronAPI.musicGetTracksByAlbum(albumId)
       setAlbumTracks(tracks as MusicTrack[])
     } catch (err) {
-      console.warn('Failed to load album tracks:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load album tracks:', err)
       setAlbumTracks([])
     }
   }
@@ -828,7 +828,7 @@ export function MediaBrowser({
       const completeness = await window.electronAPI.musicGetAlbumCompleteness(albumId)
       setSelectedAlbumCompleteness(completeness as AlbumCompletenessData | null)
     } catch (err) {
-      console.warn('Failed to load album completeness:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load album completeness:', err)
       setSelectedAlbumCompleteness(null)
     }
   }
@@ -836,9 +836,9 @@ export function MediaBrowser({
   // Analyze a single album for missing tracks
   const analyzeAlbumCompleteness = async (albumId: number) => {
     try {
-      console.log(`[MediaBrowser] Analyzing album ${albumId} for missing tracks...`)
+      window.electronAPI.log.info('[MediaBrowser]', `Analyzing album ${albumId} for missing tracks...`)
       const result = await window.electronAPI.musicAnalyzeAlbumTrackCompleteness(albumId)
-      console.log(`[MediaBrowser] Analysis result:`, result)
+      window.electronAPI.log.info('[MediaBrowser]', `Analysis result:`, result)
 
       // Reload selected album completeness if this is the selected album
       await loadAlbumCompleteness(albumId)
@@ -851,21 +851,21 @@ export function MediaBrowser({
       })
       setAllAlbumCompleteness(albumCompletenessMap)
     } catch (err) {
-      console.error('Failed to analyze album completeness:', err)
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to analyze album completeness:', err)
     }
   }
 
   // Analyze a single artist for missing albums
   const analyzeArtistCompleteness = async (artistId: number) => {
     try {
-      console.log(`[MediaBrowser] Analyzing artist ${artistId} for missing albums...`)
+      window.electronAPI.log.info('[MediaBrowser]', `Analyzing artist ${artistId} for missing albums...`)
       const result = await window.electronAPI.musicAnalyzeArtistCompleteness(artistId)
-      console.log(`[MediaBrowser] Artist analysis result:`, result)
+      window.electronAPI.log.info('[MediaBrowser]', `Artist analysis result:`, result)
 
       // Reload all artist completeness data to refresh the UI
       await loadMusicCompletenessData()
     } catch (err) {
-      console.error('Failed to analyze artist completeness:', err)
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to analyze artist completeness:', err)
     }
   }
 
@@ -980,7 +980,7 @@ export function MediaBrowser({
         averageCompleteness: avgCompleteness,
       })
     } catch (err) {
-      console.warn('Failed to load music completeness data:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to load music completeness data:', err)
     }
   }
 
@@ -1154,7 +1154,7 @@ export function MediaBrowser({
 
       container?.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {
-      console.warn('Failed to get letter offset:', err)
+      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to get letter offset:', err)
     }
   }, [setAlphabetFilter, view, musicViewMode, activeSourceId, activeLibraryId, loadPaginatedMovies, loadPaginatedShows, loadPaginatedArtists, loadPaginatedAlbums])
 
@@ -1399,7 +1399,7 @@ export function MediaBrowser({
 
     const { type, id, artistName } = pendingNavigation
 
-    console.log('[MediaBrowser] Handling navigation:', pendingNavigation)
+    window.electronAPI.log.info('[MediaBrowser]', '[MediaBrowser] Handling navigation:', pendingNavigation)
 
     if (type === 'movie') {
       setView('movies')
@@ -1430,7 +1430,7 @@ export function MediaBrowser({
         window.electronAPI.musicGetArtists({ searchQuery: artistName, limit: 1, offset: 0 }).then(result => {
           const artists = result as MusicArtist[]
           if (artists.length > 0) setSelectedArtist(artists[0])
-        }).catch(err => console.error('Failed to find artist for navigation:', err))
+        }).catch(err => window.electronAPI.log.error('[MediaBrowser]', 'Failed to find artist for navigation:', err))
       }
     } else if (type === 'album') {
       setView('music')
@@ -1457,7 +1457,7 @@ export function MediaBrowser({
             loadAlbumTracks(album.id)
           }
         }
-      }).catch(err => console.error('Failed to find track for navigation:', err))
+      }).catch(err => window.electronAPI.log.error('[MediaBrowser]', 'Failed to find track for navigation:', err))
     }
 
     clearNavigation()

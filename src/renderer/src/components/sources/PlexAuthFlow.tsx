@@ -77,7 +77,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
             setStep('servers')
           }
         } catch (err) {
-          console.error('Error checking auth:', err)
+          window.electronAPI.log.error('[PlexAuthFlow]', 'Error checking auth:', err)
         }
       }, POLL_INTERVAL_MS)
 
@@ -162,7 +162,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[PlexAuthFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -182,7 +182,7 @@ export function PlexAuthFlow({ onSuccess, onBack }: PlexAuthFlowProps) {
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[PlexAuthFlow]', 'Failed to queue library scan:', err)
       }
     }
 

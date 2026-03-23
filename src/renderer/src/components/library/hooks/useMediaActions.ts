@@ -76,7 +76,7 @@ export function useMediaActions({
       filePath: string
     ) => {
       try {
-        console.log(`[useMediaActions] Rescanning item: ${filePath}`)
+        window.electronAPI.log.info('[useMediaActions]', `Rescanning item: ${filePath}`)
         await window.electronAPI.sourcesScanItem(sourceId, libraryId, filePath)
         // Reload media items to show updated data
         await loadMedia()
@@ -85,7 +85,7 @@ export function useMediaActions({
           setDetailRefreshKey((prev) => prev + 1)
         }
       } catch (err) {
-        console.error('Rescan failed:', err)
+        window.electronAPI.log.error('[useMediaActions]', 'Rescan failed:', err)
       }
     },
     [selectedMediaId, loadMedia, setDetailRefreshKey]

@@ -165,7 +165,7 @@ export function GeneralTab() {
         })
         setConfiguredProviders(providerTypes)
       } catch (error) {
-        console.error('Failed to load general settings:', error)
+        window.electronAPI.log.error('[GeneralTab]', 'Failed to load general settings:', error)
       } finally {
         setIsLoading(false)
       }
@@ -180,7 +180,7 @@ export function GeneralTab() {
         await window.electronAPI.monitoringSetConfig(config)
         setMonitoringConfig((prev) => ({ ...prev, ...config }))
       } catch (error) {
-        console.error('Failed to save monitoring config:', error)
+        window.electronAPI.log.error('[GeneralTab]', 'Failed to save monitoring config:', error)
       } finally {
         setIsSaving(false)
       }

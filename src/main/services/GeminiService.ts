@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from '../services/LoggingService'
 
 /**
  * Google Gemini AI Service with rate limit tracking
@@ -319,7 +320,7 @@ export class GeminiService {
       if (recentToolCalls.length >= 3) {
         const last3 = recentToolCalls.slice(-3)
         if (last3[0] === last3[1] && last3[1] === last3[2]) {
-          console.warn('[GeminiService] Tool-use loop detected — same calls repeated 3 times, breaking')
+          getLoggingService().warn('[GeminiService]', '[GeminiService] Tool-use loop detected — same calls repeated 3 times, breaking')
           return {
             text: 'I encountered an issue processing your request. Please try rephrasing your question.',
             usage: totalUsage,

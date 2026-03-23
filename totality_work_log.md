@@ -14,16 +14,17 @@
     - Downgraded routine "Skipping" logs (for items without media parts) to `verbose` level to reduce clutter in standard application logs.
     - Downgraded routine scan progress and completion messages to `verbose` or formatted them for better readability in `info` level.
 
-## 2026-03-22
-- **Architectural Consolidation & Refactoring (v0.4.0):**
-    - **Centralized Robust Matching:** Extracted advanced TMDB search logic (fuzzy year matching and AI disambiguation) from individual providers into `TMDBService.ts`.
-    - **Unified FFprobe Enhancement:** Centralized `needsEnhancement` and `enhanceMetadata` in `MediaFileAnalyzer.ts`, deduplicating technical stream merging across Kodi and Local providers.
-    - **Consolidated Discovery:** Merged `EmbyDiscoveryService` and `JellyfinDiscoveryService` into a single, generic `UdpDiscoveryService.ts`.
-    - **Provider Refactoring:** Strengthened `BaseMediaProvider` with shared logic for quality scoring (`calculateVersionScore`) and title normalization (`normalizeGroupTitle`). All providers now inherit from this base class.
-    - **Kodi Unification:** Created `KodiMappingUtils.ts` to share field-mapping logic across Local SQLite, MySQL, and JSON-RPC variants.
-    - **Generic Repository Pattern:** Implemented `BaseRepository.ts` to handle standard SQL patterns, simplifying `MediaRepository` and `MusicRepository`.
-    - **IPC Unification:** Consolidated Jellyfin and Emby IPC handlers into a unified registration loop.
-    - **Build Stabilization:** Resolved 78+ TypeScript errors and regressions, achieving a 100% stable production build verification.
-    - **Cleanup:** Purged redundant file fragments and duplicate logic across the provider tree.
-
+## 2026-03-23
+- **Upgrades & Efficiency UI Refinement:**
+    - **Dashboard Consolidation:** Removed the redundant 'Cleanup' tab and integrated storage waste items directly into the 'Upgrades' column for a more unified view.
+    - **Efficiency Sorting:** Added a new 'Efficiency' sort option to the Upgrades column, ranking items by storage debt (GB waste).
+    - **Conversion Recommendations:** Implemented a new `ConversionRecommendation` shared component that provides tailored Handbrake parameters and FFmpeg commands (favoring AV1 > H.265 > H.264) for wasteful files.
+    - **Expandable Optimization UI:** Added 'Optimize...' actions to movie and episode menus in Dashboard, MoviesView, and TVShowsView, allowing users to toggle inline conversion instructions.
+    - **Code Deduplication:** Centralized conversion parameter logic and UI presentation across three major views to ensure consistency and maintainability.
+    - **Fail-Fast Integrity:** Removed silent fallbacks in sorting and display logic, ensuring the UI accurately reflects media analysis data.
+- **Repository Sanitization & Cleanup:**
+    - Removed redundant discovery services (`EmbyDiscoveryService.ts`, `JellyfinDiscoveryService.ts`) in favor of the unified `UdpDiscoveryService.ts`.
+    - Removed temporary `repomix` analysis files and updated `.gitignore` to prevent future tracking of temporary and localized artifacts.
+    - Verified test environment setup and repository configuration for absence of hardcoded API keys or secrets.
+    - Delegated comprehensive codebase-wide log refactoring to the `jules` cloud sub-agent to fully transition all remaining `console.*` statements to the structured `LoggingService` via IPC (Session ID: 13260709767670682377).
 

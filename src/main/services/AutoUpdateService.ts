@@ -9,6 +9,7 @@ import { app, BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-updater'
 import { safeSend } from '../ipc/utils/safeSend'
 import { getDatabaseServiceSync } from '../database/DatabaseFactory'
+import { getLoggingService } from '../services/LoggingService'
 
 export type UpdateStatus =
   | 'idle'
@@ -99,7 +100,7 @@ export class AutoUpdateService {
     })
 
     autoUpdater.on('error', (err: Error) => {
-      console.error('[AutoUpdate] Error:', err.message)
+      getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Error:', err.message)
       this.setState({
         status: 'error',
         error: err.message,
@@ -116,7 +117,7 @@ export class AutoUpdateService {
       this.autoCheckIfEnabled()
     }, CHECK_INTERVAL_MS)
 
-    console.log('[AutoUpdate] Initialized')
+    getLoggingService().info('[AutoUpdateService]', '[AutoUpdate] Initialized')
   }
 
   setMainWindow(win: BrowserWindow): void {
@@ -135,7 +136,7 @@ export class AutoUpdateService {
       await autoUpdater.checkForUpdates()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[AutoUpdate] Check failed:', msg)
+      getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Check failed:', msg)
       this.setState({ status: 'error', error: msg })
     }
   }
@@ -150,7 +151,7 @@ export class AutoUpdateService {
       await autoUpdater.downloadUpdate()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      console.error('[AutoUpdate] Download failed:', msg)
+      getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Download failed:', msg)
       this.setState({ status: 'error', error: msg })
     }
   }
@@ -166,7 +167,7 @@ export class AutoUpdateService {
       const db = getDatabaseServiceSync()
       await db.close()
     } catch (err) {
-      console.error('[AutoUpdate] Failed to close database before update:', err)
+      getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Failed to close database before update:', err)
     }
 
     // isSilent=false shows install progress, isForceRunAfter=true relaunches app

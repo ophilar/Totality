@@ -54,22 +54,22 @@ declare const __dirname: string
 // With better-sqlite3 (WAL mode): data is auto-persisted, forceSave() just checkpoints WAL
 // With SQL.js: forceSave() writes in-memory database to disk
 process.on('uncaughtException', (error) => {
-  console.error('[CRASH] Uncaught exception:', error)
+  getLoggingService().error('[index]', '[CRASH] Uncaught exception:', error)
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
       // End batch mode first to ensure pending writes are flushed
       try { db.endBatch() } catch { /* ignore */ }
-      console.log('[CRASH] better-sqlite3 data already persisted (WAL mode)')
+      getLoggingService().info('[index]', '[CRASH] better-sqlite3 data already persisted (WAL mode)')
     }
   } catch (e) {
-    console.error('[CRASH] Failed to checkpoint database:', e)
+    getLoggingService().error('[index]', '[CRASH] Failed to checkpoint database:', e)
   }
   process.exit(1)
 })
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[CRASH] Unhandled rejection at:', promise, 'reason:', reason)
+  getLoggingService().error('[index]', '[CRASH] Unhandled rejection at:', promise, 'reason:', reason)
   try {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
@@ -78,7 +78,7 @@ process.on('unhandledRejection', (reason, promise) => {
       // better-sqlite3: no action needed, WAL mode auto-persists
     }
   } catch (e) {
-    console.error('[CRASH] Failed to checkpoint database:', e)
+    getLoggingService().error('[index]', '[CRASH] Failed to checkpoint database:', e)
   }
   // Don't exit on unhandled rejection - log and continue
 })
@@ -292,7 +292,7 @@ app.whenReady().then(async () => {
         const ext = path.extname(filePath).toLowerCase()
         const ALLOWED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'])
         if (!ALLOWED_IMAGE_EXTS.has(ext)) {
-          console.warn('[Security] Blocked non-image file request:', filePath)
+          getLoggingService().warn('[index]', '[Security] Blocked non-image file request:', filePath)
           return new Response('Forbidden', { status: 403 })
         }
 
@@ -319,7 +319,7 @@ app.whenReady().then(async () => {
 
       // Block any path traversal attempts (../ sequences)
       if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
-        console.warn('[Security] Blocked path traversal attempt:', urlPath)
+        getLoggingService().warn('[index]', '[Security] Blocked path traversal attempt:', urlPath)
         return new Response('Forbidden', { status: 403 })
       }
 
@@ -335,7 +335,7 @@ app.whenReady().then(async () => {
       }
       const realBasePath = fs.existsSync(artworkBasePath) ? fs.realpathSync(artworkBasePath) : artworkBasePath
       if (!realFilePath.startsWith(realBasePath + path.sep) && realFilePath !== realBasePath) {
-        console.warn('[Security] Blocked path escape attempt:', urlPath)
+        getLoggingService().warn('[index]', '[Security] Blocked path escape attempt:', urlPath)
         return new Response('Forbidden', { status: 403 })
       }
 
@@ -351,12 +351,12 @@ app.whenReady().then(async () => {
       // Return a 404-like response
       return new Response('Not found', { status: 404 })
     })
-    console.log('Local artwork protocol registered')
+    getLoggingService().info('[index]', 'Local artwork protocol registered')
 
     // Initialize database (auto-migrates from SQL.js to better-sqlite3 if needed)
     const db = await getDatabaseServiceAsync()
     await db.initialize()
-    console.log(`Database initialized successfully (backend: ${getDatabaseBackend()})`)
+    getLoggingService().info('[index]', `Database initialized successfully (backend: ${getDatabaseBackend()})`)
 
     // Inject database getter into logging service (replaces dynamic require)
     getLoggingService().setDatabaseGetter(() => getDatabase())
@@ -367,7 +367,7 @@ app.whenReady().then(async () => {
     // Initialize source manager (loads providers from database)
     const sourceManager = getSourceManager()
     await sourceManager.initialize()
-    console.log('Source manager initialized successfully')
+    getLoggingService().info('[index]', 'Source manager initialized successfully')
 
     // Register IPC handlers
     registerDatabaseHandlers()
@@ -401,7 +401,7 @@ app.whenReady().then(async () => {
     // Initialize task queue service and load persisted history
     const taskQueueService = getTaskQueueService()
     taskQueueService.loadPersistedHistory()
-    console.log('Task queue service initialized')
+    getLoggingService().info('[index]', 'Task queue service initialized')
 
     // Initialize auto-update service
     const autoUpdateService = getAutoUpdateService()
@@ -417,7 +417,7 @@ app.whenReady().then(async () => {
     }
 
   } catch (error) {
-    console.error('Failed to initialize app:', error)
+    getLoggingService().error('[index]', 'Failed to initialize app:', error)
     dialog.showErrorBox('Startup Error', `Totality failed to start:\n\n${error instanceof Error ? error.message : String(error)}`)
     app.quit()
   }

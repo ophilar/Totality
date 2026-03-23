@@ -106,12 +106,29 @@ async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
 }
 
 export function registerLoggingHandlers(): void {
+  // Renderer logging bridge
+  ipcMain.on('logs:info', (_event, source: string, message: unknown, ...details: unknown[]) => {
+    getLoggingService().info(source, message, ...details)
+  })
+
+  ipcMain.on('logs:warn', (_event, source: string, message: unknown, ...details: unknown[]) => {
+    getLoggingService().warn(source, message, ...details)
+  })
+
+  ipcMain.on('logs:error', (_event, source: string, message: unknown, ...details: unknown[]) => {
+    getLoggingService().error(source, message, ...details)
+  })
+
+  ipcMain.on('logs:debug', (_event, source: string, message: unknown, ...details: unknown[]) => {
+    getLoggingService().debug(source, message, ...details)
+  })
+
   ipcMain.handle('logs:getAll', async (_event, limit?: unknown) => {
     try {
       const validLimit = limit !== undefined ? validateInput(z.number().int().positive().max(100000), limit, 'logs:getAll') : undefined
       return getLoggingService().getLogs(validLimit)
     } catch (error) {
-      console.error('[IPC logs:getAll] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:getAll] Error:', error)
       throw error
     }
   })
@@ -120,7 +137,7 @@ export function registerLoggingHandlers(): void {
     try {
       getLoggingService().clearLogs()
     } catch (error) {
-      console.error('[IPC logs:clear] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:clear] Error:', error)
       throw error
     }
   })
@@ -131,7 +148,7 @@ export function registerLoggingHandlers(): void {
       getLoggingService().setVerboseLogging(validEnabled)
       return { success: true }
     } catch (error) {
-      console.error('[IPC logs:setVerbose] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:setVerbose] Error:', error)
       throw error
     }
   })
@@ -140,7 +157,7 @@ export function registerLoggingHandlers(): void {
     try {
       return getLoggingService().isVerboseEnabled()
     } catch (error) {
-      console.error('[IPC logs:isVerbose] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:isVerbose] Error:', error)
       throw error
     }
   })
@@ -154,7 +171,7 @@ export function registerLoggingHandlers(): void {
         retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
       }
     } catch (error) {
-      console.error('[IPC logs:getFileLoggingSettings] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:getFileLoggingSettings] Error:', error)
       throw error
     }
   })
@@ -169,7 +186,7 @@ export function registerLoggingHandlers(): void {
       getLoggingService().updateFileLoggingSettings(valid)
       return { success: true }
     } catch (error) {
-      console.error('[IPC logs:setFileLoggingSettings] Error:', error)
+      getLoggingService().error('[logging]', '[IPC logs:setFileLoggingSettings] Error:', error)
       throw error
     }
   })

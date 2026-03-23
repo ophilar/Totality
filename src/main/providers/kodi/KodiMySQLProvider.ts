@@ -66,6 +66,7 @@ import {
 } from '../base/MusicScannerUtils'
 import type { MediaItem, MediaItemVersion, AudioTrack, MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
+import { getLoggingService } from '../../services/LoggingService'
 
 // Type for audio stream query result
 interface KodiAudioStream {
@@ -429,7 +430,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
         })
       }
     } catch (error: unknown) {
-      console.error('[KodiMySQLProvider] Error getting video libraries:', error)
+      getLoggingService().error('[KodiMySQLProvider]', '[KodiMySQLProvider] Error getting video libraries:', error)
     }
 
     // Check music library
@@ -447,7 +448,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
           })
         }
       } catch (error: unknown) {
-        console.log('[KodiMySQLProvider] Music library not available:', getErrorMessage(error))
+        getLoggingService().info('[KodiMySQLProvider]', '[KodiMySQLProvider] Music library not available:', getErrorMessage(error))
       }
     }
 
@@ -561,7 +562,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
       }
 
       const totalItems = items.length
-      console.log(`[KodiMySQLProvider ${this.sourceId}] Processing ${totalItems} items...`)
+      getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Processing ${totalItems} items...`)
 
       // Start batch mode
       db.startBatch()
@@ -594,7 +595,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
-          console.log(`[KodiMySQLProvider ${this.sourceId}] Grouped ${items.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
+          getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Grouped ${items.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
         }
 
         let itemIndex = 0
@@ -688,7 +689,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
 
   async getCollections(): Promise<KodiSetWithDetails[]> {
     const sets = await this.queryVideo<KodiSetWithDetails>(QUERY_ALL_SETS)
-    console.log(`[KodiMySQLProvider] Found ${sets.length} collections`)
+    getLoggingService().info('[KodiMySQLProvider]', `Found ${sets.length} collections`)
     return sets
   }
 
@@ -705,7 +706,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
       }
     }
 
-    console.log(`[KodiMySQLProvider] Found ${collectionMap.size} collections with movies`)
+    getLoggingService().info('[KodiMySQLProvider]', `Found ${collectionMap.size} collections with movies`)
     return collectionMap
   }
 
@@ -778,9 +779,9 @@ export class KodiMySQLProvider extends BaseMediaProvider {
     // Debug logging for year extraction
     const extractedYear = movie.year || undefined
     if (extractedYear) {
-      console.log(`[KodiMySQLProvider] Movie "${movie.title}" - year from DB: ${extractedYear}`)
+      getLoggingService().info('[KodiMySQLProvider]', `Movie "${movie.title}" - year from DB: ${extractedYear}`)
     } else {
-      console.log(`[KodiMySQLProvider] Movie "${movie.title}" - no year in DB (c07: "${movie.c07_raw || ''}", premiered: "${movie.premiered_raw || ''}")`)
+      getLoggingService().info('[KodiMySQLProvider]', `Movie "${movie.title}" - no year in DB (c07: "${movie.c07_raw || ''}", premiered: "${movie.premiered_raw || ''}")`)
     }
 
     return {
@@ -1141,13 +1142,13 @@ export class KodiMySQLProvider extends BaseMediaProvider {
       const artists = await this.queryMusic<KodiMusicArtistResult>(QUERY_MUSIC_ARTISTS)
       const totalArtists = artists.length
 
-      console.log(`[KodiMySQLProvider ${this.sourceId}] Scanning music library: ${totalArtists} artists`)
+      getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Scanning music library: ${totalArtists} artists`)
 
       let processed = 0
 
       for (const kodiArtist of artists) {
         if (this.musicScanCancelled) {
-          console.log(`[KodiMySQLProvider ${this.sourceId}] Music scan cancelled`)
+          getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Music scan cancelled`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -1187,12 +1188,12 @@ export class KodiMySQLProvider extends BaseMediaProvider {
       }
 
       // Phase 2: Scan orphaned albums
-      console.log(`[KodiMySQLProvider ${this.sourceId}] Scanning for compilations and orphaned albums...`)
+      getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Scanning for compilations and orphaned albums...`)
 
       const allAlbums = await this.queryMusic<KodiMusicAlbumResult>(QUERY_MUSIC_ALBUMS)
       const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(String(a.idAlbum)))
 
-      console.log(`[KodiMySQLProvider ${this.sourceId}] Found ${unprocessedAlbums.length} additional albums`)
+      getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Found ${unprocessedAlbums.length} additional albums`)
 
       let compilationProcessed = 0
       const totalCompilations = unprocessedAlbums.length
@@ -1226,11 +1227,11 @@ export class KodiMySQLProvider extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[KodiMySQLProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks in ${result.durationMs}ms`)
+      getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Music scan complete: ${result.itemsScanned} tracks in ${result.durationMs}ms`)
 
       return result
     } catch (error: unknown) {
-      console.error(`[KodiMySQLProvider ${this.sourceId}] Music scan failed:`, error)
+      getLoggingService().error('[KodiMySQLProvider ${this.sourceId}]', `Music scan failed:`, error)
       result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
       return result
@@ -1239,7 +1240,7 @@ export class KodiMySQLProvider extends BaseMediaProvider {
 
   cancelMusicScan(): void {
     this.musicScanCancelled = true
-    console.log(`[KodiMySQLProvider ${this.sourceId}] Music scan cancellation requested`)
+    getLoggingService().info('[KodiMySQLProvider ${this.sourceId}]', `Music scan cancellation requested`)
   }
 
   // ============================================================================

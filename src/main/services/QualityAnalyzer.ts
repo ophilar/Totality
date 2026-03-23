@@ -215,7 +215,7 @@ export class QualityAnalyzer {
 
       this.thresholdsLoaded = true
     } catch (error) {
-      console.error('Failed to load quality thresholds:', error)
+      getLoggingService().error('[QualityAnalyzer]', 'Failed to load quality thresholds:', error)
     }
   }
 
@@ -716,7 +716,7 @@ export class QualityAnalyzer {
           onProgress(analyzed, mediaItems.length)
         }
       } catch (error) {
-        console.error(`Failed to analyze item ${item.id}:`, error)
+        getLoggingService().error('[QualityAnalyzer]', `Failed to analyze item ${item.id}:`, error)
       }
     }
 

@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { QualityBadges } from './QualityBadges'
 import { SlimDownBanner } from './SlimDownBanner'
+import { ConversionRecommendation } from './ConversionRecommendation'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
@@ -63,6 +64,15 @@ export function MoviesView({
   collectionsOnly?: boolean
   scrollElement?: HTMLElement | null
 }) {
+  const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
+
+  const toggleRecommendation = useCallback((id: number) => {
+    setExpandedRecommendations(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
 
   // Map scale to minimum poster width (1=smallest, 7=largest)
   const posterMinWidth = useMemo(() => {
@@ -250,6 +260,8 @@ export function MoviesView({
                     onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
                     onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
                     onDismissUpgrade={onDismissUpgrade}
+                    isExpanded={expandedRecommendations.has(item.movie.id)}
+                    onToggleOptimize={() => toggleRecommendation(item.movie.id)}
                   />
                 </div>
               )
@@ -315,6 +327,8 @@ export function MoviesView({
                   onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
                   onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
                   onDismissUpgrade={onDismissUpgrade}
+                  isExpanded={expandedRecommendations.has(item.movie.id)}
+                  onToggleOptimize={() => toggleRecommendation(item.movie.id)}
                 />
               </div>
             )
@@ -444,7 +458,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
   )
 }
 
-const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void }) => {
+const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; isExpanded?: boolean; onToggleOptimize?: () => void }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -479,8 +493,14 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
     }
   }
 
+  const handleToggleOptimize = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onToggleOptimize) onToggleOptimize()
+  }
+
   const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
-  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
+  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
     <div
@@ -505,7 +525,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
                 e.stopPropagation()
                 setShowMenu(!showMenu)
               }}
-              className={`w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity ${isRescanning ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              className={`w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity ${isRescanning || showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
             >
               {isRescanning ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -517,6 +537,15 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
             {/* Dropdown menu */}
             {showMenu && !isRescanning && (
               <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
+                {onToggleOptimize && (
+                  <button
+                    onClick={handleToggleOptimize}
+                    className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    {isExpanded ? 'Hide Optimization' : 'Optimize...'}
+                  </button>
+                )}
                 {onRescan && movie.file_path && (
                   <button
                     onClick={handleRescan}
@@ -639,6 +668,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           )}
         </div>
       </div>
+      {isExpanded && <div onClick={e => e.stopPropagation()}><ConversionRecommendation item={movie} compact /></div>}
     </div>
   )
 }, (prevProps, nextProps) => {
@@ -653,6 +683,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
          prevProps.movie.source_type === nextProps.movie.source_type &&
          prevProps.movie.version_count === nextProps.movie.version_count &&
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
+         prevProps.isExpanded === nextProps.isExpanded &&
          prevProps.collectionData?.id === nextProps.collectionData?.id &&
          prevProps.collectionData?.completeness_percentage === nextProps.collectionData?.completeness_percentage
 })
@@ -664,7 +695,9 @@ const MovieListItem = memo(({
   collectionData,
   onFixMatch,
   onRescan,
-  onDismissUpgrade
+  onDismissUpgrade,
+  isExpanded,
+  onToggleOptimize
 }: {
   movie: MediaItem
   onClick: () => void
@@ -673,6 +706,8 @@ const MovieListItem = memo(({
   onFixMatch?: () => void
   onRescan?: () => Promise<void>
   onDismissUpgrade?: (movie: MediaItem) => void
+  isExpanded?: boolean
+  onToggleOptimize?: () => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
@@ -704,6 +739,12 @@ const MovieListItem = memo(({
     if (onDismissUpgrade) onDismissUpgrade(movie)
   }
 
+  const handleToggleOptimize = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowMenu(false)
+    if (onToggleOptimize) onToggleOptimize()
+  }
+
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B'
     const k = 1024
@@ -718,13 +759,13 @@ const MovieListItem = memo(({
   }
 
   const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
-  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
+  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center outline-none border-b border-border/10"
+      className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -733,111 +774,123 @@ const MovieListItem = memo(({
         }
       }}
     >
-      {/* Title & Info */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-14 bg-muted rounded overflow-hidden flex-shrink-0 relative shadow-sm">
-          {movie.poster_url ? (
-            <img src={movie.poster_url} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center"><MoviePlaceholder className="w-4 h-4 text-muted-foreground" /></div>
-          )}
-          {showSourceBadge && movie.source_type && (
-            <div className={`absolute bottom-0 left-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-[0.5rem] text-white font-bold text-center leading-tight`}>
-              {movie.source_type.toUpperCase()}
-            </div>
-          )}
-        </div>
-        <div className="min-w-0">
-          <h4 className="font-medium text-sm truncate">{movie.title}</h4>
-          <div className="flex items-center gap-2 mt-0.5">
-            <QualityBadges item={movie} whiteBg={false} />
-            {collectionData && (
-              <span className="text-[0.65rem] text-muted-foreground bg-muted/50 px-1 rounded flex items-center gap-1">
-                <Layers className="w-2.5 h-2.5" />
-                {collectionData.owned_movies}/{collectionData.total_movies}
-              </span>
+      <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center">
+        {/* Title & Info */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-14 bg-muted rounded overflow-hidden flex-shrink-0 relative shadow-sm">
+            {movie.poster_url ? (
+              <img src={movie.poster_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center"><MoviePlaceholder className="w-4 h-4 text-muted-foreground" /></div>
             )}
-          </div>
-        </div>
-      </div>
-
-      <div className="text-center text-sm text-muted-foreground">{movie.year || '-'}</div>
-      <div className="text-sm text-muted-foreground">{movie.resolution || '-'}</div>
-      <div className="text-sm text-muted-foreground uppercase">{(movie as any).video_codec || '-'}</div>
-      <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate((movie as any).video_bitrate || 0)}</div>
-      <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes((movie as any).file_size || 0)}</div>
-
-      <div className="text-center">
-        <div
-          className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
-            (movie as any).efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' :
-            (movie as any).efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' :
-            'bg-red-500/20 text-red-500'
-          }`}
-        >
-          {(movie as any).efficiency_score || 0}%
-        </div>
-      </div>
-
-      <div className="text-right">
-        <span className={`text-xs font-medium ${(movie as any).storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
-          {(movie as any).storage_debt_bytes > 0 ? formatBytes((movie as any).storage_debt_bytes) : '-'}
-        </span>
-      </div>
-
-      {/* Actions */}
-      <div className="relative flex justify-center">
-        {showMenuButton && (
-          <div ref={menuRef}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowMenu(!showMenu)
-              }}
-              className={`w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground transition-all ${showMenu ? 'bg-muted text-foreground' : ''}`}
-            >
-              {isRescanning ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <MoreVertical className="w-4 h-4" />
-              )}
-            </button>
-
-            {/* Dropdown menu */}
-            {showMenu && !isRescanning && (
-              <div className="absolute top-10 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px] z-50">
-                {onRescan && movie.file_path && (
-                  <button
-                    onClick={handleRescan}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Rescan File
-                  </button>
-                )}
-                {onFixMatch && (
-                  <button
-                    onClick={handleFixMatch}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    Fix Match
-                  </button>
-                )}
-                {onDismissUpgrade && needsUpgrade && (
-                  <button
-                    onClick={handleDismissUpgrade}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                  >
-                    <EyeOff className="w-3.5 h-3.5" />
-                    Dismiss Upgrade
-                  </button>
-                )}
+            {showSourceBadge && movie.source_type && (
+              <div className={`absolute bottom-0 left-0 right-0 ${providerColors[movie.source_type] || 'bg-gray-500'} text-[0.5rem] text-white font-bold text-center leading-tight`}>
+                {movie.source_type.toUpperCase()}
               </div>
             )}
           </div>
-        )}
+          <div className="min-w-0">
+            <h4 className="font-medium text-sm truncate">{movie.title}</h4>
+            <div className="flex items-center gap-2 mt-0.5">
+              <QualityBadges item={movie} whiteBg={false} />
+              {collectionData && (
+                <span className="text-[0.65rem] text-muted-foreground bg-muted/50 px-1 rounded flex items-center gap-1">
+                  <Layers className="w-2.5 h-2.5" />
+                  {collectionData.owned_movies}/{collectionData.total_movies}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center text-sm text-muted-foreground">{movie.year || '-'}</div>
+        <div className="text-sm text-muted-foreground">{movie.resolution || '-'}</div>
+        <div className="text-sm text-muted-foreground uppercase">{(movie as any).video_codec || '-'}</div>
+        <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate((movie as any).video_bitrate || 0)}</div>
+        <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes((movie as any).file_size || 0)}</div>
+
+        <div className="text-center">
+          <div
+            className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+              (movie as any).efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' :
+              (movie as any).efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' :
+              'bg-red-500/20 text-red-500'
+            }`}
+          >
+            {(movie as any).efficiency_score || 0}%
+          </div>
+        </div>
+
+        <div className="text-right">
+          <span className={`text-xs font-medium ${(movie as any).storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+            {(movie as any).storage_debt_bytes > 0 ? formatBytes((movie as any).storage_debt_bytes) : '-'}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div className="relative flex justify-center">
+          {showMenuButton && (
+            <div ref={menuRef}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowMenu(!showMenu)
+                }}
+                className={`w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground transition-all ${showMenu ? 'bg-muted text-foreground' : ''}`}
+              >
+                {isRescanning ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <MoreVertical className="w-4 h-4" />
+                )}
+              </button>
+
+              {/* Dropdown menu */}
+              {showMenu && !isRescanning && (
+                <div className="absolute top-10 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px] z-50">
+                  {onToggleOptimize && (
+                    <button
+                      onClick={handleToggleOptimize}
+                      className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      {isExpanded ? 'Hide Optimization' : 'Optimize...'}
+                    </button>
+                  )}
+                  {onRescan && movie.file_path && (
+                    <button
+                      onClick={handleRescan}
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Rescan File
+                    </button>
+                  )}
+                  {onFixMatch && (
+                    <button
+                      onClick={handleFixMatch}
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Fix Match
+                    </button>
+                  )}
+                  {onDismissUpgrade && needsUpgrade && (
+                    <button
+                      onClick={handleDismissUpgrade}
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                      Dismiss Upgrade
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+      {isExpanded && <div onClick={e => e.stopPropagation()} className="ml-13 mt-2"><ConversionRecommendation item={movie} compact /></div>}
     </div>
   )
 }, (prevProps, nextProps) => {
@@ -853,5 +906,6 @@ const MovieListItem = memo(({
          prevProps.movie.quality_tier === nextProps.movie.quality_tier &&
          prevProps.movie.source_type === nextProps.movie.source_type &&
          prevProps.movie.version_count === nextProps.movie.version_count &&
-         prevProps.showSourceBadge === nextProps.showSourceBadge
+         prevProps.showSourceBadge === nextProps.showSourceBadge &&
+         prevProps.isExpanded === nextProps.isExpanded
 })

@@ -34,7 +34,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const [pendingNavigation, setPendingNavigation] = useState<NavigationTarget | null>(null)
 
   const navigateTo = useCallback((target: NavigationTarget) => {
-    console.log('[Navigation] Navigate to:', target)
+    window.electronAPI.log.info('[NavigationContext]', '[Navigation] Navigate to:', target)
     setPendingNavigation(target)
   }, [])
 

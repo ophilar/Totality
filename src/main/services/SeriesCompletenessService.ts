@@ -76,7 +76,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     let seriesData: Map<string, { episodes: MediaItem[]; tmdbId?: string; sourceIds: Set<string> }>
 
     if (deduplicateByTmdbId && !sourceId) {
-      console.log('[SeriesCompletenessService] Using cross-provider deduplication by TMDB ID')
+      getLoggingService().info('[SeriesCompletenessService]', '[SeriesCompletenessService] Using cross-provider deduplication by TMDB ID')
       seriesData = await this.getSeriesDeduplicatedByTmdbId(sourceId, libraryId, onProgress)
     } else {
       const seriesMap = this.getSeriesFromMediaItems(sourceId, libraryId)
@@ -101,10 +101,10 @@ export class SeriesCompletenessService extends CancellableOperation {
           existingCompleteness.set(sc.series_title, sc.updated_at)
         }
       }
-      console.log(`[SeriesCompletenessService] Found ${existingCompleteness.size} series with existing completeness data`)
+      getLoggingService().info('[SeriesCompletenessService]', `Found ${existingCompleteness.size} series with existing completeness data`)
     }
 
-    console.log(`[SeriesCompletenessService] Found ${seriesNames.length} series to analyze (skipRecent=${skipRecentlyAnalyzed})`)
+    getLoggingService().info('[SeriesCompletenessService]', `Found ${seriesNames.length} series to analyze (skipRecent=${skipRecentlyAnalyzed})`)
 
     let analyzed = 0
     let skipped = 0
@@ -119,7 +119,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     for (let i = 0; i < seriesNames.length; i += CONCURRENCY) {
       // Check for cancellation - break instead of return to allow finally block to save
       if (this.isCancelled()) {
-        console.log(`[SeriesCompletenessService] Analysis cancelled at ${i}/${seriesNames.length}`)
+        getLoggingService().info('[SeriesCompletenessService]', `Analysis cancelled at ${i}/${seriesNames.length}`)
         break
       }
 
@@ -164,7 +164,7 @@ export class SeriesCompletenessService extends CancellableOperation {
         if (result.status === 'fulfilled' && result.value !== null) {
           analyzed++
         } else if (result.status === 'rejected') {
-          console.error('Failed to analyze series:', result.reason)
+          getLoggingService().error('[SeriesCompletenessService]', 'Failed to analyze series:', result.reason)
         }
       }
 
@@ -190,7 +190,7 @@ export class SeriesCompletenessService extends CancellableOperation {
 
     getLoggingService().verbose('[SeriesCompletenessService]',
       `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${analyzed} analyzed, ${skipped} skipped out of ${seriesNames.length} series`)
-    console.log(`[SeriesCompletenessService] Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${analyzed} analyzed, ${skipped} skipped`)
+    getLoggingService().info('[SeriesCompletenessService]', `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${analyzed} analyzed, ${skipped} skipped`)
     return { completed: wasCompleted, analyzed, skipped }
   }
 
@@ -208,7 +208,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     const episodes = db.getEpisodesForSeries(seriesTitle, sourceId, libraryId)
 
     if (episodes.length === 0) {
-      console.log(`No episodes found for series: ${seriesTitle}`)
+      getLoggingService().info('[SeriesCompletenessService]', `No episodes found for series: ${seriesTitle}`)
       return null
     }
 
@@ -221,7 +221,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     const tmdbId = cachedTmdbId || await this.findTMDBShowId(seriesTitle, episodes)
 
     if (!tmdbId) {
-      console.log(`Could not find TMDB ID for series: ${seriesTitle}`)
+      getLoggingService().info('[SeriesCompletenessService]', `Could not find TMDB ID for series: ${seriesTitle}`)
       // Store with null data - user can manually match later
       const result = this.createUnmatchedResult(seriesTitle, ownedEpisodes, sourceId, libraryId)
       await db.upsertSeriesCompleteness(result)
@@ -234,7 +234,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       const source = db.getMediaSourceById(sourceId)
       if (source && (source.source_type === 'kodi-local' || source.source_type === 'local')) {
         updateArtwork = true
-        console.log(`[SeriesCompletenessService] Will update artwork for local source: ${sourceId}`)
+        getLoggingService().info('[SeriesCompletenessService]', `Will update artwork for local source: ${sourceId}`)
       }
     }
 
@@ -290,7 +290,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       await db.upsertSeriesCompleteness(data)
       return db.getSeriesCompletenessByTitle(seriesTitle, sourceId, libraryId)
     } catch (error) {
-      console.error(`Error analyzing ${seriesTitle}:`, error)
+      getLoggingService().error('[SeriesCompletenessService]', `Error analyzing ${seriesTitle}:`, error)
       return null
     }
   }
@@ -350,7 +350,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     const seriesByTitle = this.getSeriesFromMediaItems(undefined, libraryId)
     const seriesTitles = Array.from(seriesByTitle.keys())
 
-    console.log(`[SeriesCompletenessService] Deduplicating ${seriesTitles.length} series by TMDB ID...`)
+    getLoggingService().info('[SeriesCompletenessService]', `Deduplicating ${seriesTitles.length} series by TMDB ID...`)
 
     // First pass: Find TMDB IDs for all series
     const tmdbIdMap = new Map<string, string>() // series_title -> tmdb_id
@@ -385,7 +385,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       }
     }
 
-    console.log(`[SeriesCompletenessService] Found ${tmdbIdMap.size} series with TMDB IDs, ${titlesByTmdbId.size} unique TMDB IDs`)
+    getLoggingService().info('[SeriesCompletenessService]', `Found ${tmdbIdMap.size} series with TMDB IDs, ${titlesByTmdbId.size} unique TMDB IDs`)
 
     // Second pass: Merge episodes by TMDB ID
     const result = new Map<string, { episodes: MediaItem[]; tmdbId?: string; sourceIds: Set<string> }>()
@@ -413,7 +413,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       const deduplicatedEpisodes = this.deduplicateEpisodes(allEpisodes)
 
       if (titles.length > 1) {
-        console.log(`[SeriesCompletenessService] Merged ${titles.length} titles into "${canonicalTitle}" (TMDB ${tmdbId}): ${allEpisodes.length} -> ${deduplicatedEpisodes.length} episodes`)
+        getLoggingService().info('[SeriesCompletenessService]', `Merged ${titles.length} titles into "${canonicalTitle}" (TMDB ${tmdbId}): ${allEpisodes.length} -> ${deduplicatedEpisodes.length} episodes`)
       }
 
       result.set(canonicalTitle, {
@@ -480,7 +480,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     // This is the most reliable as it comes directly from Plex's metadata agents
     for (const episode of episodes) {
       if (episode.series_tmdb_id) {
-        console.log(`Found show TMDB ID from Plex metadata: "${seriesTitle}" -> TMDB ID ${episode.series_tmdb_id}`)
+        getLoggingService().info('[SeriesCompletenessService]', `Found show TMDB ID from Plex metadata: "${seriesTitle}" -> TMDB ID ${episode.series_tmdb_id}`)
         return episode.series_tmdb_id
       }
     }
@@ -498,30 +498,30 @@ export class SeriesCompletenessService extends CancellableOperation {
     // Method 2: Try IMDB ID via /find endpoint
     if (imdbId) {
       try {
-        console.log(`Trying IMDB ID ${imdbId} for "${seriesTitle}"`)
+        getLoggingService().info('[SeriesCompletenessService]', `Trying IMDB ID ${imdbId} for "${seriesTitle}"`)
         const findResult = await tmdb.findByExternalId(imdbId, 'imdb_id')
         if (findResult.tv_results && findResult.tv_results.length > 0) {
           const show = findResult.tv_results[0]
-          console.log(`Found via IMDB: "${seriesTitle}" -> TMDB ID ${show.id}`)
+          getLoggingService().info('[SeriesCompletenessService]', `Found via IMDB: "${seriesTitle}" -> TMDB ID ${show.id}`)
           return String(show.id)
         }
       } catch (error) {
-        console.error(`IMDB lookup failed for "${seriesTitle}":`, error)
+        getLoggingService().error('[SeriesCompletenessService]', `IMDB lookup failed for "${seriesTitle}":`, error)
       }
     }
 
     // Method 4: Fall back to title search
     try {
-      console.log(`Searching TMDB by title for "${seriesTitle}"`)
+      getLoggingService().info('[SeriesCompletenessService]', `Searching TMDB by title for "${seriesTitle}"`)
       const searchResults = await tmdb.searchTVShow(seriesTitle)
 
       if (searchResults.results.length > 0) {
         const result = searchResults.results[0]
-        console.log(`Found via search: "${seriesTitle}" -> ${result.name} (TMDB ID ${result.id})`)
+        getLoggingService().info('[SeriesCompletenessService]', `Found via search: "${seriesTitle}" -> ${result.name} (TMDB ID ${result.id})`)
         return String(result.id)
       }
     } catch (error) {
-      console.error(`TMDB search failed for "${seriesTitle}":`, error)
+      getLoggingService().error('[SeriesCompletenessService]', `TMDB search failed for "${seriesTitle}":`, error)
     }
 
     return null
@@ -574,7 +574,7 @@ export class SeriesCompletenessService extends CancellableOperation {
           mediaItemMap.set(key, item)
         }
       }
-      console.log(`[SeriesCompletenessService] Built mediaItemMap with ${mediaItemMap.size} episodes for artwork updates`)
+      getLoggingService().info('[SeriesCompletenessService]', `Built mediaItemMap with ${mediaItemMap.size} episodes for artwork updates`)
     }
 
     const missingSeasons: number[] = []
@@ -623,14 +623,14 @@ export class SeriesCompletenessService extends CancellableOperation {
           }
         }
       } catch (error) {
-        console.error(`[SeriesCompletenessService] Failed to fetch seasons batch:`, error)
+        getLoggingService().error('[SeriesCompletenessService]', `Failed to fetch seasons batch:`, error)
         // Fall back to individual calls for this batch
         for (const seasonNum of batchSeasons) {
           try {
             const seasonDetails = await tmdb.getSeasonDetails(tmdbId, seasonNum)
             seasonDataMap.set(seasonNum, seasonDetails)
           } catch (err) {
-            console.error(`Error fetching season ${seasonNum}:`, err)
+            getLoggingService().error('[SeriesCompletenessService]', `Error fetching season ${seasonNum}:`, err)
           }
         }
       }
@@ -667,7 +667,7 @@ export class SeriesCompletenessService extends CancellableOperation {
             const mediaItem = mediaItemMap.get(key)!
             const episodeThumbUrl = tmdb.buildImageUrl(episode.still_path) || undefined
 
-            console.log(`[SeriesCompletenessService] Updating artwork for S${episode.season_number}E${episode.episode_number}: poster=${!!showPosterUrl}, thumb=${!!episodeThumbUrl}, seasonPoster=${!!seasonPosterUrl}`)
+            getLoggingService().info('[SeriesCompletenessService]', `Updating artwork for S${episode.season_number}E${episode.episode_number}: poster=${!!showPosterUrl}, thumb=${!!episodeThumbUrl}, seasonPoster=${!!seasonPosterUrl}`)
 
             await db.updateMediaItemArtwork(sourceId, mediaItem.plex_id, {
               posterUrl: showPosterUrl,

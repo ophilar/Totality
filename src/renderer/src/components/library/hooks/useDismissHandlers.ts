@@ -108,7 +108,7 @@ export function useDismissHandlers({
         },
       })
     } catch (err) {
-      console.error('Failed to dismiss upgrade:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss upgrade:', err)
     }
   }, [setPaginatedMovies, setSelectedShowEpisodes, addToast])
 
@@ -139,7 +139,7 @@ export function useDismissHandlers({
       })
       addToast({ type: 'success', title: 'Item dismissed', message: `"${title}" removed from recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss missing episode:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing episode:', err)
     }
   }, [setSeriesCompleteness, addToast])
 
@@ -175,7 +175,7 @@ export function useDismissHandlers({
       })
       addToast({ type: 'success', title: 'Season dismissed', message: `${seasonEpisodes.length} missing episodes from Season ${seasonNumber} removed` })
     } catch (err) {
-      console.error('Failed to dismiss missing season:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing season:', err)
     }
   }, [seriesCompleteness, setSeriesCompleteness, addToast])
 
@@ -207,7 +207,7 @@ export function useDismissHandlers({
       emitDismissCollectionMovie({ collectionId, tmdbId })
       addToast({ type: 'success', title: 'Movie dismissed', message: `"${movieTitle}" removed from collection recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss collection movie:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss collection movie:', err)
     }
   }, [selectedCollection, setSelectedCollection, setMovieCollections, addToast])
 
@@ -233,7 +233,7 @@ export function useDismissHandlers({
       })
       addToast({ type: 'success', title: 'Album dismissed', message: `"${album.title}" removed from recommendations` })
     } catch (err) {
-      console.error('Failed to dismiss missing album:', err)
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss missing album:', err)
     }
   }, [setArtistCompleteness, addToast])
 

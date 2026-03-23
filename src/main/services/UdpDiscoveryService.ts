@@ -1,6 +1,7 @@
 import { getErrorMessage } from './utils/errorUtils'
 import * as dgram from 'dgram'
 import axios from 'axios'
+import { getLoggingService } from '../services/LoggingService'
 
 /**
  * UdpDiscoveryService
@@ -55,7 +56,7 @@ export class UdpDiscoveryService {
                 type,
               })
 
-              console.log(`${logPrefix} Found server: ${response.Name} at ${response.Address || rinfo.address}`)
+              getLoggingService().info('[UdpDiscoveryService]', `${logPrefix} Found server: ${response.Name} at ${response.Address || rinfo.address}`)
             }
           } catch (e) {
             // Ignore invalid responses
@@ -64,7 +65,7 @@ export class UdpDiscoveryService {
         })
 
         socket.on('error', (err) => {
-          console.error(`${logPrefix} Socket error:`, err.message)
+          getLoggingService().error('[UdpDiscoveryService]', `${logPrefix} Socket error:`, err.message)
         })
 
         socket.bind(() => {
@@ -85,9 +86,9 @@ export class UdpDiscoveryService {
               }
             }
 
-            console.log(`${logPrefix} Broadcast sent, waiting for responses...`)
+            getLoggingService().info('[UdpDiscoveryService]', `${logPrefix} Broadcast sent, waiting for responses...`)
           } catch (e) {
-            console.error(`${logPrefix} Failed to send broadcast:`, e)
+            getLoggingService().error('[UdpDiscoveryService]', `${logPrefix} Failed to send broadcast:`, e)
           }
         })
 
@@ -98,12 +99,12 @@ export class UdpDiscoveryService {
           } catch (e) {
             // Ignore close errors
           }
-          console.log(`${logPrefix} Discovery complete, found ${servers.length} server(s)`)
+          getLoggingService().info('[UdpDiscoveryService]', `${logPrefix} Discovery complete, found ${servers.length} server(s)`)
           resolve(servers)
         }, DISCOVERY_TIMEOUT)
 
       } catch (err) {
-        console.error(`${logPrefix} Failed to create socket:`, err)
+        getLoggingService().error('[UdpDiscoveryService]', `${logPrefix} Failed to create socket:`, err)
         resolve(servers)
       }
     })

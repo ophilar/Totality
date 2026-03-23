@@ -246,7 +246,7 @@ export function ServicesTab() {
       setNfsMappings(nfsMaps || {})
       setOriginalNfsMappings(nfsMaps || {})
     } catch (error) {
-      console.error('Failed to load settings:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to load settings:', error)
     } finally {
       setIsLoading(false)
     }
@@ -298,7 +298,7 @@ export function ServicesTab() {
       setOriginalGeminiModel(geminiModel)
       setHasChanges(false)
     } catch (error) {
-      console.error('Failed to save settings:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
     } finally {
       setIsSaving(false)
     }
@@ -357,7 +357,7 @@ export function ServicesTab() {
     try {
       await window.electronAPI.setSetting('ffprobe_enabled', newValue ? 'true' : 'false')
     } catch (error) {
-      console.error('Failed to save FFprobe setting:', error)
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save FFprobe setting:', error)
       setFfprobeEnabled(!newValue)
     }
   }

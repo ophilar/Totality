@@ -5,6 +5,7 @@ import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '../services/Gem
 import { LIBRARY_CHAT_SYSTEM_PROMPT } from '../services/ai-system-prompts'
 import { getGeminiAnalysisService } from '../services/GeminiAnalysisService'
 import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '../validation/schemas'
+import { getLoggingService } from '../services/LoggingService'
 
 const AiChatMessageSchema = z.object({
   messages: z.array(z.object({
@@ -56,7 +57,7 @@ export function registerGeminiHandlers() {
       const validKey = validateInput(AiTestApiKeySchema, apiKey, 'ai:testApiKey')
       return await getGeminiService().testApiKey(validKey)
     } catch (error) {
-      console.error('Error testing Gemini API key:', error)
+      getLoggingService().error('[gemini]', 'Error testing Gemini API key:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
   })
@@ -66,7 +67,7 @@ export function registerGeminiHandlers() {
       const validated = validateInput(AiSendMessageSchema, params, 'ai:sendMessage')
       return await getGeminiService().sendMessage(validated)
     } catch (error) {
-      console.error('Error in ai:sendMessage:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:sendMessage:', error)
       throw formatError(error)
     }
   })
@@ -97,7 +98,7 @@ export function registerGeminiHandlers() {
 
       return result
     } catch (error) {
-      console.error('Error in ai:streamMessage:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:streamMessage:', error)
       throw formatError(error)
     }
   })
@@ -108,7 +109,7 @@ export function registerGeminiHandlers() {
   ipcMain.handle('ai:chatMessage', async (event, params: unknown) => {
     try {
       const validated = validateInput(AiChatMessageSchema, params, 'ai:chatMessage')
-      console.log('[IPC ai:chatMessage] Chat message received, history length:', validated.messages.length)
+      getLoggingService().info('[gemini]', '[IPC ai:chatMessage] Chat message received, history length:', validated.messages.length)
       const win = BrowserWindow.fromWebContents(event.sender)
       const actionableItems: ActionableItem[] = []
 
@@ -170,10 +171,10 @@ export function registerGeminiHandlers() {
         requestId: validated.requestId,
       }
     } catch (error) {
-      console.error('Error in ai:chatMessage:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:chatMessage:', error)
       const formatted = formatError(error)
       if (formatted.rateLimited) {
-        console.log('[IPC ai:chatMessage] Rate limited, retry after', formatted.retryAfterSeconds, 'seconds')
+        getLoggingService().info('[gemini]', '[IPC ai:chatMessage] Rate limited, retry after', formatted.retryAfterSeconds, 'seconds')
         return formatted
       }
       throw formatted
@@ -193,7 +194,7 @@ export function registerGeminiHandlers() {
       )
       const win = BrowserWindow.fromWebContents(event.sender)
 
-      console.log('[IPC ai:qualityReport] Generating quality report')
+      getLoggingService().info('[gemini]', '[IPC ai:qualityReport] Generating quality report')
       const result = await getGeminiAnalysisService().generateQualityReport(
         (delta) => {
           win?.webContents.send('ai:analysisStreamDelta', { requestId, delta })
@@ -203,7 +204,7 @@ export function registerGeminiHandlers() {
       win?.webContents.send('ai:analysisStreamComplete', { requestId })
       return { text: result.text, requestId }
     } catch (error) {
-      console.error('Error in ai:qualityReport:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:qualityReport:', error)
       throw formatError(error)
     }
   })
@@ -217,7 +218,7 @@ export function registerGeminiHandlers() {
       )
       const win = BrowserWindow.fromWebContents(event.sender)
 
-      console.log('[IPC ai:upgradePriorities] Generating upgrade priorities report')
+      getLoggingService().info('[gemini]', '[IPC ai:upgradePriorities] Generating upgrade priorities report')
       const result = await getGeminiAnalysisService().generateUpgradePriorities(
         (delta) => {
           win?.webContents.send('ai:analysisStreamDelta', { requestId, delta })
@@ -227,7 +228,7 @@ export function registerGeminiHandlers() {
       win?.webContents.send('ai:analysisStreamComplete', { requestId })
       return { text: result.text, requestId }
     } catch (error) {
-      console.error('Error in ai:upgradePriorities:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:upgradePriorities:', error)
       throw formatError(error)
     }
   })
@@ -241,7 +242,7 @@ export function registerGeminiHandlers() {
       )
       const win = BrowserWindow.fromWebContents(event.sender)
 
-      console.log('[IPC ai:completenessInsights] Generating completeness report')
+      getLoggingService().info('[gemini]', '[IPC ai:completenessInsights] Generating completeness report')
       const result = await getGeminiAnalysisService().generateCompletenessInsights(
         (delta) => {
           win?.webContents.send('ai:analysisStreamDelta', { requestId, delta })
@@ -251,7 +252,7 @@ export function registerGeminiHandlers() {
       win?.webContents.send('ai:analysisStreamComplete', { requestId })
       return { text: result.text, requestId }
     } catch (error) {
-      console.error('Error in ai:completenessInsights:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:completenessInsights:', error)
       throw formatError(error)
     }
   })
@@ -265,7 +266,7 @@ export function registerGeminiHandlers() {
       )
       const win = BrowserWindow.fromWebContents(event.sender)
 
-      console.log('[IPC ai:wishlistAdvice] Generating wishlist advice report')
+      getLoggingService().info('[gemini]', '[IPC ai:wishlistAdvice] Generating wishlist advice report')
       const result = await getGeminiAnalysisService().generateWishlistAdvice(
         (delta) => {
           win?.webContents.send('ai:analysisStreamDelta', { requestId, delta })
@@ -275,7 +276,7 @@ export function registerGeminiHandlers() {
       win?.webContents.send('ai:analysisStreamComplete', { requestId })
       return { text: result.text, requestId }
     } catch (error) {
-      console.error('Error in ai:wishlistAdvice:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:wishlistAdvice:', error)
       throw formatError(error)
     }
   })
@@ -301,7 +302,7 @@ export function registerGeminiHandlers() {
       const explanation = await getGeminiService().explainQualityScore(validated)
       return { text: explanation }
     } catch (error) {
-      console.error('Error in ai:explainQuality:', error)
+      getLoggingService().error('[gemini]', 'Error in ai:explainQuality:', error)
       throw formatError(error)
     }
   })

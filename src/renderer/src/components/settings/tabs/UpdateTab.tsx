@@ -73,7 +73,7 @@ export function UpdateTab() {
         setUpdateState(state)
         setAutoUpdateEnabled(setting !== 'false')
       } catch (error) {
-        console.error('Failed to load update settings:', error)
+        window.electronAPI.log.error('[UpdateTab]', 'Failed to load update settings:', error)
       } finally {
         setIsLoading(false)
       }

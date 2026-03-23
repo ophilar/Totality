@@ -4,6 +4,7 @@
 
 import { ipcMain } from 'electron'
 import { getAutoUpdateService } from '../services/AutoUpdateService'
+import { getLoggingService } from '../services/LoggingService'
 
 export function registerAutoUpdateHandlers(): void {
   const service = getAutoUpdateService()
@@ -15,7 +16,7 @@ export function registerAutoUpdateHandlers(): void {
     try {
       return service.getState()
     } catch (error) {
-      console.error('[IPC autoUpdate:getState] Error:', error)
+      getLoggingService().error('[autoUpdate]', '[IPC autoUpdate:getState] Error:', error)
       throw error
     }
   })
@@ -25,11 +26,11 @@ export function registerAutoUpdateHandlers(): void {
    */
   ipcMain.handle('autoUpdate:checkForUpdates', async () => {
     try {
-      console.log('[IPC autoUpdate:checkForUpdates] Checking for updates')
+      getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:checkForUpdates] Checking for updates')
       await service.checkForUpdates()
       return { success: true }
     } catch (error) {
-      console.error('[IPC autoUpdate:checkForUpdates] Error:', error)
+      getLoggingService().error('[autoUpdate]', '[IPC autoUpdate:checkForUpdates] Error:', error)
       throw error
     }
   })
@@ -39,11 +40,11 @@ export function registerAutoUpdateHandlers(): void {
    */
   ipcMain.handle('autoUpdate:downloadUpdate', async () => {
     try {
-      console.log('[IPC autoUpdate:downloadUpdate] Downloading update')
+      getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:downloadUpdate] Downloading update')
       await service.downloadUpdate()
       return { success: true }
     } catch (error) {
-      console.error('[IPC autoUpdate:downloadUpdate] Error:', error)
+      getLoggingService().error('[autoUpdate]', '[IPC autoUpdate:downloadUpdate] Error:', error)
       throw error
     }
   })
@@ -53,14 +54,14 @@ export function registerAutoUpdateHandlers(): void {
    */
   ipcMain.handle('autoUpdate:installUpdate', async () => {
     try {
-      console.log('[IPC autoUpdate:installUpdate] Installing update and restarting')
+      getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:installUpdate] Installing update and restarting')
       await service.installUpdate()
       return { success: true }
     } catch (error) {
-      console.error('[IPC autoUpdate:installUpdate] Error:', error)
+      getLoggingService().error('[autoUpdate]', '[IPC autoUpdate:installUpdate] Error:', error)
       throw error
     }
   })
 
-  console.log('[IPC] Auto-update handlers registered')
+  getLoggingService().info('[autoUpdate]', '[IPC] Auto-update handlers registered')
 }

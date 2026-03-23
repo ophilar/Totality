@@ -12,6 +12,7 @@
  */
 
 import { safeStorage } from 'electron'
+import { getLoggingService } from '../services/LoggingService'
 
 // Fields that should be encrypted in connection configs
 const SENSITIVE_CONFIG_FIELDS = [
@@ -51,9 +52,9 @@ export class CredentialEncryptionService {
     // Check if safeStorage is available on this platform
     this.isAvailable = safeStorage.isEncryptionAvailable()
     if (!this.isAvailable) {
-      console.warn('[CredentialEncryption] safeStorage not available - credentials will be stored in plain text')
+      getLoggingService().warn('[CredentialEncryptionService]', '[CredentialEncryption] safeStorage not available - credentials will be stored in plain text')
     } else {
-      console.log('[CredentialEncryption] Encryption available using OS secure storage')
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Encryption available using OS secure storage')
     }
   }
 
@@ -78,7 +79,7 @@ export class CredentialEncryptionService {
       // Convert to base64 for storage
       return ENCRYPTED_PREFIX + encrypted.toString('base64')
     } catch (error) {
-      console.error('[CredentialEncryption] Failed to encrypt value:', error)
+      getLoggingService().error('[CredentialEncryptionService]', '[CredentialEncryption] Failed to encrypt value:', error)
       return value
     }
   }
@@ -209,11 +210,11 @@ export class CredentialEncryptionService {
     let settingsEncrypted = 0
 
     if (!this.isAvailable) {
-      console.log('[CredentialEncryption] Skipping migration - encryption not available')
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Skipping migration - encryption not available')
       return { sourcesEncrypted, settingsEncrypted }
     }
 
-    console.log('[CredentialEncryption] Starting credential migration...')
+    getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Starting credential migration...')
 
     // Migrate media source credentials
     const sources = getMediaSources()
@@ -234,10 +235,10 @@ export class CredentialEncryptionService {
           const encrypted = this.encryptConnectionConfig(config)
           await updateMediaSource(source.source_id, JSON.stringify(encrypted))
           sourcesEncrypted++
-          console.log(`[CredentialEncryption] Encrypted credentials for source: ${source.source_id}`)
+          getLoggingService().info('[CredentialEncryption]', `Encrypted credentials for source: ${source.source_id}`)
         }
       } catch (error) {
-        console.error(`[CredentialEncryption] Failed to migrate source ${source.source_id}:`, error)
+        getLoggingService().error('[CredentialEncryption]', `Failed to migrate source ${source.source_id}:`, error)
       }
     }
 
@@ -250,14 +251,14 @@ export class CredentialEncryptionService {
           const encrypted = this.encrypt(value)
           await setSetting(key, encrypted)
           settingsEncrypted++
-          console.log(`[CredentialEncryption] Encrypted setting: ${key}`)
+          getLoggingService().info('[CredentialEncryption]', `Encrypted setting: ${key}`)
         } catch (error) {
-          console.error(`[CredentialEncryption] Failed to migrate setting ${key}:`, error)
+          getLoggingService().error('[CredentialEncryption]', `Failed to migrate setting ${key}:`, error)
         }
       }
     }
 
-    console.log(`[CredentialEncryption] Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`)
+    getLoggingService().info('[CredentialEncryption]', `Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`)
     return { sourcesEncrypted, settingsEncrypted }
   }
 }

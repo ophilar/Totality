@@ -15,6 +15,7 @@
  */
 
 import { getDatabase } from '../../database/getDatabase'
+import { getLoggingService } from '../../services/LoggingService'
 
 // ============================================================================
 // NFS MOUNT MAPPINGS
@@ -650,15 +651,15 @@ export function convertKodiPathToLocal(kodiPath: string): string {
       return localPath
     }
     // No mapping found - log warning with guidance
-    console.warn(`[KodiDatabaseSchema] No NFS mount mapping configured for path with scheme: ${kodiPath.split('://')[0] || 'unknown'}`)
-    console.warn('[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts')
+    getLoggingService().warn('[KodiDatabaseSchema]', `No NFS mount mapping configured for path with scheme: ${kodiPath.split('://')[0] || 'unknown'}`)
+    getLoggingService().warn('[KodiDatabaseSchema]', '[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts')
     return kodiPath
   }
 
   // Handle other URL schemes that Kodi might use
   if (kodiPath.includes('://') && !kodiPath.startsWith('file://')) {
     // Unknown URL scheme, return as-is
-    console.warn(`[KodiDatabaseSchema] Unknown URL scheme for FFprobe: ${kodiPath.split('://')[0] || 'unknown'}`)
+    getLoggingService().warn('[KodiDatabaseSchema]', `Unknown URL scheme for FFprobe: ${kodiPath.split('://')[0] || 'unknown'}`)
     return kodiPath
   }
 

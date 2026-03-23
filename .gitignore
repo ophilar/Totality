@@ -47,3 +47,9 @@ CLAUDE.md
 coverage/
 
 repomix-output.xml
+repomix-analysis.txt
+repomix.config.json
+
+# Temporary Analysis Files
+repomix-analysis.txt
+repomix.config.json

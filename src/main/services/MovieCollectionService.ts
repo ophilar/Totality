@@ -54,7 +54,7 @@ export class MovieCollectionService extends CancellableOperation {
       return { updated: 0, failed: 0 }
     }
 
-    console.log(`[MovieCollectionService] Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies`)
+    getLoggingService().info('[MovieCollectionService]', `Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies`)
 
     let updated = 0
     let failed = 0
@@ -63,7 +63,7 @@ export class MovieCollectionService extends CancellableOperation {
     for (let i = 0; i < moviesWithoutTmdb.length; i += BATCH_SIZE) {
       // Check for cancellation
       if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] TMDB lookup cancelled at ${i}/${moviesWithoutTmdb.length}`)
+        getLoggingService().info('[MovieCollectionService]', `TMDB lookup cancelled at ${i}/${moviesWithoutTmdb.length}`)
         break
       }
 
@@ -80,7 +80,7 @@ export class MovieCollectionService extends CancellableOperation {
               const findResult = await tmdb.findByExternalId(movie.imdb_id, 'imdb_id')
               if (findResult.movie_results && findResult.movie_results.length > 0) {
                 tmdbId = String(findResult.movie_results[0].id)
-                console.log(`[MovieCollectionService] Found "${movie.title}" via IMDB: ${tmdbId}`)
+                getLoggingService().info('[MovieCollectionService]', `Found "${movie.title}" via IMDB: ${tmdbId}`)
               }
             } catch (error) {
               // Continue to title search
@@ -99,10 +99,10 @@ export class MovieCollectionService extends CancellableOperation {
                 })
                 const bestMatch = exactMatch || searchResults.results[0]
                 tmdbId = String(bestMatch.id)
-                console.log(`[MovieCollectionService] Found "${movie.title}" via search: ${tmdbId}`)
+                getLoggingService().info('[MovieCollectionService]', `Found "${movie.title}" via search: ${tmdbId}`)
               }
             } catch (error) {
-              console.warn(`[MovieCollectionService] Search failed for "${movie.title}":`, error)
+              getLoggingService().warn('[MovieCollectionService]', `Search failed for "${movie.title}":`, error)
             }
           }
 
@@ -140,7 +140,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     getLoggingService().verbose('[MovieCollectionService]',
       `TMDB ID lookup: ${updated} found, ${failed} failed out of ${moviesWithoutTmdb.length} movies`)
-    console.log(`[MovieCollectionService] TMDB lookup complete: ${updated} updated, ${failed} failed`)
+    getLoggingService().info('[MovieCollectionService]', `TMDB lookup complete: ${updated} updated, ${failed} failed`)
     return { updated, failed }
   }
 
@@ -183,7 +183,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     // Get all movies from all sources
     const allMovies = db.getMediaItems({ type: 'movie' }) as MediaItem[]
-    console.log(`[MovieCollectionService] Cross-provider deduplication: ${allMovies.length} total movies`)
+    getLoggingService().info('[MovieCollectionService]', `Cross-provider deduplication: ${allMovies.length} total movies`)
 
     // For any source that's local, we need TMDB IDs first
     const sources = db.getMediaSources() as Array<{ id: number; source_type: string }>
@@ -199,7 +199,7 @@ export class MovieCollectionService extends CancellableOperation {
     )
 
     if (localMoviesWithoutTmdb.length > 0) {
-      console.log(`[MovieCollectionService] Looking up TMDB IDs for ${localMoviesWithoutTmdb.length} local movies`)
+      getLoggingService().info('[MovieCollectionService]', `Looking up TMDB IDs for ${localMoviesWithoutTmdb.length} local movies`)
 
       const lookupProgressWrapper = onProgress ? (progress: TMDBLookupProgress) => {
         onProgress({
@@ -220,12 +220,12 @@ export class MovieCollectionService extends CancellableOperation {
       // Re-fetch all movies to get updated TMDB IDs
       const updatedMovies = db.getMediaItems({ type: 'movie' }) as MediaItem[]
       const deduplicated = this.deduplicateMoviesByTmdbId(updatedMovies)
-      console.log(`[MovieCollectionService] After deduplication: ${deduplicated.length} unique movies`)
+      getLoggingService().info('[MovieCollectionService]', `After deduplication: ${deduplicated.length} unique movies`)
       return deduplicated
     }
 
     const deduplicated = this.deduplicateMoviesByTmdbId(allMovies)
-    console.log(`[MovieCollectionService] After deduplication: ${deduplicated.length} unique movies`)
+    getLoggingService().info('[MovieCollectionService]', `After deduplication: ${deduplicated.length} unique movies`)
     return deduplicated
   }
 
@@ -327,7 +327,7 @@ export class MovieCollectionService extends CancellableOperation {
     // Check if TMDB API key is configured
     const tmdbApiKey = db.getSetting('tmdb_api_key')
     if (!tmdbApiKey) {
-      console.log('[MovieCollectionService] TMDB API key not configured, cannot analyze collections')
+      getLoggingService().info('[MovieCollectionService]', '[MovieCollectionService] TMDB API key not configured, cannot analyze collections')
       throw new Error('TMDB API key not configured. Please add your API key in Settings.')
     }
 
@@ -340,7 +340,7 @@ export class MovieCollectionService extends CancellableOperation {
       const source = db.getMediaSourceById(sourceId)
       if (source && (source.source_type === 'kodi-local' || source.source_type === 'local')) {
         isLocalSource = true
-        console.log('[MovieCollectionService] Local source detected, will lookup missing TMDB IDs and update artwork')
+        getLoggingService().info('[MovieCollectionService]', '[MovieCollectionService] Local source detected, will lookup missing TMDB IDs and update artwork')
       }
     }
 
@@ -353,7 +353,7 @@ export class MovieCollectionService extends CancellableOperation {
     if (libraryId) filters.libraryId = libraryId
 
     if (deduplicateByTmdbId && !sourceId) {
-      console.log('[MovieCollectionService] Using cross-provider deduplication by TMDB ID')
+      getLoggingService().info('[MovieCollectionService]', '[MovieCollectionService] Using cross-provider deduplication by TMDB ID')
       movies = await this.getMoviesDeduplicatedByTmdbId(onProgress)
 
       // Check for cancellation after deduplication
@@ -369,7 +369,7 @@ export class MovieCollectionService extends CancellableOperation {
     if (isLocalSource && !deduplicateByTmdbId) {
       const moviesWithoutTmdb = movies.filter(m => !m.tmdb_id)
       if (moviesWithoutTmdb.length > 0) {
-        console.log(`[MovieCollectionService] Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies without them`)
+        getLoggingService().info('[MovieCollectionService]', `Looking up TMDB IDs for ${moviesWithoutTmdb.length} movies without them`)
 
         // Create a lookup progress wrapper that maps to CollectionAnalysisProgress
         const lookupProgressWrapper = onProgress ? (progress: TMDBLookupProgress) => {
@@ -395,7 +395,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     // Filter to only movies with TMDB IDs
     const moviesWithTmdb = movies.filter(m => m.tmdb_id)
-    console.log(`[MovieCollectionService] Found ${movies.length} movies, ${moviesWithTmdb.length} have TMDB IDs`)
+    getLoggingService().info('[MovieCollectionService]', `Found ${movies.length} movies, ${moviesWithTmdb.length} have TMDB IDs`)
 
     if (moviesWithTmdb.length === 0) {
       onProgress?.({
@@ -423,7 +423,7 @@ export class MovieCollectionService extends CancellableOperation {
     for (let i = 0; i < moviesWithTmdb.length; i += BATCH_SIZE) {
       // Check for cancellation
       if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] Analysis cancelled at ${scannedCount}/${moviesWithTmdb.length}`)
+        getLoggingService().info('[MovieCollectionService]', `Analysis cancelled at ${scannedCount}/${moviesWithTmdb.length}`)
         return { completed: false, analyzed: 0, skipped: 0 }
       }
 
@@ -466,7 +466,7 @@ export class MovieCollectionService extends CancellableOperation {
             collectionMap.get(collectionId)!.ownedMovies.push(movie)
           }
         } else if (result.status === 'rejected') {
-          console.warn(`[MovieCollectionService] Failed to get TMDB details for "${movie.title}":`, result.reason)
+          getLoggingService().warn('[MovieCollectionService]', `Failed to get TMDB details for "${movie.title}":`, result.reason)
         }
 
         scannedCount++
@@ -479,7 +479,7 @@ export class MovieCollectionService extends CancellableOperation {
       }
     }
 
-    console.log(`[MovieCollectionService] Found ${collectionMap.size} collections from TMDB`)
+    getLoggingService().info('[MovieCollectionService]', `Found ${collectionMap.size} collections from TMDB`)
 
     if (collectionMap.size === 0) {
       onProgress?.({
@@ -503,7 +503,7 @@ export class MovieCollectionService extends CancellableOperation {
           })
         }
       }
-      console.log(`[MovieCollectionService] Found ${existingCollections.size} existing collections for skip check`)
+      getLoggingService().info('[MovieCollectionService]', `Found ${existingCollections.size} existing collections for skip check`)
     }
 
     // Clear existing collections to sync (only if not skipping)
@@ -524,7 +524,7 @@ export class MovieCollectionService extends CancellableOperation {
     for (const collectionInfo of collectionEntries) {
       // Check for cancellation - break instead of return to allow finally block to save
       if (this.isCancelled()) {
-        console.log(`[MovieCollectionService] Analysis cancelled at ${processedCount}/${collectionEntries.length}`)
+        getLoggingService().info('[MovieCollectionService]', `Analysis cancelled at ${processedCount}/${collectionEntries.length}`)
         break
       }
 
@@ -556,7 +556,7 @@ export class MovieCollectionService extends CancellableOperation {
 
         // Skip only if we have NO owned movies at all
         if (ownedTmdbIds.length === 0) {
-          console.log(`[MovieCollectionService] Skipping "${collectionInfo.collectionName}" - no owned movies found`)
+          getLoggingService().info('[MovieCollectionService]', `Skipping "${collectionInfo.collectionName}" - no owned movies found`)
           processedCount++
           continue
         }
@@ -568,7 +568,7 @@ export class MovieCollectionService extends CancellableOperation {
 
         // lookupCollectionCompleteness returns null for single-movie collections
         if (!result) {
-          console.log(`[MovieCollectionService] Skipping "${collectionInfo.collectionName}" - not a real collection (<=1 released movie)`)
+          getLoggingService().info('[MovieCollectionService]', `Skipping "${collectionInfo.collectionName}" - not a real collection (<=1 released movie)`)
           processedCount++
           continue
         }
@@ -642,7 +642,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     getLoggingService().verbose('[MovieCollectionService]',
       `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} collections analyzed, ${skipped} skipped, ${collectionEntries.length} total found`)
-    console.log(`[MovieCollectionService] Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} analyzed, ${skipped} skipped`)
+    getLoggingService().info('[MovieCollectionService]', `Analysis ${wasCompleted ? 'complete' : 'cancelled'}: ${processedCount - skipped} analyzed, ${skipped} skipped`)
     return { completed: wasCompleted, analyzed: processedCount - skipped, skipped }
   }
 

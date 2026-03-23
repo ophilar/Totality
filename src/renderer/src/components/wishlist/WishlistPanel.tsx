@@ -71,7 +71,7 @@ export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
     try {
       await removeItem(id)
     } catch (err) {
-      console.error('Error removing item:', err)
+      window.electronAPI.log.error('[WishlistPanel]', 'Error removing item:', err)
     }
   }
 
@@ -79,7 +79,7 @@ export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
     try {
       await updateItem(id, { priority })
     } catch (err) {
-      console.error('Error updating priority:', err)
+      window.electronAPI.log.error('[WishlistPanel]', 'Error updating priority:', err)
     }
   }
 
@@ -87,7 +87,7 @@ export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
     try {
       await markCompleted(id)
     } catch (err) {
-      console.error('Error marking item as completed:', err)
+      window.electronAPI.log.error('[WishlistPanel]', 'Error marking item as completed:', err)
     }
   }
 
@@ -95,7 +95,7 @@ export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
     try {
       await markActive(id)
     } catch (err) {
-      console.error('Error marking item as active:', err)
+      window.electronAPI.log.error('[WishlistPanel]', 'Error marking item as active:', err)
     }
   }
 
@@ -113,10 +113,10 @@ export function WishlistPanel({ isOpen, onClose }: WishlistPanelProps) {
     try {
       const result = await exportToCsv()
       if (result.success && result.path) {
-        console.log(`Exported ${result.count} items to ${result.path}`)
+        window.electronAPI.log.info('[WishlistPanel]', `Exported ${result.count} items to ${result.path}`)
       }
     } catch (err) {
-      console.error('Export failed:', err)
+      window.electronAPI.log.error('[WishlistPanel]', 'Export failed:', err)
     } finally {
       setIsExporting(false)
     }

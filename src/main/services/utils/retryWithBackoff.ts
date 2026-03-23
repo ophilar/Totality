@@ -111,7 +111,7 @@ function sleep(ms: number): Promise<void> {
  *     maxRetries: 3,
  *     initialDelay: 1000,
  *     onRetry: (attempt, error, delay) => {
- *       console.log(`Retry ${attempt} after ${delay}ms: ${error.message}`)
+ *       getLoggingService().info('[retryWithBackoff]', `Retry ${attempt} after ${delay}ms: ${error.message}`)
  *     }
  *   }
  * )
@@ -173,7 +173,7 @@ export async function retryWithBackoff<T>(
  * ```typescript
  * const fetchWithRetry = createRetryFetch({
  *   maxRetries: 3,
- *   onRetry: (attempt, error, delay) => console.log(`Retry ${attempt}...`)
+ *   onRetry: (attempt, error, delay) => getLoggingService().info('[retryWithBackoff]', `Retry ${attempt}...`)
  * })
  *
  * const response = await fetchWithRetry('https://api.example.com/data')

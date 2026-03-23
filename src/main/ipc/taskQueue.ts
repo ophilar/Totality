@@ -6,6 +6,7 @@ import { ipcMain } from 'electron'
 import { getTaskQueueService } from '../services/TaskQueueService'
 import { validateInput, TaskDefinitionSchema, NonEmptyStringSchema } from '../validation/schemas'
 import { z } from 'zod'
+import { getLoggingService } from '../services/LoggingService'
 
 export function registerTaskQueueHandlers(): void {
   const service = getTaskQueueService()
@@ -17,7 +18,7 @@ export function registerTaskQueueHandlers(): void {
     try {
       return service.getQueueState()
     } catch (error) {
-      console.error('[IPC taskQueue:getState] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:getState] Error:', error)
       throw error
     }
   })
@@ -28,12 +29,12 @@ export function registerTaskQueueHandlers(): void {
   ipcMain.handle('taskQueue:addTask', async (_event, definition: unknown) => {
     try {
       const validDefinition = validateInput(TaskDefinitionSchema, definition, 'taskQueue:addTask')
-      console.log('[IPC] taskQueue:addTask called with:', validDefinition)
+      getLoggingService().info('[taskQueue]', '[IPC] taskQueue:addTask called with:', validDefinition)
       const taskId = service.addTask(validDefinition)
-      console.log('[IPC] taskQueue:addTask returning taskId:', taskId)
+      getLoggingService().info('[taskQueue]', '[IPC] taskQueue:addTask returning taskId:', taskId)
       return { success: true, taskId }
     } catch (error) {
-      console.error('[IPC taskQueue:addTask] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:addTask] Error:', error)
       throw error
     }
   })
@@ -44,11 +45,11 @@ export function registerTaskQueueHandlers(): void {
   ipcMain.handle('taskQueue:removeTask', async (_event, taskId: unknown) => {
     try {
       const validTaskId = validateInput(NonEmptyStringSchema, taskId, 'taskQueue:removeTask')
-      console.log('[IPC taskQueue:removeTask]', validTaskId)
+      getLoggingService().info('[IPC taskQueue:removeTask]', validTaskId)
       const removed = service.removeTask(validTaskId)
       return { success: removed }
     } catch (error) {
-      console.error('[IPC taskQueue:removeTask] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:removeTask] Error:', error)
       throw error
     }
   })
@@ -62,7 +63,7 @@ export function registerTaskQueueHandlers(): void {
       service.reorderQueue(validTaskIds)
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:reorderQueue] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:reorderQueue] Error:', error)
       throw error
     }
   })
@@ -75,7 +76,7 @@ export function registerTaskQueueHandlers(): void {
       service.clearQueue()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:clearQueue] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearQueue] Error:', error)
       throw error
     }
   })
@@ -85,11 +86,11 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:pause', async () => {
     try {
-      console.log('[IPC taskQueue:pause] Queue paused')
+      getLoggingService().info('[taskQueue]', '[IPC taskQueue:pause] Queue paused')
       service.pauseQueue()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:pause] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:pause] Error:', error)
       throw error
     }
   })
@@ -99,11 +100,11 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:resume', async () => {
     try {
-      console.log('[IPC taskQueue:resume] Queue resumed')
+      getLoggingService().info('[taskQueue]', '[IPC taskQueue:resume] Queue resumed')
       service.resumeQueue()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:resume] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:resume] Error:', error)
       throw error
     }
   })
@@ -116,7 +117,7 @@ export function registerTaskQueueHandlers(): void {
       service.cancelCurrentTask()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:cancelCurrent] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:cancelCurrent] Error:', error)
       throw error
     }
   })
@@ -128,7 +129,7 @@ export function registerTaskQueueHandlers(): void {
     try {
       return service.getTaskHistory()
     } catch (error) {
-      console.error('[IPC taskQueue:getTaskHistory] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:getTaskHistory] Error:', error)
       throw error
     }
   })
@@ -140,7 +141,7 @@ export function registerTaskQueueHandlers(): void {
     try {
       return service.getMonitoringHistory()
     } catch (error) {
-      console.error('[IPC taskQueue:getMonitoringHistory] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:getMonitoringHistory] Error:', error)
       throw error
     }
   })
@@ -153,7 +154,7 @@ export function registerTaskQueueHandlers(): void {
       service.clearTaskHistory()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:clearTaskHistory] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearTaskHistory] Error:', error)
       throw error
     }
   })
@@ -166,10 +167,10 @@ export function registerTaskQueueHandlers(): void {
       service.clearMonitoringHistory()
       return { success: true }
     } catch (error) {
-      console.error('[IPC taskQueue:clearMonitoringHistory] Error:', error)
+      getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearMonitoringHistory] Error:', error)
       throw error
     }
   })
 
-  console.log('[IPC] Task queue handlers registered')
+  getLoggingService().info('[taskQueue]', '[IPC] Task queue handlers registered')
 }

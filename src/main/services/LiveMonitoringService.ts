@@ -225,16 +225,16 @@ export class LiveMonitoringService {
    */
   start(): void {
     if (this.isActive) {
-      console.log('[LiveMonitoring] Already active')
+      getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Already active')
       return
     }
 
     if (!this.config.enabled) {
-      console.log('[LiveMonitoring] Monitoring is disabled')
+      getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Monitoring is disabled')
       return
     }
 
-    console.log('[LiveMonitoring] Starting...')
+    getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Starting...')
     this.isActive = true
 
     // Get all enabled sources
@@ -253,25 +253,25 @@ export class LiveMonitoringService {
    */
   stop(): void {
     if (!this.isActive) {
-      console.log('[LiveMonitoring] Already stopped')
+      getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Already stopped')
       return
     }
 
-    console.log('[LiveMonitoring] Stopping...')
+    getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Stopping...')
 
     // Clear all polling timers
     for (const [sourceId, timer] of this.pollingTimers) {
       clearTimeout(timer)
-      console.log(`[LiveMonitoring] Stopped polling for ${sourceId}`)
+      getLoggingService().info('[LiveMonitoring]', `Stopped polling for ${sourceId}`)
     }
     this.pollingTimers.clear()
 
     // Close all file watchers (fire-and-forget, but log errors)
     for (const [sourceId, watcher] of this.fileWatchers) {
       watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing watcher for ${sourceId}:`, err)
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
       })
-      console.log(`[LiveMonitoring] Stopped watching ${sourceId}`)
+      getLoggingService().info('[LiveMonitoring]', `Stopped watching ${sourceId}`)
     }
     this.fileWatchers.clear()
 
@@ -296,7 +296,7 @@ export class LiveMonitoringService {
       return
     }
 
-    console.log('[LiveMonitoring] Pausing for task queue - stopping all timers')
+    getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Pausing for task queue - stopping all timers')
     this.emitDebugEvent('info', 'Monitoring paused for scan')
 
     // Clear all polling timers
@@ -331,7 +331,7 @@ export class LiveMonitoringService {
       return
     }
 
-    console.log('[LiveMonitoring] Resuming after task queue - restarting timers')
+    getLoggingService().info('[LiveMonitoringService]', '[LiveMonitoring] Resuming after task queue - restarting timers')
     this.emitDebugEvent('info', 'Monitoring resumed after scan')
 
     // Clear any accumulated file changes to avoid flooding
@@ -361,7 +361,7 @@ export class LiveMonitoringService {
     } else {
       // Both: Polling for background updates AND registered for focus-triggers
       this.startPolling(sourceId, sourceType)
-      console.log(`[LiveMonitoring] ${sourceId} (${sourceType}) started with background polling + focus trigger.`)
+      getLoggingService().info('[LiveMonitoring]', `${sourceId} (${sourceType}) started with background polling + focus trigger.`)
     }
   }
 
@@ -382,7 +382,7 @@ export class LiveMonitoringService {
       }
 
       if (!watchPath) {
-        console.log(`[LiveMonitoring] No path to watch for ${sourceId}`)
+        getLoggingService().info('[LiveMonitoring]', `No path to watch for ${sourceId}`)
         return
       }
 
@@ -394,7 +394,7 @@ export class LiveMonitoringService {
       // Determine if we should use polling (for network paths)
       const usePolling = isNetworkPath(watchPath)
 
-      console.log(`[LiveMonitoring] Starting file watcher for ${sourceName} (usePolling: ${usePolling})`)
+      getLoggingService().info('[LiveMonitoring]', `Starting file watcher for ${sourceName} (usePolling: ${usePolling})`)
       this.emitDebugEvent('info', `Starting file watcher: ${sourceName} (${usePolling ? 'polling' : 'native'})`)
 
       const watcher = chokidar.watch(watchPath, {
@@ -416,7 +416,7 @@ export class LiveMonitoringService {
             this.handleFileChange(sourceId, 'add', filePath)
           }
         } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file add for ${sourceName}:`, error)
+          getLoggingService().error('[LiveMonitoring]', `Error handling file add for ${sourceName}:`, error)
         }
       })
 
@@ -426,7 +426,7 @@ export class LiveMonitoringService {
             this.handleFileChange(sourceId, 'change', filePath)
           }
         } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file change for ${sourceName}:`, error)
+          getLoggingService().error('[LiveMonitoring]', `Error handling file change for ${sourceName}:`, error)
         }
       })
 
@@ -436,28 +436,28 @@ export class LiveMonitoringService {
             this.handleFileChange(sourceId, 'unlink', filePath)
           }
         } catch (error) {
-          console.error(`[LiveMonitoring] Error handling file unlink for ${sourceName}:`, error)
+          getLoggingService().error('[LiveMonitoring]', `Error handling file unlink for ${sourceName}:`, error)
         }
       })
 
       watcher.on('error', (error) => {
-        console.error(`[LiveMonitoring] Watcher error for ${sourceName}:`, error)
+        getLoggingService().error('[LiveMonitoring]', `Watcher error for ${sourceName}:`, error)
         this.emitDebugEvent('error', `[${sourceName}] Watcher error: ${getErrorMessage(error) || error}`)
         try {
           this.handleWatcherError(sourceId, sourceType, watchPath!)
         } catch (handlerError) {
-          console.error(`[LiveMonitoring] Error in watcher error handler for ${sourceName}:`, handlerError)
+          getLoggingService().error('[LiveMonitoring]', `Error in watcher error handler for ${sourceName}:`, handlerError)
         }
       })
 
       watcher.on('ready', () => {
-        console.log(`[LiveMonitoring] Watcher ready for ${sourceName}`)
+        getLoggingService().info('[LiveMonitoring]', `Watcher ready for ${sourceName}`)
         this.emitDebugEvent('info', `[${sourceName}] File watcher ready`)
       })
 
       this.fileWatchers.set(sourceId, watcher)
     } catch (error) {
-      console.error(`[LiveMonitoring] Failed to start watcher for ${sourceId}:`, error)
+      getLoggingService().error('[LiveMonitoring]', `Failed to start watcher for ${sourceId}:`, error)
     }
   }
 
@@ -478,7 +478,7 @@ export class LiveMonitoringService {
     if (watcher) {
       this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
       watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing failed watcher for ${sourceId}:`, err)
+        getLoggingService().error('[LiveMonitoring]', `Error closing failed watcher for ${sourceId}:`, err)
       })
     }
 
@@ -490,7 +490,7 @@ export class LiveMonitoringService {
     }
     this.pendingFileChanges.delete(sourceId)
 
-    console.log(`[LiveMonitoring] Watcher failed for ${sourceId}, falling back to polling`)
+    getLoggingService().info('[LiveMonitoring]', `Watcher failed for ${sourceId}, falling back to polling`)
 
     // Fall back to polling for this source
     this.startPolling(sourceId, sourceType)
@@ -510,7 +510,7 @@ export class LiveMonitoringService {
     const source = db.getMediaSourceById(sourceId)
     const sourceName = source?.display_name || sourceId
 
-    console.log(`[LiveMonitoring] File ${event}: ${path.basename(filePath)}`)
+    getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
     const fileName = path.basename(filePath)
     this.emitDebugEvent(event === 'unlink' ? 'removed' : 'info', `[${sourceName}] File ${event}: ${fileName}`)
 
@@ -546,18 +546,18 @@ export class LiveMonitoringService {
     try {
       // Check if manual scan is in progress
       if (this.shouldPause()) {
-        console.log(`[LiveMonitoring] Manual scan in progress, discarding ${changedFiles.length} file changes for ${sourceId}`)
+        getLoggingService().info('[LiveMonitoring]', `Manual scan in progress, discarding ${changedFiles.length} file changes for ${sourceId}`)
         return
       }
 
       // Safety check: if too many files changed at once, it's probably from scan interference
       // Normal user operations would be adding/removing a few files at a time
       if (changedFiles.length > LiveMonitoringService.MAX_REASONABLE_CHANGES) {
-        console.log(`[LiveMonitoring] Too many file changes (${changedFiles.length}), likely scan interference - skipping`)
+        getLoggingService().info('[LiveMonitoring]', `Too many file changes (${changedFiles.length}), likely scan interference - skipping`)
         return
       }
 
-      console.log(`[LiveMonitoring] Processing ${changedFiles.length} file changes for ${sourceId}`)
+      getLoggingService().info('[LiveMonitoring]', `Processing ${changedFiles.length} file changes for ${sourceId}`)
       getLoggingService().verbose('[LiveMonitoring]',
         `Processing file changes for ${sourceId}`,
         changedFiles.map(f => path.basename(f)).join(', '))
@@ -565,7 +565,7 @@ export class LiveMonitoringService {
       // Use targeted file scanning (much faster than full scan)
       await this.checkSourceWithTargetedFiles(sourceId, changedFiles)
     } catch (error) {
-      console.error(`[LiveMonitoring] Error processing file changes for ${sourceId}:`, error)
+      getLoggingService().error('[LiveMonitoring]', `Error processing file changes for ${sourceId}:`, error)
     }
   }
 
@@ -579,7 +579,7 @@ export class LiveMonitoringService {
     // Get source info
     const source = db.getMediaSourceById(sourceId)
     if (!source) {
-      console.log(`[LiveMonitoring] Source ${sourceId} not found`)
+      getLoggingService().info('[LiveMonitoring]', `Source ${sourceId} not found`)
       return []
     }
 
@@ -601,7 +601,7 @@ export class LiveMonitoringService {
           () => {} // Silent progress
         )
 
-        console.log(`[LiveMonitoring] Scan result for ${library.libraryId}: success=${result.success}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}`)
+        getLoggingService().info('[LiveMonitoring]', `Scan result for ${library.libraryId}: success=${result.success}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}`)
 
         // Check for changes
         if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0 || result.itemsRemoved > 0)) {
@@ -714,10 +714,10 @@ export class LiveMonitoringService {
             this.emitDebugEvent('removed', `[${source.display_name}] ${result.itemsRemoved} item(s) removed from ${library.libraryName}`)
           }
 
-          console.log(`[LiveMonitoring] Targeted scan complete for ${library.libraryName}: ${changeDescription}`)
+          getLoggingService().info('[LiveMonitoring]', `Targeted scan complete for ${library.libraryName}: ${changeDescription}`)
         }
       } catch (error) {
-        console.error(`[LiveMonitoring] Error in targeted scan for library ${library.libraryId}:`, error)
+        getLoggingService().error('[LiveMonitoring]', `Error in targeted scan for library ${library.libraryId}:`, error)
       }
     }
 
@@ -731,7 +731,7 @@ export class LiveMonitoringService {
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
       import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
         getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
+          getLoggingService().error('[LiveMonitoringService]', '[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
         })
       })
     }
@@ -745,7 +745,7 @@ export class LiveMonitoringService {
   private startPolling(sourceId: string, sourceType: ProviderType): void {
     const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType]
 
-    console.log(`[LiveMonitoring] Starting polling for ${sourceId} (${sourceType}) every ${interval / 1000}s`)
+    getLoggingService().info('[LiveMonitoring]', `Starting polling for ${sourceId} (${sourceType}) every ${interval / 1000}s`)
 
     // Schedule first check after a short delay
     const timer = setTimeout(() => this.pollSource(sourceId, sourceType), LiveMonitoringService.FIRST_POLL_DELAY_MS)
@@ -759,7 +759,7 @@ export class LiveMonitoringService {
     try {
       // Check if we should pause
       if (this.shouldPause()) {
-        console.log(`[LiveMonitoring] Manual scan in progress, skipping poll for ${sourceId}`)
+        getLoggingService().info('[LiveMonitoring]', `Manual scan in progress, skipping poll for ${sourceId}`)
         this.scheduleNextPoll(sourceId, sourceType)
         return
       }
@@ -771,7 +771,7 @@ export class LiveMonitoringService {
       const source = db.getMediaSourceById(sourceId)
       const sourceName = source?.display_name || sourceId
 
-      console.log(`[LiveMonitoring] Polling ${sourceName}...`)
+      getLoggingService().info('[LiveMonitoring]', `Polling ${sourceName}...`)
       this.emitDebugEvent('poll', `Polling: ${sourceName}`)
       this.lastCheckTimes.set(sourceId, new Date())
 
@@ -785,7 +785,7 @@ export class LiveMonitoringService {
       getLoggingService().verbose('[LiveMonitoring]',
         `Poll complete: "${sourceName}" in ${((Date.now() - pollStart) / 1000).toFixed(1)}s`)
     } catch (error) {
-      console.error(`[LiveMonitoring] Error polling ${sourceId}:`, error)
+      getLoggingService().error('[LiveMonitoring]', `Error polling ${sourceId}:`, error)
       this.emitDebugEvent('error', `Polling error: ${sourceId}`)
     } finally {
       // Always schedule next poll, even if this one failed
@@ -822,7 +822,7 @@ export class LiveMonitoringService {
     // Get source info
     const source = db.getMediaSourceById(sourceId)
     if (!source) {
-      console.log(`[LiveMonitoring] Source ${sourceId} not found`)
+      getLoggingService().info('[LiveMonitoring]', `Source ${sourceId} not found`)
       return []
     }
 
@@ -898,7 +898,7 @@ export class LiveMonitoringService {
             ? `${result.itemsAdded} new, ${result.itemsUpdated} updated`
             : result.itemsAdded > 0 ? `${result.itemsAdded} new` : `${result.itemsUpdated} updated`
 
-          console.log(`[LiveMonitoring] Detected changes in ${library.libraryName}: ${changeDescription}`)
+          getLoggingService().info('[LiveMonitoring]', `Detected changes in ${library.libraryName}: ${changeDescription}`)
         }
 
         // Handle removed items
@@ -919,10 +919,10 @@ export class LiveMonitoringService {
           // Emit debug event for removals
           this.emitDebugEvent('removed', `[${source.display_name}] ${result.itemsRemoved} item(s) removed from ${library.libraryName}`)
 
-          console.log(`[LiveMonitoring] Detected ${result.itemsRemoved} removed items in ${library.libraryName}`)
+          getLoggingService().info('[LiveMonitoring]', `Detected ${result.itemsRemoved} removed items in ${library.libraryName}`)
         }
       } catch (error) {
-        console.error(`[LiveMonitoring] Error checking library ${library.libraryId}:`, error)
+        getLoggingService().error('[LiveMonitoring]', `Error checking library ${library.libraryId}:`, error)
       }
     }
 
@@ -936,7 +936,7 @@ export class LiveMonitoringService {
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
       import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
         getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
+          getLoggingService().error('[LiveMonitoringService]', '[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
         })
       })
     }
@@ -1010,9 +1010,9 @@ export class LiveMonitoringService {
         const lastCheck = this.lastCheckTimes.get(source.source_id)
         const now = new Date()
         if (!lastCheck || (now.getTime() - lastCheck.getTime() > 30000)) {
-          console.log(`[LiveMonitoring] Focus trigger: checking lazy source ${source.display_name}`)
+          getLoggingService().info('[LiveMonitoring]', `Focus trigger: checking lazy source ${source.display_name}`)
           this.checkSource(source.source_id).catch(err => {
-            console.error(`[LiveMonitoring] Focus check failed for ${source.source_id}:`, err)
+            getLoggingService().error('[LiveMonitoring]', `Focus check failed for ${source.source_id}:`, err)
           })
           this.lastCheckTimes.set(source.source_id, now)
         }
@@ -1025,11 +1025,11 @@ export class LiveMonitoringService {
    */
   async forceCheck(sourceId: string): Promise<SourceChangeEvent[]> {
     if (this.shouldPause()) {
-      console.log(`[LiveMonitoring] Manual scan in progress, cannot force check`)
+      getLoggingService().info('[LiveMonitoring]', `Manual scan in progress, cannot force check`)
       return []
     }
 
-    console.log(`[LiveMonitoring] Force checking ${sourceId}...`)
+    getLoggingService().info('[LiveMonitoring]', `Force checking ${sourceId}...`)
     return this.checkSource(sourceId)
   }
 
@@ -1046,7 +1046,7 @@ export class LiveMonitoringService {
    * Remove a source from monitoring (when source is removed)
    */
   removeSource(sourceId: string): void {
-    console.log(`[LiveMonitoring] Removing source ${sourceId} from monitoring`)
+    getLoggingService().info('[LiveMonitoring]', `Removing source ${sourceId} from monitoring`)
 
     // Stop polling timer
     const timer = this.pollingTimers.get(sourceId)
@@ -1060,7 +1060,7 @@ export class LiveMonitoringService {
     if (watcher) {
       this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
       watcher.close().catch((err) => {
-        console.error(`[LiveMonitoring] Error closing watcher for removed source ${sourceId}:`, err)
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for removed source ${sourceId}:`, err)
       })
     }
 

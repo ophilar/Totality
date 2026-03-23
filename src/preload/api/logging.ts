@@ -1,6 +1,13 @@
 import { ipcRenderer } from 'electron'
 
 export const loggingApi = {
+  log: {
+    info: (source: string, message: unknown, ...details: unknown[]) => ipcRenderer.send('logs:info', source, message, ...details),
+    warn: (source: string, message: unknown, ...details: unknown[]) => ipcRenderer.send('logs:warn', source, message, ...details),
+    error: (source: string, message: unknown, ...details: unknown[]) => ipcRenderer.send('logs:error', source, message, ...details),
+    debug: (source: string, message: unknown, ...details: unknown[]) => ipcRenderer.send('logs:debug', source, message, ...details),
+  },
+
   // ============================================================================
   // LOGGING
   // ============================================================================
@@ -21,6 +28,13 @@ export const loggingApi = {
 }
 
 export interface LoggingAPI {
+  log: {
+    info: (source: string, message: unknown, ...details: unknown[]) => void
+    warn: (source: string, message: unknown, ...details: unknown[]) => void
+    error: (source: string, message: unknown, ...details: unknown[]) => void
+    debug: (source: string, message: unknown, ...details: unknown[]) => void
+  }
+
   // ============================================================================
   // LOGGING
   // ============================================================================

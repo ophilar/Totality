@@ -63,7 +63,7 @@ export function useAnalysisManager({
       const key = await window.electronAPI.getSetting('tmdb_api_key')
       setTmdbApiKeySet(!!key && key.length > 0)
     } catch (err) {
-      console.warn('Failed to check TMDB API key:', err)
+      window.electronAPI.log.warn('[useAnalysisManager]', 'Failed to check TMDB API key:', err)
     }
   }, [])
 
@@ -84,7 +84,7 @@ export function useAnalysisManager({
         libraryId,
       })
     } catch (err) {
-      console.error('Failed to queue series analysis:', err)
+      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue series analysis:', err)
     }
   }, [activeSourceId, activeSourceLibraries, getSourceName])
 
@@ -105,7 +105,7 @@ export function useAnalysisManager({
         libraryId,
       })
     } catch (err) {
-      console.error('Failed to queue collections analysis:', err)
+      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue collections analysis:', err)
     }
   }, [activeSourceId, activeSourceLibraries, getSourceName])
 
@@ -119,7 +119,7 @@ export function useAnalysisManager({
         sourceId: activeSourceId || undefined,
       })
     } catch (err) {
-      console.error('Failed to queue music analysis:', err)
+      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue music analysis:', err)
     }
   }, [activeSourceId, getSourceName])
 
@@ -127,11 +127,11 @@ export function useAnalysisManager({
   const handleAnalyzeSingleSeries = useCallback(
     async (seriesTitle: string) => {
       try {
-        console.log(`[useAnalysisManager] Analyzing series: ${seriesTitle}`)
+        window.electronAPI.log.info('[useAnalysisManager]', `Analyzing series: ${seriesTitle}`)
         await window.electronAPI.seriesAnalyze(seriesTitle)
         await loadCompletenessData()
       } catch (err) {
-        console.error('Single series analysis failed:', err)
+        window.electronAPI.log.error('[useAnalysisManager]', 'Single series analysis failed:', err)
       }
     },
     [loadCompletenessData]
@@ -142,7 +142,7 @@ export function useAnalysisManager({
     try {
       await window.electronAPI.taskQueueCancelCurrent()
     } catch (err) {
-      console.error('Failed to cancel analysis:', err)
+      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to cancel analysis:', err)
     }
   }, [])
 

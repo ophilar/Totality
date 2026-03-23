@@ -176,7 +176,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
               libraryId: srcLib.id,
             })
           } catch (err) {
-            console.error('Failed to queue library scan:', err)
+            window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to queue library scan:', err)
           }
         }
       } else {
@@ -208,7 +208,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
               libraryId: srcLib.id,
             })
           } catch (err) {
-            console.error('Failed to queue library scan:', err)
+            window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to queue library scan:', err)
           }
         }
       }

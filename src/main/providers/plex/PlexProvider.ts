@@ -130,7 +130,7 @@ export class PlexProvider extends BaseMediaProvider {
       })
       return response.data as PlexAuthPin
     } catch (error) {
-      console.error('Failed to request auth PIN:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to request auth PIN:', error)
       throw new Error('Failed to initiate Plex authentication')
     }
   }
@@ -157,7 +157,7 @@ export class PlexProvider extends BaseMediaProvider {
 
       return null
     } catch (error) {
-      console.error('Failed to check auth PIN:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to check auth PIN:', error)
       return null
     }
   }
@@ -187,7 +187,7 @@ export class PlexProvider extends BaseMediaProvider {
         error: 'Invalid or missing token',
       }
     } catch (error: unknown) {
-      console.error('Plex authentication failed:', error)
+      getLoggingService().error('[PlexProvider]', 'Plex authentication failed:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Authentication failed',
@@ -243,7 +243,7 @@ export class PlexProvider extends BaseMediaProvider {
         }
       })
     } catch (error) {
-      console.error('Failed to discover servers:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to discover servers:', error)
       throw new Error('Failed to discover Plex servers')
     }
   }
@@ -290,7 +290,7 @@ export class PlexProvider extends BaseMediaProvider {
             timeout: 5000,
           })
           workingConnection = conn
-          console.log(`[PlexProvider] Connected via ${conn.local ? 'local' : conn.relay ? 'relay' : 'remote'} (${conn.protocol})`)
+          getLoggingService().info('[PlexProvider]', `Connected via ${conn.local ? 'local' : conn.relay ? 'relay' : 'remote'} (${conn.protocol})`)
           break
         } catch {
           console.debug(`[PlexProvider] Connection failed: ${conn.local ? 'local' : conn.relay ? 'relay' : 'remote'} (${conn.protocol}), trying next...`)
@@ -403,7 +403,7 @@ export class PlexProvider extends BaseMediaProvider {
       const items = await this.paginatedPlexFetch<PlexMediaItem>(url)
       return items.map((item: PlexMediaItem) => this.convertToMediaMetadata(item))
     } catch (error) {
-      console.error('Failed to get library items:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get library items:', error)
       throw new Error('Failed to fetch library items')
     }
   }
@@ -431,7 +431,7 @@ export class PlexProvider extends BaseMediaProvider {
 
       return this.convertToMediaMetadata(metadata)
     } catch (error) {
-      console.error('Failed to get item metadata:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get item metadata:', error)
       throw error
     }
   }
@@ -554,7 +554,7 @@ export class PlexProvider extends BaseMediaProvider {
 
               const detailed = metaResult.value
               if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                console.warn(`[PlexProvider ${this.sourceId}] Skipping ${item.title}: no media data available`)
+                getLoggingService().warn('[PlexProvider ${this.sourceId}]', `Skipping ${item.title}: no media data available`)
                 continue
               }
 
@@ -637,14 +637,14 @@ export class PlexProvider extends BaseMediaProvider {
         // Incremental scan: fetch all current IDs from Plex to detect changes
         const libType = libraryType || await this.getPlexLibraryType(libraryId)
         if (libType) {
-          console.log(`[PlexProvider ${this.sourceId}] Checking for changes in ${libType} library...`)
+          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Checking for changes in ${libType} library...`)
           const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
           const itemType = libType === 'show' ? 'episode' : 'movie'
 
           // Check for deletions (items in DB but not in Plex)
           const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
           if (removedCount > 0) {
-            console.log(`[PlexProvider ${this.sourceId}] Removed ${removedCount} deleted items`)
+            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Removed ${removedCount} deleted items`)
           }
           result.itemsRemoved = removedCount
 
@@ -659,11 +659,11 @@ export class PlexProvider extends BaseMediaProvider {
           }
 
           if (missingIds.length > 0) {
-            console.log(`[PlexProvider ${this.sourceId}] Found ${missingIds.length} items in Plex not in DB, fetching...`)
+            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Found ${missingIds.length} items in Plex not in DB, fetching...`)
             // Fetch and process the missing items
             const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
             result.itemsAdded += addedCount
-            console.log(`[PlexProvider ${this.sourceId}] Added ${addedCount} missing items`)
+            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Added ${addedCount} missing items`)
           }
         }
       }
@@ -688,13 +688,13 @@ export class PlexProvider extends BaseMediaProvider {
     const db = getDatabase()
     const items = db.getMediaItems({ type, sourceId: this.sourceId, libraryId })
 
-    console.log(`[PlexProvider ${this.sourceId}] Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
+    getLoggingService().info('[PlexProvider ${this.sourceId}]', `Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
 
     let removedCount = 0
     for (const item of items) {
       if (!validIds.has(item.plex_id)) {
         if (item.id) {
-          console.log(`[PlexProvider ${this.sourceId}] Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
+          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
           await db.deleteMediaItem(item.id)
           removedCount++
         }
@@ -728,7 +728,7 @@ export class PlexProvider extends BaseMediaProvider {
       }
       return null
     } catch (error) {
-      console.error(`[PlexProvider ${this.sourceId}] Failed to get library type:`, error)
+      getLoggingService().error('[PlexProvider ${this.sourceId}]', `Failed to get library type:`, error)
       return null
     }
   }
@@ -757,7 +757,7 @@ export class PlexProvider extends BaseMediaProvider {
       }
     }
 
-    console.log(`[PlexProvider ${this.sourceId}] Got ${ids.size} item IDs for reconciliation`)
+    getLoggingService().info('[PlexProvider ${this.sourceId}]', `Got ${ids.size} item IDs for reconciliation`)
     return ids
   }
 
@@ -808,14 +808,14 @@ export class PlexProvider extends BaseMediaProvider {
               db.upsertQualityScore(qualityScore)
             }
           } catch (qualityError) {
-            console.warn(`[PlexProvider ${this.sourceId}] Failed to analyze quality for ${mediaItem.title}`)
+            getLoggingService().warn('[PlexProvider ${this.sourceId}]', `Failed to analyze quality for ${mediaItem.title}`)
           }
 
           addedCount++
-          console.log(`[PlexProvider ${this.sourceId}] Added missing ${itemType}: "${mediaItem.title}"`)
+          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Added missing ${itemType}: "${mediaItem.title}"`)
         }
       } catch (error) {
-        console.error(`[PlexProvider ${this.sourceId}] Failed to fetch item ${ratingKey}:`, error)
+        getLoggingService().error('[PlexProvider ${this.sourceId}]', `Failed to fetch item ${ratingKey}:`, error)
       }
     }
 
@@ -878,12 +878,12 @@ export class PlexProvider extends BaseMediaProvider {
     if (sinceTimestamp) {
       const unixSeconds = Math.floor(sinceTimestamp.getTime() / 1000)
       params['addedAt>'] = unixSeconds
-      console.log(`[PlexProvider ${this.sourceId}] Incremental scan: fetching items added after ${sinceTimestamp.toISOString()}`)
+      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Incremental scan: fetching items added after ${sinceTimestamp.toISOString()}`)
     }
 
     const items = await this.paginatedPlexFetch<PlexMediaItem>(url, Object.keys(params).length > 0 ? params : undefined)
     if (sinceTimestamp) {
-      console.log(`[PlexProvider ${this.sourceId}] Incremental scan found ${items.length} new/updated items`)
+      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Incremental scan found ${items.length} new/updated items`)
     }
     return items
   }
@@ -906,7 +906,7 @@ export class PlexProvider extends BaseMediaProvider {
       const responseData = response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } }
       return responseData?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
-      console.error('Failed to get item metadata:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get item metadata:', error)
       return null
     }
   }
@@ -920,7 +920,7 @@ export class PlexProvider extends BaseMediaProvider {
       const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
       return await this.paginatedPlexFetch<PlexMediaItem>(url)
     } catch (error) {
-      console.error('Failed to get episodes:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get episodes:', error)
       return []
     }
   }
@@ -965,7 +965,7 @@ export class PlexProvider extends BaseMediaProvider {
 
       return response.data as PlexUser
     } catch (error) {
-      console.error('Failed to get user info:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get user info:', error)
       return null
     }
   }
@@ -1282,18 +1282,18 @@ export class PlexProvider extends BaseMediaProvider {
       throw new Error('No server selected')
     }
 
-    console.log(`[PlexProvider] Fetching artists from library ${libraryKey}`)
-    console.log(`[PlexProvider] Fetching artists from server: ${this.selectedServer.name || 'unknown'}`)
+    getLoggingService().info('[PlexProvider]', `Fetching artists from library ${libraryKey}`)
+    getLoggingService().info('[PlexProvider]', `Fetching artists from server: ${this.selectedServer.name || 'unknown'}`)
 
     // For music libraries (type 'artist'), calling /all returns artists by default
     // We explicitly request type=8 (artist) to ensure we get artists only
     const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
     const artists = await this.paginatedPlexFetch<PlexMusicArtist>(url, { type: 8 })
-    console.log(`[PlexProvider] Found ${artists.length} artists in library ${libraryKey}`)
+    getLoggingService().info('[PlexProvider]', `Found ${artists.length} artists in library ${libraryKey}`)
 
     // Log first artist for debugging
     if (artists.length > 0) {
-      console.log(`[PlexProvider] First artist sample:`, JSON.stringify(artists[0], null, 2).substring(0, 500))
+      getLoggingService().info('[PlexProvider]', `First artist sample:`, JSON.stringify(artists[0], null, 2).substring(0, 500))
     }
 
     return artists
@@ -1307,7 +1307,7 @@ export class PlexProvider extends BaseMediaProvider {
       throw new Error('No server selected')
     }
 
-    console.log(`[PlexProvider] Fetching albums from ${artistKey ? `artist ${artistKey}` : `library ${libraryKey}`}`)
+    getLoggingService().info('[PlexProvider]', `Fetching albums from ${artistKey ? `artist ${artistKey}` : `library ${libraryKey}`}`)
 
     let albums: PlexMusicAlbum[]
     if (artistKey) {
@@ -1327,11 +1327,11 @@ export class PlexProvider extends BaseMediaProvider {
       albums = await this.paginatedPlexFetch<PlexMusicAlbum>(url, { type: 9 })
     }
 
-    console.log(`[PlexProvider] Found ${albums.length} albums`)
+    getLoggingService().info('[PlexProvider]', `Found ${albums.length} albums`)
 
     // Log first album for debugging
     if (albums.length > 0) {
-      console.log(`[PlexProvider] First album sample:`, JSON.stringify(albums[0], null, 2).substring(0, 500))
+      getLoggingService().info('[PlexProvider]', `First album sample:`, JSON.stringify(albums[0], null, 2).substring(0, 500))
     }
 
     return albums
@@ -1345,7 +1345,7 @@ export class PlexProvider extends BaseMediaProvider {
       throw new Error('No server selected')
     }
 
-    console.log(`[PlexProvider] Fetching tracks for album ${albumKey}`)
+    getLoggingService().info('[PlexProvider]', `Fetching tracks for album ${albumKey}`)
 
     // Request tracks with Media information included
     // Using includeFields to ensure we get all track data
@@ -1361,17 +1361,17 @@ export class PlexProvider extends BaseMediaProvider {
 
     const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicTrack[] } }
     const tracks = responseData?.MediaContainer?.Metadata || []
-    console.log(`[PlexProvider] Found ${tracks.length} tracks`)
+    getLoggingService().info('[PlexProvider]', `Found ${tracks.length} tracks`)
 
     // Log first track to check if Media data is present
     if (tracks.length > 0) {
       const firstTrack = tracks[0]
-      console.log(`[PlexProvider] First track sample:`, JSON.stringify(firstTrack, null, 2).substring(0, 800))
-      console.log(`[PlexProvider] First track has Media: ${!!firstTrack.Media}`)
+      getLoggingService().info('[PlexProvider]', `First track sample:`, JSON.stringify(firstTrack, null, 2).substring(0, 800))
+      getLoggingService().info('[PlexProvider]', `First track has Media: ${!!firstTrack.Media}`)
 
       // If no Media data, we may need to fetch each track individually
       if (!firstTrack.Media) {
-        console.log(`[PlexProvider] Tracks missing Media data, fetching individual metadata...`)
+        getLoggingService().info('[PlexProvider]', `Tracks missing Media data, fetching individual metadata...`)
         const detailedTracks: PlexMusicTrack[] = []
         for (const track of tracks) {
           try {
@@ -1390,11 +1390,11 @@ export class PlexProvider extends BaseMediaProvider {
               detailedTracks.push(detailedTrack)
             }
           } catch (error) {
-            console.warn(`[PlexProvider] Failed to fetch track ${track.ratingKey}:`, error)
+            getLoggingService().warn('[PlexProvider]', `Failed to fetch track ${track.ratingKey}:`, error)
             detailedTracks.push(track) // Use basic track data as fallback
           }
         }
-        console.log(`[PlexProvider] Fetched ${detailedTracks.length} detailed tracks`)
+        getLoggingService().info('[PlexProvider]', `Fetched ${detailedTracks.length} detailed tracks`)
         return detailedTracks
       }
     }
@@ -1423,7 +1423,7 @@ export class PlexProvider extends BaseMediaProvider {
       const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicArtist[] } }
       return responseData?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
-      console.error('Failed to get artist metadata:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get artist metadata:', error)
       return null
     }
   }
@@ -1449,7 +1449,7 @@ export class PlexProvider extends BaseMediaProvider {
       const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicAlbum[] } }
       return responseData?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
-      console.error('Failed to get album metadata:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get album metadata:', error)
       return null
     }
   }
@@ -1543,7 +1543,7 @@ export class PlexProvider extends BaseMediaProvider {
     const audioStream = part?.Stream?.find(s => s.streamType === 2)
 
     if (!media || !part) {
-      console.warn(`[PlexProvider] Skipping track "${item.title}" - no Media/Part data`)
+      getLoggingService().warn('[PlexProvider]', `Skipping track "${item.title}" - no Media/Part data`)
       return null
     }
 
@@ -1764,12 +1764,12 @@ export class PlexProvider extends BaseMediaProvider {
       }
 
       // Phase 2: Get all albums directly to catch compilations and orphaned albums
-      console.log(`[PlexProvider ${this.sourceId}] Scanning for compilations and orphaned albums...`)
+      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Scanning for compilations and orphaned albums...`)
 
       const allAlbums = await this.getMusicAlbums(libraryId)
       const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(a.ratingKey))
 
-      console.log(`[PlexProvider ${this.sourceId}] Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
+      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
 
       let compilationProcessed = 0
       const totalCompilations = unprocessedAlbums.length
@@ -1777,7 +1777,7 @@ export class PlexProvider extends BaseMediaProvider {
       for (const plexAlbum of unprocessedAlbums) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          console.log(`[PlexProvider ${this.sourceId}] Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
+          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result

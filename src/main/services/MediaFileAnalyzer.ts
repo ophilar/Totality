@@ -14,6 +14,7 @@ import {
 } from './MediaNormalizer'
 import type { MediaMetadata } from '../providers/base/MediaProvider'
 import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '../workers/ffprobe-worker'
+import { getLoggingService } from '../services/LoggingService'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
 
@@ -133,7 +134,7 @@ export class MediaFileAnalyzer {
         if (available) {
           this.ffprobePath = probePath
           this.ffprobeChecked = true
-          console.log(`[MediaFileAnalyzer] Found FFprobe at: ${probePath === 'ffprobe' ? 'system PATH' : 'bundled'}`)
+          getLoggingService().info('[MediaFileAnalyzer]', `Found FFprobe at: ${probePath === 'ffprobe' ? 'system PATH' : 'bundled'}`)
           return true
         }
       } catch {
@@ -173,7 +174,7 @@ export class MediaFileAnalyzer {
       if (platform === 'darwin') return await this.fetchLatestVersionMacOS()
       if (platform === 'linux') return await this.fetchLatestVersionLinux()
     } catch (error) {
-      console.error('[MediaFileAnalyzer] Failed to check latest version:', error)
+      getLoggingService().error('[MediaFileAnalyzer]', '[MediaFileAnalyzer] Failed to check latest version:', error)
     }
     return null
   }

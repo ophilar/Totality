@@ -119,7 +119,7 @@ export function CompletenessPanel({
         const state = await window.electronAPI.taskQueueGetState()
         setQueueState(state)
       } catch (err) {
-        console.error('Failed to load queue state:', err)
+        window.electronAPI.log.error('[CompletenessPanel]', 'Failed to load queue state:', err)
       }
     }
 
@@ -181,7 +181,7 @@ export function CompletenessPanel({
       const key = await window.electronAPI.getSetting('tmdb_api_key')
       setIsKeyConfigured(!!key)
     } catch (err) {
-      console.error('Error loading API key:', err)
+      window.electronAPI.log.error('[CompletenessPanel]', 'Error loading API key:', err)
     }
   }
 

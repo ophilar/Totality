@@ -174,7 +174,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[KodiMySQLFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -194,7 +194,7 @@ export function KodiMySQLFlow({ onSuccess, onBack }: KodiMySQLFlowProps) {
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[KodiMySQLFlow]', 'Failed to queue library scan:', err)
       }
     }
 

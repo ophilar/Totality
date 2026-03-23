@@ -192,7 +192,7 @@ export function QualitySettingsTab() {
       setSettings(loaded)
       setOriginalSettings(loaded)
     } catch (error) {
-      console.error('Failed to load settings:', error)
+      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to load settings:', error)
     } finally {
       setIsLoading(false)
     }
@@ -207,7 +207,7 @@ export function QualitySettingsTab() {
       setOriginalSettings({ ...settings })
       setShowReanalyzePrompt(true)
     } catch (error) {
-      console.error('Failed to save settings:', error)
+      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to save settings:', error)
     } finally {
       setIsSaving(false)
     }
@@ -219,7 +219,7 @@ export function QualitySettingsTab() {
     try {
       await window.electronAPI.qualityAnalyzeAll()
     } catch (error) {
-      console.error('Failed to re-analyze:', error)
+      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to re-analyze:', error)
     } finally {
       setIsReanalyzing(false)
       setReanalyzeProgress(null)

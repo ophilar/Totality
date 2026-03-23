@@ -10,6 +10,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { app } from 'electron'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
+import { getLoggingService } from '../services/LoggingService'
 
 
 interface WorkerTask {
@@ -80,7 +81,7 @@ export class FFprobeWorkerPool {
 
     this.ffprobePath = ffprobePath
     this.initialized = true
-    console.log(`[FFprobeWorkerPool] Initialized with ${this.maxWorkers} workers`)
+    getLoggingService().info('[FFprobeWorkerPool]', `Initialized with ${this.maxWorkers} workers`)
   }
 
   /**
@@ -88,7 +89,7 @@ export class FFprobeWorkerPool {
    */
   setMaxWorkers(count: number): void {
     this.maxWorkers = Math.min(16, Math.max(1, count))
-    console.log(`[FFprobeWorkerPool] Max workers set to ${this.maxWorkers}`)
+    getLoggingService().info('[FFprobeWorkerPool]', `Max workers set to ${this.maxWorkers}`)
   }
 
   /**
@@ -254,21 +255,21 @@ export class FFprobeWorkerPool {
       })
 
       worker.on('error', (error) => {
-        console.error('[FFprobeWorkerPool] Worker error:', error)
+        getLoggingService().error('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Worker error:', error)
         this.handleWorkerError(workerInfo, error)
       })
 
       worker.on('exit', (code) => {
         if (code !== 0 && !this.isShuttingDown) {
-          console.warn(`[FFprobeWorkerPool] Worker exited with code ${code}`)
+          getLoggingService().warn('[FFprobeWorkerPool]', `Worker exited with code ${code}`)
         }
         this.removeWorker(workerInfo)
       })
 
-      console.log(`[FFprobeWorkerPool] Created worker (total: ${this.workers.length + 1})`)
+      getLoggingService().info('[FFprobeWorkerPool]', `Created worker (total: ${this.workers.length + 1})`)
       return workerInfo
     } catch (error) {
-      console.error('[FFprobeWorkerPool] Failed to create worker:', error)
+      getLoggingService().error('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Failed to create worker:', error)
       return null
     }
   }
@@ -384,7 +385,7 @@ export class FFprobeWorkerPool {
     this.initialized = false
     this.isShuttingDown = false
 
-    console.log('[FFprobeWorkerPool] Shutdown complete')
+    getLoggingService().info('[FFprobeWorkerPool]', '[FFprobeWorkerPool] Shutdown complete')
   }
 
   /**

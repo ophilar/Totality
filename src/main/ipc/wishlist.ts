@@ -1,3 +1,4 @@
+import { getLoggingService } from '../services/LoggingService'
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
 import { getDatabase } from '../database/getDatabase'
@@ -25,7 +26,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:add', async (_event, item: unknown) => {
     try {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:add')
-      console.log('[IPC wishlist:add]', validItem.media_type, `"${validItem.title}"`)
+      getLoggingService().info('[IPC wishlist:add]', validItem.media_type, `"${validItem.title}"`)
 
       // Auto-fetch poster from TMDB if tmdb_id is provided but poster_url is missing
       if (validItem.tmdb_id && !validItem.poster_url) {
@@ -43,7 +44,7 @@ export function registerWishlistHandlers() {
 
       return await db.addWishlistItem(validItem as any)
     } catch (error) {
-      console.error('Error adding wishlist item:', error)
+      getLoggingService().error('[wishlist]', 'Error adding wishlist item:', error)
       throw error
     }
   })
@@ -55,11 +56,11 @@ export function registerWishlistHandlers() {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
-      console.log('[IPC wishlist:update] id:', validId)
+      getLoggingService().info('[wishlist]', '[IPC wishlist:update] id:', validId)
       await db.updateWishlistItem(validId, validUpdates as any)
       return { success: true }
     } catch (error) {
-      console.error('Error updating wishlist item:', error)
+      getLoggingService().error('[wishlist]', 'Error updating wishlist item:', error)
       throw error
     }
   })
@@ -70,11 +71,11 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:remove', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
-      console.log('[IPC wishlist:remove] id:', validId)
+      getLoggingService().info('[wishlist]', '[IPC wishlist:remove] id:', validId)
       await db.removeWishlistItem(validId)
       return { success: true }
     } catch (error) {
-      console.error('Error removing wishlist item:', error)
+      getLoggingService().error('[wishlist]', 'Error removing wishlist item:', error)
       throw error
     }
   })
@@ -87,7 +88,7 @@ export function registerWishlistHandlers() {
       const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
       return db.getWishlistItems(validFilters as any)
     } catch (error) {
-      console.error('Error getting wishlist items:', error)
+      getLoggingService().error('[wishlist]', 'Error getting wishlist items:', error)
       throw error
     }
   })
@@ -100,7 +101,7 @@ export function registerWishlistHandlers() {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
       return db.getWishlistItemById(validId)
     } catch (error) {
-      console.error('Error getting wishlist item:', error)
+      getLoggingService().error('[wishlist]', 'Error getting wishlist item:', error)
       throw error
     }
   })
@@ -112,7 +113,7 @@ export function registerWishlistHandlers() {
     try {
       return db.getWishlistCount()
     } catch (error) {
-      console.error('Error getting wishlist count:', error)
+      getLoggingService().error('[wishlist]', 'Error getting wishlist count:', error)
       throw error
     }
   })
@@ -127,7 +128,7 @@ export function registerWishlistHandlers() {
       const validMediaItemId = mediaItemId !== undefined ? validateInput(PositiveIntSchema, mediaItemId, 'wishlist:checkExists') : undefined
       return db.wishlistItemExists(validTmdbId, validMusicbrainzId, validMediaItemId)
     } catch (error) {
-      console.error('Error checking wishlist existence:', error)
+      getLoggingService().error('[wishlist]', 'Error checking wishlist existence:', error)
       throw error
     }
   })
@@ -139,7 +140,7 @@ export function registerWishlistHandlers() {
     try {
       return db.getWishlistCountsByReason()
     } catch (error) {
-      console.error('Error getting wishlist counts by reason:', error)
+      getLoggingService().error('[wishlist]', 'Error getting wishlist counts by reason:', error)
       throw error
     }
   })
@@ -150,7 +151,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:addBulk', async (_event, items: unknown) => {
     try {
       const validItems = validateInput(z.array(WishlistItemSchema), items, 'wishlist:addBulk')
-      console.log('[IPC wishlist:addBulk]', validItems.length, 'items')
+      getLoggingService().info('[IPC wishlist:addBulk]', validItems.length, 'items')
 
       // Auto-fetch posters from TMDB for items missing poster_url
       const tmdb = getTMDBService()
@@ -171,7 +172,7 @@ export function registerWishlistHandlers() {
       const added = await db.addWishlistItemsBulk(validItems as any)
       return { success: true, added }
     } catch (error) {
-      console.error('Error bulk adding wishlist items:', error)
+      getLoggingService().error('[wishlist]', 'Error bulk adding wishlist items:', error)
       throw error
     }
   })
@@ -188,7 +189,7 @@ export function registerWishlistHandlers() {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:getStoreLinks')
       return storeService.getStoreLinks(validItem as WishlistItem)
     } catch (error) {
-      console.error('Error getting store links:', error)
+      getLoggingService().error('[wishlist]', 'Error getting store links:', error)
       throw error
     }
   })
@@ -204,7 +205,7 @@ export function registerWishlistHandlers() {
       await shell.openExternal(validUrl)
       return { success: true }
     } catch (error) {
-      console.error('Error opening store link:', error)
+      getLoggingService().error('[wishlist]', 'Error opening store link:', error)
       throw error
     }
   })
@@ -220,7 +221,7 @@ export function registerWishlistHandlers() {
       await db.setSetting('store_region', validRegion)
       return { success: true }
     } catch (error) {
-      console.error('Error setting store region:', error)
+      getLoggingService().error('[wishlist]', 'Error setting store region:', error)
       throw error
     }
   })
@@ -233,7 +234,7 @@ export function registerWishlistHandlers() {
       const region = db.getSetting('store_region')
       return region || 'us'
     } catch (error) {
-      console.error('Error getting store region:', error)
+      getLoggingService().error('[wishlist]', 'Error getting store region:', error)
       return 'us'
     }
   })
@@ -278,12 +279,12 @@ export function registerWishlistHandlers() {
 
       return { success: true, path: result.filePath, count: items.length }
     } catch (error) {
-      console.error('Error exporting wishlist:', error)
+      getLoggingService().error('[wishlist]', 'Error exporting wishlist:', error)
       throw error
     }
   })
 
-  console.log('Wishlist IPC handlers registered')
+  getLoggingService().info('[wishlist]', 'Wishlist IPC handlers registered')
 }
 
 /**

@@ -71,7 +71,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         setStep('server-select')
       }
     } catch (err: unknown) {
-      console.error('Discovery failed:', err)
+      window.electronAPI.log.error('[JellyfinAuthFlow]', 'Discovery failed:', err)
     } finally {
       setIsDiscovering(false)
     }
@@ -185,7 +185,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[JellyfinAuthFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -205,7 +205,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[JellyfinAuthFlow]', 'Failed to queue library scan:', err)
       }
     }
 

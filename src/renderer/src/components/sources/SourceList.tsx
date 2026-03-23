@@ -23,7 +23,7 @@ export function SourceList({ onSourcesChanged }: SourceListProps) {
       await scanAllSources()
       onSourcesChanged?.()
     } catch (err) {
-      console.error('Failed to scan all sources:', err)
+      window.electronAPI.log.error('[SourceList]', 'Failed to scan all sources:', err)
     }
   }
 

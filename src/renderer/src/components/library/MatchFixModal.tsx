@@ -87,7 +87,7 @@ export function MatchFixModal({
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
 
-    console.log('[MatchFixModal] Searching for:', searchQuery, 'type:', type)
+    window.electronAPI.log.info('[MatchFixModal]', '[MatchFixModal] Searching for:', searchQuery, 'type:', type)
     setIsSearching(true)
     setError(null)
     setSearchResults([])
@@ -113,10 +113,10 @@ export function MatchFixModal({
           break
       }
 
-      console.log('[MatchFixModal] Got results:', results.length, results)
+      window.electronAPI.log.info('[MatchFixModal]', '[MatchFixModal] Got results:', results.length, results)
       setSearchResults(results)
     } catch (err: unknown) {
-      console.error('[MatchFixModal] Search error:', err)
+      window.electronAPI.log.error('[MatchFixModal]', '[MatchFixModal] Search error:', err)
       setError((err as Error).message || 'Search failed')
     } finally {
       setIsSearching(false)

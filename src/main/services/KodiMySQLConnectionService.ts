@@ -10,6 +10,7 @@ import { getErrorMessage } from './utils/errorUtils'
  */
 
 // Dynamic import for optional mysql2 dependency
+import { getLoggingService } from '../services/LoggingService'
 let mysql: typeof import('mysql2/promise') | null = null
 let mysqlAvailable = false
 
@@ -19,7 +20,7 @@ try {
   mysql = require('mysql2/promise')
   mysqlAvailable = true
 } catch {
-  console.log('[KodiMySQLConnectionService] mysql2 not installed - Kodi MySQL features unavailable')
+  getLoggingService().info('[KodiMySQLConnectionService]', '[KodiMySQLConnectionService] mysql2 not installed - Kodi MySQL features unavailable')
 }
 
 // Type definitions (used even when mysql2 is not available)

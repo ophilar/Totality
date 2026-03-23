@@ -142,7 +142,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       setCount(countResult)
       setCounts(countsResult)
     } catch (err) {
-      console.error('Error loading wishlist:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error loading wishlist:', err)
       setError('Failed to load wishlist')
     } finally {
       setIsLoading(false)
@@ -154,7 +154,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       const storedRegion = await window.electronAPI.wishlistGetRegion()
       setRegionState(storedRegion)
     } catch (err) {
-      console.error('Error loading region:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error loading region:', err)
     }
   }, [])
 
@@ -182,7 +182,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await loadWishlist()
       return id
     } catch (err) {
-      console.error('Error adding wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error adding wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -192,7 +192,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistUpdate(id, updates)
       await loadWishlist()
     } catch (err) {
-      console.error('Error updating wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error updating wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -202,7 +202,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistUpdate(id, { status: 'completed' })
       await loadWishlist()
     } catch (err) {
-      console.error('Error marking wishlist item as completed:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error marking wishlist item as completed:', err)
       throw err
     }
   }, [loadWishlist])
@@ -212,7 +212,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistUpdate(id, { status: 'active' })
       await loadWishlist()
     } catch (err) {
-      console.error('Error marking wishlist item as active:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error marking wishlist item as active:', err)
       throw err
     }
   }, [loadWishlist])
@@ -222,7 +222,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistRemove(id)
       await loadWishlist()
     } catch (err) {
-      console.error('Error removing wishlist item:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error removing wishlist item:', err)
       throw err
     }
   }, [loadWishlist])
@@ -231,7 +231,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistCheckExists(tmdbId, musicbrainzId, mediaItemId)
     } catch (err) {
-      console.error('Error checking wishlist existence:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error checking wishlist existence:', err)
       return false
     }
   }, [])
@@ -242,7 +242,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await loadWishlist()
       return result.added
     } catch (err) {
-      console.error('Error bulk adding wishlist items:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error bulk adding wishlist items:', err)
       throw err
     }
   }, [loadWishlist])
@@ -251,7 +251,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistGetStoreLinks(item) as StoreLink[]
     } catch (err) {
-      console.error('Error getting store links:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error getting store links:', err)
       return []
     }
   }, [])
@@ -260,7 +260,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       await window.electronAPI.wishlistOpenStoreLink(url)
     } catch (err) {
-      console.error('Error opening store link:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error opening store link:', err)
     }
   }, [])
 
@@ -269,7 +269,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
       await window.electronAPI.wishlistSetRegion(newRegion)
       setRegionState(newRegion)
     } catch (err) {
-      console.error('Error setting region:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error setting region:', err)
     }
   }, [])
 
@@ -277,7 +277,7 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
     try {
       return await window.electronAPI.wishlistExportCsv()
     } catch (err) {
-      console.error('Error exporting wishlist:', err)
+      window.electronAPI.log.error('[WishlistContext]', 'Error exporting wishlist:', err)
       return { success: false }
     }
   }, [])

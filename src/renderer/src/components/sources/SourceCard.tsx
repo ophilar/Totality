@@ -158,7 +158,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
           setConnectionError(result.error)
         }
       } catch (err: unknown) {
-        console.error('Failed to load libraries:', err)
+        window.electronAPI.log.error('[SourceCard]', 'Failed to load libraries:', err)
         setConnectionStatus('error')
         setConnectionError(err instanceof Error ? err.message : 'Failed to connect to server')
       } finally {
@@ -177,7 +177,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         lib.id === libraryId ? { ...lib, isEnabled: !currentEnabled } : lib
       ))
     } catch (err) {
-      console.error('Failed to toggle library:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle library:', err)
     } finally {
       setIsTogglingLibrary(null)
     }
@@ -193,7 +193,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     try {
       await removeSource(source.source_id)
     } catch (err) {
-      console.error('Failed to remove source:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to remove source:', err)
     } finally {
       setIsDeleting(false)
     }
@@ -204,7 +204,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     try {
       await toggleSource(source.source_id, !source.is_enabled)
     } catch (err) {
-      console.error('Failed to toggle source:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle source:', err)
     }
   }
 
@@ -226,7 +226,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       })
       onScan?.()
     } catch (err) {
-      console.error('Failed to queue library scan:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to queue library scan:', err)
     }
   }
 
@@ -252,7 +252,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         setFfprobeCanInstall(canInstall)
       }
     } catch (err: unknown) {
-      console.error('Failed to load FFprobe status:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to load FFprobe status:', err)
       setFfprobeError(err instanceof Error ? err.message : 'Failed to check FFprobe status')
     } finally {
       setFfprobeLoading(false)
@@ -285,7 +285,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         setFfprobeInstallProgress(null)
       }
     } catch (err: unknown) {
-      console.error('Failed to install FFprobe:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to install FFprobe:', err)
       setFfprobeError(err instanceof Error ? err.message : 'Installation failed')
       setFfprobeInstallProgress(null)
     } finally {
@@ -309,7 +309,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       await window.electronAPI.ffprobeSetEnabled(source.source_id, newValue)
       setFfprobeEnabled(newValue)
     } catch (err: unknown) {
-      console.error('Failed to toggle FFprobe:', err)
+      window.electronAPI.log.error('[SourceCard]', 'Failed to toggle FFprobe:', err)
     }
   }
 

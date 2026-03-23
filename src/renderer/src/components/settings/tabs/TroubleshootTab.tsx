@@ -230,7 +230,7 @@ export function TroubleshootTab() {
       setVerboseEnabled(isVerbose)
       setFileLoggingSettings(fileSettings)
     } catch (error) {
-      console.error('Failed to load logs:', error)
+      window.electronAPI.log.error('[TroubleshootTab]', 'Failed to load logs:', error)
     } finally {
       setIsLoading(false)
     }
@@ -248,7 +248,7 @@ export function TroubleshootTab() {
     try {
       await window.electronAPI.exportLogs()
     } catch (error) {
-      console.error('Failed to export logs:', error)
+      window.electronAPI.log.error('[TroubleshootTab]', 'Failed to export logs:', error)
     } finally {
       setIsExporting(false)
     }

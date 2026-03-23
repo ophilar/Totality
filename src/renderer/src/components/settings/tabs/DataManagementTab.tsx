@@ -75,7 +75,7 @@ export function DataManagementTab() {
       const path = await window.electronAPI.dbGetPath()
       setDbPath(path)
     } catch (error) {
-      console.error('Failed to load database path:', error)
+      window.electronAPI.log.error('[DataManagementTab]', 'Failed to load database path:', error)
       setDbPath('Unable to load path')
     } finally {
       setIsLoading(false)

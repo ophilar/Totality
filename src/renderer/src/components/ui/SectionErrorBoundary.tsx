@@ -57,7 +57,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`[SectionErrorBoundary:${this.props.section}]`, error, errorInfo)
+    window.electronAPI.log.error('[SectionErrorBoundary:${this.props.section}]', ``, error, errorInfo)
     this.setState({ errorInfo })
 
     // Call optional error callback

@@ -5,10 +5,11 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { FixedSizeList as VirtualList, VariableSizeList } from 'react-window'
+import { VariableSizeList } from 'react-window'
 import { Sparkles, Library, Tv, Film, Music, Disc3, CircleFadingArrowUp, ChevronDown, Plus, EyeOff, Trash2 } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { MediaDetails } from '../library/MediaDetails'
+import { ConversionRecommendation } from '../library/ConversionRecommendation'
 import { useSources } from '../../contexts/SourceContext'
 import type { MediaItem, MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData, MusicAlbum } from '../library/types'
 import {
@@ -21,6 +22,7 @@ interface MusicAlbumUpgrade extends MusicAlbum {
   quality_tier: string
   tier_quality: string
   tier_score: number
+  storage_debt_bytes?: number
 }
 
 // Missing item types for expanded rows
@@ -62,12 +64,11 @@ interface DashboardProps {
   hasMusic?: boolean
 }
 
-type UpgradeTab = 'movies' | 'tv' | 'music' | 'cleanup'
+type UpgradeTab = 'movies' | 'tv' | 'music'
 
 // Item heights for virtual lists (fixed height rows)
-const MOVIE_ITEM_HEIGHT = 80  // poster height + padding
-const TV_ITEM_HEIGHT = 80
-const MUSIC_ITEM_HEIGHT = 64  // square album art + padding
+const MOVIE_ITEM_HEIGHT = 96  // Increased for efficiency info
+const MUSIC_ITEM_HEIGHT = 72
 
 // Expandable row constants (variable height rows)
 const COLLAPSED_HEIGHT = 80  // Base row height for collections/series
@@ -94,7 +95,6 @@ export function Dashboard({
   const [movieUpgrades, setMovieUpgrades] = useState<MediaItem[]>([])
   const [tvUpgrades, setTvUpgrades] = useState<MediaItem[]>([])
   const [musicUpgrades, setMusicUpgrades] = useState<MusicAlbumUpgrade[]>([])
-  const [storageWaste, setStorageWaste] = useState<MediaItem[]>([])
   const [collections, setCollections] = useState<MovieCollectionData[]>([])
   const [series, setSeries] = useState<SeriesCompletenessData[]>([])
   const [artists, setArtists] = useState<ArtistCompletenessData[]>([])
@@ -118,9 +118,19 @@ export function Dashboard({
 
   // Detail modal state
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
+  const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
+
+  // Toggle recommendation expansion
+  const toggleRecommendation = (mediaId: number) => {
+    setExpandedRecommendations(prev => {
+      const next = new Set(prev)
+      next.has(mediaId) ? next.delete(mediaId) : next.add(mediaId)
+      return next
+    })
+  }
 
   // Sort state for dashboard columns
-  const [upgradeSortBy, setUpgradeSortBy] = useState<'quality' | 'recent' | 'title'>('quality')
+  const [upgradeSortBy, setUpgradeSortBy] = useState<'quality' | 'efficiency' | 'recent' | 'title'>('quality')
   const [collectionSortBy, setCollectionSortBy] = useState<'completeness' | 'name' | 'recent'>('completeness')
   const [seriesSortBy, setSeriesSortBy] = useState<'completeness' | 'name' | 'recent'>('completeness')
   const [artistSortBy, setArtistSortBy] = useState<'completeness' | 'name'>('completeness')
@@ -131,6 +141,7 @@ export function Dashboard({
   const [expandedArtists, setExpandedArtists] = useState<Set<number>>(new Set())
 
   // VariableSizeList refs for resetting cached sizes on expand/collapse
+  const upgradeListInstanceRef = useRef<VariableSizeList>(null)
   const collectionsListInstanceRef = useRef<VariableSizeList>(null)
   const seriesListInstanceRef = useRef<VariableSizeList>(null)
   const artistsListInstanceRef = useRef<VariableSizeList>(null)
@@ -176,7 +187,7 @@ export function Dashboard({
       const singlesEnabled = singlesSettingVal !== 'false'
       setIncludeEps(epsEnabled)
       setIncludeSingles(singlesEnabled)
-      if (upgSort) setUpgradeSortBy(upgSort as 'quality' | 'recent' | 'title')
+      if (upgSort) setUpgradeSortBy(upgSort as 'quality' | 'efficiency' | 'recent' | 'title')
       if (collSort) setCollectionSortBy(collSort as 'completeness' | 'name' | 'recent')
       if (serSort) setSeriesSortBy(serSort as 'completeness' | 'name' | 'recent')
       if (artSort) setArtistSortBy(artSort as 'completeness' | 'name')
@@ -225,20 +236,23 @@ export function Dashboard({
       const excludedCleanupIds = new Set(cleanupExclusions.map(e => e.reference_id))
 
       // Filter and sort upgrades, excluding dismissed items
-      setMovieUpgrades(movieUpgradeData
-        .filter(m => !excludedUpgradeIds.has(m.id))
-        .sort((a, b) => (a.tier_score ?? 100) - (b.tier_score ?? 100))
-      )
-      setTvUpgrades(tvUpgradeData
-        .filter(e => !excludedUpgradeIds.has(e.id))
-        .sort((a, b) => (a.tier_score ?? 100) - (b.tier_score ?? 100))
-      )
-      setMusicUpgrades((musicUpgradeData || []).filter(m => !excludedUpgradeIds.has(m.id)))
+      // Merge items from storageWasteData that aren't already in the upgrade lists
+      const movieWaste = storageWasteData.filter(m => m.type === 'movie' && !excludedCleanupIds.has(m.id))
+      const tvWaste = storageWasteData.filter(m => m.type === 'episode' && !excludedCleanupIds.has(m.id))
+      
+      const allMovieUpgrades = [...movieUpgradeData.filter(m => !excludedUpgradeIds.has(m.id))]
+      movieWaste.forEach(mw => {
+        if (!allMovieUpgrades.some(m => m.id === mw.id)) allMovieUpgrades.push(mw)
+      })
 
-      // Filter storage waste: items with significant debt (> 1GB) and not excluded
-      setStorageWaste(storageWasteData
-        .filter(m => !excludedCleanupIds.has(m.id) && (m.storage_debt_bytes || 0) > 1024 * 1024 * 1024)
-      )
+      const allTvUpgrades = [...tvUpgradeData.filter(e => !excludedUpgradeIds.has(e.id))]
+      tvWaste.forEach(tw => {
+        if (!allTvUpgrades.some(e => e.id === tw.id)) allTvUpgrades.push(tw)
+      })
+
+      setMovieUpgrades(allMovieUpgrades.sort((a, b) => (a.tier_score ?? 100) - (b.tier_score ?? 100)))
+      setTvUpgrades(allTvUpgrades.sort((a, b) => (a.tier_score ?? 100) - (b.tier_score ?? 100)))
+      setMusicUpgrades((musicUpgradeData || []).filter(m => !excludedUpgradeIds.has(m.id)))
 
       // Filter collections: remove excluded missing movies from JSON, adjust totals
       const filteredCollections = collectionsData
@@ -295,7 +309,7 @@ export function Dashboard({
         .sort((a, b) => b.completeness_percentage - a.completeness_percentage)
       setArtists(incompleteArtists)
     } catch (err) {
-      console.error('Failed to load dashboard data:', err)
+      window.electronAPI.log.error('[Dashboard]', 'Failed to load dashboard data:', err)
       setError('Failed to load dashboard data. Please try again.')
     } finally {
       setIsLoading(false)
@@ -476,6 +490,21 @@ export function Dashboard({
     return height
   }, [artists, expandedArtists, parseMissingAlbums])
 
+  // Height calculation for upgrades
+  const getUpgradeRowHeight = useCallback((index: number) => {
+    const type = upgradeTab
+    let base = type === 'music' ? MUSIC_ITEM_HEIGHT : MOVIE_ITEM_HEIGHT
+    let mediaId: number | undefined
+    if (type === 'movies') mediaId = movieUpgrades[index]?.id
+    else if (type === 'tv') mediaId = tvUpgrades[index]?.id
+    else if (type === 'music') mediaId = musicUpgrades[index]?.id
+    
+    if (mediaId && expandedRecommendations.has(mediaId)) {
+      base += 130 // Estimated height of recommendation component
+    }
+    return base
+  }, [upgradeTab, movieUpgrades, tvUpgrades, musicUpgrades, expandedRecommendations])
+
   // Generic toggle expand factory - creates a toggle function for any expandable list
   const createToggleExpand = useCallback(
     (
@@ -584,20 +613,24 @@ export function Dashboard({
 
   useEffect(() => {
     setMovieUpgrades(prev => [...prev].sort((a, b) => {
+      if (upgradeSortBy === 'efficiency') return (b.storage_debt_bytes ?? 0) - (a.storage_debt_bytes ?? 0)
       if (upgradeSortBy === 'quality') return (a.tier_score ?? 100) - (b.tier_score ?? 100)
       if (upgradeSortBy === 'recent') return getCreatedAt(b).localeCompare(getCreatedAt(a))
       return a.title.localeCompare(b.title)
     }))
     setTvUpgrades(prev => [...prev].sort((a, b) => {
+      if (upgradeSortBy === 'efficiency') return (b.storage_debt_bytes ?? 0) - (a.storage_debt_bytes ?? 0)
       if (upgradeSortBy === 'quality') return (a.tier_score ?? 100) - (b.tier_score ?? 100)
       if (upgradeSortBy === 'recent') return getCreatedAt(b).localeCompare(getCreatedAt(a))
       return (a.series_title || a.title).localeCompare(b.series_title || b.title)
     }))
     setMusicUpgrades(prev => [...prev].sort((a, b) => {
+      if (upgradeSortBy === 'efficiency') return (b.storage_debt_bytes ?? 0) - (a.storage_debt_bytes ?? 0)
       if (upgradeSortBy === 'quality') return (a.tier_score ?? 100) - (b.tier_score ?? 100)
       if (upgradeSortBy === 'recent') return getCreatedAt(b).localeCompare(getCreatedAt(a))
       return a.title.localeCompare(b.title)
     }))
+    upgradeListInstanceRef.current?.resetAfterIndex(0)
   }, [upgradeSortBy])
 
   useEffect(() => {
@@ -630,173 +663,157 @@ export function Dashboard({
     artistsListInstanceRef.current?.resetAfterIndex(0)
   }, [artistSortBy])
 
-  const dismissCleanupItem = useCallback(async (index: number) => {
-    const item = storageWaste[index]
-    if (!item) return
-    await window.electronAPI.addExclusion('cleanup_radar', item.id, undefined, undefined, item.title)
-    setStorageWaste(prev => prev.filter((_, i) => i !== index))
-  }, [storageWaste])
-
   // Virtual list row renderers
-  const StorageWasteRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const item = storageWaste[index]
+  const MovieUpgradeRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const item = movieUpgrades[index]
     if (!item) return null
-    
+    const isExpanded = expandedRecommendations.has(item.id)
     const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
-    const totalGB = item.file_size ? (item.file_size / (1024 * 1024 * 1024)).toFixed(1) : '0'
 
     return (
-      <div style={style} className="px-2">
+      <div style={style} className="px-2 overflow-hidden">
         <div
           className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(item.id)}
         >
           <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
-            {item.poster_url || item.episode_thumb_url ? (
-              <img src={item.poster_url || item.episode_thumb_url} alt="" className="w-full h-full object-cover" />
+            {item.poster_url ? (
+              <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                {item.type === 'movie' ? <Film className="w-5 h-5 text-muted-foreground/50" /> : <Tv className="w-5 h-5 text-muted-foreground/50" />}
+                <Film className="w-5 h-5 text-muted-foreground/50" />
               </div>
             )}
-            <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm">
-              <Trash2 className="w-2.5 h-2.5 text-white" />
-            </div>
+            {parseFloat(wasteGB) > 0.5 && (
+              <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
+                <Trash2 className="w-2.5 h-2.5 text-white" />
+              </div>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-medium text-sm truncate">{item.title}</div>
-            <div className="text-xs text-muted-foreground truncate">
-              {item.type === 'episode' ? `${item.series_title} S${item.season_number}E${item.episode_number}` : item.year}
-            </div>
+            <div className="text-xs text-muted-foreground truncate">{item.year}</div>
             <div className="flex items-center gap-2 mt-1">
-              <div className="text-[10px] font-bold text-red-400 bg-red-400/10 px-1 py-0.5 rounded leading-none">
-                {wasteGB}GB WASTE
-              </div>
-              <div className="text-[10px] text-muted-foreground">
-                of {totalGB}GB
-              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {item.quality_tier} · {item.tier_quality}
+              </span>
+              {parseFloat(wasteGB) > 0.5 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleRecommendation(item.id); upgradeListInstanceRef.current?.resetAfterIndex(index) }}
+                  className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
+                    isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
+                  }`}
+                >
+                  {wasteGB}GB WASTE
+                </button>
+              )}
             </div>
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); dismissCleanupItem(index) }}
-            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
-            title="Dismiss"
-          >
-            <EyeOff className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    )
-  }, [storageWaste, dismissCleanupItem])
-
-  const MovieUpgradeRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const item = movieUpgrades[index]
-    if (!item) return null
-    return (
-      <div style={style} className="px-2">
-        <div
-          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-          onClick={() => setSelectedMediaId(item.id)}
-        >
-        <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
-          {item.poster_url ? (
-            <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Film className="w-5 h-5 text-muted-foreground/50" />
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{item.title}</div>
-          <div className="text-xs text-muted-foreground truncate">{item.year}</div>
-          <div className="text-[10px] text-muted-foreground mt-1">
-            {item.quality_tier} · {item.tier_quality}
+          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+            <AddToWishlistButton
+              mediaType="movie"
+              title={item.title}
+              year={item.year}
+              tmdbId={item.tmdb_id}
+              posterUrl={item.poster_url}
+              reason="upgrade"
+              mediaItemId={item.id}
+              currentQualityTier={item.quality_tier}
+              currentQualityLevel={item.tier_quality}
+              currentResolution={item.resolution}
+              compact
+            />
+            <button
+              onClick={() => dismissMovieUpgrade(index)}
+              className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+              title="Dismiss"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <AddToWishlistButton
-            mediaType="movie"
-            title={item.title}
-            year={item.year}
-            tmdbId={item.tmdb_id}
-            posterUrl={item.poster_url}
-            reason="upgrade"
-            mediaItemId={item.id}
-            currentQualityTier={item.quality_tier}
-            currentQualityLevel={item.tier_quality}
-            currentResolution={item.resolution}
-            compact
-          />
-          <button
-            onClick={() => dismissMovieUpgrade(index)}
-            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
-            title="Dismiss"
-          >
-            <EyeOff className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        </div>
+        {isExpanded && <div className="ml-13 mb-2"><ConversionRecommendation item={item} compact /></div>}
       </div>
     )
-  }, [movieUpgrades, dismissMovieUpgrade])
+  }, [movieUpgrades, expandedRecommendations, dismissMovieUpgrade])
 
   const TvUpgradeRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const item = tvUpgrades[index]
     if (!item) return null
+    const isExpanded = expandedRecommendations.has(item.id)
+    const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
+
     return (
-      <div style={style} className="px-2">
+      <div style={style} className="px-2 overflow-hidden">
         <div
           className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(item.id)}
         >
-        <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
-          {item.poster_url ? (
-            <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Tv className="w-5 h-5 text-muted-foreground/50" />
+          <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
+            {item.poster_url ? (
+              <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Tv className="w-5 h-5 text-muted-foreground/50" />
+              </div>
+            )}
+            {parseFloat(wasteGB) > 0.5 && (
+              <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
+                <Trash2 className="w-2.5 h-2.5 text-white" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
+            <div className="text-xs text-muted-foreground truncate">
+              S{item.season_number}E{item.episode_number} · {item.title}
             </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
-          <div className="text-xs text-muted-foreground truncate">
-            S{item.season_number}E{item.episode_number} · {item.title}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-muted-foreground">
+                {item.quality_tier} · {item.tier_quality}
+              </span>
+              {parseFloat(wasteGB) > 0.5 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleRecommendation(item.id); upgradeListInstanceRef.current?.resetAfterIndex(index) }}
+                  className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
+                    isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
+                  }`}
+                >
+                  {wasteGB}GB WASTE
+                </button>
+              )}
+            </div>
           </div>
-          <div className="text-[10px] text-muted-foreground mt-1">
-            {item.quality_tier} · {item.tier_quality}
+          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+            <AddToWishlistButton
+              mediaType="episode"
+              title={item.title}
+              year={item.year}
+              tmdbId={item.tmdb_id}
+              posterUrl={item.poster_url}
+              seriesTitle={item.series_title}
+              seasonNumber={item.season_number}
+              episodeNumber={item.episode_number}
+              reason="upgrade"
+              mediaItemId={item.id}
+              currentQualityTier={item.quality_tier}
+              currentQualityLevel={item.tier_quality}
+              currentResolution={item.resolution}
+              compact
+            />
+            <button
+              onClick={() => dismissTvUpgrade(index)}
+              className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+              title="Dismiss"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <AddToWishlistButton
-            mediaType="episode"
-            title={item.title}
-            year={item.year}
-            tmdbId={item.tmdb_id}
-            posterUrl={item.poster_url}
-            seriesTitle={item.series_title}
-            seasonNumber={item.season_number}
-            episodeNumber={item.episode_number}
-            reason="upgrade"
-            mediaItemId={item.id}
-            currentQualityTier={item.quality_tier}
-            currentQualityLevel={item.tier_quality}
-            currentResolution={item.resolution}
-            compact
-          />
-          <button
-            onClick={() => dismissTvUpgrade(index)}
-            className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
-            title="Dismiss"
-          >
-            <EyeOff className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        </div>
+        {isExpanded && <div className="ml-13 mb-2"><ConversionRecommendation item={item} compact /></div>}
       </div>
     )
-  }, [tvUpgrades, dismissTvUpgrade])
+  }, [tvUpgrades, expandedRecommendations, dismissTvUpgrade])
 
   const MusicUpgradeRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const album = musicUpgrades[index]
@@ -804,7 +821,7 @@ export function Dashboard({
     return (
       <div style={style} className="px-2">
         <div
-          className="flex items-center gap-3 px-2 py-1 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
+          className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
           onClick={() => setSelectedMediaId(album.id)}
         >
           <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
@@ -1287,10 +1304,11 @@ export function Dashboard({
                 <div className="flex items-center gap-2">
                   <select
                     value={upgradeSortBy}
-                    onChange={e => { const v = e.target.value as 'quality' | 'recent' | 'title'; setUpgradeSortBy(v); window.electronAPI.setSetting('dashboard_upgrade_sort', v) }}
+                    onChange={e => { const v = e.target.value as 'quality' | 'efficiency' | 'recent' | 'title'; setUpgradeSortBy(v); window.electronAPI.setSetting('dashboard_upgrade_sort', v) }}
                     className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary"
                   >
                     <option value="quality">Quality</option>
+                    <option value="efficiency">Efficiency</option>
                     <option value="recent">Recent</option>
                     <option value="title">Title</option>
                   </select>
@@ -1300,7 +1318,7 @@ export function Dashboard({
                 </div>
               </div>
               {/* Tabs - centered, only show if multiple library types exist */}
-              {([hasMovies, hasTV, hasMusic].filter(Boolean).length > 1 || storageWaste.length > 0) && (
+              {[hasMovies, hasTV, hasMusic].filter(Boolean).length > 1 && (
                 <div className="flex flex-wrap gap-1 justify-center">
                   {hasMovies && (
                     <button
@@ -1341,19 +1359,6 @@ export function Dashboard({
                       Music
                     </button>
                   )}
-                  {storageWaste.length > 0 && (
-                    <button
-                      onClick={() => setUpgradeTab('cleanup')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        upgradeTab === 'cleanup'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-orange-600/20 text-orange-200 hover:bg-orange-600/30'
-                      }`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Cleanup
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -1366,14 +1371,15 @@ export function Dashboard({
                       No movie upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
+                    <VariableSizeList
+                      ref={upgradeListInstanceRef}
                       height={upgradeListHeight}
                       itemCount={movieUpgrades.length}
-                      itemSize={MOVIE_ITEM_HEIGHT}
+                      itemSize={getUpgradeRowHeight}
                       width="100%"
                     >
                       {MovieUpgradeRow}
-                    </VirtualList>
+                    </VariableSizeList>
                   )
                 )}
                 {/* TV Tab Content */}
@@ -1383,14 +1389,15 @@ export function Dashboard({
                       No TV upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
+                    <VariableSizeList
+                      ref={upgradeListInstanceRef}
                       height={upgradeListHeight}
                       itemCount={tvUpgrades.length}
-                      itemSize={TV_ITEM_HEIGHT}
+                      itemSize={getUpgradeRowHeight}
                       width="100%"
                     >
                       {TvUpgradeRow}
-                    </VirtualList>
+                    </VariableSizeList>
                   )
                 )}
                 {/* Music Tab Content */}
@@ -1400,31 +1407,15 @@ export function Dashboard({
                       No music upgrades needed
                     </div>
                   ) : (
-                    <VirtualList
+                    <VariableSizeList
+                      ref={upgradeListInstanceRef}
                       height={upgradeListHeight}
                       itemCount={musicUpgrades.length}
-                      itemSize={MUSIC_ITEM_HEIGHT}
+                      itemSize={getUpgradeRowHeight}
                       width="100%"
                     >
                       {MusicUpgradeRow}
-                    </VirtualList>
-                  )
-                )}
-                {/* Cleanup Tab Content */}
-                {upgradeTab === 'cleanup' && (
-                  storageWaste.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">
-                      No storage waste detected
-                    </div>
-                  ) : (
-                    <VirtualList
-                      height={upgradeListHeight}
-                      itemCount={storageWaste.length}
-                      itemSize={MOVIE_ITEM_HEIGHT}
-                      width="100%"
-                    >
-                      {StorageWasteRow}
-                    </VirtualList>
+                    </VariableSizeList>
                   )
                 )}
               </div>

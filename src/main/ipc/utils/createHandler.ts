@@ -9,6 +9,7 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { getErrorMessage, isNodeError } from '../../services/utils/errorUtils'
+import { getLoggingService } from '../../services/LoggingService'
 
 /**
  * Options for creating an IPC handler
@@ -57,12 +58,12 @@ export function createIpcHandler<TArgs extends unknown[], TReturn>(
   ipcMain.handle(channel, async (_event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
       if (options.logCalls) {
-        console.log(`[IPC] ${channel} called`)
+        getLoggingService().info('[IPC]', `${channel} called`)
       }
       return await handler(...(args as TArgs))
     } catch (error) {
       const message = getErrorMessage(error)
-      console.error(`[IPC] Error in ${channel}:`, message)
+      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
 
       if (options.onError) {
         options.onError(channel, error)
@@ -91,12 +92,12 @@ export function createIpcHandlerWithEvent<TArgs extends unknown[], TReturn>(
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
       if (options.logCalls) {
-        console.log(`[IPC] ${channel} called`)
+        getLoggingService().info('[IPC]', `${channel} called`)
       }
       return await handler(event, ...(args as TArgs))
     } catch (error) {
       const message = getErrorMessage(error)
-      console.error(`[IPC] Error in ${channel}:`, message)
+      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
 
       if (options.onError) {
         options.onError(channel, error)
@@ -119,12 +120,12 @@ export function createSyncHandler<TArgs extends unknown[], TReturn>(
   ipcMain.handle(channel, (_event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
       if (options.logCalls) {
-        console.log(`[IPC] ${channel} called (sync)`)
+        getLoggingService().info('[IPC]', `${channel} called (sync)`)
       }
       return handler(...(args as TArgs))
     } catch (error) {
       const message = getErrorMessage(error)
-      console.error(`[IPC] Error in ${channel}:`, message)
+      getLoggingService().error('[IPC]', `Error in ${channel}:`, message)
 
       if (options.onError) {
         options.onError(channel, error)

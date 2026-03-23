@@ -76,7 +76,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
         setMode('select-mode')
       }
     } catch (err) {
-      console.error('Error detecting local Kodi:', err)
+      window.electronAPI.log.error('[KodiConnectionFlow]', 'Error detecting local Kodi:', err)
       setMode('select-mode')
     }
   }
@@ -133,7 +133,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
             libraryId: lib.id,
           })
         } catch (err) {
-          console.error('Failed to queue library scan:', err)
+          window.electronAPI.log.error('[KodiConnectionFlow]', 'Failed to queue library scan:', err)
         }
       }
 
@@ -183,7 +183,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
         }))
       )
     } catch (err) {
-      console.error('Failed to save library selection:', err)
+      window.electronAPI.log.error('[KodiConnectionFlow]', 'Failed to save library selection:', err)
     }
 
     // Refresh sources list now that setup is complete
@@ -204,7 +204,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           libraryId: lib.id,
         })
       } catch (err) {
-        console.error('Failed to queue library scan:', err)
+        window.electronAPI.log.error('[KodiConnectionFlow]', 'Failed to queue library scan:', err)
       }
     }
 

@@ -66,8 +66,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (baseTheme === 'frost') {
         baseTheme = 'slate'
         themeMode = 'light'
-        window.electronAPI.setSetting('theme', 'slate').catch(console.error)
-        window.electronAPI.setSetting('theme_mode', 'light').catch(console.error)
+        window.electronAPI.setSetting('theme', 'slate').catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
+        window.electronAPI.setSetting('theme_mode', 'light').catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
       }
 
       if (!BASE_THEMES.includes(baseTheme as BaseTheme)) {
@@ -91,18 +91,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((newTheme: BaseTheme) => {
     setThemeState(newTheme)
-    window.electronAPI.setSetting('theme', newTheme).catch(console.error)
+    window.electronAPI.setSetting('theme', newTheme).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
   }, [])
 
   const setMode = useCallback((newMode: ThemeMode) => {
     setModeState(newMode)
-    window.electronAPI.setSetting('theme_mode', newMode).catch(console.error)
+    window.electronAPI.setSetting('theme_mode', newMode).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
     // Auto-switch away from dark-only themes when explicitly choosing light mode
     if (newMode === 'light') {
       setThemeState(current => {
         if (DARK_ONLY_THEMES.includes(current)) {
           const fallback: BaseTheme = 'slate'
-          window.electronAPI.setSetting('theme', fallback).catch(console.error)
+          window.electronAPI.setSetting('theme', fallback).catch(err => window.electronAPI.log.error('ThemeContext', String(err)))
           return fallback
         }
         return current

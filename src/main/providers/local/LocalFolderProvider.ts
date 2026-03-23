@@ -320,7 +320,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           })
         }
       } catch (error) {
-        console.warn('[LocalFolderProvider] Failed to scan for subfolders:', error)
+        getLoggingService().warn('[LocalFolderProvider]', '[LocalFolderProvider] Failed to scan for subfolders:', error)
         // Fall back to movies
         libraries.push({
           id: 'movies',
@@ -386,14 +386,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
     // If targetFiles provided, use targeted scanning (much faster)
     if (targetFiles && targetFiles.length > 0) {
-      console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan for ${targetFiles.length} files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Targeted scan for ${targetFiles.length} files`)
       return this.scanTargetedFiles(libraryId, targetFiles, onProgress)
     }
 
     // Determine if this is an incremental scan
     const isIncremental = !!sinceTimestamp && !forceFullScan
     if (isIncremental) {
-      console.log(`[LocalFolderProvider ${this.sourceId}] Incremental scan since ${sinceTimestamp.toISOString()}`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Incremental scan since ${sinceTimestamp.toISOString()}`)
     }
 
     // Parse library ID - format can be "type" or "type:subfolder"
@@ -461,7 +461,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
 
       // Phase 1: Discover all media files
-      console.log(`[LocalFolderProvider ${this.sourceId}] Starting scan, onProgress defined: ${!!onProgress}`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Starting scan, onProgress defined: ${!!onProgress}`)
       onProgress?.({
         current: 0,
         total: 100,
@@ -473,7 +473,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const mediaFiles = await this.discoverMediaFiles(scanPath, scanType, onProgress, isIncremental ? sinceTimestamp : undefined)
       const totalFiles = mediaFiles.length
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} ${scanType} files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Found ${totalFiles} ${scanType} files`)
 
       if (totalFiles === 0) {
         result.success = true
@@ -510,7 +510,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       try {
         // Process in batches for parallel FFprobe analysis
         const useParallelFFprobe = ffprobeAvailable && ffprobeParallelEnabled && ffprobeBatchSize > 1
-        console.log(`[LocalFolderProvider ${this.sourceId}] Using ${useParallelFFprobe ? 'parallel' : 'sequential'} FFprobe (batch size: ${ffprobeBatchSize})`)
+        getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Using ${useParallelFFprobe ? 'parallel' : 'sequential'} FFprobe (batch size: ${ffprobeBatchSize})`)
 
         for (let batchStart = 0; batchStart < mediaFiles.length; batchStart += ffprobeBatchSize) {
           const batchEnd = Math.min(batchStart + ffprobeBatchSize, mediaFiles.length)
@@ -620,7 +620,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
                 // Filter out short videos for movies (featurettes, behind-the-scenes, etc.)
                 if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) {
-                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
+                  getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
                   continue
                 }
               }
@@ -656,7 +656,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
         const multiVersionGroups = groups.filter(g => g.length > 1).length
         if (multiVersionGroups > 0) {
-          console.log(`[LocalFolderProvider ${this.sourceId}] Grouped ${processedItems.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
+          getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Grouped ${processedItems.length} items into ${groups.length} entries (${multiVersionGroups} with multiple versions)`)
         }
 
         for (const group of groups) {
@@ -746,12 +746,12 @@ export class LocalFolderProvider extends BaseMediaProvider {
       if (movieTotal > 0 || seriesTotal > 0) {
         const moviePercent = movieTotal > 0 ? Math.round((movieMatches / movieTotal) * 100) : 0
         const seriesPercent = seriesTotal > 0 ? Math.round((seriesMatches / seriesTotal) * 100) : 0
-        console.log(`[LocalFolderProvider ${this.sourceId}] TMDB match stats:`)
+        getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `TMDB match stats:`)
         if (movieTotal > 0) {
-          console.log(`  Movies: ${movieMatches}/${movieTotal} matched (${moviePercent}%)`)
+          getLoggingService().info('[LocalFolderProvider]', `  Movies: ${movieMatches}/${movieTotal} matched (${moviePercent}%)`)
         }
         if (seriesTotal > 0) {
-          console.log(`  Series: ${seriesMatches}/${seriesTotal} matched (${seriesPercent}%)`)
+          getLoggingService().info('[LocalFolderProvider]', `  Series: ${seriesMatches}/${seriesTotal} matched (${seriesPercent}%)`)
         }
       }
 
@@ -828,7 +828,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         if (existingItem?.id) {
           await db.deleteMediaItem(existingItem.id)
           result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted file: ${path.basename(filePath)}`)
+          getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Removed deleted file: ${path.basename(filePath)}`)
         }
       }
 
@@ -838,7 +838,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         return result
       }
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Scanning ${validFiles.length} targeted files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Scanning ${validFiles.length} targeted files`)
 
       db.startBatch()
 
@@ -906,7 +906,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
                 // Filter out short videos for movies (featurettes, behind-the-scenes, etc.)
                 if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) {
-                  console.log(`[LocalFolderProvider ${this.sourceId}] Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
+                  getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Skipping short video (${Math.round(analysis.duration / 60)}min): ${path.basename(filePath)}`)
                   continue
                 }
               }
@@ -935,10 +935,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
               result.itemsScanned++
               if (isNew) {
                 result.itemsAdded++
-                console.log(`[LocalFolderProvider ${this.sourceId}] Added: ${metadata.title}`)
+                getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Added: ${metadata.title}`)
               } else {
                 result.itemsUpdated++
-                console.log(`[LocalFolderProvider ${this.sourceId}] Updated: ${metadata.title}`)
+                getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Updated: ${metadata.title}`)
               }
             }
           } catch (error: unknown) {
@@ -963,13 +963,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
         if (seriesTotal > 0) {
           parts.push(`${seriesMatches}/${seriesTotal} series`)
         }
-        console.log(`[LocalFolderProvider ${this.sourceId}] TMDB matches: ${parts.join(', ')}`)
+        getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `TMDB matches: ${parts.join(', ')}`)
       }
 
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Targeted scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
 
       return result
     } catch (error: unknown) {
@@ -1016,16 +1016,16 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
       // Handle deleted files
       const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
-      console.log(`[LocalFolderProvider ${this.sourceId}] Checking ${deletedFiles.length} deleted files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Checking ${deletedFiles.length} deleted files`)
       for (const filePath of deletedFiles) {
-        console.log(`[LocalFolderProvider ${this.sourceId}] Looking up deleted track: ${path.basename(filePath)}`)
+        getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Looking up deleted track: ${path.basename(filePath)}`)
         const existingTrack = db.getMusicTrackByPath(filePath)
         if (existingTrack?.id) {
           await db.deleteMusicTrack(existingTrack.id)
           result.itemsRemoved++
-          console.log(`[LocalFolderProvider ${this.sourceId}] Removed deleted track: ${path.basename(filePath)}`)
+          getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Removed deleted track: ${path.basename(filePath)}`)
         } else {
-          console.log(`[LocalFolderProvider ${this.sourceId}] Track not found in database for: ${path.basename(filePath)}`)
+          getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Track not found in database for: ${path.basename(filePath)}`)
         }
       }
 
@@ -1035,7 +1035,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         return result
       }
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Scanning ${validFiles.length} targeted music files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Scanning ${validFiles.length} targeted music files`)
 
       // Maps to track artists and albums
       const artistMap = new Map<string, number>()
@@ -1200,10 +1200,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
             result.itemsScanned++
             if (isNew) {
               result.itemsAdded++
-              console.log(`[LocalFolderProvider ${this.sourceId}] Added track: ${trackTitle}`)
+              getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Added track: ${trackTitle}`)
             } else {
               result.itemsUpdated++
-              console.log(`[LocalFolderProvider ${this.sourceId}] Updated track: ${trackTitle}`)
+              getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Updated track: ${trackTitle}`)
             }
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
@@ -1223,7 +1223,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Targeted music scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Targeted music scan complete: ${result.itemsAdded} added, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed`)
 
       return result
     } catch (error: unknown) {
@@ -1303,14 +1303,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       } catch (error) {
         // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        getLoggingService().warn('[LocalFolderProvider]', `Cannot access directory: ${path.basename(dir)}`)
       }
     }
 
     await scanDir(rootDir)
 
     if (sinceTimestamp && skippedUnchanged > 0) {
-      console.log(`[LocalFolderProvider ${this.sourceId}] Incremental scan: skipped ${skippedUnchanged} unchanged files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Incremental scan: skipped ${skippedUnchanged} unchanged files`)
     }
 
     return files
@@ -1385,7 +1385,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       cache.set(artistName.toLowerCase(), artistName)
       return artistName
     } catch (error) {
-      console.warn(`[LocalFolderProvider] MusicBrainz artist lookup failed for "${artistName}":`, error)
+      getLoggingService().warn('[LocalFolderProvider]', `MusicBrainz artist lookup failed for "${artistName}":`, error)
       cache.set(artistName.toLowerCase(), artistName)
       return artistName
     }
@@ -1457,7 +1457,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       } catch (error) {
         // Ignore TMDB errors, continue with parsed data
-        console.warn(`[LocalFolderProvider] TMDB lookup failed for "${parsed.title}":`, error)
+        getLoggingService().warn('[LocalFolderProvider]', `TMDB lookup failed for "${parsed.title}":`, error)
       }
     }
 
@@ -1579,7 +1579,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       } catch (error) {
         // Ignore TMDB errors, continue with parsed data
-        console.warn(`[LocalFolderProvider] TMDB episode lookup failed for "${parsed.seriesTitle}" S${parsed.seasonNumber}E${parsed.episodeNumber}:`, error)
+        getLoggingService().warn('[LocalFolderProvider]', `TMDB episode lookup failed for "${parsed.seriesTitle}" S${parsed.seasonNumber}E${parsed.episodeNumber}:`, error)
       }
     }
 
@@ -2023,7 +2023,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '50', 10)
 
       if (mbNameCorrectionEnabled) {
-        console.log(`[LocalFolderProvider ${this.sourceId}] MusicBrainz name correction enabled`)
+        getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `MusicBrainz name correction enabled`)
       }
 
       // Phase 1: Discover all audio files
@@ -2038,7 +2038,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const audioFiles = await this.discoverAudioFiles(musicPath)
       const totalFiles = audioFiles.length
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Found ${totalFiles} audio files`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Found ${totalFiles} audio files`)
 
       if (totalFiles === 0) {
         result.success = true
@@ -2068,7 +2068,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       // Phase 2: Process each file in batches
       db.startBatch()
       const useParallelFFprobe = ffprobeAvailable && ffprobeParallelEnabled && ffprobeBatchSize > 1
-      console.log(`[LocalFolderProvider ${this.sourceId}] Using ${useParallelFFprobe ? 'parallel' : 'sequential'} FFprobe for music (batch size: ${ffprobeBatchSize})`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Using ${useParallelFFprobe ? 'parallel' : 'sequential'} FFprobe for music (batch size: ${ffprobeBatchSize})`)
 
       try {
         for (let batchStart = 0; batchStart < audioFiles.length; batchStart += ffprobeBatchSize) {
@@ -2245,20 +2245,20 @@ export class LocalFolderProvider extends BaseMediaProvider {
               let artworkPath: string | null = null
 
               // Debug: Log artwork detection status
-              console.log(`[LocalFolderProvider] Artwork check for "${artistName} - ${albumName}": hasEmbedded=${audioInfo.hasEmbeddedArtwork}, ffprobeAvailable=${ffprobeAvailable}`)
+              getLoggingService().info('[LocalFolderProvider]', `Artwork check for "${artistName} - ${albumName}": hasEmbedded=${audioInfo.hasEmbeddedArtwork}, ffprobeAvailable=${ffprobeAvailable}`)
 
               // Try embedded artwork first (most reliable for the specific release)
               if (audioInfo.hasEmbeddedArtwork && ffprobeAvailable) {
                 try {
                   artworkPath = await this.extractAlbumArtwork(filePath, albumId!, fileAnalyzer)
                   if (artworkPath) {
-                    console.log(`[LocalFolderProvider] Extracted embedded artwork for "${albumName}"`)
+                    getLoggingService().info('[LocalFolderProvider]', `Extracted embedded artwork for "${albumName}"`)
 
                   } else {
-                    console.log(`[LocalFolderProvider] Failed to extract embedded artwork for "${albumName}" (returned null)`)
+                    getLoggingService().info('[LocalFolderProvider]', `Failed to extract embedded artwork for "${albumName}" (returned null)`)
                   }
                 } catch (extractErr) {
-                  console.warn(`[LocalFolderProvider] Error extracting embedded artwork for "${albumName}":`, extractErr)
+                  getLoggingService().warn('[LocalFolderProvider]', `Error extracting embedded artwork for "${albumName}":`, extractErr)
                 }
               }
 
@@ -2268,9 +2268,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
                 const folderArtwork = await this.findFolderArtwork(folderPath)
                 if (folderArtwork) {
                   artworkPath = `local-artwork://file?path=${encodeURIComponent(folderArtwork)}`
-                  console.log(`[LocalFolderProvider] Using folder artwork for "${albumName}": ${path.basename(folderArtwork)}`)
+                  getLoggingService().info('[LocalFolderProvider]', `Using folder artwork for "${albumName}": ${path.basename(folderArtwork)}`)
                 } else {
-                  console.log(`[LocalFolderProvider] No folder artwork found for "${albumName}" in ${path.basename(folderPath)}`)
+                  getLoggingService().info('[LocalFolderProvider]', `No folder artwork found for "${albumName}" in ${path.basename(folderPath)}`)
                 }
               }
 
@@ -2278,7 +2278,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               if (artworkPath) {
                 await db.updateMusicAlbumArtwork(albumId, artworkPath)
               } else {
-                console.log(`[LocalFolderProvider] No artwork found for "${artistName} - ${albumName}" - will use Cover Art Archive fallback during completeness analysis`)
+                getLoggingService().info('[LocalFolderProvider]', `No artwork found for "${artistName} - ${albumName}" - will use Cover Art Archive fallback during completeness analysis`)
               }
             }
 
@@ -2340,7 +2340,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       result.success = true
       result.durationMs = Date.now() - startTime
 
-      console.log(`[LocalFolderProvider ${this.sourceId}] Music scan complete: ${result.itemsScanned} tracks, ${artistMap.size} artists, ${albumMap.size} albums`)
+      getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Music scan complete: ${result.itemsScanned} tracks, ${artistMap.size} artists, ${albumMap.size} albums`)
 
       return result
     } catch (error: unknown) {
@@ -2386,7 +2386,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       } catch (error) {
         // Skip inaccessible directories
-        console.warn(`[LocalFolderProvider] Cannot access directory: ${path.basename(dir)}`)
+        getLoggingService().warn('[LocalFolderProvider]', `Cannot access directory: ${path.basename(dir)}`)
       }
     }
 
@@ -2453,13 +2453,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const success = await fileAnalyzer.extractArtwork(audioFilePath, outputPath)
 
       if (success) {
-        console.log(`[LocalFolderProvider] Extracted album artwork for album ${albumId}`)
+        getLoggingService().info('[LocalFolderProvider]', `Extracted album artwork for album ${albumId}`)
         return artworkUrl
       }
 
       return null
     } catch (error) {
-      console.warn(`[LocalFolderProvider] Failed to extract artwork from ${path.basename(audioFilePath)}:`, error)
+      getLoggingService().warn('[LocalFolderProvider]', `Failed to extract artwork from ${path.basename(audioFilePath)}:`, error)
       return null
     }
   }

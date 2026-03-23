@@ -6,6 +6,7 @@
  */
 
 import type { Database } from 'sql.js'
+import { getLoggingService } from '../../services/LoggingService'
 
 export const MIGRATION_VERSION = 2
 export const MIGRATION_NAME = 'kodi_local_support'
@@ -39,11 +40,11 @@ function needsConstraintUpdate(db: Database, table: string): boolean {
  * Run the migration
  */
 export async function runMigration(db: Database): Promise<void> {
-  console.log('[Migration 002] Starting kodi-local support migration...')
+  getLoggingService().info('[002_kodi_local_support]', '[Migration 002] Starting kodi-local support migration...')
 
   // 1. Update media_sources table
   if (tableExists(db, 'media_sources') && needsConstraintUpdate(db, 'media_sources')) {
-    console.log('[Migration 002] Recreating media_sources table with updated CHECK constraint...')
+    getLoggingService().info('[002_kodi_local_support]', '[Migration 002] Recreating media_sources table with updated CHECK constraint...')
 
     // Create temp table with new constraint
     db.run(`
@@ -85,12 +86,12 @@ export async function runMigration(db: Database): Promise<void> {
       END
     `)
 
-    console.log('[Migration 002] media_sources table updated')
+    getLoggingService().info('[002_kodi_local_support]', '[Migration 002] media_sources table updated')
   }
 
   // 2. Update media_items table
   if (tableExists(db, 'media_items') && needsConstraintUpdate(db, 'media_items')) {
-    console.log('[Migration 002] Recreating media_items table with updated CHECK constraint...')
+    getLoggingService().info('[002_kodi_local_support]', '[Migration 002] Recreating media_items table with updated CHECK constraint...')
 
     // Get current table schema to preserve all columns
     const schemaResult = db.exec(`PRAGMA table_info(media_items)`)
@@ -173,7 +174,7 @@ export async function runMigration(db: Database): Promise<void> {
         END
       `)
 
-      console.log('[Migration 002] media_items table updated')
+      getLoggingService().info('[002_kodi_local_support]', '[Migration 002] media_items table updated')
     }
   }
 
@@ -186,7 +187,7 @@ export async function runMigration(db: Database): Promise<void> {
 
   for (const table of musicTables) {
     if (tableExists(db, table.name) && needsConstraintUpdate(db, table.name)) {
-      console.log(`[Migration 002] Updating ${table.name} table...`)
+      getLoggingService().info('[Migration 002]', `Updating ${table.name} table...`)
 
       // Get all columns
       const schemaResult = db.exec(`PRAGMA table_info(${table.name})`)
@@ -218,7 +219,7 @@ export async function runMigration(db: Database): Promise<void> {
           db.run(`DROP TABLE ${table.name}`)
           db.run(`ALTER TABLE ${table.name}_new RENAME TO ${table.name}`)
 
-          console.log(`[Migration 002] ${table.name} table updated`)
+          getLoggingService().info('[Migration 002]', `${table.name} table updated`)
         }
       }
     }
@@ -227,13 +228,13 @@ export async function runMigration(db: Database): Promise<void> {
   // 4. Store migration version in settings
   db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_version', '${MIGRATION_VERSION}')`)
 
-  console.log('[Migration 002] Kodi local support migration completed successfully')
+  getLoggingService().info('[002_kodi_local_support]', '[Migration 002] Kodi local support migration completed successfully')
 }
 
 /**
  * Rollback the migration (not easily possible for constraint changes)
  */
 export async function rollbackMigration(db: Database): Promise<void> {
-  console.log('[Migration 002] Rollback not supported for this migration')
+  getLoggingService().info('[002_kodi_local_support]', '[Migration 002] Rollback not supported for this migration')
   void db // Suppress unused warning
 }

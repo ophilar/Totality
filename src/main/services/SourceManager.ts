@@ -78,7 +78,7 @@ export class SourceManager {
    */
   stopScan(): void {
     if (this.isScanning) {
-      console.log('[SourceManager] Stopping scan...')
+      getLoggingService().info('[SourceManager]', '[SourceManager] Stopping scan...')
       this.scanCancelled = true
     }
   }
@@ -103,12 +103,12 @@ export class SourceManager {
       sources.map((source: MediaSource) => this.loadSingleSource(source, db, unavailableSources))
     )
 
-    console.log(`[SourceManager] Initialized with ${this.providers.size} providers`)
+    getLoggingService().info('[SourceManager]', `Initialized with ${this.providers.size} providers`)
 
     // Create notifications for unavailable sources (after startup)
     if (unavailableSources.length > 0) {
       const names = unavailableSources.map(s => s.name).join(', ')
-      console.warn(`[SourceManager] Unavailable sources at startup: ${names}`)
+      getLoggingService().warn('[SourceManager]', `Unavailable sources at startup: ${names}`)
       try {
         db.createNotification({
           type: 'error',
@@ -118,7 +118,7 @@ export class SourceManager {
             : `${unavailableSources.length} sources could not be reached at startup: ${names}. Please check their connections.`,
         })
       } catch (err) {
-        console.warn('[SourceManager] Could not create notification for unavailable sources:', err)
+        getLoggingService().warn('[SourceManager]', '[SourceManager] Could not create notification for unavailable sources:', err)
       }
     }
   }
@@ -154,14 +154,14 @@ export class SourceManager {
             unavailableSources.push({ name: source.display_name, type: source.source_type })
           }
         } catch (error) {
-          console.warn(`[SourceManager] Could not restore server for ${source.display_name}:`, error)
+          getLoggingService().warn('[SourceManager]', `Could not restore server for ${source.display_name}:`, error)
           unavailableSources.push({ name: source.display_name, type: source.source_type })
         }
       }
 
-      console.log(`[SourceManager] Loaded provider: ${source.display_name} (${source.source_type})`)
+      getLoggingService().info('[SourceManager]', `Loaded provider: ${source.display_name} (${source.source_type})`)
     } catch (error) {
-      console.error(`[SourceManager] Failed to load provider ${source.source_id}:`, error)
+      getLoggingService().error('[SourceManager]', `Failed to load provider ${source.source_id}:`, error)
     }
   }
 
@@ -185,9 +185,9 @@ export class SourceManager {
           ...source,
           display_name: server.name,
         })
-        console.log(`[SourceManager] Restored server selection: ${server.name}`)
+        getLoggingService().info('[SourceManager]', `Restored server selection: ${server.name}`)
       } else {
-        console.log(`[SourceManager] Restored server selection for ${source.display_name}`)
+        getLoggingService().info('[SourceManager]', `Restored server selection for ${source.display_name}`)
       }
 
       // Sync legacy PlexService for backward compatibility (MovieCollectionService uses it)
@@ -195,13 +195,13 @@ export class SourceManager {
         const plexService = getPlexService()
         await plexService.authenticateWithToken(connectionConfig.token as string)
         await plexService.selectServer(connectionConfig.serverId as string)
-        console.log(`[SourceManager] Synced legacy PlexService with server: ${source.display_name}`)
+        getLoggingService().info('[SourceManager]', `Synced legacy PlexService with server: ${source.display_name}`)
       } catch (syncError) {
-        console.warn(`[SourceManager] Could not sync legacy PlexService:`, syncError)
+        getLoggingService().warn('[SourceManager]', `Could not sync legacy PlexService:`, syncError)
       }
       return true
     } else {
-      console.warn(`[SourceManager] Failed to restore server selection for ${source.display_name}`)
+      getLoggingService().warn('[SourceManager]', `Failed to restore server selection for ${source.display_name}`)
       return false
     }
   }
@@ -257,7 +257,7 @@ export class SourceManager {
       throw new Error('Failed to retrieve created source')
     }
 
-    console.log(`[SourceManager] Added source: ${config.displayName} (${sourceId})`)
+    getLoggingService().info('[SourceManager]', `Added source: ${config.displayName} (${sourceId})`)
     return source
   }
 
@@ -299,7 +299,7 @@ export class SourceManager {
       this.providers.set(sourceId, provider)
     }
 
-    console.log(`[SourceManager] Updated source: ${sourceId}`)
+    getLoggingService().info('[SourceManager]', `Updated source: ${sourceId}`)
   }
 
   /**
@@ -325,7 +325,7 @@ export class SourceManager {
     // 5. Clean up cached artwork files
     await this.cleanupArtworkCache(sourceId)
 
-    console.log(`[SourceManager] Removed source: ${sourceId}`)
+    getLoggingService().info('[SourceManager]', `Removed source: ${sourceId}`)
   }
 
   /**
@@ -335,10 +335,10 @@ export class SourceManager {
     const artworkPath = path.join(app.getPath('userData'), 'artwork', sourceId)
     try {
       await fs.rm(artworkPath, { recursive: true, force: true })
-      console.log(`[SourceManager] Cleaned up artwork cache for ${sourceId}`)
+      getLoggingService().info('[SourceManager]', `Cleaned up artwork cache for ${sourceId}`)
     } catch (error) {
       // Ignore if folder doesn't exist or other errors
-      console.log(`[SourceManager] No artwork cache to clean up for ${sourceId}`)
+      getLoggingService().info('[SourceManager]', `No artwork cache to clean up for ${sourceId}`)
     }
   }
 
@@ -463,7 +463,7 @@ export class SourceManager {
       const config = JSON.parse(source.connection_config)
       if (!config.username || !config.password || config.accessToken) return null
 
-      console.log(`[SourceManager] Authenticating ${provider.providerType} with username/password`)
+      getLoggingService().info('[SourceManager]', `Authenticating ${provider.providerType} with username/password`)
 
       const authResult = await provider.authenticate({
         serverUrl: config.serverUrl,
@@ -501,10 +501,10 @@ export class SourceManager {
       })
       this.providers.set(sourceId, newProvider)
 
-      console.log(`[SourceManager] ${provider.providerType} authenticated and credentials saved`)
+      getLoggingService().info('[SourceManager]', `${provider.providerType} authenticated and credentials saved`)
       return null // Auth succeeded
     } catch (err: unknown) {
-      console.error(`[SourceManager] Error during ${provider.providerType} authentication:`, err)
+      getLoggingService().error('[SourceManager]', `Error during ${provider.providerType} authentication:`, err)
       return { success: false, error: err instanceof Error ? err.message : 'Authentication error' }
     }
   }
@@ -680,9 +680,9 @@ export class SourceManager {
         onProgress(progress)
       } : undefined
 
-      console.log(`[SourceManager] Starting scan: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}`)
+      getLoggingService().info('[SourceManager]', `Starting scan: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}`)
       const result = await provider.scanLibrary(libraryId, { onProgress: wrappedProgress })
-      console.log(`[SourceManager] Scan result: itemsScanned=${result.itemsScanned}, itemsAdded=${result.itemsAdded}, itemsUpdated=${result.itemsUpdated}, itemsRemoved=${result.itemsRemoved}, success=${result.success}, errors=${result.errors.length}`)
+      getLoggingService().info('[SourceManager]', `Scan result: itemsScanned=${result.itemsScanned}, itemsAdded=${result.itemsAdded}, itemsUpdated=${result.itemsUpdated}, itemsRemoved=${result.itemsRemoved}, success=${result.success}, errors=${result.errors.length}`)
 
       // Verbose scan summary
       const durationSec = (result.durationMs / 1000).toFixed(1)
@@ -713,7 +713,7 @@ export class SourceManager {
           library.type,
           result.itemsScanned
         )
-        console.log(`[SourceManager] Updated scan timestamp for library ${library.name}`)
+        getLoggingService().info('[SourceManager]', `Updated scan timestamp for library ${library.name}`)
       }
 
       return result
@@ -740,13 +740,13 @@ export class SourceManager {
       for (const source of enabledSources) {
         // Check for cancellation before each source
         if (this.scanCancelled) {
-          console.log('[SourceManager] Scan cancelled by user')
+          getLoggingService().info('[SourceManager]', '[SourceManager] Scan cancelled by user')
           break
         }
 
         const provider = this.providers.get(source.source_id)
         if (!provider) {
-          console.warn(`[SourceManager] Provider not found for source: ${source.source_id}`)
+          getLoggingService().warn('[SourceManager]', `Provider not found for source: ${source.source_id}`)
           continue
         }
 
@@ -754,7 +754,7 @@ export class SourceManager {
         if (provider.providerType === 'plex') {
           const plexProvider = provider as PlexProvider
           if (!plexProvider.hasSelectedServer()) {
-            console.log(`[SourceManager] Skipping Plex source ${source.source_id} - no server selected`)
+            getLoggingService().info('[SourceManager]', `Skipping Plex source ${source.source_id} - no server selected`)
             continue
           }
         }
@@ -767,7 +767,7 @@ export class SourceManager {
           for (const library of libraries) {
             // Check for cancellation before each library
             if (this.scanCancelled) {
-              console.log('[SourceManager] Scan cancelled by user')
+              getLoggingService().info('[SourceManager]', '[SourceManager] Scan cancelled by user')
               break
             }
 
@@ -776,7 +776,7 @@ export class SourceManager {
 
             // Skip disabled libraries
             if (!db.isLibraryEnabled(source.source_id, library.id)) {
-              console.log(`[SourceManager] Skipping disabled library: ${library.name}`)
+              getLoggingService().info('[SourceManager]', `Skipping disabled library: ${library.name}`)
               continue
             }
 
@@ -806,7 +806,7 @@ export class SourceManager {
           if (this.scanCancelled) {
             break
           }
-          console.error(`[SourceManager] Failed to scan source ${source.source_id}:`, error)
+          getLoggingService().error('[SourceManager]', `Failed to scan source ${source.source_id}:`, error)
           results.set(source.source_id, {
             success: false,
             itemsScanned: 0,
@@ -846,12 +846,12 @@ export class SourceManager {
 
     // If never scanned, do full scan
     if (!lastScanTime) {
-      console.log(`[SourceManager] No previous scan for ${sourceId}:${libraryId}, doing full scan`)
+      getLoggingService().info('[SourceManager]', `No previous scan for ${sourceId}:${libraryId}, doing full scan`)
       return this.scanLibrary(sourceId, libraryId, onProgress)
     }
 
     const sinceTimestamp = new Date(lastScanTime)
-    console.log(`[SourceManager] Incremental scan for ${sourceId}:${libraryId} since ${sinceTimestamp.toISOString()}`)
+    getLoggingService().info('[SourceManager]', `Incremental scan for ${sourceId}:${libraryId} since ${sinceTimestamp.toISOString()}`)
 
     const provider = this.providers.get(sourceId)
     if (!provider) {
@@ -898,7 +898,7 @@ export class SourceManager {
       throw new Error(`Source not found: ${sourceId}`)
     }
 
-    console.log(`[SourceManager] Targeted scan of ${filePaths.length} files for ${sourceId}:${libraryId}`)
+    getLoggingService().info('[SourceManager]', `Targeted scan of ${filePaths.length} files for ${sourceId}:${libraryId}`)
 
     const result = await provider.scanLibrary(libraryId, {
       onProgress,
@@ -921,7 +921,7 @@ export class SourceManager {
     const enabledSources = db.getEnabledMediaSources()
     const results = new Map<string, ScanResult>()
 
-    console.log(`[SourceManager] Starting incremental scan of ${enabledSources.length} sources`)
+    getLoggingService().info('[SourceManager]', `Starting incremental scan of ${enabledSources.length} sources`)
 
     for (const source of enabledSources) {
       const provider = this.providers.get(source.source_id)
@@ -936,7 +936,7 @@ export class SourceManager {
 
           // Skip disabled libraries
           if (!db.isLibraryEnabled(source.source_id, library.id)) {
-            console.log(`[SourceManager] Skipping disabled library: ${source.display_name}/${library.name}`)
+            getLoggingService().info('[SourceManager]', `Skipping disabled library: ${source.display_name}/${library.name}`)
             continue
           }
 
@@ -944,9 +944,9 @@ export class SourceManager {
           const sinceTimestamp = lastScanTime ? new Date(lastScanTime) : undefined
 
           if (sinceTimestamp) {
-            console.log(`[SourceManager] Incremental scan: ${source.display_name}/${library.name} since ${sinceTimestamp.toISOString()}`)
+            getLoggingService().info('[SourceManager]', `Incremental scan: ${source.display_name}/${library.name} since ${sinceTimestamp.toISOString()}`)
           } else {
-            console.log(`[SourceManager] Full scan (no previous): ${source.display_name}/${library.name}`)
+            getLoggingService().info('[SourceManager]', `Full scan (no previous): ${source.display_name}/${library.name}`)
           }
 
           const result = await provider.scanLibrary(library.id, {
@@ -970,11 +970,11 @@ export class SourceManager {
           results.set(`${source.source_id}:${library.id}`, result)
         }
       } catch (error) {
-        console.error(`[SourceManager] Incremental scan failed for ${source.source_id}:`, error)
+        getLoggingService().error('[SourceManager]', `Incremental scan failed for ${source.source_id}:`, error)
       }
     }
 
-    console.log(`[SourceManager] Incremental scan complete: ${results.size} libraries processed`)
+    getLoggingService().info('[SourceManager]', `Incremental scan complete: ${results.size} libraries processed`)
     return results
   }
 
@@ -994,7 +994,7 @@ export class SourceManager {
     if (provider.providerType === 'plex') {
       const plexProvider = provider as PlexProvider
       if (!plexProvider.hasSelectedServer()) {
-        console.log(`[SourceManager] Plex source ${sourceId} has no server selected, returning empty libraries`)
+        getLoggingService().info('[SourceManager]', `Plex source ${sourceId} has no server selected, returning empty libraries`)
         return []
       }
     }
@@ -1015,7 +1015,7 @@ export class SourceManager {
   }
 
   private async fetchLibraries(sourceId: string, provider: MediaProvider): Promise<MediaLibrary[]> {
-    console.log(`[SourceManager] Getting libraries for ${sourceId} (${provider.providerType})`)
+    getLoggingService().info('[SourceManager]', `Getting libraries for ${sourceId} (${provider.providerType})`)
     const libraries = await provider.getLibraries()
 
     // Enrich libraries with scan timestamps from database
@@ -1093,7 +1093,7 @@ export class SourceManager {
     const provider = createProvider(source.source_type, config)
     this.providers.set(sourceId, provider)
 
-    console.log(`[SourceManager] Reloaded provider: ${sourceId}`)
+    getLoggingService().info('[SourceManager]', `Reloaded provider: ${sourceId}`)
   }
 }
 

@@ -8,6 +8,7 @@ import { ipcMain, dialog, shell } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { getSourceManager } from '../services/SourceManager'
+import { getLoggingService } from '../services/LoggingService'
 import { getDatabase } from '../database/getDatabase'
 import { getPlexService } from '../services/PlexService'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
@@ -50,7 +51,7 @@ export function registerSourceHandlers(): void {
    */
   ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
     const validUrl = validateInput(SafeUrlSchema, url, 'app:openExternal')
-    console.log('[IPC app:openExternal]', validUrl)
+    getLoggingService().info('[IPC app:openExternal]', validUrl)
     await shell.openExternal(validUrl)
   })
 
@@ -64,10 +65,10 @@ export function registerSourceHandlers(): void {
   ipcMain.handle('sources:add', async (_event, config: unknown) => {
     try {
       const validatedConfig = validateInput(AddSourceSchema, config, 'sources:add')
-      console.log('[IPC sources:add] Adding source:', validatedConfig.displayName, `(${validatedConfig.sourceType})`)
+      getLoggingService().info('[sources]', '[IPC sources:add] Adding source:', validatedConfig.displayName, `(${validatedConfig.sourceType})`)
       return await manager.addSource(validatedConfig)
     } catch (error: unknown) {
-      console.error('Error adding source:', error)
+      getLoggingService().error('[sources]', 'Error adding source:', error)
       throw error
     }
   })
@@ -79,10 +80,10 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:update')
       const validatedUpdates = validateInput(UpdateSourceSchema, updates, 'sources:update')
-      console.log('[IPC sources:update] Updating source:', validSourceId)
+      getLoggingService().info('[sources]', '[IPC sources:update] Updating source:', validSourceId)
       await manager.updateSource(validSourceId, validatedUpdates)
     } catch (error: unknown) {
-      console.error('Error updating source:', error)
+      getLoggingService().error('[sources]', 'Error updating source:', error)
       throw error
     }
   })
@@ -93,10 +94,10 @@ export function registerSourceHandlers(): void {
   ipcMain.handle('sources:remove', async (_event, sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:remove')
-      console.log('[IPC sources:remove] Removing source:', validSourceId)
+      getLoggingService().info('[sources]', '[IPC sources:remove] Removing source:', validSourceId)
       await manager.removeSource(validSourceId)
     } catch (error: unknown) {
-      console.error('Error removing source:', error)
+      getLoggingService().error('[sources]', 'Error removing source:', error)
       throw error
     }
   })
@@ -109,7 +110,7 @@ export function registerSourceHandlers(): void {
       const validType = type !== undefined ? validateInput(OptionalProviderTypeSchema, type, 'sources:list') : undefined
       return await manager.getSources(validType)
     } catch (error: unknown) {
-      console.error('Error listing sources:', error)
+      getLoggingService().error('[sources]', 'Error listing sources:', error)
       throw error
     }
   })
@@ -122,7 +123,7 @@ export function registerSourceHandlers(): void {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:get')
       return await manager.getSource(validSourceId)
     } catch (error: unknown) {
-      console.error('Error getting source:', error)
+      getLoggingService().error('[sources]', 'Error getting source:', error)
       throw error
     }
   })
@@ -134,7 +135,7 @@ export function registerSourceHandlers(): void {
     try {
       return await manager.getEnabledSources()
     } catch (error: unknown) {
-      console.error('Error getting enabled sources:', error)
+      getLoggingService().error('[sources]', 'Error getting enabled sources:', error)
       throw error
     }
   })
@@ -148,7 +149,7 @@ export function registerSourceHandlers(): void {
       const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggle')
       await manager.toggleSource(validSourceId, validEnabled)
     } catch (error: unknown) {
-      console.error('Error toggling source:', error)
+      getLoggingService().error('[sources]', 'Error toggling source:', error)
       throw error
     }
   })
@@ -165,7 +166,7 @@ export function registerSourceHandlers(): void {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:testConnection')
       return await manager.testConnection(validSourceId)
     } catch (error: unknown) {
-      console.error('Error testing connection:', error)
+      getLoggingService().error('[sources]', 'Error testing connection:', error)
       throw error
     }
   })
@@ -181,7 +182,7 @@ export function registerSourceHandlers(): void {
     try {
       return await manager.plexStartAuth()
     } catch (error: unknown) {
-      console.error('Error starting Plex auth:', error)
+      getLoggingService().error('[sources]', 'Error starting Plex auth:', error)
       throw error
     }
   })
@@ -193,7 +194,7 @@ export function registerSourceHandlers(): void {
     try {
       return await manager.plexCompleteAuth(pinId)
     } catch (error: unknown) {
-      console.error('Error checking Plex auth:', error)
+      getLoggingService().error('[sources]', 'Error checking Plex auth:', error)
       throw error
     }
   })
@@ -205,7 +206,7 @@ export function registerSourceHandlers(): void {
     try {
       return await manager.plexAuthenticateAndDiscover(token, displayName)
     } catch (error: unknown) {
-      console.error('Error authenticating Plex:', error)
+      getLoggingService().error('[sources]', 'Error authenticating Plex:', error)
       throw error
     }
   })
@@ -229,12 +230,12 @@ export function registerSourceHandlers(): void {
     const plexSources = await manager.getSources('plex')
     if (plexSources.length > 0) {
       const resolvedSourceId = plexSources[0].source_id
-      console.log(`[plex:selectServer] Using first Plex source: ${resolvedSourceId}`)
+      getLoggingService().info('[plex:selectServer]', `Using first Plex source: ${resolvedSourceId}`)
       return await manager.plexSelectServer(resolvedSourceId, resolvedServerId)
     }
 
     // Fallback to legacy PlexService for old auth flow
-    console.log('[plex:selectServer] No sources found, using legacy PlexService')
+    getLoggingService().info('[sources]', '[plex:selectServer] No sources found, using legacy PlexService')
     const plex = getPlexService()
     const success = await plex.selectServer(resolvedServerId)
     return { success }
@@ -257,16 +258,16 @@ export function registerSourceHandlers(): void {
       const plexSources = await manager.getSources('plex')
       if (plexSources.length > 0) {
         const resolvedSourceId = plexSources[0].source_id
-        console.log(`[plex:getServers] Using first Plex source: ${resolvedSourceId}`)
+        getLoggingService().info('[plex:getServers]', `Using first Plex source: ${resolvedSourceId}`)
         return await manager.plexGetServers(resolvedSourceId)
       }
 
       // Fallback to legacy PlexService for old auth flow
-      console.log('[plex:getServers] No sources found, using legacy PlexService')
+      getLoggingService().info('[sources]', '[plex:getServers] No sources found, using legacy PlexService')
       const plex = getPlexService()
       return await plex.getServers()
     } catch (error: unknown) {
-      console.error('Error getting Plex servers:', error)
+      getLoggingService().error('[sources]', 'Error getting Plex servers:', error)
       throw error
     }
   })
@@ -284,7 +285,7 @@ export function registerSourceHandlers(): void {
       return await manager.getLibraries(validSourceId)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
-      console.warn(`[IPC] sources:getLibraries failed for ${sourceId}: ${msg}`)
+      getLoggingService().warn('[IPC]', `sources:getLibraries failed for ${sourceId}: ${msg}`)
       return []
     }
   })
@@ -324,7 +325,7 @@ export function registerSourceHandlers(): void {
       })
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
-      console.warn(`[IPC] sources:getLibrariesWithStatus failed for ${sourceId}: ${msg}`)
+      getLoggingService().warn('[IPC]', `sources:getLibrariesWithStatus failed for ${sourceId}: ${msg}`)
       return []
     }
   })
@@ -337,7 +338,7 @@ export function registerSourceHandlers(): void {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:toggleLibrary')
       const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:toggleLibrary')
       const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggleLibrary')
-      console.log('[IPC sources:toggleLibrary]', validSourceId, validLibraryId, validEnabled ? 'enabled' : 'disabled')
+      getLoggingService().info('[IPC sources:toggleLibrary]', validSourceId, validLibraryId, validEnabled ? 'enabled' : 'disabled')
       const db = getDatabase()
       await db.toggleLibrary(validSourceId, validLibraryId, validEnabled)
 
@@ -347,7 +348,7 @@ export function registerSourceHandlers(): void {
 
       return { success: true }
     } catch (error: unknown) {
-      console.error('Error toggling library:', error)
+      getLoggingService().error('[sources]', 'Error toggling library:', error)
       throw error
     }
   })
@@ -367,7 +368,7 @@ export function registerSourceHandlers(): void {
       await db.setLibrariesEnabled(validSourceId, libraries)
       return { success: true }
     } catch (error: unknown) {
-      console.error('Error setting libraries enabled:', error)
+      getLoggingService().error('[sources]', 'Error setting libraries enabled:', error)
       throw error
     }
   })
@@ -381,7 +382,7 @@ export function registerSourceHandlers(): void {
       const db = getDatabase()
       return db.getEnabledLibraryIds(validSourceId)
     } catch (error: unknown) {
-      console.error('Error getting enabled library IDs:', error)
+      getLoggingService().error('[sources]', 'Error getting enabled library IDs:', error)
       throw error
     }
   })
@@ -391,11 +392,11 @@ export function registerSourceHandlers(): void {
    */
   ipcMain.handle('sources:stopScan', async () => {
     try {
-      console.log('[IPC] Stopping scan...')
+      getLoggingService().info('[sources]', '[IPC] Stopping scan...')
       manager.stopScan()
       return { success: true }
     } catch (error: unknown) {
-      console.error('Error stopping scan:', error)
+      getLoggingService().error('[sources]', 'Error stopping scan:', error)
       return { success: false, error: getErrorMessage(error) }
     }
   })
@@ -407,7 +408,7 @@ export function registerSourceHandlers(): void {
     const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:scanLibrary')
     const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:scanLibrary')
     const win = getWindowFromEvent(event)
-    console.log(`[IPC sources:scanLibrary] Starting scan for ${validSourceId}/${validLibraryId}, win exists: ${!!win}`)
+    getLoggingService().info('[IPC sources:scanLibrary]', `Starting scan for ${validSourceId}/${validLibraryId}, win exists: ${!!win}`)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     let progressCount = 0
 
@@ -415,15 +416,15 @@ export function registerSourceHandlers(): void {
       const result = await manager.scanLibrary(validSourceId, validLibraryId, (progress) => {
         progressCount++
         if (progressCount <= 3 || progressCount % 50 === 0) {
-          console.log(`[IPC sources:scanLibrary] Progress #${progressCount}: ${progress.percentage?.toFixed(1)}% - ${progress.currentItem}`)
+          getLoggingService().info('[IPC sources:scanLibrary]', `Progress #${progressCount}: ${progress.percentage?.toFixed(1)}% - ${progress.currentItem}`)
         }
         onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
       })
 
-      console.log(`[IPC sources:scanLibrary] Scan complete, sent ${progressCount} progress events`)
+      getLoggingService().info('[IPC sources:scanLibrary]', `Scan complete, sent ${progressCount} progress events`)
       return result
     } catch (error: unknown) {
-      console.error('Error scanning library:', error)
+      getLoggingService().error('[sources]', 'Error scanning library:', error)
       throw error
     } finally {
       flush()
@@ -448,7 +449,7 @@ export function registerSourceHandlers(): void {
         ...value,
       }))
     } catch (error: unknown) {
-      console.error('Error scanning all sources:', error)
+      getLoggingService().error('[sources]', 'Error scanning all sources:', error)
       throw error
     } finally {
       flush()
@@ -468,7 +469,7 @@ export function registerSourceHandlers(): void {
     const validLibraryId = libraryId != null ? validateInput(SourceIdSchema, libraryId, 'sources:scanItem') : null
     const validFilePath = validateInput(FilePathSchema, filePath, 'sources:scanItem')
     const win = getWindowFromEvent(event)
-    console.log(`[IPC sources:scanItem] Starting single item scan for ${path.basename(validFilePath)}`)
+    getLoggingService().info('[IPC sources:scanItem]', `Starting single item scan for ${path.basename(validFilePath)}`)
 
     // If libraryId not provided, determine the appropriate default based on provider type
     let resolvedLibraryId = validLibraryId
@@ -482,7 +483,7 @@ export function registerSourceHandlers(): void {
         // LocalFolderProvider uses 'movie' and 'tvshows'
         resolvedLibraryId = 'movie'
       }
-      console.log(`[IPC sources:scanItem] No libraryId provided, using default for ${provider?.providerType || 'unknown'}: ${resolvedLibraryId}`)
+      getLoggingService().info('[IPC sources:scanItem]', `No libraryId provided, using default for ${provider?.providerType || 'unknown'}: ${resolvedLibraryId}`)
     }
 
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
@@ -492,10 +493,10 @@ export function registerSourceHandlers(): void {
         onProgress(progress, { sourceId: validSourceId, libraryId: resolvedLibraryId })
       })
 
-      console.log(`[IPC sources:scanItem] Scan complete: ${result.itemsScanned} items`)
+      getLoggingService().info('[IPC sources:scanItem]', `Scan complete: ${result.itemsScanned} items`)
       return result
     } catch (error: unknown) {
-      console.error('Error scanning single item:', error)
+      getLoggingService().error('[sources]', 'Error scanning single item:', error)
       throw error
     } finally {
       flush()
@@ -509,7 +510,7 @@ export function registerSourceHandlers(): void {
     const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:scanLibraryIncremental')
     const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:scanLibraryIncremental')
     const win = getWindowFromEvent(event)
-    console.log(`[IPC sources:scanLibraryIncremental] Starting incremental scan for ${validSourceId}/${validLibraryId}`)
+    getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Starting incremental scan for ${validSourceId}/${validLibraryId}`)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
 
     try {
@@ -517,10 +518,10 @@ export function registerSourceHandlers(): void {
         onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
       })
 
-      console.log(`[IPC sources:scanLibraryIncremental] Scan complete: ${result.itemsScanned} items`)
+      getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Scan complete: ${result.itemsScanned} items`)
       return result
     } catch (error: unknown) {
-      console.error('Error in incremental library scan:', error)
+      getLoggingService().error('[sources]', 'Error in incremental library scan:', error)
       throw error
     } finally {
       flush()
@@ -532,7 +533,7 @@ export function registerSourceHandlers(): void {
    */
   ipcMain.handle('sources:scanAllIncremental', async (event) => {
     const win = getWindowFromEvent(event)
-    console.log('[IPC sources:scanAllIncremental] Starting incremental scan of all sources')
+    getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Starting incremental scan of all sources')
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
 
     try {
@@ -540,7 +541,7 @@ export function registerSourceHandlers(): void {
         onProgress(progress, { sourceId, sourceName })
       })
 
-      console.log('[IPC sources:scanAllIncremental] Incremental scan complete')
+      getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Incremental scan complete')
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({
@@ -548,7 +549,7 @@ export function registerSourceHandlers(): void {
         ...value,
       }))
     } catch (error: unknown) {
-      console.error('Error in incremental scan all:', error)
+      getLoggingService().error('[sources]', 'Error in incremental scan all:', error)
       throw error
     } finally {
       flush()
@@ -566,7 +567,7 @@ export function registerSourceHandlers(): void {
     try {
       return await manager.getAggregatedStats()
     } catch (error: unknown) {
-      console.error('Error getting stats:', error)
+      getLoggingService().error('[sources]', 'Error getting stats:', error)
       throw error
     }
   })
@@ -578,7 +579,7 @@ export function registerSourceHandlers(): void {
     try {
       return manager.getSupportedProviders()
     } catch (error: unknown) {
-      console.error('Error getting supported providers:', error)
+      getLoggingService().error('[sources]', 'Error getting supported providers:', error)
       throw error
     }
   })
@@ -596,7 +597,7 @@ export function registerSourceHandlers(): void {
       const discovery = getKodiLocalDiscoveryService()
       return await discovery.detectLocalInstallation()
     } catch (error: unknown) {
-      console.error('Error detecting local Kodi:', error)
+      getLoggingService().error('[sources]', 'Error detecting local Kodi:', error)
       return null
     }
   })
@@ -609,7 +610,7 @@ export function registerSourceHandlers(): void {
       const discovery = getKodiLocalDiscoveryService()
       return await discovery.isKodiRunning()
     } catch (error: unknown) {
-      console.error('Error checking if Kodi is running:', error)
+      getLoggingService().error('[sources]', 'Error checking if Kodi is running:', error)
       return false
     }
   })
@@ -641,7 +642,7 @@ export function registerSourceHandlers(): void {
 
       return result
     } catch (error: unknown) {
-      console.error('Error importing Kodi collections:', error)
+      getLoggingService().error('[sources]', 'Error importing Kodi collections:', error)
       throw error
     } finally {
       flush()
@@ -666,7 +667,7 @@ export function registerSourceHandlers(): void {
       const kodiProvider = provider as KodiLocalProvider
       return await kodiProvider.getCollections()
     } catch (error: unknown) {
-      console.error('Error getting Kodi collections:', error)
+      getLoggingService().error('[sources]', 'Error getting Kodi collections:', error)
       throw error
     }
   })
@@ -693,7 +694,7 @@ export function registerSourceHandlers(): void {
       }
       return await connectionService.testConnection(mysqlConfig)
     } catch (error: unknown) {
-      console.error('Error testing MySQL connection:', error)
+      getLoggingService().error('[sources]', 'Error testing MySQL connection:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Connection test failed',
@@ -717,7 +718,7 @@ export function registerSourceHandlers(): void {
       }
       return await connectionService.detectDatabases(mysqlConfig)
     } catch (error: unknown) {
-      console.error('Error detecting MySQL databases:', error)
+      getLoggingService().error('[sources]', 'Error detecting MySQL databases:', error)
       return {
         videoDatabase: null,
         videoVersion: null,
@@ -774,7 +775,7 @@ export function registerSourceHandlers(): void {
         serverVersion: authResult.serverVersion,
       }
     } catch (error: unknown) {
-      console.error('Error authenticating Kodi MySQL:', error)
+      getLoggingService().error('[sources]', 'Error authenticating Kodi MySQL:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Authentication failed',
@@ -794,7 +795,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.isAvailable()
     } catch (error: unknown) {
-      console.error('Error checking FFprobe availability:', error)
+      getLoggingService().error('[sources]', 'Error checking FFprobe availability:', error)
       return false
     }
   })
@@ -807,7 +808,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.getVersion()
     } catch (error: unknown) {
-      console.error('Error getting FFprobe version:', error)
+      getLoggingService().error('[sources]', 'Error getting FFprobe version:', error)
       return null
     }
   })
@@ -821,7 +822,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.analyzeFile(validFilePath)
     } catch (error: unknown) {
-      console.error('Error analyzing file:', error)
+      getLoggingService().error('[sources]', 'Error analyzing file:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Failed to analyze file',
@@ -852,7 +853,7 @@ export function registerSourceHandlers(): void {
       kodiProvider.setFFprobeAnalysis(validEnabled)
       return { success: true, enabled: validEnabled }
     } catch (error: unknown) {
-      console.error('Error setting FFprobe analysis:', error)
+      getLoggingService().error('[sources]', 'Error setting FFprobe analysis:', error)
       throw error
     }
   })
@@ -875,7 +876,7 @@ export function registerSourceHandlers(): void {
       const kodiProvider = provider as KodiLocalProvider
       return kodiProvider.isFFprobeAnalysisEnabled()
     } catch (error: unknown) {
-      console.error('Error checking FFprobe status:', error)
+      getLoggingService().error('[sources]', 'Error checking FFprobe status:', error)
       return false
     }
   })
@@ -902,7 +903,7 @@ export function registerSourceHandlers(): void {
         reason: isAvailable ? null : 'FFprobe not found on system. Install FFmpeg to enable file analysis.',
       }
     } catch (error: unknown) {
-      console.error('Error checking FFprobe for source:', error)
+      getLoggingService().error('[sources]', 'Error checking FFprobe for source:', error)
       return { available: false, reason: getErrorMessage(error) }
     }
   })
@@ -915,7 +916,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return analyzer.canInstall()
     } catch (error: unknown) {
-      console.error('Error checking FFprobe install capability:', error)
+      getLoggingService().error('[sources]', 'Error checking FFprobe install capability:', error)
       return false
     }
   })
@@ -935,7 +936,7 @@ export function registerSourceHandlers(): void {
 
       return result
     } catch (error: unknown) {
-      console.error('Error installing FFprobe:', error)
+      getLoggingService().error('[sources]', 'Error installing FFprobe:', error)
       return {
         success: false,
         error: getErrorMessage(error) || 'Installation failed',
@@ -952,7 +953,7 @@ export function registerSourceHandlers(): void {
       const success = await analyzer.uninstallFFprobe()
       return { success }
     } catch (error: unknown) {
-      console.error('Error uninstalling FFprobe:', error)
+      getLoggingService().error('[sources]', 'Error uninstalling FFprobe:', error)
       return { success: false, error: getErrorMessage(error) }
     }
   })
@@ -965,7 +966,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.checkForUpdate()
     } catch (error: unknown) {
-      console.error('Error checking for FFprobe update:', error)
+      getLoggingService().error('[sources]', 'Error checking for FFprobe update:', error)
       return {
         currentVersion: null,
         latestVersion: null,
@@ -983,7 +984,7 @@ export function registerSourceHandlers(): void {
       const analyzer = getMediaFileAnalyzer()
       return await analyzer.isBundledVersion()
     } catch (error: unknown) {
-      console.error('Error checking FFprobe bundle status:', error)
+      getLoggingService().error('[sources]', 'Error checking FFprobe bundle status:', error)
       return false
     }
   })
@@ -1017,7 +1018,7 @@ export function registerSourceHandlers(): void {
         folderPath: result.filePaths[0],
       }
     } catch (error: unknown) {
-      console.error('Error opening folder dialog:', error)
+      getLoggingService().error('[sources]', 'Error opening folder dialog:', error)
       return { cancelled: true, error: getErrorMessage(error) }
     }
   })
@@ -1078,7 +1079,7 @@ export function registerSourceHandlers(): void {
 
       return { subfolders }
     } catch (error: unknown) {
-      console.error('Error detecting subfolders:', error)
+      getLoggingService().error('[sources]', 'Error detecting subfolders:', error)
       return { subfolders: [], error: getErrorMessage(error) }
     }
   })
@@ -1105,7 +1106,7 @@ export function registerSourceHandlers(): void {
 
       return source
     } catch (error: unknown) {
-      console.error('Error adding local folder source with libraries:', error)
+      getLoggingService().error('[sources]', 'Error adding local folder source with libraries:', error)
       throw error
     }
   })
@@ -1127,10 +1128,10 @@ export function registerSourceHandlers(): void {
         isEnabled: true,
       })
     } catch (error: unknown) {
-      console.error('Error adding local folder source:', error)
+      getLoggingService().error('[sources]', 'Error adding local folder source:', error)
       throw error
     }
   })
 
-  console.log('[IPC] Source handlers registered')
+  getLoggingService().info('[sources]', '[IPC] Source handlers registered')
 }

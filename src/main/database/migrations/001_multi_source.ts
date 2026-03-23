@@ -10,6 +10,7 @@
  */
 
 import type { Database } from 'sql.js'
+import { getLoggingService } from '../../services/LoggingService'
 
 export const MIGRATION_VERSION = 1
 export const MIGRATION_NAME = 'multi_source'
@@ -39,11 +40,11 @@ function tableExists(db: Database, table: string): boolean {
  * Run the migration
  */
 export async function runMigration(db: Database): Promise<void> {
-  console.log('[Migration 001] Starting multi-source migration...')
+  getLoggingService().info('[001_multi_source]', '[Migration 001] Starting multi-source migration...')
 
   // 1. Create media_sources table if not exists
   if (!tableExists(db, 'media_sources')) {
-    console.log('[Migration 001] Creating media_sources table...')
+    getLoggingService().info('[001_multi_source]', '[Migration 001] Creating media_sources table...')
     db.run(`
       CREATE TABLE media_sources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,20 +74,20 @@ export async function runMigration(db: Database): Promise<void> {
 
   // 2. Add source_id column to media_items if not exists
   if (!columnExists(db, 'media_items', 'source_id')) {
-    console.log('[Migration 001] Adding source_id column to media_items...')
+    getLoggingService().info('[001_multi_source]', '[Migration 001] Adding source_id column to media_items...')
     db.run(`ALTER TABLE media_items ADD COLUMN source_id TEXT NOT NULL DEFAULT 'legacy'`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_media_items_source ON media_items(source_id)`)
   }
 
   // 3. Add source_type column to media_items if not exists
   if (!columnExists(db, 'media_items', 'source_type')) {
-    console.log('[Migration 001] Adding source_type column to media_items...')
+    getLoggingService().info('[001_multi_source]', '[Migration 001] Adding source_type column to media_items...')
     db.run(`ALTER TABLE media_items ADD COLUMN source_type TEXT NOT NULL DEFAULT 'plex'`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_media_items_source_type ON media_items(source_type)`)
   }
 
   // 4. Create composite unique index (drop old one first if exists)
-  console.log('[Migration 001] Creating composite unique index...')
+  getLoggingService().info('[001_multi_source]', '[Migration 001] Creating composite unique index...')
   try {
     db.run(`DROP INDEX IF EXISTS idx_media_items_plex_id`)
   } catch {
@@ -96,7 +97,7 @@ export async function runMigration(db: Database): Promise<void> {
     db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_media_items_source_provider_id ON media_items(source_id, plex_id)`)
   } catch (error) {
     // Index may already exist or have conflicts
-    console.warn('[Migration 001] Could not create composite index:', error)
+    getLoggingService().warn('[001_multi_source]', '[Migration 001] Could not create composite index:', error)
   }
 
   // 5. Create legacy source from existing Plex settings if there's data
@@ -109,7 +110,7 @@ export async function runMigration(db: Database): Promise<void> {
     const legacyCount = legacyExists[0]?.values[0]?.[0] as number || 0
 
     if (legacyCount === 0) {
-      console.log('[Migration 001] Creating legacy source for existing data...')
+      getLoggingService().info('[001_multi_source]', '[Migration 001] Creating legacy source for existing data...')
 
       // Get existing Plex settings
       const tokenResult = db.exec(`SELECT value FROM settings WHERE key = 'plex_token'`)
@@ -139,7 +140,7 @@ export async function runMigration(db: Database): Promise<void> {
       stmt.run(['legacy', 'plex', 'Legacy Plex Server', connectionConfig, 1, lastScanTime])
       stmt.free()
 
-      console.log(`[Migration 001] Created legacy source for ${itemCount} existing items`)
+      getLoggingService().info('[Migration 001]', `Created legacy source for ${itemCount} existing items`)
     }
 
     // Update all existing items to use legacy source (in case they have empty source_id)
@@ -149,14 +150,14 @@ export async function runMigration(db: Database): Promise<void> {
   // 6. Store migration version in settings
   db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_version', '${MIGRATION_VERSION}')`)
 
-  console.log('[Migration 001] Multi-source migration completed successfully')
+  getLoggingService().info('[001_multi_source]', '[Migration 001] Multi-source migration completed successfully')
 }
 
 /**
  * Rollback the migration (for development/testing)
  */
 export async function rollbackMigration(db: Database): Promise<void> {
-  console.log('[Migration 001] Rolling back multi-source migration...')
+  getLoggingService().info('[001_multi_source]', '[Migration 001] Rolling back multi-source migration...')
 
   // Note: SQLite doesn't support DROP COLUMN, so we can only:
   // 1. Drop the indexes
@@ -170,8 +171,8 @@ export async function rollbackMigration(db: Database): Promise<void> {
     db.run(`DROP TABLE IF EXISTS media_sources`)
     db.run(`DELETE FROM settings WHERE key = 'migration_version'`)
   } catch (error) {
-    console.error('[Migration 001] Rollback error:', error)
+    getLoggingService().error('[001_multi_source]', '[Migration 001] Rollback error:', error)
   }
 
-  console.log('[Migration 001] Rollback completed')
+  getLoggingService().info('[001_multi_source]', '[Migration 001] Rollback completed')
 }

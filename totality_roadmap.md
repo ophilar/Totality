@@ -29,6 +29,8 @@
 ## Phase 4: Efficiency & UI Refinement (Current)
 - [x] **Cleanup Radar**: Dashboard component ranking items by Storage Debt (GB waste).
 - [x] **Trash Indicator**: UI badges for redundant/dubbed audio tracks.
+- [x] **Upgrades UI Refinement**: Consolidate Cleanup functionality into Upgrades column and add Efficiency sorting.
+- [x] **Actionable Recommendations**: Show tailored conversion parameters (AV1 preference) for wasteful files.
 - [ ] **Actionable Optimization**: Initiate local FFmpeg transcodes to pay off storage debt.
 - [ ] **Library Audit Export**: Generate CSV/PDF reports of quality and efficiency metrics.
 - [ ] **Multi-user profiles** and permissions.

@@ -22,6 +22,7 @@ vi.mock('worker_threads', () => ({
 
 vi.mock('os', () => ({
   cpus: vi.fn(() => Array(4).fill({ model: 'test' })),
+  homedir: vi.fn(() => '/home/test'),
 }))
 
 vi.mock('path', () => ({

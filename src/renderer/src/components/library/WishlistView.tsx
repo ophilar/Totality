@@ -97,7 +97,7 @@ export function WishlistView(_props: WishlistViewProps) {
 
       setMissing(missingList)
     } catch (err) {
-      console.error('Failed to load wishlist data:', err)
+      window.electronAPI.log.error('[WishlistView]', 'Failed to load wishlist data:', err)
       addToast({ title: 'Failed to load wishlist data', type: 'error' })
     } finally {
       setLoading(false)
@@ -117,7 +117,7 @@ export function WishlistView(_props: WishlistViewProps) {
       emitDismissUpgrade({ mediaId: item.id })
       addToast({ title: `Dismissed upgrade for ${item.title}`, type: 'success' })
     } catch (err) {
-      console.error('Failed to dismiss upgrade:', err)
+      window.electronAPI.log.error('[WishlistView]', 'Failed to dismiss upgrade:', err)
       addToast({ title: 'Failed to dismiss upgrade', type: 'error' })
     }
   }
@@ -145,7 +145,7 @@ export function WishlistView(_props: WishlistViewProps) {
       setMissing(prev => prev.filter(m => m.id !== item.id))
       addToast({ title: `Dismissed missing item ${item.title}`, type: 'success' })
     } catch (err) {
-      console.error('Failed to dismiss missing item:', err)
+      window.electronAPI.log.error('[WishlistView]', 'Failed to dismiss missing item:', err)
       addToast({ title: 'Failed to dismiss item', type: 'error' })
     }
   }

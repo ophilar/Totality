@@ -3,6 +3,7 @@ import { getMovieCollectionService } from '../services/MovieCollectionService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
 import { validateInput, OptionalSourceIdSchema, PositiveIntSchema, NonEmptyStringSchema } from '../validation/schemas'
+import { getLoggingService } from '../services/LoggingService'
 
 export function registerCollectionHandlers() {
   const service = getMovieCollectionService()
@@ -23,7 +24,7 @@ export function registerCollectionHandlers() {
 
       return { success: true, ...result }
     } catch (error) {
-      console.error('Error analyzing collections:', error)
+      getLoggingService().error('[collections]', 'Error analyzing collections:', error)
       throw error
     } finally {
       flush()
@@ -36,7 +37,7 @@ export function registerCollectionHandlers() {
       service.cancel()
       return { success: true }
     } catch (error) {
-      console.error('Error cancelling collection analysis:', error)
+      getLoggingService().error('[collections]', 'Error cancelling collection analysis:', error)
       throw error
     }
   })
@@ -47,7 +48,7 @@ export function registerCollectionHandlers() {
     try {
       return service.getCollections(validSourceId)
     } catch (error) {
-      console.error('Error getting collections:', error)
+      getLoggingService().error('[collections]', 'Error getting collections:', error)
       throw error
     }
   })
@@ -59,7 +60,7 @@ export function registerCollectionHandlers() {
     try {
       return service.getIncompleteCollections(validSourceId)
     } catch (error) {
-      console.error('Error getting incomplete collections:', error)
+      getLoggingService().error('[collections]', 'Error getting incomplete collections:', error)
       throw error
     }
   })
@@ -69,7 +70,7 @@ export function registerCollectionHandlers() {
     try {
       return service.getStats()
     } catch (error) {
-      console.error('Error getting collection stats:', error)
+      getLoggingService().error('[collections]', 'Error getting collection stats:', error)
       throw error
     }
   })
@@ -80,10 +81,10 @@ export function registerCollectionHandlers() {
     try {
       return service.deleteCollection(validId)
     } catch (error) {
-      console.error('Error deleting collection:', error)
+      getLoggingService().error('[collections]', 'Error deleting collection:', error)
       throw error
     }
   })
 
-  console.log('Movie collection IPC handlers registered')
+  getLoggingService().info('[collections]', 'Movie collection IPC handlers registered')
 }
