@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.1](https://github.com/bbidwell85/totality/compare/v0.3.0...v0.3.1) (2026-03-26)
+
+
+### Features
+
+* notifications system, TopBar modernization, and UI refinements ([3b0509c](https://github.com/bbidwell85/totality/commit/3b0509cfee15160aabad3dfe53fb3a09ca3e5f07))
+
+
+### Bug Fixes
+
+* multiple library view and dashboard bug fixes ([7244f5d](https://github.com/bbidwell85/totality/commit/7244f5d11f6f9d247c950745a511ad9be9525cb9))
+* switch coverage provider from v8 to istanbul ([d567bae](https://github.com/bbidwell85/totality/commit/d567bae70e7631f5cc90ff34992b772548425ce5))
+
 ## [0.3.0](https://github.com/bbidwell85/totality/compare/v0.2.3...v0.3.0) (2026-03-22)
 
 
