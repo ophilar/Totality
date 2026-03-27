@@ -13,7 +13,8 @@
 - [x] Performance: Optimize `BetterSQLiteService` query execution for large libraries.
 - [x] AI: Implement Flash models and caching for high-volume analysis.
 - [x] **Virtualization**: Implement `react-virtuoso` across all library views (60fps scrolling).
-- [x] **Modularization**: Refactor `DatabaseService` into specialized repositories and migrate to `better-sqlite3`.
+- [x] **Modularization**: Refactor `DatabaseService` into specialized repositories and migrate to `better-sqlite3`. (v0.4.0)
+- [x] **Tech Stack Modernization**: Upgrade to React 19, TypeScript 6, and Electron 41. (v0.4.0)
 
 ## Phase 3: Feature Expansion (Complete)
 - [x] Unified library search with AI tool-use.
@@ -31,7 +32,7 @@
 - [x] **Trash Indicator**: UI badges for redundant/dubbed audio tracks.
 - [x] **Upgrades UI Refinement**: Consolidate Cleanup functionality into Upgrades column and add Efficiency sorting.
 - [x] **Actionable Recommendations**: Show tailored conversion parameters (AV1 preference) for wasteful files.
+- [x] **Development Stabilization**: Modernize ESLint config (v10) and resolve dependency peer conflicts.
 - [ ] **Actionable Optimization**: Initiate local FFmpeg transcodes to pay off storage debt.
-- [ ] **Library Audit Export**: Generate CSV/PDF reports of quality and efficiency metrics.
-- [ ] **Multi-user profiles** and permissions.
+- [ ] **Library Audit Export**: Generate CSV/PDF reports of quality and efficiency metrics.- [ ] **Multi-user profiles** and permissions.
 - [ ] **AI Upgrade Recommendations**: Suggest higher quality versions based on availability.
