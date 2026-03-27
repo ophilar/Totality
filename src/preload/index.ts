@@ -9,6 +9,7 @@ import { wishlistApi, WishlistAPI } from './api/wishlist'
 import { monitoringApi, MonitoringAPI } from './api/monitoring'
 import { aiApi, AiAPI } from './api/ai'
 import { loggingApi, LoggingAPI } from './api/logging'
+import { notificationsApi, NotificationsAPI } from './api/notifications'
 
 // Import types
 import type {
@@ -39,7 +40,8 @@ export type {
   WishlistAPI,
   MonitoringAPI,
   AiAPI,
-  LoggingAPI
+  LoggingAPI,
+  NotificationsAPI
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -53,6 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ...monitoringApi,
   ...aiApi,
   ...loggingApi,
+  ...notificationsApi
 })
 
 // Type definitions for window object
@@ -63,7 +66,8 @@ export type ElectronAPI = AppAPI &
   WishlistAPI &
   MonitoringAPI &
   AiAPI &
-  LoggingAPI
+  LoggingAPI &
+  NotificationsAPI
 
 declare global {
   interface Window {

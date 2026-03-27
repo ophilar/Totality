@@ -94,7 +94,6 @@ export function MoviesView({
     const moviesInCollections = new Set<number>()
     const collectionMovieMap = new Map<string, MediaItem[]>()
 
-    // Find which movies belong to which collection
     for (const movie of movies) {
       const collection = getCollectionForMovie(movie)
       if (collection) {
@@ -105,10 +104,7 @@ export function MoviesView({
       }
     }
 
-    // Build display items
     const items: MovieDisplayItem[] = []
-
-    // Add collections (only those that have at least one movie in current filtered view)
     const addedCollections = new Set<string>()
     for (const collection of movieCollections) {
       if (collectionMovieMap.has(collection.tmdb_collection_id) && !addedCollections.has(collection.tmdb_collection_id)) {
@@ -117,7 +113,6 @@ export function MoviesView({
       }
     }
 
-    // Add individual movies not in any collection (unless collections-only filter is active)
     if (!collectionsOnly) {
       for (const movie of movies) {
         if (!moviesInCollections.has(movie.id)) {
@@ -126,7 +121,6 @@ export function MoviesView({
       }
     }
 
-    // Sort all items alphabetically together (collections and movies interleaved)
     items.sort((a, b) => {
       if (sortBy === 'efficiency') {
         const effA = a.type === 'movie' ? (a.movie.efficiency_score ?? 100) : 100

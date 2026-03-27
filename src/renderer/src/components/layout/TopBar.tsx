@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowBigLeft } from 'lucide-react'
+import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
@@ -41,6 +41,8 @@ interface TopBarProps {
   hasMusic?: boolean
   onBack?: () => void
   canGoBack?: boolean
+  onForward?: () => void
+  canGoForward?: boolean
 }
 
 export function TopBar({
@@ -61,6 +63,8 @@ export function TopBar({
   hasMusic = false,
   onBack,
   canGoBack = false,
+  onForward,
+  canGoForward = false,
 }: TopBarProps) {
   const { sources } = useSources()
   const { count: wishlistCount } = useWishlist()
@@ -234,20 +238,12 @@ export function TopBar({
   const isDashboard = currentView === 'dashboard'
 
   // Get actual theme from document (to escape TopBar's forced dark mode)
-  const getActiveTheme = () => {
-    const themes = ['frost', 'slate-light', 'ember-light', 'forest-light',
-                    'ocean-light', 'lavender-light', 'rose-light', 'sand-light',
-                    'mint-light', 'coral-light', 'dark']
-    for (const theme of themes) {
-      if (document.documentElement.classList.contains(theme)) return theme
-    }
-    return 'dark'
-  }
+
 
   return (
     <header
       id="top-bar"
-      className="dark fixed top-4 left-4 right-4 z-100 bg-black rounded-2xl shadow-xl px-4 py-3"
+      className="fixed top-4 left-4 right-4 z-100 bg-black text-white rounded-2xl shadow-xl px-4 py-3"
       role="banner"
       aria-label="Main navigation"
     >
@@ -258,8 +254,8 @@ export function TopBar({
           <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
 
           {/* Search */}
-          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+          <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-56 focus-within:w-80 transition-all duration-300 ease-out">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
             <input
               ref={searchInputRef}
               type="text"
@@ -268,7 +264,7 @@ export function TopBar({
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full pl-10 pr-8 py-2 bg-input border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+              className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all duration-300"
               aria-label="Search all libraries"
             />
             {searchInput && (
@@ -278,7 +274,7 @@ export function TopBar({
                   setSearchResults(null)
                   setShowSearchResults(false)
                 }}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground z-10"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white z-10"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
@@ -287,7 +283,7 @@ export function TopBar({
 
             {/* Search Results Dropdown */}
             {showSearchResults && searchInput.length >= 2 && (
-              <div className={`${getActiveTheme()} absolute top-full left-0 right-0 mt-2 bg-popover border border-border rounded-lg shadow-2xl overflow-hidden z-9999 max-h-[400px] overflow-y-auto`}>
+              <div className="absolute top-full left-0 right-0 mt-2 bg-popover border border-border rounded-lg shadow-2xl z-9999 max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {isSearching && (
                   <div className="px-3 py-4 text-sm text-muted-foreground text-center">Searching...</div>
                 )}
@@ -525,12 +521,26 @@ export function TopBar({
             disabled={!canGoBack}
             className={`p-1.5 rounded-md transition-colors shrink-0 ${
               canGoBack
-                ? 'text-foreground hover:bg-muted cursor-pointer'
-                : 'text-muted-foreground/30 cursor-default'
+                ? 'text-white hover:bg-white/10 cursor-pointer'
+                : 'text-neutral-600 cursor-default'
             }`}
-            title="Go back"
+            title="Go back (Alt+Left)"
           >
-            <ArrowBigLeft className="w-5 h-5 fill-current" />
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+
+          {/* Forward Button */}
+          <button
+            onClick={canGoForward && onForward ? onForward : undefined}
+            disabled={!canGoForward}
+            className={`p-1.5 rounded-md transition-colors shrink-0 ${
+              canGoForward
+                ? 'text-white hover:bg-white/10 cursor-pointer'
+                : 'text-neutral-600 cursor-default'
+            }`}
+            title="Go forward (Alt+Right)"
+          >
+            <ArrowRight className="w-5 h-5" />
           </button>
 
         </div>
@@ -544,8 +554,8 @@ export function TopBar({
                 onClick={onNavigateHome}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                   isDashboard
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-card text-muted-foreground hover:bg-muted'
+                    ? 'bg-white text-black'
+                    : 'text-white hover:bg-white/10'
                 }`}
                 role="tab"
                 aria-selected={isDashboard}
@@ -556,7 +566,7 @@ export function TopBar({
 
               {/* Divider - only show if any library buttons will render */}
               {(hasMovies || hasTV || hasMusic) && (
-                <div className="w-px bg-border/50 mx-1" />
+                <div className="w-px bg-white/20 mx-1" />
               )}
 
               {/* Movies Button - only render if movies library exists */}
@@ -565,8 +575,8 @@ export function TopBar({
                   onClick={() => onNavigateToLibrary('movies')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'movies'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-card text-muted-foreground hover:bg-muted'
+                      ? 'bg-white text-black'
+                      : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
                   aria-selected={!isDashboard && libraryTab === 'movies'}
@@ -582,8 +592,8 @@ export function TopBar({
                   onClick={() => onNavigateToLibrary('tv')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'tv'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-card text-muted-foreground hover:bg-muted'
+                      ? 'bg-white text-black'
+                      : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
                   aria-selected={!isDashboard && libraryTab === 'tv'}
@@ -599,8 +609,8 @@ export function TopBar({
                   onClick={() => onNavigateToLibrary('music')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
                     !isDashboard && libraryTab === 'music'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-card text-muted-foreground hover:bg-muted'
+                      ? 'bg-white text-black'
+                      : 'text-white hover:bg-white/10'
                   }`}
                   role="tab"
                   aria-selected={!isDashboard && libraryTab === 'music'}
@@ -612,7 +622,7 @@ export function TopBar({
 
               {/* Auto-refresh indicator */}
               {isAutoRefreshing && (
-                <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground" title="Checking for new content...">
+                <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-white/50" title="Checking for new content...">
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   <span>Syncing</span>
                 </div>
@@ -628,8 +638,8 @@ export function TopBar({
             onClick={onToggleCompleteness}
             className={`relative p-2 rounded-md transition-colors ${
               showCompletenessPanel
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-card text-muted-foreground hover:bg-muted'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/10'
             }`}
             title={!tmdbApiKeySet ? "TMDB API key needed for completeness" : "Collection Completeness"}
             aria-label="Toggle completeness panel"
@@ -649,8 +659,8 @@ export function TopBar({
             onClick={onToggleWishlist}
             className={`relative p-2 rounded-md transition-colors ${
               showWishlistPanel
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-card text-muted-foreground hover:bg-muted'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/10'
             }`}
             title="Wishlist (W)"
             aria-label="Toggle wishlist panel"
@@ -658,7 +668,7 @@ export function TopBar({
           >
             <Star className="w-5 h-5" />
             {wishlistCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+              <span className="absolute -top-1 -right-1 bg-white text-black text-[10px] font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                 {wishlistCount > 99 ? '99+' : wishlistCount}
               </span>
             )}
@@ -669,8 +679,8 @@ export function TopBar({
             onClick={onToggleChat}
             className={`p-2 rounded-md transition-colors ${
               showChatPanel
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-card text-muted-foreground hover:bg-muted'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/10'
             }`}
             title="AI Assistant"
             aria-label="Toggle AI chat"
@@ -685,7 +695,7 @@ export function TopBar({
           {/* Settings */}
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-md transition-colors bg-card text-muted-foreground hover:bg-muted"
+            className="p-2 rounded-md transition-colors text-white hover:bg-white/10"
             title="Settings"
             aria-label="Open settings"
           >

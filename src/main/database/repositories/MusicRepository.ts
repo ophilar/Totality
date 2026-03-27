@@ -343,9 +343,15 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     let sql = 'SELECT * FROM music_albums WHERE 1=1'
     const params: unknown[] = []
 
-    if (filters?.artistId) {
+    if (filters?.artistId && filters?.artistName) {
+      sql += ' AND (artist_id = ? OR artist_name = ?)'
+      params.push(filters.artistId, filters.artistName)
+    } else if (filters?.artistId) {
       sql += ' AND artist_id = ?'
       params.push(filters.artistId)
+    } else if (filters?.artistName) {
+      sql += ' AND artist_name = ?'
+      params.push(filters.artistName)
     }
     if (filters?.sourceId) {
       sql += ' AND source_id = ?'
@@ -435,9 +441,15 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       sql += ' AND album_id = ?'
       params.push(filters.albumId)
     }
-    if (filters?.artistId) {
+    if (filters?.artistId && filters?.artistName) {
+      sql += ' AND (artist_id = ? OR artist_name = ?)'
+      params.push(filters.artistId, filters.artistName)
+    } else if (filters?.artistId) {
       sql += ' AND artist_id = ?'
       params.push(filters.artistId)
+    } else if (filters?.artistName) {
+      sql += ' AND artist_name = ?'
+      params.push(filters.artistName)
     }
     if (filters?.sourceId) {
       sql += ' AND source_id = ?'

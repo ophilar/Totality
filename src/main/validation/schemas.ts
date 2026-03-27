@@ -121,6 +121,7 @@ export const TVShowFiltersSchema = z.object({
  */
 export const MusicFiltersSchema = z.object({
   artistId: z.number().int().positive().optional(),
+  artistName: z.string().max(500).optional(),
   albumId: z.number().int().positive().optional(),
   qualityTier: z.enum(['LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES']).optional(),
   needsUpgrade: z.boolean().optional(),
@@ -180,6 +181,7 @@ export const TaskDefinitionSchema = z.object({
   label: z.string().min(1).max(200),
   sourceId: z.string().optional(),
   libraryId: z.string().optional(),
+  artistId: z.number().int().positive().optional(),
 })
 
 /**

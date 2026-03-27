@@ -326,6 +326,38 @@ describe('FileNameParser', () => {
       })
     })
 
+    describe('episode title extraction', () => {
+      it('should extract episode title between episode number and quality', () => {
+        const result = parser.parseEpisode('Breaking.Bad.S01E01.Pilot.720p.BluRay') as ParsedEpisodeInfo
+        expect(result?.episodeTitle).toBe('Pilot')
+      })
+
+      it('should extract multi-word episode title', () => {
+        const result = parser.parseEpisode('Show.S02E05.The.One.Where.They.Fight.1080p') as ParsedEpisodeInfo
+        expect(result?.episodeTitle).toBe('The One Where They Fight')
+      })
+
+      it('should not extract episode title when only quality follows', () => {
+        const result = parser.parseEpisode('Show.S01E01.720p.WEB-DL') as ParsedEpisodeInfo
+        expect(result?.episodeTitle).toBeUndefined()
+      })
+    })
+
+    describe('series title from all-season folder path', () => {
+      it('should fall back to last folder when all folders are season folders', () => {
+        const result = parser.parseEpisode('S01E01.720p', '/Season 1') as ParsedEpisodeInfo
+        // When all parts are season folders, falls back to last part
+        expect(result?.seriesTitle).toBe('Season 1')
+      })
+    })
+
+    describe('audio codec extraction in episodes', () => {
+      it('should extract audio codec from episode filename', () => {
+        const result = parser.parseEpisode('Show.S01E01.1080p.DTS') as ParsedEpisodeInfo
+        expect(result?.audioCodec).toBeDefined()
+      })
+    })
+
     describe('non-episode files', () => {
       it('should return null for non-episode movies', () => {
         const result = parser.parseEpisode('The Matrix 1999 1080p BluRay')
@@ -414,6 +446,42 @@ describe('FileNameParser', () => {
       it('should parse "Artist - Title" format when no folder context', () => {
         const result = parser.parseMusic('Artist Name - Song Title')
         expect(result.artist).toBe('Artist Name')
+        expect(result.title).toBe('Song Title')
+      })
+    })
+
+    describe('single folder context', () => {
+      it('should treat single folder as artist with no album', () => {
+        const result = parser.parseMusic('01 - Song Title', '/ArtistOnly')
+        expect(result.artist).toBe('ArtistOnly')
+        expect(result.album).toBeUndefined()
+      })
+    })
+
+    describe('year extraction from album name', () => {
+      it('should extract year from album in folder path', () => {
+        const result = parser.parseMusic('01 - Track', '/Music/Artist/Album (2019)')
+        expect(result.year).toBe(2019)
+        expect(result.album).toBe('Album (2019)')
+      })
+
+      it('should not set year when album has no year', () => {
+        const result = parser.parseMusic('01 - Track', '/Music/Artist/Album Name')
+        expect(result.year).toBeUndefined()
+      })
+    })
+
+    describe('plain title (no separators)', () => {
+      it('should use cleaned filename as title when no dash separator', () => {
+        const result = parser.parseMusic('Song Title')
+        expect(result.title).toBe('Song Title')
+        expect(result.artist).toBeUndefined()
+      })
+    })
+
+    describe('underscore handling', () => {
+      it('should replace underscores with spaces', () => {
+        const result = parser.parseMusic('01_-_Song_Title')
         expect(result.title).toBe('Song Title')
       })
     })

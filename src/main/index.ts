@@ -37,6 +37,7 @@ import { registerJellyfinHandlers } from './ipc/jellyfin'
 import { registerMusicHandlers } from './ipc/music'
 import { registerWishlistHandlers } from './ipc/wishlist'
 import { registerMonitoringHandlers } from './ipc/monitoring'
+import { registerNotificationHandlers } from './ipc/notifications'
 import { registerTaskQueueHandlers } from './ipc/taskQueue'
 import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
@@ -379,6 +380,7 @@ app.whenReady().then(async () => {
     registerMusicHandlers()
     registerWishlistHandlers()
     registerMonitoringHandlers()
+    registerNotificationHandlers()
     registerTaskQueueHandlers()
     registerLoggingHandlers()
     registerAutoUpdateHandlers()

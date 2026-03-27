@@ -2168,7 +2168,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
         UPDATE movie_collections SET
           collection_name = ?, total_movies = ?, owned_movies = ?,
           missing_movies = ?, owned_movie_ids = ?, completeness_percentage = ?,
-          poster_url = ?, backdrop_url = ?, updated_at = datetime('now')
+          poster_url = COALESCE(?, poster_url), backdrop_url = COALESCE(?, backdrop_url), updated_at = datetime('now')
         WHERE id = ?
       `).run(
         data.collection_name, data.total_movies, data.owned_movies,

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi) and recommends higher-quality versions. Built with Electron 27, React 18, TypeScript, Vite 5, and Tailwind CSS.
+Totality is an Electron desktop application that analyzes media library quality from multiple sources (Plex, Jellyfin, Emby, Kodi) and recommends higher-quality versions. Built with Electron 41, React 18, TypeScript, Vite 6, and Tailwind CSS 4.
 
 ## Development Commands
 
 ```bash
 npm run electron:dev     # Start Vite + Electron together (recommended for development)
 npm run build            # TypeScript compile + Vite build + Electron Builder
-npm run lint             # Run ESLint on TS/TSX files
+npm run lint             # Run ESLint (flat config, eslint.config.js)
 npm run preview          # Preview Vite production build
 npm run test             # Run Vitest in watch mode
 npm run test:run         # Run all tests once
@@ -20,6 +20,8 @@ npm run test:ui          # Open Vitest interactive UI in browser
 npm run generate-icons   # Generate app icons from source
 npm run electron:build   # Same as `npm run build` (alias)
 ```
+
+**Note:** `postinstall` runs `electron-rebuild` automatically after `npm install` to compile native modules (better-sqlite3) for Electron's Node ABI.
 
 **Single test:** `npx vitest run tests/unit/FileNameParser.test.ts` or use `-t` to filter by test name: `npx vitest run -t "parses year"`
 
@@ -93,33 +95,16 @@ Reset database: `del "%APPDATA%\totality\totality.db"`
 
 ### Core Services (Singletons in Main Process)
 
-Services use singleton pattern via getter functions:
+Services use singleton pattern via `getXxxService()` getter functions (see Singleton Services pattern below). Key services with non-obvious behavior:
 
-- **DatabaseService** (`getDatabaseService()`): SQLite operations with dual-backend support (see Database Backend Selection below)
-- **CredentialEncryptionService** (`getCredentialEncryptionService()`): Credential encryption using Electron's safeStorage API
-- **SourceManager** (`getSourceManager()`): Multi-provider orchestration (Plex, Jellyfin, Emby, Kodi, Local)
-- **PlexService** (`getPlexService()`): Plex API authentication and scanning
-- **QualityAnalyzer** (`getQualityAnalyzer()`): Tier-based quality scoring (SD/720p/1080p/4K)
-- **TMDBService** (`getTMDBService()`): TMDB API for movie collections and TV series data (rate-limited: 40 req/s)
-- **SeriesCompletenessService** (`getSeriesCompletenessService()`): TV series completeness tracking
-- **MovieCollectionService** (`getMovieCollectionService()`): Movie franchise collection tracking
-- **MusicBrainzService** (`getMusicBrainzService()`): MusicBrainz API for artist/album completeness
-- **JellyfinDiscoveryService** (`getJellyfinDiscoveryService()`): Jellyfin server discovery (UDP broadcast)
-- **EmbyDiscoveryService** (`getEmbyDiscoveryService()`): Emby server discovery
-- **KodiLocalDiscoveryService** (`getKodiLocalDiscoveryService()`): Local Kodi installation detection
-- **MediaNormalizer** (`getMediaNormalizer()`): Normalizes media data from different providers to common format
-- **MediaFileAnalyzer** (`getMediaFileAnalyzer()`): FFprobe wrapper for media file analysis (resolution, codecs, bitrate, HDR); can auto-download FFprobe
-- **FileNameParser** (`getFileNameParser()`): Parses media filenames to extract metadata (title, year, season/episode) with smart year detection
-- **LiveMonitoringService** (`getLiveMonitoringService()`): Polls sources for changes, detects added/updated/removed items
-- **TaskQueueService** (`getTaskQueueService()`): Background task queue with pause/resume/cancel
-- **StoreSearchService** (`getStoreSearchService()`): Search external stores (Amazon, iTunes) for wishlist items
-- **AudioCodecRanker** (`getAudioCodecRanker()`): Ranks audio codecs by quality (Atmos > DTS:X > TrueHD, etc.)
-- **LoggingService** (`getLoggingService()`): Application logging with verbose mode, file logging, and main window event emission
-- **KodiMySQLConnectionService** (`getKodiMySQLConnectionService()`): MySQL backend support for Kodi
-- **MediaConverter** (`getMediaConverter()`): Converts between media data formats
-- **FFprobeWorkerPool** (`getFFprobeWorkerPool()`): Manages concurrent FFprobe worker threads for parallel file analysis
-- **AutoUpdateService** (`getAutoUpdateService()`): Electron-updater integration for auto-update checking and installation
-- **GeminiService** (`getGeminiService()`): Google Gemini AI wrapper for chat and analysis (see AI Chat & Analysis section)
+- **DatabaseService** (`getDatabaseService()`): Dual SQLite backend — better-sqlite3 (production) or SQL.js (fallback/tests). See Database Backend Selection.
+- **SourceManager** (`getSourceManager()`): Orchestrates all provider lifecycles, scanning, connection testing
+- **QualityAnalyzer** (`getQualityAnalyzer()`): Tier-based scoring with codec efficiency multipliers
+- **GeminiService** (`getGeminiService()`): Sync constructor (async init causes race condition). See AI Chat & Analysis.
+- **LoggingService** (`getLoggingService()`): Intercepts console globally, sanitizes sensitive data, verbose mode via `verbose()` method
+- **TaskQueueService** (`getTaskQueueService()`): Background task queue — runs quality analysis after music scans
+
+All other services follow the same singleton getter pattern and are discoverable via `grep -r "export function get.*Service"` in `src/main/`.
 
 ### Multi-Provider Architecture
 
@@ -189,6 +174,7 @@ registerTaskQueueHandlers()
 registerLoggingHandlers()
 registerAutoUpdateHandlers()
 registerGeminiHandlers()
+registerNotificationHandlers()
 ```
 
 **Handler Pattern** (`src/main/ipc/*.ts`):
@@ -242,13 +228,18 @@ Events: `sources:scanProgress`, `quality:analysisProgress`, `series:progress`, `
 
 **Video Quality Scoring** (`src/main/services/QualityAnalyzer.ts`):
 1. Resolution tier: SD (<720p), 720p, 1080p, 4K (≥2160p)
-2. Within tier: LOW/MEDIUM/HIGH based on bitrate and audio quality
-3. Bitrate thresholds vary by tier (e.g., 1080p: 6000-15000 kbps)
-4. Codec efficiency multipliers: H.264 (1.0x), HEVC (2.0x), AV1 (2.5x), VP9 (1.8x)
+2. Per-tier scoring: bitrate vs configurable medium/high thresholds → 0-100 score
+3. At or above high threshold = 100 (no penalty curve beyond target)
+4. Codec efficiency multipliers: H.264 (1.0x), HEVC (2.0x), AV1 (2.5x), VP9 (1.8x) — applied to effective bitrate before scoring
+5. Audio scoring: same per-tier curve, no codec bonuses — pure bitrate vs threshold
+6. Overall score = video × weight + audio × (1 - weight), configurable via `quality_video_weight` setting (default 70%)
+7. Quality label (LOW/MEDIUM/HIGH) derived from weighted overall score (≥75=HIGH, ≥50=MEDIUM, <50=LOW)
+8. Corrupt audio track detection: tracks with bitrate < channels × 32 kbps are skipped in best-track selection
 
 **Music Quality Tiers**:
 - **Ultra**: Lossless (FLAC/ALAC/WAV) with 24-bit+ OR >48kHz sample rate
 - **High**: CD-quality lossless (16-bit / 44.1-48kHz)
+- **High Lossy**: Lossy ≥256 kbps (recognized as high quality for its format)
 - **Medium**: MP3 ≥160 kbps or AAC ≥128 kbps
 - **Low**: MP3 <160 kbps or AAC <128 kbps
 
@@ -275,105 +266,53 @@ Events: `sources:scanProgress`, `quality:analysisProgress`, `series:progress`, `
 - **lucide-react**: Icon library used throughout the UI
 - **@dnd-kit**: Drag-and-drop for task queue reordering
 
-### Task Queue System
+### Background Systems
 
-**Location:** `src/main/services/TaskQueueService.ts`
+- **TaskQueueService** (`src/main/services/TaskQueueService.ts`): Task types: `library-scan`, `source-scan`, `series-completeness`, `collection-completeness`, `music-completeness`, `music-scan`. Supports pause/resume/cancel/reorder. Emits notifications on completion/failure.
+- **LiveMonitoringService** (`src/main/services/LiveMonitoringService.ts`): Polls sources on intervals, pauses during manual scans, creates `source_change` notifications.
+- **Notifications** (`notifications` table): Types: `source_change`, `scan_complete`, `error`, `info`. Emitted from TaskQueueService, LiveMonitoringService, SourceManager, AutoUpdateService. UI in `ActivityPanel.tsx`.
+- **Wishlist**: Auto-fetches TMDB poster on add when `tmdb_id` present but `poster_url` missing (both direct and bulk add paths).
 
-Background task execution with queue management:
-- Task types: `library-scan`, `source-scan`, `series-completeness`, `collection-completeness`, `music-completeness`, `music-scan`
-- Operations: add, remove, reorder, pause, resume, cancel
-- Progress tracking per task with events to renderer
-- History of completed/failed/cancelled tasks
+### Preference Persistence
 
-### Wishlist/Shopping List
-
-**Location:** `src/main/ipc/wishlist.ts`, `src/renderer/src/components/wishlist/`
-
-Track media items to acquire:
-- CRUD operations for wishlist items
-- Priority levels and notes
-- Store search integration (Amazon, iTunes, etc.) via `StoreSearchService`
-- Bulk operations support
-
-### Live Monitoring
-
-**Location:** `src/main/services/LiveMonitoringService.ts`
-
-Automatic change detection:
-- Polls enabled sources on configurable intervals
-- Detects added/updated/removed items
-- Pauses during manual scans
-- Emits `monitoring:statusChanged` events to renderer
+Preferences persisted via `setSetting`/`getSetting`:
+- `dashboard_upgrade_sort`, `dashboard_collection_sort`, `dashboard_series_sort`, `dashboard_artist_sort`
+- `library_view_prefs` — JSON object storing per-tab `viewType` and `gridScale`
+- `quality_video_weight` — video/audio score weighting (default 70%)
 
 ### Logging & Diagnostics
 
 **Location:** `src/main/services/LoggingService.ts`
 
-**In-Memory Logs:**
-- Circular buffer (2000 info + 500 important entries)
-- Intercepts `console.log/warn/error` globally, emits `logging:entry` events to renderer
+- In-memory circular buffer (2000 info + 500 important entries), intercepts `console.*` globally
 - Sanitizes sensitive data (tokens, passwords, API keys) from log output
-
-**Verbose Logging:**
-- `getLoggingService().verbose(source, message, details?)` — only emits when verbose mode enabled
-- Setting persisted to database (`verbose_logging_enabled`), survives restarts
-- Used across key services: SourceManager, LocalFolderProvider, QualityAnalyzer, TMDBService, SeriesCompletenessService, MovieCollectionService, LiveMonitoringService, MusicBrainzService
-- Zero overhead when disabled — verbose calls short-circuit immediately
-
-**File Logging:**
-- Daily rotation to `%APPDATA%\totality\logs\totality-YYYY-MM-DD.log`
-- Configurable: enabled/disabled, min level (verbose/debug/info/warn/error), retention days
-- Settings exposed in TroubleshootTab UI with IPC handlers: `logs:getFileLoggingSettings`, `logs:setFileLoggingSettings`, `logs:openLogFolder`
-- Database settings: `file_logging_enabled`, `file_logging_min_level`, `log_retention_days`
-
-**TroubleshootTab** (`src/renderer/src/components/settings/tabs/TroubleshootTab.tsx`):
-- Virtualized log viewer with level filtering, text search, multi-select, copy to clipboard
-- Verbose mode toggle (persisted)
-- Collapsible file logging settings (enable/disable, min level, retention, open folder)
-- Export with diagnostics (app version, platform, connected sources, FFprobe status, DB size)
+- **Verbose mode**: `getLoggingService().verbose(source, message, details?)` — persisted to DB (`verbose_logging_enabled`), zero overhead when disabled
+- **File logging**: Daily rotation to `%APPDATA%\totality\logs\`, configurable min level and retention. Settings: `file_logging_enabled`, `file_logging_min_level`, `log_retention_days`
 
 ### AI Chat & Analysis (Gemini)
 
 **Model:** Google Gemini `gemini-2.5-flash` via `@google/genai` SDK (free tier: 10 RPM, 250 RPD)
 
-**Core Services:**
-- **GeminiService** (`src/main/services/GeminiService.ts`): Singleton API wrapper. Constructor reads API key synchronously from DB (must be sync — async init causes race condition where `isConfigured()` returns false). Provides `sendMessage()`, `streamMessage()`, and `sendMessageWithTools()` (agentic tool-use loop, max 10 rounds).
-- **GeminiTools** (`src/main/services/GeminiTools.ts`): 21 tool definitions + `executeTool()` dispatcher. Tools: `search_library`, `get_media_items`, `get_tv_shows`, `get_library_stats`, `get_quality_distribution`, `get_series_completeness`, `get_collection_completeness`, `get_music_stats`, `get_music_albums`, `get_music_quality_distribution`, `get_artist_completeness`, `get_album_details`, `check_music_ownership`, `get_source_list`, `get_wishlist`, `search_tmdb`, `discover_titles`, `get_similar_titles`, `check_ownership`, `get_item_details`, `add_to_wishlist`.
-- **GeminiAnalysisService** (`src/main/services/GeminiAnalysisService.ts`): 4 streaming report generators (quality, upgrades, completeness, wishlist). Each gathers data upfront and sends as context (not agentic).
-- **System Prompts** (`src/main/services/ai-system-prompts.ts`): Chat prompt has film/TV/music enthusiast personality with videophile/audiophile expertise. Separate prompts for each report type.
+**Architecture:**
+- **GeminiService** (`src/main/services/GeminiService.ts`): Sync constructor reads API key from DB (async causes race condition). `sendMessageWithTools()` runs agentic tool-use loop (max 10 rounds).
+- **GeminiTools** (`src/main/services/GeminiTools.ts`): 21 tool definitions + `executeTool()` dispatcher for library queries, TMDB search, wishlist management.
+- **GeminiAnalysisService** (`src/main/services/GeminiAnalysisService.ts`): 4 streaming report generators. Gathers data upfront (not agentic).
+- **System Prompts** (`src/main/services/ai-system-prompts.ts`): Chat prompt has film/TV/music enthusiast personality.
 
-**IPC Pattern:**
-- Chat: `ai:chatMessage` → tool-use loop, emits `ai:toolUse` events per round, then simulated streaming of final response via `ai:chatStreamDelta` / `ai:chatStreamComplete`. Rate limit errors are **returned** (not thrown) to preserve structured data across IPC serialization.
-- Reports: `ai:qualityReport` etc. → streams via `ai:analysisStreamDelta` / `ai:analysisStreamComplete`
-- Rate limiting: `ai:getRateLimitInfo` returns `{ limited, retryAfterSeconds }`. Retry timing extracted from SDK `Headers` object (`retry-after-ms`, `retry-after`) with 15s fallback.
-
-**Context-Aware Chat:**
-- `useChat.ts` accepts a `ViewContext` (current view, library tab, selected item, active source)
-- View context is injected as a `[Viewing: movies library]` prefix into the last user message before sending to Gemini
-- `ChatPanel.tsx` shows dynamic suggested prompts based on current view/tab
-
-**Renderer:**
-- `src/renderer/src/hooks/useChat.ts`: Chat state management with view context and streaming support
-- `src/renderer/src/components/chat/ChatPanel.tsx`: Chat UI with tool-use badges, auto-scroll, rate-limit display, dynamic suggested prompts
-- `src/renderer/src/components/library/AIInsightsPanel.tsx`: Report UI with streaming markdown
-
-**SDK Gotchas:**
+**Critical Gotchas:**
 - `.text` and `.functionCalls` are **getter properties**, NOT methods — don't use `()`
-- Rate limit detection: checks both HTTP 429 and `RESOURCE_EXHAUSTED` in error messages. SDK auto-retries 429s up to 2 times before throwing.
-- Rate limit errors thrown over Electron IPC lose custom properties (serialized as generic Error) — must **return** structured rate limit responses instead of throwing
-- API key stored encrypted (`gemini_api_key` setting), refreshed on `settings:changed` event
-
-**Token Optimization:**
-- Chat history bounded to 20 messages
-- `compact()` utility strips null/undefined fields from all tool responses
-- Completeness results limited to 5 samples + total count
-- Quality condensed to single string in TMDB cross-reference results
+- Rate limit errors must be **returned** (not thrown) from IPC handlers — thrown errors lose custom properties during Electron IPC serialization
+- Rate limit detection: checks both HTTP 429 and `RESOURCE_EXHAUSTED`. SDK auto-retries 429s up to 2 times before throwing.
+- API key stored encrypted (`gemini_api_key`), refreshed on `settings:changed` event
+- View context injected as `[Viewing: movies library]` prefix into last user message before sending to Gemini
+- Chat history bounded to 20 messages; `compact()` strips null/undefined from tool responses
 
 ## Code Style
 
 - No semicolons, single quotes, 2-space indent, trailing commas (es5), 100-char line width, `arrowParens: "always"`
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` — prefix unused parameters with `_` (ESLint `argsIgnorePattern: '^_'`)
 - `@typescript-eslint/no-explicit-any` is `warn` — avoid `any` but it won't block builds
+- ESLint 9 flat config (`eslint.config.js`), `typescript-eslint` v8 (unified package), `@typescript-eslint/no-require-imports` and `@typescript-eslint/no-unused-expressions` are off, `caughtErrors: 'none'` on no-unused-vars
 - IPC handlers validate inputs with **Zod v4** schemas (`src/main/validation/schemas.ts`) using `validateInput(schema, input, 'context')` — note Zod v4 has different APIs from v3 (e.g., `z.object()` methods differ)
 
 ## Important Patterns
@@ -445,6 +384,8 @@ The app supports two SQLite backends with automatic migration:
 
 **Upsert Return IDs**: Music upsert methods (`upsertMusicAlbum`, `upsertMusicArtist`, `upsertMusicTrack`, `upsertMediaItem`) always look up the ID by unique key after INSERT/UPDATE. Do NOT use `lastInsertRowid` — it returns stale values after `ON CONFLICT DO UPDATE`, causing child records to link to wrong parents.
 
+**Music Album Queries**: `getMusicAlbums` supports both `artistId` (FK) and `artistName` (string) filters. When both are provided, it uses `OR` logic (`artist_id = ? OR artist_name = ?`) to catch albums with mismatched FKs — matching how the completeness handler in `music.ts` finds owned albums. Always pass both when querying albums for a specific artist.
+
 ### Database Persistence (SQL.js only)
 
 When using SQL.js backend, the database is in-memory. `DatabaseService.save()` writes to disk:
@@ -496,62 +437,13 @@ Components in `src/renderer/src/components/` organized by domain: `dashboard/`, 
 - `MusicView.tsx`: Artist/album/track views (extracted view component). Album list `itemSize={104}`, track list `itemSize={40}`
 - `hooks/`: Custom hooks for library state (`useLibraryState`, `useLibraryDataLoading`, `useLibraryEventListeners`, etc.)
 
-### Theme-Aware Assets
+## External APIs & Rate Limits
 
-**Location:** `src/renderer/src/assets/`
-
-Logo and animation assets have light and dark variants, switched via `effectiveIsDark` from `ThemeContext`:
-
-| Asset | Dark Theme | Light Theme |
-|-------|-----------|-------------|
-| Splash animation | `totality_anim.webm` | `totality_anim_black.webm` |
-| About modal logo | `logo.png` | `logo_black.png` |
-| Splash static logo | `logo.png` | `logo_black.png` |
-
-Components using theme-aware assets:
-- **SplashScreen** (`src/renderer/src/components/layout/SplashScreen.tsx`): Animated video + static fallback
-- **AboutModal** (`src/renderer/src/components/ui/AboutModal.tsx`): Logo in About tab
-
-### About Modal
-
-**Location:** `src/renderer/src/components/ui/AboutModal.tsx`
-
-Three tabs: About, Credits, Legal. Includes:
-- **About**: Key features list, version display, GitHub links
-- **Credits**: Data sources (TMDB, MusicBrainz), AI assistant (Google Gemini), media analysis (FFmpeg/FFprobe), open source technologies, external services
-- **Legal**: Privacy & data (local storage, API communication, credential encryption, AI features, auto-updates), trademarks (media servers, AI services, retailers, data services), disclaimer (including AI accuracy), MIT license
-
-## External APIs
-
-### Plex API
-- Base URL: `https://plex.tv/api/v2`
-- Authentication: PIN-based OAuth flow
-- Headers: `X-Plex-Client-Identifier`, `X-Plex-Product`, `X-Plex-Token`
-
-### TMDB API
-- Base URL: `https://api.themoviedb.org/3`
-- Rate limit: 40 requests per second
-- Used for: Movie collection detection, TV series metadata, local folder metadata lookup
-- Caching: 24-hour in-memory cache for API responses
-- Optimizations: `append_to_response` for batch season fetches, series ID caching during scans
-
-### MusicBrainz API
-- Base URL: `https://musicbrainz.org/ws/2`
-- Rate limit: 1 request per second (strict)
-- Used for: Artist discography completeness, album track completeness
-
-### FFprobe (Local Tool)
-- **MediaFileAnalyzer** can auto-download FFprobe binaries on Windows
-- Uses `adm-zip` for extraction (avoids PowerShell execution policy issues)
-- Used by LocalFolderProvider and KodiLocalProvider for file analysis
-- Extracts: resolution, codecs, bitrate, HDR format, audio tracks, subtitles
-- Bundled path: `%APPDATA%\totality\ffprobe\`
-
-### Local Artwork Protocol
-Custom Electron protocol `local-artwork://` for serving local artwork files:
-- `local-artwork://file?path=C:\path\to\file.jpg` - Direct file path access
-- `local-artwork://albums/123.jpg` - App-cached artwork from `%APPDATA%\totality\artwork\`
-- Registered before `app.whenReady()` via `protocol.registerSchemesAsPrivileged()`
+- **TMDB**: 40 req/s, 24-hour in-memory cache, `append_to_response` for batch season fetches
+- **MusicBrainz**: 1 req/s (strict), used for artist/album completeness
+- **Plex**: PIN-based OAuth, requires `X-Plex-Client-Identifier` / `X-Plex-Product` / `X-Plex-Token` headers
+- **FFprobe**: Auto-downloads on Windows via `adm-zip` (not PowerShell — avoids execution policy issues). Path: `%APPDATA%\totality\ffprobe\`
+- **Local Artwork Protocol**: `local-artwork://file?path=...` or `local-artwork://albums/123.jpg`, registered before `app.whenReady()`
 
 ## Security
 
@@ -610,15 +502,6 @@ When a source is deleted via `SourceManager.removeSource()` → `db.deleteMediaS
 - **TMDB not matching**: Verify TMDB API key in settings, check parsed title in logs
 - **Missing artwork**: Run completeness analysis on specific source (not "all sources") for artwork updates
 - **Numeric titles (e.g., "1917")**: Parser keeps numeric title intact, uses next year as release year
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl/Cmd + F` | Focus search |
-| `Escape` | Close modal/panel |
-| `G` | Toggle grid view |
-| `L` | Toggle list view |
 
 ## Testing
 
