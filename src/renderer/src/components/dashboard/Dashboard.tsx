@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { VariableSizeList } from 'react-window'
+import * as ReactWindow from 'react-window'
 import { Sparkles, Library, Tv, Film, Music, Disc3, CircleFadingArrowUp, ChevronDown, Plus, EyeOff, Trash2 } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { MediaDetails } from '../library/MediaDetails'
@@ -16,6 +16,9 @@ import {
   emitDismissUpgrade,
   emitDismissCollectionMovie,
 } from '../../utils/dismissEvents'
+
+// VariableSizeList type for casting
+const { VariableSizeList } = ReactWindow as any
 
 // Music album with quality info from the upgrade query
 interface MusicAlbumUpgrade extends MusicAlbum {
@@ -141,10 +144,10 @@ export function Dashboard({
   const [expandedArtists, setExpandedArtists] = useState<Set<number>>(new Set())
 
   // VariableSizeList refs for resetting cached sizes on expand/collapse
-  const upgradeListInstanceRef = useRef<VariableSizeList>(null)
-  const collectionsListInstanceRef = useRef<VariableSizeList>(null)
-  const seriesListInstanceRef = useRef<VariableSizeList>(null)
-  const artistsListInstanceRef = useRef<VariableSizeList>(null)
+  const upgradeListInstanceRef = useRef<any>(null)
+  const collectionsListInstanceRef = useRef<any>(null)
+  const seriesListInstanceRef = useRef<any>(null)
+  const artistsListInstanceRef = useRef<any>(null)
 
   // Measure list container heights - observe each list container directly
   useEffect(() => {
@@ -334,7 +337,7 @@ export function Dashboard({
     } finally {
       setIsLoading(false)
     }
-  }, [activeSourceId])
+  }, [activeSourceId, includeEps, includeSingles])
 
   useEffect(() => {
     loadDashboardData()
@@ -544,7 +547,7 @@ export function Dashboard({
   const createToggleExpand = useCallback(
     (
       setExpanded: React.Dispatch<React.SetStateAction<Set<number>>>,
-      listRef: React.RefObject<VariableSizeList>
+      listRef: React.RefObject<any>
     ) => (index: number) => {
       setExpanded(prev => {
         const next = new Set(prev)

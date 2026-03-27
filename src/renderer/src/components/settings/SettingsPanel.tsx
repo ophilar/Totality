@@ -40,10 +40,10 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
   const titleId = useId()
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap
-  useFocusTrap(isOpen, modalRef, false)
+  useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>, false)
 
   // Focus close button when modal opens, and set initial tab
   useEffect(() => {

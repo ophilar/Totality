@@ -521,7 +521,7 @@ export async function executeTool(
       let series
       const seriesTitle = toolString(input, 'series_title', 300)
       if (seriesTitle) {
-        const single = db.getSeriesCompletenessByTitle(seriesTitle)
+        const single = db.getSeriesCompletenessByTitle(seriesTitle, undefined, undefined)
         series = single ? [single] : []
       } else if (toolBoolean(input, 'incomplete_only')) {
         series = db.getIncompleteSeries()

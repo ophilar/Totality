@@ -12,7 +12,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return this.queryOne<MusicTrack>(sql, [filePath])
   }
 
-  upsertMusicTrack(track: MusicTrack): number {
+  upsertTrack(track: MusicTrack): number {
     const stmt = this.db.prepare(`
       INSERT INTO music_tracks (
         source_id, source_type, library_id, provider_id, album_id, artist_id,
@@ -45,9 +45,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id),
         genres = excluded.genres,
         updated_at = datetime('now')
+      RETURNING id
     `)
 
-    const result = stmt.run(
+    const row = stmt.get(
       track.source_id,
       track.source_type,
       track.library_id || '',
@@ -74,19 +75,16 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       track.musicbrainz_id || null,
       track.genres || null,
       track.added_at || null
-    )
+    ) as { id: number } | undefined
 
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    const existing = this.db.prepare(
-      'SELECT id FROM music_tracks WHERE source_id = ? AND provider_id = ?'
-    ).get(track.source_id, track.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+    return row?.id || 0
   }
 
-  upsertMusicArtist(artist: MusicArtist): number {
+  upsertMusicTrack(track: MusicTrack): number {
+    return this.upsertTrack(track)
+  }
+
+  upsertArtist(artist: MusicArtist): number {
     const stmt = this.db.prepare(`
       INSERT INTO music_artists (
         source_id, source_type, library_id, provider_id, name, sort_name,
@@ -107,9 +105,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         track_count = excluded.track_count,
         user_fixed_match = CASE WHEN music_artists.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
         updated_at = datetime('now')
+      RETURNING id
     `)
 
-    const result = stmt.run(
+    const row = stmt.get(
       artist.source_id,
       artist.source_type,
       artist.library_id || '',
@@ -125,20 +124,16 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       artist.album_count || null,
       artist.track_count || null,
       artist.user_fixed_match ? 1 : 0
-    )
+    ) as { id: number } | undefined
 
-
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    const existing = this.db.prepare(
-      'SELECT id FROM music_artists WHERE source_id = ? AND provider_id = ?'
-    ).get(artist.source_id, artist.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+    return row?.id || 0
   }
 
-  upsertMusicAlbum(album: MusicAlbum): number {
+  upsertMusicArtist(artist: MusicArtist): number {
+    return this.upsertArtist(artist)
+  }
+
+  upsertAlbum(album: MusicAlbum): number {
     const stmt = this.db.prepare(`
       INSERT INTO music_albums (
         source_id, source_type, library_id, provider_id, artist_id, artist_name,
@@ -173,9 +168,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         release_date = excluded.release_date,
         user_fixed_match = CASE WHEN music_albums.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
         updated_at = datetime('now')
+      RETURNING id
     `)
 
-    const result = stmt.run(
+    const row = stmt.get(
       album.source_id,
       album.source_type,
       album.library_id || '',
@@ -203,16 +199,13 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       album.release_date || null,
       album.added_at || null,
       album.user_fixed_match ? 1 : 0
-    )
+    ) as { id: number } | undefined
 
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
+    return row?.id || 0
+  }
 
-    const existing = this.db.prepare(
-      'SELECT id FROM music_albums WHERE source_id = ? AND provider_id = ?'
-    ).get(album.source_id, album.provider_id) as { id: number } | undefined
-    return existing?.id || 0
+  upsertMusicAlbum(album: MusicAlbum): number {
+    return this.upsertAlbum(album)
   }
 
   updateMusicAlbumArtwork(sourceIdOrAlbumId: string | number, providerIdOrThumbUrl?: string, artwork?: { thumbUrl?: string; artUrl?: string }): void {
@@ -744,5 +737,37 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
   getMusicTrackByMusicbrainzId(id: string): MusicTrack | null {
     const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE musicbrainz_id = ? LIMIT 1')
     return (stmt.get(id) as MusicTrack) || null
+  }
+
+  getMusicStats(sourceId?: string): {
+    totalArtists: number
+    totalAlbums: number
+    totalTracks: number
+    totalSize: number
+    avgAudioBitrate: number
+  } {
+    let sqlArtists = 'SELECT COUNT(*) as count FROM music_artists'
+    let sqlAlbums = 'SELECT COUNT(*) as count, SUM(total_size) as total_size, AVG(avg_audio_bitrate) as avg_bitrate FROM music_albums'
+    let sqlTracks = 'SELECT COUNT(*) as count FROM music_tracks'
+    const params: any[] = []
+
+    if (sourceId) {
+      sqlArtists += ' WHERE source_id = ?'
+      sqlAlbums += ' WHERE source_id = ?'
+      sqlTracks += ' WHERE source_id = ?'
+      params.push(sourceId)
+    }
+
+    const artistRow = this.db.prepare(sqlArtists).get(...params) as { count: number }
+    const albumRow = this.db.prepare(sqlAlbums).get(...params) as { count: number; total_size: number; avg_bitrate: number }
+    const trackRow = this.db.prepare(sqlTracks).get(...params) as { count: number }
+
+    return {
+      totalArtists: artistRow?.count || 0,
+      totalAlbums: albumRow?.count || 0,
+      totalTracks: trackRow?.count || 0,
+      totalSize: albumRow?.total_size || 0,
+      avgAudioBitrate: albumRow?.avg_bitrate || 0
+    }
   }
 }

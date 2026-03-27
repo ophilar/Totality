@@ -192,7 +192,7 @@ export function registerSourceHandlers(): void {
    */
   ipcMain.handle('plex:checkAuth', async (_event, pinId: number) => {
     try {
-      return await manager.plexCompleteAuth(pinId)
+      return await manager.plexCompleteAuth(pinId.toString())
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error checking Plex auth:', error)
       throw error

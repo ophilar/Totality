@@ -38,22 +38,9 @@ vi.mock('electron', () => ({
   },
 }))
 
-// Mock sql.js for database tests
-vi.mock('sql.js', () => {
-  const mockDb = {
-    exec: vi.fn(() => []),
-    run: vi.fn(),
-    close: vi.fn(),
-    export: vi.fn(() => new Uint8Array()),
-    getRowsModified: vi.fn(() => 0),
-  }
-
-  return {
-    default: vi.fn(() => Promise.resolve({
-      Database: vi.fn(() => mockDb),
-    })),
-  }
-})
+// Mock Better-SQLite3 for environments where it can't be compiled
+// However, for unit tests we usually want the real thing in :memory:
+// We only mock it if absolutely necessary or to track calls.
 
 // Global test utilities
 declare global {

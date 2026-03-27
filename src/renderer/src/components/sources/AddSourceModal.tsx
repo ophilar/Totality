@@ -63,10 +63,10 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
   const [focusedIndex, setFocusedIndex] = useState(0)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
   const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap and modal registration
-  useFocusTrap(true, modalRef, false) // Don't auto-focus, we handle it manually
+  useFocusTrap(true, modalRef as React.RefObject<HTMLElement>, false) // Don't auto-focus, we handle it manually
 
   // Filter to only show supported providers
   const availableProviders = providers.filter(p => supportedProviders.includes(p.type))
@@ -173,7 +173,7 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
               {availableProviders.map((provider, index) => (
                 <button
                   key={provider.type}
-                  ref={el => buttonRefs.current[index] = el}
+                  ref={el => { buttonRefs.current[index] = el }}
                   onClick={() => setSelectedProvider(provider.type)}
                   onFocus={() => setFocusedIndex(index)}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}

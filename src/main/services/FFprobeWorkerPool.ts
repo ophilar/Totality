@@ -11,6 +11,7 @@ import * as path from 'path'
 import { app } from 'electron'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import { getLoggingService } from '../services/LoggingService'
+import { getErrorMessage } from './utils/errorUtils'
 
 
 interface WorkerTask {
@@ -215,13 +216,14 @@ export class FFprobeWorkerPool {
     }
 
     // Find or create an available worker
-    let workerInfo: WorkerInfo | undefined = this.workers.find(w => !w.busy)
+    const workerInfo: WorkerInfo | undefined = this.workers.find(w => !w.busy)
 
     if (!workerInfo && this.workers.length < this.maxWorkers) {
       const newWorker = this.createWorker()
       if (newWorker) {
         this.workers.push(newWorker)
-        workerInfo = newWorker
+        this.processQueue() // Recursively call to assign the task
+        return
       }
     }
 
@@ -308,12 +310,12 @@ export class FFprobeWorkerPool {
   /**
    * Handle worker error
    */
-  private handleWorkerError(workerInfo: WorkerInfo, error: Error): void {
+  private handleWorkerError(workerInfo: WorkerInfo, error: unknown): void {
     const task = workerInfo.currentTask
     if (task) {
       task.resolve({
         success: false,
-        error: error.message,
+        error: getErrorMessage(error),
         filePath: task.filePath,
         audioTracks: [],
         subtitleTracks: [],

@@ -34,10 +34,10 @@ const tabs: Tab[] = [
 
 export function AboutModal({ isOpen, onClose }: AboutModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('about')
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap
-  useFocusTrap(isOpen, modalRef)
+  useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>)
 
   // Handle Escape key
   useEffect(() => {

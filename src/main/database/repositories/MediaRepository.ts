@@ -161,12 +161,12 @@ export class MediaRepository extends BaseRepository<MediaItem> {
         audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
         subtitle_tracks, original_language, audio_language,
         container, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
-        episode_thumb_url, season_poster_url, user_fixed_match,
+        episode_thumb_url, season_poster_url, summary, user_fixed_match,
         quality_tier, tier_quality, tier_score,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         datetime('now'), datetime('now')
       )
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
@@ -210,14 +210,16 @@ export class MediaRepository extends BaseRepository<MediaItem> {
         poster_url = COALESCE(excluded.poster_url, media_items.poster_url),
         episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
         season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
+        summary = COALESCE(excluded.summary, media_items.summary),
         user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
         quality_tier = COALESCE(excluded.quality_tier, media_items.quality_tier),
         tier_quality = COALESCE(excluded.tier_quality, media_items.tier_quality),
         tier_score = COALESCE(excluded.tier_score, media_items.tier_score),
         updated_at = datetime('now')
+      RETURNING id
     `)
 
-    const result = stmt.run(
+    const row = stmt.get(
       item.source_id || 'legacy',
       item.source_type || 'plex',
       item.library_id || null,
@@ -261,18 +263,14 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       item.poster_url || null,
       item.episode_thumb_url || null,
       item.season_poster_url || null,
+      item.summary || null,
       item.user_fixed_match ? 1 : 0,
       item.quality_tier || null,
       item.tier_quality || null,
       item.tier_score || 0
-    )
+    ) as { id: number } | undefined
 
-    if (result.changes > 0 && result.lastInsertRowid) {
-      return Number(result.lastInsertRowid)
-    }
-
-    const existing = this.getMediaItemByProviderId(item.plex_id, item.source_id)
-    return existing?.id || 0
+    return row?.id || 0
   }
 
   deleteMediaItem(id: number): void {

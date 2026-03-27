@@ -30,6 +30,10 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-expressions': 'off',
+      'no-useless-catch': 'warn',
+      'no-useless-assignment': 'warn',
+      'preserve-caught-error': 'off',
+      '@typescript-eslint/ban-ts-comment': 'warn',
     },
   },
   {

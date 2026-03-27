@@ -297,7 +297,7 @@ export function MediaBrowser({
         const album = musicAlbums.find((a: { id?: number }) => a.id === state.selectedAlbum.id)
         setSelectedAlbum(album || null)
         if (album?.id) {
-          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => setAlbumTracks(tracks as never[]))
+          window.electronAPI.musicGetTracksByAlbum(album.id).then((tracks: unknown[]) => setAlbumTracks(tracks as any[]))
         }
       } else {
         setSelectedAlbum(null)
@@ -554,7 +554,7 @@ export function MediaBrowser({
     } finally {
       setArtistsLoading(false)
     }
-  }, [activeSourceId, activeLibraryId,searchQuery, alphabetFilter, artistsLoading])
+  }, [activeSourceId, activeLibraryId, searchQuery, alphabetFilter, artistsLoading])
 
   // Load more artists (infinite scroll callback)
   const loadMoreArtists = useCallback(() => {
@@ -598,7 +598,7 @@ export function MediaBrowser({
     } finally {
       setTracksLoading(false)
     }
-  }, [activeSourceId, activeLibraryId,searchQuery, trackSortColumn, trackSortDirection, tracksLoading])
+  }, [activeSourceId, activeLibraryId, searchQuery, trackSortColumn, trackSortDirection, tracksLoading])
 
   // Load more tracks (infinite scroll callback)
   const loadMoreTracks = useCallback(() => {
@@ -613,7 +613,7 @@ export function MediaBrowser({
       loadPaginatedTracks(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery, trackSortColumn, trackSortDirection])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, trackSortColumn, trackSortDirection])
 
   // Load paginated albums from server with current filters/sorting
   const loadPaginatedAlbums = useCallback(async (reset = true, startOffset?: number) => {
@@ -655,7 +655,7 @@ export function MediaBrowser({
     } finally {
       setAlbumsLoading(false)
     }
-  }, [activeSourceId, activeLibraryId,searchQuery, alphabetFilter, albumSortColumn, albumSortDirection, albumsLoading, selectedArtist])
+  }, [activeSourceId, activeLibraryId, searchQuery, alphabetFilter, albumSortColumn, albumSortDirection, albumsLoading, selectedArtist])
 
   // Load more albums (infinite scroll callback)
   const loadMoreAlbums = useCallback(() => {
@@ -670,7 +670,7 @@ export function MediaBrowser({
       loadPaginatedArtists(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery, alphabetFilter])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, alphabetFilter])
 
   // Trigger server-side album loading when albums tab is active and filters change
   useEffect(() => {
@@ -678,7 +678,7 @@ export function MediaBrowser({
       loadPaginatedAlbums(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, musicViewMode, activeSourceId, activeLibraryId,searchQuery, alphabetFilter, albumSortColumn, albumSortDirection, selectedArtist])
+  }, [view, musicViewMode, activeSourceId, activeLibraryId, searchQuery, alphabetFilter, albumSortColumn, albumSortDirection, selectedArtist])
 
   // Load paginated movies from server with current filters/sorting
   const loadPaginatedMovies = useCallback(async (reset = true, startOffset?: number) => {
@@ -741,11 +741,7 @@ export function MediaBrowser({
       loadPaginatedMovies(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-<<<<<<< HEAD
-  }, [view, activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, sortBy, slimDown])
-=======
-  }, [view, activeSourceId, activeLibraryId,debouncedTierFilter, debouncedQualityFilter, searchQuery, alphabetFilter])
->>>>>>> upstream/master
+  }, [view, activeSourceId, activeLibraryId, debouncedTierFilter, debouncedQualityFilter, searchQuery, sortBy, slimDown, alphabetFilter])
 
   // Load paginated TV shows from server with current filters
   const loadPaginatedShows = useCallback(async (reset = true, startOffset?: number) => {
@@ -792,11 +788,7 @@ export function MediaBrowser({
     } finally {
       setShowsLoading(false)
     }
-<<<<<<< HEAD
-  }, [showsLoading, activeSourceId, activeLibraryId,searchQuery, sortBy, slimDown])
-=======
-  }, [showsLoading, activeSourceId, activeLibraryId,searchQuery, alphabetFilter])
->>>>>>> upstream/master
+  }, [showsLoading, activeSourceId, activeLibraryId, searchQuery, sortBy, slimDown, alphabetFilter])
 
   const loadMoreShows = useCallback(() => {
     if (showsOffsetRef.current < totalShowCount && !showsLoading) {
@@ -824,11 +816,7 @@ export function MediaBrowser({
       loadPaginatedShows(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-<<<<<<< HEAD
-  }, [view, activeSourceId, activeLibraryId, searchQuery, sortBy, slimDown])
-=======
-  }, [view, activeSourceId, activeLibraryId,searchQuery, alphabetFilter])
->>>>>>> upstream/master
+  }, [view, activeSourceId, activeLibraryId, searchQuery, sortBy, slimDown, alphabetFilter])
 
   // Load episodes when a show is selected
   useEffect(() => {
@@ -888,16 +876,6 @@ export function MediaBrowser({
   // Analyze a single artist for missing albums (queued via task queue)
   const analyzeArtistCompleteness = async (artistId: number) => {
     try {
-<<<<<<< HEAD
-      window.electronAPI.log.info('[MediaBrowser]', `Analyzing artist ${artistId} for missing albums...`)
-      const result = await window.electronAPI.musicAnalyzeArtistCompleteness(artistId)
-      window.electronAPI.log.info('[MediaBrowser]', `Artist analysis result:`, result)
-
-      // Reload all artist completeness data to refresh the UI
-      await loadMusicCompletenessData()
-    } catch (err) {
-      window.electronAPI.log.error('[MediaBrowser]', 'Failed to analyze artist completeness:', err)
-=======
       // Look up artist name for the task label
       const artist = musicArtists.find(a => a.id === artistId)
       const artistName = artist?.name || `Artist #${artistId}`
@@ -905,10 +883,9 @@ export function MediaBrowser({
         type: 'music-completeness',
         label: `Analyze ${artistName}`,
         artistId,
-      })
+      } as any)
     } catch (err) {
-      console.error('Failed to queue artist completeness analysis:', err)
->>>>>>> upstream/master
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to queue artist completeness analysis:', err)
     }
   }
 
@@ -1177,40 +1154,10 @@ export function MediaBrowser({
       }
       return
     }
-<<<<<<< HEAD
-
-    // Determine table for DB query
-    let table: 'movies' | 'tvshows' | 'artists' | 'albums'
-    if (view === 'movies') table = 'movies'
-    else if (view === 'tv') table = 'tvshows'
-    else if (view === 'music' && musicViewMode === 'albums') table = 'albums'
-    else table = 'artists'
-
-    try {
-      const offset = await window.electronAPI.getLetterOffset({
-        table,
-        letter,
-        sourceId: activeSourceId || undefined,
-        libraryId: activeLibraryId || undefined,
-      })
-
-      // Reload from that offset
-      if (view === 'movies') loadPaginatedMovies(true, offset)
-      else if (view === 'tv') loadPaginatedShows(true, offset)
-      else if (view === 'music' && musicViewMode === 'artists') loadPaginatedArtists(true, offset)
-      else if (view === 'music' && musicViewMode === 'albums') loadPaginatedAlbums(true, offset)
-
-      container?.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch (err) {
-      window.electronAPI.log.warn('[MediaBrowser]', 'Failed to get letter offset:', err)
-    }
-  }, [setAlphabetFilter, view, musicViewMode, activeSourceId, activeLibraryId, loadPaginatedMovies, loadPaginatedShows, loadPaginatedArtists, loadPaginatedAlbums])
-=======
     // Paginated views: filter by letter via backend query
     setAlphabetFilter(letter)
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [setAlphabetFilter, collectionsOnly])
->>>>>>> upstream/master
 
   // Movies are now loaded from the server pre-filtered/sorted/paginated
 

@@ -23,7 +23,7 @@ export interface NavigationTarget {
 // Snapshot of the full navigation state (for history stack)
 export interface NavigationState {
   view: 'dashboard' | 'library'
-  tab?: 'movies' | 'tv' | 'music'
+  tab?: 'movies' | 'tv' | 'music' | 'wishlist'
   // TV drill-down
   selectedShow?: string | null
   selectedSeason?: number | null

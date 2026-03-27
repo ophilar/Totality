@@ -5,11 +5,13 @@
 import { ipcMain } from 'electron'
 import { getDatabase } from '../database/getDatabase'
 
+import { GetNotificationsOptions } from '../types/monitoring'
+
 export function registerNotificationHandlers(): void {
-  ipcMain.handle('notifications:getAll', async (_event, options?: { limit?: number, offset?: number, type?: string, unreadOnly?: boolean }) => {
+  ipcMain.handle('notifications:getAll', async (_event, options?: any) => {
     try {
       const db = getDatabase()
-      return db.getNotifications(options || {})
+      return db.getNotifications(options as GetNotificationsOptions || {})
     } catch (error) {
       console.error('[IPC notifications:getAll] Error:', error)
       throw error

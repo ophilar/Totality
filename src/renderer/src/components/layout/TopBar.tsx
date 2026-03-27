@@ -105,7 +105,7 @@ export function TopBar({
   const [isSearching, setIsSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchDebounceRef = useRef<NodeJS.Timeout>()
+  const searchDebounceRef = useRef<NodeJS.Timeout>(null!)
 
   // Debounced search
   const performSearch = useCallback(async (query: string) => {

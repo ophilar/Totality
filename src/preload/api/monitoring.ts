@@ -54,6 +54,7 @@ export const monitoringApi = {
     label: string
     sourceId?: string
     libraryId?: string
+    artistId?: number
   }) => ipcRenderer.invoke('taskQueue:addTask', definition),
   taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke('taskQueue:removeTask', taskId),
   taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke('taskQueue:reorderQueue', taskIds),
@@ -174,6 +175,7 @@ export interface MonitoringAPI {
       label: string
       sourceId?: string
       libraryId?: string
+      artistId?: number
       status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
       progress?: {
         current: number
@@ -199,6 +201,7 @@ export interface MonitoringAPI {
       label: string
       sourceId?: string
       libraryId?: string
+      artistId?: number
       status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
       progress?: {
         current: number
@@ -225,6 +228,7 @@ export interface MonitoringAPI {
       label: string
       sourceId?: string
       libraryId?: string
+      artistId?: number
       status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
       progress?: {
         current: number
@@ -252,6 +256,7 @@ export interface MonitoringAPI {
     label: string
     sourceId?: string
     libraryId?: string
+    artistId?: number
   }) => Promise<{ success: boolean; taskId: string }>
   taskQueueRemoveTask: (taskId: string) => Promise<{ success: boolean }>
   taskQueueReorderQueue: (taskIds: string[]) => Promise<{ success: boolean }>
@@ -290,6 +295,7 @@ export interface MonitoringAPI {
       label: string
       sourceId?: string
       libraryId?: string
+      artistId?: number
       status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
       progress?: {
         current: number

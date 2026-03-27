@@ -1,18 +1,9 @@
 /**
  * TroubleshootTab - Live log viewer and export functionality
- *
- * Features:
- * - Real-time log display with virtualization for performance
- * - Filter by log level
- * - Auto-scroll (disables on manual scroll up, "Jump to latest" to re-enable)
- * - Export logs to file
- * - Multi-select with shift-click range and copy to clipboard
- * - Clear logs
- * - Details panel for selected log
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { FixedSizeList as VirtualList } from 'react-window'
+import * as ReactWindow from 'react-window'
 import {
   Loader2,
   Download,
@@ -32,6 +23,9 @@ import {
   CheckCircle,
   Circle,
 } from 'lucide-react'
+
+// Cast for type compatibility
+const { FixedSizeList: VirtualList } = ReactWindow as any
 
 interface LogEntry {
   id: string
@@ -78,7 +72,7 @@ function Toggle({
 export function TroubleshootTab() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isExporting, setIsExporting] = useState(false)
+  const [isExporting, setIsLoadingExport] = useState(false)
   const [filter, setFilter] = useState<LogFilter>('all')
   const [searchText, setSearchText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
@@ -94,7 +88,7 @@ export function TroubleshootTab() {
     retentionDays: number
   }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
-  const listRef = useRef<VirtualList>(null)
+  const listRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const logViewerRef = useRef<HTMLDivElement>(null)
   const lastScrollOffset = useRef(0)
@@ -244,13 +238,13 @@ export function TroubleshootTab() {
   }
 
   const handleExport = async () => {
-    setIsExporting(true)
+    setIsLoadingExport(true)
     try {
       await window.electronAPI.exportLogs()
     } catch (error) {
       window.electronAPI.log.error('[TroubleshootTab]', 'Failed to export logs:', error)
     } finally {
-      setIsExporting(false)
+      setIsLoadingExport(false)
     }
   }
 

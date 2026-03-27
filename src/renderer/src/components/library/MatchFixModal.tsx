@@ -69,10 +69,10 @@ export function MatchFixModal({
   const [isFixing, setIsFixing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap
-  useFocusTrap(isOpen, modalRef)
+  useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>)
 
   // Reset state when modal opens
   useEffect(() => {
