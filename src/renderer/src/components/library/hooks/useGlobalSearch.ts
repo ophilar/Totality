@@ -252,7 +252,7 @@ export function useGlobalSearch({
     globalSearchResults.tracks.length > 0
 
   // Flatten search results for keyboard navigation
-  const flattenedResults = useMemo((): FlattenedResult[] => {
+  const flattenedResults = useMemo(() => {
     const results: FlattenedResult[] = []
     globalSearchResults.movies.forEach((m) => results.push({ type: 'movie', id: m.id }))
     globalSearchResults.tvShows.forEach((s) => results.push({ type: 'tv', id: s.id }))
@@ -267,13 +267,17 @@ export function useGlobalSearch({
     return results
   }, [globalSearchResults])
 
-  // Reset search result index when search input changes
-  useEffect(() => {
+  const [prevSearchInput, setPrevSearchInput] = useState(searchInput)
+
+  // Adjust search result index when search input changes (React 19 recommended pattern instead of useEffect)
+  if (searchInput !== prevSearchInput) {
+    setPrevSearchInput(searchInput)
     setSearchResultIndex(-1)
-  }, [searchInput])
+  }
 
   // Handle clicking outside search results to close
   useEffect(() => {
+
     const handleClickOutside = (event: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
         setShowSearchResults(false)

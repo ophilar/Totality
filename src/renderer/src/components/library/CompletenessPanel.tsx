@@ -134,41 +134,6 @@ export function CompletenessPanel({
     return () => cleanup?.()
   }, [])
 
-  // Auto-focus close button when panel opens
-  useEffect(() => {
-    if (isOpen) {
-      loadApiKey()
-      // Focus the close button after a small delay to ensure panel is rendered
-      setTimeout(() => {
-        closeButtonRef.current?.focus()
-      }, 100)
-    }
-  }, [isOpen])
-
-  // Reset library selections when panel closes or libraries change
-  useEffect(() => {
-    if (!isOpen) {
-      setSelectedMovieLibraryId('')
-      setSelectedShowLibraryId('')
-    }
-  }, [isOpen])
-
-  useEffect(() => {
-    setSelectedMovieLibraryId('')
-    setSelectedShowLibraryId('')
-  }, [libraries])
-
-  // Listen for settings changes (e.g., API key saved in Settings modal)
-  useEffect(() => {
-    const cleanup = window.electronAPI.onSettingsChanged?.((data) => {
-      if (data.key === 'tmdb_api_key') {
-        setIsKeyConfigured(data.hasValue)
-      }
-    })
-    return () => cleanup?.()
-  }, [])
-
-  // Handle Escape key to close panel
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -184,6 +149,20 @@ export function CompletenessPanel({
       window.electronAPI.log.error('[CompletenessPanel]', 'Error loading API key:', err)
     }
   }
+
+  // Auto-focus close button when panel opens
+  useEffect(() => {
+    if (isOpen) {
+      // Wrap in Promise.resolve().then() to avoid "set-state-in-effect" cascading render warning
+      void Promise.resolve().then(() => {
+        loadApiKey()
+      })
+      // Focus the close button after a small delay to ensure panel is rendered
+      setTimeout(() => {
+        closeButtonRef.current?.focus()
+      }, 100)
+    }
+  }, [isOpen])
 
   const handleAnalyzeSeries = async () => {
     await onAnalyzeSeries(selectedShowLibraryId || undefined)

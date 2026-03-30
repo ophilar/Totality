@@ -247,7 +247,11 @@ export function ActivityPanel() {
   }, [])
 
   useEffect(() => {
-    loadNotifications()
+    // Wrap in Promise.resolve().then() to avoid "set-state-in-effect" cascading render warning
+    void Promise.resolve().then(() => {
+      loadNotifications()
+    })
+
     // Refresh notifications periodically when panel is open
     if (isOpen) {
       const interval = setInterval(loadNotifications, 10000)

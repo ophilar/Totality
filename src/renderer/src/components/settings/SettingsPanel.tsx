@@ -37,6 +37,16 @@ const TABS: Tab[] = [
 
 export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'general')
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+
+  // Adjust state when modal opens (React 19 recommended pattern instead of useEffect)
+  if (isOpen && !prevIsOpen) {
+    setPrevIsOpen(true)
+    setActiveTab(initialTab || 'general')
+  } else if (!isOpen && prevIsOpen) {
+    setPrevIsOpen(false)
+  }
+
   const titleId = useId()
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
@@ -45,15 +55,14 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
   // Focus trap
   useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>, false)
 
-  // Focus close button when modal opens, and set initial tab
+  // Focus close button when modal opens
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab || 'general')
       setTimeout(() => {
         closeButtonRef.current?.focus()
       }, 100)
     }
-  }, [isOpen, initialTab])
+  }, [isOpen])
 
   // Handle Escape key to close modal
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

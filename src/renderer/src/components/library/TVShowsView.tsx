@@ -449,11 +449,20 @@ export function TVShowsView({
     }
   }
 
-  // Show detail view menu
   const [showDetailMenu, setShowDetailMenu] = useState(false)
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
   const [copiedTitle, setCopiedTitle] = useState(false)
-  useEffect(() => { setShowOverviewExpanded(false); setCopiedTitle(false) }, [selectedShow])
+  const [showOverview, setShowOverview] = useState<string | null>(null)
+  const [prevSelectedShow, setPrevSelectedShow] = useState(selectedShow)
+
+  // Adjust state when show selection changes (React 19 recommended pattern instead of useEffect)
+  if (selectedShow !== prevSelectedShow) {
+    setPrevSelectedShow(selectedShow)
+    setShowOverviewExpanded(false)
+    setCopiedTitle(false)
+    setShowOverview(null)
+  }
+
   const showDetailMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!showDetailMenu) return
@@ -467,9 +476,7 @@ export function TVShowsView({
   }, [showDetailMenu])
 
   // Fetch show summary from TMDB when a show is selected
-  const [showOverview, setShowOverview] = useState<string | null>(null)
   useEffect(() => {
-    setShowOverview(null)
     if (selectedShow && !selectedSeason) {
       const completenessData = seriesCompleteness.get(selectedShow)
       if (completenessData?.tmdb_id) {

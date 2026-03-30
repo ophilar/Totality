@@ -653,16 +653,25 @@ function SourceItem({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [renameValue, setRenameValue] = useState(source.display_name)
+  const [prevIsRenaming, setPrevIsRenaming] = useState(isRenaming)
+
+  // Adjust state when renaming starts (React 19 recommended pattern instead of useEffect)
+  if (isRenaming && !prevIsRenaming) {
+    setPrevIsRenaming(true)
+    setRenameValue(source.display_name)
+  } else if (!isRenaming && prevIsRenaming) {
+    setPrevIsRenaming(false)
+  }
+
   const confirmTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Focus input when renaming starts
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
-      setRenameValue(source.display_name)
       renameInputRef.current.focus()
       renameInputRef.current.select()
     }
-  }, [isRenaming, source.display_name])
+  }, [isRenaming])
 
   const handleRenameSubmit = async () => {
     const trimmed = renameValue.trim()

@@ -165,8 +165,12 @@ function AppContent() {
 
   // Load completeness data on mount and when sources change
   useEffect(() => {
-    loadCompletenessData()
-    loadMusicCompletenessData()
+    // Wrap in Promise.resolve().then() to avoid "set-state-in-effect" cascading render warning
+    // This ensures state updates happen in a separate microtask
+    void Promise.resolve().then(() => {
+      loadCompletenessData()
+      loadMusicCompletenessData()
+    })
   }, [loadCompletenessData, loadMusicCompletenessData])
 
   // Listen for completeness analysis progress events

@@ -28,6 +28,51 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
   const requestIdRef = useRef(0)
   const activeRequestId = useRef<string | null>(null)
 
+  const generateReport = useCallback(async (type: ReportType) => {
+    setSelectedReport(type)
+    setReportContent('')
+    setError(null)
+    setIsGenerating(true)
+
+    const requestId = `analysis-${++requestIdRef.current}`
+    activeRequestId.current = requestId
+
+    try {
+      const apiMethods: Record<ReportType, (params: { requestId: string }) => Promise<unknown>> = {
+        quality: window.electronAPI.aiQualityReport,
+        upgrades: window.electronAPI.aiUpgradePriorities,
+        completeness: window.electronAPI.aiCompletenessInsights,
+        wishlist: window.electronAPI.aiWishlistAdvice,
+      }
+      const apiMethod = apiMethods[type]
+
+      await apiMethod({ requestId })
+    } catch (err: unknown) {
+      const errorObj = err as { error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
+      if (errorObj.rateLimited && errorObj.retryAfterSeconds) {
+        setRateLimited({ limited: true, retryAfterSeconds: errorObj.retryAfterSeconds })
+        setError(`Rate limit reached. Try again in ${errorObj.retryAfterSeconds}s`)
+      } else {
+        setError(errorObj.error || 'Failed to generate report')
+      }
+      setIsGenerating(false)
+      activeRequestId.current = null
+    }
+  }, [])
+
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+
+  // Adjust state when panel opens/closes (React 19 recommended pattern instead of useEffect)
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen)
+    if (!isOpen) {
+      // Reset state when panel closes
+      setSelectedReport(null)
+      setReportContent('')
+      setError(null)
+    }
+  }
+
   // Check if AI is configured and auto-start if initialReport specified
   useEffect(() => {
     if (isOpen) {
@@ -37,13 +82,8 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
           generateReport(initialReport)
         }
       }).catch(() => setIsConfigured(false))
-    } else {
-      // Reset state when panel closes
-      setSelectedReport(null)
-      setReportContent('')
-      setError(null)
     }
-  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, initialReport, selectedReport, isGenerating, generateReport])
 
   // Listen for settings changes
   useEffect(() => {
@@ -93,38 +133,6 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
     }, 1000)
     return () => clearInterval(interval)
   }, [rateLimited.limited])
-
-  const generateReport = useCallback(async (type: ReportType) => {
-    setSelectedReport(type)
-    setReportContent('')
-    setError(null)
-    setIsGenerating(true)
-
-    const requestId = `analysis-${++requestIdRef.current}`
-    activeRequestId.current = requestId
-
-    try {
-      const apiMethods: Record<ReportType, (params: { requestId: string }) => Promise<unknown>> = {
-        quality: window.electronAPI.aiQualityReport,
-        upgrades: window.electronAPI.aiUpgradePriorities,
-        completeness: window.electronAPI.aiCompletenessInsights,
-        wishlist: window.electronAPI.aiWishlistAdvice,
-      }
-      const apiMethod = apiMethods[type]
-
-      await apiMethod({ requestId })
-    } catch (err: unknown) {
-      const errorObj = err as { error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
-      if (errorObj.rateLimited && errorObj.retryAfterSeconds) {
-        setRateLimited({ limited: true, retryAfterSeconds: errorObj.retryAfterSeconds })
-        setError(`Rate limit reached. Try again in ${errorObj.retryAfterSeconds}s`)
-      } else {
-        setError(errorObj.error || 'Failed to generate report')
-      }
-      setIsGenerating(false)
-      activeRequestId.current = null
-    }
-  }, [])
 
   const handleBack = () => {
     setSelectedReport(null)
