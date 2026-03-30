@@ -280,7 +280,7 @@ export class QualityAnalyzer {
    * Higher score = better quality
    */
   private calculateAudioTrackQualityScore(track: AudioTrack): number {
-    let score = 0
+    let score: number
     const channels = track.channels || 2
     const bitrate = track.bitrate || 0
     const isLossless = this.isLosslessAudio(track.codec)
@@ -576,7 +576,7 @@ export class QualityAnalyzer {
     // HDR requires slightly more bitrate for the same visual transparency
     const bloatKbps = this.bloatThresholds[tier] * (isHdr ? this.hdrOverheadMultiplier : 1.0)
 
-    let score = 0
+    let score: number
 
     // 1. Perfect efficiency: achieves HIGH quality target with modern codec
     if (analysisBitrate <= targetKbps && efficiencyMult >= 2.0) {

@@ -304,7 +304,6 @@ describe('MediaConverter.mergeUpdates', () => {
 
   it('should update the updated_at timestamp', () => {
     const existing = MediaConverter.createPlaceholder('item-1', 'Test', 'movie', defaultOptions)
-    const before = existing.updated_at
     // Small delay to ensure different timestamp
     const merged = MediaConverter.mergeUpdates(existing, { title: 'Updated' })
     expect(merged.updated_at).toBeDefined()

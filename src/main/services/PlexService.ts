@@ -570,7 +570,7 @@ export class PlexService {
     getLoggingService().info('[PlexService]', `Processing ${totalItems} items...`)
 
     // Process all items in batches
-    let scanned = 0
+    let scanned: number
     db.startBatch()
     try {
       scanned = await this.processBatches(
@@ -644,7 +644,7 @@ export class PlexService {
     onProgress?: (progress: ScanProgress) => void,
   ): Promise<number> {
     const BATCH_SIZE = 10
-    let scanned = 0
+    let scanned: number
 
     for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
       const batch = itemsToProcess.slice(i, i + BATCH_SIZE)

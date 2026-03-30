@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { BetterSQLiteService } from '../../src/main/database/BetterSQLiteService'
-import type { MediaItem } from '../../src/main/types/database'
 
 describe('BetterSQLiteService Integration', () => {
   let service: BetterSQLiteService

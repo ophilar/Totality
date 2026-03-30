@@ -182,8 +182,9 @@ export class SourceManager {
         getLoggingService().warn('[SourceManager]', `Could not find Plex server ${config.serverId} for ${source.display_name}`)
         return false
       }
-    } catch (err) {
-      throw err
+    } finally {
+      // Empty finally or remove entirely if not needed.
+      // In this case, there was no finally, just a useless catch.
     }
   }
 

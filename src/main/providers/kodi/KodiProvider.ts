@@ -772,7 +772,7 @@ export class KodiProvider extends BaseMediaProvider {
 
     // Calculate total bitrate from file size
     let totalBitrate = 0
-    let videoBitrate = 0
+    let videoBitrate: number
     if (fileSize > 0 && durationSeconds > 0) {
       totalBitrate = this.calculateBitrate(fileSize, durationSeconds)
       // Estimate video portion (~85-95% of total for movies with lossless audio)
@@ -868,7 +868,7 @@ export class KodiProvider extends BaseMediaProvider {
 
     // Calculate total bitrate from file size
     let totalBitrate = 0
-    let videoBitrate = 0
+    let videoBitrate: number
     if (fileSize > 0 && durationSeconds > 0) {
       totalBitrate = this.calculateBitrate(fileSize, durationSeconds)
       videoBitrate = Math.round(totalBitrate * 0.90)
@@ -1375,7 +1375,6 @@ export class KodiProvider extends BaseMediaProvider {
     // For now, we'll try to guess from the file path
     const filePath = item.file || ''
     const ext = filePath.split('.').pop()?.toLowerCase() || ''
-    let audioCodec = 'unknown'
 
     // Map common extensions to codecs
     const codecMap: Record<string, string> = {
@@ -1392,7 +1391,7 @@ export class KodiProvider extends BaseMediaProvider {
       'ape': 'ape',
       'wv': 'wavpack',
     }
-    audioCodec = codecMap[ext] || ext || 'unknown'
+    const audioCodec = codecMap[ext] || ext || 'unknown'
 
     const lossless = isLosslessCodec(audioCodec)
     const sampleRate = item.samplerate || 44100
