@@ -13,8 +13,8 @@ export interface MediaSource {
   is_enabled: boolean
   last_connected_at?: string
   last_scan_at?: string
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 // Parsed connection config for different providers
@@ -48,8 +48,8 @@ export interface KodiConnectionConfig {
 export interface KodiLocalConnectionConfig {
   databasePath: string
   databaseVersion?: number
-  musicDatabasePath?: string | null
-  musicDatabaseVersion?: number | null
+  musicDatabasePath?: string | null | undefined
+  musicDatabaseVersion?: number | null | undefined
   includeVideo?: boolean
   includeMusic?: boolean
 }
@@ -118,63 +118,65 @@ export interface MediaItem {
   // Provider item ID (was plex_id, now generic but kept for compatibility)
   plex_id: string
   title: string
-  sort_title?: string
-  year?: number
+  sort_title?: string | null | undefined
+  year?: number | null | undefined
   type: 'movie' | 'episode'
-  series_title?: string
-  season_number?: number
-  episode_number?: number
+  series_title?: string | null | undefined
+  season_number?: number | null | undefined
+  episode_number?: number | null | undefined
 
   // File information
-  file_path: string
-  file_size: number
-  duration: number
+  file_path?: string | null | undefined
+  file_size: number | null | undefined
+  duration: number | null | undefined
 
   // Video quality
-  resolution: string
-  width: number
-  height: number
-  video_codec: string
-  video_bitrate: number
+  resolution: string | null | undefined
+  width: number | null | undefined
+  height: number | null | undefined
+  video_codec: string | null | undefined
+  video_bitrate: number | null | undefined
 
   // Audio quality
-  audio_codec: string
-  audio_channels: number
-  audio_bitrate: number
+  audio_codec: string | null | undefined
+  audio_channels: number | null | undefined
+  audio_bitrate: number | null | undefined
 
   // Enhanced video quality metadata
-  video_frame_rate?: number      // 23.976, 24, 60 fps
-  color_bit_depth?: number        // 8, 10, 12 bits
-  hdr_format?: string             // "None", "HDR10", "Dolby Vision", "HLG"
-  color_space?: string            // "bt709", "bt2020nc"
-  video_profile?: string          // "high", "main 10"
-  video_level?: number            // 41, 50, 51
+  video_frame_rate?: number | null      // 23.976, 24, 60 fps
+  color_bit_depth?: number | null        // 8, 10, 12 bits
+  hdr_format?: string | null             // "None", "HDR10", "Dolby Vision", "HLG"
+  color_space?: string | null            // "bt709", "bt2020nc"
+  video_profile?: string | null          // "high", "main 10"
+  video_level?: number | null            // 41, 50, 51
 
   // Enhanced audio quality metadata
-  audio_profile?: string          // "lc", "he", "truehd"
-  audio_sample_rate?: number      // 48000, 96000 Hz
-  has_object_audio?: boolean      // Atmos/DTS:X flag
+  audio_profile?: string | null          // "lc", "he", "truehd"
+  audio_sample_rate?: number | null      // 48000, 96000 Hz
+  has_object_audio?: boolean | null      // Atmos/DTS:X flag
 
   // All audio tracks (JSON string in DB, parsed here)
-  audio_tracks?: string           // JSON array of AudioTrack
+  audio_tracks?: string | null           // JSON array of AudioTrack
 
   // All subtitle tracks (JSON string in DB, parsed here)
-  subtitle_tracks?: string        // JSON array of SubtitleTrack
+  subtitle_tracks?: string | null        // JSON array of SubtitleTrack
 
   // Container metadata
-  container?: string              // "mkv", "mp4", "avi"
+  container?: string | null              // "mkv", "mp4", "avi"
 
   // File modification tracking (for skip-unchanged optimization)
-  file_mtime?: number             // Unix timestamp of file modification time
+  file_mtime?: number | null             // Unix timestamp of file modification time
 
   // Metadata
-  imdb_id?: string
-  tmdb_id?: string
-  series_tmdb_id?: string // Show-level TMDB ID for episodes (from Plex show metadata)
-  poster_url?: string
-  episode_thumb_url?: string
-  season_poster_url?: string
-  summary?: string
+  imdb_id?: string | null | undefined
+  tmdb_id?: string | null | undefined
+  series_tmdb_id?: string | null // Show-level TMDB ID for episodes (from Plex show metadata)
+  original_language?: string | null | undefined
+  audio_language?: string | null | undefined
+  poster_url?: string | null | undefined
+  episode_thumb_url?: string | null | undefined
+  season_poster_url?: string | null | undefined
+  summary?: string | null | undefined
 
   // User override flag (preserves user-selected metadata during rescans)
   user_fixed_match?: boolean
@@ -182,9 +184,16 @@ export interface MediaItem {
   // Multi-version support
   version_count?: number          // Cached count of versions (default 1)
 
+  // Quality scores (denormalized for fast access)
+  quality_tier?: string
+  tier_quality?: string
+  tier_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+
   // Timestamps
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 // Represents one file/version of a media item (e.g., 4K HDR vs 1080p theatrical)
@@ -194,9 +203,9 @@ export interface MediaItemVersion {
 
   // Version identification
   version_source: string          // 'primary', 'plex_media_1', 'jellyfin_source_abc', 'local_file'
-  edition?: string                // 'Extended', "Director's Cut", 'IMAX', 'Remastered', etc.
-  label?: string                  // Auto-generated: "4K HDR Dolby Vision", "1080p Extended"
-  source_type?: string            // 'REMUX', 'WEB-DL' — used for label generation, not persisted
+  edition?: string | null | undefined                // 'Extended', "Director's Cut", 'IMAX', 'Remastered', etc.
+  label?: string | null | undefined                  // Auto-generated: "4K HDR Dolby Vision", "1080p Extended"
+  source_type?: string | null | undefined            // 'REMUX', 'WEB-DL' — used for label generation, not persisted
 
   // File information
   file_path: string
@@ -216,32 +225,34 @@ export interface MediaItemVersion {
   audio_bitrate: number
 
   // Enhanced video quality metadata
-  video_frame_rate?: number
-  color_bit_depth?: number
-  hdr_format?: string
-  color_space?: string
-  video_profile?: string
-  video_level?: number
+  video_frame_rate?: number | null | undefined
+  color_bit_depth?: number | null | undefined
+  hdr_format?: string | null | undefined
+  color_space?: string | null | undefined
+  video_profile?: string | null | undefined
+  video_level?: number | null | undefined
 
   // Enhanced audio quality metadata
-  audio_profile?: string
-  audio_sample_rate?: number
-  has_object_audio?: boolean
+  audio_profile?: string | null | undefined
+  audio_sample_rate?: number | null | undefined
+  has_object_audio?: boolean | null | undefined
 
   // All tracks (JSON strings)
-  audio_tracks?: string
-  subtitle_tracks?: string
+  audio_tracks?: string | null | undefined
+  subtitle_tracks?: string | null | undefined
 
   // Container
-  container?: string
-  file_mtime?: number
+  container?: string | null | undefined
+  file_mtime?: number | null | undefined
 
   // Quality scores (denormalized for fast access)
-  quality_tier?: string           // 'SD', '720p', '1080p', '4K'
-  tier_quality?: string           // 'LOW', 'MEDIUM', 'HIGH'
-  tier_score?: number
-  bitrate_tier_score?: number
-  audio_tier_score?: number
+  quality_tier?: string | null | undefined           // 'SD', '720p', '1080p', '4K'
+  tier_quality?: string | null | undefined           // 'LOW', 'MEDIUM', 'HIGH'
+  tier_score?: number | null | undefined
+  bitrate_tier_score?: number | null | undefined
+  audio_tier_score?: number | null | undefined
+  efficiency_score?: number | null | undefined
+  storage_debt_bytes?: number | null | undefined
 
   // Best version flag
   is_best?: boolean
@@ -262,11 +273,15 @@ export interface QualityScore {
   bitrate_tier_score: number // 0-100 bitrate score for tier
   audio_tier_score: number // 0-100 audio score for tier
 
-  // Legacy scores (for backward compatibility)
-  overall_score: number // Maps to tier_score
-  resolution_score: number // Deprecated
-  bitrate_score: number // Maps to bitrate_tier_score
-  audio_score: number // Maps to audio_tier_score
+  // Legacy scores (added back for compatibility)
+  overall_score: number
+  resolution_score: number
+  bitrate_score: number
+  audio_score: number
+
+  // Efficiency metrics
+  efficiency_score: number // 0-100 score (BPP based)
+  storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
 
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
@@ -275,8 +290,8 @@ export interface QualityScore {
   // Analysis details
   issues: string // JSON array of issues
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AppSettings {
@@ -304,15 +319,18 @@ export interface SeriesCompleteness {
   missing_episodes: string // JSON array of MissingEpisode
 
   completeness_percentage: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
 
   // TMDB metadata
   tmdb_id?: string
-  poster_url?: string
-  backdrop_url?: string
+  poster_url?: string | null | undefined
+  backdrop_url?: string | null | undefined
   status?: string // "Returning Series", "Ended", "Canceled"
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MovieCollection {
@@ -332,11 +350,11 @@ export interface MovieCollection {
 
   completeness_percentage: number
 
-  poster_url?: string
-  backdrop_url?: string
+  poster_url?: string | null | undefined
+  backdrop_url?: string | null | undefined
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MissingMovie {
@@ -355,6 +373,8 @@ export interface MissingEpisode {
 
 // Query filter types
 export interface MediaItemFilters {
+  efficiencyFilter?: string
+  slimDown?: boolean
   type?: 'movie' | 'episode'
   minQualityScore?: number
   maxQualityScore?: number
@@ -367,7 +387,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score'
+  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency'
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -390,11 +410,12 @@ export interface TVShowSummary {
 }
 
 export interface TVShowFilters {
+  slimDown?: boolean
   sourceId?: string
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'season_count'
+  sortBy?: 'title' | 'episode_count' | 'season_count' | 'storage_debt' | 'efficiency' | 'size'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -434,8 +455,8 @@ export interface MusicArtist {
   // User override flag
   user_fixed_match?: boolean
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MusicAlbum {
@@ -487,8 +508,8 @@ export interface MusicAlbum {
   // User override flag
   user_fixed_match?: boolean
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MusicTrack {
@@ -524,6 +545,10 @@ export interface MusicTrack {
   bit_depth?: number
   channels?: number
 
+  // Efficiency metrics
+  efficiency_score?: number
+  storage_debt_bytes?: number
+
   // Quality flags
   is_lossless?: boolean
   is_hi_res?: boolean
@@ -534,8 +559,8 @@ export interface MusicTrack {
 
   // Timestamps
   added_at?: string
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MusicQualityScore {
@@ -553,8 +578,8 @@ export interface MusicQualityScore {
 
   issues: string // JSON array
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ArtistCompleteness {
@@ -562,6 +587,7 @@ export interface ArtistCompleteness {
   artist_name: string
 
   musicbrainz_id?: string
+  library_id?: string
 
   // Completeness stats
   total_albums: number
@@ -570,6 +596,10 @@ export interface ArtistCompleteness {
   owned_singles: number
   total_eps: number
   owned_eps: number
+
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
 
   // Missing items (JSON arrays)
   missing_albums: string
@@ -587,8 +617,8 @@ export interface ArtistCompleteness {
 
   last_sync_at?: string
 
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MissingAlbum {
@@ -618,14 +648,18 @@ export interface AlbumCompleteness {
   total_tracks: number
   owned_tracks: number
 
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  total_size?: number
+
   // Missing tracks (JSON array of MissingTrack)
   missing_tracks: string
 
   completeness_percentage: number
 
   last_sync_at?: string
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 // Music query filters
@@ -642,7 +676,7 @@ export interface MusicFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year'
+  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency'
   sortOrder?: 'asc' | 'desc'
   // Alphabet filter
   alphabetFilter?: string
@@ -666,48 +700,48 @@ export interface WishlistItem {
   media_type: WishlistMediaType
   title: string
   subtitle?: string
-  year?: number
+  year?: number | null | undefined
 
   // Wishlist reason
   reason: WishlistReason
 
   // External IDs for store linking
-  tmdb_id?: string
-  imdb_id?: string
-  musicbrainz_id?: string
+  tmdb_id?: string | null | undefined
+  imdb_id?: string | null | undefined
+  musicbrainz_id?: string | null | undefined
 
   // Series/Collection context (for TV)
-  series_title?: string
-  season_number?: number
-  episode_number?: number
-  collection_name?: string
+  series_title?: string | null | undefined
+  season_number?: number | null | undefined
+  episode_number?: number | null | undefined
+  collection_name?: string | null | undefined
 
   // Artist context (for music)
-  artist_name?: string
-  album_title?: string
+  artist_name?: string | null | undefined
+  album_title?: string | null | undefined
 
   // Artwork
-  poster_url?: string
+  poster_url?: string | null | undefined
 
   // User data
   priority: WishlistPriority
-  notes?: string
+  notes?: string | null | undefined
 
   // Status tracking
   status: WishlistStatus
-  completed_at?: string
+  completed_at?: string | null | undefined
 
   // Upgrade-specific fields (only used when reason='upgrade')
-  current_quality_tier?: string
-  current_quality_level?: string
-  current_resolution?: string
-  current_video_codec?: string
-  current_audio_codec?: string
-  media_item_id?: number
+  current_quality_tier?: string | null | undefined
+  current_quality_level?: string | null | undefined
+  current_resolution?: string | null | undefined
+  current_video_codec?: string | null | undefined
+  current_audio_codec?: string | null | undefined
+  media_item_id?: number | null | undefined
 
   // Timestamps
-  added_at: string
-  updated_at: string
+  added_at?: string
+  updated_at?: string
 }
 
 export interface WishlistFilters {
@@ -723,4 +757,3 @@ export interface WishlistFilters {
   limit?: number
   offset?: number
 }
-

@@ -91,10 +91,20 @@ CREATE TABLE IF NOT EXISTS media_items (
   imdb_id TEXT,
   tmdb_id TEXT,
   series_tmdb_id TEXT,
+  original_language TEXT, -- From TMDB
+  audio_language TEXT,    -- From file metadata (best track)
   poster_url TEXT,
   episode_thumb_url TEXT,
   season_poster_url TEXT,
   summary TEXT,
+
+  -- User selection tracking
+  user_fixed_match INTEGER DEFAULT 0,
+
+  -- Quality scores (denormalized for fast access)
+  quality_tier TEXT,
+  tier_quality TEXT,
+  tier_score INTEGER DEFAULT 0,
 
   -- Timestamps
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -181,6 +191,10 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   resolution_score INTEGER NOT NULL,
   bitrate_score INTEGER NOT NULL,
   audio_score INTEGER NOT NULL,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER DEFAULT 0,
+  storage_debt_bytes INTEGER DEFAULT 0,
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL DEFAULT 0,
@@ -455,6 +469,7 @@ CREATE TABLE IF NOT EXISTS artist_completeness (
 
   -- MusicBrainz data
   musicbrainz_id TEXT,
+  library_id TEXT NOT NULL DEFAULT '',
 
   -- Completeness stats
   total_albums INTEGER NOT NULL DEFAULT 0,
@@ -723,6 +738,7 @@ CREATE INDEX IF NOT EXISTS idx_music_quality_scores_tier ON music_quality_scores
 CREATE INDEX IF NOT EXISTS idx_music_quality_scores_upgrade ON music_quality_scores(needs_upgrade);
 
 CREATE INDEX IF NOT EXISTS idx_artist_completeness_name ON artist_completeness(artist_name);
+CREATE INDEX IF NOT EXISTS idx_artist_completeness_library ON artist_completeness(library_id);
 CREATE INDEX IF NOT EXISTS idx_artist_completeness_musicbrainz ON artist_completeness(musicbrainz_id);
 
 CREATE INDEX IF NOT EXISTS idx_album_completeness_album ON album_completeness(album_id);
@@ -882,6 +898,25 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('quality_music_high_bitrate', '256'),
   ('quality_music_hires_samplerate', '44100'),
   ('quality_music_hires_bitdepth', '16'),
+
+  -- Efficiency target thresholds (kbps) for HEVC
+  ('quality_efficiency_sd_target', '1200'),
+  ('quality_efficiency_720p_target', '2500'),
+  ('quality_efficiency_1080p_target', '5000'),
+  ('quality_efficiency_4k_target', '15000'),
+
+  -- Bloat start thresholds (kbps) for HEVC
+  ('quality_efficiency_sd_bloat', '2500'),
+  ('quality_efficiency_720p_bloat', '5000'),
+  ('quality_efficiency_1080p_bloat', '10000'),
+  ('quality_efficiency_4k_bloat', '30000'),
+
+  -- Efficiency UI thresholds
+  ('quality_efficiency_trash_threshold', '60'),
+
+  -- Efficiency Allowances
+  ('quality_efficiency_lossless_allowance', '4000'),
+  ('quality_efficiency_hdr_overhead', '1.10'),
 
   -- Window behavior
   ('minimize_to_tray', 'false'),

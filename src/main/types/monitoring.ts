@@ -2,7 +2,8 @@
  * Types for Live Monitoring and Notification System
  */
 
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'local'
+import type { ProviderType } from './database'
+export type { ProviderType }
 
 // =============================================================================
 // Monitoring Configuration
@@ -25,6 +26,7 @@ export const DEFAULT_MONITORING_CONFIG: MonitoringConfig = {
     emby: 300000,      // 5 minutes - remote server
     kodi: 300000,      // 5 minutes - remote server
     'kodi-local': 60000, // 1 minute - local database
+    'kodi-mysql': 60000, // 1 minute - remote database
     local: 60000,      // 1 minute - local folder
   },
 }

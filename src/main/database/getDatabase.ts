@@ -2,21 +2,20 @@
  * Centralized database getter
  *
  * This module provides a single entry point for getting the database service.
- * It delegates to the DatabaseFactory which handles backend selection and migration.
+ * Strictly uses BetterSQLite3 for performance and modern feature support.
  *
  * Usage:
  *   import { getDatabase } from '../database/getDatabase'
  *   const db = getDatabase()
  */
 
-import { getDatabaseServiceSync } from './DatabaseFactory'
+import { getBetterSQLiteService, BetterSQLiteService } from './BetterSQLiteService'
 
 /**
  * Get the database service instance (synchronous)
- * This should only be called after app.whenReady() and database initialization
  */
-export function getDatabase() {
-  return getDatabaseServiceSync()
+export function getDatabase(): BetterSQLiteService {
+  return getBetterSQLiteService()
 }
 
 /**

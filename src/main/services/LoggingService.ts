@@ -90,7 +90,8 @@ class LoggingService {
   }
 
   /** Sanitize sensitive data from log output */
-  private sanitize(text: string): string {
+  private sanitize(text: any): string {
+    if (typeof text !== "string") return String(text)
     let result = text
 
     // Replace home directory with ~ to avoid leaking OS username
@@ -182,14 +183,33 @@ class LoggingService {
     this.addEntry(level, source, cleanMessage, details)
   }
 
-  private addEntry(level: LogLevel, source: string, message: string, details?: string): void {
+  private formatDetails(args: unknown[]): string | undefined {
+    if (args.length === 0) return undefined
+    return args
+      .map((arg) => {
+        if (arg instanceof Error) {
+          return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
+        }
+        try {
+          return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        } catch {
+          return String(arg)
+        }
+      })
+      .join('\n\n')
+  }
+
+  private addEntry(level: LogLevel, source: string, message: unknown, ...details: unknown[]): void {
+    const formattedMessage = typeof message === 'string' ? message : String(message)
+    const formattedDetails = this.formatDetails(details)
+
     const entry: LogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString(),
       level,
       source,
-      message: this.sanitize(message),
-      details: details ? this.sanitize(details) : undefined,
+      message: this.sanitize(formattedMessage),
+      details: formattedDetails ? this.sanitize(formattedDetails) : undefined,
     }
 
     // Route to appropriate buffer based on level
@@ -252,10 +272,26 @@ class LoggingService {
     return this.verboseEnabled
   }
 
-  verbose(source: string, message: string, details?: string): void {
+  debug(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('debug', source, message, ...details)
+  }
+
+  verbose(source: string, message: unknown, ...details: unknown[]): void {
     if (this.verboseEnabled) {
-      this.addEntry('verbose', source, message, details)
+      this.addEntry('verbose', source, message, ...details)
     }
+  }
+
+  info(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('info', source, message, ...details)
+  }
+
+  warn(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('warn', source, message, ...details)
+  }
+
+  error(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('error', source, message, ...details)
   }
 
   getSessionInfo(): { sessionId: string; startedAt: string; uptimeMs: number } {
