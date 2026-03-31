@@ -422,7 +422,7 @@ export class QualityAnalyzer {
    * Used during scan and retroactive analysis to populate per-version quality data.
    */
   analyzeVersion(version: MediaItemVersion): VersionQualityResult {
-    const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore } = this.scoreQuality(version)
+    const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore } = this.scoreQuality(version as any)
     return {
       quality_tier: qualityTier,
       tier_quality: tierQuality,
@@ -437,11 +437,11 @@ export class QualityAnalyzer {
    */
   async analyzeMediaItem(mediaItem: MediaItem): Promise<QualityScore> {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio } =
-      this.scoreQuality(mediaItem)
+      this.scoreQuality(mediaItem as any)
 
     // Legacy scoring (for backward compatibility) - also use best audio
-    const resolutionScore = this.calculateResolutionScore(mediaItem.height)
-    const bitrateScore = this.calculateBitrateScore(mediaItem.video_bitrate, mediaItem.height)
+    const resolutionScore = this.calculateResolutionScore(mediaItem.height || 0)
+    const bitrateScore = this.calculateBitrateScore(mediaItem.video_bitrate || 0, mediaItem.height || 0)
     const audioScore = this.calculateAudioScore(bestAudio.channels, bestAudio.bitrate)
     const overallScore = tierScore
 
@@ -449,11 +449,11 @@ export class QualityAnalyzer {
     const issues: string[] = []
     const { medium: mediumThreshold } = this.videoThresholds[qualityTier]
 
-    const codecEfficiency = this.getCodecEfficiency(mediaItem.video_codec)
-    if (effectiveBitrate < mediumThreshold && mediaItem.video_bitrate > 0) {
+    const codecEfficiency = this.getCodecEfficiency(mediaItem.video_codec || "")
+    if (effectiveBitrate < mediumThreshold && (mediaItem.video_bitrate || 0) > 0) {
       const codecName = codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
       issues.push(
-        `Low bitrate for ${qualityTier}: ${this.formatBitrate(mediaItem.video_bitrate)}${codecName}`
+        `Low bitrate for ${qualityTier}: ${this.formatBitrate(mediaItem.video_bitrate || 0)}${codecName}`
       )
     } else if (mediaItem.video_bitrate === 0) {
       issues.push(`Bitrate unknown for ${qualityTier}`)
@@ -483,6 +483,8 @@ export class QualityAnalyzer {
     const needsUpgrade = tierQuality === 'LOW'
 
     return {
+      efficiency_score: 0,
+      storage_debt_bytes: 0,
       media_item_id: mediaItem.id || 0,
       quality_tier: qualityTier,
       tier_quality: tierQuality,
@@ -709,13 +711,13 @@ export class QualityAnalyzer {
    * Get recommended format for upgrade based on current quality
    */
   getRecommendedFormat(mediaItem: MediaItem, currentScore: number): string {
-    if (mediaItem.height >= 2160 && currentScore >= 90) {
+    if ((mediaItem.height || 0) >= 2160 && currentScore >= 90) {
       return 'No upgrade needed'
     }
-    if (mediaItem.height >= 1080 && currentScore < 80) {
+    if ((mediaItem.height || 0) >= 1080 && currentScore < 80) {
       return '4K UHD Blu-ray'
     }
-    if (mediaItem.height < 1080) {
+    if ((mediaItem.height || 0) < 1080) {
       return 'Blu-ray'
     }
     return 'Blu-ray'

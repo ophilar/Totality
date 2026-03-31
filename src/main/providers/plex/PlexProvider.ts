@@ -1273,13 +1273,15 @@ export class PlexProvider implements MediaProvider {
     }
   }
 
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2
+  private scoreVersion(v: { resolution?: string | null; video_bitrate?: number | null; hdr_format?: string | null }): number {
+    const res = v.resolution || ''
+    const bitrate = v.video_bitrate || 0
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2
       : 1
     const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
+    return tierRank * 100000 + hdrBonus + bitrate
   }
 
   // ============================================================================

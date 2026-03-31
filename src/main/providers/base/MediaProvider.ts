@@ -15,38 +15,38 @@ export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' 
 // Credentials for different provider types
 export interface ProviderCredentials {
   // Plex: OAuth token
-  token?: string
+  token?: string | null
 
   // Jellyfin/Emby: Server URL + credentials
-  serverUrl?: string
-  apiKey?: string
-  accessToken?: string
-  username?: string
-  password?: string
+  serverUrl?: string | null
+  apiKey?: string | null
+  accessToken?: string | null
+  username?: string | null
+  password?: string | null
 
   // Kodi: JSON-RPC connection
-  host?: string
-  port?: number
+  host?: string | null
+  port?: number | null
 
   // Kodi MySQL: Database connection
-  videoDatabaseName?: string
-  musicDatabaseName?: string
-  databasePrefix?: string
-  ssl?: boolean
-  connectionTimeout?: number
-  videoDatabaseVersion?: number
+  videoDatabaseName?: string | null
+  musicDatabaseName?: string | null
+  databasePrefix?: string | null
+  ssl?: boolean | null
+  connectionTimeout?: number | null
+  videoDatabaseVersion?: number | null
 
   // Kodi Local: Local database access
-  databasePath?: string
-  databaseVersion?: number
-  musicDatabasePath?: string
-  includeVideo?: boolean
-  includeMusic?: boolean
+  databasePath?: string | null
+  databaseVersion?: number | null
+  musicDatabasePath?: string | null
+  includeVideo?: boolean | null
+  includeMusic?: boolean | null
 
   // Local folder
-  folderPath?: string
+  folderPath?: string | null
   mediaType?: 'movies' | 'tvshows' | 'mixed'
-  name?: string
+  name?: string | null
   customLibraries?: Array<{
     name: string
     path: string
@@ -55,19 +55,19 @@ export interface ProviderCredentials {
   }>
 
   // Common
-  userId?: string
+  userId?: string | null
 }
 
 // Authentication result
 export interface AuthResult {
   success: boolean
-  error?: string
-  token?: string
-  apiKey?: string
-  userId?: string
-  userName?: string
-  serverName?: string
-  serverVersion?: string
+  error?: string | null
+  token?: string | null
+  apiKey?: string | null
+  userId?: string | null
+  userName?: string | null
+  serverName?: string | null
+  serverVersion?: string | null
 }
 
 // Connection test result - imported from shared types
@@ -78,9 +78,9 @@ export interface ServerInstance {
   name: string
   address: string
   port: number
-  version?: string
-  isLocal?: boolean
-  isOwned?: boolean
+  version?: string | null
+  isLocal?: boolean | null
+  isOwned?: boolean | null
   protocol?: 'http' | 'https'
 }
 
@@ -89,46 +89,46 @@ export interface MediaLibrary {
   id: string
   name: string
   type: 'movie' | 'show' | 'music' | 'unknown'
-  collectionType?: string // Raw provider-specific type (e.g., 'boxsets', 'movies', 'tvshows')
-  itemCount?: number
-  scannedAt?: string
+  collectionType?: string | null // Raw provider-specific type (e.g., 'boxsets', 'movies', 'tvshows')
+  itemCount?: number | null
+  scannedAt?: string | null
 }
 
 // Video stream metadata
 export interface VideoStreamInfo {
   codec: string
-  profile?: string
-  level?: string
+  profile?: string | null
+  level?: string | null
   width: number
   height: number
-  bitrate?: number
-  frameRate?: number
-  bitDepth?: number
-  hdrFormat?: string
-  colorSpace?: string
+  bitrate?: number | null
+  frameRate?: number | null
+  bitDepth?: number | null
+  hdrFormat?: string | null
+  colorSpace?: string | null
 }
 
 // Audio stream metadata
 export interface AudioStreamInfo {
   codec: string
-  profile?: string
+  profile?: string | null
   channels: number
-  bitrate?: number
-  sampleRate?: number
-  language?: string
-  title?: string
-  isDefault?: boolean
-  hasObjectAudio?: boolean
-  index?: number
+  bitrate?: number | null
+  sampleRate?: number | null
+  language?: string | null
+  title?: string | null
+  isDefault?: boolean | null
+  hasObjectAudio?: boolean | null
+  index?: number | null
 }
 
 // Subtitle stream metadata
 export interface SubtitleStreamInfo {
   codec: string
-  language?: string
-  title?: string
-  isDefault?: boolean
-  isForced?: boolean
+  language?: string | null
+  title?: string | null
+  isDefault?: boolean | null
+  isForced?: boolean | null
 }
 
 // Normalized media metadata from any provider
@@ -140,46 +140,46 @@ export interface MediaMetadata {
   // Core identification
   itemId: string
   title: string
-  sortTitle?: string
+  sortTitle?: string | null
   type: 'movie' | 'episode'
-  year?: number
+  year?: number | null
 
   // Episode-specific
-  seriesTitle?: string
-  seasonNumber?: number
-  episodeNumber?: number
+  seriesTitle?: string | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
 
   // External IDs
-  imdbId?: string
-  tmdbId?: number
-  seriesTmdbId?: number
+  imdbId?: string | null
+  tmdbId?: number | null
+  seriesTmdbId?: number | null
 
   // File info
-  filePath?: string
-  fileSize?: number
-  duration?: number
-  container?: string
+  filePath?: string | null
+  fileSize?: number | null
+  duration?: number | null
+  container?: string | null
 
   // Video quality
-  resolution?: string
-  width?: number
-  height?: number
-  videoCodec?: string
-  videoBitrate?: number
-  videoFrameRate?: number
-  colorBitDepth?: number
-  hdrFormat?: string
-  colorSpace?: string
-  videoProfile?: string
-  videoLevel?: string
+  resolution?: string | null
+  width?: number | null
+  height?: number | null
+  videoCodec?: string | null
+  videoBitrate?: number | null
+  videoFrameRate?: number | null
+  colorBitDepth?: number | null
+  hdrFormat?: string | null
+  colorSpace?: string | null
+  videoProfile?: string | null
+  videoLevel?: string | null
 
   // Audio quality (primary track)
-  audioCodec?: string
-  audioChannels?: number
-  audioBitrate?: number
-  audioProfile?: string
-  audioSampleRate?: number
-  hasObjectAudio?: boolean
+  audioCodec?: string | null
+  audioChannels?: number | null
+  audioBitrate?: number | null
+  audioProfile?: string | null
+  audioSampleRate?: number | null
+  hasObjectAudio?: boolean | null
 
   // All audio tracks
   audioTracks?: AudioStreamInfo[]
@@ -188,10 +188,10 @@ export interface MediaMetadata {
   subtitleTracks?: SubtitleStreamInfo[]
 
   // Artwork
-  posterUrl?: string
-  episodeThumbUrl?: string
-  seasonPosterUrl?: string
-  backdropUrl?: string
+  posterUrl?: string | null
+  episodeThumbUrl?: string | null
+  seasonPosterUrl?: string | null
+  backdropUrl?: string | null
 
   // Original raw data for debugging
   rawData?: unknown
@@ -202,7 +202,7 @@ export interface ScanProgress {
   current: number
   total: number
   phase: 'fetching' | 'processing' | 'analyzing' | 'saving'
-  currentItem?: string
+  currentItem?: string | null
   percentage: number
 }
 
@@ -215,7 +215,7 @@ export interface ScanOptions {
   /** Only scan items added/modified after this timestamp (incremental scan) */
   sinceTimestamp?: Date
   /** Force full scan even if sinceTimestamp is provided */
-  forceFullScan?: boolean
+  forceFullScan?: boolean | null
   /** Specific files to scan (for targeted scanning from file watcher) */
   targetFiles?: string[]
 }
@@ -229,24 +229,24 @@ export interface ScanResult {
   itemsRemoved: number
   errors: string[]
   durationMs: number
-  cancelled?: boolean
+  cancelled?: boolean | null
 }
 
 // Source configuration stored in database
 export interface SourceConfig {
-  sourceId?: string
+  sourceId?: string | null
   sourceType: ProviderType
   displayName: string
   connectionConfig: ProviderCredentials
-  isEnabled?: boolean
+  isEnabled?: boolean | null
 }
 
 // Full source record from database
 export interface MediaSource extends SourceConfig {
   sourceId: string
   isEnabled: boolean
-  lastConnectedAt?: string
-  lastScanAt?: string
+  lastConnectedAt?: string | null
+  lastScanAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -262,7 +262,7 @@ export interface AggregatedStats {
     displayName: string
     sourceType: ProviderType
     itemCount: number
-    lastScanAt?: string
+    lastScanAt?: string | null
   }>
 }
 
@@ -295,7 +295,7 @@ export interface MediaProvider {
 
   // Item Operations
   getItemMetadata(itemId: string): Promise<MediaMetadata>
-  getLibraryItems?(libraryId: string, offset?: number, limit?: number): Promise<MediaMetadata[]>
+  getLibraryItems?(libraryId: string, offset?: number | null, limit?: number | null): Promise<MediaMetadata[]>
 
   // TV-specific operations (optional)
   getShowSeasons?(showId: string): Promise<{ seasonNumber: number; episodeCount: number }[]>
@@ -339,7 +339,7 @@ export abstract class BaseMediaProvider implements MediaProvider {
   }
 
   // Helper to detect HDR format
-  protected detectHdrFormat(colorSpace?: string, bitDepth?: number, profile?: string): string | undefined {
+  protected detectHdrFormat(colorSpace?: string | null, bitDepth?: number | null, profile?: string | null): string | undefined {
     if (!colorSpace && !profile) return undefined
 
     const colorSpaceLower = (colorSpace || '').toLowerCase()
@@ -364,7 +364,7 @@ export abstract class BaseMediaProvider implements MediaProvider {
   }
 
   // Helper to detect object-based audio
-  protected hasObjectAudio(codec?: string, profile?: string, title?: string): boolean {
+  protected hasObjectAudio(codec?: string | null, profile?: string | null, title?: string | null): boolean {
     const codecLower = (codec || '').toLowerCase()
     const profileLower = (profile || '').toLowerCase()
     const titleLower = (title || '').toLowerCase()

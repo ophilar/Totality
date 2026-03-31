@@ -390,7 +390,7 @@ export class LocalFolderProvider implements MediaProvider {
     // If targetFiles provided, use targeted scanning (much faster)
     if (targetFiles && targetFiles.length > 0) {
       console.log(`[LocalFolderProvider ${this.sourceId}] Targeted scan for ${targetFiles.length} files`)
-      return this.scanTargetedFiles(libraryId, targetFiles, onProgress)
+      return this.scanTargetedFiles(libraryId, (targetFiles || []).filter(Boolean) as string[], onProgress)
     }
 
     // Determine if this is an incremental scan
@@ -728,7 +728,7 @@ export class LocalFolderProvider implements MediaProvider {
 
         const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
         for (const item of existingItems) {
-          if (!scannedFilePaths.has(item.file_path)) {
+          if (!scannedFilePaths.has(item.file_path || "")) {
             if (item.id) {
               await db.deleteMediaItem(item.id)
               result.itemsRemoved++
@@ -1773,7 +1773,7 @@ export class LocalFolderProvider implements MediaProvider {
         channels: track.channels,
         bitrate: track.bitrate,
         sampleRate: track.sampleRate,
-        language: track.language,
+        language: undefined,
         isDefault: track.isDefault,
         hasObjectAudio: track.hasObjectAudio,
       }))
@@ -1794,7 +1794,7 @@ export class LocalFolderProvider implements MediaProvider {
     if (analysis.subtitleTracks && analysis.subtitleTracks.length > 0) {
       enhanced.subtitleTracks = analysis.subtitleTracks.map(track => ({
         codec: track.codec,
-        language: track.language,
+        language: undefined,
         title: track.title,
         isDefault: track.isDefault,
         isForced: track.isForced,
@@ -1927,12 +1927,14 @@ export class LocalFolderProvider implements MediaProvider {
     return Math.abs(hash).toString(36)
   }
 
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
+  private scoreVersion(v: { resolution?: string | null; video_bitrate?: number | null; hdr_format?: string | null }): number {
+    const res = v.resolution || ''
+    const bitrate = v.video_bitrate || 0
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2 : 1
     const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
+    return tierRank * 100000 + hdrBonus + bitrate
   }
 
   private normalizeGroupTitle(title: string): string {
@@ -1953,7 +1955,7 @@ export class LocalFolderProvider implements MediaProvider {
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
-          language: track.language,
+          language: undefined,
           hasObjectAudio: track.hasObjectAudio || false,
         })
       })
@@ -2016,7 +2018,7 @@ export class LocalFolderProvider implements MediaProvider {
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
-          language: track.language,
+          language: undefined,
           hasObjectAudio: track.hasObjectAudio || false,
         })
       })
@@ -2090,7 +2092,7 @@ export class LocalFolderProvider implements MediaProvider {
           codec: track.codec,
           channels: track.channels,
           bitrate: track.bitrate,
-          language: track.language,
+          language: undefined,
           title: track.title,
           isDefault: track.isDefault,
           hasObjectAudio: track.hasObjectAudio,

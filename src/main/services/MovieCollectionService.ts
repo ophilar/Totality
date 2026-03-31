@@ -90,7 +90,7 @@ export class MovieCollectionService extends CancellableOperation {
           // Method 2: Fall back to title + year search
           if (!tmdbId) {
             try {
-              const searchResults = await tmdb.searchMovie(movie.title, movie.year)
+              const searchResults = await tmdb.searchMovie(movie.title, movie.year || undefined)
               if (searchResults.results && searchResults.results.length > 0) {
                 // Try to find exact match by year first
                 const exactMatch = searchResults.results.find(r => {

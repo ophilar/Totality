@@ -260,11 +260,11 @@ export class KodiMySQLProvider implements MediaProvider {
         port: cc.port || 3306,
         username: cc.username || '',
         password: cc.password || '',
-        videoDatabaseName: cc.videoDatabaseName,
-        musicDatabaseName: cc.musicDatabaseName,
+        videoDatabaseName: cc.videoDatabaseName || undefined,
+        musicDatabaseName: cc.musicDatabaseName || undefined,
         databasePrefix: cc.databasePrefix || 'kodi_',
-        ssl: cc.ssl,
-        connectionTimeout: cc.connectionTimeout,
+        ssl: cc.ssl || false,
+        connectionTimeout: cc.connectionTimeout || 10000,
       }
       this.videoDatabaseName = cc.videoDatabaseName || ''
       this.musicDatabaseName = cc.musicDatabaseName || ''
@@ -288,13 +288,13 @@ export class KodiMySQLProvider implements MediaProvider {
         username: credentials.username || '',
         password: credentials.password || '',
         databasePrefix: credentials.databasePrefix || 'kodi_',
-        ssl: credentials.ssl,
+        ssl: credentials.ssl || false,
         connectionTimeout: credentials.connectionTimeout || 10000,
       }
 
       // Test connection and detect databases
       const connectionService = getKodiMySQLConnectionService()
-      const testResult = await connectionService.testConnection(this.mysqlConfig)
+      const testResult = await connectionService.testConnection(this.mysqlConfig!)
 
       if (!testResult.success) {
         return {
@@ -316,11 +316,11 @@ export class KodiMySQLProvider implements MediaProvider {
       }
 
       // Store updated config with detected databases
-      this.mysqlConfig.videoDatabaseName = this.videoDatabaseName
-      this.mysqlConfig.musicDatabaseName = this.musicDatabaseName
+      this.mysqlConfig!.videoDatabaseName = this.videoDatabaseName
+      this.mysqlConfig!.musicDatabaseName = this.musicDatabaseName
 
       // Create connection pool
-      this.pool = await connectionService.createPool(this.mysqlConfig)
+      this.pool = await connectionService.createPool(this.mysqlConfig!)
 
       return {
         success: true,
@@ -357,7 +357,7 @@ export class KodiMySQLProvider implements MediaProvider {
     }
 
     const connectionService = getKodiMySQLConnectionService()
-    const testResult = await connectionService.testConnection(this.mysqlConfig)
+    const testResult = await connectionService.testConnection(this.mysqlConfig!)
 
     if (!testResult.success) {
       return {
@@ -884,7 +884,7 @@ export class KodiMySQLProvider implements MediaProvider {
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
-          language: track.language,
+          language: undefined,
           hasObjectAudio: track.hasObjectAudio || false,
         })
       })
@@ -936,12 +936,14 @@ export class KodiMySQLProvider implements MediaProvider {
     }
   }
 
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
+  private scoreVersion(v: { resolution?: string | null; video_bitrate?: number | null; hdr_format?: string | null }): number {
+    const res = v.resolution || ''
+    const bitrate = v.video_bitrate || 0
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2 : 1
     const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
+    return tierRank * 100000 + hdrBonus + bitrate
   }
 
   private normalizeGroupTitle(title: string): string {
@@ -957,7 +959,7 @@ export class KodiMySQLProvider implements MediaProvider {
     const audioTracks: AudioTrack[] = []
     if (metadata.audioTracks?.length) {
       metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })
+        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: undefined, hasObjectAudio: track.hasObjectAudio || false })
       })
     } else if (metadata.audioCodec) {
       audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: metadata.hasObjectAudio || false })

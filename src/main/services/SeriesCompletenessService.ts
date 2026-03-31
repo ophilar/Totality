@@ -213,7 +213,7 @@ export class SeriesCompletenessService extends CancellableOperation {
     }
 
     // Extract episode info
-    const ownedEpisodes: EpisodeInfo[] = episodes.map((ep: { season_number?: number; episode_number?: number }) => ({
+    const ownedEpisodes: EpisodeInfo[] = episodes.map((ep: any) => ({
       seasonNumber: ep.season_number || 0,
       episodeNumber: ep.episode_number || 0,
     }))

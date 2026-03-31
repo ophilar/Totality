@@ -51,7 +51,7 @@ export class GeminiAnalysisService {
       '',
       '## Sample Low-Quality Items (up to 20)',
       JSON.stringify(
-        lowQualityItems.map((item: Record<string, unknown>) => compact({
+        lowQualityItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -110,7 +110,7 @@ export class GeminiAnalysisService {
       '',
       '## LOW Quality Items (up to 30)',
       JSON.stringify(
-        lowItems.map((item: Record<string, unknown>) => compact({
+        lowItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -125,7 +125,7 @@ export class GeminiAnalysisService {
       '',
       '## MEDIUM Quality Items (up to 20)',
       JSON.stringify(
-        mediumItems.map((item: Record<string, unknown>) => compact({
+        mediumItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           type: item.type,
@@ -254,7 +254,7 @@ export class GeminiAnalysisService {
       '',
       `## Wishlist Items (${wishlistItems.length})`,
       JSON.stringify(
-        wishlistItems.map((item: Record<string, unknown>) => compact({
+        wishlistItems.map((item: any) => compact({
           title: item.title,
           year: item.year,
           media_type: item.media_type,

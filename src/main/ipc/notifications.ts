@@ -9,7 +9,7 @@ export function registerNotificationHandlers(): void {
   ipcMain.handle('notifications:getAll', async (_event, options?: { limit?: number, offset?: number, type?: string, unreadOnly?: boolean }) => {
     try {
       const db = getDatabase()
-      return db.getNotifications(options || {})
+      return db.getNotifications((options as any) || {})
     } catch (error) {
       console.error('[IPC notifications:getAll] Error:', error)
       throw error

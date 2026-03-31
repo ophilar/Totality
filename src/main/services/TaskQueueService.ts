@@ -542,7 +542,7 @@ export class TaskQueueService {
    * Execute a task based on its type
    */
   private async executeTask(task: QueuedTask): Promise<void> {
-    const progressCallback = (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => {
+    const progressCallback = (progress: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string | null }) => {
       if (this.cancelRequested) {
         throw new Error('Task cancelled')
       }
@@ -557,7 +557,7 @@ export class TaskQueueService {
         total,
         percentage,
         phase: progress.phase ?? 'processing',
-        currentItem: progress.currentItem,
+        currentItem: progress.currentItem || undefined,
       }
       this.emitProgressUpdate()
     }
@@ -609,7 +609,7 @@ export class TaskQueueService {
     const isFirstScan = !existingScanTime
 
     const manager = getSourceManager()
-    const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+    const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress as any)
 
     task.result = {
       itemsScanned: result.itemsScanned,
@@ -624,7 +624,7 @@ export class TaskQueueService {
     }
   }
 
-  private async executeSourceScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
+  private async executeSourceScan(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string | null }) => void): Promise<void> {
     if (!task.sourceId) {
       throw new Error('Source scan requires sourceId')
     }
@@ -660,7 +660,7 @@ export class TaskQueueService {
           current: i,
           total: enabledLibraries.length,
           phase: p.phase,
-          currentItem: p.currentItem,
+          currentItem: p.currentItem || undefined,
           percentage: ((i + (p.percentage || 0) / 100) / enabledLibraries.length) * 100,
         })
       })
@@ -786,7 +786,7 @@ export class TaskQueueService {
     // Route to provider-specific music scanning method
     if (provider.providerType === 'plex') {
       const plexProvider = provider as PlexProvider
-      result = await plexProvider.scanMusicLibrary(task.libraryId, onProgress)
+      result = await plexProvider.scanMusicLibrary(task.libraryId, onProgress as any)
     } else if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
       const jellyfinProvider = provider as JellyfinEmbyBase
       result = await jellyfinProvider.scanMusicLibrary(task.libraryId, onProgress)
@@ -799,7 +799,7 @@ export class TaskQueueService {
     } else if (provider.providerType === 'local') {
       // Local folder provider routes music through scanLibrary internally
       const localProvider = provider as LocalFolderProvider
-      result = await localProvider.scanLibrary(task.libraryId, { onProgress })
+      result = await localProvider.scanLibrary(task.libraryId, { onProgress: onProgress as any })
     } else {
       throw new Error(`Music scanning not supported for provider type: ${provider.providerType}`)
     }

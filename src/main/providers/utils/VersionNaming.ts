@@ -7,14 +7,14 @@
  */
 
 // Minimum fields needed from a version object
-interface VersionInput {
+export interface VersionInput {
   file_path: string
-  edition?: string
-  label?: string
-  resolution: string
-  hdr_format?: string
-  source_type?: string
-  video_codec?: string
+  edition?: string | null
+  label?: string | null
+  resolution: string | null
+  hdr_format?: string | null
+  source_type?: string | null
+  video_codec?: string | null
 }
 
 // Plex {edition-X} tag format

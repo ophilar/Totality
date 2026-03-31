@@ -216,7 +216,7 @@ export interface PlexMetadataResponse {
 export interface ScanProgress {
   scanned: number
   total: number
-  currentItem: string
+  currentItem?: string | null
   percentage: number
 }
 

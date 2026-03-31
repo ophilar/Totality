@@ -468,11 +468,11 @@ export async function executeTool(
         tierQuality: toolString(input, 'tier_quality') || undefined,
         needsUpgrade: toolBoolean(input, 'needs_upgrade'),
         searchQuery: toolString(input, 'search_query', 200) || undefined,
-        sortBy: toolString(input, 'sort_by') || 'title',
+        sortBy: toolString(input, 'sort_by') as any || 'title',
         sortOrder: (toolString(input, 'sort_order') as 'asc' | 'desc') || 'asc',
         limit,
       })
-      const simplified = items.map((item: Record<string, unknown>) => compact({
+      const simplified = items.map((item: any) => compact({
         title: item.title,
         year: item.year,
         type: item.type,
@@ -598,11 +598,11 @@ export async function executeTool(
       const wlLimit = toolNumber(input, 'limit', 1, 50) || 20
       const items = db.getWishlistItems({
         reason: (toolString(input, 'reason') as 'missing' | 'upgrade') || undefined,
-        media_type: toolString(input, 'media_type') || undefined,
+        media_type: toolString(input, 'media_type') as any || undefined,
         limit: wlLimit,
         status: 'active',
       })
-      const simplified = items.map((item: Record<string, unknown>) => compact({
+      const simplified = items.map((item: any) => compact({
         media_type: item.media_type,
         title: item.title,
         year: item.year,
@@ -1073,7 +1073,7 @@ export async function executeTool(
             artist: match.name,
             owned: true,
             album_count: albums.length,
-            albums: albums.slice(0, 5).map((a: Record<string, unknown>) => a.title),
+            albums: albums.slice(0, 5).map((a: any) => a.title),
           })
         }
         return { artist: name, owned: false, album_count: 0 }
@@ -1343,9 +1343,9 @@ export async function executeTool(
 
       let albums: Record<string, unknown>[]
       if (artistName) {
-        albums = db.getMusicAlbumsByArtistName(artistName, limit) as Record<string, unknown>[]
+        albums = db.getMusicAlbumsByArtistName(artistName, limit) as any
       } else {
-        albums = db.getMusicAlbums(filters) as Record<string, unknown>[]
+        albums = db.getMusicAlbums(filters) as any
       }
 
       // Enrich with quality scores
@@ -1376,7 +1376,7 @@ export async function executeTool(
       const upgradeLimit = toolNumber(input, 'upgrade_limit', 1, 50) || 10
 
       // Get all albums and their quality scores
-      const allAlbums = db.getMusicAlbums({ limit: 10000 }) as Record<string, unknown>[]
+      const allAlbums = db.getMusicAlbums({ limit: 10000 }) as any
       const tiers: Record<string, number> = {
         HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0, UNSCORED: 0,
       }
@@ -1480,7 +1480,7 @@ export async function executeTool(
       }
 
       // Get tracks
-      const tracks = db.getMusicTracks({ albumId: album.id as number, limit: 200 }) as Record<string, unknown>[]
+      const tracks = db.getMusicTracks({ albumId: album.id as number, limit: 200 }) as any
       const trackData = tracks.map((t: Record<string, unknown>) => compact({
         track_number: t.track_number,
         disc_number: t.disc_number,

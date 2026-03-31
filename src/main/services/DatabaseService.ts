@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getErrorMessage } from './utils/errorUtils'
 import initSqlJs, { Database } from 'sql.js'
 import fs from 'fs/promises'

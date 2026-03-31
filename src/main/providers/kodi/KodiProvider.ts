@@ -247,8 +247,8 @@ export class KodiProvider implements MediaProvider {
 
       this.host = credentials.host
       this.port = credentials.port || 8080
-      this.username = credentials.username
-      this.password = credentials.password
+      this.username = credentials.username || undefined
+      this.password = credentials.password || undefined
 
       // Test connection
       const testResult = await this.testConnection()
@@ -965,7 +965,7 @@ export class KodiProvider implements MediaProvider {
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
-          language: track.language,
+          language: undefined,
           hasObjectAudio: track.hasObjectAudio || false,
         })
       })
@@ -1019,12 +1019,14 @@ export class KodiProvider implements MediaProvider {
     }
   }
 
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
+  private scoreVersion(v: { resolution?: string | null; video_bitrate?: number | null; hdr_format?: string | null }): number {
+    const res = v.resolution || ''
+    const bitrate = v.video_bitrate || 0
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2 : 1
     const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
+    return tierRank * 100000 + hdrBonus + bitrate
   }
 
   private normalizeGroupTitle(title: string): string {
@@ -1040,7 +1042,7 @@ export class KodiProvider implements MediaProvider {
     const audioTracks: AudioTrack[] = []
     if (metadata.audioTracks?.length) {
       metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })
+        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: undefined, hasObjectAudio: track.hasObjectAudio || false })
       })
     } else if (metadata.audioCodec) {
       audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: metadata.hasObjectAudio || false })

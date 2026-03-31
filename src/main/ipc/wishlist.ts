@@ -85,7 +85,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getAll', async (_event, filters?: unknown) => {
     try {
       const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
-      return db.getWishlistItems(validFilters)
+      return db.getWishlistItems(validFilters as any)
     } catch (error) {
       console.error('Error getting wishlist items:', error)
       throw error

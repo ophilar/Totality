@@ -407,7 +407,7 @@ export class KodiLocalProvider implements MediaProvider {
         channels: track.channels,
         bitrate: track.bitrate,
         sampleRate: track.sampleRate,
-        language: track.language,
+        language: undefined,
         title: track.title,
         isDefault: track.isDefault,
         hasObjectAudio: track.hasObjectAudio,
@@ -429,7 +429,7 @@ export class KodiLocalProvider implements MediaProvider {
     if (analysis.subtitleTracks.length > 0) {
       enhanced.subtitleTracks = analysis.subtitleTracks.map(track => ({
         codec: track.codec,
-        language: track.language,
+        language: undefined,
         title: track.title,
         isDefault: track.isDefault,
         isForced: track.isForced,
@@ -923,7 +923,7 @@ export class KodiLocalProvider implements MediaProvider {
     // Handle targeted file scanning (for rescan of specific files)
     if (targetFiles && targetFiles.length > 0) {
       console.log(`[KodiLocalProvider ${this.sourceId}] Targeted scan for ${targetFiles.length} files`)
-      return this.scanTargetedFiles(libraryId, targetFiles, onProgress)
+      return this.scanTargetedFiles(libraryId, (targetFiles || []).filter(Boolean) as string[], onProgress)
     }
 
     const isIncremental = !!sinceTimestamp && !forceFullScan
@@ -1656,7 +1656,7 @@ export class KodiLocalProvider implements MediaProvider {
           codec: track.codec || 'Unknown',
           channels: track.channels || 2,
           bitrate: track.bitrate || 0,
-          language: track.language,
+          language: undefined,
           hasObjectAudio: track.hasObjectAudio || false,
         })
       })
@@ -1719,12 +1719,14 @@ export class KodiLocalProvider implements MediaProvider {
     }
   }
 
-  private scoreVersion(v: { resolution: string; video_bitrate: number; hdr_format?: string }): number {
-    const tierRank = v.resolution.includes('2160') ? 4
-      : v.resolution.includes('1080') ? 3
-      : v.resolution.includes('720') ? 2 : 1
+  private scoreVersion(v: { resolution?: string | null; video_bitrate?: number | null; hdr_format?: string | null }): number {
+    const res = v.resolution || ''
+    const bitrate = v.video_bitrate || 0
+    const tierRank = res.includes('2160') ? 4
+      : res.includes('1080') ? 3
+      : res.includes('720') ? 2 : 1
     const hdrBonus = v.hdr_format && v.hdr_format !== 'None' ? 1000 : 0
-    return tierRank * 100000 + hdrBonus + v.video_bitrate
+    return tierRank * 100000 + hdrBonus + bitrate
   }
 
   private normalizeGroupTitle(title: string): string {
@@ -1740,7 +1742,7 @@ export class KodiLocalProvider implements MediaProvider {
     const audioTracks: AudioTrack[] = []
     if (metadata.audioTracks?.length) {
       metadata.audioTracks.forEach((track, index) => {
-        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })
+        audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: undefined, hasObjectAudio: track.hasObjectAudio || false })
       })
     } else if (metadata.audioCodec) {
       audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: metadata.hasObjectAudio || false })

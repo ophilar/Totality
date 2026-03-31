@@ -284,7 +284,7 @@ export class SourceManager {
       connection_config: updates.connectionConfig
         ? JSON.stringify(updates.connectionConfig)
         : existing.connection_config,
-      is_enabled: updates.isEnabled !== undefined ? updates.isEnabled : existing.is_enabled,
+      is_enabled: updates.isEnabled !== undefined ? Boolean(updates.isEnabled) : existing.is_enabled,
     }
 
     await db.upsertMediaSource(updatedSource)
@@ -797,7 +797,7 @@ export class SourceManager {
                   throw new Error('Scan cancelled by user')
                 }
                 if (onProgress) {
-                  onProgress(source.source_id, source.display_name, progress)
+                  onProgress(source.source_id, source.display_name, progress as any)
                 }
               }
             })
@@ -910,7 +910,7 @@ export class SourceManager {
 
     const result = await provider.scanLibrary(libraryId, {
       onProgress,
-      targetFiles: filePaths,
+      targetFiles: (filePaths || []).filter(Boolean) as string[],
     })
 
     return result
@@ -960,7 +960,7 @@ export class SourceManager {
           const result = await provider.scanLibrary(library.id, {
             sinceTimestamp,
             onProgress: onProgress ? (progress) => {
-              onProgress(source.source_id, source.display_name, progress)
+              onProgress(source.source_id, source.display_name, progress as any)
             } : undefined,
           })
 

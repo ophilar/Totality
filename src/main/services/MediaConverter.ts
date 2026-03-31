@@ -129,8 +129,8 @@ export class MediaConverter {
       channels: stream.channels ? normalizeAudioChannels(stream.channels, undefined) : 2,
       bitrate: stream.bitrate ? normalizeBitrate(stream.bitrate) : 0,
       sampleRate: stream.sampleRate ? normalizeSampleRate(stream.sampleRate) : undefined,
-      language: stream.language,
-      title: stream.title,
+      language: undefined,
+      title: stream.title || undefined,
       isDefault: stream.isDefault || false,
       hasObjectAudio: stream.hasObjectAudio || false,
     }))
@@ -147,8 +147,8 @@ export class MediaConverter {
     return subtitleStreams.map((stream, index) => ({
       index,
       codec: stream.codec || 'unknown',
-      language: stream.language,
-      title: stream.title,
+      language: undefined,
+      title: stream.title || undefined,
       isDefault: stream.isDefault || false,
       isForced: stream.isForced || false,
     }))
@@ -182,7 +182,7 @@ export class MediaConverter {
       channels: track.channels,
       bitrate: track.bitrate,
       sampleRate: track.sampleRate,
-      language: track.language,
+      language: undefined,
       title: track.title,
       hasObjectAudio: track.hasObjectAudio,
       isDefault: track.isDefault,

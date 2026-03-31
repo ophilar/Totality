@@ -45,7 +45,7 @@ export function registerMusicHandlers(): void {
     const win = getWindowFromEvent(_event)
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
 
-    const progressCallback = (progress: { current: number; total: number; currentItem?: string; percentage?: number }) => {
+    const progressCallback = (progress: { current: number; total: number; currentItem?: string | null; percentage?: number }) => {
       onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
     }
 

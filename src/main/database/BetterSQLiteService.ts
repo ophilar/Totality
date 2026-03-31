@@ -2,6 +2,7 @@ import { getLoggingService } from '../services/LoggingService'
 import Database from 'better-sqlite3'
 import * as path from 'path'
 import { app } from 'electron'
+import { getErrorMessage } from '../services/utils/errorUtils'
 import { runMigrations } from './DatabaseMigration'
 import {
   ConfigRepository,
