@@ -77,7 +77,7 @@ export async function migrateDatabase(): Promise<MigrationResult> {
   const backupPath = path.join(userDataPath, 'totality.db.backup')
 
   try {
-    console.log('[Migration] Starting database migration from SQL.js to better-sqlite3...')
+    getLoggingService().info('[Migration]', 'Starting database migration from SQL.js to better-sqlite3...')
 
     const { getDatabaseService } = await import('../services/DatabaseService')
     const sqlJsDb = getDatabaseService()
