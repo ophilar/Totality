@@ -43,5 +43,8 @@ nul
 .claude/
 CLAUDE.md
 
+# Repomix
+repomix-output.*
+
 # Test coverage
 coverage/
