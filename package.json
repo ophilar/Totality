@@ -51,7 +51,10 @@
     "react-window": "^1.8.10",
     "zod": "^4.3.6"
   },
-  "optionalDependencies": {},
+  "optionalDependencies": {
+    "mysql2": "^3.16.2",
+    "sql.js": "^1.10.3"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",
     "@types/adm-zip": "^0.5.8",

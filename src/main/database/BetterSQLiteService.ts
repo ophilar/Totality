@@ -485,12 +485,6 @@ export class BetterSQLiteService {
       albums: this.db?.prepare("SELECT * FROM music_albums WHERE title LIKE ? LIMIT ?").all(q, limit) || []
     }
   }
-  resetDatabase(): void {
-    const tables = ['media_items', 'media_sources', 'music_artists', 'music_albums', 'music_tracks', 'notifications', 'settings', 'task_history', 'activity_log', 'exclusions', 'library_scans', 'movie_collections', 'series_completeness', 'music_quality_scores', 'artist_completeness', 'album_completeness']
-    this.db?.transaction(() => {
-      for (const t of tables) this.db?.prepare(`DELETE FROM ${t}`).run()
-    })()
-  }
 
   // --- Scan Tracking ---
   updateLibraryScanTime(sourceId: string, libraryId: string, _name: string, _type: string, items: number): void {
@@ -503,8 +497,159 @@ export class BetterSQLiteService {
   }
   updateSourceScanTime(sourceId: string): void { this.sourceRepo.updateLastScanAt(sourceId) }
 
-  // Backup/Export
-  exportData(): any { return { settings: this.getAllSettings() } }
+  // --- Backup/Export ---
+
+  /**
+   * Export all database data to JSON
+   */
+  exportData(): Record<string, unknown[]> {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const tables = [
+      'settings',
+      'media_sources',
+      'media_items',
+      'quality_scores',
+      'series_completeness',
+      'movie_collections',
+      'music_artists',
+      'music_albums',
+      'music_tracks',
+      'music_quality_scores',
+      'artist_completeness',
+      'album_completeness',
+      'exclusions',
+      'library_scans',
+      'task_history',
+      'activity_log',
+      'media_item_versions',
+      'media_item_collections'
+    ]
+
+    const exportedData: Record<string, unknown[]> = {
+      _meta: [{
+        exportedAt: new Date().toISOString(),
+        version: '2.0',
+        engine: 'better-sqlite3',
+        tables: tables,
+      }]
+    }
+
+    for (const table of tables) {
+      try {
+        const stmt = this.db.prepare(`SELECT * FROM ${table}`)
+        exportedData[table] = stmt.all()
+      } catch {
+        exportedData[table] = []
+      }
+    }
+
+    return exportedData
+  }
+
+  /**
+   * Import data from exported JSON
+   */
+  importData(data: Record<string, unknown[]>): { imported: number; errors: string[] } {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const errors: string[] = []
+    let imported = 0
+
+    const importOrder = [
+      'settings',
+      'media_sources',
+      'media_items',
+      'quality_scores',
+      'series_completeness',
+      'movie_collections',
+      'music_artists',
+      'music_albums',
+      'music_tracks',
+      'music_quality_scores',
+      'artist_completeness',
+      'album_completeness',
+      'exclusions',
+      'library_scans',
+      'task_history',
+      'activity_log',
+      'media_item_versions',
+      'media_item_collections'
+    ]
+
+    const transaction = this.db.transaction(() => {
+      for (const table of importOrder) {
+        if (!data[table] || !Array.isArray(data[table]) || data[table].length === 0) {
+          continue
+        }
+
+        const rows = data[table] as Record<string, unknown>[]
+
+        for (const row of rows) {
+          try {
+            const columns = Object.keys(row).filter(k => row[k] !== undefined)
+            const values = columns.map(k => row[k])
+            const placeholders = columns.map(() => '?').join(', ')
+
+            const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`
+            this.db!.prepare(sql).run(...values)
+            imported++
+          } catch (error: unknown) {
+            errors.push(`${table}: ${getErrorMessage(error)}`)
+          }
+        }
+      }
+    })
+
+    try {
+      transaction()
+    } catch (error: unknown) {
+      errors.push(`Import failed: ${getErrorMessage(error)}`)
+    }
+
+    return { imported, errors }
+  }
+
+  /**
+   * Reset the database (delete all data)
+   */
+  resetDatabase(): void {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const tables = [
+      'album_completeness',
+      'artist_completeness',
+      'music_quality_scores',
+      'music_tracks',
+      'music_albums',
+      'music_artists',
+      'movie_collections',
+      'series_completeness',
+      'quality_scores',
+      'media_items',
+      'media_sources',
+      'library_scans',
+      'wishlist_items',
+      'notifications',
+      'settings',
+      'task_history',
+      'activity_log',
+      'exclusions',
+      'media_item_versions',
+      'media_item_collections'
+    ]
+
+    const transaction = this.db.transaction(() => {
+      for (const table of tables) {
+        try {
+          this.db!.prepare(`DELETE FROM ${table}`).run()
+        } catch {
+          getLoggingService().warn('[BetterSQLiteService]', `Could not clear table ${table}`)
+        }
+      }
+    })
+    transaction()
+  }
+
   exportWorkingCSV(_options: any): string { return 'Not implemented in this version' }
-  async importData(_data: any): Promise<any> { return { success: true } }
 }
