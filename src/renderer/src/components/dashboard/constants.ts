@@ -1,0 +1,9 @@
+export const MOVIE_ITEM_HEIGHT = 96
+export const MUSIC_ITEM_HEIGHT = 72
+export const COLLAPSED_HEIGHT = 80
+export const COLLAPSED_HEIGHT_ARTIST = 64
+export const EXPANDED_MARGIN = 8
+export const EXPANDED_ITEM_HEIGHT = 40
+export const ITEM_GAP = 4
+export const SECTION_HEADER_HEIGHT = 36
+export const TYPE_SECTION_GAP = 12
