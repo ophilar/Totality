@@ -4,7 +4,7 @@
   "description": "Analyze media library quality and recommend upgrades",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
-    "postinstall": "electron-rebuild",
+    "postinstall": "electron-builder install-app-deps",
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "lint": "eslint --max-warnings 0",
@@ -71,6 +71,7 @@
     "cssnano": "^7.1.2",
     "electron": "^41.0.3",
     "electron-builder": "^26.8.1",
+    "@electron/rebuild": "^3.7.1",
     "eslint": "^9.28.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
