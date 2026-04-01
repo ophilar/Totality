@@ -20,6 +20,8 @@ import * as path from 'path'
 
 // better-sqlite3 is always available in production
 import { getBetterSQLiteService } from './BetterSQLiteService'
+import { getLoggingService } from '../services/LoggingService'
+import { migrateDatabase } from './DatabaseMigration'
 
 // SQL.js is loaded dynamically to avoid requiring it in production builds
 // (it's excluded from the ASAR bundle since production uses better-sqlite3)

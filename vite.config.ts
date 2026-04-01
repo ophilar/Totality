@@ -115,6 +115,7 @@ export default defineConfig({
   root: './src/renderer',
   build: {
     outDir: '../../dist',
+    emptyOutDir: true,
     minify: 'esbuild',
     sourcemap: false,
     esbuild: {

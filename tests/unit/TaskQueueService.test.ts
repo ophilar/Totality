@@ -82,6 +82,8 @@ describe('TaskQueueService', () => {
       const definition: TaskDefinition = {
         type: 'library-scan',
         label: 'Scan All Libraries',
+        sourceId: 'src1',
+        libraryId: 'lib1',
       }
 
       const taskId = service.addTask(definition)
@@ -94,9 +96,9 @@ describe('TaskQueueService', () => {
     })
 
     it('should add multiple tasks to the queue', () => {
-      service.addTask({ type: 'library-scan', label: 'Task 1' })
+      service.addTask({ type: 'library-scan', label: 'Task 1', sourceId: 'src1', libraryId: 'lib1' })
       service.addTask({ type: 'source-scan', label: 'Task 2', sourceId: 'src1' })
-      service.addTask({ type: 'series-completeness', label: 'Task 3' })
+      service.addTask({ type: 'series-completeness', label: 'Task 3', sourceId: 'src1', libraryId: 'lib1' })
 
       const state = service.getQueueState()
       // First task might be running, rest in queue
@@ -105,7 +107,7 @@ describe('TaskQueueService', () => {
     })
 
     it('should remove a queued task', () => {
-      const taskId = service.addTask({ type: 'library-scan', label: 'Test' })
+      const taskId = service.addTask({ type: 'library-scan', label: 'Test', sourceId: 'src1', libraryId: 'lib1' })
 
       // If task is already running, removeTask returns false for running tasks
       const state = service.getQueueState()
@@ -121,8 +123,8 @@ describe('TaskQueueService', () => {
     })
 
     it('should generate unique task IDs', () => {
-      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1' })
-      const id2 = service.addTask({ type: 'library-scan', label: 'Task 2' })
+      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1', sourceId: 'src1', libraryId: 'lib1' })
+      const id2 = service.addTask({ type: 'library-scan', label: 'Task 2', sourceId: 'src1', libraryId: 'lib1' })
 
       expect(id1).not.toBe(id2)
     })
@@ -177,7 +179,7 @@ describe('TaskQueueService', () => {
 
   describe('task definitions', () => {
     it('should accept library-scan task', () => {
-      const id = service.addTask({ type: 'library-scan', label: 'Scan' })
+      const id = service.addTask({ type: 'library-scan', label: 'Scan', sourceId: 'src1', libraryId: 'lib1' })
       expect(id).toBeDefined()
     })
 
@@ -204,6 +206,8 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'series-completeness',
         label: 'Analyze Series',
+        sourceId: 'src1',
+        libraryId: 'lib1',
       })
       expect(id).toBeDefined()
     })
@@ -212,6 +216,8 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'collection-completeness',
         label: 'Analyze Collections',
+        sourceId: 'src1',
+        libraryId: 'lib1',
       })
       expect(id).toBeDefined()
     })
@@ -220,6 +226,8 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'music-completeness',
         label: 'Analyze Music',
+        sourceId: 'src1',
+        libraryId: 'lib1',
       })
       expect(id).toBeDefined()
     })

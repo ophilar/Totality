@@ -14,6 +14,8 @@ import type { Database } from 'better-sqlite3'
 import { getLoggingService } from '../services/LoggingService'
 import { DATABASE_SCHEMA } from './schema'
 import { getErrorMessage } from '../services/utils/errorUtils'
+import { getDatabaseService } from '../services/DatabaseService'
+import { getBetterSQLiteService } from './BetterSQLiteService'
 
 interface MigrationResult {
   success: boolean
@@ -79,7 +81,6 @@ export async function migrateDatabase(): Promise<MigrationResult> {
   try {
     getLoggingService().info('[Migration]', 'Starting database migration from SQL.js to better-sqlite3...')
 
-    const { getDatabaseService } = await import('../services/DatabaseService')
     const sqlJsDb = getDatabaseService()
     await sqlJsDb.initialize()
 
@@ -93,7 +94,6 @@ export async function migrateDatabase(): Promise<MigrationResult> {
 
     await sqlJsDb.close()
 
-    const { getBetterSQLiteService } = await import('./BetterSQLiteService')
     const betterDb = getBetterSQLiteService()
     betterDb.initialize()
 

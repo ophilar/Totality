@@ -229,12 +229,12 @@ export function registerSourceHandlers(): void {
     const plexSources = await manager.getSources('plex')
     if (plexSources.length > 0) {
       const resolvedSourceId = plexSources[0].source_id
-      console.log(`[plex:selectServer] Using first Plex source: ${resolvedSourceId}`)
+      console.log(`(plex:selectServer) Using first Plex source: ${resolvedSourceId}`)
       return await manager.plexSelectServer(resolvedSourceId, resolvedServerId)
     }
 
     // Fallback to legacy PlexService for old auth flow
-    console.log('[plex:selectServer] No sources found, using legacy PlexService')
+    console.log('(plex:selectServer) No sources found, using legacy PlexService')
     const plex = getPlexService()
     const success = await plex.selectServer(resolvedServerId)
     return { success }
@@ -257,12 +257,12 @@ export function registerSourceHandlers(): void {
       const plexSources = await manager.getSources('plex')
       if (plexSources.length > 0) {
         const resolvedSourceId = plexSources[0].source_id
-        console.log(`[plex:getServers] Using first Plex source: ${resolvedSourceId}`)
+        console.log(`(plex:getServers) Using first Plex source: ${resolvedSourceId}`)
         return await manager.plexGetServers(resolvedSourceId)
       }
 
       // Fallback to legacy PlexService for old auth flow
-      console.log('[plex:getServers] No sources found, using legacy PlexService')
+      console.log('(plex:getServers) No sources found, using legacy PlexService')
       const plex = getPlexService()
       return await plex.getServers()
     } catch (error: unknown) {
@@ -1133,4 +1133,6 @@ export function registerSourceHandlers(): void {
   })
 
   console.log('[IPC] Source handlers registered')
+}
+)
 }
