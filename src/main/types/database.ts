@@ -271,8 +271,6 @@ export interface QualityScore {
   bitrate_score: number
   audio_score: number
 
-  // Efficiency metrics
-
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
   needs_upgrade: boolean // Maps to tier_quality === 'LOW'

@@ -632,8 +632,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
 
   getArtistCompleteness(artistName: string): ArtistCompleteness | null {
     const stmt = this.db.prepare(`
-      SELECT ac.*,
-             ac.efficiency_score, ac.storage_debt_bytes, ac.total_size
+      SELECT ac.*, ac.total_size
       FROM artist_completeness ac 
       WHERE ac.artist_name = ?
     `)
@@ -643,8 +642,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
   getAllArtistCompleteness(sourceId?: string): ArtistCompleteness[] {
     if (sourceId) {
       const stmt = this.db.prepare(`
-        SELECT DISTINCT ac.*, 
-               ac.efficiency_score, ac.storage_debt_bytes, ac.total_size
+        SELECT DISTINCT ac.*, ac.total_size
         FROM artist_completeness ac
         INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
         ORDER BY ac.artist_name ASC
@@ -663,7 +661,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         total_tracks, owned_tracks, missing_tracks,
         completeness_percentage, total_size,
         last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(album_id) DO UPDATE SET
         artist_name = excluded.artist_name,
         album_title = excluded.album_title,
@@ -673,8 +671,6 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         owned_tracks = excluded.owned_tracks,
         missing_tracks = excluded.missing_tracks,
         completeness_percentage = excluded.completeness_percentage,
-        efficiency_score = excluded.efficiency_score,
-        storage_debt_bytes = excluded.storage_debt_bytes,
         total_size = excluded.total_size,
         last_sync_at = excluded.last_sync_at,
         updated_at = datetime('now')
@@ -684,8 +680,6 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       data.musicbrainz_release_id || null, data.musicbrainz_release_group_id || null,
       data.total_tracks, data.owned_tracks, data.missing_tracks,
       data.completeness_percentage,
-      (data as any).efficiency_score || 0,
-      (data as any).storage_debt_bytes || 0,
       (data as any).total_size || 0,
       data.last_sync_at || null
     )
