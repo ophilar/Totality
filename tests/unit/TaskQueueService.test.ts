@@ -11,6 +11,7 @@ vi.mock('../../src/main/services/SourceManager', () => ({
   getSourceManager: vi.fn().mockReturnValue({
     getProvider: vi.fn(),
     getSources: vi.fn().mockReturnValue([]),
+    scanLibrary: vi.fn().mockResolvedValue({ itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, success: true, errors: [], durationMs: 0 }),
   }),
 }))
 
