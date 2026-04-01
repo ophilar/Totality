@@ -598,7 +598,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         completeness_percentage, total_size,
         country, active_years, artist_type,
         thumb_url, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(artist_name) DO UPDATE SET
         musicbrainz_id = excluded.musicbrainz_id,
         total_albums = excluded.total_albums,
@@ -611,8 +611,6 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         missing_singles = excluded.missing_singles,
         missing_eps = excluded.missing_eps,
         completeness_percentage = excluded.completeness_percentage,
-        efficiency_score = excluded.efficiency_score,
-        storage_debt_bytes = excluded.storage_debt_bytes,
         total_size = excluded.total_size,
         country = excluded.country,
         active_years = excluded.active_years,
@@ -626,8 +624,6 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       data.total_singles, data.owned_singles, data.total_eps, data.owned_eps,
       data.missing_albums, data.missing_singles, data.missing_eps,
       data.completeness_percentage,
-      (data as any).efficiency_score || 0,
-      (data as any).storage_debt_bytes || 0,
       (data as any).total_size || 0,
       data.country || null, data.active_years || null,
       data.artist_type || null, data.thumb_url || null, data.last_sync_at || null

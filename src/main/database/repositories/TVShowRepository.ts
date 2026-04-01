@@ -44,9 +44,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     const sortMap: Record<string, string> = {
       'title': 'sc.series_title',
       'completeness': 'sc.completeness_percentage',
-      'episodes': 'sc.total_episodes',
-      'debt': 'sc.storage_debt_bytes',
-      'efficiency': 'sc.efficiency_score'
+      'episodes': 'sc.total_episodes'
     }
     const sortCol = sortMap[filters?.sortBy || 'title'] || 'sc.series_title'
     const sortDir = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'

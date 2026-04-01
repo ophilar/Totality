@@ -175,8 +175,6 @@ export function runMigrations(db: Database): void {
     'ALTER TABLE quality_scores ADD COLUMN tier_score INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE quality_scores ADD COLUMN bitrate_tier_score INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE quality_scores ADD COLUMN audio_tier_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
 
     'ALTER TABLE media_items ADD COLUMN episode_thumb_url TEXT',
     'ALTER TABLE media_items ADD COLUMN season_poster_url TEXT',
@@ -210,8 +208,6 @@ export function runMigrations(db: Database): void {
     'ALTER TABLE series_completeness ADD COLUMN status TEXT',
     "ALTER TABLE series_completeness ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE series_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE series_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE series_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE series_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
 
     "ALTER TABLE movie_collections ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
@@ -224,18 +220,12 @@ export function runMigrations(db: Database): void {
     "ALTER TABLE music_tracks ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE artist_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
     'ALTER TABLE artist_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE artist_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE artist_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE music_tracks ADD COLUMN file_mtime INTEGER',
 
-    'ALTER TABLE album_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE album_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE album_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
 
     'ALTER TABLE media_item_versions ADD COLUMN original_language TEXT',
     'ALTER TABLE media_item_versions ADD COLUMN audio_language TEXT',
-    'ALTER TABLE media_item_versions ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE media_item_versions ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE media_item_versions ADD COLUMN bitrate_tier_score INTEGER DEFAULT 0',
     'ALTER TABLE media_item_versions ADD COLUMN audio_tier_score INTEGER DEFAULT 0',
 

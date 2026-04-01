@@ -361,8 +361,6 @@ export interface MissingEpisode {
 
 // Query filter types
 export interface MediaItemFilters {
-  efficiencyFilter?: string
-  slimDown?: boolean
   type?: 'movie' | 'episode'
   minQualityScore?: number
   maxQualityScore?: number
@@ -398,7 +396,6 @@ export interface TVShowSummary {
 }
 
 export interface TVShowFilters {
-  slimDown?: boolean
   sourceId?: string
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha

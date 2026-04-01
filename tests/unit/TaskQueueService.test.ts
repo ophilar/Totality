@@ -20,6 +20,7 @@ vi.mock('../../src/main/services/SourceManager', () => ({
 vi.mock('../../src/main/services/SeriesCompletenessService', () => ({
   getSeriesCompletenessService: vi.fn().mockReturnValue({
     analyzeLibraryCompleteness: vi.fn(),
+    analyzeAllSeries: vi.fn(),
     cancel: vi.fn(),
   }),
 }))
@@ -27,6 +28,7 @@ vi.mock('../../src/main/services/SeriesCompletenessService', () => ({
 vi.mock('../../src/main/services/MovieCollectionService', () => ({
   getMovieCollectionService: vi.fn().mockReturnValue({
     analyzeCollections: vi.fn(),
+    analyzeAllCollections: vi.fn(),
     cancel: vi.fn(),
   }),
 }))
@@ -34,6 +36,7 @@ vi.mock('../../src/main/services/MovieCollectionService', () => ({
 vi.mock('../../src/main/services/MusicBrainzService', () => ({
   getMusicBrainzService: vi.fn().mockReturnValue({
     analyzeArtistCompleteness: vi.fn(),
+    analyzeAllMusic: vi.fn(),
     cancel: vi.fn(),
   }),
 }))
@@ -42,6 +45,9 @@ vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn().mockReturnValue({
     getSources: vi.fn().mockReturnValue([]),
     getMediaItems: vi.fn().mockReturnValue([]),
+    getSourceLibraries: vi.fn().mockReturnValue([]),
+    saveActivityLogEntry: vi.fn(),
+    saveTaskHistory: vi.fn(),
   }),
 }))
 

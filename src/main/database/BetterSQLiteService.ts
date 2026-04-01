@@ -276,9 +276,8 @@ export class BetterSQLiteService {
     else { const item = this.mediaRepo.getMediaItemByProviderId(p, id); if (item) this.mediaRepo.updateMediaItemArtwork(item.id!, art) }
   }
   removeStaleMediaItems(ids: Set<string>, type: any): number { return this.mediaRepo.removeStaleMediaItems(ids, type) }
-  updateMediaItemVersionQuality(id: number, score: any): void {
-    this.db?.prepare('UPDATE media_item_versions SET updated_at = datetime(\'now\') WHERE id = ?')
-      .run(score.efficiency_score, score.storage_debt_bytes, id)
+  updateMediaItemVersionQuality(id: number, _score: any): void {
+    this.db?.prepare("UPDATE media_item_versions SET updated_at = datetime('now') WHERE id = ?").run(id)
   }
   updateBestVersion(itemId: number): void {
     this.db?.transaction(() => {

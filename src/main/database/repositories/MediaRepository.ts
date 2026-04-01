@@ -11,8 +11,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     let sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
+             q.quality_tier, q.tier_quality, q.tier_score, q.issues
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -61,15 +60,6 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       sql += ' AND q.tier_quality = ?'
       params.push(filters.tierQuality)
     }
-    if (filters?.efficiencyFilter) {
-      if (filters.efficiencyFilter === 'low') sql += ' AND q.efficiency_score < 60'
-      else if (filters.efficiencyFilter === 'medium') sql += ' AND q.efficiency_score >= 60 AND q.efficiency_score < 85'
-      else if (filters.efficiencyFilter === 'high') sql += ' AND q.efficiency_score >= 85'
-    }
-    if (filters?.slimDown) {
-      // Show highly inefficient or heavily wasteful items
-      sql += ' AND (q.efficiency_score < 60 OR q.storage_debt_bytes > 5368709120)' // 5GB debt threshold
-    }
     if (filters?.needsUpgrade !== undefined) {
       sql += ' AND q.needs_upgrade = ?'
       params.push(filters.needsUpgrade ? 1 : 0)
@@ -85,9 +75,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       'created_at': 'm.created_at',
       'tier_score': 'q.tier_score',
       'overall_score': 'q.overall_score',
-      'size': 'm.file_size',
-      'storage_debt': 'q.storage_debt_bytes',
-      'efficiency': 'q.efficiency_score'
+      'size': 'm.file_size'
     }
     const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -110,8 +98,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     const sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
+             q.quality_tier, q.tier_quality, q.tier_score, q.issues
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.id = ?
@@ -127,8 +114,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     const sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
+             q.quality_tier, q.tier_quality, q.tier_score, q.issues
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.file_path = ?
@@ -516,8 +502,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
   ): MediaItem[] {
     let sql = `SELECT m.*,
                       q.overall_score, q.needs_upgrade,
-                      q.quality_tier, q.tier_quality, q.tier_score,
-                      q.efficiency_score, q.storage_debt_bytes, q.issues
+                      q.quality_tier, q.tier_quality, q.tier_score, q.issues
 FROM media_items m
 LEFT JOIN quality_scores q ON m.id = q.media_item_id
 WHERE m.type = 'episode' AND m.series_title = ?`
