@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Mock electron
 vi.mock('electron', () => ({
-  BrowserWindow: vi.fn(),
+  BrowserWindow: {
+    getAllWindows: vi.fn().mockReturnValue([]),
+  },
 }))
 
 // Mock dependencies

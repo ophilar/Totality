@@ -24,11 +24,9 @@ class MockWorker extends EventEmitter {
   })
 }
 
-const mockWorker = new MockWorker()
-
 vi.mock('worker_threads', () => ({
   Worker: vi.fn().mockImplementation(function() {
-    return mockWorker
+    return new MockWorker()
   }),
 }))
 
@@ -49,11 +47,6 @@ describe('FFprobeWorkerPool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pool = new FFprobeWorkerPool()
-    // Reset the mock worker state
-    mockWorker.removeAllListeners()
-    mockWorker.postMessage.mockReset()
-    mockWorker.terminate.mockReset()
-    mockWorker.removeAllListeners.mockReset()
   })
 
   describe('initialization', () => {
