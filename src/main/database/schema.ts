@@ -192,9 +192,7 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   bitrate_score INTEGER NOT NULL,
   audio_score INTEGER NOT NULL,
 
-  -- Efficiency metrics
-  efficiency_score INTEGER DEFAULT 0,
-  storage_debt_bytes INTEGER DEFAULT 0,
+  -- Efficiency metrics (removed for now)
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL DEFAULT 0,

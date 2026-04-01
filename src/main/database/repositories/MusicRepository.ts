@@ -595,7 +595,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         artist_name, musicbrainz_id, total_albums, owned_albums,
         total_singles, owned_singles, total_eps, owned_eps,
         missing_albums, missing_singles, missing_eps,
-        completeness_percentage, efficiency_score, storage_debt_bytes, total_size,
+        completeness_percentage, total_size,
         country, active_years, artist_type,
         thumb_url, last_sync_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -665,7 +665,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         album_id, artist_name, album_title,
         musicbrainz_release_id, musicbrainz_release_group_id,
         total_tracks, owned_tracks, missing_tracks,
-        completeness_percentage, efficiency_score, storage_debt_bytes, total_size,
+        completeness_percentage, total_size,
         last_sync_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(album_id) DO UPDATE SET

@@ -242,17 +242,17 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       item.audio_codec,
       item.audio_channels,
       item.audio_bitrate,
-      item.video_frame_rate || null,
-      item.color_bit_depth || null,
-      item.hdr_format || null,
-      item.color_space || null,
-      item.video_profile || null,
-      item.video_level || null,
-      item.audio_profile || null,
-      item.audio_sample_rate || null,
-      item.has_object_audio ? 1 : 0,
-      item.audio_tracks || null,
-      item.subtitle_tracks || null,
+      (item as any).video_frame_rate || null,
+      (item as any).color_bit_depth || null,
+      (item as any).hdr_format || null,
+      (item as any).color_space || null,
+      (item as any).video_profile || null,
+      (item as any).video_level || null,
+      (item as any).audio_profile || null,
+      (item as any).audio_sample_rate || null,
+      (item as any).has_object_audio ? 1 : 0,
+      (item as any).audio_tracks || null,
+      (item as any).subtitle_tracks || null,
       item.original_language || null,
       item.audio_language || null,
       item.container || null,
@@ -537,5 +537,4 @@ WHERE m.type = 'episode' AND m.series_title = ?`
     const stmt = this.db.prepare(sql)
     return stmt.all(...params) as MediaItem[]
   }
-
 }

@@ -264,7 +264,7 @@ export class SeriesCompletenessService extends CancellableOperation {
       getLoggingService().verbose('[SeriesCompletenessService]',
         `"${seriesTitle}" (tmdb:${tmdbId}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
 
-      await db.upsertSeriesCompleteness(data)
+      await db.upsertSeriesCompleteness(data as any)
       return db.getSeriesCompletenessByTitle(seriesTitle, sourceId, libraryId)
     } catch (error) {
       console.error(`Error analyzing ${seriesTitle}:`, error)

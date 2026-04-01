@@ -483,8 +483,6 @@ export class QualityAnalyzer {
     const needsUpgrade = tierQuality === 'LOW'
 
     return {
-      efficiency_score: 0,
-      storage_debt_bytes: 0,
       media_item_id: mediaItem.id || 0,
       quality_tier: qualityTier,
       tier_quality: tierQuality,

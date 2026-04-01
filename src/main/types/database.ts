@@ -188,10 +188,6 @@ export interface MediaItem {
   quality_tier?: string
   tier_quality?: string
   tier_score?: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-
-  // Timestamps
   created_at?: string
   updated_at?: string
 }
@@ -251,10 +247,6 @@ export interface MediaItemVersion {
   tier_score?: number | null | undefined
   bitrate_tier_score?: number | null | undefined
   audio_tier_score?: number | null | undefined
-  efficiency_score?: number | null | undefined
-  storage_debt_bytes?: number | null | undefined
-
-  // Best version flag
   is_best?: boolean
 
   // Timestamps
@@ -280,8 +272,6 @@ export interface QualityScore {
   audio_score: number
 
   // Efficiency metrics
-  efficiency_score: number // 0-100 score (BPP based)
-  storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
 
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
@@ -319,8 +309,6 @@ export interface SeriesCompleteness {
   missing_episodes: string // JSON array of MissingEpisode
 
   completeness_percentage: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
   total_size?: number
 
   // TMDB metadata
@@ -387,7 +375,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency'
+  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size'
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -415,7 +403,7 @@ export interface TVShowFilters {
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'season_count' | 'storage_debt' | 'efficiency' | 'size'
+  sortBy?: 'title' | 'episode_count' | 'season_count' | 'size'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -546,10 +534,6 @@ export interface MusicTrack {
   channels?: number
 
   // Efficiency metrics
-  efficiency_score?: number
-  storage_debt_bytes?: number
-
-  // Quality flags
   is_lossless?: boolean
   is_hi_res?: boolean
 
@@ -596,9 +580,6 @@ export interface ArtistCompleteness {
   owned_singles: number
   total_eps: number
   owned_eps: number
-
-  efficiency_score?: number
-  storage_debt_bytes?: number
   total_size?: number
 
   // Missing items (JSON arrays)
@@ -647,9 +628,6 @@ export interface AlbumCompleteness {
   // Track counts
   total_tracks: number
   owned_tracks: number
-
-  efficiency_score?: number
-  storage_debt_bytes?: number
   total_size?: number
 
   // Missing tracks (JSON array of MissingTrack)
@@ -676,7 +654,7 @@ export interface MusicFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency'
+  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year'
   sortOrder?: 'asc' | 'desc'
   // Alphabet filter
   alphabetFilter?: string

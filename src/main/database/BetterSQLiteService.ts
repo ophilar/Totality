@@ -277,7 +277,7 @@ export class BetterSQLiteService {
   }
   removeStaleMediaItems(ids: Set<string>, type: any): number { return this.mediaRepo.removeStaleMediaItems(ids, type) }
   updateMediaItemVersionQuality(id: number, score: any): void {
-    this.db?.prepare('UPDATE media_item_versions SET efficiency_score = ?, storage_debt_bytes = ?, updated_at = datetime(\'now\') WHERE id = ?')
+    this.db?.prepare('UPDATE media_item_versions SET updated_at = datetime(\'now\') WHERE id = ?')
       .run(score.efficiency_score, score.storage_debt_bytes, id)
   }
   updateBestVersion(itemId: number): void {
@@ -285,7 +285,7 @@ export class BetterSQLiteService {
       this.db?.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(itemId)
       this.db?.prepare(`
         UPDATE media_item_versions SET is_best = 1 WHERE id = (
-          SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY efficiency_score DESC, file_size DESC LIMIT 1
+          SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY file_size DESC LIMIT 1
         )
       `).run(itemId)
     })()

@@ -97,7 +97,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
 
   getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
     let sql = `
-      SELECT m.*, q.quality_tier, q.tier_quality, q.tier_score, q.efficiency_score, q.storage_debt_bytes
+      SELECT m.*, q.quality_tier, q.tier_quality, q.tier_score
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.series_title = ? AND m.type = 'episode'
