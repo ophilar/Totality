@@ -7,12 +7,13 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// Mock database getter before importing QualityAnalyzer
+import { BetterSQLiteService } from '../../src/main/database/BetterSQLiteService'
+
+// Intercept getDatabase
+let testDb: BetterSQLiteService
+
 vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({
-    getSettingsByPrefix: vi.fn(() => ({})),
-    upsertQualityScore: vi.fn(),
-  })),
+  getDatabase: vi.fn(() => testDb),
 }))
 
 import { QualityAnalyzer } from '../../src/main/services/QualityAnalyzer'
@@ -22,8 +23,15 @@ describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
 
   beforeEach(() => {
+    testDb = new BetterSQLiteService(':memory:')
+    testDb.initialize()
+    
     vi.clearAllMocks()
     analyzer = new QualityAnalyzer()
+  })
+
+  afterEach(() => {
+    testDb.close()
   })
 
   // ============================================================================

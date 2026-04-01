@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { TaskQueueService, TaskDefinition } from '../../src/main/services/TaskQueueService'
+import { BetterSQLiteService } from '../../src/main/database/BetterSQLiteService'
 
-// Mock electron
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: vi.fn().mockReturnValue([]),
-  },
-}))
-
-// Mock dependencies
+// Mock dependencies that involve network or complex logic
 vi.mock('../../src/main/ipc/utils/safeSend', () => ({
   safeSend: vi.fn(),
 }))
@@ -43,16 +38,6 @@ vi.mock('../../src/main/services/MusicBrainzService', () => ({
   }),
 }))
 
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn().mockReturnValue({
-    getSources: vi.fn().mockReturnValue([]),
-    getMediaItems: vi.fn().mockReturnValue([]),
-    getSourceLibraries: vi.fn().mockReturnValue([]),
-    saveActivityLogEntry: vi.fn(),
-    saveTaskHistory: vi.fn(),
-  }),
-}))
-
 vi.mock('../../src/main/services/LiveMonitoringService', () => ({
   getLiveMonitoringService: vi.fn().mockReturnValue({
     pauseMonitoring: vi.fn(),
@@ -63,18 +48,26 @@ vi.mock('../../src/main/services/LiveMonitoringService', () => ({
   }),
 }))
 
-// Import after mocks
-import { TaskQueueService, TaskDefinition } from '../../src/main/services/TaskQueueService'
+// Intercept getDatabase
+let testDb: BetterSQLiteService
+
+vi.mock('../../src/main/database/getDatabase', () => ({
+  getDatabase: vi.fn(() => testDb),
+}))
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
 
   beforeEach(() => {
+    testDb = new BetterSQLiteService(':memory:')
+    testDb.initialize()
+    
+    vi.clearAllMocks()
     service = new TaskQueueService()
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    testDb.close()
   })
 
   describe('queue management', () => {
@@ -101,20 +94,19 @@ describe('TaskQueueService', () => {
       service.addTask({ type: 'series-completeness', label: 'Task 3', sourceId: 'src1', libraryId: 'lib1' })
 
       const state = service.getQueueState()
-      // First task might be running, rest in queue
       const totalTasks = state.queue.length + (state.currentTask ? 1 : 0)
       expect(totalTasks).toBe(3)
     })
 
     it('should remove a queued task', () => {
+      service.pauseQueue()
       const taskId = service.addTask({ type: 'library-scan', label: 'Test', sourceId: 'src1', libraryId: 'lib1' })
 
-      // If task is already running, removeTask returns false for running tasks
+      const removed = service.removeTask(taskId)
+      expect(removed).toBe(true)
+      
       const state = service.getQueueState()
-      if (state.queue.find(t => t.id === taskId)) {
-        const removed = service.removeTask(taskId)
-        expect(removed).toBe(true)
-      }
+      expect(state.queue.length).toBe(0)
     })
 
     it('should return false when removing non-existent task', () => {

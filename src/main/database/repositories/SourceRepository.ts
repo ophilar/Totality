@@ -9,12 +9,21 @@ export class SourceRepository extends BaseRepository<MediaSource> {
 
   getMediaSources(): MediaSource[] {
     const stmt = this.db.prepare('SELECT * FROM media_sources ORDER BY display_name ASC')
-    return stmt.all() as MediaSource[]
+    const rows = stmt.all() as MediaSource[]
+    return rows.map(row => ({
+      ...row,
+      is_enabled: Boolean(row.is_enabled)
+    }))
   }
 
   getMediaSourceById(sourceId: string): MediaSource | null {
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE source_id = ?')
-    return (stmt.get(sourceId) as MediaSource) || null
+    const row = stmt.get(sourceId) as MediaSource
+    if (!row) return null
+    return {
+      ...row,
+      is_enabled: Boolean(row.is_enabled)
+    }
   }
 
   upsertMediaSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): number {

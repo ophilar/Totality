@@ -26,11 +26,18 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     removeHandler: vi.fn(),
   },
-  BrowserWindow: vi.fn(() => ({
-    webContents: {
-      send: vi.fn(),
-    },
-  })),
+  BrowserWindow: Object.assign(
+    vi.fn(() => ({
+      webContents: {
+        send: vi.fn(),
+      },
+    })),
+    {
+      fromWebContents: vi.fn(),
+      getAllWindows: vi.fn(() => []),
+      getFocusedWindow: vi.fn(),
+    }
+  ),
   safeStorage: {
     isEncryptionAvailable: vi.fn(() => false),
     encryptString: vi.fn((str: string) => Buffer.from(str)),

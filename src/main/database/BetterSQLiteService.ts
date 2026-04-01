@@ -129,12 +129,26 @@ export class BetterSQLiteService {
     return this._taskRepo
   }
 
-  constructor() {
-    try {
-      const userDataPath = app.getPath('userData')
-      this.dbPath = path.join(userDataPath, 'totality-v2.db')
-    } catch {
-      this.dbPath = ':memory:'
+  constructor(dbPath?: string) {
+    if (dbPath) {
+      this.dbPath = dbPath
+    } else {
+      try {
+        const userDataPath = app.getPath('userData')
+        this.dbPath = path.join(userDataPath, 'totality-v2.db')
+      } catch {
+        this.dbPath = ':memory:'
+      }
+    }
+  }
+
+  /**
+   * Reset the singleton instance (primarily for testing)
+   */
+  static resetInstance(): void {
+    if (serviceInstance) {
+      serviceInstance.close()
+      serviceInstance = null
     }
   }
 
@@ -418,13 +432,35 @@ export class BetterSQLiteService {
   removeExclusion(id: number): void { this.db?.prepare('DELETE FROM exclusions WHERE id = ?').run(id) }
 
   // --- Tasks ---
-  addTaskHistory(entry: any): number { return this.taskRepo.addTaskHistory(entry) }
+  addTaskHistory(entry: any): number { return this.saveTaskHistory(entry) }
   getTaskHistory(limit?: number): any[] { return this.taskRepo.getTaskHistory(limit) }
-  saveActivityLogEntry(entry: any): void { this.taskRepo.addActivityLog({ entry_type: entry.entryType, message: entry.message, task_id: entry.taskId, task_type: entry.taskType }) }
+  saveActivityLogEntry(entry: any): void {
+    this.taskRepo.addActivityLog({
+      entry_type: entry.entryType,
+      message: entry.message,
+      task_id: entry.taskId,
+      task_type: entry.taskType
+    })
+  }
   getActivityLog(type: string, limit: number): any[] { return type === 'task' ? this.taskRepo.getTaskHistory(limit) : this.taskRepo.getActivityLogs(limit) }
   clearTaskHistory(): void { this.taskRepo.clearHistory() }
   clearActivityLog(type: string): void { this.db?.prepare('DELETE FROM activity_log WHERE entry_type = ?').run(type) }
-  saveTaskHistory(entry: any): number { return this.taskRepo.addTaskHistory(entry) }
+  saveTaskHistory(entry: any): number {
+    return this.taskRepo.addTaskHistory({
+      task_id: entry.taskId,
+      type: entry.type,
+      label: entry.label,
+      source_id: entry.sourceId,
+      library_id: entry.libraryId,
+      status: entry.status,
+      error: entry.error,
+      result: entry.result ? JSON.stringify(entry.result) : undefined,
+      created_at: entry.createdAt || new Date().toISOString(),
+      started_at: entry.startedAt,
+      completed_at: entry.completedAt,
+      duration_ms: entry.durationMs
+    })
+  }
 
   // --- Stats ---
   getLibraryStats(sourceId?: string): any { return this.statsRepo.getLibraryStats(sourceId) }
@@ -443,14 +479,40 @@ export class BetterSQLiteService {
   }
   upsertQualityScore(score: any): number {
     const stmt = this.db?.prepare(`
-      INSERT INTO quality_scores (media_item_id, overall_score, needs_upgrade, created_at, updated_at)
-      VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      INSERT INTO quality_scores (
+        media_item_id, quality_tier, tier_quality, tier_score,
+        bitrate_tier_score, audio_tier_score, overall_score,
+        resolution_score, bitrate_score, audio_score,
+        needs_upgrade, issues, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(media_item_id) DO UPDATE SET
+        quality_tier = excluded.quality_tier,
+        tier_quality = excluded.tier_quality,
+        tier_score = excluded.tier_score,
+        bitrate_tier_score = excluded.bitrate_tier_score,
+        audio_tier_score = excluded.audio_tier_score,
         overall_score = excluded.overall_score,
+        resolution_score = excluded.resolution_score,
+        bitrate_score = excluded.bitrate_score,
+        audio_score = excluded.audio_score,
         needs_upgrade = excluded.needs_upgrade,
+        issues = excluded.issues,
         updated_at = datetime('now')
     `)
-    return Number(stmt?.run(score.media_item_id, score.overall_score, score.needs_upgrade ? 1 : 0).lastInsertRowid)
+    return Number(stmt?.run(
+      score.media_item_id,
+      score.quality_tier || 'SD',
+      score.tier_quality || 'MEDIUM',
+      score.tier_score || 0,
+      score.bitrate_tier_score || 0,
+      score.audio_tier_score || 0,
+      score.overall_score || 0,
+      score.resolution_score || 0,
+      score.bitrate_score || 0,
+      score.audio_score || 0,
+      score.needs_upgrade ? 1 : 0,
+      score.issues || '[]'
+    ).lastInsertRowid)
   }
 
   // --- Movie Collections ---
@@ -487,12 +549,17 @@ export class BetterSQLiteService {
   }
 
   // --- Scan Tracking ---
-  updateLibraryScanTime(sourceId: string, libraryId: string, _name: string, _type: string, items: number): void {
+  updateLibraryScanTime(sourceId: string, libraryId: string, name: string, type: string, items: number): void {
     this.db?.prepare(`
-      INSERT INTO library_scans (source_id, library_id, last_scan_at, items_scanned, created_at, updated_at)
-      VALUES (?, ?, datetime('now'), ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, library_id) DO UPDATE SET last_scan_at = datetime('now'), items_scanned = ?, updated_at = datetime('now')
-    `).run(sourceId, libraryId, items, items)
+      INSERT INTO library_scans (source_id, library_id, library_name, library_type, last_scan_at, items_scanned, created_at, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'), ?, datetime('now'), datetime('now'))
+      ON CONFLICT(source_id, library_id) DO UPDATE SET 
+        library_name = excluded.library_name,
+        library_type = excluded.library_type,
+        last_scan_at = datetime('now'), 
+        items_scanned = ?, 
+        updated_at = datetime('now')
+    `).run(sourceId, libraryId, name, type, items, items)
     this.sourceRepo.updateLastScanAt(sourceId)
   }
   updateSourceScanTime(sourceId: string): void { this.sourceRepo.updateLastScanAt(sourceId) }

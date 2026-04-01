@@ -1134,5 +1134,3 @@ export function registerSourceHandlers(): void {
 
   console.log('[IPC] Source handlers registered')
 }
-)
-}

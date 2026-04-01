@@ -117,11 +117,9 @@ export async function performMigrationIfNeeded(): Promise<{ migrated: boolean; e
     return { migrated: false }
   }
 
-    const mod = await import('../services/LoggingService')
-    mod.getLoggingService().info('[DatabaseFactory]', 'Starting automatic migration to better-sqlite3...')
+  getLoggingService().info('[DatabaseFactory]', 'Starting automatic migration to better-sqlite3...')
 
   try {
-    const { migrateDatabase } = await import('./DatabaseMigration')
     const result = await migrateDatabase()
 
     if (result.success) {
