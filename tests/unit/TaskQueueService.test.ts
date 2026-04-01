@@ -9,7 +9,10 @@ vi.mock('../../src/main/ipc/utils/safeSend', () => ({
 
 vi.mock('../../src/main/services/SourceManager', () => ({
   getSourceManager: vi.fn().mockReturnValue({
-    getProvider: vi.fn(),
+    getProvider: vi.fn().mockReturnValue({
+      providerType: 'local',
+      scanLibrary: vi.fn().mockResolvedValue({ itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, success: true, errors: [], durationMs: 0 }),
+    }),
     getSources: vi.fn().mockReturnValue([]),
     scanLibrary: vi.fn().mockResolvedValue({ itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, success: true, errors: [], durationMs: 0 }),
   }),
@@ -56,6 +59,12 @@ vi.mock('../../src/main/database/getDatabase', () => ({
   getDatabase: vi.fn(() => testDb),
 }))
 
+vi.mock('../../src/main/services/QualityAnalyzer', () => ({
+  getQualityAnalyzer: vi.fn().mockReturnValue({
+    analyzeMusicAlbum: vi.fn(),
+  })
+}))
+
 describe('TaskQueueService', () => {
   let service: TaskQueueService
 
@@ -65,6 +74,24 @@ describe('TaskQueueService', () => {
     
     vi.clearAllMocks()
     service = new TaskQueueService()
+
+    // Add dummy source for test to pass scan test
+    testDb.upsertMediaSource({
+      source_id: 'src1',
+      source_type: 'local',
+      display_name: 'Local test source',
+      connection_config: JSON.stringify({ path: '/tmp' }),
+      is_enabled: true
+    })
+
+    // Add dummy source for music scan test
+    testDb.upsertMediaSource({
+      source_id: 'test-source',
+      source_type: 'local',
+      display_name: 'Local music test source',
+      connection_config: JSON.stringify({ path: '/tmp' }),
+      is_enabled: true
+    })
   })
 
   afterEach(() => {
