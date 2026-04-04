@@ -6,6 +6,7 @@ import {
   UPGRADE_PRIORITIES_SYSTEM_PROMPT,
   COMPLETENESS_INSIGHTS_SYSTEM_PROMPT,
   WISHLIST_ADVICE_SYSTEM_PROMPT,
+  COMPRESSION_ADVICE_SYSTEM_PROMPT,
 } from './ai-system-prompts'
 
 /** Strip null/undefined/empty fields to reduce token usage */
@@ -25,6 +26,67 @@ function compact(obj: any): any {
  */
 
 export class GeminiAnalysisService {
+  /**
+   * Generate optimal compression parameters for a specific movie or episode.
+   * Uses structured JSON output for precision.
+   */
+  async getCompressionAdvice(
+    mediaId: number,
+  ): Promise<{ text: string }> {
+    const db = getDatabase()
+    const item = db.getMediaItemById(mediaId)
+
+    if (!item) {
+      throw new Error(`Media item with ID ${mediaId} not found`)
+    }
+
+    // Prepare detailed metadata for the AI
+    const metadata = compact({
+      title: item.title,
+      type: item.type,
+      series_title: item.series_title,
+      season_number: item.season_number,
+      episode_number: item.episode_number,
+      year: item.year,
+      file_path: item.file_path,
+      file_size_bytes: item.file_size,
+      duration_ms: item.duration,
+      container: item.container,
+      video: {
+        codec: item.video_codec,
+        resolution: item.resolution,
+        width: item.width,
+        height: item.height,
+        bitrate_kbps: item.video_bitrate,
+        frame_rate: item.video_frame_rate,
+        bit_depth: item.color_bit_depth,
+        hdr_format: item.hdr_format,
+        profile: item.video_profile,
+        level: item.video_level,
+      },
+      audio_tracks: item.audio_tracks ? JSON.parse(item.audio_tracks) : [],
+      quality: {
+        tier: item.quality_tier,
+        level: item.tier_quality,
+        score: item.tier_score,
+        efficiency: item.efficiency_score,
+      },
+    })
+
+    const result = await getGeminiService().sendMessage({
+      messages: [
+        {
+          role: 'user',
+          content: `Analyze this media file and provide optimal compression parameters:\n\n${JSON.stringify(metadata, null, 2)}`,
+        },
+      ],
+      system: COMPRESSION_ADVICE_SYSTEM_PROMPT,
+      maxTokens: 2048,
+    })
+
+    return { text: result.text }
+  }
+
   /**
    * Generate a quality health report for the library.
    */

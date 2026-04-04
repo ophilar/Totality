@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import * as ReactWindow from 'react-window'
+import { List, RowComponentProps, useListRef } from 'react-window'
 import {
   Loader2,
   Download,
@@ -23,9 +23,6 @@ import {
   CheckCircle,
   Circle,
 } from 'lucide-react'
-
-// Cast for type compatibility
-const { FixedSizeList: VirtualList } = ReactWindow as any
 
 interface LogEntry {
   id: string
@@ -69,6 +66,67 @@ function Toggle({
   )
 }
 
+interface MyRowProps {
+  filteredLogs: LogEntry[]
+  detailLogId: string | null
+  selectedIds: Set<string>
+  getLevelIcon: (level: string) => React.ReactNode
+  formatTime: (timestamp: string) => string
+  handleToggleSelect: (index: number, shiftKey: boolean) => void
+  setDetailLogId: (id: string | null) => void
+}
+
+// Row renderer for virtualized list
+function LogRow({
+  index,
+  style,
+  filteredLogs,
+  detailLogId,
+  selectedIds,
+  getLevelIcon,
+  formatTime,
+  handleToggleSelect,
+  setDetailLogId,
+}: RowComponentProps<MyRowProps>) {
+  const entry = filteredLogs[index]
+  if (!entry) return null
+
+  const isDetailTarget = entry.id === detailLogId
+  const isChecked = selectedIds.has(entry.id)
+
+  return (
+    <div style={style} className="px-2 py-0.5">
+      <div
+        className={`rounded h-full flex items-center gap-2 px-2 ${
+          entry.details ? 'cursor-pointer hover:bg-white/5' : ''
+        } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
+        onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            handleToggleSelect(index, e.shiftKey)
+          }}
+          className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+            isChecked ? 'bg-primary border-primary' : 'border-muted-foreground hover:border-primary/50'
+          }`}
+        >
+          {isChecked && (
+            <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </button>
+        {getLevelIcon(entry.level)}
+        <span className="text-muted-foreground shrink-0 text-xs">{formatTime(entry.timestamp)}</span>
+        <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">{entry.source}</span>
+        <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
+        {entry.details && <span className="text-muted-foreground text-[10px] shrink-0">{isDetailTarget ? '▼' : '▶'}</span>}
+      </div>
+    </div>
+  )
+}
+
 export function TroubleshootTab() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -77,7 +135,6 @@ export function TroubleshootTab() {
   const [searchText, setSearchText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   const [detailLogId, setDetailLogId] = useState<string | null>(null)
-  const [listHeight, setListHeight] = useState(300)
   const [verboseEnabled, setVerboseEnabled] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [copyFeedback, setCopyFeedback] = useState(false)
@@ -88,8 +145,7 @@ export function TroubleshootTab() {
     retentionDays: number
   }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
   const lastClickedIndex = useRef<number | null>(null)
-  const listRef = useRef<any>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const listRef = useListRef(null)
   const logViewerRef = useRef<HTMLDivElement>(null)
   const lastScrollOffset = useRef(0)
   const isAutoScrolling = useRef(false)
@@ -128,64 +184,39 @@ export function TroubleshootTab() {
   useEffect(() => {
     if (autoScroll && listRef.current && filteredLogs.length > 0) {
       isAutoScrolling.current = true
-      listRef.current.scrollToItem(filteredLogs.length - 1, 'end')
+      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
       // Reset flag after scroll completes
       setTimeout(() => {
         isAutoScrolling.current = false
       }, 50)
     }
-  }, [filteredLogs.length, autoScroll])
+  }, [filteredLogs.length, autoScroll, listRef])
 
   // Handle scroll events to detect manual scrolling
-  const handleScroll = useCallback(
-    ({ scrollOffset }: { scrollOffset: number }) => {
-      // If this is a programmatic scroll, ignore it
-      if (isAutoScrolling.current) {
-        lastScrollOffset.current = scrollOffset
-        return
-      }
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollOffset = e.currentTarget.scrollTop
 
-      // If user scrolled up, disable auto-scroll
-      if (scrollOffset < lastScrollOffset.current) {
-        setAutoScroll(false)
-      }
-
+    // If this is a programmatic scroll, ignore it
+    if (isAutoScrolling.current) {
       lastScrollOffset.current = scrollOffset
-    },
-    []
-  )
+      return
+    }
+
+    // If user scrolled up, disable auto-scroll
+    if (scrollOffset < lastScrollOffset.current) {
+      setAutoScroll(false)
+    }
+
+    lastScrollOffset.current = scrollOffset
+  }, [])
 
   // Jump to latest and re-enable auto-scroll
   const jumpToLatest = useCallback(() => {
     setAutoScroll(true)
     if (listRef.current && filteredLogs.length > 0) {
-      listRef.current.scrollToItem(filteredLogs.length - 1, 'end')
+      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
     }
-  }, [filteredLogs.length])
-
-  // Measure container height with ResizeObserver
-  useEffect(() => {
-    if (isLoading) return
-
-    const container = containerRef.current
-    if (!container) return
-
-    const updateHeight = () => {
-      const height = container.clientHeight
-      if (height > 0) {
-        setListHeight(height)
-      }
-    }
-
-    // Delay initial measurement to ensure flex layout has resolved
-    requestAnimationFrame(updateHeight)
-
-    // Watch for resize
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(container)
-
-    return () => observer.disconnect()
-  }, [isLoading])
+  }, [filteredLogs.length, listRef])
 
   // Keyboard shortcuts for selection
   useEffect(() => {
@@ -353,60 +384,6 @@ export function TroubleshootTab() {
     })
   }, [])
 
-  // Row renderer for virtualized list
-  const LogRow = useCallback(
-    ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const entry = filteredLogs[index]
-      if (!entry) return null
-
-      const isDetailTarget = entry.id === detailLogId
-      const isChecked = selectedIds.has(entry.id)
-
-      return (
-        <div style={style} className="px-2 py-0.5">
-          <div
-            className={`rounded h-full flex items-center gap-2 px-2 ${
-              entry.details ? 'cursor-pointer hover:bg-white/5' : ''
-            } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
-            onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
-          >
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleToggleSelect(index, e.shiftKey)
-              }}
-              className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
-                isChecked
-                  ? 'bg-primary border-primary'
-                  : 'border-muted-foreground hover:border-primary/50'
-              }`}
-            >
-              {isChecked && (
-                <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </button>
-            {getLevelIcon(entry.level)}
-            <span className="text-muted-foreground shrink-0 text-xs">
-              {formatTime(entry.timestamp)}
-            </span>
-            <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">
-              {entry.source}
-            </span>
-            <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
-            {entry.details && (
-              <span className="text-muted-foreground text-[10px] shrink-0">
-                {isDetailTarget ? '▼' : '▶'}
-              </span>
-            )}
-          </div>
-        </div>
-      )
-    },
-    [filteredLogs, detailLogId, selectedIds, getLevelIcon, formatTime, handleToggleSelect]
-  )
-
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center py-12">
@@ -525,21 +502,25 @@ export function TroubleshootTab() {
           </div>
         ) : (
           <>
-            {/* Virtualized log list - absolute positioning to fill parent */}
-            <div ref={containerRef} className="absolute inset-0 overflow-hidden">
-              <VirtualList
-                ref={listRef}
-                height={listHeight}
-                width="100%"
-                itemCount={filteredLogs.length}
-                itemSize={LOG_ROW_HEIGHT}
-                className="scrollbar-visible"
-                style={{ width: '100%' }}
-                onScroll={handleScroll}
-              >
-                {LogRow}
-              </VirtualList>
-            </div>
+            {/* Virtualized log list - fills parent via style */}
+            <List<MyRowProps>
+              listRef={listRef}
+              rowCount={filteredLogs.length}
+              rowHeight={LOG_ROW_HEIGHT}
+              rowComponent={LogRow}
+              rowProps={{
+                filteredLogs,
+                detailLogId,
+                selectedIds,
+                getLevelIcon,
+                formatTime,
+                handleToggleSelect,
+                setDetailLogId,
+              }}
+              className="scrollbar-visible"
+              style={{ height: '100%', width: '100%' }}
+              onScroll={handleScroll}
+            />
 
             {/* Jump to latest button - overlay */}
             {!autoScroll && filteredLogs.length > 0 && (

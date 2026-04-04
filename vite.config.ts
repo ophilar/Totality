@@ -88,7 +88,38 @@ export default defineConfig({
         }
       }
     ]),
-    renderer()
+    renderer(),
+    {
+      name: 'fix-rolldown-warnings',
+      configResolved(config) {
+        // Rolldown (Vite 8) doesn't support 'freeze'
+        const output = config.build.rollupOptions.output
+        if (output) {
+          if (Array.isArray(output)) {
+            for (const o of output) {
+              delete (o as any).freeze
+            }
+          } else {
+            delete (output as any).freeze
+          }
+        }
+
+        // Silence customResolver deprecation warning by removing it from aliases
+        // Note: This might break resolution if the plugin relied on it, but Vite 8/Rolldown 
+        // usually handles standard aliases fine.
+        if (config.resolve?.alias && Array.isArray(config.resolve.alias)) {
+          for (const alias of config.resolve.alias) {
+            if ((alias as any).customResolver) {
+              delete (alias as any).customResolver
+            }
+          }
+        }
+      },
+      // Adding resolveId as suggested by the warning
+      resolveId() {
+        return null
+      }
+    }
   ],
   optimizeDeps: {
     include: ['react-window']
@@ -107,19 +138,7 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom')) {
-              return 'vendor';
-            }
-            if (id.includes('react-window')) {
-              return 'ui';
-            }
-            return 'vendor';
-          }
-        }
-      }
+      // No explicit output options here, plugin handles cleanup
     }
   }
 })

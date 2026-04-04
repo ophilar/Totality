@@ -74,6 +74,8 @@ export const aiApi = {
   },
   aiWishlistAdvice: (params: { requestId: string }) =>
     ipcRenderer.invoke('ai:wishlistAdvice', params),
+  aiCompressionAdvice: (params: { mediaId: number; requestId: string }) =>
+    ipcRenderer.invoke('ai:compressionAdvice', params),
   aiExplainQuality: (params: {
     title: string
     resolution?: string
@@ -130,6 +132,7 @@ export interface AiAPI {
   onAiAnalysisStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => () => void
   onAiAnalysisStreamComplete: (callback: (data: { requestId: string }) => void) => () => void
   aiWishlistAdvice: (params: { requestId: string }) => Promise<{ text: string; requestId: string }>
+  aiCompressionAdvice: (params: { mediaId: number; requestId: string }) => Promise<{ text: string; requestId: string }>
   aiExplainQuality: (params: {
     title: string
     resolution?: string

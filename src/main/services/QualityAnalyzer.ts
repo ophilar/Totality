@@ -280,7 +280,7 @@ export class QualityAnalyzer {
    * Higher score = better quality
    */
   private calculateAudioTrackQualityScore(track: AudioTrack): number {
-    let score: number
+    let score = 0
     const channels = track.channels || 2
     const bitrate = track.bitrate || 0
     const isLossless = this.isLosslessAudio(track.codec)

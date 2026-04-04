@@ -1,4 +1,4 @@
-import type { MediaItem, MusicAlbum, MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '../library/types'
+import type { MusicAlbum } from '../library/types'
 
 export interface MusicAlbumUpgrade extends MusicAlbum {
   quality_tier: string

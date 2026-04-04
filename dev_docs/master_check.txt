@@ -1,0 +1,749 @@
+<repomix><file_summary>This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where empty lines have been removed, line numbers have been added, content has been formatted for parsing in xml style, content has been compressed (code blocks are separated by ⋮---- delimiter).<purpose>This file contains a packed representation of a subset of the repository&apos;s contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.</purpose><file_format>The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file</file_format><usage_guidelines>- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.</usage_guidelines><notes>- Some files may have been excluded based on .gitignore rules and Repomix&apos;s configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: package.json, src/main/database/**/*
+- Files matching these patterns are excluded: **/tests/**, **/docs/**, **/migrations/**, **/*.ipynb, **/*.csv, **/*.json, **/__pycache__/**, **/*.pyo, **/*.pyc, **/*.pyd, **/*.pyi, **/.venv/**, **/.mypy_cache/**, **/.pytest_cache/**, **/.tox/**, **/.coverage/**, **/outputs/**, **/checkpoints/**, **/*.pt, **/*.pth, **/data/*.parquet, **/.gradle/**, **/build/**, **/captures/**, **/*.apk, **/*.aar, **/*.jks, **/local.properties, **/.externalNativeBuild/**, **/cmake.p*, **/cmake_install.cmake, **/*.tflite, **/*.bin, **/*.onnx, **/mediapipe/**, **/.database/**, **/*.sqlite, **/*.sql, **/*.db*, **/node_modules/**, **/.obsidian/**, **/.zotero/**, **/.git/**, **/CHANGELOG.md, **/LICENSE*, **/*.log, **/*.patch, **/*.diff, **/site-packages/**/*.md, **/.specify/memory/**, **/Library/**, **/Temp/**, **/Obj/**, **/Logs/**, **/UserSettings/**, **/MemoryCaptures/**, **/Build/**, **/Builds/**, **/*.meta, **/*.unitypackage, **/*.asset, **/Assets/Textures/**, **/Assets/Models/**, **/Assets/Audio/**, **/Assets/Plugins/**, **/*.fbx, **/*.png, **/*.jpg, **/*.wav, **/*.mp3, !**/*.uxml, !**/*.uss, !**/GUI_MAP.md, !GEMINI.md, !spec.md, !plan.md
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Empty lines have been removed from all files
+- Line numbers have been added to the beginning of each line
+- Content has been formatted for parsing in xml style
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)</notes></file_summary><directory_structure>.github/
+.github/workflows/
+dev_docs/
+resources/
+scripts/
+src/
+src/main/
+src/main/database/
+src/main/database/repositories/
+src/main/ipc/
+src/main/ipc/utils/
+src/main/providers/
+src/main/providers/base/
+src/main/providers/jellyfin-emby/
+src/main/providers/kodi/
+src/main/providers/local/
+src/main/providers/plex/
+src/main/providers/utils/
+src/main/services/
+src/main/services/database/
+src/main/services/utils/
+src/main/types/
+src/main/validation/
+src/main/workers/
+src/preload/
+src/renderer/
+src/renderer/public/
+src/renderer/src/
+src/renderer/src/assets/
+src/renderer/src/assets/onboarding/
+src/renderer/src/components/
+src/renderer/src/components/chat/
+src/renderer/src/components/dashboard/
+src/renderer/src/components/layout/
+src/renderer/src/components/library/
+src/renderer/src/components/library/hooks/
+src/renderer/src/components/onboarding/
+src/renderer/src/components/settings/
+src/renderer/src/components/settings/tabs/
+src/renderer/src/components/sources/
+src/renderer/src/components/ui/
+src/renderer/src/components/wishlist/
+src/renderer/src/contexts/
+src/renderer/src/hooks/
+src/renderer/src/styles/
+src/renderer/src/utils/
+src/main/database/BetterSQLiteService.ts
+src/main/database/DatabaseFactory.ts
+src/main/database/DatabaseMigration.ts
+src/main/database/getDatabase.ts
+src/main/database/repositories/BaseRepository.ts
+src/main/database/repositories/ConfigRepository.ts
+src/main/database/repositories/ExclusionRepository.ts
+src/main/database/repositories/index.ts
+src/main/database/repositories/MediaRepository.ts
+src/main/database/repositories/MusicRepository.ts
+src/main/database/repositories/NotificationRepository.ts
+src/main/database/repositories/SourceRepository.ts
+src/main/database/repositories/StatsRepository.ts
+src/main/database/repositories/TaskRepository.ts
+src/main/database/repositories/TVShowRepository.ts
+src/main/database/repositories/WishlistRepository.ts
+src/main/database/schema.ts</directory_structure><files>This section contains the contents of the repository&apos;s files.<file path="src/main/database/getDatabase.ts">/**
+ * Centralized database getter
+ *
+ * This module provides a single entry point for getting the database service.
+ * Strictly uses BetterSQLite3 for performance and modern feature support.
+ *
+ * Usage:
+ *   import { getDatabase } from &apos;../database/getDatabase&apos;
+ *   const db = getDatabase()
+ */
+import { getBetterSQLiteService, BetterSQLiteService } from &apos;./BetterSQLiteService&apos;
+/**
+ * Centralized database getter
+ *
+ * This module provides a single entry point for getting the database service.
+ * Strictly uses BetterSQLite3 for performance and modern feature support.
+ *
+ * Usage:
+ *   import { getDatabase } from &apos;../database/getDatabase&apos;
+ *   const db = getDatabase()
+ */
+export function getDatabase(): BetterSQLiteService
+/**
+ * Alias for getDatabase() - for compatibility with existing code
+ */</file><file path="src/main/database/repositories/BaseRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+/**
+ * BaseRepository
+ *
+ * Abstract base class for all repositories.
+ * Provides generic CRUD operations and common SQL patterns.
+ */
+export abstract class BaseRepository&lt;T extends { id?: number }&gt; {
+⋮----
+constructor(protected db: Database, protected tableName: string)
+/**
+   * Get a single record by ID
+   */
+getById(id: number): T | null
+/**
+   * Delete a record by ID
+   */
+delete(id: number): boolean
+/**
+   * Generic count method
+   */
+protected count(whereSql: string = &apos;1=1&apos;, params: unknown[] = []): number
+/**
+   * Update timestamps for a record
+   */
+protected updateTimestamps(id: number): void
+/**
+   * Helper to build paging SQL
+   */
+protected buildPagingSql(limit?: number, offset?: number): string
+/**
+   * Execute a raw query and return results
+   */
+protected queryAll&lt;R = T&gt;(sql: string, params: unknown[] = []): R[]
+/**
+   * Execute a raw query and return a single result
+   */
+protected queryOne&lt;R = T&gt;(sql: string, params: unknown[] = []): R | null</file><file path="src/main/database/repositories/ConfigRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import { getCredentialEncryptionService } from &apos;../../services/CredentialEncryptionService&apos;
+export class ConfigRepository {
+⋮----
+constructor(private db: Database)
+getSetting(key: string): string | null
+setSetting(key: string, value: string): void
+deleteSetting(key: string): void
+getAllSettings(): Record&lt;string, string&gt;
+getSettingsByPrefix(prefix: string): Record&lt;string, string&gt;</file><file path="src/main/database/repositories/ExclusionRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export interface Exclusion {
+  id?: number
+  exclusion_type: &apos;media_upgrade&apos; | &apos;collection_movie&apos; | &apos;series_episode&apos; | &apos;artist_album&apos;
+  reference_id?: number
+  reference_key?: string
+  parent_key?: string
+  title?: string
+  created_at?: string
+}
+export class ExclusionRepository extends BaseRepository&lt;Exclusion&gt; {
+⋮----
+constructor(db: Database)
+isExcluded(type: string, referenceId?: number, referenceKey?: string): boolean
+addExclusion(exclusion: Omit&lt;Exclusion, &apos;id&apos; | &apos;created_at&apos;&gt;): void
+removeExclusion(type: string, referenceId?: number, referenceKey?: string): void
+getExclusions(type?: string, parentKey?: string): Exclusion[]</file><file path="src/main/database/repositories/index.ts"></file><file path="src/main/database/repositories/NotificationRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { Notification, GetNotificationsOptions } from &apos;../../types/monitoring&apos;
+export class NotificationRepository {
+⋮----
+constructor(private db: Database)
+addNotification(notification: Omit&lt;Notification, &apos;id&apos; | &apos;isRead&apos; | &apos;createdAt&apos; | &apos;readAt&apos;&gt;): number
+createNotification(notification: Omit&lt;Notification, &apos;id&apos; | &apos;isRead&apos; | &apos;createdAt&apos; | &apos;readAt&apos;&gt;): number
+createNotifications(notifications: Array&lt;Omit&lt;Notification, &apos;id&apos; | &apos;isRead&apos; | &apos;createdAt&apos; | &apos;readAt&apos;&gt;&gt;): number[]
+getNotifications(options: GetNotificationsOptions =
+markAsRead(ids: number[]): void
+markNotificationRead(id: number): void
+markAllAsRead(): void
+markAllNotificationsRead(): void
+deleteNotifications(ids: number[]): void
+deleteNotification(id: number): void
+deleteAllNotifications(): void
+clearAllNotifications(): void
+getUnreadCount(): number
+getNotificationCounts():</file><file path="src/main/database/repositories/StatsRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+export class StatsRepository {
+⋮----
+constructor(private db: Database)
+getLibraryStats(sourceId?: string):
+getMediaItemsCountBySource(sourceId: string): number
+getAggregatedSourceStats():</file><file path="src/main/database/repositories/TaskRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export interface TaskHistoryEntry {
+  id?: number
+  task_id: string
+  type: string
+  label: string
+  source_id?: string
+  library_id?: string
+  status: &apos;completed&apos; | &apos;failed&apos; | &apos;cancelled&apos; | &apos;interrupted&apos;
+  error?: string
+  result?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  duration_ms?: number
+  recorded_at?: string
+}
+export interface ActivityLogEntry {
+  id?: number
+  entry_type: string
+  message: string
+  task_id?: string
+  task_type?: string
+  created_at?: string
+}
+export class TaskRepository extends BaseRepository&lt;TaskHistoryEntry&gt; {
+⋮----
+constructor(db: Database)
+addTaskHistory(entry: TaskHistoryEntry): number
+addActivityLog(entry: Omit&lt;ActivityLogEntry, &apos;id&apos; | &apos;created_at&apos;&gt;): void
+getTaskHistory(limit = 50): TaskHistoryEntry[]
+getActivityLogs(limit = 100): ActivityLogEntry[]
+clearHistory(): void</file><file path="src/main/database/repositories/WishlistRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { WishlistItem, WishlistFilters } from &apos;../../types/database&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export class WishlistRepository extends BaseRepository&lt;WishlistItem&gt; {
+⋮----
+constructor(db: Database)
+getWishlistItems(filters?: WishlistFilters): WishlistItem[]
+getWishlistItemByTmdbId(tmdbId: string): WishlistItem | null
+getWishlistItemByMusicbrainzId(mbid: string): WishlistItem | null
+add(item: Omit&lt;WishlistItem, &apos;id&apos; | &apos;added_at&apos; | &apos;updated_at&apos;&gt;): number</file><file path="src/main/database/repositories/SourceRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { MediaSource } from &apos;../../types/database&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export class SourceRepository extends BaseRepository&lt;MediaSource&gt; {
+⋮----
+constructor(db: Database)
+getMediaSources(): MediaSource[]
+getMediaSourceById(sourceId: string): MediaSource | null
+upsertMediaSource(source: Omit&lt;MediaSource, &apos;id&apos; | &apos;created_at&apos; | &apos;updated_at&apos;&gt;): number
+deleteMediaSource(sourceId: string): void
+updateLastScanAt(sourceId: string): void</file><file path="src/main/database/repositories/MediaRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { MediaItem, MediaItemFilters } from &apos;../../types/database&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export class MediaRepository extends BaseRepository&lt;MediaItem&gt; {
+⋮----
+constructor(db: Database)
+getMediaItems(filters?: MediaItemFilters &amp;
+getMediaItem(id: number): MediaItem | null
+getMediaItemById(id: number): MediaItem | null
+getMediaItemByPath(filePath: string): MediaItem | null
+getMediaItemByProviderId(providerId: string, sourceId?: string): MediaItem | null
+upsertMediaItem(item: MediaItem): number
+deleteMediaItem(id: number): void
+deleteMediaItemsForSource(sourceId: string): void
+updateSeriesMatch(
+    seriesTitle: string,
+    sourceId: string,
+    tmdbId: string,
+    posterUrl?: string,
+    newSeriesTitle?: string
+): number
+updateMovieMatch(
+    mediaItemId: number,
+    tmdbId: string,
+    posterUrl?: string,
+    title?: string,
+    year?: number
+): void
+updateMovieWithTMDBId(mediaItemId: number, tmdbId: string): void
+removeStaleMediaItems(validPlexIds: Set&lt;string&gt;, type: &apos;movie&apos; | &apos;episode&apos;): number
+updateMediaItemArtwork(
+    id: number,
+    artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
+): void
+getMediaItemsByTmdbIds(tmdbIds: string[]): Map&lt;string, MediaItem&gt;
+getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number
+getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number
+getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number
+getLetterOffset(
+    table: &apos;movies&apos; | &apos;tvshows&apos; | &apos;artists&apos; | &apos;albums&apos;,
+    letter: string,
+    filters?: { sourceId?: string; libraryId?: string }
+): number
+getEpisodesForSeries(
+    seriesTitle: string,
+    sourceId?: string,
+    libraryId?: string
+): MediaItem[]</file><file path="src/main/database/repositories/TVShowRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from &apos;../../types/database&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export class TVShowRepository extends BaseRepository&lt;SeriesCompleteness&gt; {
+⋮----
+constructor(db: Database)
+getTVShowSummaries(filters?: TVShowFilters &amp;
+countTVShows(filters?: TVShowFilters): number
+getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[]
+getSeriesCompletenessByTitle(title: string, sourceId: string, libraryId: string): SeriesCompleteness | null
+upsertSeriesCompleteness(data: SeriesCompleteness): number</file><file path="src/main/database/repositories/MusicRepository.ts">import type { Database } from &apos;better-sqlite3&apos;
+import type { MusicArtist, MusicAlbum, MusicTrack, MusicQualityScore, ArtistCompleteness, AlbumCompleteness, MusicFilters } from &apos;../../types/database&apos;
+import { BaseRepository } from &apos;./BaseRepository&apos;
+export class MusicRepository extends BaseRepository&lt;MusicArtist | MusicAlbum | MusicTrack&gt; {
+⋮----
+constructor(db: Database)
+⋮----
+super(db, &apos;music_tracks&apos;) // Default table, methods will override as needed
+⋮----
+getMusicTrackByPath(filePath: string): MusicTrack | null
+upsertTrack(track: MusicTrack): number
+upsertMusicTrack(track: MusicTrack): number
+upsertArtist(artist: MusicArtist): number
+upsertMusicArtist(artist: MusicArtist): number
+upsertAlbum(album: MusicAlbum): number
+upsertMusicAlbum(album: MusicAlbum): number
+updateMusicAlbumArtwork(sourceIdOrAlbumId: string | number, providerIdOrThumbUrl?: string, artwork?:
+updateMusicArtistArtwork(sourceId: string, providerId: string, artwork:
+getMusicArtists(filters?: MusicFilters): MusicArtist[]
+countMusicArtists(filters?: MusicFilters): number
+getMusicArtistById(id: number): MusicArtist | null
+getMusicArtistByName(name: string, sourceId: string): MusicArtist | null
+getMusicAlbums(filters?: MusicFilters): MusicAlbum[]
+countMusicAlbums(filters?: MusicFilters): number
+getMusicAlbumById(id: number): MusicAlbum | null
+getMusicAlbumByName(title: string, artistId: number): MusicAlbum | null
+getMusicAlbumsByArtistName(artistName: string, limit = 500): MusicAlbum[]
+getMusicTracks(filters?: MusicFilters): MusicTrack[]
+getMusicTracksByAlbumIds(albumIds: number[]): Map&lt;number, MusicTrack[]&gt;
+countMusicTracks(filters?: MusicFilters): number
+getMusicTrackById(id: number): MusicTrack | null
+deleteMusicTrack(id: number): void
+updateMusicArtistCounts(artistId: number, albumCount: number, trackCount: number): void
+updateMusicArtistMbid(artistId: number, musicbrainzId: string): void
+updateMusicAlbumMbid(albumId: number, musicbrainzId: string): void
+upsertMusicQualityScore(score: MusicQualityScore): void
+getMusicQualityScore(albumId: number): MusicQualityScore | null
+getAlbumsNeedingUpgrade(limit?: number, sourceId?: string): MusicAlbum[]
+upsertArtistCompleteness(data: ArtistCompleteness): void
+getArtistCompleteness(artistName: string): ArtistCompleteness | null
+getAllArtistCompleteness(sourceId?: string): ArtistCompleteness[]
+upsertAlbumCompleteness(data: AlbumCompleteness): void
+getAlbumCompleteness(albumId: number): AlbumCompleteness | null
+getAllAlbumCompleteness(): AlbumCompleteness[]
+getAlbumCompletenessByArtist(artistName: string): AlbumCompleteness[]
+getIncompleteAlbums(): AlbumCompleteness[]
+getMusicAlbumsByMusicbrainzIds(ids: string[]): Map&lt;string, MusicAlbum&gt;
+getMusicTrackByMusicbrainzId(id: string): MusicTrack | null
+getMusicStats(sourceId?: string):</file><file path="src/main/database/DatabaseMigration.ts">/**
+ * Database Migration Utility
+ *
+ * Handles:
+ * 1. Migration from SQL.js to better-sqlite3.
+ * 2. Incremental schema updates (ALTER TABLE).
+ * 3. Performance indexing and data cleanup.
+ */
+⋮----
+import { app } from &apos;electron&apos;
+import type { Database } from &apos;better-sqlite3&apos;
+import { getLoggingService } from &apos;../services/LoggingService&apos;
+import { DATABASE_SCHEMA } from &apos;./schema&apos;
+import { getErrorMessage } from &apos;../services/utils/errorUtils&apos;
+import { getDatabaseService } from &apos;../services/DatabaseService&apos;
+import { getBetterSQLiteService } from &apos;./BetterSQLiteService&apos;
+interface MigrationResult {
+  success: boolean
+  tablesExported: number
+  rowsExported: number
+  rowsImported: number
+  errors: string[]
+  backupPath?: string
+}
+// ============================================================================
+// SQL.js to BetterSQLite3 Migration
+// ============================================================================
+/**
+ * Check if migration from SQL.js to better-sqlite3 is needed
+ */
+export function needsMigration(): boolean
+/**
+ * Check if we should use better-sqlite3 (either migrated or fresh install)
+ */
+export function shouldUseBetterSqlite(): boolean
+/**
+ * Migrate data from SQL.js to better-sqlite3
+ */
+export async function migrateDatabase(): Promise&lt;MigrationResult&gt;
+⋮----
+try { fs.unlinkSync(betterSqliteDbPath) } catch { /* ignore */ }
+⋮----
+function verifyMigration(
+  exportedData: Record&lt;string, unknown[]&gt;,
+  betterDb: any
+):
+export function rollbackMigration(): boolean
+// ============================================================================
+// Schema Migrations (Incremental)
+// ============================================================================
+/**
+ * Run database migrations and schema updates
+ */
+export function runMigrations(db: Database): void
+⋮----
+// Execute main schema
+⋮----
+// List of ALTER TABLE statements for incremental updates
+⋮----
+function migrateCheckConstraints(db: Database): void
+function createIndexes(db: Database): void
+⋮----
+for (const idx of indexes) { try { db.exec(idx) } catch { /* ignore */ } }
+⋮----
+function fixMusicTrackAlbumReferences(db: Database): void
+function migrateExistingItemsToVersions(db: Database): void
+function cleanupOrphanedRecords(db: Database): void
+⋮----
+} catch { /* ignore */ }</file><file path="src/main/database/DatabaseFactory.ts">/**
+ * Database Factory
+ *
+ * Provides a factory function to get the appropriate database service
+ * based on the configured backend. Supports automatic migration from
+ * SQL.js to better-sqlite3.
+ *
+ * Migration strategy:
+ * 1. If better-sqlite3 database exists, use it
+ * 2. If SQL.js database exists and no better-sqlite3, migrate automatically
+ * 3. For fresh installs (no database), use better-sqlite3
+ *
+ * Environment variable: Set USE_BETTER_SQLITE3=true to force better-sqlite3
+ * Environment variable: Set USE_SQLJS=true to force SQL.js (for testing)
+ */
+import { app } from &apos;electron&apos;
+⋮----
+// better-sqlite3 is always available in production
+import { getBetterSQLiteService } from &apos;./BetterSQLiteService&apos;
+import { getLoggingService } from &apos;../services/LoggingService&apos;
+import { migrateDatabase } from &apos;./DatabaseMigration&apos;
+// SQL.js is loaded dynamically to avoid requiring it in production builds
+// (it&apos;s excluded from the ASAR bundle since production uses better-sqlite3)
+⋮----
+async function getSqlJsService(): Promise&lt;DatabaseServiceInterface&gt;
+// The database backend to use (cached after first check)
+⋮----
+// Database service interfaces for type compatibility
+interface DatabaseServiceInterface {
+  isInitialized: boolean
+  initialize(): Promise&lt;void&gt; | void
+  close(): Promise&lt;void&gt; | void
+  forceSave(): Promise&lt;void&gt; | void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any
+}
+⋮----
+initialize(): Promise&lt;void&gt; | void
+close(): Promise&lt;void&gt; | void
+forceSave(): Promise&lt;void&gt; | void
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+⋮----
+/**
+ * Check if better-sqlite3 backend should be used
+ * In production: always use better-sqlite3 (migrate if needed)
+ * In tests: use SQL.js when USE_SQLJS env var is set
+ */
+function shouldUseBetterSqlite(): boolean
+⋮----
+// Environment variable override for tests
+⋮----
+// Production always uses better-sqlite3
+// Migration happens automatically in getDatabaseServiceAsync()
+⋮----
+/**
+ * Check if migration from SQL.js to better-sqlite3 is available
+ */
+export function isMigrationAvailable(): boolean
+/**
+ * Perform migration from SQL.js to better-sqlite3
+ * Returns true if migration was successful or not needed
+ */
+export async function performMigrationIfNeeded(): Promise&lt;
+/**
+ * Get the database service instance (async version)
+ * Automatically handles migration from SQL.js to better-sqlite3 if needed
+ */
+export async function getDatabaseServiceAsync(): Promise&lt;DatabaseServiceInterface&gt;
+⋮----
+// In production, always migrate if there&apos;s an old SQL.js database
+⋮----
+/**
+ * Get the synchronous database service
+ * Note: This should only be called after the app is ready and database is initialized
+ * Migration must be performed before calling this (which loads the SQL.js module if needed)
+ */
+export function getDatabaseServiceSync(): DatabaseServiceInterface
+⋮----
+// SQL.js loader must have been initialized by a prior getDatabaseServiceAsync() call
+⋮----
+/**
+ * Check which backend is currently configured
+ */
+export function getDatabaseBackend(): &apos;sql.js&apos; | &apos;better-sqlite3&apos;
+/**
+ * Force a specific backend (for testing)
+ */
+export function setDatabaseBackend(backend: &apos;sql.js&apos; | &apos;better-sqlite3&apos;): void
+/**
+ * Reset factory state (for testing)
+ */
+export function resetFactoryState(): void</file><file path="src/main/database/schema.ts">// Database schema as a TypeScript constant
+// This ensures it&apos;s bundled correctly by Vite</file><file path="src/main/database/BetterSQLiteService.ts">import { getLoggingService } from &apos;../services/LoggingService&apos;
+import Database from &apos;better-sqlite3&apos;
+⋮----
+import { app } from &apos;electron&apos;
+import { getErrorMessage } from &apos;../services/utils/errorUtils&apos;
+import { runMigrations } from &apos;./DatabaseMigration&apos;
+import {
+  ConfigRepository,
+  MediaRepository,
+  MusicRepository,
+  StatsRepository,
+  NotificationRepository,
+  TVShowRepository,
+  SourceRepository,
+  WishlistRepository,
+  ExclusionRepository,
+  TaskRepository
+} from &apos;./repositories&apos;
+import type {
+  MediaItem,
+  MediaItemFilters,
+  MediaSource,
+  MusicArtist,
+  MusicAlbum,
+  MusicTrack,
+  MusicFilters,
+  WishlistItem,
+  WishlistFilters,
+  TVShowFilters,
+  SeriesCompleteness,
+} from &apos;../types/database&apos;
+import type {
+  Notification,
+  NotificationCountResult,
+  GetNotificationsOptions,
+} from &apos;../types/monitoring&apos;
+// Singleton instance
+⋮----
+export function getBetterSQLiteService(): BetterSQLiteService
+/**
+ * BetterSQLiteService - High-performance database service
+ */
+export class BetterSQLiteService {
+⋮----
+// Repositories
+⋮----
+get isInitialized(): boolean
+// Lazy-loaded repository getters
+private get configRepo(): ConfigRepository
+private get mediaRepo(): MediaRepository
+private get musicRepo(): MusicRepository
+private get statsRepo(): StatsRepository
+private get notificationRepo(): NotificationRepository
+private get tvShowRepo(): TVShowRepository
+private get sourceRepo(): SourceRepository
+private get wishlistRepo(): WishlistRepository
+private get exclusionRepo(): ExclusionRepository
+private get taskRepo(): TaskRepository
+constructor(dbPath?: string)
+/**
+   * Reset the singleton instance (primarily for testing)
+   */
+static resetInstance(): void
+initialize(): void
+close(): void
+getDbPath(): string
+// Batch operations
+startBatch(): void
+endBatch(): void
+forceSave(): void
+// --- Configuration ---
+getSetting(key: string): string | null
+setSetting(key: string, value: string): void
+getAllSettings(): Record&lt;string, string&gt;
+getSettingsByPrefix(prefix: string): Record&lt;string, string&gt;
+// --- Sources ---
+getMediaSources(type?: string): MediaSource[]
+getEnabledMediaSources(): MediaSource[]
+getMediaSourceById(id: string): MediaSource | null
+upsertMediaSource(source: any): number
+deleteMediaSource(id: string): void
+toggleMediaSource(id: string, enabled: boolean): void
+updateSourceConnectionTime(id: string): void
+getSourceLibraries(id: string): any[]
+isLibraryEnabled(sourceId: string, libraryId: string): boolean
+toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): void
+setLibrariesEnabled(sourceId: string, libraries: Array&lt;
+getEnabledLibraryIds(sourceId: string): string[]
+// --- Media Items ---
+getMediaItems(filters?: MediaItemFilters): MediaItem[]
+getMediaItemById(id: number): MediaItem | null
+getMediaItemByPlexId(sourceId: string, plexId: string): MediaItem | null
+getMediaItemByProviderId(pId: string, sId: string): MediaItem | null
+getMediaItemByPath(pathStr: string): MediaItem | null
+getMediaItemsCountBySource(sourceId: string): number
+countMediaItems(filters?: MediaItemFilters): number
+upsertMediaItem(item: any): number
+deleteMediaItem(id: number): void
+deleteMediaItemsForSource(sourceId: string): void
+getMediaItemVersions(id: number): any[]
+syncMediaItemVersions(id: number, versions: any[]): void
+updateMovieMatch(id: number, tmdbId: string, poster?: string, title?: string, year?: number): void
+updateMovieWithTMDBId(id: number, tmdbId: string): void
+updateMediaItemArtwork(id: number | string, p: any, art?: any): void
+removeStaleMediaItems(ids: Set&lt;string&gt;, type: any): number
+updateMediaItemVersionQuality(id: number, _score: any): void
+updateBestVersion(itemId: number): void
+getMediaItemsByTmdbIds(ids: string[]): Map&lt;string, MediaItem&gt;
+addMediaItemToCollection(mediaId: number, collectionId: string | void): void
+// --- TV Shows ---
+getTVShows(filters?: TVShowFilters): any[]
+countTVShows(filters?: TVShowFilters): number
+countTVEpisodes(_filters?: TVShowFilters): number
+getTVShowEpisodes(title: string, sourceId?: string): MediaItem[]
+getSeriesCompleteness(sourceId?: string): any[]
+getAllSeriesCompleteness(sourceId?: string, libraryId?: string): any[]
+getIncompleteSeries(sourceId?: string): any[]
+getSeriesCompletenessStats(): any { return this.statsRepo.getLibraryStats() } // Use stats repo or implementation
+deleteSeriesCompleteness(id: number): void
+getEpisodesForSeries(title: string, sId?: string, lId?: string): MediaItem[]
+upsertSeriesCompleteness(data: SeriesCompleteness): number
+getSeriesCompletenessByTitle(title: string, sId?: string, lId?: string): any
+getEpisodeCountForSeason(title: string, season: number): number
+getEpisodeCountForSeasonEpisode(t: string, s: number, e: number): number
+updateSeriesMatch(t: string, sId: string, tmdbId: string, p?: string, nt?: string): number
+getEpisodeCountBySeriesTmdbId(tmdbId: string): number
+// --- Music ---
+getMusicArtists(filters?: MusicFilters): MusicArtist[]
+getMusicArtistById(id: number): MusicArtist | null
+countMusicArtists(filters?: MusicFilters): number
+getMusicAlbums(filters?: MusicFilters): MusicAlbum[]
+getMusicAlbumById(id: number): MusicAlbum | null
+countMusicAlbums(filters?: MusicFilters): number
+getMusicTracks(filtersOrId: any): MusicTrack[]
+countMusicTracks(filters?: MusicFilters): number
+getMusicTrackByPath(p: string): MusicTrack | null
+getMusicAlbumsByArtistName(name: string, limit?: number): MusicAlbum[]
+getMusicAlbumsByMusicbrainzIds(ids: string[]): Map&lt;string, MusicAlbum&gt;
+getMusicTrackByMusicbrainzId(id: string): MusicTrack | null
+getMusicTracksByAlbumIds(albumIds: number[]): Map&lt;number, MusicTrack[]&gt;
+upsertMusicQualityScore(score: any): void
+getMusicQualityScore(id: number): any
+upsertArtistCompleteness(data: any): void
+getArtistCompleteness(name: string): any
+getAllArtistCompleteness(sourceId?: string): any[]
+upsertAlbumCompleteness(data: any): void
+getAllAlbumCompleteness(): any[]
+getAlbumCompleteness(id: number): any
+getIncompleteAlbums(): any[]
+updateMusicArtistMbid(id: number, mbid: string): void
+updateMusicAlbumMbid(id: number, mbid: string): void
+updateMusicAlbumArtwork(sId: string | number, pId?: string, art?: any): void
+getMusicStats(sourceId?: string): any
+getAlbumsNeedingUpgrade(limit?: number, sourceId?: string): any[]
+updateArtistMatch(id: number, mbid: string): void
+updateAlbumMatch(id: number, mbid: string): void
+upsertMusicArtist(data: any): number
+upsertMusicAlbum(data: any): number
+upsertMusicTrack(data: any): number
+updateMusicArtistCounts(id: number, ac: number, tc: number): void
+deleteMusicTrack(id: number): void
+getMusicArtistByName(name: string, sourceId: string): any
+getMusicAlbumByName(title: string, artistId: number): any
+// --- Notifications ---
+getNotifications(options?: GetNotificationsOptions): Notification[]
+getUnreadNotificationCount(): NotificationCountResult
+getNotificationCount(): NotificationCountResult
+createNotification(notif: any): number
+markNotificationsRead(ids: number[]): void
+markAllNotificationsRead(): void
+deleteNotifications(ids: number[]): void
+clearAllNotifications(): void
+// --- Wishlist ---
+getWishlistItems(filters?: WishlistFilters): WishlistItem[]
+getWishlistCount(): number
+wishlistItemExists(tmdbId?: string, mbid?: string, mId?: number): boolean
+getWishlistCountsByReason(): any
+getActiveWishlistItems(): WishlistItem[]
+addWishlistItem(item: any): number
+addWishlistItemsBulk(items: any[]): number
+updateWishlistItem(id: number, data: any): void
+removeWishlistItem(id: number): void
+getWishlistItemById(id: number): any
+// --- Exclusions ---
+getExclusions(type?: string, parentKey?: string): any[]
+isExcluded(type: string, refId?: number, refKey?: string): boolean
+addExclusion(type: any, refId?: any, refKey?: any, parentKey?: any, title?: any): void
+removeExclusion(id: number): void
+// --- Tasks ---
+addTaskHistory(entry: any): number
+getTaskHistory(limit?: number): any[]
+saveActivityLogEntry(entry: any): void
+getActivityLog(type: string, limit: number): any[]
+clearTaskHistory(): void
+clearActivityLog(type: string): void
+saveTaskHistory(entry: any): number
+// --- Stats ---
+getLibraryStats(sourceId?: string): any
+getAggregatedSourceStats(): any
+// --- Quality Scores ---
+getQualityScores(): any[]
+getQualityScoreByMediaId(id: number): any
+getQualityScoresByMediaItemIds(ids: number[]): Map&lt;number, any&gt;
+upsertQualityScore(score: any): number
+// --- Movie Collections ---
+getMovieCollections(sourceId?: string): any[]
+⋮----
+clearMovieCollections(sourceId?: string): void
+upsertMovieCollection(data: any): void
+deleteMovieCollection(id: number): boolean
+getMovieCollectionStats(): any
+// --- Utils ---
+getLetterOffset(table: any, letter: any, filters: any): number
+getLibraryScanTime(sourceId: string, libraryId: string): string | null
+getLibraryScanTimes(sourceId: string): Map&lt;string, any&gt;
+globalSearch(query: string, limit = 5): any
+// --- Scan Tracking ---
+updateLibraryScanTime(sourceId: string, libraryId: string, name: string, type: string, items: number): void
+updateSourceScanTime(sourceId: string): void
+// --- Backup/Export ---
+/**
+   * Export all database data to JSON
+   */
+exportData(): Record&lt;string, unknown[]&gt;
+/**
+   * Import data from exported JSON
+   */
+importData(data: Record&lt;string, unknown[]&gt;):
+/**
+   * Reset the database (delete all data)
+   */
+resetDatabase(): void
+exportWorkingCSV(_options: any): string</file></files></repomix>

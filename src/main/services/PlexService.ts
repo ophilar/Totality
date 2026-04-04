@@ -644,7 +644,7 @@ export class PlexService {
     onProgress?: (progress: ScanProgress) => void,
   ): Promise<number> {
     const BATCH_SIZE = 10
-    let scanned: number
+    let scanned = 0
 
     for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
       const batch = itemsToProcess.slice(i, i + BATCH_SIZE)

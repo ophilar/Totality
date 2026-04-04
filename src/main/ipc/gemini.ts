@@ -281,6 +281,29 @@ export function registerGeminiHandlers() {
     }
   })
 
+  ipcMain.handle('ai:compressionAdvice', async (event, params: unknown) => {
+    try {
+      const { mediaId, requestId } = validateInput(
+        z.object({
+          mediaId: z.number(),
+          requestId: z.string().min(1).max(100),
+        }),
+        params,
+        'ai:compressionAdvice',
+      )
+      const win = BrowserWindow.fromWebContents(event.sender)
+
+      getLoggingService().info('[gemini]', `[IPC ai:compressionAdvice] Generating compression advice for mediaId: ${mediaId}`)
+      const result = await getGeminiAnalysisService().getCompressionAdvice(mediaId)
+
+      win?.webContents.send('ai:analysisStreamComplete', { requestId })
+      return { text: result.text, requestId }
+    } catch (error) {
+      getLoggingService().error('[gemini]', 'Error in ai:compressionAdvice:', error)
+      throw formatError(error)
+    }
+  })
+
   ipcMain.handle('ai:explainQuality', async (_event, params: unknown) => {
     try {
       const validated = validateInput(
