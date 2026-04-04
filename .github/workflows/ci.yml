@@ -25,14 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Rebuild for Node
-        run: npm rebuild
-
       - name: Run tests
         run: npm run test:run
-
-      - name: Rebuild for Electron
-        run: npm run postinstall
 
       - name: Build
         run: npm run build
