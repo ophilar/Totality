@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run test:run
 
   build:
@@ -43,7 +43,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
 
       # macOS code signing setup
       - name: Import macOS signing certificate
