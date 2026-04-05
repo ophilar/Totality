@@ -13,6 +13,7 @@ import { safeSend } from '../ipc/utils/safeSend'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
+import * as crypto from 'crypto'
 
 export type LogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error'
 
@@ -49,7 +50,7 @@ class LoggingService {
   private infoLogs: LogEntry[] = [] // Circular buffer for info/debug/verbose
   private importantLogs: LogEntry[] = [] // Protected buffer for warn/error
   private mainWindow: BrowserWindow | null = null
-  private sessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  private sessionId = `${Date.now()}-${crypto.randomBytes(9).toString('base64url').slice(0, 9)}`
   private startedAt = new Date()
   private verboseEnabled = false
   private homeDir = os.homedir()
