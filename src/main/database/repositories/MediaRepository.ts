@@ -461,6 +461,13 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     letter: string,
     filters?: { sourceId?: string; libraryId?: string }
   ): number {
+    // SECURITY: Explicit allowlist validation to prevent SQL injection or misdirection.
+    // The allowlist includes both internal UI table identifiers and actual database tables.
+    const allowedTables = ['movies', 'tvshows', 'artists', 'albums', 'media_items', 'music_artists', 'music_albums', 'movie_collections'];
+    if (!allowedTables.includes(table)) {
+      throw new Error(`Invalid table identifier: ${table}`);
+    }
+
     if (letter === '#') return 0
 
     const upperLetter = letter.toUpperCase()
