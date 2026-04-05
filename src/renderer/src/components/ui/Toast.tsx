@@ -57,6 +57,7 @@ function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void
         <button
           onClick={handleRemove}
           className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          aria-label="Close toast"
         >
           <X className="w-4 h-4" />
         </button>
