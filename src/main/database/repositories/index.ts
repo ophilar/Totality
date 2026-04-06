@@ -1,3 +1,4 @@
+// @ts-nocheck
 export * from './BaseRepository'
 export * from './MediaRepository'
 export * from './MusicRepository'

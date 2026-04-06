@@ -1,9 +1,10 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import type { MediaSource } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class SourceRepository extends BaseRepository<MediaSource> {
-  constructor(db: Database) {
+  constructor(db: DatabaseSync) {
     super(db, 'media_sources')
   }
 

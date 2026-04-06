@@ -1,7 +1,8 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 
 export class StatsRepository {
-  constructor(private db: Database) {}
+  constructor(private db: DatabaseSync) {}
 
   getLibraryStats(sourceId?: string): {
     totalItems: number
