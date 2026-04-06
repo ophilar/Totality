@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { ConfigRepository } from '../../src/main/database/repositories/ConfigRepository'
 import { runMigrations } from '../../src/main/database/DatabaseMigration'
 
@@ -17,7 +17,7 @@ describe('ConfigRepository', () => {
   let repo: ConfigRepository
 
   beforeEach(() => {
-    db = new Database(':memory:')
+    db = new DatabaseSync(':memory:')
     runMigrations(db)
     repo = new ConfigRepository(db)
   })

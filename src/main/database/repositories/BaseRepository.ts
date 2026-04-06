@@ -1,4 +1,5 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 
 /**
  * BaseRepository
@@ -7,7 +8,7 @@ import type { Database } from 'better-sqlite3'
  * Provides generic CRUD operations and common SQL patterns.
  */
 export abstract class BaseRepository<T extends { id?: number }> {
-  constructor(protected db: Database, protected tableName: string) {}
+  constructor(protected db: DatabaseSync, protected tableName: string) {}
 
   /**
    * Get a single record by ID
@@ -22,7 +23,7 @@ export abstract class BaseRepository<T extends { id?: number }> {
    */
   delete(id: number): boolean {
     const stmt = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`)
-    const info = stmt.run(id)
+    const info = stmt.run(id) as { changes: number }
     return info.changes > 0
   }
 

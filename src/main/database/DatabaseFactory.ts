@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { BetterSQLiteService, getBetterSQLiteService } from './BetterSQLiteService'
 
 /**

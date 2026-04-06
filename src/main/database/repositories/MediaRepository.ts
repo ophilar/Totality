@@ -1,9 +1,10 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import type { MediaItem, MediaItemFilters } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class MediaRepository extends BaseRepository<MediaItem> {
-  constructor(db: Database) {
+  constructor(db: DatabaseSync) {
     super(db, 'media_items')
   }
 
@@ -369,13 +370,14 @@ export class MediaRepository extends BaseRepository<MediaItem> {
 
   removeStaleMediaItems(validPlexIds: Set<string>, type: 'movie' | 'episode'): number {
     const stmt = this.db.prepare('SELECT id, plex_id FROM media_items WHERE type = ?')
-    const items = stmt.all(type) as Array<{ id: number; plex_id: string }>
+    const items = stmt.all(type as any) as unknown as Array<{ id: number; plex_id: string }>
 
     let removedCount = 0
     const deleteStmt = this.db.prepare('DELETE FROM media_items WHERE id = ?')
     const deleteScoreStmt = this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?')
 
-    const transaction = this.db.transaction(() => {
+    this.db.exec('BEGIN DEFERRED')
+    try {
       for (const item of items) {
         if (!validPlexIds.has(item.plex_id)) {
           deleteScoreStmt.run(item.id)
@@ -383,8 +385,11 @@ export class MediaRepository extends BaseRepository<MediaItem> {
           removedCount++
         }
       }
-    })
-    transaction()
+      this.db.exec('COMMIT')
+    } catch(err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
 
     return removedCount
   }

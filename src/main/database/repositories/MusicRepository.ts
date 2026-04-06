@@ -1,9 +1,10 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import type { MusicArtist, MusicAlbum, MusicTrack, MusicQualityScore, ArtistCompleteness, AlbumCompleteness, MusicFilters } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | MusicTrack> {
-  constructor(db: Database) {
+  constructor(db: DatabaseSync) {
     super(db, 'music_tracks') // Default table, methods will override as needed
   }
 

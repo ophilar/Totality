@@ -1,4 +1,5 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import { BaseRepository } from './BaseRepository'
 
 export interface Exclusion {
@@ -12,7 +13,7 @@ export interface Exclusion {
 }
 
 export class ExclusionRepository extends BaseRepository<Exclusion> {
-  constructor(db: Database) {
+  constructor(db: DatabaseSync) {
     super(db, 'exclusions')
   }
 

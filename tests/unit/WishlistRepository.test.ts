@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { WishlistRepository } from '../../src/main/database/repositories/WishlistRepository'
 import { runMigrations } from '../../src/main/database/DatabaseMigration'
 
@@ -8,7 +8,7 @@ describe('WishlistRepository', () => {
   let repo: WishlistRepository
 
   beforeEach(() => {
-    db = new Database(':memory:')
+    db = new DatabaseSync(':memory:')
     runMigrations(db)
     repo = new WishlistRepository(db)
   })

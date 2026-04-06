@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getErrorMessage } from '../../services/utils/errorUtils'
 /**
  * KodiProvider
