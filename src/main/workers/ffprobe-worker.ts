@@ -7,6 +7,7 @@
 
 import { parentPort, workerData } from 'worker_threads'
 import { spawn } from 'child_process'
+import * as path from 'path'
 
 // Types mirrored from MediaFileAnalyzer (can't import due to worker isolation)
 interface FFprobeStream {
@@ -154,19 +155,31 @@ interface WorkerResult {
 const ffprobePath: string = workerData?.ffprobePath || 'ffprobe'
 
 /**
+ * Sanitize a file path to prevent command injection and ensure it's absolute
+ */
+function sanitizePath(filePath: string): string {
+  if (filePath.includes('\0')) {
+    throw new Error('Invalid path: contains null bytes')
+  }
+  return path.resolve(filePath)
+}
+
+/**
  * Run FFprobe on a file and return raw JSON output
  */
 function runFFprobe(filePath: string): Promise<FFprobeOutput> {
+  const sanitizedPath = sanitizePath(filePath)
   return new Promise((resolve, reject) => {
     const args = [
       '-v', 'quiet',
       '-print_format', 'json',
       '-show_format',
       '-show_streams',
-      filePath,
+      `file:${sanitizedPath}`,
     ]
 
-    const proc = spawn(ffprobePath, args, {
+    const actualPath = (ffprobePath && (path.isAbsolute(ffprobePath) || ffprobePath.includes(path.sep))) ? path.resolve(ffprobePath) : ffprobePath
+    const proc = spawn(actualPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

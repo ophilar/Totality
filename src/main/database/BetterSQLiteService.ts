@@ -346,6 +346,7 @@ export class BetterSQLiteService {
   getMusicTrackByPath(p: string): MusicTrack | null { return this.musicRepo.getMusicTrackByPath(p) }
   getMusicAlbumsByArtistName(name: string, limit?: number): MusicAlbum[] { return this.musicRepo.getMusicAlbumsByArtistName(name, limit) }
   getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum> { return this.musicRepo.getMusicAlbumsByMusicbrainzIds(ids) }
+  getMusicTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> { return this.musicRepo.getMusicTracksByAlbumIds(albumIds) }
   getMusicTrackByMusicbrainzId(id: string): MusicTrack | null { return this.musicRepo.getMusicTrackByMusicbrainzId(id) }
   upsertMusicQualityScore(score: any): void { this.musicRepo.upsertMusicQualityScore(score) }
   getMusicQualityScore(id: number): any { return this.musicRepo.getMusicQualityScore(id) }

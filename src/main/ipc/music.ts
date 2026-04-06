@@ -104,17 +104,16 @@ export function registerMusicHandlers(): void {
       const albums = db.getMusicAlbums({ sourceId: validSourceId })
       getLoggingService().info('[music:scanLibrary]', `Found ${albums.length} albums in database for sourceId=${validSourceId}`)
 
-      // Batch fetch all tracks to avoid N+1 queries
+      // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
+      // Previously, the 'in db' check failed because the method wasn't exposed in BetterSQLiteService, 
+      // which caused a fallback to fetching tracks individually for each album (N queries). 
+      // We now call db.getMusicTracksByAlbumIds directly since it's properly exposed.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = 'getMusicTracksByAlbumIds' in db
-        ? (db as unknown as { getMusicTracksByAlbumIds: (ids: number[]) => Map<number, MusicTrack[]> }).getMusicTracksByAlbumIds(albumIds)
-        : null
+      const tracksByAlbum = db.getMusicTracksByAlbumIds(albumIds)
 
       db.startBatch()
       for (const album of albums) {
-        const tracks = tracksByAlbum
-          ? (tracksByAlbum.get(album.id!) || [])
-          : db.getMusicTracks({ albumId: album.id })
+        const tracks = tracksByAlbum.get(album.id!) || []
         const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
         await db.upsertMusicQualityScore(qualityScore)
       }
@@ -340,19 +339,18 @@ export function registerMusicHandlers(): void {
       const filters: MusicFilters = validSourceId ? { sourceId: validSourceId } : {}
       const albums = db.getMusicAlbums(filters)
 
-      // Batch fetch all tracks to avoid N+1 queries
+      // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
+      // Previously, the 'in db' check failed because the method wasn't exposed in BetterSQLiteService, 
+      // which caused a fallback to fetching tracks individually for each album (N queries). 
+      // We now call db.getMusicTracksByAlbumIds directly since it's properly exposed.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = 'getMusicTracksByAlbumIds' in db
-        ? (db as unknown as { getMusicTracksByAlbumIds: (ids: number[]) => Map<number, MusicTrack[]> }).getMusicTracksByAlbumIds(albumIds)
-        : null
+      const tracksByAlbum = db.getMusicTracksByAlbumIds(albumIds)
 
       let processed = 0
 
       db.startBatch()
       for (const album of albums) {
-        const tracks = tracksByAlbum
-          ? (tracksByAlbum.get(album.id!) || [])
-          : db.getMusicTracks({ albumId: album.id })
+        const tracks = tracksByAlbum.get(album.id!) || []
         const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
         await db.upsertMusicQualityScore(qualityScore)
 

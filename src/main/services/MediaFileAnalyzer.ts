@@ -153,7 +153,8 @@ export class MediaFileAnalyzer {
     if (!await this.isAvailable()) return null
 
     return new Promise((resolve) => {
-      const proc = spawn(this.ffprobePath!, ['-version'])
+      const actualPath = (this.ffprobePath && (path.isAbsolute(this.ffprobePath) || this.ffprobePath.includes(path.sep))) ? path.resolve(this.ffprobePath) : (this.ffprobePath || 'ffprobe')
+      const proc = spawn(actualPath, ['-version'])
       let output = ''
       proc.stdout.on('data', (data) => { output += data.toString() })
       proc.on('close', () => {
@@ -275,26 +276,34 @@ export class MediaFileAnalyzer {
     if (!this.ffprobePath) await this.isAvailable()
     if (!this.ffprobePath) return false
 
-    // Derive ffmpeg path from ffprobe path
-    const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) => {
-      return match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
-    })
+    try {
+      const sanitizedInput = this.sanitizePath(audioFilePath)
+      const sanitizedOutput = this.sanitizePath(outputPath)
 
-    const actualFFmpegPath = fs.existsSync(ffmpegPath) ? ffmpegPath : 'ffmpeg'
-
-    return new Promise((resolve) => {
-      const outputDir = path.dirname(outputPath)
-      if (!fs.existsSync(outputDir)) mkdirSync(outputDir, { recursive: true })
-
-      const args = ['-i', audioFilePath, '-an', '-vcodec', 'copy', '-y', outputPath]
-      const proc = spawn(actualFFmpegPath, args, { stdio: 'ignore', timeout: 30000 })
-
-      proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) resolve(true)
-        else { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); resolve(false) }
+      // Derive ffmpeg path from ffprobe path
+      const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) => {
+        return match.toLowerCase().includes('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
       })
-      proc.on('error', () => resolve(false))
-    })
+
+      const actualFFmpegPath = (fs.existsSync(ffmpegPath) || ffmpegPath.includes(path.sep)) ? path.resolve(ffmpegPath) : 'ffmpeg'
+
+      return new Promise((resolve) => {
+        const outputDir = path.dirname(sanitizedOutput)
+        if (!fs.existsSync(outputDir)) mkdirSync(outputDir, { recursive: true })
+
+        const args = ['-i', `file:${sanitizedInput}`, '-an', '-vcodec', 'copy', '-y', sanitizedOutput]
+        const proc = spawn(actualFFmpegPath, args, { stdio: 'ignore', timeout: 30000 })
+
+        proc.on('close', (code) => {
+          if (code === 0 && fs.existsSync(sanitizedOutput) && fs.statSync(sanitizedOutput).size > 0) resolve(true)
+          else { if (fs.existsSync(sanitizedOutput)) fs.unlinkSync(sanitizedOutput); resolve(false) }
+        })
+        proc.on('error', () => resolve(false))
+      })
+    } catch (error) {
+      getLoggingService().error('[MediaFileAnalyzer]', 'Failed to extract artwork:', error)
+      return false
+    }
   }
 
   canInstall(): boolean {
@@ -511,18 +520,31 @@ export class MediaFileAnalyzer {
     return paths
   }
 
+  /**
+   * Sanitize a file path to prevent command injection and ensure it's absolute
+   */
+  private sanitizePath(filePath: string): string {
+    if (filePath.includes('\0')) {
+      throw new Error('Invalid path: contains null bytes')
+    }
+    return path.resolve(filePath)
+  }
+
   private async testFFprobe(probePath: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const proc = spawn(probePath, ['-version'], { stdio: 'ignore', timeout: 5000 })
+      const actualPath = (probePath && (path.isAbsolute(probePath) || probePath.includes(path.sep))) ? path.resolve(probePath) : probePath
+      const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
       proc.on('close', (code) => resolve(code === 0))
       proc.on('error', () => resolve(false))
     })
   }
 
   private async runFFprobe(filePath: string): Promise<FFprobeOutput> {
+    const sanitizedPath = this.sanitizePath(filePath)
     return new Promise((resolve, reject) => {
-      const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath]
-      const proc = spawn(this.ffprobePath!, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
+      const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', `file:${sanitizedPath}`]
+      const actualPath = (this.ffprobePath && (path.isAbsolute(this.ffprobePath) || this.ffprobePath.includes(path.sep))) ? path.resolve(this.ffprobePath) : (this.ffprobePath || 'ffprobe')
+      const proc = spawn(actualPath, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
       let stdout = ''
       let stderr = ''
       proc.stdout.on('data', (data) => { stdout += data.toString() })
