@@ -406,7 +406,24 @@ export class BetterSQLiteService {
   getActiveWishlistItems(): WishlistItem[] { return this.wishlistRepo.getWishlistItems({ status: 'active' }) }
   addWishlistItem(item: any): number { return (this.wishlistRepo as any).add(item) }
   addWishlistItemsBulk(items: any[]): number { let count = 0; this.db?.transaction(() => { for (const i of items) { this.addWishlistItem(i); count++ } })(); return count }
-  updateWishlistItem(id: number, data: any): void { const updates = Object.keys(data).map(k => `${k} = ?`).join(', '); this.db?.prepare(`UPDATE wishlist_items SET ${updates}, updated_at = datetime('now') WHERE id = ?`).run(...Object.values(data), id) }
+  updateWishlistItem(id: number, data: any): void {
+    const allowedKeys = [
+      'media_type', 'title', 'subtitle', 'year', 'reason', 'tmdb_id', 'imdb_id',
+      'musicbrainz_id', 'series_title', 'season_number', 'episode_number',
+      'collection_name', 'artist_name', 'album_title', 'poster_url', 'priority',
+      'notes', 'status', 'media_item_id'
+    ];
+    const updates: string[] = [];
+    const values: any[] = [];
+    for (const [k, v] of Object.entries(data)) {
+      if (allowedKeys.includes(k)) {
+        updates.push(`${k} = ?`);
+        values.push(v);
+      }
+    }
+    if (updates.length === 0) return;
+    this.db?.prepare(`UPDATE wishlist_items SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...values, id)
+  }
   removeWishlistItem(id: number): void { this.db?.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id) }
   getWishlistItemById(id: number): any { return this.db?.prepare('SELECT * FROM wishlist_items WHERE id = ?').get(id) }
 
