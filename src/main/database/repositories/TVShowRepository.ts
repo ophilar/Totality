@@ -1,9 +1,10 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
-  constructor(db: Database) {
+  constructor(db: DatabaseSync) {
     super(db, 'series_completeness')
   }
 

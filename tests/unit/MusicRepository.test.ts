@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { MusicRepository } from '../../src/main/database/repositories/MusicRepository'
 import { runMigrations } from '../../src/main/database/DatabaseMigration'
 import type { MusicArtist, MusicAlbum } from '../../src/main/types/database'
@@ -9,7 +9,7 @@ describe('MusicRepository', () => {
   let repo: MusicRepository
 
   beforeEach(() => {
-    db = new Database(':memory:')
+    db = new DatabaseSync(':memory:')
     runMigrations(db)
     repo = new MusicRepository(db)
   })

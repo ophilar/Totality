@@ -26,11 +26,12 @@ export default defineConfig({
             },
             rollupOptions: {
               external: [
-                'electron', 'electron-updater', 'sql.js', 'better-sqlite3', 'mysql2',
-                'fsevents', 'chokidar', '@google/genai',
+                'electron', 'electron-updater', 'sql.js', 'mysql2',
+                'fsevents', '@google/genai',
                 'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
                 'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
+                'node:sqlite'
               ],
               output: {
                 format: 'cjs',

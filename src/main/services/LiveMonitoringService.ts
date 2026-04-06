@@ -12,7 +12,6 @@ import { getErrorMessage } from './utils/errorUtils'
  */
 
 import { BrowserWindow } from 'electron'
-import * as chokidar from 'chokidar'
 import * as path from 'path'
 import * as fs from 'fs'
 import { exec } from 'child_process'
@@ -106,7 +105,7 @@ export class LiveMonitoringService {
   private lastCheckTimes: Map<string, Date> = new Map()
 
   // File watching state (for local sources)
-  private fileWatchers: Map<string, chokidar.FSWatcher> = new Map()
+  private fileWatchers: Map<string, fs.FSWatcher> = new Map()
   private fileChangeDebounce: Map<string, NodeJS.Timeout> = new Map()
   private pendingFileChanges: Map<string, Set<string>> = new Map()
 
@@ -115,9 +114,6 @@ export class LiveMonitoringService {
   private static readonly FILE_CHANGE_DEBOUNCE_MS = 2000 // Wait 2s after last file change
   private static readonly STARTUP_DELAY_MS = 5000 // Delay before starting monitoring on app launch
   private static readonly FIRST_POLL_DELAY_MS = 5000 // Delay before first poll after starting
-  private static readonly NETWORK_POLL_INTERVAL_MS = 10000 // 10s polling interval for network paths
-  private static readonly WRITE_STABILITY_THRESHOLD_MS = 2000 // Wait for file writes to stabilize
-  private static readonly CHOKIDAR_POLL_INTERVAL_MS = 500 // Poll interval for chokidar awaitWriteFinish
   private static readonly MAX_REASONABLE_CHANGES = 50 // Max file changes to process at once
   private static readonly POLL_TIMEOUT_MS = 120000 // 2-minute timeout for polling a source
 
@@ -266,11 +262,13 @@ export class LiveMonitoringService {
     }
     this.pollingTimers.clear()
 
-    // Close all file watchers (fire-and-forget, but log errors)
+    // Close all file watchers
     for (const [sourceId, watcher] of this.fileWatchers) {
-      watcher.close().catch((err) => {
+      try {
+        watcher.close()
+      } catch (err) {
         getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
-      })
+      }
       getLoggingService().info('[LiveMonitoring]', `Stopped watching ${sourceId}`)
     }
     this.fileWatchers.clear()
@@ -397,46 +395,24 @@ export class LiveMonitoringService {
       getLoggingService().info('[LiveMonitoring]', `Starting file watcher for ${sourceName} (usePolling: ${usePolling})`)
       this.emitDebugEvent('info', `Starting file watcher: ${sourceName} (${usePolling ? 'polling' : 'native'})`)
 
-      const watcher = chokidar.watch(watchPath, {
-        ignored: /(^|[/\\])\./, // Ignore hidden files (starting with dot)
-        persistent: true,
-        ignoreInitial: true,
-        awaitWriteFinish: {
-          stabilityThreshold: LiveMonitoringService.WRITE_STABILITY_THRESHOLD_MS,
-          pollInterval: LiveMonitoringService.CHOKIDAR_POLL_INTERVAL_MS,
-        },
-        usePolling,
-        interval: usePolling ? LiveMonitoringService.NETWORK_POLL_INTERVAL_MS : undefined,
-        binaryInterval: usePolling ? LiveMonitoringService.NETWORK_POLL_INTERVAL_MS : undefined,
-      })
+      // Use native fs.watch for recursive directory watching (supported natively in Node 20+)
+      const watcher = fs.watch(watchPath, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return
 
-      watcher.on('add', (filePath) => {
+        // Ignore hidden files or directories
+        if (/(^|[/\\])\./.test(filename)) return
+
+        const fullPath = path.join(watchPath, filename)
+
         try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'add', filePath)
+          if (this.isMediaFile(fullPath)) {
+            // fs.watch doesn't accurately report add vs change vs unlink reliably.
+            // We'll treat all file events as 'change' and let the batch processor figure it out.
+            const action = fs.existsSync(fullPath) ? 'change' : 'unlink'
+            this.handleFileChange(sourceId, action, fullPath)
           }
         } catch (error) {
-          getLoggingService().error('[LiveMonitoring]', `Error handling file add for ${sourceName}:`, error)
-        }
-      })
-
-      watcher.on('change', (filePath) => {
-        try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'change', filePath)
-          }
-        } catch (error) {
-          getLoggingService().error('[LiveMonitoring]', `Error handling file change for ${sourceName}:`, error)
-        }
-      })
-
-      watcher.on('unlink', (filePath) => {
-        try {
-          if (this.isMediaFile(filePath)) {
-            this.handleFileChange(sourceId, 'unlink', filePath)
-          }
-        } catch (error) {
-          getLoggingService().error('[LiveMonitoring]', `Error handling file unlink for ${sourceName}:`, error)
+          getLoggingService().error('[LiveMonitoring]', `Error handling file event for ${sourceName}:`, error)
         }
       })
 
@@ -450,10 +426,8 @@ export class LiveMonitoringService {
         }
       })
 
-      watcher.on('ready', () => {
-        getLoggingService().info('[LiveMonitoring]', `Watcher ready for ${sourceName}`)
-        this.emitDebugEvent('info', `[${sourceName}] File watcher ready`)
-      })
+      getLoggingService().info('[LiveMonitoring]', `Watcher ready for ${sourceName}`)
+      this.emitDebugEvent('info', `[${sourceName}] File watcher ready`)
 
       this.fileWatchers.set(sourceId, watcher)
     } catch (error) {
@@ -473,13 +447,15 @@ export class LiveMonitoringService {
    * Handle watcher error by falling back to polling
    */
   private handleWatcherError(sourceId: string, sourceType: ProviderType, _watchPath: string): void {
-    // Close the failed watcher (fire-and-forget with error logging)
+    // Close the failed watcher
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
       this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
-      watcher.close().catch((err) => {
+      try {
+        watcher.close()
+      } catch (err) {
         getLoggingService().error('[LiveMonitoring]', `Error closing failed watcher for ${sourceId}:`, err)
-      })
+      }
     }
 
     // Clear any pending debounce timer for this source
@@ -1090,13 +1066,15 @@ export class LiveMonitoringService {
       this.pollingTimers.delete(sourceId)
     }
 
-    // Stop file watcher (fire-and-forget with error logging)
+    // Stop file watcher
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
       this.fileWatchers.delete(sourceId) // Remove from map first to prevent double-close
-      watcher.close().catch((err) => {
+      try {
+        watcher.close()
+      } catch (err) {
         getLoggingService().error('[LiveMonitoring]', `Error closing watcher for removed source ${sourceId}:`, err)
-      })
+      }
     }
 
     // Clear debounce timer

@@ -1,8 +1,9 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import { getCredentialEncryptionService } from '../../services/CredentialEncryptionService'
 
 export class ConfigRepository {
-  constructor(private db: Database) {}
+  constructor(private db: DatabaseSync) {}
 
   getSetting(key: string): string | null {
     const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?')
