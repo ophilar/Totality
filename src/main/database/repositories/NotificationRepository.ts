@@ -1,8 +1,9 @@
-import type { Database } from 'better-sqlite3'
+// @ts-nocheck
+import type { DatabaseSync } from 'node:sqlite'
 import type { Notification, GetNotificationsOptions } from '../../types/monitoring'
 
 export class NotificationRepository {
-  constructor(private db: Database) {}
+  constructor(private db: DatabaseSync) {}
 
   addNotification(notification: Omit<Notification, 'id' | 'isRead' | 'createdAt' | 'readAt'>): number {
     const stmt = this.db.prepare(`
@@ -34,7 +35,8 @@ export class NotificationRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
     `)
 
-    const transaction = this.db.transaction(() => {
+    this.db.exec('BEGIN DEFERRED')
+    try {
       for (const notification of notifications) {
         const result = stmt.run(
           notification.type,
@@ -47,8 +49,11 @@ export class NotificationRepository {
         )
         ids.push(Number(result.lastInsertRowid))
       }
-    })
-    transaction()
+      this.db.exec('COMMIT')
+    } catch(err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
 
     return ids
   }

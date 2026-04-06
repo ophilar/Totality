@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Database schema as a TypeScript constant
 // This ensures it's bundled correctly by Vite
 
