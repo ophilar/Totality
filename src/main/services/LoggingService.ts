@@ -174,9 +174,7 @@ class LoggingService {
               }
               try {
                 return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-              } catch {
-                return String(arg)
-              }
+              } catch (error) { throw error }
             })
             .join('\n\n')
         : undefined
@@ -193,9 +191,7 @@ class LoggingService {
         }
         try {
           return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-        } catch {
-          return String(arg)
-        }
+        } catch (error) { throw error }
       })
       .join('\n\n')
   }
@@ -266,7 +262,7 @@ class LoggingService {
         const db = this.dbGetter()
         db.setSetting('verbose_logging_enabled', String(enabled))
       }
-    } catch { /* DB may not be ready */ }
+    } catch (e) { throw e; }
   }
 
   isVerboseEnabled(): boolean {
@@ -378,9 +374,7 @@ class LoggingService {
       // Restore verbose setting
       const verbose = db.getSetting('verbose_logging_enabled')
       if (verbose === 'true') this.verboseEnabled = true
-    } catch {
-      // DB may not be ready; use defaults (file logging stays disabled)
-    }
+    } catch (error) { throw error }
   }
 
   private appendToFileBuffer(entry: LogEntry): void {

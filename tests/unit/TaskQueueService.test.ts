@@ -1,68 +1,42 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-
-// Mock electron
-vi.mock('electron', () => ({
-  BrowserWindow: vi.fn(),
-}))
-
-// Mock dependencies
-vi.mock('../../src/main/ipc/utils/safeSend', () => ({
-  safeSend: vi.fn(),
-}))
-
-vi.mock('../../src/main/services/SourceManager', () => ({
-  getSourceManager: vi.fn().mockReturnValue({
-    getProvider: vi.fn(),
-    getSources: vi.fn().mockReturnValue([]),
-  }),
-}))
-
-vi.mock('../../src/main/services/SeriesCompletenessService', () => ({
-  getSeriesCompletenessService: vi.fn().mockReturnValue({
-    analyzeLibraryCompleteness: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('../../src/main/services/MovieCollectionService', () => ({
-  getMovieCollectionService: vi.fn().mockReturnValue({
-    analyzeCollections: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('../../src/main/services/MusicBrainzService', () => ({
-  getMusicBrainzService: vi.fn().mockReturnValue({
-    analyzeArtistCompleteness: vi.fn(),
-    cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn().mockReturnValue({
-    getSources: vi.fn().mockReturnValue([]),
-    getMediaItems: vi.fn().mockReturnValue([]),
-  }),
-}))
-
-vi.mock('../../src/main/services/LiveMonitoringService', () => ({
-  getLiveMonitoringService: vi.fn().mockReturnValue({
-    pauseMonitoring: vi.fn(),
-    resumeMonitoring: vi.fn(),
-    pause: vi.fn(),
-    resume: vi.fn(),
-    isActiveAndEnabled: vi.fn().mockReturnValue(false),
-  }),
-}))
-
-// Import after mocks
 import { TaskQueueService, TaskDefinition } from '../../src/main/services/TaskQueueService'
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
+  let mockDb: any
+  let mockLogging: any
+  let mockSourceManager: any
 
   beforeEach(() => {
-    service = new TaskQueueService()
+    vi.clearAllMocks()
+    
+    mockDb = {
+      getSetting: vi.fn().mockReturnValue(null),
+      setSetting: vi.fn(),
+      createNotification: vi.fn().mockReturnValue(1),
+      getMusicArtistById: vi.fn(),
+      getMusicAlbums: vi.fn().mockReturnValue([]),
+    }
+
+    mockLogging = {
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      verbose: vi.fn(),
+    }
+
+    mockSourceManager = {
+      getProvider: vi.fn(),
+      getSources: vi.fn().mockReturnValue([]),
+      scanLibrary: vi.fn().mockResolvedValue({ success: true }),
+      scanSource: vi.fn().mockResolvedValue({ success: true }),
+    }
+
+    service = new TaskQueueService({
+      db: mockDb,
+      logging: mockLogging,
+      sourceManager: mockSourceManager
+    })
   })
 
   afterEach(() => {
@@ -76,7 +50,7 @@ describe('TaskQueueService', () => {
         label: 'Scan All Libraries',
       }
 
-      const taskId = service.addTask(definition)
+      const taskId = service.addTask(definition as any)
 
       expect(taskId).toBeDefined()
       expect(taskId).toMatch(/^task_\d+_[a-z0-9]+$/)
@@ -86,20 +60,18 @@ describe('TaskQueueService', () => {
     })
 
     it('should add multiple tasks to the queue', () => {
-      service.addTask({ type: 'library-scan', label: 'Task 1' })
-      service.addTask({ type: 'source-scan', label: 'Task 2', sourceId: 'src1' })
-      service.addTask({ type: 'series-completeness', label: 'Task 3' })
+      service.addTask({ type: 'library-scan', label: 'Task 1' } as any)
+      service.addTask({ type: 'source-scan', label: 'Task 2', sourceId: 'src1' } as any)
+      service.addTask({ type: 'series-completeness', label: 'Task 3' } as any)
 
       const state = service.getQueueState()
-      // First task might be running, rest in queue
       const totalTasks = state.queue.length + (state.currentTask ? 1 : 0)
       expect(totalTasks).toBe(3)
     })
 
     it('should remove a queued task', () => {
-      const taskId = service.addTask({ type: 'library-scan', label: 'Test' })
+      const taskId = service.addTask({ type: 'library-scan', label: 'Test' } as any)
 
-      // If task is already running, removeTask returns false for running tasks
       const state = service.getQueueState()
       if (state.queue.find(t => t.id === taskId)) {
         const removed = service.removeTask(taskId)
@@ -113,8 +85,8 @@ describe('TaskQueueService', () => {
     })
 
     it('should generate unique task IDs', () => {
-      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1' })
-      const id2 = service.addTask({ type: 'library-scan', label: 'Task 2' })
+      const id1 = service.addTask({ type: 'library-scan', label: 'Task 1' } as any)
+      const id2 = service.addTask({ type: 'library-scan', label: 'Task 2' } as any)
 
       expect(id1).not.toBe(id2)
     })
@@ -169,7 +141,7 @@ describe('TaskQueueService', () => {
 
   describe('task definitions', () => {
     it('should accept library-scan task', () => {
-      const id = service.addTask({ type: 'library-scan', label: 'Scan' })
+      const id = service.addTask({ type: 'library-scan', label: 'Scan' } as any)
       expect(id).toBeDefined()
     })
 
@@ -178,7 +150,7 @@ describe('TaskQueueService', () => {
         type: 'source-scan',
         label: 'Scan Source',
         sourceId: 'test-source',
-      })
+      } as any)
       expect(id).toBeDefined()
     })
 
@@ -188,7 +160,7 @@ describe('TaskQueueService', () => {
         label: 'Scan Music',
         sourceId: 'test-source',
         libraryId: 'test-library',
-      })
+      } as any)
       expect(id).toBeDefined()
     })
 
@@ -196,7 +168,7 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'series-completeness',
         label: 'Analyze Series',
-      })
+      } as any)
       expect(id).toBeDefined()
     })
 
@@ -204,7 +176,7 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'collection-completeness',
         label: 'Analyze Collections',
-      })
+      } as any)
       expect(id).toBeDefined()
     })
 
@@ -212,7 +184,7 @@ describe('TaskQueueService', () => {
       const id = service.addTask({
         type: 'music-completeness',
         label: 'Analyze Music',
-      })
+      } as any)
       expect(id).toBeDefined()
     })
   })

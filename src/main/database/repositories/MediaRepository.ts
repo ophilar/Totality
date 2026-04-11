@@ -124,6 +124,38 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     return this.getMediaItem(id)
   }
 
+  updateMediaItemPathAndStats(mediaItemId: number, newPath: string, analysis: any): void {
+    this.db.prepare(`
+      UPDATE media_items 
+      SET file_path = ?, 
+          file_size = ?, 
+          duration = ?, 
+          resolution = ?, 
+          width = ?, 
+          height = ?, 
+          video_codec = ?, 
+          video_bitrate = ?, 
+          audio_codec = ?, 
+          audio_channels = ?, 
+          audio_bitrate = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      newPath,
+      analysis.fileSize || 0,
+      analysis.duration || 0,
+      analysis.video?.resolution || 'unknown',
+      analysis.video?.width || 0,
+      analysis.video?.height || 0,
+      analysis.video?.codec || 'unknown',
+      analysis.video?.bitrate || 0,
+      analysis.audioTracks?.[0]?.codec || 'unknown',
+      analysis.audioTracks?.[0]?.channels || 0,
+      analysis.audioTracks?.[0]?.bitrate || 0,
+      mediaItemId
+    )
+  }
+
   getMediaItemByPath(filePath: string): MediaItem | null {
     const sql = `
       SELECT m.*,
@@ -172,11 +204,11 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       )
       ON CONFLICT(source_id, plex_id) DO UPDATE SET
         library_id = excluded.library_id,
-        title = excluded.title,
-        sort_title = excluded.sort_title,
-        year = excluded.year,
+        title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.title ELSE excluded.title END,
+        sort_title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.sort_title ELSE excluded.sort_title END,
+        year = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.year ELSE excluded.year END,
         type = excluded.type,
-        series_title = excluded.series_title,
+        series_title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_title ELSE excluded.series_title END,
         season_number = excluded.season_number,
         episode_number = excluded.episode_number,
         file_path = excluded.file_path,
@@ -203,15 +235,15 @@ export class MediaRepository extends BaseRepository<MediaItem> {
         subtitle_tracks = excluded.subtitle_tracks,
         container = excluded.container,
         file_mtime = excluded.file_mtime,
-        original_language = COALESCE(excluded.original_language, media_items.original_language),
+        original_language = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.original_language ELSE COALESCE(excluded.original_language, media_items.original_language) END,
         audio_language = COALESCE(excluded.audio_language, media_items.audio_language),
-        imdb_id = COALESCE(excluded.imdb_id, media_items.imdb_id),
-        tmdb_id = COALESCE(excluded.tmdb_id, media_items.tmdb_id),
-        series_tmdb_id = COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id),
-        poster_url = COALESCE(excluded.poster_url, media_items.poster_url),
-        episode_thumb_url = COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url),
-        season_poster_url = COALESCE(excluded.season_poster_url, media_items.season_poster_url),
-        summary = COALESCE(excluded.summary, media_items.summary),
+        imdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.imdb_id ELSE COALESCE(excluded.imdb_id, media_items.imdb_id) END,
+        tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.tmdb_id ELSE COALESCE(excluded.tmdb_id, media_items.tmdb_id) END,
+        series_tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id) END,
+        poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.poster_url ELSE COALESCE(excluded.poster_url, media_items.poster_url) END,
+        episode_thumb_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url) END,
+        season_poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.season_poster_url ELSE COALESCE(excluded.season_poster_url, media_items.season_poster_url) END,
+        summary = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.summary ELSE COALESCE(excluded.summary, media_items.summary) END,
         user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
         quality_tier = COALESCE(excluded.quality_tier, media_items.quality_tier),
         tier_quality = COALESCE(excluded.tier_quality, media_items.tier_quality),
@@ -275,25 +307,108 @@ export class MediaRepository extends BaseRepository<MediaItem> {
   }
 
   deleteMediaItem(id: number): void {
-    this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
-    this.db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
-    this.delete(id)
+    const db = this.db
+    db.exec('BEGIN')
+    try {
+      // 1. Fetch item details before deletion to update summaries later
+      const item = db.prepare(
+        'SELECT tmdb_id, source_id, library_id, type, series_title, season_number, episode_number FROM media_items WHERE id = ?'
+      ).get(id) as { tmdb_id?: string; source_id: string; library_id?: string; type: string; series_title?: string; season_number?: number; episode_number?: number } | undefined
+
+      if (item) {
+        // Capture collection IDs before deleting associations
+        const collections = db.prepare('SELECT collection_id FROM media_item_collections WHERE media_item_id = ?').all(id) as Array<{ collection_id: number }>
+
+        // 2. Perform deletions
+        db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
+        db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
+        db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
+        db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
+
+        // 3. Update summaries
+        const sourceId = item.source_id
+        const libraryId = item.library_id || ''
+
+        if (item.type === 'episode' && item.series_title) {
+          // Update series completeness
+          db.prepare(`
+            UPDATE series_completeness SET
+              owned_episodes = (SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
+              owned_seasons = (SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
+              completeness_percentage = CASE WHEN total_episodes > 0
+                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode') AS REAL) * 100.0 / total_episodes)
+                ELSE 0 END,
+              updated_at = datetime('now')
+            WHERE series_title = ? AND source_id = ? AND library_id = ?
+          `).run(
+            item.series_title, sourceId, libraryId,
+            item.series_title, sourceId, libraryId,
+            item.series_title, sourceId, libraryId,
+            item.series_title, sourceId, libraryId
+          )
+
+          // Cleanup series completeness if no more episodes exist for it
+          db.prepare(
+            'DELETE FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ? AND owned_episodes <= 0'
+          ).run(item.series_title, sourceId, libraryId)
+        }
+
+        if (item.type === 'movie' && collections.length > 0) {
+          // Update collection completeness for each affected collection
+          const updateStmt = db.prepare(`
+            UPDATE movie_collections SET
+              owned_movies = (
+                SELECT COUNT(DISTINCT media_item_id) FROM media_item_collections
+                WHERE collection_id = movie_collections.id
+              ),
+              completeness_percentage = CASE WHEN total_movies > 0
+                THEN ROUND(CAST((SELECT COUNT(DISTINCT media_item_id) FROM media_item_collections WHERE collection_id = movie_collections.id) AS REAL) * 100.0 / total_movies)
+                ELSE 0 END,
+              updated_at = datetime('now')
+            WHERE id = ?
+          `)
+
+          for (const coll of collections) {
+            updateStmt.run(coll.collection_id)
+          }
+        }
+      }      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
   }
 
   deleteMediaItemsForSource(sourceId: string): void {
-    this.db.prepare(`
-      DELETE FROM media_item_versions WHERE media_item_id IN (
-        SELECT id FROM media_items WHERE source_id = ?
-      )
-    `).run(sourceId)
-    this.db.prepare(`
-      DELETE FROM quality_scores WHERE media_item_id IN (
-        SELECT id FROM media_items WHERE source_id = ?
-      )
-    `).run(sourceId)
+    const db = this.db
+    db.exec('BEGIN')
+    try {
+      db.prepare(`
+        DELETE FROM media_item_versions WHERE media_item_id IN (
+          SELECT id FROM media_items WHERE source_id = ?
+        )
+      `).run(sourceId)
+      
+      db.prepare(`
+        DELETE FROM quality_scores WHERE media_item_id IN (
+          SELECT id FROM media_items WHERE source_id = ?
+        )
+      `).run(sourceId)
 
-    this.db.prepare('DELETE FROM media_items WHERE source_id = ?').run(sourceId)
+      db.prepare(`
+        DELETE FROM media_item_collections WHERE media_item_id IN (
+          SELECT id FROM media_items WHERE source_id = ?
+        )
+      `).run(sourceId)
+
+      db.prepare('DELETE FROM media_items WHERE source_id = ?').run(sourceId)
+      db.prepare('DELETE FROM series_completeness WHERE source_id = ?').run(sourceId)
+      db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
   }
 
   updateSeriesMatch(
@@ -369,29 +484,36 @@ export class MediaRepository extends BaseRepository<MediaItem> {
   }
 
   removeStaleMediaItems(validPlexIds: Set<string>, type: 'movie' | 'episode'): number {
-    const stmt = this.db.prepare('SELECT id, plex_id FROM media_items WHERE type = ?')
-    const items = stmt.all(type as any) as unknown as Array<{ id: number; plex_id: string }>
-
-    let removedCount = 0
-    const deleteStmt = this.db.prepare('DELETE FROM media_items WHERE id = ?')
-    const deleteScoreStmt = this.db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?')
-
-    this.db.exec('BEGIN DEFERRED')
+    const db = this.db
+    
+    db.exec('BEGIN')
     try {
-      for (const item of items) {
-        if (!validPlexIds.has(item.plex_id)) {
-          deleteScoreStmt.run(item.id)
-          deleteStmt.run(item.id)
-          removedCount++
-        }
+      if (validPlexIds.size === 0) {
+        const result = db.prepare('DELETE FROM media_items WHERE type = ?').run(type)
+        db.exec('COMMIT')
+        return Number(result.changes)
       }
-      this.db.exec('COMMIT')
-    } catch(err) {
-      this.db.exec('ROLLBACK')
+
+      // Use a temporary table for maximum performance with large sets
+      db.exec('CREATE TEMPORARY TABLE IF NOT EXISTS valid_plex_ids (plex_id TEXT)')
+      db.exec('DELETE FROM valid_plex_ids')
+      
+      const insertStmt = db.prepare('INSERT INTO valid_plex_ids (plex_id) VALUES (?)')
+      for (const id of validPlexIds) {
+        insertStmt.run(id)
+      }
+
+      const result = db.prepare(`
+        DELETE FROM media_items 
+        WHERE type = ? AND plex_id NOT IN (SELECT plex_id FROM valid_plex_ids)
+      `).run(type)
+
+      db.exec('COMMIT')
+      return Number(result.changes)
+    } catch (err) {
+      db.exec('ROLLBACK')
       throw err
     }
-
-    return removedCount
   }
 
   updateMediaItemArtwork(

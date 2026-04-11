@@ -28,10 +28,11 @@ export interface TaskResult {
 
 export interface QueuedTask {
   id: string
-  type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
+  type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
   label: string
   sourceId?: string
   libraryId?: string
+  mediaItemId?: number
   artistId?: number
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress?: TaskProgress
@@ -40,6 +41,17 @@ export interface QueuedTask {
   completedAt?: string
   error?: string
   result?: TaskResult
+  options?: any
+}
+
+export interface TaskQueueDependencies {
+  db?: any
+  logging?: any
+  sourceManager?: any
+  seriesCompleteness?: any
+  movieCollection?: any
+  musicBrainz?: any
+  transcoding?: any
 }
 
 export class TaskQueueService {
@@ -50,8 +62,52 @@ export class TaskQueueService {
   private cancelRequested = false
   private historyLimit = 100
 
-  constructor() {
+  private db: any
+  private logging: any
+  private sourceManager: any
+  private seriesCompleteness: any
+  private movieCollection: any
+  private musicBrainz: any
+  private transcoding: any
+
+  constructor(deps: TaskQueueDependencies = {}) {
+    this.db = deps.db || getDatabase()
+    this.logging = deps.logging || getLoggingService()
+    this.sourceManager = deps.sourceManager || null
+    this.seriesCompleteness = deps.seriesCompleteness || null
+    this.movieCollection = deps.movieCollection || null
+    this.musicBrainz = deps.musicBrainz || null
+    this.transcoding = deps.transcoding || null
+
     this.loadState()
+  }
+
+  private getSourceManager(): any {
+    if (!this.sourceManager) this.sourceManager = getSourceManager()
+    return this.sourceManager
+  }
+
+  private getSeriesCompleteness(): any {
+    if (!this.seriesCompleteness) this.seriesCompleteness = getSeriesCompletenessService()
+    return this.seriesCompleteness
+  }
+
+  private getMovieCollection(): any {
+    if (!this.movieCollection) this.movieCollection = getMovieCollectionService()
+    return this.movieCollection
+  }
+
+  private getMusicBrainz(): any {
+    if (!this.musicBrainz) this.musicBrainz = getMusicBrainzService()
+    return this.musicBrainz
+  }
+
+  private getTranscoding(): any {
+    if (!this.transcoding) {
+      const { getTranscodingService } = require('./TranscodingService')
+      this.transcoding = getTranscodingService()
+    }
+    return this.transcoding
   }
 
   setMainWindow(_win: any): void {
@@ -74,7 +130,7 @@ export class TaskQueueService {
     }
 
     this.queue.push(task)
-    getLoggingService().info('[TaskQueue]', `Task added: ${task.label} (${task.id})`)
+    this.logging.info('[TaskQueue]', `Task added: ${task.label} (${task.id})`)
     
     this.saveState()
     this.processQueue()
@@ -90,7 +146,7 @@ export class TaskQueueService {
     const index = this.queue.findIndex(t => t.id === taskId)
     if (index !== -1) {
       const task = this.queue.splice(index, 1)[0]
-      getLoggingService().info('[TaskQueue]', `Task removed: ${task.label} (${task.id})`)
+      this.logging.info('[TaskQueue]', `Task removed: ${task.label} (${task.id})`)
       this.saveState()
       this.notifyListeners()
       return true
@@ -102,7 +158,7 @@ export class TaskQueueService {
     const originalCount = this.queue.length
     this.queue = this.queue.filter(t => t.sourceId !== sourceId)
     if (this.queue.length !== originalCount) {
-      getLoggingService().info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
+      this.logging.info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
       this.saveState()
       this.notifyListeners()
     }
@@ -132,7 +188,7 @@ export class TaskQueueService {
   clearQueue(): void {
     const count = this.queue.length
     this.queue = []
-    getLoggingService().info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
+    this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
     this.saveState()
     this.notifyListeners()
   }
@@ -142,7 +198,7 @@ export class TaskQueueService {
    */
   pause(): void {
     this.isPaused = true
-    getLoggingService().info('[TaskQueue]', 'Queue paused')
+    this.logging.info('[TaskQueue]', 'Queue paused')
     this.notifyListeners()
   }
 
@@ -153,7 +209,7 @@ export class TaskQueueService {
    */
   resume(): void {
     this.isPaused = false
-    getLoggingService().info('[TaskQueue]', 'Queue resumed')
+    this.logging.info('[TaskQueue]', 'Queue resumed')
     this.processQueue()
     this.notifyListeners()
   }
@@ -166,7 +222,7 @@ export class TaskQueueService {
   cancelCurrent(): void {
     if (this.currentTask) {
       this.cancelRequested = true
-      getLoggingService().info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
+      this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
     }
   }
 
@@ -214,7 +270,7 @@ export class TaskQueueService {
     this.currentTask.startedAt = new Date().toISOString()
     this.cancelRequested = false
     
-    getLoggingService().info('[TaskQueue]', `Starting task: ${this.currentTask.label}`)
+    this.logging.info('[TaskQueue]', `Starting task: ${this.currentTask.label}`)
     this.notifyListeners()
 
     const task = this.currentTask
@@ -243,32 +299,35 @@ export class TaskQueueService {
         case 'music-scan':
           await this.executeMusicScan(task, onProgress)
           break
+        case 'transcode':
+          await this.executeTranscode(task, onProgress)
+          break
         default:
           throw new Error(`Unknown task type: ${task.type}`)
       }
 
       if (this.cancelRequested) {
         task.status = 'cancelled'
-        getLoggingService().info('[TaskQueue]', `Task cancelled: ${task.label}`)
+        this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
       } else {
         task.status = 'completed'
-        getLoggingService().info('[TaskQueue]', `Task completed: ${task.label}`)
+        this.logging.info('[TaskQueue]', `Task completed: ${task.label}`)
       }
     } catch (error) {
       const errorMsg = getErrorMessage(error)
       task.status = 'failed'
       task.error = errorMsg
-      getLoggingService().error('[TaskQueue]', `Task failed: ${task.label}`, error)
+      this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
       
       try {
-        getDatabase().createNotification({
+        this.db.createNotification({
           type: 'error',
           title: 'Task failed',
           message: `${task.label}: ${errorMsg}`,
           sourceId: task.sourceId,
           sourceName: task.label,
         })
-      } catch { /* ignore */ }
+      } catch (e) { }
     } finally {
       task.completedAt = new Date().toISOString()
       this.completedTasks.unshift(task)
@@ -282,8 +341,10 @@ export class TaskQueueService {
       
       // Emit completion event for UI sounds/effects
       if (task.status === 'completed') {
-        const windows = require('electron').BrowserWindow.getAllWindows()
-        windows[0]?.webContents.send('taskQueue:taskComplete', task)
+        try {
+          const windows = require('electron').BrowserWindow.getAllWindows()
+          windows[0]?.webContents.send('taskQueue:taskComplete', task)
+        } catch (e) {}
       }
 
       // Small delay before next task
@@ -293,18 +354,18 @@ export class TaskQueueService {
 
   private async executeLibraryScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
-    const manager = getSourceManager()
+    const manager = this.getSourceManager()
     await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
   }
 
   private async executeSourceScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.sourceId) throw new Error('Missing sourceId')
-    const manager = getSourceManager()
+    const manager = this.getSourceManager()
     await manager.scanSource(task.sourceId, onProgress)
   }
 
   private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
-    const service = getSeriesCompletenessService()
+    const service = this.getSeriesCompleteness()
     const result = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress)
     
     task.result = {
@@ -317,7 +378,7 @@ export class TaskQueueService {
   }
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
-    const service = getMovieCollectionService()
+    const service = this.getMovieCollection()
     const result = await service.analyzeAllCollections((prog: any) => {
       onProgress({
         current: prog.current,
@@ -334,8 +395,8 @@ export class TaskQueueService {
   }
 
   private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
-    const service = getMusicBrainzService()
-    const db = getDatabase()
+    const service = this.getMusicBrainz()
+    const db = this.db
     
     if (!task.artistId) throw new Error('Missing artistId for music completeness analysis')
     
@@ -344,8 +405,8 @@ export class TaskQueueService {
 
     // Get owned albums for this artist
     const albums = db.getMusicAlbums({ artistId: task.artistId })
-    const ownedAlbumTitles = albums.map(a => a.title)
-    const ownedAlbumMbIds = albums.map(a => a.musicbrainz_id).filter((id): id is string => !!id)
+    const ownedAlbumTitles = albums.map((a: any) => a.title)
+    const ownedAlbumMbIds = albums.map((a: any) => a.musicbrainz_id).filter((id: any): id is string => !!id)
     
     // @ts-ignore - analyzeArtistCompleteness might have different signature than expected from grep
     const result = await service.analyzeArtistCompleteness(
@@ -371,8 +432,27 @@ export class TaskQueueService {
 
   private async executeMusicScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.sourceId) throw new Error('Missing sourceId')
-    const manager = getSourceManager()
+    const manager = this.getSourceManager()
     await manager.scanSource(task.sourceId, onProgress)
+  }
+
+  private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    if (!task.mediaItemId) throw new Error('Missing mediaItemId for transcode task')
+    const service = this.getTranscoding()
+    
+    await service.transcode(
+      task.mediaItemId,
+      task.options || {},
+      (p: any) => {
+        onProgress({
+          current: Math.round(p.percent),
+          total: 100,
+          percentage: p.percent,
+          phase: p.status,
+          currentItem: task.label
+        })
+      }
+    )
   }
 
   private notifyListeners(): void {
@@ -385,26 +465,22 @@ export class TaskQueueService {
           win.webContents.send('taskQueue:updated', state)
         }
       }
-    } catch {
-      // Ignore during unit tests
-    }
+    } catch (error) { }
   }
 
   private saveState(): void {
-    const db = getDatabase()
     try {
-      db.setSetting('task_queue_state', JSON.stringify({
+      this.db.setSetting('task_queue_state', JSON.stringify({
         queue: this.queue,
         completedTasks: this.completedTasks,
         isPaused: this.isPaused
       }))
-    } catch { /* ignore */ }
+    } catch (e) { }
   }
 
   private loadState(): void {
-    const db = getDatabase()
     try {
-      const stateStr = db.getSetting('task_queue_state')
+      const stateStr = this.db.getSetting('task_queue_state')
       if (stateStr) {
         const state = JSON.parse(stateStr)
         this.queue = state.queue || []
@@ -414,7 +490,7 @@ export class TaskQueueService {
         // Reset any tasks that were running to queued
         this.queue.forEach(t => { if (t.status === 'running') t.status = 'queued' })
       }
-    } catch { /* ignore */ }
+    } catch (e) { }
   }
 }
 

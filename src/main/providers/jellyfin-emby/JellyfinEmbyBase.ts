@@ -204,6 +204,8 @@ export interface JellyfinMusicTrack {
   ProviderIds?: Record<string, string>
   ImageTags?: { Primary?: string; Thumb?: string }
   PrimaryImageTag?: string
+  Moods?: string[]
+  Tags?: string[]
 }
 
 export abstract class JellyfinEmbyBase extends BaseMediaProvider {
@@ -418,9 +420,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         timeout: 5000,
       })
       return response.data === true
-    } catch {
-      return false
-    }
+    } catch (error) { throw error }
   }
 
   /**
@@ -1412,9 +1412,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               })
             }
           }
-        } catch {
-          // Path not accessible (remote server) — skip external subtitle detection
-        }
+        } catch (error) { throw error }
       }
 
       // Find best audio track using shared utility
@@ -1908,6 +1906,10 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     const musicbrainzId = extractMusicBrainzId(item.ProviderIds, ...MUSICBRAINZ_TRACK_KEYS)
     const artistName = item.AlbumArtist || item.ArtistItems?.[0]?.Name || item.Artists?.[0] || 'Unknown Artist'
 
+    // Extract moods/tags
+    const moods = [...(item.Moods || []), ...(item.Tags || [])]
+    const uniqueMoods = Array.from(new Set(moods))
+
     return {
       source_id: this.sourceId,
       source_type: this.providerType,
@@ -1932,6 +1934,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       is_lossless: lossless,
       is_hi_res: hiRes,
       musicbrainz_id: musicbrainzId,
+      mood: uniqueMoods.length > 0 ? JSON.stringify(uniqueMoods) : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }

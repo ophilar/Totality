@@ -91,7 +91,7 @@ export interface ServerInstance {
 export interface MediaLibrary {
   id: string
   name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
+  type: 'movie' | 'show' | 'tv' | 'music' | 'mixed' | 'unknown'
   collectionType?: string // Raw provider-specific type (e.g., 'boxsets', 'movies', 'tvshows')
   itemCount?: number
   scannedAt?: string

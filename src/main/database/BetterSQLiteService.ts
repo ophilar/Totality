@@ -14,7 +14,8 @@ import {
   SourceRepository,
   WishlistRepository,
   ExclusionRepository,
-  TaskRepository
+  TaskRepository,
+  DuplicateRepository
 } from './repositories'
 import type {
   MediaItem,
@@ -45,6 +46,13 @@ export function getBetterSQLiteService(): BetterSQLiteService {
   return serviceInstance
 }
 
+export function resetBetterSQLiteServiceForTesting(): void {
+  if (serviceInstance) {
+    serviceInstance.close()
+    serviceInstance = null
+  }
+}
+
 /**
  * BetterSQLiteService - High-performance database service
  */
@@ -65,76 +73,93 @@ export class BetterSQLiteService {
   private _wishlistRepo: WishlistRepository | null = null
   private _exclusionRepo: ExclusionRepository | null = null
   private _taskRepo: TaskRepository | null = null
+  private _duplicateRepo: DuplicateRepository | null = null
 
   get isInitialized(): boolean { return this._isInitialized }
 
   // Lazy-loaded repository getters
-  private get configRepo(): ConfigRepository {
+  public get configRepo(): ConfigRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._configRepo) this._configRepo = new ConfigRepository(this.db)
     return this._configRepo
   }
 
-  private get mediaRepo(): MediaRepository {
+  public get mediaRepo(): MediaRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._mediaRepo) this._mediaRepo = new MediaRepository(this.db)
     return this._mediaRepo
   }
 
-  private get musicRepo(): MusicRepository {
+  public get musicRepo(): MusicRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._musicRepo) this._musicRepo = new MusicRepository(this.db)
     return this._musicRepo
   }
 
-  private get statsRepo(): StatsRepository {
+  public get statsRepo(): StatsRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._statsRepo) this._statsRepo = new StatsRepository(this.db)
     return this._statsRepo
   }
 
-  private get notificationRepo(): NotificationRepository {
+  public get notificationRepo(): NotificationRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._notificationRepo) this._notificationRepo = new NotificationRepository(this.db)
     return this._notificationRepo
   }
 
-  private get tvShowRepo(): TVShowRepository {
+  public get tvShowRepo(): TVShowRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._tvShowRepo) this._tvShowRepo = new TVShowRepository(this.db)
     return this._tvShowRepo
   }
 
-  private get sourceRepo(): SourceRepository {
+  public get sourceRepo(): SourceRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._sourceRepo) this._sourceRepo = new SourceRepository(this.db)
     return this._sourceRepo
   }
 
-  private get wishlistRepo(): WishlistRepository {
+  public get wishlistRepo(): WishlistRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._wishlistRepo) this._wishlistRepo = new WishlistRepository(this.db)
     return this._wishlistRepo
   }
 
-  private get exclusionRepo(): ExclusionRepository {
+  public get exclusionRepo(): ExclusionRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._exclusionRepo) this._exclusionRepo = new ExclusionRepository(this.db)
     return this._exclusionRepo
   }
 
-  private get taskRepo(): TaskRepository {
+  public get taskRepo(): TaskRepository {
     if (!this.db) throw new Error('Database not initialized')
     if (!this._taskRepo) this._taskRepo = new TaskRepository(this.db)
     return this._taskRepo
   }
 
-  constructor() {
+  public get duplicateRepo(): DuplicateRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._duplicateRepo) this._duplicateRepo = new DuplicateRepository(this.db)
+    return this._duplicateRepo
+  }
+
+  constructor(customDbPath?: string) {
     try {
-      const userDataPath = app.getPath('userData')
-      this.dbPath = path.join(userDataPath, 'totality-v2.db')
-    } catch {
-      this.dbPath = ':memory:'
+      if (customDbPath) {
+        this.dbPath = customDbPath
+      } else if (process.env.TOTALITY_DB_PATH) {
+        this.dbPath = process.env.TOTALITY_DB_PATH
+      } else {
+        const userDataPath = app.getPath('userData')
+        this.dbPath = path.join(userDataPath, 'totality-v2.db')
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === 'test') {
+        this.dbPath = ':memory:'
+      } else {
+        throw error
+      }
     }
   }
 
@@ -187,6 +212,11 @@ export class BetterSQLiteService {
     if (this.db) this.db.exec('PRAGMA ' + 'wal_checkpoint(TRUNCATE)')
   }
 
+  getSetting(key: string): string | null {
+    if (!this.db) return null
+    return this.configRepo.getSetting(key)
+  }
+
   // --- Configuration ---
   getSetting(key: string): string | null { return this.configRepo.getSetting(key) }
   setSetting(key: string, value: string): void { this.configRepo.setSetting(key, value) }
@@ -213,8 +243,20 @@ export class BetterSQLiteService {
   updateSourceConnectionTime(id: string): void {
     this.db?.prepare("UPDATE media_sources SET last_connected_at = datetime('now') WHERE source_id = ?").run(id)
   }
-  getSourceLibraries(id: string): any[] {
-    return this.db?.prepare('SELECT DISTINCT library_id as id, library_id as name FROM media_items WHERE source_id = ?').all(id) || []
+  getSourceLibraries(sourceId: string): any[] {
+    const rows = this.db?.prepare(`
+      SELECT 
+        library_id as libraryId, 
+        library_name as libraryName, 
+        library_type as libraryType, 
+        is_enabled as isEnabled,
+        is_protected as isProtected,
+        last_scan_at as lastScanAt,
+        items_scanned as itemsScanned
+      FROM library_scans 
+      WHERE source_id = ?
+    `).all(sourceId) as any[]
+    return rows || []
   }
   isLibraryEnabled(sourceId: string, libraryId: string): boolean {
     const row = this.db?.prepare('SELECT is_enabled FROM library_scans WHERE source_id = ? AND library_id = ?').get(sourceId, libraryId) as { is_enabled: number } | undefined
@@ -228,20 +270,52 @@ export class BetterSQLiteService {
     `).run(sourceId, libraryId, enabled ? 1 : 0, enabled ? 1 : 0)
   }
   setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; enabled: boolean }>): void {
-    this.db?.exec('BEGIN DEFERRED')
+    const useTx = !this._inBatch
+    if (useTx) this.db?.exec('BEGIN DEFERRED')
     try {
       for (const lib of libraries) this.toggleLibrary(sourceId, lib.id, lib.enabled)
-      this.db?.exec('COMMIT')
-    } catch(err) { this.db?.exec('ROLLBACK'); throw err; }
+      if (useTx) this.db?.exec('COMMIT')
+    } catch(err) { if (useTx) this.db?.exec('ROLLBACK'); throw err; }
   }
   getEnabledLibraryIds(sourceId: string): string[] {
     const rows = this.db?.prepare('SELECT library_id FROM library_scans WHERE source_id = ? AND is_enabled = 1').all(sourceId) as Array<{ library_id: string }>
     return rows ? rows.map(r => r.library_id) : []
   }
 
+  setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean): void {
+    this.db?.prepare('UPDATE library_scans SET is_protected = ?, updated_at = datetime(\'now\') WHERE source_id = ? AND library_id = ?')
+      .run(isProtected ? 1 : 0, sourceId, libraryId)
+  }
+
+  isLibraryProtected(sourceId: string, libraryId: string): boolean {
+    const row = this.db?.prepare('SELECT is_protected FROM library_scans WHERE source_id = ? AND library_id = ?').get(sourceId, libraryId) as { is_protected: number } | undefined
+    return row ? row.is_protected === 1 : false
+  }
+
+  async setPin(pin: string): Promise<void> {
+    const { createHash } = await import('node:crypto')
+    const hash = createHash('sha256').update(pin).digest('hex')
+    this.setSetting('library_pin_hash', hash)
+  }
+
+  async verifyPin(pin: string): Promise<boolean> {
+    const storedHash = this.getSetting('library_pin_hash')
+    if (!storedHash) return true // No PIN set means unlocked
+    const { createHash } = await import('node:crypto')
+    const hash = createHash('sha256').update(pin).digest('hex')
+    return hash === storedHash
+  }
+
+  hasPin(): boolean {
+    return !!this.getSetting('library_pin_hash')
+  }
+
   // --- Media Items ---
   getMediaItems(filters?: MediaItemFilters): MediaItem[] { return this.mediaRepo.getMediaItems(filters) }
-  getMediaItemById(id: number): MediaItem | null { return this.mediaRepo.getById(id) }
+  getMediaItemById(id: number): MediaItem | null { return this.mediaRepo.getMediaItem(id) }
+  updateMediaItemPathAndStats(mediaItemId: number, newPath: string, analysis: any): void {
+    this.mediaRepo.updateMediaItemPathAndStats(mediaItemId, newPath, analysis)
+  }
   getMediaItemByPlexId(sourceId: string, plexId: string): MediaItem | null { return this.mediaRepo.getMediaItemByProviderId(plexId, sourceId) }
   getMediaItemByProviderId(pId: string, sId: string): MediaItem | null { return this.mediaRepo.getMediaItemByProviderId(pId, sId) }
   getMediaItemByPath(pathStr: string): MediaItem | null { return this.mediaRepo.getMediaItemByPath(pathStr) }
@@ -254,7 +328,8 @@ export class BetterSQLiteService {
   deleteMediaItemsForSource(sourceId: string): void { this.mediaRepo.deleteMediaItemsForSource(sourceId) }
   getMediaItemVersions(id: number): any[] { return this.db?.prepare('SELECT * FROM media_item_versions WHERE media_item_id = ?').all(id) || [] }
   syncMediaItemVersions(id: number, versions: any[]): void {
-    this.db?.exec('BEGIN DEFERRED')
+    const useTx = !this._inBatch
+    if (useTx) this.db?.exec('BEGIN DEFERRED')
     try {
       this.db?.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
       for (const v of versions) {
@@ -262,12 +337,32 @@ export class BetterSQLiteService {
           INSERT INTO media_item_versions (
             media_item_id, version_source, file_path, file_size, duration,
             resolution, width, height, video_codec, video_bitrate,
-            audio_codec, audio_channels, audio_bitrate, is_best
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, v.version_source || 'primary', v.file_path, v.file_size, v.duration, v.resolution, v.width, v.height, v.video_codec, v.video_bitrate, v.audio_codec, v.audio_channels, v.audio_bitrate, v.is_best ? 1 : 0)
+            audio_codec, audio_channels, audio_bitrate, is_best,
+            hdr_format, color_bit_depth, original_language, audio_language
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id, 
+          v.version_source || 'primary', 
+          v.file_path, 
+          v.file_size, 
+          v.duration, 
+          v.resolution, 
+          v.width, 
+          v.height, 
+          v.video_codec, 
+          v.video_bitrate, 
+          v.audio_codec, 
+          v.audio_channels, 
+          v.audio_bitrate, 
+          v.is_best ? 1 : 0,
+          v.hdr_format || null,
+          v.color_bit_depth || null,
+          v.original_language || null,
+          v.audio_language || null
+        )
       }
-      this.db?.exec('COMMIT')
-    } catch(err) { this.db?.exec('ROLLBACK'); throw err; }
+      if (useTx) this.db?.exec('COMMIT')
+    } catch(err) { if (useTx) this.db?.exec('ROLLBACK'); throw err; }
   }
   updateMovieMatch(id: number, tmdbId: string, poster?: string, title?: string, year?: number): void {
     this.mediaRepo.updateMovieMatch(id, tmdbId, poster, title, year)
@@ -285,7 +380,8 @@ export class BetterSQLiteService {
       .run(score.efficiency_score, score.storage_debt_bytes, id)
   }
   updateBestVersion(itemId: number): void {
-    this.db?.exec('BEGIN DEFERRED')
+    const useTx = !this._inBatch
+    if (useTx) this.db?.exec('BEGIN DEFERRED')
     try {
       this.db?.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(itemId)
       this.db?.prepare(`
@@ -293,8 +389,8 @@ export class BetterSQLiteService {
           SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY efficiency_score DESC, file_size DESC LIMIT 1
         )
       `).run(itemId)
-      this.db?.exec('COMMIT')
-    } catch(err) { this.db?.exec('ROLLBACK'); throw err; }
+      if (useTx) this.db?.exec('COMMIT')
+    } catch(err) { if (useTx) this.db?.exec('ROLLBACK'); throw err; }
   }
   getMediaItemsByTmdbIds(ids: string[]): Map<string, MediaItem> { return this.mediaRepo.getMediaItemsByTmdbIds(ids) }
   addMediaItemToCollection(mediaId: number, collectionId: string | void): void {
@@ -414,11 +510,12 @@ export class BetterSQLiteService {
   addWishlistItem(item: any): number { return (this.wishlistRepo as any).add(item) }
   addWishlistItemsBulk(items: any[]): number {
     let count = 0
-    this.db?.exec('BEGIN DEFERRED')
+    const useTx = !this._inBatch
+    if (useTx) this.db?.exec('BEGIN DEFERRED')
     try {
       for (const i of items) { this.addWishlistItem(i); count++ }
-      this.db?.exec('COMMIT')
-    } catch(err) { this.db?.exec('ROLLBACK'); throw err; }
+      if (useTx) this.db?.exec('COMMIT')
+    } catch(err) { if (useTx) this.db?.exec('ROLLBACK'); throw err; }
     return count
   }
   updateWishlistItem(id: number, data: any): void {
@@ -462,6 +559,7 @@ export class BetterSQLiteService {
   // --- Stats ---
   getLibraryStats(sourceId?: string): any { return this.statsRepo.getLibraryStats(sourceId) }
   getAggregatedSourceStats(): any { return this.statsRepo.getAggregatedSourceStats() }
+  getDashboardSummary(sourceId?: string): DashboardSummary { return this.statsRepo.getDashboardSummary(sourceId) }
 
   // --- Quality Scores ---
   getQualityScores(): any[] { return this.db?.prepare('SELECT * FROM quality_scores').all() || [] }
@@ -476,14 +574,27 @@ export class BetterSQLiteService {
   }
   upsertQualityScore(score: any): number {
     const stmt = this.db?.prepare(`
-      INSERT INTO quality_scores (media_item_id, overall_score, needs_upgrade, created_at, updated_at)
-      VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      INSERT INTO quality_scores (
+        media_item_id, overall_score, resolution_score, bitrate_score, audio_score, 
+        needs_upgrade, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(media_item_id) DO UPDATE SET
         overall_score = excluded.overall_score,
+        resolution_score = excluded.resolution_score,
+        bitrate_score = excluded.bitrate_score,
+        audio_score = excluded.audio_score,
         needs_upgrade = excluded.needs_upgrade,
         updated_at = datetime('now')
     `)
-    return Number(stmt?.run(score.media_item_id, score.overall_score, score.needs_upgrade ? 1 : 0).lastInsertRowid)
+    return Number(stmt?.run(
+      score.media_item_id,
+      score.overall_score || 0,
+      score.resolution_score || 0,
+      score.bitrate_score || 0,
+      score.audio_score || 0,
+      score.needs_upgrade ? 1 : 0
+    ).lastInsertRowid)
   }
 
   // --- Movie Collections ---
@@ -520,11 +631,12 @@ export class BetterSQLiteService {
   }
   resetDatabase(): void {
     const tables = ['media_items', 'media_sources', 'music_artists', 'music_albums', 'music_tracks', 'notifications', 'settings', 'task_history', 'activity_log', 'exclusions', 'library_scans', 'movie_collections', 'series_completeness', 'music_quality_scores', 'artist_completeness', 'album_completeness']
-    this.db?.exec('BEGIN DEFERRED')
+    const useTx = !this._inBatch
+    if (useTx) this.db?.exec('BEGIN DEFERRED')
     try {
       for (const t of tables) this.db?.prepare(`DELETE FROM ${t}`).run()
-      this.db?.exec('COMMIT')
-    } catch(err) { this.db?.exec('ROLLBACK'); throw err; }
+      if (useTx) this.db?.exec('COMMIT')
+    } catch(err) { if (useTx) this.db?.exec('ROLLBACK'); throw err; }
   }
 
   // --- Scan Tracking ---

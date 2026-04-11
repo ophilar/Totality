@@ -26,6 +26,7 @@ export interface MusicArtist {
   sort_name?: string
   musicbrainz_id?: string
   genres?: string
+  mood?: string
   country?: string
   biography?: string
   thumb_url?: string
@@ -46,6 +47,7 @@ export interface MusicAlbum {
   year?: number
   musicbrainz_id?: string
   genres?: string
+  mood?: string
   album_type?: string
   track_count?: number
   duration_ms?: number
@@ -80,6 +82,7 @@ export interface MusicTrack {
   channels?: number
   efficiency_score?: number
   storage_debt_bytes?: number
+  mood?: string
   is_lossless?: boolean
   is_hi_res?: boolean
 }
@@ -126,6 +129,11 @@ export interface MediaItem {
   // File information
   file_path?: string
   file_size?: number
+  video_codec?: string
+  video_profile?: string
+  audio_codec?: string
+  audio_tracks?: string
+  has_embedded_subtitles?: boolean
 
   // Enhanced quality metadata
   hdr_format?: string
@@ -379,5 +387,5 @@ export interface MatchFixModalData {
 export type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 export type QualityFilter = 'all' | 'low' | 'medium' | 'high'
 export type ViewType = 'grid' | 'list'
-export type MediaViewType = 'movies' | 'tv' | 'music' | 'wishlist'
+export type MediaViewType = 'movies' | 'tv' | 'music' | 'wishlist' | 'duplicates'
 export type MusicViewMode = 'artists' | 'albums' | 'tracks'

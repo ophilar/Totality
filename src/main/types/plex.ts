@@ -262,6 +262,7 @@ export interface PlexMusicArtist {
   // Artist metadata
   Country?: { tag: string }[]
   Genre?: { tag: string }[]
+  Mood?: { tag: string }[]
 
   // External IDs
   Guid?: PlexGuid[]
@@ -293,6 +294,7 @@ export interface PlexMusicAlbum {
   // Album metadata
   studio?: string // Record label
   Genre?: { tag: string }[]
+  Mood?: { tag: string }[]
 
   // External IDs
   Guid?: PlexGuid[]
@@ -322,6 +324,9 @@ export interface PlexMusicTrack {
   grandparentKey?: string
   grandparentTitle?: string // Artist name
   grandparentThumb?: string
+
+  // Metadata
+  Mood?: { tag: string }[]
 
   // External IDs
   Guid?: PlexGuid[]

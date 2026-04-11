@@ -10,7 +10,10 @@ import { MoviesView } from './MoviesView'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
 import { WishlistView } from './WishlistView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, Heart } from 'lucide-react'
+import { DuplicatesView } from './DuplicatesView'
+import { PinEntryModal } from './PinEntryModal'
+import type { MediaViewType } from './types'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, Heart, Lock, Unlock } from 'lucide-react'
 
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
@@ -104,7 +107,7 @@ export function MediaBrowser({
   const hasInitialLoadRef = useRef(false) // Track if initial load is complete
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
   const [stats, setStats] = useState<LibraryStats | null>(null)
-  const [view, setView] = useState<'movies' | 'tv' | 'music' | 'wishlist'>('movies')
+  const [view, setView] = useState<MediaViewType>('movies')
   const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
 
   // Music state
@@ -230,20 +233,33 @@ export function MediaBrowser({
   // matchFixModal, selectedMissingItem, handleRescanItem provided by useMediaActions hook (below pagination functions)
 
   // Active source libraries (to determine which library types exist)
-  const [activeSourceLibraries, setActiveSourceLibraries] = useState<Array<{ id: string; name: string; type: string }>>([])
+  const [activeSourceLibraries, setActiveSourceLibraries] = useState<Array<{ id: string; name: string; type: string; isProtected?: boolean }>>([])
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_librariesLoading, setLibrariesLoading] = useState(false)
+
+  // Library protection state
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [showPinModal, setShowPinModal] = useState(false)
 
   // Library filter within current view
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
 
   // Libraries of the current view type (for library filter dropdown)
   const currentTypeLibraries = useMemo(() =>
-    activeSourceLibraries.filter(lib =>
-      view === 'movies' ? lib.type === 'movie' :
-      view === 'tv' ? lib.type === 'show' :
-      lib.type === 'music'
-    ), [activeSourceLibraries, view])
+    activeSourceLibraries.filter(lib => {
+      // Filter by type
+      const typeMatch = (
+        view === 'movies' ? lib.type === 'movie' :
+        view === 'tv' ? lib.type === 'show' :
+        lib.type === 'music'
+      )
+      if (!typeMatch) return false
+
+      // Filter by protection
+      if (lib.isProtected && !isUnlocked) return false
+
+      return true
+    }), [activeSourceLibraries, view, isUnlocked])
 
   // Reset library filter when view or source changes
   useEffect(() => {
@@ -1908,6 +1924,29 @@ export function MediaBrowser({
                   <span>Music</span>
                 </button>
 
+                {/* Duplicates Button */}
+                <button
+                  onClick={() => {
+                    setView('duplicates')
+                    onLibraryTabChange?.('duplicates')
+                    setSelectedShow(null)
+                    setSelectedSeason(null)
+                    setSelectedArtist(null)
+                    setSelectedAlbum(null)
+                  }}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    view === 'duplicates'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                  role="tab"
+                  aria-selected={view === 'duplicates'}
+                  aria-controls="library-content"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Duplicates</span>
+                </button>
+
                 {/* Wishlist Button */}
                 <button
                   ref={wishlistTabRef}
@@ -2050,19 +2089,42 @@ export function MediaBrowser({
                 )}
 
                 {/* Library Filter (shown when source has 2+ libraries of current type) */}
-                {activeSourceId && currentTypeLibraries.length >= 2 && (
+                {activeSourceId && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Library</span>
-                    <select
-                      value={activeLibraryId || ''}
-                      onChange={(e) => setActiveLibraryId(e.target.value || null)}
-                      className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">All Libraries</option>
-                      {currentTypeLibraries.map(lib => (
-                        <option key={lib.id} value={lib.id}>{lib.name}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={activeLibraryId || ''}
+                        onChange={(e) => setActiveLibraryId(e.target.value || null)}
+                        className="px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">All Libraries</option>
+                        {currentTypeLibraries.map(lib => (
+                          <option key={lib.id} value={lib.id}>
+                            {lib.isProtected ? '🔒 ' : ''}{lib.name}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      <button
+                        onClick={() => {
+                          if (isUnlocked) {
+                            setIsUnlocked(false)
+                            setActiveLibraryId(null) // Reset if locked
+                          } else {
+                            setShowPinModal(true)
+                          }
+                        }}
+                        className={`p-1.5 rounded-md transition-colors ${
+                          isUnlocked 
+                            ? 'bg-primary/20 text-primary hover:bg-primary/30' 
+                            : 'bg-card text-muted-foreground hover:bg-muted'
+                        }`}
+                        title={isUnlocked ? 'Lock protected libraries' : 'Unlock protected libraries'}
+                      >
+                        {isUnlocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -2220,6 +2282,8 @@ export function MediaBrowser({
           <EnhancedEmptyState />
         ) : view === 'wishlist' ? (
           <WishlistView />
+        ) : view === 'duplicates' ? (
+          <DuplicatesView />
         ) : (
           view === 'movies' ? (
             <MoviesView
@@ -2427,6 +2491,17 @@ export function MediaBrowser({
           </div>
         </div>
       </main>
+
+      {/* Pin Entry Modal */}
+      <PinEntryModal 
+        isOpen={showPinModal}
+        onClose={() => setShowPinModal(false)}
+        onSuccess={() => {
+          setIsUnlocked(true)
+          setShowPinModal(false)
+          addToast({ title: 'Unlocked', message: 'Library unlocked', type: 'success' })
+        }}
+      />
 
       {/* Media Details Modal */}
       {selectedMediaId && (

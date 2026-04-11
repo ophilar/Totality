@@ -28,6 +28,7 @@ export const DEFAULT_MONITORING_CONFIG: MonitoringConfig = {
     'kodi-local': 60000, // 1 minute - local database
     'kodi-mysql': 60000, // 1 minute - remote database
     local: 60000,      // 1 minute - local folder
+    mediamonkey: 60000, // 1 minute - local database
   },
 }
 

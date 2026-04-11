@@ -124,17 +124,13 @@ export class KodiLocalDiscoveryService {
         try {
           await execAsync('pgrep -x Kodi')
           return true
-        } catch {
-          return false
-        }
+        } catch (error) { throw error }
       } else {
         // Linux: use pgrep
         try {
           await execAsync('pgrep -x kodi')
           return true
-        } catch {
-          return false
-        }
+        } catch (error) { throw error }
       }
     } catch (error) {
       // If command fails, assume Kodi is not running

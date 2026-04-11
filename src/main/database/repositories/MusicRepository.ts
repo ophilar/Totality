@@ -20,8 +20,8 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         album_name, artist_name, title, track_number, disc_number, duration,
         file_path, file_size, container, file_mtime, audio_codec, audio_bitrate,
         sample_rate, bit_depth, channels, is_lossless, is_hi_res,
-        musicbrainz_id, genres, added_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        musicbrainz_id, genres, mood, added_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(source_id, provider_id) DO UPDATE SET
         library_id = excluded.library_id,
         album_id = excluded.album_id,
@@ -45,6 +45,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         is_hi_res = excluded.is_hi_res,
         musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id),
         genres = excluded.genres,
+        mood = excluded.mood,
         updated_at = datetime('now')
       RETURNING id
     `)
@@ -75,6 +76,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       track.is_hi_res ? 1 : 0,
       track.musicbrainz_id || null,
       track.genres || null,
+      track.mood || null,
       track.added_at || null
     ) as { id: number } | undefined
 
@@ -89,19 +91,20 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     const stmt = this.db.prepare(`
       INSERT INTO music_artists (
         source_id, source_type, library_id, provider_id, name, sort_name,
-        musicbrainz_id, genres, country, biography, thumb_url, art_url,
+        musicbrainz_id, genres, mood, country, biography, thumb_url, art_url,
         album_count, track_count, user_fixed_match, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(source_id, provider_id) DO UPDATE SET
         library_id = excluded.library_id,
-        name = excluded.name,
-        sort_name = excluded.sort_name,
-        musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_artists.musicbrainz_id),
+        name = CASE WHEN music_artists.user_fixed_match = 1 THEN music_artists.name ELSE excluded.name END,
+        sort_name = CASE WHEN music_artists.user_fixed_match = 1 THEN music_artists.sort_name ELSE excluded.sort_name END,
+        musicbrainz_id = CASE WHEN music_artists.user_fixed_match = 1 THEN music_artists.musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_artists.musicbrainz_id) END,
         genres = excluded.genres,
+        mood = excluded.mood,
         country = excluded.country,
         biography = excluded.biography,
-        thumb_url = COALESCE(excluded.thumb_url, music_artists.thumb_url),
-        art_url = COALESCE(excluded.art_url, music_artists.art_url),
+        thumb_url = CASE WHEN music_artists.user_fixed_match = 1 THEN music_artists.thumb_url ELSE COALESCE(excluded.thumb_url, music_artists.thumb_url) END,
+        art_url = CASE WHEN music_artists.user_fixed_match = 1 THEN music_artists.art_url ELSE COALESCE(excluded.art_url, music_artists.art_url) END,
         album_count = excluded.album_count,
         track_count = excluded.track_count,
         user_fixed_match = CASE WHEN music_artists.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
@@ -118,6 +121,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       artist.sort_name || null,
       artist.musicbrainz_id || null,
       artist.genres || null,
+      artist.mood || null,
       artist.country || null,
       artist.biography || null,
       artist.thumb_url || null,
@@ -139,21 +143,22 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       INSERT INTO music_albums (
         source_id, source_type, library_id, provider_id, artist_id, artist_name,
         title, sort_title, year, musicbrainz_id, musicbrainz_release_group_id,
-        genres, studio, album_type, track_count, total_duration, total_size,
+        genres, mood, studio, album_type, track_count, total_duration, total_size,
         best_audio_codec, best_audio_bitrate, best_sample_rate, best_bit_depth,
         avg_audio_bitrate, thumb_url, art_url, release_date, added_at,
         user_fixed_match, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(source_id, provider_id) DO UPDATE SET
         library_id = excluded.library_id,
         artist_id = excluded.artist_id,
         artist_name = excluded.artist_name,
-        title = excluded.title,
-        sort_title = excluded.sort_title,
-        year = excluded.year,
-        musicbrainz_id = COALESCE(excluded.musicbrainz_id, music_albums.musicbrainz_id),
-        musicbrainz_release_group_id = COALESCE(excluded.musicbrainz_release_group_id, music_albums.musicbrainz_release_group_id),
+        title = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.title ELSE excluded.title END,
+        sort_title = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.sort_title ELSE excluded.sort_title END,
+        year = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.year ELSE excluded.year END,
+        musicbrainz_id = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_albums.musicbrainz_id) END,
+        musicbrainz_release_group_id = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.musicbrainz_release_group_id ELSE COALESCE(excluded.musicbrainz_release_group_id, music_albums.musicbrainz_release_group_id) END,
         genres = excluded.genres,
+        mood = excluded.mood,
         studio = excluded.studio,
         album_type = excluded.album_type,
         track_count = excluded.track_count,
@@ -164,8 +169,8 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         best_sample_rate = excluded.best_sample_rate,
         best_bit_depth = excluded.best_bit_depth,
         avg_audio_bitrate = excluded.avg_audio_bitrate,
-        thumb_url = COALESCE(excluded.thumb_url, music_albums.thumb_url),
-        art_url = COALESCE(excluded.art_url, music_albums.art_url),
+        thumb_url = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.thumb_url ELSE COALESCE(excluded.thumb_url, music_albums.thumb_url) END,
+        art_url = CASE WHEN music_albums.user_fixed_match = 1 THEN music_albums.art_url ELSE COALESCE(excluded.art_url, music_albums.art_url) END,
         release_date = excluded.release_date,
         user_fixed_match = CASE WHEN music_albums.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
         updated_at = datetime('now')
@@ -185,6 +190,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       album.musicbrainz_id || null,
       album.musicbrainz_release_group_id || null,
       album.genres || null,
+      album.mood || null,
       album.studio || null,
       album.album_type || null,
       album.track_count || null,
@@ -289,6 +295,14 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
         params.push(filters.alphabetFilter.toUpperCase())
       }
     }
+    if (filters?.mood) {
+      sql += ' AND mood LIKE ?'
+      params.push(`%${filters.mood}%`)
+    }
+    if (filters?.genre) {
+      sql += ' AND genres LIKE ?'
+      params.push(`%${filters.genre}%`)
+    }
 
     const artistSortMap: Record<string, string> = { 'name': 'sort_name', 'title': 'sort_name', 'added_at': 'created_at' }
     const sortCol = artistSortMap[filters?.sortBy || ''] || 'sort_name'
@@ -367,6 +381,14 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       const placeholders = filters.excludeAlbumTypes.map(() => '?').join(',')
       sql += ` AND (album_type IS NULL OR album_type NOT IN (${placeholders}))`
       params.push(...filters.excludeAlbumTypes)
+    }
+    if (filters?.mood) {
+      sql += ' AND mood LIKE ?'
+      params.push(`%${filters.mood}%`)
+    }
+    if (filters?.genre) {
+      sql += ' AND genres LIKE ?'
+      params.push(`%${filters.genre}%`)
     }
 
     const albumSortMap: Record<string, string> = { 'title': 'COALESCE(sort_title, title)', 'artist': 'artist_name', 'year': 'year', 'added_at': 'created_at' }
@@ -457,6 +479,14 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       if (filters.alphabetFilter === '#') { sql += " AND title NOT GLOB '[A-Za-z]*'" }
       else { sql += ' AND UPPER(SUBSTR(title, 1, 1)) = ?'; params.push(filters.alphabetFilter.toUpperCase()) }
     }
+    if (filters?.mood) {
+      sql += ' AND mood LIKE ?'
+      params.push(`%${filters.mood}%`)
+    }
+    if (filters?.genre) {
+      sql += ' AND genres LIKE ?'
+      params.push(`%${filters.genre}%`)
+    }
 
     const trackSortMap: Record<string, string> = { 'title': 'title', 'artist': 'artist_name', 'album': 'album_name', 'codec': 'audio_codec', 'duration': 'duration', 'added_at': 'created_at' }
     if (filters?.sortBy && trackSortMap[filters.sortBy]) {
@@ -532,6 +562,21 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       UPDATE music_artists SET album_count = ?, track_count = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(albumCount, trackCount, artistId)
+  }
+
+  updateAllMusicArtistCounts(sourceId?: string): void {
+    let sql = `
+      UPDATE music_artists SET
+        album_count = (SELECT COUNT(*) FROM music_albums WHERE artist_id = music_artists.id),
+        track_count = (SELECT COUNT(*) FROM music_tracks WHERE artist_id = music_artists.id),
+        updated_at = datetime('now')
+    `
+    const params: unknown[] = []
+    if (sourceId) {
+      sql += ' WHERE source_id = ?'
+      params.push(sourceId)
+    }
+    this.db.prepare(sql).run(...params)
   }
 
   updateMusicArtistMbid(artistId: number, musicbrainzId: string): void {
@@ -747,15 +792,33 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     totalSize: number
     avgAudioBitrate: number
   } {
-    let sqlArtists = 'SELECT COUNT(*) as count FROM music_artists'
-    let sqlAlbums = 'SELECT COUNT(*) as count, SUM(total_size) as total_size, AVG(avg_audio_bitrate) as avg_bitrate FROM music_albums'
-    let sqlTracks = 'SELECT COUNT(*) as count FROM music_tracks'
+    let sqlArtists = `
+      SELECT COUNT(DISTINCT ma.id) as count 
+      FROM music_artists ma
+      JOIN media_sources s ON ma.source_id = s.source_id
+      LEFT JOIN library_scans ls ON ma.source_id = ls.source_id AND ma.library_id = ls.library_id
+      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+    `
+    let sqlAlbums = `
+      SELECT COUNT(DISTINCT a.id) as count, SUM(a.total_size) as total_size, AVG(a.avg_audio_bitrate) as avg_bitrate 
+      FROM music_albums a
+      JOIN media_sources s ON a.source_id = s.source_id
+      LEFT JOIN library_scans ls ON a.source_id = ls.source_id AND a.library_id = ls.library_id
+      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+    `
+    let sqlTracks = `
+      SELECT COUNT(DISTINCT t.id) as count 
+      FROM music_tracks t
+      JOIN media_sources s ON t.source_id = s.source_id
+      LEFT JOIN library_scans ls ON t.source_id = ls.source_id AND t.library_id = ls.library_id
+      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
+    `
     const params: any[] = []
 
     if (sourceId) {
-      sqlArtists += ' WHERE source_id = ?'
-      sqlAlbums += ' WHERE source_id = ?'
-      sqlTracks += ' WHERE source_id = ?'
+      sqlArtists += ' AND ma.source_id = ?'
+      sqlAlbums += ' AND a.source_id = ?'
+      sqlTracks += ' AND t.source_id = ?'
       params.push(sourceId)
     }
 

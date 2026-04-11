@@ -36,6 +36,13 @@ export const mediaApi = {
   setSetting: (key: string, value: string) => ipcRenderer.invoke('db:setSetting', key, value),
   getAllSettings: () => ipcRenderer.invoke('db:getAllSettings'),
 
+  // Library Protection
+  dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => 
+    ipcRenderer.invoke('db:setLibraryProtected', sourceId, libraryId, isProtected),
+  dbVerifyPin: (pin: string) => ipcRenderer.invoke('db:verifyPin', pin),
+  dbSetPin: (pin: string) => ipcRenderer.invoke('db:setPin', pin),
+  dbHasPin: () => ipcRenderer.invoke('db:hasPin'),
+
   // NFS Mount Mappings (for Kodi)
   getNfsMappings: () => ipcRenderer.invoke('settings:getNfsMappings'),
   setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke('settings:setNfsMappings', mappings),
@@ -111,6 +118,7 @@ export const mediaApi = {
 
   // Database - Statistics
   getLibraryStats: (sourceId?: string) => ipcRenderer.invoke('db:getLibraryStats', sourceId),
+  getDashboardSummary: (sourceId?: string) => ipcRenderer.invoke('db:getDashboardSummary', sourceId),
 
   // Database - Global Search
   mediaSearch: (query: string) => ipcRenderer.invoke('media:search', query),
@@ -160,6 +168,12 @@ export interface MediaAPI {
   getSetting: (key: string) => Promise<string | null>
   setSetting: (key: string, value: string) => Promise<boolean>
   getAllSettings: () => Promise<Record<string, string>>
+
+  // Library Protection
+  dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => Promise<boolean>
+  dbVerifyPin: (pin: string) => Promise<boolean>
+  dbSetPin: (pin: string) => Promise<boolean>
+  dbHasPin: () => Promise<boolean>
 
   // NFS Mount Mappings (for Kodi)
   getNfsMappings: () => Promise<Record<string, string>>
@@ -281,6 +295,7 @@ export interface MediaAPI {
     tvNeedsUpgradeCount: number
     tvAverageQualityScore: number
   }>
+  getDashboardSummary: (sourceId?: string) => Promise<any>
 
   // Database - Global Search
   mediaSearch: (query: string) => Promise<{

@@ -124,7 +124,7 @@ export function Dashboard({
   const getCollectionRowHeight = useCallback((index: number) => {
     const collection = collections[index]
     if (!collection || !expandedCollections.has(index)) return COLLAPSED_HEIGHT
-    const missing = parseMissingMovies(collection)
+    const missing = parseMissingMovies(collection as any)
     if (missing.length === 0) return COLLAPSED_HEIGHT
     let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
     height += missing.length * EXPANDED_ITEM_HEIGHT
@@ -135,7 +135,7 @@ export function Dashboard({
   const getSeriesRowHeight = useCallback((index: number) => {
     const s = series[index]
     if (!s || !expandedSeries.has(index)) return COLLAPSED_HEIGHT
-    const groups = groupEpisodesBySeason(s)
+    const groups = groupEpisodesBySeason(s as any)
     if (groups.length === 0) return COLLAPSED_HEIGHT
     let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
     height += groups.length * EXPANDED_ITEM_HEIGHT
@@ -204,23 +204,23 @@ export function Dashboard({
   const dismissMovieUpgrade = useCallback(async (index: number) => {
     const item = movieUpgrades[index]
     if (!item) return
-    await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
+    await window.electronAPI.addExclusion('media_upgrade', item.id as any, undefined, undefined, item.title)
     setMovieUpgrades(prev => prev.filter((_, i) => i !== index))
-    emitDismissUpgrade({ mediaId: item.id })
+    emitDismissUpgrade({ mediaId: item.id as any })
   }, [movieUpgrades, setMovieUpgrades])
 
   const dismissTvUpgrade = useCallback(async (index: number) => {
     const item = tvUpgrades[index]
     if (!item) return
-    await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, `${item.series_title} S${item.season_number}E${item.episode_number}`)
+    await window.electronAPI.addExclusion('media_upgrade', item.id as any, undefined, undefined, `${item.series_title} S${item.season_number}E${item.episode_number}`)
     setTvUpgrades(prev => prev.filter((_, i) => i !== index))
-    emitDismissUpgrade({ mediaId: item.id })
+    emitDismissUpgrade({ mediaId: item.id as any })
   }, [tvUpgrades, setTvUpgrades])
 
   const dismissMusicUpgrade = useCallback(async (index: number) => {
     const album = musicUpgrades[index]
     if (!album) return
-    await window.electronAPI.addExclusion('media_upgrade', album.id, undefined, undefined, `${album.artist_name} - ${album.title}`)
+    await window.electronAPI.addExclusion('media_upgrade', album.id as any, undefined, undefined, `${album.artist_name} - ${album.title}`)
     setMusicUpgrades(prev => prev.filter((_, i) => i !== index))
   }, [musicUpgrades, setMusicUpgrades])
 
@@ -230,7 +230,7 @@ export function Dashboard({
     await window.electronAPI.addExclusion('collection_movie', undefined, movie.tmdb_id, collection.tmdb_collection_id, movie.title)
     setCollections(prev => prev.map((c, i) => {
       if (i !== collectionIndex) return c
-      const missing = parseMissingMovies(c)
+      const missing = parseMissingMovies(c as any)
       const filtered = missing.filter(m => m.tmdb_id !== movie.tmdb_id)
       const newTotal = c.total_movies - 1
       return {
@@ -251,7 +251,7 @@ export function Dashboard({
     await window.electronAPI.addExclusion('series_episode', undefined, refKey, s.tmdb_id || s.series_title, `${s.series_title} ${refKey}`)
     setSeries(prev => prev.map((ser, i) => {
       if (i !== seriesIndex) return ser
-      const missing = parseMissingEpisodes(ser)
+      const missing = parseMissingEpisodes(ser as any)
       const filtered = missing.filter(ep => !(ep.season_number === episode.season_number && ep.episode_number === episode.episode_number))
       return { ...ser, missing_episodes: JSON.stringify(filtered) }
     }))
@@ -281,8 +281,8 @@ export function Dashboard({
     <MovieUpgradeRow
       index={index}
       style={style}
-      item={movieUpgrades[index]}
-      isExpanded={expandedRecommendations.has(movieUpgrades[index].id)}
+      item={movieUpgrades[index] as any}
+      isExpanded={expandedRecommendations.has(movieUpgrades[index].id as any)}
       onToggleExpand={toggleRecommendation}
       onSelect={setSelectedMediaId}
       onDismiss={dismissMovieUpgrade}
@@ -293,8 +293,8 @@ export function Dashboard({
     <TvUpgradeRow
       index={index}
       style={style}
-      item={tvUpgrades[index]}
-      isExpanded={expandedRecommendations.has(tvUpgrades[index].id)}
+      item={tvUpgrades[index] as any}
+      isExpanded={expandedRecommendations.has(tvUpgrades[index].id as any)}
       onToggleExpand={toggleRecommendation}
       onSelect={setSelectedMediaId}
       onDismiss={dismissTvUpgrade}
@@ -305,7 +305,7 @@ export function Dashboard({
     <MusicUpgradeRow
       index={index}
       style={style}
-      album={musicUpgrades[index]}
+      album={musicUpgrades[index] as any}
       onSelect={setSelectedMediaId}
       onDismiss={dismissMusicUpgrade}
     />
@@ -315,7 +315,7 @@ export function Dashboard({
     <CollectionRow
       index={index}
       style={style}
-      collection={collections[index]}
+      collection={collections[index] as any}
       isExpanded={expandedCollections.has(index)}
       onToggleExpand={toggleCollectionExpand}
       onDismiss={dismissCollectionMovie}
@@ -326,7 +326,7 @@ export function Dashboard({
     <SeriesRow
       index={index}
       style={style}
-      s={series[index]}
+      s={series[index] as any}
       isExpanded={expandedSeries.has(index)}
       onToggleExpand={toggleSeriesExpand}
       onDismiss={dismissSeriesEpisode}

@@ -113,6 +113,11 @@ export const monitoringApi = {
     ipcRenderer.on('wishlist:autoCompleted', handler)
     return () => ipcRenderer.removeListener('wishlist:autoCompleted', handler)
   },
+  onLibraryUpdated: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('library:updated', handler)
+    return () => ipcRenderer.removeListener('library:updated', handler)
+  },
 }
 
 export interface MonitoringAPI {
@@ -361,4 +366,5 @@ export interface MonitoringAPI {
     }>
   }) => void) => () => void
   onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => () => void
+  onLibraryUpdated: (callback: () => void) => () => void
 }

@@ -691,9 +691,7 @@ export class KodiLocalProvider extends BaseMediaProvider {
   private getFileSize(filePath: string): number {
     try {
       if (fs.existsSync(filePath)) return fs.statSync(filePath).size
-    } catch {
-      // Ignore errors reading file size
-    }
+    } catch (error) { throw error }
     return 0
   }
 

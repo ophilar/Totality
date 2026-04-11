@@ -483,6 +483,19 @@ export function MusicView({
                       {selectedAlbum.album_type}
                     </span>
                   )}
+                  {(() => {
+                    try {
+                      const moods = selectedAlbum.mood ? JSON.parse(selectedAlbum.mood) : []
+                      if (!Array.isArray(moods) || moods.length === 0) return null
+                      return moods.map((mood: string) => (
+                        <span key={mood} className="px-2 py-1 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full">
+                          {mood}
+                        </span>
+                      ))
+                    } catch {
+                      return null
+                    }
+                  })()}
                 </div>
               )
             })()}
@@ -2404,6 +2417,22 @@ const TrackListItem = memo(({ track, index, artistName, albumTitle, columnWidths
       {/* Track Title */}
       <div className="min-w-0 truncate" style={{ width: widths.title }}>
         <h4 className="font-medium text-sm truncate">{track.title}</h4>
+        {track.mood && (() => {
+          try {
+            const moods = JSON.parse(track.mood)
+            if (!Array.isArray(moods) || moods.length === 0) return null
+            return (
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {moods.slice(0, 2).map((mood: string) => (
+                  <span key={mood} className="text-[9px] px-1 py-0 bg-blue-500/10 text-blue-400 rounded-sm border border-blue-500/20">
+                    {mood}
+                  </span>
+                ))}
+                {moods.length > 2 && <span className="text-[9px] text-muted-foreground">+{moods.length - 2}</span>}
+              </div>
+            )
+          } catch { return null }
+        })()}
       </div>
 
       {/* Artist */}

@@ -19,9 +19,7 @@ try {
    
   mysql = require('mysql2/promise')
   mysqlAvailable = true
-} catch {
-  getLoggingService().info('[KodiMySQLConnectionService]', '[KodiMySQLConnectionService] mysql2 not installed - Kodi MySQL features unavailable')
-}
+} catch (error) { throw error }
 
 // Type definitions (used even when mysql2 is not available)
 type Pool = import('mysql2/promise').Pool
@@ -177,13 +175,12 @@ class KodiMySQLConnectionService {
       if (connection) {
         try {
           await connection.end()
-        } catch {
-          // Ignore close errors
-        }
+        } catch (error) { throw error }
       }
 
       // Sanitize error message (don't expose passwords)
       let errorMessage = getErrorMessage(error) || 'Connection failed'
+      getLoggingService().error('[KodiMySQL]', `Connection failed: ${errorMessage}`)
       if (errorMessage.includes('Access denied')) {
         errorMessage = 'Access denied - check username and password'
       } else if (errorMessage.includes('ECONNREFUSED')) {

@@ -175,7 +175,7 @@ function createIndexes(db: DatabaseSync.Database): void {
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
   for (const idx of indexes) {
-    try { db.exec(idx) } catch { /* ignore */ }
+    try { db.exec(idx) } catch (e) { throw e; }
   }
 }
 
@@ -219,10 +219,17 @@ function migrateExistingItemsToVersions(db: DatabaseSync.Database): void {
 
 function cleanupOrphanedRecords(db: DatabaseSync.Database): void {
   try {
-    db.exec('BEGIN DEFERRED'); try {
+    db.exec('BEGIN DEFERRED')
+    try {
       db.prepare('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
       db.prepare('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
       db.prepare('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
-    } catch(err) { db.exec('ROLLBACK'); throw err; }
-  } catch { /* ignore */ }
+      db.exec('COMMIT')
+    } catch(err) { 
+      db.exec('ROLLBACK')
+      throw err 
+    }
+  } catch (e) { 
+    getLoggingService().error('[DatabaseMigration]', 'Cleanup error: ' + getErrorMessage(e))
+  }
 }

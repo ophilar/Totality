@@ -64,9 +64,7 @@ async function detectWindowsNetworkDrivesAsync(): Promise<void> {
       }
     }
     networkDriveLetters = detected
-  } catch {
-    // wmic unavailable or timed out — fall back to empty set (treat all drives as local)
-  }
+  } catch (error) { throw error }
 }
 
 /**
@@ -594,9 +592,7 @@ export class LiveMonitoringService {
             const existingFiles = filePaths.filter(fp => {
               try {
                 return fs.existsSync(fp)
-              } catch {
-                return false
-              }
+              } catch (error) { throw error }
             })
 
             if (isMusic) {
@@ -703,7 +699,10 @@ export class LiveMonitoringService {
                 sourceName: source.display_name,
                 itemCount: totalChanges,
               })
-            } catch { /* ignore */ }
+
+              // Notify renderer that library data has changed
+              this.sendToRenderer('library:updated', {})
+            } catch (e) { throw e; }
           }
         }
       } catch (error) {
@@ -889,6 +888,9 @@ export class LiveMonitoringService {
             : result.itemsAdded > 0 ? `${result.itemsAdded} new` : `${result.itemsUpdated} updated`
 
           getLoggingService().info('[LiveMonitoring]', `Detected changes in ${library.libraryName}: ${changeDescription}`)
+
+          // Notify renderer that library data has changed
+          this.sendToRenderer('library:updated', {})
         }
 
         // Handle removed items
@@ -934,7 +936,7 @@ export class LiveMonitoringService {
           sourceName: source.display_name,
           itemCount: totalAdded + totalUpdated + totalRemoved,
         })
-      } catch { /* ignore */ }
+      } catch (e) { throw e; }
     }
 
     // Notify renderer of source check completion
@@ -963,6 +965,14 @@ export class LiveMonitoringService {
 
     const sourceManager = getSourceManager()
     return sourceManager.isManualScanInProgress()
+  }
+
+  /**
+   * Manually trigger a library updated event in the UI
+   */
+  notifyLibraryUpdated(): void {
+    getLoggingService().info('[LiveMonitoringService]', 'Library updated event triggered manually')
+    this.sendToRenderer('library:updated', {})
   }
 
   /**

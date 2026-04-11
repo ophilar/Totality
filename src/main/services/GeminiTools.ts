@@ -452,9 +452,7 @@ export async function executeTool(
             })
             return JSON.stringify({ tmdb_matches: found })
           }
-        } catch {
-          // TMDB fallback failed, return empty results
-        }
+        } catch (error) { throw error }
       }
 
       return JSON.stringify(results)
@@ -539,7 +537,7 @@ export async function executeTool(
           missingSample = parsed.slice(0, 5).map((e: any) =>
             `S${e.season_number}E${e.episode_number}`,
           )
-        } catch { /* empty */ }
+        } catch (e) { throw e; }
         return compact({
           series_title: s.series_title,
           total_seasons: s.total_seasons,
@@ -572,7 +570,7 @@ export async function executeTool(
           missingSample = parsed.slice(0, 5).map((m: any) =>
             m.year ? `${m.title} (${m.year})` : `${m.title}`,
           )
-        } catch { /* empty */ }
+        } catch (e) { throw e; }
         return compact({
           collection_name: c.collection_name,
           total_movies: c.total_movies,
@@ -1125,7 +1123,7 @@ export async function executeTool(
             object_audio: t.has_object_audio || undefined,
           }))
         }
-      } catch { /* empty */ }
+      } catch (e) { throw e; }
 
       // Parse subtitle tracks
       let subtitleTracks: string[] = []
@@ -1135,7 +1133,7 @@ export async function executeTool(
             (t: any) => t.language || t.title || 'Unknown',
           )
         }
-      } catch { /* empty */ }
+      } catch (e) { throw e; }
 
       // Get quality score
       const qualityScore = db.getQualityScoreByMediaId(item.id as number) as any | null
@@ -1236,7 +1234,7 @@ export async function executeTool(
                 resolvedTitle = releases[0].title || resolvedTitle
               }
             }
-          } catch { /* continue without MusicBrainz data */ }
+          } catch (e) { throw e; }
         } else {
           // Movie/TV: look up TMDB for poster
           try {
@@ -1269,7 +1267,7 @@ export async function executeTool(
                 }
               }
             }
-          } catch { /* continue without TMDB data */ }
+          } catch (e) { throw e; }
         }
 
         // Map chat media types to wishlist media types
@@ -1441,7 +1439,7 @@ export async function executeTool(
           missingSample = parsed.slice(0, 5).map((m: any) =>
             m.year ? `${m.title} (${m.year})` : `${m.title}`,
           )
-        } catch { /* empty */ }
+        } catch (e) { throw e; }
         return compact({
           artist_name: a.artist_name,
           total_albums: a.total_albums,

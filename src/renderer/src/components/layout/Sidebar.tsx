@@ -33,7 +33,9 @@ const PROVIDER_COLORS: Record<ProviderType, string> = {
   emby: 'bg-green-500',
   kodi: 'bg-blue-500',
   'kodi-local': 'bg-blue-500',
+  'kodi-mysql': 'bg-blue-500',
   local: 'bg-slate-600',
+  mediamonkey: 'bg-orange-600',
 }
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {

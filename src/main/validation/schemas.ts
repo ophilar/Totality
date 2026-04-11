@@ -21,7 +21,8 @@ export const ProviderTypeSchema = z.enum([
   'kodi',
   'kodi-local',
   'kodi-mysql',
-  'local'
+  'local',
+  'mediamonkey'
 ])
 
 /**
@@ -450,9 +451,7 @@ export const SafeUrlSchema = z.string().url().refine(
     try {
       const parsed = new URL(url)
       return ['http:', 'https:'].includes(parsed.protocol)
-    } catch {
-      return false
-    }
+    } catch (error) { throw error }
   },
   { message: 'URL must use http or https protocol' }
 )

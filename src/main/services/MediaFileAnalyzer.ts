@@ -109,6 +109,21 @@ export class MediaFileAnalyzer {
   private ffprobePath: string | null = null
   private ffprobeChecked: boolean = false
   private availabilityPromise: Promise<boolean> | null = null
+  private analysisOverride: Map<string, FileAnalysisResult> = new Map()
+
+  /**
+   * For testing: Set a pre-baked analysis result for a specific path
+   */
+  setAnalysisOverride(filePath: string, result: FileAnalysisResult): void {
+    this.analysisOverride.set(filePath, result)
+  }
+
+  /**
+   * For testing: Clear all analysis overrides
+   */
+  clearAnalysisOverrides(): void {
+    this.analysisOverride.clear()
+  }
 
   /**
    * Check if FFprobe is available on the system
@@ -137,9 +152,7 @@ export class MediaFileAnalyzer {
           getLoggingService().info('[MediaFileAnalyzer]', `Found FFprobe at: ${probePath === 'ffprobe' ? 'system PATH' : 'bundled'}`)
           return true
         }
-      } catch {
-        // Continue
-      }
+      } catch (error) { throw error }
     }
 
     this.ffprobeChecked = true
@@ -261,7 +274,7 @@ export class MediaFileAnalyzer {
   async uninstallFFprobe(): Promise<boolean> {
     const p = this.getBundledFFprobePath()
     try { if (fs.existsSync(p)) fs.unlinkSync(p); this.ffprobePath = null; this.ffprobeChecked = false; return true }
-    catch { return false }
+    catch (error) { throw error }
   }
 
   async isBundledVersion(): Promise<boolean> {
@@ -314,6 +327,9 @@ export class MediaFileAnalyzer {
    * Analyze a media file and return detailed metadata
    */
   async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+    const override = this.analysisOverride.get(filePath)
+    if (override) return override
+
     if (!await this.isAvailable()) {
       return { success: false, error: 'FFprobe not installed', filePath, audioTracks: [], subtitleTracks: [] }
     }

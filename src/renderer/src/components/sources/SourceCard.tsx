@@ -23,7 +23,9 @@ const providerColors: Record<ProviderType, string> = {
   emby: 'bg-green-500',
   kodi: 'bg-blue-500',
   'kodi-local': 'bg-blue-500',
+  'kodi-mysql': 'bg-blue-500',
   local: 'bg-slate-600',
+  mediamonkey: 'bg-orange-600',
 }
 
 // Helper to parse connection config and get server URL
