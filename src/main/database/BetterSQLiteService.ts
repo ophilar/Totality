@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getLoggingService } from '../services/LoggingService'
 import { DatabaseSync } from 'node:sqlite'
 import * as path from 'path'
@@ -29,6 +28,7 @@ import type {
   WishlistFilters,
   TVShowFilters,
   SeriesCompleteness,
+  DashboardSummary,
 } from '../types/database'
 import type {
   Notification,
@@ -57,7 +57,7 @@ export function resetBetterSQLiteServiceForTesting(): void {
  * BetterSQLiteService - High-performance database service
  */
 export class BetterSQLiteService {
-  private db: DatabaseSync.Database | null = null
+  private db: DatabaseSync | null = null
   private dbPath: string
   private _isInitialized = false
   private _inBatch = false
@@ -218,7 +218,6 @@ export class BetterSQLiteService {
   }
 
   // --- Configuration ---
-  getSetting(key: string): string | null { return this.configRepo.getSetting(key) }
   setSetting(key: string, value: string): void { this.configRepo.setSetting(key, value) }
   getAllSettings(): Record<string, string> { return this.configRepo.getAllSettings() }
   getSettingsByPrefix(prefix: string): Record<string, string> { return this.configRepo.getSettingsByPrefix(prefix) }
