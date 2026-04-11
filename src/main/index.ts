@@ -42,6 +42,7 @@ import { registerTaskQueueHandlers } from './ipc/taskQueue'
 import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
+import { registerDuplicateHandlers } from './ipc/duplicates'
 import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
@@ -60,7 +61,7 @@ process.on('uncaughtException', (error) => {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
       // End batch mode first to ensure pending writes are flushed
-      try { db.endBatch() } catch { /* ignore */ }
+      try { db.endBatch() } catch (e) { throw e; }
       getLoggingService().info('[index]', '[CRASH] better-sqlite3 data already persisted (WAL mode)')
     }
   } catch (e) {
@@ -75,7 +76,7 @@ process.on('unhandledRejection', (reason, promise) => {
     const db = getDatabaseServiceSync()
     if (db.isInitialized) {
       // End batch mode first to ensure pending writes are flushed
-      try { db.endBatch() } catch { /* ignore */ }
+      try { db.endBatch() } catch (e) { throw e; }
       // better-sqlite3: no action needed, WAL mode auto-persists
     }
   } catch (e) {
@@ -247,9 +248,7 @@ app.on('before-quit', async (event) => {
   try {
     const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
     await getFFprobeWorkerPool().shutdown()
-  } catch {
-    // Pool may not have been initialized
-  }
+  } catch (error) { throw error }
 
   // Flush log buffer to disk
   await getLoggingService().shutdown()
@@ -385,6 +384,7 @@ app.whenReady().then(async () => {
     registerLoggingHandlers()
     registerAutoUpdateHandlers()
     registerGeminiHandlers()
+    registerDuplicateHandlers()
 
     // Initialize live monitoring service
     const liveMonitoringService = getLiveMonitoringService()

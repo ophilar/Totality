@@ -219,9 +219,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           if (directoriesProcessed % 50 === 0) {
             await new Promise(resolve => setImmediate(resolve))
           }
-        } catch {
-          // Skip inaccessible directories
-        }
+        } catch (error) { throw error }
       }
 
       await countFiles(this.folderPath)
@@ -1286,9 +1284,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
                   skippedUnchanged++
                   continue
                 }
-              } catch {
-                // If we can't stat the file, include it anyway
-              }
+              } catch (error) { throw error }
             }
 
             const relativePath = path.relative(rootDir, fullPath)
@@ -1321,9 +1317,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const db = getDatabase()
       const apiKey = await db.getSetting('tmdb_api_key')
       return !!apiKey && apiKey.length > 0
-    } catch {
-      return false
-    }
+    } catch (error) { throw error }
   }
 
   /**
@@ -1335,9 +1329,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const setting = db.getSetting('musicbrainz_name_correction')
       // Default to true if not set
       return setting !== 'false'
-    } catch {
-      return true
-    }
+    } catch (error) { throw error }
   }
 
   /**
@@ -1565,10 +1557,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
                 parsed.seasonNumber,
                 seasonDetails?.poster_path || null
               )
-            } catch {
-              // Season might not exist, cache null to avoid retrying
-              cachedSeries.seasonPosters.set(parsed.seasonNumber, null)
-            }
+            } catch (error) { throw error }
           }
 
           // Set season poster
@@ -1925,9 +1914,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           hasObjectAudio: track.hasObjectAudio,
           index: track.index,
         }))
-      } catch {
-        // Ignore parse errors
-      }
+      } catch (error) { throw error }
     }
 
     return {
@@ -2490,9 +2477,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       }
 
       return null
-    } catch {
-      return null
-    }
+    } catch (error) { throw error }
   }
 
   private async updateArtistStats(

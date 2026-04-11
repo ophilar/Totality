@@ -1,7 +1,7 @@
 // Database type definitions
 
 // Provider types supported by the application
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local'
+export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
 
 // Media source configuration (Plex, Jellyfin, Emby, Kodi servers)
 export interface MediaSource {
@@ -441,6 +441,7 @@ export interface MusicArtist {
   // Metadata
   musicbrainz_id?: string
   genres?: string // JSON array
+  mood?: string // JSON array
   country?: string
   biography?: string
 
@@ -478,6 +479,7 @@ export interface MusicAlbum {
   musicbrainz_id?: string
   musicbrainz_release_group_id?: string
   genres?: string // JSON array
+  mood?: string // JSON array
   studio?: string // Record label
 
   // Album type
@@ -552,11 +554,10 @@ export interface MusicTrack {
   // Quality flags
   is_lossless?: boolean
   is_hi_res?: boolean
-
   // Metadata
   musicbrainz_id?: string
   genres?: string // JSON array
-
+  mood?: string // JSON array
   // Timestamps
   added_at?: string
   created_at?: string
@@ -675,6 +676,9 @@ export interface MusicFilters {
   sourceId?: string
   sourceType?: ProviderType
   libraryId?: string
+  // Filter by tags
+  mood?: string
+  genre?: string
   // Sorting
   sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency'
   sortOrder?: 'asc' | 'desc'
@@ -756,4 +760,26 @@ export interface WishlistFilters {
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
+}
+
+// ============================================================================
+// DASHBOARD TYPES
+// ============================================================================
+
+export interface DashboardSummary {
+  movieUpgrades: MediaItem[]
+  tvUpgrades: MediaItem[]
+  musicUpgrades: MusicAlbum[]
+  incompleteCollections: MovieCollection[]
+  incompleteSeries: SeriesCompleteness[]
+  incompleteArtists: ArtistCompleteness[]
+  storageWaste: MediaItem[]
+  settings: {
+    includeEps: boolean
+    includeSingles: boolean
+    upgradeSort: string
+    collectionSort: string
+    seriesSort: string
+    artistSort: string
+  }
 }

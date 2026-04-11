@@ -186,11 +186,11 @@ export class MovieCollectionService extends CancellableOperation {
     getLoggingService().info('[MovieCollectionService]', `Cross-provider deduplication: ${allMovies.length} total movies`)
 
     // For any source that's local, we need TMDB IDs first
-    const sources = db.getMediaSources() as Array<{ id: number; source_type: string }>
+    const sources = db.getMediaSources() as Array<{ source_id: string; source_type: string }>
     const localSourceIds = new Set(
       sources
         .filter((s: typeof sources[0]) => s.source_type === 'kodi-local' || s.source_type === 'local')
-        .map((s: typeof sources[0]) => String(s.id))
+        .map((s: typeof sources[0]) => s.source_id)
     )
 
     // Check if any movies from local sources need TMDB ID lookups

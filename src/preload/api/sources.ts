@@ -209,9 +209,18 @@ export const sourcesApi = {
   // Detect subfolders and their media types
   localDetectSubfolders: (folderPath: string) => ipcRenderer.invoke('local:detectSubfolders', folderPath),
 
+  // File and Folder picking
+  localSelectFile: (options?: unknown) => ipcRenderer.invoke('local:selectFile', options),
+
   // Add a local folder as a media source
   localAddSource: (config: { folderPath: string; displayName: string; mediaType: 'movies' | 'tvshows' | 'music' | 'mixed' }) =>
     ipcRenderer.invoke('local:addSource', config),
+
+  // MediaMonkey 5 source management
+  mediamonkeyTestConnection: (config: { databasePath: string }) =>
+    ipcRenderer.invoke('mediamonkey:testConnection', config),
+  mediamonkeyAddSource: (config: { databasePath: string; displayName: string; isEnabled: boolean }) =>
+    ipcRenderer.invoke('mediamonkey:addSource', config),
 
   // Add a local folder with custom library configurations
   localAddSourceWithLibraries: (config: {
@@ -537,8 +546,9 @@ export interface SourcesAPI {
   // LOCAL FOLDER SOURCE
   // ============================================================================
 
-  // Open folder picker dialog
+  // File and Folder picking
   localSelectFolder: () => Promise<{ cancelled: boolean; folderPath?: string; error?: string }>
+  localSelectFile: (options?: unknown) => Promise<{ cancelled: boolean; filePath?: string; error?: string }>
 
   // Detect subfolders and their media types
   localDetectSubfolders: (folderPath: string) => Promise<{
@@ -556,6 +566,10 @@ export interface SourcesAPI {
     displayName: string
     mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
   }) => Promise<MediaSourceResponse>
+
+  // MediaMonkey 5 source management
+  mediamonkeyTestConnection: (config: { databasePath: string }) => Promise<ConnectionTestResult>
+  mediamonkeyAddSource: (config: { databasePath: string; displayName: string; isEnabled: boolean }) => Promise<MediaSourceResponse>
 
   // Add a local folder with custom library configurations
   localAddSourceWithLibraries: (config: {

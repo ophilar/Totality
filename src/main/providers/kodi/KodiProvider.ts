@@ -1108,9 +1108,7 @@ export class KodiProvider extends BaseMediaProvider {
 
       // Check if file exists
       return fs.existsSync(filePath)
-    } catch {
-      return false
-    }
+    } catch (error) { throw error }
   }
 
   /**

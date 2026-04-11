@@ -5,6 +5,7 @@ import { appApi, AppAPI } from './api/app'
 import { sourcesApi, SourcesAPI } from './api/sources'
 import { mediaApi, MediaAPI } from './api/media'
 import { musicApi, MusicAPI } from './api/music'
+import { duplicatesApi, DuplicatesAPI } from './api/duplicates'
 import { wishlistApi, WishlistAPI } from './api/wishlist'
 import { monitoringApi, MonitoringAPI } from './api/monitoring'
 import { aiApi, AiAPI } from './api/ai'
@@ -51,6 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ...sourcesApi,
   ...mediaApi,
   ...musicApi,
+  ...duplicatesApi,
   ...wishlistApi,
   ...monitoringApi,
   ...aiApi,
@@ -63,6 +65,7 @@ export type ElectronAPI = AppAPI &
   SourcesAPI &
   MediaAPI &
   MusicAPI &
+  DuplicatesAPI &
   WishlistAPI &
   MonitoringAPI &
   AiAPI &

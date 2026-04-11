@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.4.3](https://github.com/bbidwell85/totality/compare/v0.4.0...v0.4.3) (2026-04-11)
+
+### Phase 5: Reliability & Optimization
+
+* **Intra-Source Deduplication:** New engine and UI for detecting and resolving duplicates within a single provider (TMDB/MusicBrainz IDs). Scoring uses grounded resolution and original language match as primary retention factors.
+* **Gemini-Driven Transcoding:** Orchestration of Handbrake and MKVToolNix via `TranscodingService`. Uses `gemini-3.1-flash-lite` to generate optimal per-video encoding parameters for maximum space savings.
+* **"No Mocks" Test Architecture:** Comprehensive integration testing using real in-memory SQLite and local HTTP servers (`node:http`) for network dependencies.
+* **Strict Data Integrity:** Removed all silent fallbacks in the repository layer. Mandatory media fields now enforce strict database constraints to ensure data consistency.
+* **Protected Libraries:** Implementation of library-level PIN protection (`SHA-256`) for sensitive content, with secure session unlocking in the UI.
+* **NSFW Scrubbing:** Standardized all terminology; "NSFW" references replaced with "sensitive" or "protected" throughout the codebase and UI.
+
 ## [0.4.0](https://github.com/bbidwell85/totality/compare/v0.3.1...v0.4.0) (2026-03-27)
 
 ### Fork-Specific Features

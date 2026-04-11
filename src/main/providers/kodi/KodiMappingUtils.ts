@@ -182,6 +182,9 @@ export class KodiMappingUtils {
     const audioCodec = guessCodecFromExtension(item.strFileName)
     const lossless = isLosslessCodec(audioCodec)
 
+    // Handle moods (Kodi uses semicolon or just string)
+    const moods = item.mood ? item.mood.split(/;\s*/).filter(m => !!m) : []
+
     return {
       source_id: sourceId,
       source_type: sourceType as any,
@@ -199,6 +202,7 @@ export class KodiMappingUtils {
       audio_codec: audioCodec,
       is_lossless: lossless,
       musicbrainz_id: item.strMusicBrainzTrackID || undefined,
+      mood: moods.length > 0 ? JSON.stringify(moods) : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }

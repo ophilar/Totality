@@ -12,6 +12,7 @@ import { PlexAuthFlow } from './PlexAuthFlow'
 import { JellyfinAuthFlow } from './JellyfinAuthFlow'
 import { KodiConnectionFlow } from './KodiConnectionFlow'
 import { LocalFolderFlow } from './LocalFolderFlow'
+import { MediaMonkeyFlow } from './MediaMonkeyFlow'
 
 interface AddSourceModalProps {
   onClose: () => void
@@ -54,6 +55,12 @@ const providers: Array<{
     name: 'Local Folder',
     description: 'Scan a local folder for media files',
     color: 'bg-slate-600',
+  },
+  {
+    type: 'mediamonkey',
+    name: 'MediaMonkey 5',
+    description: 'Connect to MediaMonkey SQLite database',
+    color: 'bg-orange-600',
   },
 ]
 
@@ -131,6 +138,8 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
         return <KodiConnectionFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
       case 'local':
         return <LocalFolderFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
+      case 'mediamonkey':
+        return <MediaMonkeyFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
       default:
         return null
     }

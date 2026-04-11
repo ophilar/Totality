@@ -1,3 +1,13 @@
+## 2026-04-11
+- **Phase 5: Reliability & Optimization Completion (v0.4.3):**
+    - **Intra-Source Deduplication:** Implemented a new `DeduplicationService` and `DuplicatesView` UI to detect and resolve redundant files within the same provider. Features a retention scoring engine that favors high resolution (4K > 1080p) and original language matches.
+    - **Gemini-Driven Transcoding:** Orchestrated Handbrake and MKVToolNix through a new `TranscodingService`. Integrated `gemini-3.1-flash-lite` to generate per-video optimized encoding parameters, focusing on AV1/HEVC for maximum transparent space savings.
+    - **"No Mocks" Testing Architecture:** Established a rigorous integration testing standard using real in-memory SQLite databases and local HTTP servers (`node:http`) to simulate external APIs (Gemini, TMDB). Reached 600+ passing tests with zero reliance on traditional mocks/fakes.
+    - **Strict Data Integrity:** Removed all silent fallbacks from the repository layer (`MediaRepository.ts`). Mandatory media metadata fields now strictly enforce database constraints, preventing inconsistent data states and masking of scan failures.
+    - **Protected Libraries:** Implemented SHA-256 PIN protection for sensitive library scans. Added a secure `PinEntryModal` and unified session state management in `MediaBrowser` to hide/show protected content safely.
+    - **NSFW Terminology Scrubbing:** Successfully audited and scrubbed the entire codebase and UI of "NSFW" references, standardizing on "sensitive" and "protected" terminology in alignment with project mandates.
+    - **Gemini Service Enhancements:** Added support for `gemini_base_url` and `GOOGLE_GENAI_BASE_URL` environment variables to support local AI proxies and isolated testing environments.
+
 ## 2026-03-28
 - **Major Dependency Upgrade:**
     - Updated entire tech stack to latest versions:

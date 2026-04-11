@@ -27,12 +27,20 @@
 - [x] **Architectural Consolidation**: Refactor providers and services for DRY/SOLID (v0.4.0).
 - [x] **Log Standardization**: Comprehensive transition from `console.log` to structured `LoggingService`.
 
-## Phase 4: Efficiency & UI Refinement (Current)
+## Phase 4: Efficiency & Architectural Consolidation (Complete)
+- [x] **v0.4.0 Migration**: Full port of upstream features (MediaMonkey 5, Mood Sync) to Repository Pattern.
+- [x] **N+1 Optimization**: Eliminate nested database queries in background completeness services.
 - [x] **Cleanup Radar**: Dashboard component ranking items by Storage Debt (GB waste).
 - [x] **Trash Indicator**: UI badges for redundant/dubbed audio tracks.
 - [x] **Upgrades UI Refinement**: Consolidate Cleanup functionality into Upgrades column and add Efficiency sorting.
 - [x] **Actionable Recommendations**: Show tailored conversion parameters (AV1 preference) for wasteful files.
-- [x] **Development Stabilization**: Modernize ESLint config (v10) and resolve dependency peer conflicts.
-- [ ] **Actionable Optimization**: Initiate local FFmpeg transcodes to pay off storage debt.
-- [ ] **Library Audit Export**: Generate CSV/PDF reports of quality and efficiency metrics.- [ ] **Multi-user profiles** and permissions.
-- [ ] **AI Upgrade Recommendations**: Suggest higher quality versions based on availability.
+- [x] **Dependency Injection**: Harden services against global mocks and monkeypatching for testing.
+
+## Phase 5: Active Optimization & Reporting (Complete)
+- [x] **Test Coverage Expansion**: Implement "No Mocks" integration testing architecture with real in-memory databases and local servers. (v0.4.3)
+- [x] **Transcoding Engine**: Implement `TranscodingService` using Handbrake/MKVToolNix with Gemini-driven (3.1 flash lite) optimized parameters. (v0.4.3)
+- [x] **Intra-Provider Deduplication**: Identify and track duplicate files within the same provider via `DeduplicationService`. (v0.4.3)
+- [x] **Deduplication UI**: Dedicated view for managing and resolving detected duplicates. (v0.4.3)
+- [x] **Protected Libraries**: Sensitive library protection via SHA-256 PIN lock and secure session state. (v0.4.3)
+- [x] **AI Upgrade Recommendations**: Retention scoring engine suggesting high-quality version preservation during deduplication. (v0.4.3)
+

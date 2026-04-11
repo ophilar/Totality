@@ -310,6 +310,7 @@ CREATE TABLE IF NOT EXISTS music_artists (
   -- Metadata
   musicbrainz_id TEXT,
   genres TEXT, -- JSON array
+  mood TEXT, -- JSON array
   country TEXT,
   biography TEXT,
 
@@ -350,6 +351,7 @@ CREATE TABLE IF NOT EXISTS music_albums (
   musicbrainz_id TEXT,
   musicbrainz_release_group_id TEXT,
   genres TEXT, -- JSON array
+  mood TEXT, -- JSON array
   studio TEXT, -- Record label
 
   -- Album type
@@ -427,6 +429,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   -- Metadata
   musicbrainz_id TEXT,
   genres TEXT, -- JSON array
+  mood TEXT, -- JSON array
 
   -- Timestamps
   added_at TEXT,
@@ -594,13 +597,35 @@ CREATE TABLE IF NOT EXISTS library_scans (
   library_id TEXT NOT NULL,
   library_name TEXT NOT NULL,
   library_type TEXT NOT NULL,
-  last_scan_at TEXT NOT NULL,
+  last_scan_at TEXT,
   items_scanned INTEGER DEFAULT 0,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  is_protected INTEGER NOT NULL DEFAULT 0,
 
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
   UNIQUE(source_id, library_id)
+);
+
+-- Media item duplicates (flagged by user or detected during rematching)
+CREATE TABLE IF NOT EXISTS media_item_duplicates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL,
+  external_id TEXT NOT NULL, -- TMDB ID or MusicBrainz ID
+  external_type TEXT NOT NULL CHECK(external_type IN ('tmdb_movie', 'tmdb_series', 'musicbrainz_artist', 'musicbrainz_album')),
+  
+  -- The media item IDs that are duplicates (JSON array)
+  media_item_ids TEXT NOT NULL,
+  
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'resolved', 'ignored')),
+  resolution_strategy TEXT,
+  resolved_at TEXT,
+  
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  
+  UNIQUE(source_id, external_id, external_type)
 );
 
 -- Notifications for live monitoring system

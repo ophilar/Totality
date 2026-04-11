@@ -42,9 +42,7 @@ async function getSourceInfo(): Promise<SourceInfo[]> {
             if (test && test.success) {
               serverVersion = test.serverVersion || null
             }
-          } catch {
-            // Source unreachable — leave version as null
-          }
+          } catch (error) { throw error }
         }
         return {
           displayName: source.display_name,
@@ -55,9 +53,7 @@ async function getSourceInfo(): Promise<SourceInfo[]> {
     )
 
     return results
-  } catch {
-    return []
-  }
+  } catch (error) { throw error }
 }
 
 async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
@@ -78,9 +74,7 @@ async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
     try {
       const stats = fs.statSync(dbPath)
       dbSizeMB = Math.round((stats.size / 1024 / 1024) * 10) / 10
-    } catch {
-      // DB file may not exist yet
-    }
+    } catch (error) { throw error }
 
     const sources = await manager.getSources()
     const libraries = sources.map((s) => ({

@@ -63,10 +63,21 @@ export class SeriesCompletenessService {
       if (sourceId) filters.sourceId = sourceId
       if (libraryId) filters.libraryId = libraryId
 
-      const seriesTitles = db.getTVShows(filters).map(s => s.series_title)
+      const shows = db.getTVShows(filters)
+      const seriesTitles = shows.map(s => s.series_title)
       result.totalSeries = seriesTitles.length
 
       getLoggingService().info('[SeriesCompletenessService]', `Starting analysis for ${seriesTitles.length} series`)
+
+      // Optimization: Fetch all episodes for this source/library in one go and group by series
+      const allEpisodes = db.getMediaItems({ type: 'episode', sourceId, libraryId })
+      const episodesBySeries = new Map<string, any[]>()
+      for (const ep of allEpisodes) {
+        if (ep.series_title) {
+          if (!episodesBySeries.has(ep.series_title)) episodesBySeries.set(ep.series_title, [])
+          episodesBySeries.get(ep.series_title)!.push(ep)
+        }
+      }
 
       for (let i = 0; i < seriesTitles.length; i++) {
         if (this.cancelRequested) {
@@ -84,7 +95,9 @@ export class SeriesCompletenessService {
             currentItem: title
           })
 
-          const analysis = await this.analyzeSeries(title, sourceId, libraryId)
+          const episodes = episodesBySeries.get(title) || []
+          const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes)
+          
           if (analysis) {
             result.analyzed++
             if (analysis.completeness_percentage >= 100) {
@@ -110,9 +123,9 @@ export class SeriesCompletenessService {
   /**
    * Analyze a single TV series
    */
-  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string): Promise<SeriesCompleteness | null> {
+  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: any[]): Promise<SeriesCompleteness | null> {
     const db = getDatabase()
-    const episodes = db.getEpisodesForSeries(seriesTitle, sourceId, libraryId)
+    const episodes = providedEpisodes || db.getEpisodesForSeries(seriesTitle, sourceId, libraryId)
 
     if (episodes.length === 0) {
       getLoggingService().info('[SeriesCompletenessService]', `No episodes found for series: ${seriesTitle}`)
@@ -187,9 +200,7 @@ export class SeriesCompletenessService {
         return String(results.results[0].id)
       }
       return null
-    } catch {
-      return null
-    }
+    } catch (error) { throw error }
   }
 
   private async calculateMissing(tmdbId: string, owned: EpisodeInfo[], episodesForArtwork?: any[], sourceId?: string): Promise<AnalysisResult> {

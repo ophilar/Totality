@@ -24,7 +24,10 @@ import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBacko
  * API Documentation: https://developer.themoviedb.org/reference/intro/getting-started
  */
 export class TMDBService {
-  private static readonly BASE_URL = 'https://api.themoviedb.org/3'
+  private static get BASE_URL(): string {
+    const db = getDatabase()
+    return db.getSetting('tmdb_base_url') || 'https://api.themoviedb.org/3'
+  }
   private static readonly IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
   private static readonly CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
   private static readonly MAX_CONCURRENT = 10 // Max concurrent requests
@@ -482,9 +485,7 @@ export class TMDBService {
         posterPath: best.poster_path || undefined,
         backdropPath: best.backdrop_path || undefined,
       }
-    } catch {
-      return null
-    }
+    } catch (error) { throw error }
   }
 
   /**
@@ -693,4 +694,8 @@ export function getTMDBService(): TMDBService {
     })
   }
   return tmdbService
+}
+
+export function resetTMDBServiceForTesting(): void {
+  tmdbService = null
 }

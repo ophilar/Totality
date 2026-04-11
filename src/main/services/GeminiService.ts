@@ -68,7 +68,11 @@ export class GeminiService {
     this.enabled = db.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
-      this.client = new GoogleGenAI({ apiKey: this.apiKey })
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.getSetting('gemini_base_url')
+      this.client = new GoogleGenAI({ 
+        apiKey: this.apiKey,
+        httpOptions: baseUrl ? { baseUrl } : undefined
+      })
     }
   }
 
@@ -82,7 +86,11 @@ export class GeminiService {
     this.enabled = db.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
-      this.client = new GoogleGenAI({ apiKey: this.apiKey })
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.getSetting('gemini_base_url')
+      this.client = new GoogleGenAI({ 
+        apiKey: this.apiKey,
+        httpOptions: baseUrl ? { baseUrl } : undefined
+      })
     } else {
       this.client = null
     }
@@ -437,10 +445,7 @@ export class GeminiService {
       const num = parseInt(text, 10)
       if (num >= 1 && num <= candidates.length) return num - 1
       return 0
-    } catch {
-      // On any error (rate limit, etc.), fall back to first result
-      return 0
-    }
+    } catch (error) { throw error }
   }
 
   /**
@@ -539,4 +544,8 @@ export function getGeminiService(): GeminiService {
     geminiService = new GeminiService()
   }
   return geminiService
+}
+
+export function resetGeminiServiceForTesting(): void {
+  geminiService = null
 }

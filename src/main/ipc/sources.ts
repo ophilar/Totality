@@ -192,7 +192,7 @@ export function registerSourceHandlers(): void {
    */
   ipcMain.handle('plex:checkAuth', async (_event, pinId: number) => {
     try {
-      return await manager.plexCompleteAuth(pinId.toString())
+      return await manager.plexCompleteAuth(pinId)
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error checking Plex auth:', error)
       throw error
@@ -308,6 +308,7 @@ export function registerSourceHandlers(): void {
         libraryName: string
         libraryType: string
         isEnabled: boolean
+        isProtected: boolean
         lastScanAt: string | null
         itemsScanned: number
       }>
@@ -318,7 +319,8 @@ export function registerSourceHandlers(): void {
         const stored = storedMap.get(lib.id)
         return {
           ...lib,
-          isEnabled: stored ? stored.isEnabled : true, // Default to enabled
+          isEnabled: stored ? !!stored.isEnabled : true, // Default to enabled
+          isProtected: stored ? !!stored.isProtected : false, // Default to not protected
           lastScanAt: stored?.lastScanAt || null,
           itemsScanned: stored?.itemsScanned || 0,
         }
@@ -990,7 +992,7 @@ export function registerSourceHandlers(): void {
   })
 
   // ============================================================================
-  // LOCAL FOLDER SOURCE
+  // LOCAL FOLDER & SQLITE FILE SOURCES
   // ============================================================================
 
   /**
@@ -1020,6 +1022,78 @@ export function registerSourceHandlers(): void {
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error opening folder dialog:', error)
       return { cancelled: true, error: getErrorMessage(error) }
+    }
+  })
+
+  /**
+   * Open file picker dialog for selecting a local file (e.g., SQLite DB)
+   */
+  ipcMain.handle('local:selectFile', async (event, options?: unknown) => {
+    try {
+      const win = getWindowFromEvent(event)
+      if (!win) {
+        return { cancelled: true }
+      }
+
+      const validOptions = options as Electron.OpenDialogOptions || {
+        title: 'Select File',
+        properties: ['openFile'],
+      }
+
+      const result = await dialog.showOpenDialog(win, validOptions)
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { cancelled: true }
+      }
+
+      return {
+        cancelled: false,
+        filePath: result.filePaths[0],
+      }
+    } catch (error: unknown) {
+      getLoggingService().error('[sources]', 'Error opening file dialog:', error)
+      return { cancelled: true, error: getErrorMessage(error) }
+    }
+  })
+
+  /**
+   * Add a MediaMonkey 5 database as a source
+   */
+  ipcMain.handle('mediamonkey:addSource', async (_event, config: unknown) => {
+    const validated = config as { databasePath: string; displayName: string; isEnabled: boolean }
+    try {
+      return await manager.addSource({
+        sourceType: 'mediamonkey',
+        displayName: validated.displayName,
+        connectionConfig: {
+          databasePath: validated.databasePath,
+        },
+        isEnabled: validated.isEnabled,
+      })
+    } catch (error: unknown) {
+      getLoggingService().error('[sources]', 'Error adding MediaMonkey source:', error)
+      throw error
+    }
+  })
+
+  /**
+   * Test connection to MediaMonkey 5 database
+   */
+  ipcMain.handle('mediamonkey:testConnection', async (_event, config: unknown) => {
+    const validated = config as { databasePath: string }
+    try {
+      const { MediaMonkeyProvider } = await import('../providers/mediamonkey/MediaMonkeyProvider')
+      const provider = new MediaMonkeyProvider({
+        sourceType: 'mediamonkey',
+        displayName: 'Test',
+        connectionConfig: {
+          databasePath: validated.databasePath,
+        },
+      })
+      return await provider.testConnection()
+    } catch (error: unknown) {
+      getLoggingService().error('[sources]', 'Error testing MediaMonkey connection:', error)
+      return { success: false, error: getErrorMessage(error) }
     }
   })
 

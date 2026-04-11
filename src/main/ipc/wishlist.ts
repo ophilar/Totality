@@ -39,7 +39,7 @@ export function registerWishlistHandlers() {
             const details = await tmdb.getTVShowDetails(validItem.tmdb_id)
             validItem.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
           }
-        } catch { /* continue without poster */ }
+        } catch (e) { throw e; }
       }
 
       return await db.addWishlistItem(validItem as any)
@@ -165,7 +165,7 @@ export function registerWishlistHandlers() {
               const details = await tmdb.getTVShowDetails(item.tmdb_id)
               item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
             }
-          } catch { /* continue without poster */ }
+          } catch (e) { throw e; }
         }
       }
 

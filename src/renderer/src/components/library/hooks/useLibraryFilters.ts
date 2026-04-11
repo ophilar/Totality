@@ -11,6 +11,8 @@ interface UseLibraryFiltersReturn {
   setQualityFilter: (filter: QualityFilter) => void
   alphabetFilter: string | null
   setAlphabetFilter: (filter: string | null) => void
+  libraryId: string
+  setLibraryId: (id: string) => void
   slimDown: boolean
   setSlimDown: (active: boolean) => void
   debouncedTierFilter: TierFilter
@@ -21,7 +23,7 @@ interface UseLibraryFiltersReturn {
 /**
  * Hook to manage library filter state with debouncing
  *
- * Provides tier (resolution), quality (within tier), and alphabet filters
+ * Provides tier (resolution), quality (within tier), alphabet, and library filters
  * with debounced versions for performance during rapid changes.
  *
  * @param searchQuery Current search query (used in filter logic)
@@ -31,6 +33,7 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
   const [alphabetFilter, setAlphabetFilter] = useState<string | null>(null)
+  const [libraryId, setLibraryId] = useState<string>('all')
   const [slimDown, setSlimDown] = useState<boolean>(false)
 
   // Debounced filter values (faster than search since they're button clicks)
@@ -60,6 +63,9 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
         }
       }
 
+      // Library filter
+      if (libraryId !== 'all' && item.library_id !== libraryId) return false
+
       // Tier filter (use debounced value)
       if (debouncedTierFilter !== 'all' && item.quality_tier !== debouncedTierFilter) return false
 
@@ -78,7 +84,7 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
 
       return true
     },
-    [searchQuery, debouncedTierFilter, debouncedQualityFilter, slimDown]
+    [searchQuery, debouncedTierFilter, debouncedQualityFilter, libraryId, slimDown]
   )
 
   return {
@@ -88,6 +94,8 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
     setQualityFilter,
     alphabetFilter,
     setAlphabetFilter,
+    libraryId,
+    setLibraryId,
     slimDown,
     setSlimDown,
     debouncedTierFilter,

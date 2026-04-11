@@ -53,3 +53,5 @@ repomix.config.json
 # Temporary Analysis Files
 repomix-analysis.txt
 repomix.config.json
+repomix-output.txt
+*.tsbuildinfo

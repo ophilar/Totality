@@ -245,7 +245,7 @@ export class GeminiAnalysisService {
             missingSample = parsed.slice(0, 5).map((e: any) =>
               `S${e.season_number}E${e.episode_number}`,
             )
-          } catch { /* empty */ }
+          } catch (e) { throw e; }
           return compact({
             series_title: s.series_title,
             total_episodes: s.total_episodes,
@@ -269,7 +269,7 @@ export class GeminiAnalysisService {
             missingSample = parsed.slice(0, 5).map((m: any) =>
               m.year ? `${m.title} (${m.year})` : `${m.title}`,
             )
-          } catch { /* empty */ }
+          } catch (e) { throw e; }
           return compact({
             collection_name: c.collection_name,
             total_movies: c.total_movies,

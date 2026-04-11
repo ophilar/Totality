@@ -231,6 +231,45 @@ export function registerDatabaseHandlers() {
     }
   })
 
+  // Library Protection
+  ipcMain.handle('db:setLibraryProtected', async (_event, sourceId: string, libraryId: string, isProtected: boolean) => {
+    try {
+      db.setLibraryProtected(sourceId, libraryId, isProtected)
+      return true
+    } catch (error) {
+      getLoggingService().error('[database]', 'Error setting library protected:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('db:verifyPin', async (_event, pin: string) => {
+    try {
+      return await db.verifyPin(pin)
+    } catch (error) {
+      getLoggingService().error('[database]', 'Error verifying PIN:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('db:setPin', async (_event, pin: string) => {
+    try {
+      await db.setPin(pin)
+      return true
+    } catch (error) {
+      getLoggingService().error('[database]', 'Error setting PIN:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('db:hasPin', async () => {
+    try {
+      return db.hasPin()
+    } catch (error) {
+      getLoggingService().error('[database]', 'Error checking for PIN:', error)
+      throw error
+    }
+  })
+
   // NFS Mount Mappings (for Kodi NFS path conversion)
   ipcMain.handle('settings:getNfsMappings', async () => {
     try {
@@ -303,6 +342,16 @@ export function registerDatabaseHandlers() {
     }
   })
 
+  ipcMain.handle('db:getDashboardSummary', async (_event, sourceId?: unknown) => {
+    try {
+      const validSourceId = validateInput(OptionalSourceIdSchema, sourceId, 'db:getDashboardSummary')
+      return db.getDashboardSummary(validSourceId)
+    } catch (error) {
+      getLoggingService().error('[database]', 'Error getting dashboard summary:', error)
+      throw error
+    }
+  })
+
   // ============================================================================
   // MATCH FIXING - Fix incorrect TMDB matches for movies
   // ============================================================================
@@ -368,6 +417,13 @@ export function registerDatabaseHandlers() {
 
       // Update the movie with the new TMDB ID, poster, title, and year
       await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year)
+
+      // Check for duplicates in the same source
+      const item = db.getMediaItemById(validMediaItemId)
+      if (item && item.source_id) {
+        const { getDeduplicationService } = require('../services/DeduplicationService')
+        await getDeduplicationService().scanForDuplicates(item.source_id)
+      }
 
       // Send library update for live refresh
       win?.webContents.send('library:updated', { type: 'media' })

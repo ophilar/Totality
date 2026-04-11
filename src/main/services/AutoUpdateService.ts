@@ -72,7 +72,7 @@ export class AutoUpdateService {
       })
       try {
         getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
-      } catch { /* ignore */ }
+      } catch (e) { throw e; }
     })
 
     autoUpdater.on('update-not-available', (_info: UpdateInfo) => {
@@ -102,7 +102,7 @@ export class AutoUpdateService {
       })
       try {
         getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
-      } catch { /* ignore */ }
+      } catch (e) { throw e; }
     })
 
     autoUpdater.on('error', (err: Error) => {
@@ -196,9 +196,7 @@ export class AutoUpdateService {
       if (setting === 'false') {
         return
       }
-    } catch {
-      // If DB read fails, still check for updates
-    }
+    } catch (error) { throw error }
 
     await this.checkForUpdates()
   }

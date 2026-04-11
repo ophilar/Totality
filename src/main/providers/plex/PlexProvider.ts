@@ -1469,8 +1469,9 @@ export class PlexProvider extends BaseMediaProvider {
       }
     }
 
-    // Extract genres
+    // Extract genres and moods
     const genres = item.Genre?.map(g => g.tag) || []
+    const moods = item.Mood?.map(m => m.tag) || []
 
     // Extract country
     const country = item.Country?.[0]?.tag
@@ -1484,6 +1485,7 @@ export class PlexProvider extends BaseMediaProvider {
       sort_name: item.title,
       musicbrainz_id: musicbrainzId,
       genres: JSON.stringify(genres),
+      mood: JSON.stringify(moods),
       country,
       biography: item.summary,
       thumb_url: item.thumb ? `${this.selectedServer?.uri}${item.thumb}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
@@ -1508,8 +1510,9 @@ export class PlexProvider extends BaseMediaProvider {
       }
     }
 
-    // Extract genres
+    // Extract genres and moods
     const genres = item.Genre?.map(g => g.tag) || []
+    const moods = item.Mood?.map(m => m.tag) || []
 
     return {
       source_id: this.sourceId,
@@ -1523,6 +1526,7 @@ export class PlexProvider extends BaseMediaProvider {
       year: item.year,
       musicbrainz_id: musicbrainzId,
       genres: JSON.stringify(genres),
+      mood: JSON.stringify(moods),
       studio: item.studio,
       album_type: 'album', // Default, could be refined
       thumb_url: item.thumb ? `${this.selectedServer?.uri}${item.thumb}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
@@ -1561,6 +1565,9 @@ export class PlexProvider extends BaseMediaProvider {
       }
     }
 
+    // Extract moods
+    const moods = item.Mood?.map(m => m.tag) || []
+
     // Determine if lossless
     const codec = audioCodec.toLowerCase()
     const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'pcm', 'ape', 'wavpack']
@@ -1595,6 +1602,7 @@ export class PlexProvider extends BaseMediaProvider {
       is_lossless: isLossless,
       is_hi_res: isHiRes,
       musicbrainz_id: musicbrainzId,
+      mood: JSON.stringify(moods),
       added_at: item.addedAt ? new Date(item.addedAt * 1000).toISOString() : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1745,9 +1753,7 @@ export class PlexProvider extends BaseMediaProvider {
             artistAlbumCount++
           }
 
-          // Update artist counts
-          await db.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
-
+          // Skip individual artist count updates in the loop
           processed++
           if (onProgress) {
             onProgress({
@@ -1764,12 +1770,12 @@ export class PlexProvider extends BaseMediaProvider {
       }
 
       // Phase 2: Get all albums directly to catch compilations and orphaned albums
-      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Scanning for compilations and orphaned albums...`)
+      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, 'Scanning for compilations and orphaned albums...')
 
       const allAlbums = await this.getMusicAlbums(libraryId)
       const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(a.ratingKey))
 
-      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
+      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
 
       let compilationProcessed = 0
       const totalCompilations = unprocessedAlbums.length
@@ -1777,7 +1783,7 @@ export class PlexProvider extends BaseMediaProvider {
       for (const plexAlbum of unprocessedAlbums) {
         // Check for cancellation
         if (this.musicScanCancelled) {
-          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
+          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
           result.cancelled = true
           result.durationMs = Date.now() - startTime
           return result
@@ -1816,13 +1822,6 @@ export class PlexProvider extends BaseMediaProvider {
 
           await processAlbum(plexAlbum, artistId, artistName)
 
-          // Update artist counts
-          if (artistId) {
-            const artistAlbums = db.getMusicAlbums({ artistId })
-            const artistTracks = db.getMusicTracks({ artistId })
-            await db.updateMusicArtistCounts(artistId, artistAlbums.length, artistTracks.length)
-          }
-
           compilationProcessed++
           if (onProgress) {
             onProgress({
@@ -1837,6 +1836,9 @@ export class PlexProvider extends BaseMediaProvider {
           result.errors.push(`Failed to process album ${plexAlbum.title}: ${getErrorMessage(error)}`)
         }
       }
+
+      // Bulk update all artist counts for this source
+      await (db as any).updateAllMusicArtistCounts(this.sourceId)
 
       // Update scan time
       await db.updateSourceScanTime(this.sourceId)

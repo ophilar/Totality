@@ -20,3 +20,15 @@
 - **Provider Pattern:** Media source abstraction allows adding new providers without changing core logic.
 - **Zod Boundaries:** Runtime validation at every system boundary (IPC, API, DB) ensures data integrity.
 - **Singleton Services:** Core services like `DatabaseService` and `GeminiService` use the singleton pattern for unified state management.
+
+## Testability Principles
+
+- **No Global Mocks:** Tests must verify actual code paths including database transactions and network logic. Avoid `vi.mock()` for core business logic.
+- **Environment Agnosticism:** Services must be designed to run in diverse environments (Production, Test, CLI) by allowing configuration via environment variables or settings (e.g., base URL overrides, custom database paths).
+- **In-Memory Integration:** Favor real in-memory SQLite databases over mocks for repository and service tests to ensure query correctness and schema integrity.
+
+## Active Optimization Principles
+
+- **Atomic File Operations:** When modifying or replacing media files (e.g., transcoding), use a "Write-Rename-Cleanup" pattern with backup support to prevent data loss.
+- **AI-Augmented Transcoding:** Leverage LLMs (Gemini) to determine optimal per-video encoding parameters, balancing quality and compression beyond generic presets.
+- **Safe Deduplication:** Automatic file deletion is strictly opt-in. The system should identify and recommend actions, but manual confirmation is the default for destructive operations.

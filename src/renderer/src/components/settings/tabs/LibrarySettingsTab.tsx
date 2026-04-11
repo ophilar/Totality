@@ -17,6 +17,7 @@ import {
   Library,
   CheckCircle,
   Circle,
+  Lock,
 } from 'lucide-react'
 
 interface ExclusionRecord {
@@ -142,6 +143,13 @@ export function LibrarySettingsTab() {
   })
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
 
+  // Protected Libraries state
+  const [sources, setSources] = useState<any[]>([])
+  const [sourceLibraries, setSourceLibraries] = useState<Record<string, any[]>>({})
+  const [hasPin, setHasPin] = useState(false)
+  const [isChangingPin, setIsChangingPin] = useState(false)
+  const [newPin, setNewPin] = useState('')
+
   const toggleCard = (card: string) => {
     setExpandedCards((prev) => {
       const next = new Set(prev)
@@ -151,10 +159,32 @@ export function LibrarySettingsTab() {
     })
   }
 
+  // Load sources and their libraries
+  const loadSourceData = useCallback(async () => {
+    try {
+      const srcList = await window.electronAPI.sourcesList()
+      setSources(srcList)
+      
+      const libMap: Record<string, any[]> = {}
+      await Promise.all(srcList.map(async (src: any) => {
+        const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(src.source_id)
+        libMap[src.source_id] = libs
+      }))
+      setSourceLibraries(libMap)
+      
+      const pinStatus = await window.electronAPI.dbHasPin()
+      setHasPin(pinStatus)
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to load source/library data:', err)
+    }
+  }, [])
+
   // Load all data on mount
   useEffect(() => {
     async function loadData() {
       try {
+        await loadSourceData()
+        
         const [
           epsVal,
           singlesVal,
@@ -186,7 +216,29 @@ export function LibrarySettingsTab() {
       }
     }
     loadData()
-  }, [])
+  }, [loadSourceData])
+
+  const handleToggleProtected = async (sourceId: string, libraryId: string, isProtected: boolean) => {
+    try {
+      await window.electronAPI.dbSetLibraryProtected(sourceId, libraryId, isProtected)
+      await loadSourceData()
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library protection:', err)
+    }
+  }
+
+  const handleSetPin = async () => {
+    if (newPin.length < 4) return
+    try {
+      await window.electronAPI.dbSetPin(newPin)
+      setNewPin('')
+      setIsChangingPin(false)
+      const pinStatus = await window.electronAPI.dbHasPin()
+      setHasPin(pinStatus)
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to set PIN:', err)
+    }
+  }
 
   const reloadExclusions = useCallback(async () => {
     try {
@@ -405,6 +457,109 @@ export function LibrarySettingsTab() {
               })}
             </div>
           </div>        </div>
+      </SettingsCard>
+
+      {/* Protected Libraries Card */}
+      <SettingsCard
+        title="Protected Libraries"
+        description="Hide sensitive or personal libraries behind a PIN"
+        icon={<Lock className="w-5 h-5" />}
+        status={hasPin ? 'configured' : 'not-configured'}
+        statusText={hasPin ? 'PIN Set' : 'No PIN'}
+        expanded={expandedCards.has('security')}
+        onToggle={() => toggleCard('security')}
+      >
+        <div className="space-y-6">
+          {/* PIN Management */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">Security PIN</p>
+            <p className="text-xs text-muted-foreground">
+              Used to unlock libraries marked as protected.
+            </p>
+            
+            {!isChangingPin ? (
+              <div className="flex items-center justify-between bg-background/50 px-4 py-3 rounded-lg border border-border/30">
+                <span className="text-sm font-medium">
+                  {hasPin ? '••••••••' : 'No PIN configured'}
+                </span>
+                <button
+                  onClick={() => setIsChangingPin(true)}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  {hasPin ? 'Change PIN' : 'Set PIN'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="password"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  placeholder="Enter 4-8 digits"
+                  maxLength={8}
+                  className="flex-1 px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  onClick={handleSetPin}
+                  disabled={newPin.length < 4}
+                  className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => { setIsChangingPin(false); setNewPin('') }}
+                  className="px-3 py-2 bg-muted text-muted-foreground rounded-md text-xs font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Library List */}
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-foreground">Manage Libraries</p>
+            {sources.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No sources configured.</p>
+            ) : (
+              <div className="space-y-4">
+                {sources.map(source => {
+                  const libs = sourceLibraries[source.source_id] || []
+                  if (libs.length === 0) return null
+                  
+                  return (
+                    <div key={source.source_id} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                          {source.display_name}
+                        </span>
+                        <div className="h-px bg-border/20 flex-1" />
+                      </div>
+                      
+                      <div className="bg-background/50 rounded-lg border border-border/30 divide-y divide-border/20">
+                        {libs.map(lib => (
+                          <div key={lib.id} className="flex items-center justify-between px-4 py-2.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{lib.name}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase">{lib.type}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {lib.isProtected && <Lock className="w-3 h-3 text-amber-500" />}
+                              <Toggle 
+                                checked={!!lib.isProtected}
+                                onChange={(checked) => handleToggleProtected(source.source_id, lib.id, checked)}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </SettingsCard>
 
     </div>
