@@ -230,7 +230,30 @@ export class StatsRepository {
     }
   }
 
-  getLibraryStats(sourceId?: string): {
+  public getAggregatedSourceStats(): {
+    totalSources: number
+    enabledSources: number
+    totalItems: number
+    bySource: Array<{
+      sourceId: string
+      displayName: string
+      sourceType: string
+      itemCount: number
+      lastScanAt?: string
+    }>
+  } {
+    const sources = this.getSourceStats()
+    const allSources = this.db.prepare('SELECT is_enabled FROM media_sources').all() as any[]
+
+    return {
+      totalSources: allSources.length,
+      enabledSources: allSources.filter((s) => s.is_enabled === 1).length,
+      totalItems: sources.reduce((acc, s) => acc + s.itemCount, 0),
+      bySource: sources
+    }
+  }
+
+  public getLibraryStats(sourceId?: string): {
     totalItems: number
     totalMovies: number
     totalEpisodes: number

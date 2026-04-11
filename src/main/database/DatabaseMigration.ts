@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Database Migration Utility
  *
@@ -13,7 +12,7 @@ import { getErrorMessage } from '../services/utils/errorUtils'
 /**
  * Run database migrations and schema updates
  */
-export function runMigrations(db: DatabaseSync.Database): void {
+export function runMigrations(db: DatabaseSync): void {
   // Execute main schema
   db.exec(DATABASE_SCHEMA)
 
@@ -139,7 +138,7 @@ export function runMigrations(db: DatabaseSync.Database): void {
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
 }
 
-function migrateCheckConstraints(db: DatabaseSync.Database): void {
+function migrateCheckConstraints(db: DatabaseSync): void {
   try {
     const schemaRow = db.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='media_sources'"
@@ -166,7 +165,7 @@ function migrateCheckConstraints(db: DatabaseSync.Database): void {
   }
 }
 
-function createIndexes(db: DatabaseSync.Database): void {
+function createIndexes(db: DatabaseSync): void {
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_media_items_tmdb_id ON media_items(tmdb_id) WHERE tmdb_id IS NOT NULL',
     'CREATE INDEX IF NOT EXISTS idx_media_items_imdb_id ON media_items(imdb_id) WHERE imdb_id IS NOT NULL',
@@ -179,7 +178,7 @@ function createIndexes(db: DatabaseSync.Database): void {
   }
 }
 
-function fixMusicTrackAlbumReferences(db: DatabaseSync.Database): void {
+function fixMusicTrackAlbumReferences(db: DatabaseSync): void {
   try {
     db.exec(`
       UPDATE music_tracks SET album_id = (
@@ -198,7 +197,7 @@ function fixMusicTrackAlbumReferences(db: DatabaseSync.Database): void {
   }
 }
 
-function migrateExistingItemsToVersions(db: DatabaseSync.Database): void {
+function migrateExistingItemsToVersions(db: DatabaseSync): void {
   try {
     const count = (db.prepare('SELECT COUNT(*) as count FROM media_item_versions').get() as any).count
     if (count > 0) return
@@ -217,7 +216,7 @@ function migrateExistingItemsToVersions(db: DatabaseSync.Database): void {
   }
 }
 
-function cleanupOrphanedRecords(db: DatabaseSync.Database): void {
+function cleanupOrphanedRecords(db: DatabaseSync): void {
   try {
     db.exec('BEGIN DEFERRED')
     try {
