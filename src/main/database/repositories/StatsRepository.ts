@@ -420,4 +420,26 @@ export class StatsRepository {
       averageCompleteness: Math.round(avg)
     }
   }
+
+  public getCollectionStats(): {
+    total: number
+    complete: number
+    incomplete: number
+    totalMissing: number
+    avgCompleteness: number
+  } {
+    const total = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections').get() as any
+    const complete = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage >= 100').get() as any
+    const incomplete = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage < 100').get() as any
+    const missing = this.db.prepare('SELECT SUM(total_movies - owned_movies) as count FROM movie_collections').get() as any
+    const avg = this.db.prepare('SELECT AVG(completeness_percentage) as avg FROM movie_collections').get() as any
+
+    return {
+      total: total?.count || 0,
+      complete: complete?.count || 0,
+      incomplete: incomplete?.count || 0,
+      totalMissing: missing?.count || 0,
+      avgCompleteness: Math.round(avg?.avg || 0)
+    }
+  }
 }

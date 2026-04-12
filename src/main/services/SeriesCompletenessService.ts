@@ -74,6 +74,8 @@ export class SeriesCompletenessService {
     const db = getDatabase()
     const tmdb = getTMDBService()
     const episodes = providedEpisodes || db.tvShowRepo.getTVShowEpisodes(seriesTitle, sourceId)
+    getLoggingService().info('[SeriesCompletenessService]', `Analyzing series "${seriesTitle}". Found ${episodes.length} local episodes.`)
+    episodes.forEach(e => getLoggingService().info('[SeriesCompletenessService]', ` - ${e.series_title} S${e.season_number}E${e.episode_number} (id: ${e.id})`))
 
     if (episodes.length === 0) return null
 
@@ -95,6 +97,14 @@ export class SeriesCompletenessService {
       
       // Batch fetch season details
       const seasonNums = showDetails.seasons.filter(s => s.season_number > 0).map(s => s.season_number)
+      
+      // Update local DB with TMDB ID if it was missing
+      for (const ep of episodes) {
+        if (!ep.series_tmdb_id && ep.id) {
+          // Note: we'd need a method to update series TMDB ID on episodes
+        }
+      }
+
       const fullDetails = await tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
       
       for (const sn of seasonNums) {
@@ -123,6 +133,22 @@ export class SeriesCompletenessService {
       }
 
       db.tvShowRepo.upsertSeriesCompleteness(result)
+
+      // Artwork update for local sources
+      const source = db.sourceRepo.getMediaSourceById(sourceId || '')
+      if (source && (source.source_type === 'local' || source.source_type === 'kodi-local')) {
+        for (const ep of episodes) {
+          const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
+          if (epData && ep.id) {
+            db.mediaRepo.updateMediaItemArtwork(ep.id, {
+              poster_url: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
+              episode_thumb_url: tmdb.buildImageUrl(epData.still_path, 'w500') || undefined,
+              season_poster_url: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path, 'w500') || undefined
+            })
+          }
+        }
+      }
+
       return db.tvShowRepo.getSeriesCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     } catch (error) {
       getLoggingService().error('[SeriesCompletenessService]', `Failed for series ${seriesTitle}:`, error)
