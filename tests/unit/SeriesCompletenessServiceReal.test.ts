@@ -48,7 +48,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
            status: 'Ended'
          }
 
-         if (req.url?.includes('append_to_response=season/1')) {
+         if (req.url?.includes('append_to_response=season/1') || req.url?.includes('append_to_response=season%2F1')) {
             res.end(JSON.stringify({
               ...baseData,
               'season/1': {
@@ -124,6 +124,8 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     expect(completeness).not.toBeNull()
     expect(completeness!.series_title).toBe('Game of Thrones')
     expect(completeness!.owned_episodes).toBe(1)
+    
+    const missing = JSON.parse(completeness!.missing_episodes)
     // S1E2 is missing (based on our mock season 1 having 2 episodes)
     // Note: Analysis engine uses 'S1E2' key format.
     expect(missing).toContainEqual(expect.objectContaining({
@@ -149,8 +151,8 @@ describe('SeriesCompletenessService (No Mocks)', () => {
 
     const item = db.mediaRepo.getMediaItemByProviderId('local-ep-1', 'local1')
     expect(item).not.toBeNull()
-    expect(item!.poster_url).toBe('/poster.jpg')
-    expect(item!.episode_thumb_url).toBe('/still1.jpg')
-    expect(item!.season_poster_url).toBe('/season1.jpg')
+    expect(item!.poster_url).toBe(`https://image.tmdb.org/t/p/w500/poster.jpg`)
+    expect(item!.episode_thumb_url).toBe(`https://image.tmdb.org/t/p/w500/still1.jpg`)
+    expect(item!.season_poster_url).toBe(`https://image.tmdb.org/t/p/w500/season1.jpg`)
     })
 })
