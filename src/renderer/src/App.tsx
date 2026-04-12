@@ -13,6 +13,7 @@ import { WishlistProvider } from './contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { LibraryProvider } from './contexts/LibraryContext'
 import { AddSourceModal } from './components/sources/AddSourceModal'
 import { AboutModal } from './components/ui/AboutModal'
 import { SettingsPanel } from './components/settings'
@@ -572,7 +573,9 @@ function App() {
           <SourceProvider>
             <WishlistProvider>
               <NavigationProvider>
-                <AppContent />
+                <LibraryProvider>
+                  <AppContent />
+                </LibraryProvider>
               </NavigationProvider>
             </WishlistProvider>
           </SourceProvider>

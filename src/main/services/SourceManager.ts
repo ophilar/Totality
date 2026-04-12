@@ -6,7 +6,6 @@
  */
 
 import { getDatabase } from '../database/getDatabase'
-import { getPlexService } from './PlexService'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService } from './TaskQueueService'
 import { getLoggingService } from './LoggingService'
@@ -124,7 +123,7 @@ export class SourceManager {
 
   private async loadSources(): Promise<void> {
     const db = this.db
-    const sources = db.getMediaSources()
+    const sources = db.sourceRepo.getMediaSources()
     const unavailableSources: Array<{ name: string; type: string }> = []
 
     // Load all providers in parallel with per-source timeout
@@ -139,7 +138,7 @@ export class SourceManager {
       const names = unavailableSources.map(s => s.name).join(', ')
       this.logging.warn('[SourceManager]', `Unavailable sources at startup: ${names}`)
       try {
-        db.createNotification({
+        db.notificationRepo.createNotification({
           type: 'error',
           title: 'Media source unavailable',
           message: unavailableSources.length === 1
@@ -210,7 +209,7 @@ export class SourceManager {
       const server = plexProvider.getSelectedServer()
       // Update display name to actual server name if it differs
       if (server && server.name && server.name !== source.display_name) {
-        await db.upsertMediaSource({
+        await db.sourceRepo.upsertMediaSource({
           ...source,
           display_name: server.name,
         })
@@ -219,15 +218,6 @@ export class SourceManager {
         this.logging.info('[SourceManager]', `Restored server selection for ${source.display_name}`)
       }
 
-      // Sync legacy PlexService for backward compatibility (MovieCollectionService uses it)
-      try {
-        const plexService = getPlexService()
-        await plexService.authenticateWithToken(connectionConfig.token as string)
-        await plexService.selectServer(connectionConfig.serverId as string)
-        this.logging.info('[SourceManager]', `Synced legacy PlexService with server: ${source.display_name}`)
-      } catch (syncError) {
-        this.logging.warn('[SourceManager]', `Could not sync legacy PlexService:`, syncError)
-      }
       return true
     } else {
       this.logging.warn('[SourceManager]', `Failed to restore server selection for ${source.display_name}`)
@@ -275,13 +265,13 @@ export class SourceManager {
       is_enabled: config.isEnabled !== false,
     }
 
-    await db.upsertMediaSource(sourceRecord as any)
+    await db.sourceRepo.upsertMediaSource(sourceRecord as any)
 
     // Add to active providers
     this.providers.set(sourceId, provider)
 
     // Return the full source record
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sourceRepo.getMediaSourceById(sourceId)
     if (!source) {
       throw new Error('Failed to retrieve created source')
     }
@@ -297,7 +287,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    const existing = db.getMediaSourceById(sourceId)
+    const existing = db.sourceRepo.getMediaSourceById(sourceId)
 
     if (!existing) {
       throw new Error(`Source not found: ${sourceId}`)
@@ -313,7 +303,7 @@ export class SourceManager {
       is_enabled: updates.isEnabled !== undefined ? updates.isEnabled : existing.is_enabled,
     }
 
-    await db.upsertMediaSource(updatedSource)
+    await db.sourceRepo.upsertMediaSource(updatedSource)
 
     // If connection config changed, recreate provider
     if (updates.connectionConfig) {
@@ -349,7 +339,7 @@ export class SourceManager {
     this.providers.delete(sourceId)
 
     // 4. Remove from database (includes notifications cleanup)
-    await db.deleteMediaSource(sourceId)
+    await db.sourceRepo.deleteMediaSource(sourceId)
 
     // 5. Clean up cached artwork files
     await this.cleanupArtworkCache(sourceId)
@@ -378,7 +368,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    return db.getMediaSources(type) as any
+    return db.sourceRepo.getMediaSources(type) as any
   }
 
   /**
@@ -388,7 +378,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    return db.getMediaSourceById(sourceId)
+    return db.sourceRepo.getMediaSourceById(sourceId)
   }
 
   /**
@@ -398,7 +388,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    return db.getEnabledMediaSources()
+    return db.sourceRepo.getEnabledMediaSources()
   }
 
   /**
@@ -408,7 +398,10 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    await db.toggleMediaSource(sourceId, enabled)
+    const source = db.sourceRepo.getMediaSourceById(sourceId)
+    if (source) {
+      db.sourceRepo.upsertMediaSource({ ...source, is_enabled: enabled })
+    }
   }
 
   // ============================================================================
@@ -467,7 +460,7 @@ export class SourceManager {
     const elapsed = Date.now() - startTime
 
     if (result.success) {
-      await db.updateSourceConnectionTime(sourceId)
+      await db.sourceRepo.updateSourceConnectionTime(sourceId)
       this.logging.verbose('[SourceManager]', `Connection test passed for ${currentProvider.providerType} source in ${elapsed}ms`, result.serverVersion ? `Server version: ${result.serverVersion}` : undefined)
     } else {
       this.logging.verbose('[SourceManager]', `Connection test failed for ${currentProvider.providerType} source in ${elapsed}ms`, result.error || undefined)
@@ -485,7 +478,7 @@ export class SourceManager {
     provider: MediaProvider,
     db: any,
   ): Promise<ConnectionTestResult | null> {
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sourceRepo.getMediaSourceById(sourceId)
     if (!source) return null
 
     try {
@@ -512,7 +505,7 @@ export class SourceManager {
         password: undefined,
       }
 
-      await db.upsertMediaSource({
+      await db.sourceRepo.upsertMediaSource({
         source_id: sourceId,
         source_type: source.source_type,
         display_name: source.display_name,
@@ -636,13 +629,13 @@ export class SourceManager {
     const server = provider.getSelectedServer()
     if (server) {
       const db = this.db
-      const source = db.getMediaSourceById(sourceId)
+      const source = db.sourceRepo.getMediaSourceById(sourceId)
       if (source) {
         const config = JSON.parse(source.connection_config)
         config.serverId = server.machineIdentifier
         config.serverUrl = server.uri
 
-        await db.upsertMediaSource({
+        await db.sourceRepo.upsertMediaSource({
           ...source,
           display_name: server.name || source.display_name, // Use actual server name
           connection_config: JSON.stringify(config),
@@ -735,11 +728,9 @@ export class SourceManager {
       // Update library scan timestamp if successful
       if (result.success && library) {
         const db = this.db
-        await db.updateLibraryScanTime(
+        await db.sourceRepo.updateLibraryScanTime(
           sourceId,
           libraryId,
-          library.name,
-          library.type,
           result.itemsScanned
         )
         this.logging.info('[SourceManager]', `Updated scan timestamp for library ${library.name}`)
@@ -807,7 +798,7 @@ export class SourceManager {
 
       // Skip disabled libraries
       const db = this.db
-      if (!db.isLibraryEnabled(sourceId, library.id)) continue
+      if (!db.sourceRepo.isLibraryEnabled(sourceId, library.id)) continue
 
       await this.scanLibrary(sourceId, library.id, onProgress)
     }
@@ -865,7 +856,7 @@ export class SourceManager {
             if (library.type === 'music') continue
 
             // Skip disabled libraries
-            if (!db.isLibraryEnabled(source.source_id, library.id)) {
+            if (!db.sourceRepo.isLibraryEnabled(source.source_id, library.id)) {
               this.logging.info('[SourceManager]', `Skipping disabled library: ${library.name}`)
               continue
             }
@@ -893,11 +884,9 @@ export class SourceManager {
 
             // Update library scan timestamp if successful
             if (result.success) {
-              await db.updateLibraryScanTime(
+              await db.sourceRepo.updateLibraryScanTime(
                 source.source_id,
                 library.id,
-                library.name,
-                library.type,
                 result.itemsScanned
               )
 
@@ -981,7 +970,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    const lastScanTime = db.getLibraryScanTime(sourceId, libraryId)
+    const lastScanTime = db.sourceRepo.getLibraryScanTime(sourceId, libraryId)
 
     // If never scanned, do full scan
     if (!lastScanTime) {
@@ -1008,11 +997,9 @@ export class SourceManager {
 
     // Update library scan timestamp if successful
     if (result.success && library) {
-      await db.updateLibraryScanTime(
+      await db.sourceRepo.updateLibraryScanTime(
         sourceId,
         libraryId,
-        library.name,
-        library.type,
         result.itemsScanned
       )
     }
@@ -1057,7 +1044,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    const enabledSources = db.getEnabledMediaSources()
+    const enabledSources = db.sourceRepo.getEnabledMediaSources()
     const results = new Map<string, ScanResult>()
 
     this.logging.info('[SourceManager]', `Starting incremental scan of ${enabledSources.length} sources`)
@@ -1074,12 +1061,12 @@ export class SourceManager {
           if (library.type === 'music') continue
 
           // Skip disabled libraries
-          if (!db.isLibraryEnabled(source.source_id, library.id)) {
+          if (!db.sourceRepo.isLibraryEnabled(source.source_id, library.id)) {
             this.logging.info('[SourceManager]', `Skipping disabled library: ${source.display_name}/${library.name}`)
             continue
           }
 
-          const lastScanTime = db.getLibraryScanTime(source.source_id, library.id)
+          const lastScanTime = db.sourceRepo.getLibraryScanTime(source.source_id, library.id)
           const sinceTimestamp = lastScanTime ? new Date(lastScanTime) : undefined
 
           if (sinceTimestamp) {
@@ -1097,11 +1084,9 @@ export class SourceManager {
 
           // Update library scan timestamp if successful
           if (result.success) {
-            await db.updateLibraryScanTime(
+            await db.sourceRepo.updateLibraryScanTime(
               source.source_id,
               library.id,
-              library.name,
-              library.type,
               result.itemsScanned
             )
           }
@@ -1159,7 +1144,7 @@ export class SourceManager {
 
     // Enrich libraries with scan timestamps from database
     const db = this.db
-    const scanTimes = db.getLibraryScanTimes(sourceId)
+    const scanTimes = db.sourceRepo.getLibraryScanTimes(sourceId)
 
     return libraries.map(lib => ({
       ...lib,
@@ -1190,7 +1175,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    return db.getAggregatedSourceStats()
+    return db.statsRepo.getAggregatedSourceStats()
   }
 
   // ============================================================================
@@ -1215,7 +1200,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sourceRepo.getMediaSourceById(sourceId)
 
     if (!source) {
       throw new Error(`Source not found: ${sourceId}`)

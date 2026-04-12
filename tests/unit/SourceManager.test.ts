@@ -21,24 +21,31 @@ describe('SourceManager', () => {
     mockMediaSources = []
     
     mockDb = {
-      getMediaSources: vi.fn(() => mockMediaSources),
-      getMediaSourceById: vi.fn((id: string) => mockMediaSources.find(s => s.source_id === id) || null),
-      getEnabledMediaSources: vi.fn(() => mockMediaSources.filter(s => s.is_enabled)),
-      upsertMediaSource: vi.fn((source: any) => {
-        const existingIndex = mockMediaSources.findIndex(s => s.source_id === source.source_id)
-        if (existingIndex >= 0) {
-          mockMediaSources[existingIndex] = { ...mockMediaSources[existingIndex], ...source }
-        } else {
-          mockMediaSources.push({ ...source, created_at: new Date().toISOString() })
-        }
-        return source.source_id
-      }),
-      deleteMediaSource: vi.fn(),
-      isLibraryEnabled: vi.fn(() => true),
-      getLibraryScanTimes: vi.fn(() => new Map()),
-      createNotification: vi.fn(),
-      updateSourceScanTime: vi.fn(),
-      updateLastScanAt: vi.fn(),
+      sourceRepo: {
+        getMediaSources: vi.fn(() => mockMediaSources),
+        getMediaSourceById: vi.fn((id: string) => mockMediaSources.find(s => s.source_id === id) || null),
+        getEnabledMediaSources: vi.fn(() => mockMediaSources.filter(s => s.is_enabled)),
+        upsertMediaSource: vi.fn((source: any) => {
+          const existingIndex = mockMediaSources.findIndex(s => s.source_id === source.source_id)
+          if (existingIndex >= 0) {
+            mockMediaSources[existingIndex] = { ...mockMediaSources[existingIndex], ...source }
+          } else {
+            mockMediaSources.push({ ...source, created_at: new Date().toISOString() })
+          }
+          return source.source_id
+        }),
+        deleteMediaSource: vi.fn(),
+        isLibraryEnabled: vi.fn(() => true),
+        getLibraryScanTimes: vi.fn(() => new Map()),
+        updateLibraryScanTime: vi.fn(),
+        updateLastScanAt: vi.fn(),
+      },
+      notificationRepo: {
+        createNotification: vi.fn(),
+      },
+      statsRepo: {
+        getAggregatedSourceStats: vi.fn(),
+      }
     }
 
     mockLogging = {

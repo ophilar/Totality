@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check, HardDrive, Zap } from 'lucide-react'
+import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
+import { MediaGridView } from './MediaGridView'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { MissingItemCard } from './MissingItemCard'
@@ -569,53 +571,50 @@ export function TVShowsView({
 
     const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'
 
-    // List view
-    if (viewType === 'list') {
-      return (
-        <>
-          {statsBar}
-          {isSlimDownActive && <SlimDownBanner className="mb-4" />}
-          <div className="space-y-2 mt-4">
-            {sortedShows.map((show) => {
-              const completeness = seriesCompleteness.get(show.series_title)
-              return <div key={show.series_title} data-title={show.series_title}><ShowListItem show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={async () => { await onAnalyzeSeries(show.series_title) }} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
-            })}
-          </div>
-          <div ref={showSentinelRef} className="h-1" />
-          {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
-          {totalShowCount > 0 && (
-            <div className="text-center text-sm text-muted-foreground py-2">
-              {shows.length} of {totalShowCount} TV shows
-            </div>
-          )}
-        </>
-      )
-    }
-
-    // Grid view (default)
     return (
-      <>
-        {statsBar}
-        {isSlimDownActive && <SlimDownBanner className="mb-4" />}
-        <div
-          className="grid gap-8 mt-4"
-          style={{
-            gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`
-          }}
-        >
-          {sortedShows.map((show) => {
-            const completeness = seriesCompleteness.get(show.series_title)
-            return <div key={show.series_title} data-title={show.series_title}><ShowCard show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
-          })}
-        </div>
-        <div ref={showSentinelRef} className="h-1" />
-        {showsLoading && <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
-        {totalShowCount > 0 && (
-          <div className="text-center text-sm text-muted-foreground py-2">
-            {shows.length} of {totalShowCount} TV shows
+      <MediaGridView
+        items={sortedShows}
+        totalCount={totalShowCount}
+        loading={showsLoading}
+        onLoadMore={onLoadMoreShows}
+        viewType={viewType}
+        posterMinWidth={posterMinWidth}
+        statsBar={statsBar}
+        emptyState={
+          <div className="flex flex-col items-center justify-center text-center p-12">
+            <TvPlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
+            <p className="text-muted-foreground text-xl font-medium">No TV shows found</p>
+            <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs">
+              Scan a TV library from the sidebar to start analyzing your collection
+            </p>
+          </div>
+        }
+        banner={isSlimDownActive ? <SlimDownBanner className="mb-4" /> : undefined}
+        renderGridItem={(show) => (
+          <div key={show.series_title} data-title={show.series_title}>
+            <ShowCard
+              show={show}
+              onClick={() => onSelectShow(show.series_title)}
+              completenessData={seriesCompleteness.get(show.series_title)}
+              showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
+              onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+            />
           </div>
         )}
-      </>
+        renderListItem={(show) => (
+          <div key={show.series_title} data-title={show.series_title}>
+            <ShowListItem
+              show={show}
+              onClick={() => onSelectShow(show.series_title)}
+              completenessData={seriesCompleteness.get(show.series_title)}
+              showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={async () => { await onAnalyzeSeries(show.series_title) }}
+              onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+            />
+          </div>
+        )}
+      />
     )
   }
 

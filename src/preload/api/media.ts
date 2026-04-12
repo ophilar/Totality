@@ -15,8 +15,12 @@ export const mediaApi = {
   // Database - Media Items
   getMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItems', filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
+  mediaList: (filters?: unknown) => ipcRenderer.invoke('db:media:list', filters),
+  mediaCount: (filters?: unknown) => ipcRenderer.invoke('db:media:count', filters),
   getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
+  tvShowList: (filters?: unknown) => ipcRenderer.invoke('db:tvshows:list', filters),
+  tvShowCount: (filters?: unknown) => ipcRenderer.invoke('db:tvshows:count', filters),
   countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke('db:countTVEpisodes', filters),
   getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
     ipcRenderer.invoke('db:getLetterOffset', params),
@@ -150,8 +154,12 @@ export interface MediaAPI {
   // Database - Media Items
   getMediaItems: (filters?: unknown) => Promise<any[]>
   countMediaItems: (filters?: unknown) => Promise<number>
+  mediaList: (filters?: unknown) => Promise<any[]>
+  mediaCount: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: unknown) => Promise<unknown[]>
   countTVShows: (filters?: unknown) => Promise<number>
+  tvShowList: (filters?: unknown) => Promise<unknown[]>
+  tvShowCount: (filters?: unknown) => Promise<number>
   countTVEpisodes: (filters?: unknown) => Promise<number>
   getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) => Promise<number>
   getMediaItemById: (id: number) => Promise<unknown | null>

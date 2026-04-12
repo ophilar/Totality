@@ -163,4 +163,30 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
 
     return row?.id || 0
   }
+
+  getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
+    let sql = 'SELECT * FROM series_completeness WHERE 1=1'
+    const params = []
+    if (sourceId) { sql += ' AND source_id = ?'; params.push(sourceId) }
+    if (libraryId) { sql += ' AND library_id = ?'; params.push(libraryId) }
+    sql += ' ORDER BY series_title ASC'
+    const stmt = this.db.prepare(sql)
+    return stmt.all(...params) as SeriesCompleteness[]
+  }
+
+  getIncompleteSeries(sourceId?: string): SeriesCompleteness[] {
+    let sql = 'SELECT * FROM series_completeness WHERE completeness_percentage < 100'
+    const params = []
+    if (sourceId) {
+      sql += ' AND source_id = ?'
+      params.push(sourceId)
+    }
+    sql += ' ORDER BY completeness_percentage ASC'
+    const stmt = this.db.prepare(sql)
+    return stmt.all(...params) as SeriesCompleteness[]
+  }
+
+  deleteSeriesCompleteness(id: number): void {
+    this.db.prepare('DELETE FROM series_completeness WHERE id = ?').run(id)
+  }
 }

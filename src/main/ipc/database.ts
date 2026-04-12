@@ -12,74 +12,38 @@ import type { MediaItem } from '../types/database'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 import { getLoggingService } from '../services/LoggingService'
 
+import { registerListHandlers } from './utils/genericHandlers'
+
 /**
  * Register all database-related IPC handlers
  */
 export function registerDatabaseHandlers() {
   const db = getDatabase()
 
+  // Register generic list/count handlers
+  registerListHandlers('db:media', (f) => db.mediaRepo.getMediaItems(f), (f) => db.mediaRepo.count(f), MediaItemFiltersSchema, {
+    listAlias: 'db:getMediaItems',
+    countAlias: 'db:countMediaItems'
+  })
+  registerListHandlers('db:tvshows', (f) => db.tvShowRepo.getTVShowSummaries(f), (f) => db.tvShowRepo.countTVShows(f), TVShowFiltersSchema, {
+    listAlias: 'db:getTVShows',
+    countAlias: 'db:countTVShows'
+  })
+
   // ============================================================================
   // MEDIA ITEMS
   // ============================================================================
 
-  ipcMain.handle('db:getMediaItems', async (_event, filters?: unknown) => {
-    try {
-      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItems') : undefined
-      const items = db.getMediaItems(validFilters) as MediaItem[]
-      // Debug logging for movies without year data
-      const moviesWithoutYear = items.filter((i: MediaItem) => i.type === 'movie' && !i.year)
-      if (moviesWithoutYear.length > 0) {
-        getLoggingService().info('[IPC]', `Warning: ${moviesWithoutYear.length} movies without year data`)
-        // Log first few for debugging
-        moviesWithoutYear.slice(0, 5).forEach(m => {
-          getLoggingService().info('[IPC]', `  - "${m.title}" (id: ${m.id})`)
-        })
-      }
-      return items
-    } catch (error) {
-      getLoggingService().error('[database]', 'Error getting media items:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('db:countMediaItems', async (_event, filters?: unknown) => {
-    try {
-      const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:countMediaItems') : undefined
-      return db.countMediaItems(validFilters)
-    } catch (error) {
-      getLoggingService().error('[database]', 'Error counting media items:', error)
-      throw error
-    }
-  })
-
-  // ============================================================================
-  // TV SHOWS (grouped by series_title)
-  // ============================================================================
-
-  ipcMain.handle('db:getTVShows', async (_event, filters?: unknown) => {
-    try {
-      const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:getTVShows')
-      return db.getTVShows(validFilters)
-    } catch (error) {
-      getLoggingService().error('[database]', 'Error getting TV shows:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('db:countTVShows', async (_event, filters?: unknown) => {
-    try {
-      const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVShows')
-      return db.countTVShows(validFilters)
-    } catch (error) {
-      getLoggingService().error('[database]', 'Error counting TV shows:', error)
-      throw error
-    }
-  })
+  // HANDLERS REPLACED BY registerListHandlers:
+  // - db:getMediaItems -> db:media:list
+  // - db:countMediaItems -> db:media:count
+  // - db:getTVShows -> db:tvshows:list
+  // - db:countTVShows -> db:tvshows:count
 
   ipcMain.handle('db:countTVEpisodes', async (_event, filters?: unknown) => {
     try {
       const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVEpisodes')
-      return db.countTVEpisodes(validFilters)
+      return db.mediaRepo.count({ ...validFilters, type: 'episode' })
     } catch (error) {
       getLoggingService().error('[database]', 'Error counting TV episodes:', error)
       throw error
@@ -89,7 +53,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getLetterOffset', async (_event, params: unknown) => {
     try {
       const { table, letter, sourceId, libraryId } = validateInput(LetterOffsetSchema, params, 'db:getLetterOffset')
-      return db.getLetterOffset(table, letter, { sourceId, libraryId })
+      return db.mediaRepo.getLetterOffset(table as any, letter, { sourceId, libraryId })
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting letter offset:', error)
       throw error
@@ -99,7 +63,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getMediaItemById', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:getMediaItemById')
-      return db.getMediaItemById(validId)
+      return db.mediaRepo.getMediaItemById(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting media item:', error)
       throw error
@@ -109,7 +73,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:upsertMediaItem', async (_event, item: unknown) => {
     try {
       const validItem = validateInput(MediaItemSchema, item, 'db:upsertMediaItem')
-      return await db.upsertMediaItem(validItem as any)
+      return db.mediaRepo.upsertMediaItem(validItem as any)
     } catch (error) {
       getLoggingService().error('[database]', 'Error upserting media item:', error)
       throw error
@@ -119,7 +83,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getMediaItemVersions', async (_event, mediaItemId: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, mediaItemId, 'db:getMediaItemVersions')
-      return db.getMediaItemVersions(validId)
+      return db.mediaRepo.getMediaItemVersions(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting media item versions:', error)
       throw error
@@ -129,7 +93,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:deleteMediaItem', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:deleteMediaItem')
-      await db.deleteMediaItem(validId)
+      db.mediaRepo.deleteMediaItem(validId)
       return true
     } catch (error) {
       getLoggingService().error('[database]', 'Error deleting media item:', error)

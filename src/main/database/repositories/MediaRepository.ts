@@ -670,6 +670,145 @@ WHERE m.type = 'episode' AND m.series_title = ?`
 
     const stmt = this.db.prepare(sql)
     return stmt.all(...params) as MediaItem[]
-  }
+    }
 
+    getMediaItemVersions(mediaItemId: number): any[] {
+    return this.db.prepare('SELECT * FROM media_item_versions WHERE media_item_id = ?').all(mediaItemId) || []
+    }
+
+    syncMediaItemVersions(mediaItemId: number, versions: any[]): void {
+    const db = this.db
+    db.exec('BEGIN DEFERRED')
+    try {
+      db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+      for (const v of versions) {
+        db.prepare(`
+          INSERT INTO media_item_versions (
+            media_item_id, version_source, file_path, file_size, duration,
+            resolution, width, height, video_codec, video_bitrate,
+            audio_codec, audio_channels, audio_bitrate, is_best,
+            hdr_format, color_bit_depth, original_language, audio_language
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          mediaItemId, 
+          v.version_source || 'primary', 
+          v.file_path, 
+          v.file_size, 
+          v.duration, 
+          v.resolution, 
+          v.width, 
+          v.height, 
+          v.video_codec, 
+          v.video_bitrate, 
+          v.audio_codec, 
+          v.audio_channels, 
+          v.audio_bitrate, 
+          v.is_best ? 1 : 0,
+          v.hdr_format || null,
+          v.color_bit_depth || null,
+          v.original_language || null,
+          v.audio_language || null
+        )
+      }
+      db.exec('COMMIT')
+    } catch(err) { db.exec('ROLLBACK'); throw err; }
+    }
+
+    updateMediaItemVersionQuality(id: number, score: any): void {
+    this.db.prepare('UPDATE media_item_versions SET efficiency_score = ?, storage_debt_bytes = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(score.efficiency_score, score.storage_debt_bytes, id)
+    }
+
+    updateBestVersion(mediaItemId: number): void {
+    const db = this.db
+    db.exec('BEGIN DEFERRED')
+    try {
+      db.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
+      db.prepare(`
+        UPDATE media_item_versions SET is_best = 1 WHERE id = (
+          SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY efficiency_score DESC, file_size DESC LIMIT 1
+        )
+      `).run(mediaItemId)
+      db.exec('COMMIT')
+    } catch(err) { db.exec('ROLLBACK'); throw err; }
+    }
+
+    addMediaItemToCollection(mediaId: number, tmdbCollectionId: string | void): void {
+    if (!tmdbCollectionId) return
+    this.db.prepare(`
+      INSERT OR IGNORE INTO media_item_collections (media_item_id, tmdb_collection_id, created_at)
+      VALUES (?, ?, datetime('now'))
+    `).run(mediaId, tmdbCollectionId)
+    }
+
+    globalSearch(query: string, limit = 5): any {
+      const q = `%${query}%`
+      return {
+        movies: this.db.prepare("SELECT * FROM media_items WHERE type = 'movie' AND title LIKE ? LIMIT ?").all(q, limit) || [],
+        tvShows: this.db.prepare("SELECT DISTINCT series_title as title FROM media_items WHERE type = 'episode' AND series_title LIKE ? LIMIT ?").all(q, limit) || [],
+        artists: this.db.prepare("SELECT * FROM music_artists WHERE name LIKE ? LIMIT ?").all(q, limit) || [],
+        albums: this.db.prepare("SELECT * FROM music_albums WHERE title LIKE ? LIMIT ?").all(q, limit) || []
+      }
+    }
+
+    getQualityScores(): any[] {
+      return this.db.prepare('SELECT * FROM quality_scores').all() || []
+    }
+
+    getQualityScoreByMediaId(id: number): any {
+      return this.db.prepare('SELECT * FROM quality_scores WHERE media_item_id = ?').get(id)
+    }
+
+    getQualityScoresByMediaItemIds(ids: number[]): Map<number, any> {
+      const result = new Map<number, any>()
+      if (ids.length === 0) return result
+      const placeholders = ids.map(() => '?').join(',')
+      const rows = this.db.prepare(`SELECT * FROM quality_scores WHERE media_item_id IN (${placeholders})`).all(...ids) as any[]
+      if (rows) rows.forEach(r => result.set(r.media_item_id, r))
+      return result
+    }
+
+    upsertQualityScore(score: any): number {
+      const stmt = this.db.prepare(`
+        INSERT INTO quality_scores (
+          media_item_id, quality_tier, tier_quality, tier_score,
+          bitrate_tier_score, audio_tier_score,
+          overall_score, resolution_score, bitrate_score, audio_score, 
+          efficiency_score, storage_debt_bytes,
+          needs_upgrade, issues, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(media_item_id) DO UPDATE SET
+          quality_tier = excluded.quality_tier,
+          tier_quality = excluded.tier_quality,
+          tier_score = excluded.tier_score,
+          bitrate_tier_score = excluded.bitrate_tier_score,
+          audio_tier_score = excluded.audio_tier_score,
+          overall_score = excluded.overall_score,
+          resolution_score = excluded.resolution_score,
+          bitrate_score = excluded.bitrate_score,
+          audio_score = excluded.audio_score,
+          efficiency_score = excluded.efficiency_score,
+          storage_debt_bytes = excluded.storage_debt_bytes,
+          needs_upgrade = excluded.needs_upgrade,
+          issues = excluded.issues,
+          updated_at = datetime('now')
+      `)
+      return Number(stmt.run(
+        score.media_item_id,
+        score.quality_tier || 'SD',
+        score.tier_quality || 'MEDIUM',
+        score.tier_score || 0,
+        score.bitrate_tier_score || 0,
+        score.audio_tier_score || 0,
+        score.overall_score || 0,
+        score.resolution_score || 0,
+        score.bitrate_score || 0,
+        score.audio_score || 0,
+        score.efficiency_score || 0,
+        score.storage_debt_bytes || 0,
+        score.needs_upgrade ? 1 : 0,
+        score.issues || '[]'
+      ).lastInsertRowid)
+  }
 }

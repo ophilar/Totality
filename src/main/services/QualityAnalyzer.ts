@@ -840,6 +840,8 @@ export class QualityAnalyzer {
       tier_score: tierScore,
       codec_score: codecScore,
       bitrate_score: bitrateScore,
+      efficiency_score: 0,
+      storage_debt_bytes: 0,
       needs_upgrade: needsUpgrade,
       issues: JSON.stringify(issues),
       created_at: new Date().toISOString(),
