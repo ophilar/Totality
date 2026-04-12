@@ -42,7 +42,7 @@ export class CompletenessEngine {
       }))
 
     const total = targetSet.length
-    const owned = targetSet.length - missing.length
+    const owned = targetSet.filter(item => ownedIds.has(item.tmdb_id)).length
     const percentage = total > 0 ? Math.round((owned / total) * 100) : 100
 
     return { total, owned, missing, percentage }
@@ -73,7 +73,10 @@ export class CompletenessEngine {
     }))
 
     const total = targetEpisodes.length
-    const owned = targetEpisodes.length - missing.length
+    const owned = targetEpisodes.filter(ep => {
+      const key = `S${ep.season_number}E${ep.episode_number}`
+      return ownedKeys.has(key)
+    }).length
     const percentage = total > 0 ? Math.round((owned / total) * 100) : 100
 
     return { total, owned, missing, percentage }
