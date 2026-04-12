@@ -170,21 +170,49 @@ export function MediaBrowser({
   // Selected show episode loading (on-demand)
   const [selectedShowEpisodes, setSelectedShowEpisodes] = useState<MediaItem[]>([])
   const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
-  const [searchInput, setSearchInput] = useState('')
-  // Filters (extracted to useLibraryFilters hook)
   const {
-    tierFilter, setTierFilter,
-    alphabetFilter, setAlphabetFilter,
-    slimDown, setSlimDown,
-    debouncedTierFilter, debouncedQualityFilter,
-  } = useLibraryFilters(searchInput)
-  
-  const [showSearchResults, setShowSearchResults] = useState(false)
-  const [searchResultIndex, setSearchResultIndex] = useState(-1)
-  const [searchTrackResults, setSearchTrackResults] = useState<Array<{ id: number; title: string; album_id: number; album_title?: string; artist_name?: string; thumb_url?: string; needs_upgrade: boolean; type: 'track' }>>([])
-  const searchTrackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
+    searchInput,
+    setSearchInput,
+    showSearchResults,
+    setShowSearchResults,
+    searchResultIndex,
+    setSearchResultIndex,
+    searchContainerRef,
+    globalSearchResults,
+    hasSearchResults,
+    flattenedResults,
+    handleSearchKeyDown,
+    handleSearchResultClick,
+  } = useGlobalSearch({
+    items: paginatedMovies,
+    tvShows: new Map(paginatedShows.map(s => [s.series_title, { title: s.series_title, poster_url: s.poster_url, seasons: new Map() }])),
+    musicArtists,
+    musicAlbums,
+    allMusicTracks,
+    searchInputRef,
+    onNavigateToMovie: (id) => setSelectedMediaId(id, 'movie'),
+    onNavigateToTVShow: (title) => setSelectedShow(title),
+    onNavigateToEpisode: (id, title) => {
+      if (title) setSelectedShow(title)
+      setSelectedMediaId(id, 'episode')
+    },
+    onNavigateToArtist: (artist) => {
+      setSelectedArtist(artist)
+      setMusicViewMode('albums')
+    },
+    onNavigateToAlbum: (album) => {
+      setSelectedAlbum(album)
+      setMusicViewMode('albums')
+    },
+    onNavigateToTrack: (albumId) => {
+      const album = musicAlbums.find(a => a.id === albumId)
+      if (album) setSelectedAlbum(album)
+      setMusicViewMode('albums')
+    }
+  })
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [searchInputLegacy, _setSearchInputLegacy] = useState('') // Removed duplicate search state usage
   const moviesTabRef = useRef<HTMLButtonElement>(null)
   const tvTabRef = useRef<HTMLButtonElement>(null)
   const musicTabRef = useRef<HTMLButtonElement>(null)
