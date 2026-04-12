@@ -106,13 +106,16 @@ export class SeriesCompletenessService {
       }
 
       const fullDetails = await tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
+      console.log('fullDetails from TMDB:', JSON.stringify(fullDetails, null, 2))
       
       for (const sn of seasonNums) {
         const season = fullDetails[`season/${sn}`]
         if (season) targetEpisodes.push(...season.episodes)
       }
+      console.log('targetEpisodes:', JSON.stringify(targetEpisodes, null, 2))
 
       const ownedKeys = new Set(episodes.map(e => `S${e.season_number}E${e.episode_number}`))
+      console.log('ownedKeys:', Array.from(ownedKeys))
       const analysis = CompletenessEngine.calculateEpisodic(targetEpisodes, ownedKeys)
 
       const result: SeriesCompleteness = {
@@ -141,9 +144,9 @@ export class SeriesCompletenessService {
           const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
           if (epData && ep.id) {
             db.mediaRepo.updateMediaItemArtwork(ep.id, {
-              poster_url: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
-              episode_thumb_url: tmdb.buildImageUrl(epData.still_path, 'w500') || undefined,
-              season_poster_url: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path, 'w500') || undefined
+              posterUrl: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
+              episodeThumbUrl: tmdb.buildImageUrl(epData.still_path, 'w500') || undefined,
+              seasonPosterUrl: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path, 'w500') || undefined
             })
           }
         }
