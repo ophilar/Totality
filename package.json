@@ -43,7 +43,7 @@
         "@dnd-kit/utilities": "^3.2.2",
         "@google/genai": "^1.46.0",
         "adm-zip": "^0.5.16",
-        "axios": "1.15.0",
+        "axios": "^1.14.0",
         "electron-updater": "^6.8.3",
         "lucide-react": "^1.7.0",
         "react": "^19.2.4",
