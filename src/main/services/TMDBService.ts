@@ -681,6 +681,79 @@ export class TMDBService {
       oldestEntry: oldestAge
     }
   }
+
+  /**
+   * Look up TMDB IDs for media items that don't have them
+   */
+  async lookupMissingTMDBIds(
+    items: any[],
+    type: 'movie' | 'tv',
+    onProgress?: (progress: { current: number; total: number; currentItem: string; phase: string }) => void
+  ): Promise<{ updated: number; failed: number }> {
+    const db = getDatabase()
+    const itemsWithoutTmdb = items.filter(m => !m.tmdb_id)
+
+    if (itemsWithoutTmdb.length === 0) return { updated: 0, failed: 0 }
+
+    getLoggingService().info('[TMDBService]', `Looking up TMDB IDs for ${itemsWithoutTmdb.length} ${type}s`)
+
+    let updated = 0
+    let failed = 0
+    const BATCH_SIZE = 5
+
+    for (let i = 0; i < itemsWithoutTmdb.length; i += BATCH_SIZE) {
+      const batch = itemsWithoutTmdb.slice(i, i + BATCH_SIZE)
+
+      const results = await Promise.allSettled(
+        batch.map(async (item) => {
+          let tmdbId: string | null = null
+
+          if (item.imdb_id && item.imdb_id.startsWith('tt')) {
+            try {
+              const findResult = await this.findByExternalId(item.imdb_id, 'imdb_id')
+              const res = type === 'movie' ? findResult.movie_results : findResult.tv_results
+              if (res && res.length > 0) tmdbId = String(res[0].id)
+            } catch { /* ignore */ }
+          }
+
+          if (!tmdbId) {
+            try {
+              const res = type === 'movie' 
+                ? await this.searchMovie(item.title, item.year) 
+                : await this.searchTVShow(item.series_title || item.title)
+              if (res.results && res.results.length > 0) {
+                const bestMatch = type === 'movie' 
+                  ? res.results.find(r => (r as any).release_date?.startsWith(String(item.year))) || res.results[0]
+                  : res.results[0]
+                tmdbId = String(bestMatch.id)
+              }
+            } catch { /* ignore */ }
+          }
+
+          if (tmdbId && item.id) {
+            if (type === 'movie') db.mediaRepo.updateMovieWithTMDBId(item.id, tmdbId)
+            else db.mediaRepo.updateSeriesMatch(item.series_title || item.title, item.source_id, tmdbId)
+            return { success: true }
+          }
+          return { success: false }
+        })
+      )
+
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.success) updated++
+        else failed++
+      }
+
+      onProgress?.({
+        current: Math.min(i + BATCH_SIZE, itemsWithoutTmdb.length),
+        total: itemsWithoutTmdb.length,
+        currentItem: batch[0]?.title || '',
+        phase: 'lookup',
+      })
+    }
+
+    return { updated, failed }
+  }
 }
 
 // Singleton instance
