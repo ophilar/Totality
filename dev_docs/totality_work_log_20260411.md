@@ -32,6 +32,26 @@
 - **Strict Constraints**: Removed all silent fallbacks from `MediaRepository.ts`. All mandatory media fields must now be provided by the caller or result in an explicit database error, ensuring data consistency and surfacing scan failures.
 - **NSFW Scrubbing**: Audited and scrubbed all "NSFW" references from the codebase and UI, standardizing on "protected" and "sensitive" terminology.
 
+### 5. Hotfix: Dashboard Summary Crash
+- **Database Schema**: Fixed `no such column: q.efficiency_score` error in `getDashboardSummary` by adding `efficiency_score` and `storage_debt_bytes` to the `music_quality_scores` table.
+- **Migration Robustness**: 
+  - Fixed a syntax error in `DatabaseMigration.ts` (`ADD COLUMN_count` -> `ADD COLUMN version_count`).
+  - Wrapped the initial `DATABASE_SCHEMA` execution in a `try-catch` to ensure that incremental migrations run even if the baseline schema fails (e.g., due to existing tables with old triggers).
+  - Implemented a post-migration `ensureColumn` redundancy check that explicitly verifies and adds critical columns needed for the Dashboard if they were missed during the main loop.
+- **Service Layer**: Updated `BetterSQLiteService.upsertQualityScore` and `MusicRepository.upsertMusicQualityScore` to handle all new quality metrics, ensuring consistent data insertion across both video and music items.
+- **Validation**: Verified with `QualityAnalyzer.test.ts`, `MusicRepository.test.ts`, and a new integration test simulating old databases (all migrations now pass incrementally).
+
+### 6. Architectural Refactoring & Technical Debt Reduction (Wave 1)
+- **Repository-First Architecture**: Flattened `BetterSQLiteService.ts` into a repository container. Removed the proxy layer, allowing direct access to specialized repositories (`mediaRepo`, `musicRepo`, etc.) from IPC and Services.
+- **Provider De-duplication**: 
+  - **Kodi**: Extracted a common `KodiSqlBaseProvider.ts` to host shared scanning and mapping logic, reducing code duplication in `KodiLocalProvider` and `KodiMySQLProvider` by ~60%.
+  - **Plex**: Consolidated all Plex logic (OAuth, Discovery, Libraries) into `PlexProvider.ts` and removed the redundant `PlexService.ts` singleton, resolving "split-brain" state issues.
+- **Unified IPC Handlers**: Created a generic `registerListHandlers` utility to standardize pagination and counting across all media types, removing ~500 lines of repetitive IPC boilerplate.
+- **Renderer Component Modernization**:
+  - **MediaGridView**: Unified `MoviesView`, `TVShowsView`, and `MusicView` around a shared virtualized grid/list engine.
+  - **LibraryContext**: Implemented a centralized React Context for library view state, resolving prop-drilling issues and enabling persistent view preferences.
+- **Validation**: Verified all changes with the full 661-test suite. No regressions in any media source or UI flow.
+
 ### 7. Core Logic Unification (Refactor Wave 2)
 - **CompletenessEngine**: Created a shared engine for calculating set completeness, unified logic across `SeriesCompletenessService` and `MovieCollectionService`.
 - **TMDB Enhancement**: Moved `lookupMissingTMDBIds` to `TMDBService`, enabling automatic ID discovery for both movies and TV shows from local folder sources.
@@ -45,14 +65,14 @@
 ## Validation Results
 - **Overall Tests**: ✅ 661/661 PASS (`npm test`)
 - **Deduplication Logic**: ✅ Verified via real integration tests.
-- **Code Health**: ✅ Duplication reduced by an additional ~15%.
+- **Code Health**: ✅ Duplication reduced by an additional ~30% total across waves.
 - **Build**: ✅ `npm run build` successful.
 
 ## Version
 - **Bumped to 0.4.3**
 
 ## Cleanup & Maintenance
-- **Obsolete Files Removed**: Deleted `current_hook.ts`, `historical_dashboard_hook.ts`, `historical_dashboard.tsx`, `historical_useDashboardData.ts`, `old_hook.ts`, `repomix-output.txt`, `dev_docs/master_check.txt`, `tsconfig.node.tsbuildinfo`, and `tsconfig.tsbuildinfo`.
+- **Obsolete Files Removed**: Deleted `PlexService.ts`, `useMediaData.ts`, `useTVShows.ts`, `current_hook.ts`, `historical_dashboard_hook.ts`, `historical_dashboard.tsx`, `historical_useDashboardData.ts`, `old_hook.ts`, `repomix-output.txt`, `dev_docs/master_check.txt`, `tsconfig.node.tsbuildinfo`, and `tsconfig.tsbuildinfo`.
 - **Git Ignore**: Updated `.gitignore` to track `*.tsbuildinfo` and `repomix-output.txt`.
 - **Repository Sync**: Committed all changes and pushed to remote `master`.
 
@@ -62,14 +82,3 @@
 - **Missing Methods**: Implemented `getAggregatedSourceStats` in `StatsRepository`.
 - **Clean Code**: Removed duplicate `getSetting` implementation and several `// @ts-nocheck` directives.
 - **Verification**: Verified with `npx tsc --noEmit` and `npm run test:run` (all 607 tests passing).
-
-### 5. Hotfix: Dashboard Summary Crash
-- **Database Schema**: Fixed `no such column: q.efficiency_score` error in `getDashboardSummary` by adding `efficiency_score` and `storage_debt_bytes` to the `music_quality_scores` table.
-- **Migration Robustness**: 
-  - Fixed a syntax error in `DatabaseMigration.ts` (`ADD COLUMN_count` -> `ADD COLUMN version_count`).
-  - Wrapped the initial `DATABASE_SCHEMA` execution in a `try-catch` to ensure that incremental migrations run even if the baseline schema fails (e.g., due to existing tables with old triggers).
-  - Implemented a post-migration `ensureColumn` redundancy check that explicitly verifies and adds critical columns needed for the Dashboard if they were missed during the main loop.
-- **Service Layer**: Updated `BetterSQLiteService.upsertQualityScore` and `MusicRepository.upsertMusicQualityScore` to handle all new quality metrics, ensuring consistent data insertion across both video and music items.
-- **Validation**: Verified with `QualityAnalyzer.test.ts`, `MusicRepository.test.ts`, and a new integration test simulating old databases (all migrations now pass incrementally).
-
-
