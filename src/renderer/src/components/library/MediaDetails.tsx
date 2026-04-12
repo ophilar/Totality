@@ -5,11 +5,6 @@ import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import type { WishlistMediaType } from '../../contexts/WishlistContext'
 import { useMenuClose } from '../../hooks/useMenuClose'
 
-import {
-  MediaItem as MediaWithQuality,
-  MediaItemVersion as MediaVersion,
-} from './types'
-
 interface MediaDetailsProps {
   mediaId: number
   onClose: () => void
@@ -19,7 +14,14 @@ interface MediaDetailsProps {
 }
 
 interface AudioTrack {
-...
+  index: number
+  codec: string
+  channels: number
+  bitrate: number
+  language?: string
+  title?: string
+  profile?: string
+  sampleRate?: number
   isDefault?: boolean
   hasObjectAudio?: boolean
 }
@@ -31,6 +33,97 @@ interface SubtitleTrack {
   title?: string
   isDefault?: boolean
   isForced?: boolean
+}
+
+interface MediaVersion {
+  id: number
+  media_item_id: number
+  version_source: string
+  edition?: string
+  label?: string
+  file_path: string
+  file_size: number
+  duration: number
+  resolution: string
+  width: number
+  height: number
+  video_codec: string
+  video_bitrate: number
+  audio_codec: string
+  audio_channels: number
+  audio_bitrate: number
+  video_frame_rate?: number
+  color_bit_depth?: number
+  hdr_format?: string
+  video_profile?: string
+  audio_profile?: string
+  audio_sample_rate?: number
+  has_object_audio?: boolean
+  audio_tracks?: string
+  subtitle_tracks?: string
+  color_space?: string
+  container?: string
+  quality_tier?: string
+  tier_quality?: string
+  tier_score?: number
+  bitrate_tier_score?: number
+  audio_tier_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  is_best?: boolean
+}
+
+interface MediaWithQuality {
+  id: number
+  title: string
+  year?: number
+  type: 'movie' | 'episode'
+  series_title?: string
+  season_number?: number
+  episode_number?: number
+  source_id: string
+  library_id?: string
+  file_path: string
+  file_size: number
+  duration: number
+  resolution: string
+  width: number
+  height: number
+  video_codec: string
+  video_bitrate: number
+  audio_codec: string
+  audio_channels: number
+  audio_bitrate: number
+  imdb_id?: string
+  tmdb_id?: string
+  poster_url?: string
+  episode_thumb_url?: string
+  season_poster_url?: string
+  summary?: string
+  video_frame_rate?: number
+  color_bit_depth?: number
+  hdr_format?: string
+  color_space?: string
+  video_profile?: string
+  video_level?: number
+  audio_profile?: string
+  audio_sample_rate?: number
+  has_object_audio?: boolean
+  container?: string
+  original_language?: string
+  audio_tracks?: string
+  subtitle_tracks?: string
+  version_count?: number
+  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+  tier_score?: number
+  bitrate_tier_score?: number
+  audio_tier_score?: number
+  overall_score?: number
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  needs_upgrade?: boolean
+  issues?: string
 }
 
 interface QualityThresholds {
