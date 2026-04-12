@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
+import { MediaGridView } from './MediaGridView'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check, HardDrive } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
 import { SlimDownBanner } from './SlimDownBanner'
@@ -1231,434 +1232,230 @@ export function MusicView({
     )
   }
 
-  // Main view - check for empty state
-  const hasNoMusic = artists.length === 0 && totalArtistCount === 0 && albums.length === 0 && (stats?.totalTracks || 0) === 0
-  if (hasNoMusic) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <Music className="w-16 h-16 text-muted-foreground mb-4" strokeWidth={1.5} />
-        <p className="text-muted-foreground text-lg">No music found</p>
-        <p className="text-sm text-muted-foreground mt-2">
-          Scan a music library from the sidebar to get started
-        </p>
-      </div>
-    )
-  }
+  // Main view content based on mode
+  const mainContent = useMemo(() => {
+    if (musicViewMode === 'artists') {
+      return (
+        <MediaGridView
+          items={artists}
+          totalCount={totalArtistCount}
+          loading={artistsLoading}
+          onLoadMore={onLoadMoreArtists}
+          viewType={viewType}
+          posterMinWidth={posterMinWidth}
+          emptyState={
+            <div className="flex flex-col items-center justify-center text-center p-12">
+              <User className="w-24 h-24 text-muted-foreground/40 mb-6" />
+              <p className="text-muted-foreground text-xl font-medium">No artists found</p>
+            </div>
+          }
+          renderGridItem={(artist) => (
+            <div key={artist.id} data-title={artist.name}>
+              <ArtistCard
+                artist={artist}
+                onClick={() => onSelectArtist(artist)}
+                showSourceBadge={showSourceBadge}
+                onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                onAnalyzeCompleteness={onAnalyzeArtist}
+                artistCompleteness={artistCompleteness}
+              />
+            </div>
+          )}
+          renderListItem={(artist) => (
+            <div key={artist.id} data-title={artist.name}>
+              <ArtistListItem
+                artist={artist}
+                completeness={artistCompleteness.get(artist.name)}
+                onClick={() => onSelectArtist(artist)}
+                showSourceBadge={showSourceBadge}
+                onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                onAnalyzeCompleteness={onAnalyzeArtist}
+              />
+            </div>
+          )}
+        />
+      )
+    }
+
+    if (musicViewMode === 'albums') {
+      const listHeader = (
+        <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground bg-muted/10 sticky top-0 z-10 rounded-t-lg">
+          <div className="w-16" />
+          <div className="flex-1 flex items-center gap-1 cursor-pointer hover:text-foreground" onClick={() => handleAlbumSort('title')}>
+            <span>Album</span>
+            {albumSortColumn === 'title' && <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>}
+          </div>
+          <div className="w-48 flex items-center gap-1 cursor-pointer hover:text-foreground" onClick={() => handleAlbumSort('artist')}>
+            <span>Artist</span>
+            {albumSortColumn === 'artist' && <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>}
+          </div>
+          <div className="w-20 text-center">Tracks</div>
+        </div>
+      )
+
+      return (
+        <MediaGridView
+          items={allFilteredAlbums}
+          totalCount={totalAlbumCount}
+          loading={albumsLoading}
+          onLoadMore={onLoadMoreAlbums}
+          viewType={viewType}
+          posterMinWidth={posterMinWidth}
+          listHeader={listHeader}
+          emptyState={
+            <div className="flex flex-col items-center justify-center text-center p-12">
+              <Disc3 className="w-24 h-24 text-muted-foreground/40 mb-6" />
+              <p className="text-muted-foreground text-xl font-medium">No albums found</p>
+            </div>
+          }
+          renderGridItem={(album) => (
+            <div key={album.id} data-title={album.title}>
+              <AlbumCard
+                album={album}
+                onClick={() => onSelectAlbum(album)}
+                showArtist={true}
+                showSourceBadge={showSourceBadge}
+                onAnalyze={onAnalyzeAlbum}
+                onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
+                completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
+              />
+            </div>
+          )}
+          renderListItem={(album) => (
+            <div key={album.id} data-title={album.title}>
+              <AlbumListItem
+                album={album}
+                onClick={() => onSelectAlbum(album)}
+                showArtist={true}
+                showSourceBadge={showSourceBadge}
+                completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
+              />
+            </div>
+          )}
+        />
+      )
+    }
+
+    if (musicViewMode === 'tracks') {
+      const listHeader = (
+        <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground bg-muted/10 sticky top-0 z-10 rounded-t-lg select-none">
+          <div className="w-8 text-center">#</div>
+          <div data-resize-column="title" className="flex items-center gap-1 cursor-pointer hover:text-foreground" style={{ width: trackColumnWidths.title, minWidth: 50 }} onClick={() => handleTrackSort('title')}>
+            <span>Title</span>
+            {trackSortColumn === 'title' && <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>}
+            <div className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded" onMouseDown={(e) => handleResizeStart('title', e)} />
+          </div>
+          <div data-resize-column="artist" className="flex items-center gap-1 cursor-pointer hover:text-foreground" style={{ width: trackColumnWidths.artist, minWidth: 50 }} onClick={() => handleTrackSort('artist')}>
+            <span>Artist</span>
+            {trackSortColumn === 'artist' && <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>}
+            <div className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded" onMouseDown={(e) => handleResizeStart('artist', e)} />
+          </div>
+          <div data-resize-column="album" className="flex items-center gap-1 cursor-pointer hover:text-foreground" style={{ width: trackColumnWidths.album, minWidth: 50 }} onClick={() => handleTrackSort('album')}>
+            <span>Album</span>
+            {trackSortColumn === 'album' && <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>}
+            <div className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded" onMouseDown={(e) => handleResizeStart('album', e)} />
+          </div>
+          <div style={{ width: trackColumnWidths.quality, minWidth: 50 }}>Quality</div>
+          <div className="flex items-center gap-1 cursor-pointer hover:text-foreground" style={{ width: trackColumnWidths.codec, minWidth: 50 }} onClick={() => handleTrackSort('codec')}>
+            <span>Codec</span>
+            {trackSortColumn === 'codec' && <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>}
+          </div>
+          <div className="flex items-center gap-1 cursor-pointer hover:text-foreground text-right" style={{ width: trackColumnWidths.duration, minWidth: 50 }} onClick={() => handleTrackSort('duration')}>
+            <span>Time</span>
+            {trackSortColumn === 'duration' && <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>}
+          </div>
+          <div className="w-20 text-right pr-4">Size</div>
+        </div>
+      )
+
+      return (
+        <MediaGridView
+          items={filteredTracks}
+          totalCount={totalTrackCount}
+          loading={tracksLoading}
+          onLoadMore={onLoadMoreTracks}
+          viewType="list" // Tracks are always list for now
+          listHeader={listHeader}
+          emptyState={
+            <div className="flex flex-col items-center justify-center text-center p-12">
+              <Music className="w-24 h-24 text-muted-foreground/40 mb-6" />
+              <p className="text-muted-foreground text-xl font-medium">No tracks found</p>
+            </div>
+          }
+          renderGridItem={() => null}
+          renderListItem={(track, index) => {
+            const albumInfo = track.album_id ? albumInfoMap.get(track.album_id) : undefined
+            const artistName = track.artist_id ? artistNameMap.get(track.artist_id) : albumInfo?.artistName
+            return (
+              <TrackListItem
+                track={track}
+                index={index + 1}
+                artistName={artistName}
+                albumTitle={albumInfo?.title}
+                columnWidths={trackColumnWidths}
+                onClickQuality={() => {
+                  // ... quality tier logic ...
+                  setSelectedTrackForQuality({
+                    title: track.title,
+                    codec: track.audio_codec,
+                    bitrate: track.audio_bitrate,
+                    sample_rate: track.sample_rate,
+                    bit_depth: track.bit_depth,
+                    is_lossless: track.is_lossless,
+                    qualityTier: 'medium', // Fallback for now
+                    artist_name: artistName,
+                    album_title: albumInfo?.title
+                  })
+                }}
+              />
+            )
+          }}
+        />
+      )
+    }
+    return null
+  }, [musicViewMode, artists, totalArtistCount, artistsLoading, viewType, posterMinWidth, allFilteredAlbums, totalAlbumCount, albumsLoading, albumSortColumn, albumSortDirection, allAlbumCompleteness, filteredTracks, totalTrackCount, tracksLoading, trackColumnWidths, trackSortColumn, trackSortDirection])
 
   return (
-    <div className="space-y-8">
+    <div className="h-full flex flex-col">
       {/* Stats Bar and Sorting */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-4">
         {stats && (
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <span>{stats.totalArtists} Artists</span>
+          <div className="flex items-center gap-6 text-sm text-muted-foreground font-medium">
+            <span>{stats.totalArtists.toLocaleString()} Artists</span>
             <span className="text-muted-foreground/50">•</span>
-            <span>{stats.totalAlbums} Albums</span>
+            <span>{stats.totalAlbums.toLocaleString()} Albums</span>
             <span className="text-muted-foreground/50">•</span>
-            <span>{stats.totalTracks} Tracks</span>
-            {stats.losslessAlbums > 0 && (
-              <>
-                <span className="text-muted-foreground/50">•</span>
-                <span className="text-green-500">{stats.losslessAlbums} Lossless</span>
-              </>
-            )}
-            {stats.hiResAlbums > 0 && (
-              <>
-                <span className="text-muted-foreground/50">•</span>
-                <span className="text-purple-500">{stats.hiResAlbums} Hi-Res</span>
-              </>
-            )}
+            <span>{stats.totalTracks.toLocaleString()} Tracks</span>
           </div>
         )}
 
-        {musicViewMode === 'tracks' && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Sort:</span>
-            <div className="flex gap-1">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Sort:</span>
+          <div className="flex gap-1 bg-muted/30 p-1 rounded-lg">
+            {(['title', 'efficiency', 'waste', 'size'] as const).map(s => (
               <button
-                onClick={() => onSortChange('title')}
-                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'title' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+                key={s}
+                onClick={() => onSortChange(s)}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${sortBy === s ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted/50 text-muted-foreground'}`}
               >
-                Default
+                {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
-              <button
-                onClick={() => onSortChange('efficiency')}
-                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'efficiency' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
-              >
-                Efficiency
-              </button>
-              <button
-                onClick={() => onSortChange('waste')}
-                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'waste' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
-              >
-                Waste
-              </button>
-              <button
-                onClick={() => onSortChange('size')}
-                className={`px-2 py-1 rounded text-xs transition-colors ${sortBy === 'size' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
-              >
-                Size
-              </button>
-            </div>
+            ))}
           </div>
-        )}
+        </div>
       </div>
 
       {(slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size') && (
         <SlimDownBanner className="mb-4" />
       )}
 
-      {/* Artists View Mode */}
-      {musicViewMode === 'artists' && artists.length > 0 && (
-        <div>
-          {viewType === 'list' ? (
-            <div className="space-y-2">
-              {artists.map(artist => (
-                <div key={artist.id} data-title={artist.name}>
-                  <ArtistListItem
-                    artist={artist}
-                    completeness={artistCompleteness.get(artist.name)}
-                    onClick={() => onSelectArtist(artist)}
-                    showSourceBadge={showSourceBadge}
-                    onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
-                    onAnalyzeCompleteness={onAnalyzeArtist}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <VirtuosoGrid
-              style={{ height: '100%' }}
-              data={artists}
-              useWindowScroll={!scrollElement}
-              customScrollParent={scrollElement || undefined}
-              endReached={onLoadMoreArtists}
-              listClassName="grid gap-6"
-              itemClassName="focus-poster-only"
-              components={{
-                List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
-                  <div
-                    ref={ref}
-                    className={className}
-                    style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
-                  >
-                    {children}
-                  </div>
-                )),
-                Item: ({ children, ...props }) => <div {...props}>{children}</div>
-              }}
-              itemContent={(_index, artist) => (
-                <div key={artist.id} data-title={artist.name}>
-                  <ArtistCard
-                    artist={artist}
-                    onClick={() => onSelectArtist(artist)}
-                    showSourceBadge={showSourceBadge}
-                    onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
-                    onAnalyzeCompleteness={onAnalyzeArtist}
-                    artistCompleteness={artistCompleteness}
-                  />
-                </div>
-              )}
-            />
-          )}
-          {/* Infinite scroll sentinel + loading indicator */}
-          
-          {artistsLoading && (
-            <div className="flex justify-center py-4" aria-live="polite" role="status">
-              <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" aria-label="Loading more artists" />
-            </div>
-          )}
-          {artists.length < totalArtistCount && !artistsLoading && (
-            <div className="text-center py-2 text-xs text-muted-foreground">
-              {artists.length.toLocaleString()} of {totalArtistCount.toLocaleString()} artists
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Albums View Mode */}
-      {musicViewMode === 'albums' && (
-        <div>
-          {allFilteredAlbums.length === 0 ? (
-            <div className="p-12 text-center">
-              <Disc3 className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">No albums found</p>
-            </div>
-          ) : viewType === 'list' ? (
-            <div>
-              {/* Column Headers */}
-              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider select-none">
-                {/* Thumbnail placeholder */}
-                <div className="w-16" />
-
-                {/* Title column */}
-                <div
-                  className="flex-1 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  onClick={() => handleAlbumSort('title')}
-                >
-                  <span>Album</span>
-                  {albumSortColumn === 'title' && (
-                    <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </div>
-
-                {/* Artist column */}
-                <div
-                  className="w-48 flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  onClick={() => handleAlbumSort('artist')}
-                >
-                  <span>Artist</span>
-                  {albumSortColumn === 'artist' && (
-                    <span className="text-primary">{albumSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </div>
-
-                {/* Completeness column */}
-                <div className="w-20 text-center">
-                  <span>Tracks</span>
-                </div>
-              </div>
-
-              {/* Virtualized Album List */}
-              <Virtuoso
-                style={{ height: Math.max(400, window.innerHeight - 280) }}
-                useWindowScroll={!scrollElement}
-                customScrollParent={scrollElement || undefined}
-                data={allFilteredAlbums}
-                className="scrollbar-visible"
-                endReached={onLoadMoreAlbums}
-                itemContent={(_index, album) => (
-                  <div style={{ height: 104 }}>
-                    <AlbumListItem
-                      album={album}
-                      onClick={() => onSelectAlbum(album)}
-                      showArtist={true}
-                      showSourceBadge={showSourceBadge}
-                      completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
-                    />
-                  </div>
-                )}
-              />
-            </div>
-          ) : (
-            <VirtuosoGrid
-              style={{ height: '100%' }}
-              data={allFilteredAlbums}
-              useWindowScroll={!scrollElement}
-              customScrollParent={scrollElement || undefined}
-              endReached={onLoadMoreAlbums}
-              listClassName="grid gap-6"
-              itemClassName="focus-poster-only"
-              components={{
-                List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
-                  <div
-                    ref={ref}
-                    className={className}
-                    style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
-                  >
-                    {children}
-                  </div>
-                )),
-                Item: ({ children, ...props }) => <div {...props}>{children}</div>
-              }}
-              itemContent={(_index, album) => (
-                <div key={album.id} data-title={album.title}>
-                  <AlbumCard
-                    album={album}
-                    onClick={() => onSelectAlbum(album)}
-                    showArtist={true}
-                    showSourceBadge={showSourceBadge}
-                    onAnalyze={onAnalyzeAlbum}
-                    onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
-                    completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
-                  />
-                </div>
-              )}
-            />
-          )}
-          {/* Sentinel for album grid infinite scroll */}
-          
-          {/* Album count footer */}
-          <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-2" aria-live="polite" role="status">
-            {albumsLoading && <RefreshCw className="w-3 h-3 animate-spin" aria-label="Loading more albums" />}
-            <span>
-              {allFilteredAlbums.length === totalAlbumCount
-                ? `${totalAlbumCount.toLocaleString()} albums`
-                : `${allFilteredAlbums.length.toLocaleString()} of ${totalAlbumCount.toLocaleString()} albums`}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Tracks View Mode */}
-      {musicViewMode === 'tracks' && (
-        <div>
-          {filteredTracks.length === 0 && !tracksLoading ? (
-            <div className="p-12 text-center">
-              <Music className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">No tracks found</p>
-            </div>
-          ) : (
-            <div>
-              {/* Column Headers */}
-              <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider select-none">
-                {/* # column */}
-                <div className="w-8 text-center">#</div>
-
-                {/* Title column */}
-                <div
-                  data-resize-column="title"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.title, minWidth: 50 }}
-                  onClick={() => handleTrackSort('title')}
-                >
-                  <span>Title</span>
-                  {trackSortColumn === 'title' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                  <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('title', e)}
-                  />
-                </div>
-
-                {/* Artist column */}
-                <div
-                  data-resize-column="artist"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.artist, minWidth: 50 }}
-                  onClick={() => handleTrackSort('artist')}
-                >
-                  <span>Artist</span>
-                  {trackSortColumn === 'artist' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                  <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('artist', e)}
-                  />
-                </div>
-
-                {/* Album column */}
-                <div
-                  data-resize-column="album"
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.album, minWidth: 50 }}
-                  onClick={() => handleTrackSort('album')}
-                >
-                  <span>Album</span>
-                  {trackSortColumn === 'album' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                  <div
-                    className="ml-auto w-1 h-4 cursor-col-resize hover:bg-primary/50 rounded"
-                    onMouseDown={(e) => handleResizeStart('album', e)}
-                  />
-                </div>
-
-                {/* Quality column */}
-                <div style={{ width: trackColumnWidths.quality, minWidth: 50 }}>
-                  <span>Quality</span>
-                </div>
-
-                {/* Codec column */}
-                <div
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
-                  style={{ width: trackColumnWidths.codec, minWidth: 50 }}
-                  onClick={() => handleTrackSort('codec')}
-                >
-                  <span>Codec</span>
-                  {trackSortColumn === 'codec' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </div>
-
-                {/* Duration column */}
-                <div
-                  className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors text-right"
-                  style={{ width: trackColumnWidths.duration, minWidth: 50 }}
-                  onClick={() => handleTrackSort('duration')}
-                >
-                  <span>Time</span>
-                  {trackSortColumn === 'duration' && (
-                    <span className="text-primary">{trackSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </div>
-
-                <div className="w-20 text-right pr-4">Size</div>
-              </div>
-
-              {/* Virtualized Track List */}
-              <Virtuoso
-                style={{ height: Math.max(400, window.innerHeight - 280) }}
-                useWindowScroll={!scrollElement}
-                customScrollParent={scrollElement || undefined}
-                data={filteredTracks}
-                className="scrollbar-visible"
-                endReached={onLoadMoreTracks}
-                itemContent={(index, track) => {
-                  const albumInfo = track.album_id ? albumInfoMap.get(track.album_id) : undefined
-                  const artistName = track.artist_id
-                    ? artistNameMap.get(track.artist_id)
-                    : albumInfo?.artistName
-                  const albumTitle = albumInfo?.title
-
-                  return (
-                    <div style={{ height: 40 }}>
-                      <TrackListItem
-                        track={track}
-                        index={index + 1}
-                        artistName={artistName}
-                        albumTitle={albumTitle}
-                        columnWidths={trackColumnWidths}
-                        onClickQuality={() => {
-                          const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
-                          const codecLower = (track.audio_codec || '').toLowerCase()
-                          const isLossless = track.is_lossless || LOSSLESS_CODECS.some(c => codecLower.includes(c))
-                          const bitrateKbps = track.audio_bitrate || 0
-                          const sampleRate = track.sample_rate || 0
-                          const bitDepth = track.bit_depth || 16
-                          const isAAC = codecLower.includes('aac')
-
-                          let qualityTier: 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null = null
-                          if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) qualityTier = 'ultra'
-                          else if (isLossless) qualityTier = 'high'
-                          else if (bitrateKbps >= 256) qualityTier = 'high-lossy'
-                          else if (isAAC && bitrateKbps >= 128) qualityTier = 'medium'
-                          else if (!isAAC && bitrateKbps >= 160) qualityTier = 'medium'
-                          else if (bitrateKbps > 0) qualityTier = 'low'
-                          else if (codecLower.includes('mp3') || codecLower.includes('aac') || codecLower.includes('ogg')) qualityTier = 'medium'
-
-                          setSelectedTrackForQuality({
-                            title: track.title,
-                            codec: track.audio_codec,
-                            bitrate: track.audio_bitrate,
-                            sample_rate: track.sample_rate,
-                            bit_depth: track.bit_depth,
-                            is_lossless: track.is_lossless,
-                            qualityTier,
-                            artist_name: artistName,
-                            album_title: albumTitle
-                          })
-                        }}
-                      />
-                    </div>
-                  )
-                }}
-              />
-              {/* Track count / loading indicator */}
-              <div className="px-4 py-1.5 text-xs text-muted-foreground border-t border-border flex items-center gap-2">
-                {tracksLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
-                <span>
-                  {filteredTracks.length === totalTrackCount
-                    ? `${totalTrackCount.toLocaleString()} tracks`
-                    : `${filteredTracks.length.toLocaleString()} of ${totalTrackCount.toLocaleString()} tracks`}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="flex-1 min-h-0">
+        {mainContent}
+      </div>
+    </div>
+  )
+}
 
       {/* Empty state for artists view */}
       {musicViewMode === 'artists' && artists.length === 0 && (

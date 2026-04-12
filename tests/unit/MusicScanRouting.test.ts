@@ -9,6 +9,12 @@ describe('Music Scan Routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDb = {
+      sourceRepo: {
+        getMediaSources: vi.fn(() => []),
+        updateLibraryScanTime: vi.fn(),
+        getLibraryScanTime: vi.fn(),
+        isLibraryEnabled: vi.fn(() => true),
+      },
       getMediaSources: vi.fn(() => []),
       updateLibraryScanTime: vi.fn(),
       createNotification: vi.fn(),

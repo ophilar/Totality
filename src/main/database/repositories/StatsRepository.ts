@@ -14,10 +14,15 @@ export class StatsRepository {
     const settingsMap = settings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as any)
 
     const uSort = settingsMap['dashboard_upgrade_sort'] || 'quality'
+    
     let upgradeOrderBy = 'q.tier_score ASC'
-    if (uSort === 'efficiency') upgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
-    else if (uSort === 'recent') upgradeOrderBy = 'm.created_at DESC'
-    else if (uSort === 'title') upgradeOrderBy = 'm.title ASC'
+    if (uSort === 'efficiency') {
+      upgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
+    } else if (uSort === 'recent') {
+      upgradeOrderBy = 'm.created_at DESC'
+    } else if (uSort === 'title') {
+      upgradeOrderBy = 'm.title ASC'
+    }
 
     const cSort = settingsMap['dashboard_collection_sort'] || 'completeness'
     let collOrderBy = 'completeness_percentage DESC'
@@ -67,9 +72,14 @@ export class StatsRepository {
 
     // 4. Music Upgrades
     let musicUpgradeOrderBy = 'q.tier_score ASC'
-    if (uSort === 'efficiency') musicUpgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
-    else if (uSort === 'recent') musicUpgradeOrderBy = 'a.created_at DESC'
-    else if (uSort === 'title') musicUpgradeOrderBy = 'a.title ASC'
+    
+    if (uSort === 'efficiency') {
+      musicUpgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
+    } else if (uSort === 'recent') {
+      musicUpgradeOrderBy = 'a.created_at DESC'
+    } else if (uSort === 'title') {
+      musicUpgradeOrderBy = 'a.title ASC'
+    }
 
     const musicUpgradesSql = `
       SELECT a.*, q.tier_score, q.efficiency_score, q.storage_debt_bytes
@@ -113,8 +123,6 @@ export class StatsRepository {
     // 7. Incomplete Artists
     const artistsSql = `
       SELECT ac.* FROM artist_completeness ac
-      JOIN media_sources s ON ac.artist_name = (SELECT name FROM music_artists WHERE name = ac.artist_name LIMIT 1) -- This is a bit complex due to artist_name join
-      -- Simplified: just check if the artist exists in any enabled source
       WHERE ac.completeness_percentage < 100
       AND EXISTS (
         SELECT 1 FROM music_artists ma
@@ -135,9 +143,9 @@ export class StatsRepository {
     // Process Collections exclusions
     const incompleteCollections: MovieCollection[] = []
     for (const c of incompleteCollectionsRaw) {
-      const missing = JSON.parse(c.missing_movies)
+      const missing = JSON.parse(c.missing_movies || '[]')
       const filtered = missing.filter((m: any) => !collEx.some(ex => ex.reference_key === String(m.tmdb_id) && ex.parent_key === String(c.tmdb_collection_id)))
-      const owned = c.owned_movies
+      const owned = c.owned_movies || 0
       const total = owned + filtered.length
       const completeness = total > 0 ? (owned / total) * 100 : 100
       if (completeness < 100 && total > 1) {
@@ -153,7 +161,7 @@ export class StatsRepository {
     // Process Series exclusions
     const incompleteSeries: SeriesCompleteness[] = []
     for (const s of incompleteSeriesRaw) {
-      const missing = JSON.parse(s.missing_episodes)
+      const missing = JSON.parse(s.missing_episodes || '[]')
       const filtered = missing.filter((e: any) => {
         const key = `S${e.season_number}E${e.episode_number}`
         return !serEx.some(ex => ex.reference_key === key && ex.parent_key === (s.tmdb_id || s.series_title))
@@ -173,7 +181,7 @@ export class StatsRepository {
 
     for (const a of incompleteArtistsRaw) {
       const filterJson = (json: string) => {
-        const items = JSON.parse(json)
+        const items = JSON.parse(json || '[]')
         return items.filter((item: any) => !artEx.some(ex => ex.reference_key === item.musicbrainz_id && ex.parent_key === (a.musicbrainz_id || a.artist_name)))
       }
 
@@ -202,7 +210,7 @@ export class StatsRepository {
       JOIN quality_scores q ON m.id = q.media_item_id
       JOIN media_sources s ON m.source_id = s.source_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE q.storage_debt_bytes > 1073741824 
+      WHERE q.storage_debt_bytes > 1073741824
       AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
       AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'cleanup_radar' AND reference_id IS NOT NULL)
@@ -371,5 +379,45 @@ export class StatsRepository {
       itemCount: row.item_count || 0,
       lastScanAt: row.last_scan_at || undefined,
     }))
+  }
+
+  public getMusicCompletenessStats(sourceId?: string): MusicCompletenessStats {
+    let sqlTotal = 'SELECT COUNT(*) as count FROM artist_completeness'
+    let sqlAnalyzed = 'SELECT COUNT(*) as count FROM artist_completeness WHERE last_sync_at IS NOT NULL'
+    let sqlComplete = 'SELECT COUNT(*) as count FROM artist_completeness WHERE completeness_percentage >= 100'
+    let sqlIncomplete = 'SELECT COUNT(*) as count FROM artist_completeness WHERE completeness_percentage < 100'
+    let sqlMissing = 'SELECT SUM(total_missing) as total FROM (SELECT (JSON_ARRAY_LENGTH(COALESCE(missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_singles, "[]"))) as total_missing FROM artist_completeness)'
+    let sqlAvg = 'SELECT AVG(completeness_percentage) as avg FROM artist_completeness'
+
+    if (sourceId) {
+      const join = ' INNER JOIN music_artists ma ON artist_completeness.artist_name = ma.name AND ma.source_id = ?'
+      sqlTotal += join
+      sqlAnalyzed += join
+      sqlComplete += join
+      sqlIncomplete += join
+      sqlMissing = `
+        SELECT SUM(JSON_ARRAY_LENGTH(COALESCE(ac.missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(ac.missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(ac.missing_singles, "[]"))) as total
+        FROM artist_completeness ac
+        INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
+      `
+      sqlAvg += join
+    }
+
+    const params = sourceId ? [sourceId] : []
+    const total = (this.db.prepare(sqlTotal).get(...params) as any)?.count || 0
+    const analyzed = (this.db.prepare(sqlAnalyzed).get(...params) as any)?.count || 0
+    const complete = (this.db.prepare(sqlComplete).get(...params) as any)?.count || 0
+    const incomplete = (this.db.prepare(sqlIncomplete).get(...params) as any)?.count || 0
+    const missing = (this.db.prepare(sqlMissing).get(...params) as any)?.total || 0
+    const avg = (this.db.prepare(sqlAvg).get(...params) as any)?.avg || 0
+
+    return {
+      totalArtists: total,
+      analyzedArtists: analyzed,
+      completeArtists: complete,
+      incompleteArtists: incomplete,
+      totalMissingAlbums: missing,
+      averageCompleteness: Math.round(avg)
+    }
   }
 }

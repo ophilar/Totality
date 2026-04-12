@@ -16,11 +16,17 @@ export const musicApi = {
 
   // Music Data Retrieval
   musicGetArtists: (filters?: unknown) => ipcRenderer.invoke('music:getArtists', filters),
+  musicArtistList: (filters?: unknown) => ipcRenderer.invoke('music:artists:list', filters),
+  musicArtistCount: (filters?: unknown) => ipcRenderer.invoke('music:artists:count', filters),
   musicGetArtistById: (id: number) => ipcRenderer.invoke('music:getArtistById', id),
   musicGetAlbums: (filters?: unknown) => ipcRenderer.invoke('music:getAlbums', filters),
+  musicAlbumList: (filters?: unknown) => ipcRenderer.invoke('music:albums:list', filters),
+  musicAlbumCount: (filters?: unknown) => ipcRenderer.invoke('music:albums:count', filters),
   musicGetAlbumsByArtist: (artistId: number) => ipcRenderer.invoke('music:getAlbumsByArtist', artistId),
   musicGetAlbumById: (id: number) => ipcRenderer.invoke('music:getAlbumById', id),
   musicGetTracks: (filters?: unknown) => ipcRenderer.invoke('music:getTracks', filters),
+  musicTrackList: (filters?: unknown) => ipcRenderer.invoke('music:tracks:list', filters),
+  musicTrackCount: (filters?: unknown) => ipcRenderer.invoke('music:tracks:count', filters),
   musicGetTracksByAlbum: (albumId: number) => ipcRenderer.invoke('music:getTracksByAlbum', albumId),
   musicGetStats: (sourceId?: string) => ipcRenderer.invoke('music:getStats', sourceId),
   musicCountArtists: (filters?: unknown) => ipcRenderer.invoke('music:countArtists', filters),
@@ -92,11 +98,17 @@ export interface MusicAPI {
 
   // Music Data Retrieval
   musicGetArtists: (filters?: unknown) => Promise<unknown[]>
+  musicArtistList: (filters?: unknown) => Promise<unknown[]>
+  musicArtistCount: (filters?: unknown) => Promise<number>
   musicGetArtistById: (id: number) => Promise<unknown | null>
   musicGetAlbums: (filters?: unknown) => Promise<unknown[]>
+  musicAlbumList: (filters?: unknown) => Promise<unknown[]>
+  musicAlbumCount: (filters?: unknown) => Promise<number>
   musicGetAlbumsByArtist: (artistId: number) => Promise<unknown[]>
   musicGetAlbumById: (id: number) => Promise<unknown | null>
   musicGetTracks: (filters?: unknown) => Promise<unknown[]>
+  musicTrackList: (filters?: unknown) => Promise<unknown[]>
+  musicTrackCount: (filters?: unknown) => Promise<number>
   musicGetTracksByAlbum: (albumId: number) => Promise<unknown[]>
   musicGetStats: (sourceId?: string) => Promise<{
     totalArtists: number

@@ -81,7 +81,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getAll.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.getSeriesCompleteness(validSourceId)
+      return db.tvShowRepo.getAllSeriesCompleteness(validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting series completeness:', error)
       throw error
@@ -96,7 +96,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getIncomplete.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.getIncompleteSeries(validSourceId)
+      return db.tvShowRepo.getIncompleteSeries(validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting incomplete series:', error)
       throw error
@@ -109,7 +109,7 @@ export function registerSeriesHandlers() {
   ipcMain.handle('series:getStats', async () => {
     try {
       const db = getDatabase()
-      return db.getSeriesCompletenessStats()
+      return db.statsRepo.getLibraryStats()
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting series stats:', error)
       throw error
@@ -124,7 +124,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodes.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.getEpisodesForSeries(validSeriesTitle, validSourceId)
+      return db.tvShowRepo.getTVShowEpisodes(validSeriesTitle, validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', `Error getting episodes for "${validSeriesTitle}":`, error)
       throw error
@@ -138,7 +138,8 @@ export function registerSeriesHandlers() {
     const validId = validateInput(PositiveIntSchema, id, 'series:delete.id')
     try {
       const db = getDatabase()
-      return await db.deleteSeriesCompleteness(validId)
+      db.tvShowRepo.deleteSeriesCompleteness(validId)
+      return true
     } catch (error) {
       getLoggingService().error('[series]', `Error deleting series completeness ${validId}:`, error)
       throw error

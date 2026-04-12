@@ -10,15 +10,16 @@ export default defineConfig({
       USE_SQLJS: 'true',
     },
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'html', 'lcov'],
-      include: ['src/main/**/*.ts'],
+      include: ['src/main/**/*.ts', 'src/renderer/src/**/*.{ts,tsx}'],
       exclude: [
         'src/main/index.ts', // Entry point, mostly setup
         'src/main/ipc/**/*.ts', // IPC handlers, tested via integration
+        'src/renderer/src/main.tsx',
         '**/*.d.ts',
       ],
     },

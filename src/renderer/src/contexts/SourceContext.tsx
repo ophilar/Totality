@@ -418,39 +418,66 @@ export function SourceProvider({ children }: SourceProviderProps) {
     }
   }, [])
 
-  // Scan a single source library
+  // Subscribe to task queue for scan progress
+  useEffect(() => {
+    const updateProgress = (state: any) => {
+      const { currentTask } = state
+      if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan')) {
+        setIsScanning(true)
+        if (currentTask.progress) {
+          setScanProgress(prev => {
+            const next = new Map(prev)
+            next.set(currentTask.sourceId || 'global', {
+              sourceId: currentTask.sourceId || 'global',
+              sourceName: currentTask.label,
+              libraryId: currentTask.libraryId,
+              current: currentTask.progress.current,
+              total: currentTask.progress.total,
+              phase: currentTask.progress.phase,
+              currentItem: currentTask.progress.currentItem,
+              percentage: currentTask.progress.percentage,
+            })
+            return next
+          })
+        }
+      } else {
+        setIsScanning(false)
+        setScanProgress(new Map())
+      }
+    }
+
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      updateProgress(state)
+    })
+
+    window.electronAPI.taskQueueGetState?.().then(updateProgress)
+
+    return () => cleanup?.()
+  }, [])
+
+  // Scan a single source library via Task Queue
   const scanSource = useCallback(async (
     sourceId: string,
     libraryId: string
   ): Promise<ScanResultResponse> => {
-    setIsScanning(true)
+    const source = sources.find(s => s.source_id === sourceId)
+    await window.electronAPI.taskQueueAddTask({
+      type: 'library-scan',
+      label: `Scanning ${source?.display_name || sourceId}`,
+      sourceId,
+      libraryId,
+    })
+    // For backward compatibility, return a dummy success result
+    // The actual result will come via notifications/task history
+    return { success: true, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
+  }, [sources])
 
-    try {
-      const result = await window.electronAPI.sourcesScanLibrary(sourceId, libraryId)
-      await loadStats()
-      return result
-    } finally {
-      setIsScanning(false)
-      // Clear progress for this source
-      setScanProgress(prev => {
-        const next = new Map(prev)
-        next.delete(sourceId)
-        return next
-      })
-    }
-  }, [])
-
-  // Scan all enabled sources
+  // Scan all enabled sources via Task Queue
   const scanAllSources = useCallback(async () => {
-    setIsScanning(true)
-
-    try {
-      await window.electronAPI.sourcesScanAll()
-      await loadStats()
-    } finally {
-      setIsScanning(false)
-      setScanProgress(new Map())
-    }
+    await window.electronAPI.taskQueueAddTask({
+      type: 'source-scan',
+      label: 'Scanning all enabled sources',
+    })
   }, [])
 
   // Stop current scan

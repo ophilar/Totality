@@ -19,6 +19,7 @@ import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
+import { useLibrary } from '../../contexts/LibraryContext'
 import { EnhancedEmptyState } from '../onboarding'
 import logoImage from '../../assets/totality_header_logo.png'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
@@ -76,7 +77,24 @@ export function MediaBrowser({
   onLibraryTabChange,
   onAutoRefreshChange
 }: MediaBrowserProps) {
+  const {
+    view, setView,
+    searchQuery, setSearchQuery,
+    qualityFilter, setQualityFilter,
+    gridScale, setGridScale,
+    viewType, setViewType,
+    selectedItemId: selectedMediaId, setSelectedMedia: setSelectedMediaId,
+    sortBy, setSortBy,
+    activeSourceId: contextActiveSourceId, setActiveSourceId: setContextActiveSourceId
+  } = useLibrary()
+
   const { sources, activeSourceId, scanProgress, setActiveSource, markLibraryAsNew } = useSources()
+
+  // Sync SourceManager's activeSourceId with LibraryContext
+  useEffect(() => {
+    setContextActiveSourceId(activeSourceId)
+  }, [activeSourceId, setContextActiveSourceId])
+
   const { addToast } = useToast()
   const { count: wishlistCount } = useWishlist()
   const { pendingNavigation, clearNavigation, pushNavState } = useNavigation()
@@ -107,8 +125,6 @@ export function MediaBrowser({
   const hasInitialLoadRef = useRef(false) // Track if initial load is complete
   const hasAutoSwitchedRef = useRef(false) // Track if auto-switch has been done (to prevent loop)
   const [stats, setStats] = useState<LibraryStats | null>(null)
-  const [view, setView] = useState<MediaViewType>('movies')
-  const [sortBy, setSortBy] = useState<'title' | 'efficiency' | 'waste' | 'size'>('title')
 
   // Music state
   const [musicArtists, setMusicArtists] = useState<MusicArtist[]>([])
@@ -158,13 +174,11 @@ export function MediaBrowser({
   // Filters (extracted to useLibraryFilters hook)
   const {
     tierFilter, setTierFilter,
-    qualityFilter, setQualityFilter,
     alphabetFilter, setAlphabetFilter,
     slimDown, setSlimDown,
     debouncedTierFilter, debouncedQualityFilter,
   } = useLibraryFilters(searchInput)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [searchQuery, _setSearchQuery] = useState('')
+  
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const [searchTrackResults, setSearchTrackResults] = useState<Array<{ id: number; title: string; album_id: number; album_title?: string; artist_name?: string; thumb_url?: string; needs_upgrade: boolean; type: 'track' }>>([])
@@ -184,25 +198,9 @@ export function MediaBrowser({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const gridViewRef = useRef<HTMLButtonElement>(null)
   const listViewRef = useRef<HTMLButtonElement>(null)
-  const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
+  
   const [detailRefreshKey, setDetailRefreshKey] = useState(0) // Increment to force detail view refresh
-  const [viewType, setViewTypeState] = useState<'grid' | 'list'>('grid')
-  const [gridScale, setGridScaleState] = useState(4) // 1-7 scale for grid columns (4 = 50%)
-  const viewPrefsRef = useRef<Record<string, { viewType: 'grid' | 'list', gridScale: number }>>({})
-  const viewPrefsLoadedRef = useRef(false)
-
-  const setViewType = useCallback((vt: 'grid' | 'list') => {
-    setViewTypeState(vt)
-    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view] || { viewType: 'grid', gridScale: 4 }, viewType: vt }
-    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
-  }, [view])
-
-  const setGridScale = useCallback((gs: number) => {
-    setGridScaleState(gs)
-    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view] || { viewType: 'grid', gridScale: 4 }, gridScale: gs }
-    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
-  }, [view])
-
+  
   const [collectionsOnly, setCollectionsOnly] = useState(false)
 
   // TV Show navigation

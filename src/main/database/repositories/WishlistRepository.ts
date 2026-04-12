@@ -92,4 +92,59 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
 
     return row?.id || 0
   }
+
+  update(id: number, updates: Partial<WishlistItem>): void {
+    const fields: string[] = []
+    const params: unknown[] = []
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key === 'id' || key === 'added_at' || key === 'updated_at') continue
+      fields.push(`${key} = ?`)
+      params.push(value === undefined ? null : value)
+    }
+
+    if (fields.length === 0) return
+
+    if (updates.status === 'completed') {
+      fields.push("completed_at = datetime('now')")
+    }
+
+    fields.push("updated_at = datetime('now')")
+    params.push(id)
+
+    const sql = `UPDATE wishlist_items SET ${fields.join(', ')} WHERE id = ?`
+    this.db.prepare(sql).run(...params)
+  }
+
+  delete(id: number): void {
+    this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id)
+  }
+
+  exists(tmdbId?: string, musicbrainzId?: string, mediaItemId?: number): boolean {
+    if (tmdbId) {
+      return !!this.db.prepare('SELECT id FROM wishlist_items WHERE tmdb_id = ? AND status = \'active\'').get(tmdbId)
+    }
+    if (musicbrainzId) {
+      return !!this.db.prepare('SELECT id FROM wishlist_items WHERE musicbrainz_id = ? AND status = \'active\'').get(musicbrainzId)
+    }
+    if (mediaItemId) {
+      return !!this.db.prepare('SELECT id FROM wishlist_items WHERE media_item_id = ? AND status = \'active\'').get(mediaItemId)
+    }
+    return false
+  }
+
+  getWishlistCount(): number {
+    return (this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items').get() as any)?.count || 0
+  }
+
+  getCountsByReason(): Record<string, number> {
+    const rows = this.db.prepare('SELECT reason, COUNT(*) as count FROM wishlist_items GROUP BY reason').all() as Array<{ reason: string; count: number }>
+    const counts: Record<string, number> = {}
+    if (rows) rows.forEach(r => counts[r.reason] = r.count)
+    return counts
+  }
+
+  getWishlistItemById(id: number): WishlistItem | null {
+    return (this.db.prepare('SELECT * FROM wishlist_items WHERE id = ?').get(id) as WishlistItem) || null
+  }
 }

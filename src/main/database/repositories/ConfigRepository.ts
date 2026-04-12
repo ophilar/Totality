@@ -57,4 +57,22 @@ export class ConfigRepository {
     }
     return settings
   }
+
+  async setPin(pin: string): Promise<void> {
+    const { hash } = await import('node:crypto')
+    const hashed = hash('sha256', pin)
+    this.setSetting('app_pin_hash', hashed)
+  }
+
+  async verifyPin(pin: string): Promise<boolean> {
+    const stored = this.getSetting('app_pin_hash')
+    if (!stored) return true // No PIN set
+    const { hash } = await import('node:crypto')
+    const hashed = hash('sha256', pin)
+    return hashed === stored
+  }
+
+  hasPin(): boolean {
+    return !!this.getSetting('app_pin_hash')
+  }
 }

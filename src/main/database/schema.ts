@@ -454,6 +454,10 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
   codec_score INTEGER NOT NULL DEFAULT 0,
   bitrate_score INTEGER NOT NULL DEFAULT 0,
 
+  -- Efficiency metrics
+  efficiency_score INTEGER DEFAULT 0,
+  storage_debt_bytes INTEGER DEFAULT 0,
+
   -- Quality flags
   needs_upgrade INTEGER NOT NULL DEFAULT 0,
 

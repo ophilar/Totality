@@ -9,12 +9,20 @@ import type { StoreRegion } from '../services/StoreSearchService'
 import { validateInput, PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '../validation/schemas'
 import { z } from 'zod'
 
+import { registerListHandlers } from './utils/genericHandlers'
+
 /**
  * Register all wishlist-related IPC handlers
  */
 export function registerWishlistHandlers() {
   const db = getDatabase()
   const storeService = getStoreSearchService()
+
+  // Register generic list/count handlers
+  registerListHandlers('wishlist', (f) => db.wishlistRepo.getWishlistItems(f as any), () => db.wishlistRepo.getWishlistCount(), WishlistFiltersSchema, {
+    listAlias: 'wishlist:getAll',
+    countAlias: 'wishlist:getCount'
+  })
 
   // ============================================================================
   // WISHLIST CRUD
@@ -39,10 +47,10 @@ export function registerWishlistHandlers() {
             const details = await tmdb.getTVShowDetails(validItem.tmdb_id)
             validItem.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
           }
-        } catch (e) { throw e; }
+        } catch (e) { /* ignore TMDB errors */ }
       }
 
-      return await db.addWishlistItem(validItem as any)
+      return db.wishlistRepo.add(validItem as any)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error adding wishlist item:', error)
       throw error
@@ -57,7 +65,7 @@ export function registerWishlistHandlers() {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
       getLoggingService().info('[wishlist]', '[IPC wishlist:update] id:', validId)
-      await db.updateWishlistItem(validId, validUpdates as any)
+      db.wishlistRepo.update(validId, validUpdates as any)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error updating wishlist item:', error)
@@ -72,7 +80,7 @@ export function registerWishlistHandlers() {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
       getLoggingService().info('[wishlist]', '[IPC wishlist:remove] id:', validId)
-      await db.removeWishlistItem(validId)
+      db.wishlistRepo.delete(validId)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error removing wishlist item:', error)
@@ -86,7 +94,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getAll', async (_event, filters?: unknown) => {
     try {
       const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
-      return db.getWishlistItems(validFilters as any)
+      return db.wishlistRepo.getWishlistItems(validFilters as any)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist items:', error)
       throw error
@@ -99,7 +107,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getById', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
-      return db.getWishlistItemById(validId)
+      return db.wishlistRepo.getWishlistItemById(validId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist item:', error)
       throw error
@@ -126,7 +134,7 @@ export function registerWishlistHandlers() {
       const validTmdbId = tmdbId !== undefined ? validateInput(z.string().max(20), tmdbId, 'wishlist:checkExists') : undefined
       const validMusicbrainzId = musicbrainzId !== undefined ? validateInput(z.string().max(100), musicbrainzId, 'wishlist:checkExists') : undefined
       const validMediaItemId = mediaItemId !== undefined ? validateInput(PositiveIntSchema, mediaItemId, 'wishlist:checkExists') : undefined
-      return db.wishlistItemExists(validTmdbId, validMusicbrainzId, validMediaItemId)
+      return db.wishlistRepo.exists(validTmdbId, validMusicbrainzId, validMediaItemId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error checking wishlist existence:', error)
       throw error

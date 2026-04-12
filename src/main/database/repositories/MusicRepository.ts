@@ -597,22 +597,26 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     const stmt = this.db.prepare(`
       INSERT INTO music_quality_scores (
         album_id, quality_tier, tier_quality, tier_score,
-        codec_score, bitrate_score, needs_upgrade, issues,
+        codec_score, bitrate_score, efficiency_score, storage_debt_bytes,
+        needs_upgrade, issues,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(album_id) DO UPDATE SET
         quality_tier = excluded.quality_tier,
         tier_quality = excluded.tier_quality,
         tier_score = excluded.tier_score,
         codec_score = excluded.codec_score,
         bitrate_score = excluded.bitrate_score,
+        efficiency_score = excluded.efficiency_score,
+        storage_debt_bytes = excluded.storage_debt_bytes,
         needs_upgrade = excluded.needs_upgrade,
         issues = excluded.issues,
         updated_at = datetime('now')
     `)
     stmt.run(
       score.album_id, score.quality_tier, score.tier_quality, score.tier_score,
-      score.codec_score, score.bitrate_score, score.needs_upgrade ? 1 : 0, score.issues
+      score.codec_score, score.bitrate_score, score.efficiency_score || 0, score.storage_debt_bytes || 0,
+      score.needs_upgrade ? 1 : 0, score.issues
     )
   }
 

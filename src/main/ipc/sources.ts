@@ -10,7 +10,6 @@ import path from 'path'
 import { getSourceManager } from '../services/SourceManager'
 import { getLoggingService } from '../services/LoggingService'
 import { getDatabase } from '../database/getDatabase'
-import { getPlexService } from '../services/PlexService'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
 import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '../services/KodiMySQLConnectionService'
 import { getMediaFileAnalyzer } from '../services/MediaFileAnalyzer'
@@ -214,7 +213,7 @@ export function registerSourceHandlers(): void {
   /**
    * Select a Plex server for a source
    * Supports both:
-   *   - Legacy: (serverId) - uses first Plex source or PlexService
+   *   - Legacy: (serverId) - uses first Plex source
    *   - New: (sourceId, serverId) - uses specified source
    */
   ipcMain.handle('plex:selectServer', async (_event, sourceIdOrServerId: string, serverId?: string) => {
@@ -234,18 +233,12 @@ export function registerSourceHandlers(): void {
       return await manager.plexSelectServer(resolvedSourceId, resolvedServerId)
     }
 
-    // Fallback to legacy PlexService for old auth flow
-    getLoggingService().info('[sources]', '[plex:selectServer] No sources found, using legacy PlexService')
-    const plex = getPlexService()
-    const success = await plex.selectServer(resolvedServerId)
-    return { success }
+    throw new Error('No Plex source found to select server')
   })
 
   /**
    * Get Plex servers for a source
-   * If no sourceId is provided, falls back to:
-   *   1. The first Plex source in SourceManager
-   *   2. The legacy PlexService (for backward compatibility)
+   * If no sourceId is provided, falls back to the first Plex source in SourceManager
    */
   ipcMain.handle('plex:getServers', async (_event, sourceId?: string) => {
     try {
@@ -262,10 +255,7 @@ export function registerSourceHandlers(): void {
         return await manager.plexGetServers(resolvedSourceId)
       }
 
-      // Fallback to legacy PlexService for old auth flow
-      getLoggingService().info('[sources]', '[plex:getServers] No sources found, using legacy PlexService')
-      const plex = getPlexService()
-      return await plex.getServers()
+      throw new Error('No Plex source found to get servers')
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error getting Plex servers:', error)
       throw error

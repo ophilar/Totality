@@ -575,6 +575,10 @@ export interface MusicQualityScore {
   codec_score: number
   bitrate_score: number
 
+  // Efficiency metrics
+  efficiency_score?: number
+  storage_debt_bytes?: number
+
   needs_upgrade: boolean
 
   issues: string // JSON array
@@ -765,6 +769,59 @@ export interface WishlistFilters {
 // ============================================================================
 // DASHBOARD TYPES
 // ============================================================================
+
+// ============================================================================
+// STATS AND COMPLETENESS DATA (Shared UI types)
+// ============================================================================
+
+export interface LibraryStats {
+  totalItems: number
+  totalMovies: number
+  totalEpisodes: number
+  totalShows: number
+  needsUpgradeCount: number
+  averageQualityScore: number
+  // Movie-specific stats
+  movieNeedsUpgradeCount: number
+  movieAverageQualityScore: number
+  // TV-specific stats
+  tvNeedsUpgradeCount: number
+  tvAverageQualityScore: number
+}
+
+export interface SeriesStats {
+  totalSeries: number
+  completeSeries: number
+  incompleteSeries: number
+  totalMissingEpisodes: number
+  averageCompleteness: number
+}
+
+export interface CollectionStats {
+  total: number
+  complete: number
+  incomplete: number
+  totalMissing: number
+  avgCompleteness: number
+}
+
+export interface MusicStats {
+  totalArtists: number
+  totalAlbums: number
+  totalTracks: number
+  losslessAlbums: number
+  hiResAlbums: number
+  avgBitrate: number
+}
+
+export interface MusicCompletenessStats {
+  totalArtists: number
+  analyzedArtists: number
+  completeArtists: number
+  incompleteArtists: number
+  totalMissingAlbums: number
+  averageCompleteness: number
+}
 
 export interface DashboardSummary {
   movieUpgrades: MediaItem[]

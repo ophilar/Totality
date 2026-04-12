@@ -2,10 +2,30 @@
  * Media Browser Type Definitions
  *
  * Shared types used across media browser components.
+ * Consolidates types with @main/types/database for Single Source of Truth.
  */
 
-import type { ProviderType } from '../../contexts/SourceContext'
-import type { MediaSourceResponse } from '@preload/index'
+import type { 
+  ProviderType, 
+  MediaItem as BaseMediaItem,
+  MusicArtist as BaseMusicArtist,
+  MusicAlbum as BaseMusicAlbum,
+  MusicTrack as BaseMusicTrack,
+  TVShowSummary as BaseTVShowSummary,
+  MissingEpisode as BaseMissingEpisode,
+  LibraryStats as BaseLibraryStats,
+  SeriesStats as BaseSeriesStats,
+  CollectionStats as BaseCollectionStats,
+  MusicStats as BaseMusicStats,
+  MusicCompletenessStats as BaseMusicCompletenessStats,
+  SeriesCompleteness as BaseSeriesCompleteness,
+  MovieCollection as BaseMovieCollection,
+  ArtistCompleteness as BaseArtistCompleteness,
+  AlbumCompleteness as BaseAlbumCompleteness,
+  MissingAlbum as BaseMissingAlbum,
+  MissingTrack as BaseMissingTrack,
+} from '@main/types/database'
+import type { MediaSourceResponse } from '@preload/api/types'
 
 // Re-export for convenience
 export type { ProviderType }
@@ -14,144 +34,29 @@ export type { ProviderType }
 export type MediaSource = MediaSourceResponse
 
 // ============================================================================
-// Music Types
+// Consolidated Base Types (Aliases for UI)
 // ============================================================================
 
-export interface MusicArtist {
-  id: number
-  source_id: string
-  source_type: ProviderType
-  provider_id: string
-  name: string
-  sort_name?: string
-  musicbrainz_id?: string
-  genres?: string
-  mood?: string
-  country?: string
-  biography?: string
-  thumb_url?: string
-  art_url?: string
-  album_count?: number
-  track_count?: number
-}
-
-export interface MusicAlbum {
-  id: number
-  source_id: string
-  source_type: ProviderType
-  provider_id: string
-  artist_id?: number
-  artist_name: string
-  title: string
-  sort_title?: string
-  year?: number
-  musicbrainz_id?: string
-  genres?: string
-  mood?: string
-  album_type?: string
-  track_count?: number
-  duration_ms?: number
-  total_size?: number
-  thumb_url?: string
-  is_lossless?: boolean
-  is_hi_res?: boolean
-  best_audio_codec?: string
-  best_bitrate?: number
-  best_sample_rate?: number
-  best_bit_depth?: number
-}
-
-export interface MusicTrack {
-  id: number
-  source_id: string
-  source_type: ProviderType
-  provider_id: string
-  library_id?: string
-  album_id?: number
-  artist_id?: number
-  title: string
-  track_number?: number
-  disc_number?: number
-  duration?: number // Duration in ms
-  file_path?: string
-  file_size?: number
-  audio_codec?: string
-  audio_bitrate?: number
-  sample_rate?: number
-  bit_depth?: number
-  channels?: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-  mood?: string
-  is_lossless?: boolean
-  is_hi_res?: boolean
-}
-
-export interface MusicStats {
-  totalArtists: number
-  totalAlbums: number
-  totalTracks: number
-  losslessAlbums: number
-  hiResAlbums: number
-  avgBitrate: number
-}
+export type MediaItem = BaseMediaItem
+export type MusicArtist = BaseMusicArtist
+export type MusicAlbum = BaseMusicAlbum
+export type MusicTrack = BaseMusicTrack
+export type TVShowSummary = BaseTVShowSummary
+export type MissingEpisode = BaseMissingEpisode
+export type LibraryStats = BaseLibraryStats
+export type SeriesStats = BaseSeriesStats
+export type CollectionStats = BaseCollectionStats
+export type MusicStats = BaseMusicStats
+export type MusicCompletenessStats = BaseMusicCompletenessStats
+export type SeriesCompletenessData = BaseSeriesCompleteness
+export type MovieCollectionData = BaseMovieCollection
+export type ArtistCompletenessData = BaseArtistCompleteness
+export type AlbumCompletenessData = BaseAlbumCompleteness
+export type MissingAlbum = BaseMissingAlbum
+export type MissingTrack = BaseMissingTrack
 
 // ============================================================================
-// Media Item Types
-// ============================================================================
-
-export interface MediaItem {
-  id: number
-  title: string
-  year?: number
-  type: string
-  series_title?: string
-  season_number?: number
-  episode_number?: number
-  resolution: string
-  video_bitrate: number
-  audio_channels: number
-  poster_url?: string
-  episode_thumb_url?: string
-  season_poster_url?: string
-  overall_score?: number
-  needs_upgrade?: boolean
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
-  tier_score?: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-  tmdb_id?: string
-  original_language?: string
-  audio_language?: string
-  issues?: string
-
-  // File information
-  file_path?: string
-  file_size?: number
-  video_codec?: string
-  video_profile?: string
-  audio_codec?: string
-  audio_tracks?: string
-  has_embedded_subtitles?: boolean
-
-  // Enhanced quality metadata
-  hdr_format?: string
-  color_bit_depth?: number
-  has_object_audio?: boolean
-  video_frame_rate?: number
-
-  // Multi-version
-  version_count?: number
-
-  // Source tracking
-  source_id?: string
-  source_type?: ProviderType
-  library_id?: string
-}
-
-// ============================================================================
-// TV Show Types
+// TV Show UI Specific Types
 // ============================================================================
 
 export interface TVShow {
@@ -170,151 +75,6 @@ export interface TVSeason {
   seasonNumber: number
   episodes: MediaItem[]
   posterUrl?: string
-}
-
-export interface TVShowSummary {
-  series_title: string
-  episode_count: number
-  season_count: number
-  poster_url?: string
-  source_id?: string
-  source_type?: string
-}
-
-export interface MissingEpisode {
-  season_number: number
-  episode_number: number
-  title?: string
-  air_date?: string
-}
-
-// ============================================================================
-// Library Stats Types
-// ============================================================================
-
-export interface LibraryStats {
-  totalItems: number
-  totalMovies: number
-  totalEpisodes: number
-  totalShows: number
-  needsUpgradeCount: number
-  averageQualityScore: number
-  // Movie-specific stats
-  movieNeedsUpgradeCount: number
-  movieAverageQualityScore: number
-  // TV-specific stats
-  tvNeedsUpgradeCount: number
-  tvAverageQualityScore: number
-}
-
-// ============================================================================
-// Completeness Types
-// ============================================================================
-
-export interface SeriesCompletenessData {
-  id: number
-  series_title: string
-  total_seasons: number
-  total_episodes: number
-  owned_seasons: number
-  owned_episodes: number
-  missing_seasons: string
-  missing_episodes: string
-  completeness_percentage: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-  total_size?: number
-  tmdb_id?: string
-  poster_url?: string
-  status?: string
-}
-
-export interface MovieCollectionData {
-  id: number
-  tmdb_collection_id: string
-  collection_name: string
-  total_movies: number
-  owned_movies: number
-  missing_movies: string
-  owned_movie_ids: string
-  completeness_percentage: number
-  poster_url?: string
-}
-
-export interface SeriesStats {
-  totalSeries: number
-  completeSeries: number
-  incompleteSeries: number
-  totalMissingEpisodes: number
-  averageCompleteness: number
-}
-
-export interface CollectionStats {
-  total: number
-  complete: number
-  incomplete: number
-  totalMissing: number
-  avgCompleteness: number
-}
-
-export interface MusicCompletenessStats {
-  totalArtists: number
-  analyzedArtists: number
-  completeArtists: number
-  incompleteArtists: number
-  totalMissingAlbums: number
-  averageCompleteness: number
-}
-
-export interface ArtistCompletenessData {
-  id?: number
-  artist_name: string
-  musicbrainz_id?: string
-  total_albums: number
-  owned_albums: number
-  total_singles: number
-  owned_singles: number
-  total_eps: number
-  owned_eps: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-  total_size?: number
-  missing_albums: string
-  missing_singles: string
-  missing_eps: string
-  completeness_percentage: number
-  thumb_url?: string
-}
-
-export interface MissingAlbum {
-  musicbrainz_id: string
-  title: string
-  year?: number
-  album_type: 'album' | 'ep' | 'single'
-}
-
-export interface MissingTrack {
-  musicbrainz_id?: string
-  title: string
-  track_number?: number
-  disc_number?: number
-  duration_ms?: number
-}
-
-export interface AlbumCompletenessData {
-  id?: number
-  album_id: number
-  artist_name: string
-  album_title: string
-  musicbrainz_release_id?: string
-  musicbrainz_release_group_id?: string
-  total_tracks: number
-  owned_tracks: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
-  total_size?: number
-  missing_tracks: string
-  completeness_percentage: number
 }
 
 // ============================================================================

@@ -127,4 +127,94 @@ export class SourceRepository extends BaseRepository<MediaSource> {
   updateLastScanAt(sourceId: string): void {
     this.db.prepare("UPDATE media_sources SET last_scan_at = datetime('now') WHERE source_id = ?").run(sourceId)
   }
+
+  updateSourceConnectionTime(sourceId: string): void {
+    this.db.prepare("UPDATE media_sources SET last_connected_at = datetime('now') WHERE source_id = ?").run(sourceId)
+  }
+
+  updateSourceScanTime(sourceId: string): void {
+    this.updateLastScanAt(sourceId)
+  }
+
+  getMediaSources(type?: string): MediaSource[] {
+    let sql = 'SELECT * FROM media_sources'
+    const params = []
+    if (type) {
+      sql += ' WHERE source_type = ?'
+      params.push(type)
+    }
+    sql += ' ORDER BY display_name ASC'
+    const stmt = this.db.prepare(sql)
+    return stmt.all(...params) as MediaSource[]
+  }
+
+  getEnabledMediaSources(): MediaSource[] {
+    const stmt = this.db.prepare('SELECT * FROM media_sources WHERE is_enabled = 1 ORDER BY display_name ASC')
+    return stmt.all() as MediaSource[]
+  }
+
+  getSourceLibraries(sourceId: string): any[] {
+    const rows = this.db.prepare(`
+      SELECT 
+        library_id as libraryId, 
+        library_name as libraryName, 
+        library_type as libraryType, 
+        is_enabled as isEnabled,
+        is_protected as isProtected,
+        last_scan_at as lastScanAt,
+        items_scanned as itemsScanned
+      FROM library_scans 
+      WHERE source_id = ?
+    `).all(sourceId) as any[]
+    return rows || []
+  }
+
+  isLibraryEnabled(sourceId: string, libraryId: string): boolean {
+    const row = this.db.prepare('SELECT is_enabled FROM library_scans WHERE source_id = ? AND library_id = ?').get(sourceId, libraryId) as { is_enabled: number } | undefined
+    return row ? row.is_enabled === 1 : true
+  }
+
+  toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): void {
+    this.db.prepare(`
+      INSERT INTO library_scans (source_id, library_id, is_enabled, created_at, updated_at)
+      VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(source_id, library_id) DO UPDATE SET is_enabled = ?, updated_at = datetime('now')
+    `).run(sourceId, libraryId, enabled ? 1 : 0, enabled ? 1 : 0)
+  }
+
+  getEnabledLibraryIds(sourceId: string): string[] {
+    const rows = this.db.prepare('SELECT library_id FROM library_scans WHERE source_id = ? AND is_enabled = 1').all(sourceId) as Array<{ library_id: string }>
+    return rows ? rows.map(r => r.library_id) : []
+  }
+
+  setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean): void {
+    this.db.prepare('UPDATE library_scans SET is_protected = ?, updated_at = datetime(\'now\') WHERE source_id = ? AND library_id = ?')
+      .run(isProtected ? 1 : 0, sourceId, libraryId)
+  }
+
+  isLibraryProtected(sourceId: string, libraryId: string): boolean {
+    const row = this.db.prepare('SELECT is_protected FROM library_scans WHERE source_id = ? AND library_id = ?').get(sourceId, libraryId) as { is_protected: number } | undefined
+    return row ? row.is_protected === 1 : false
+  }
+
+  getLibraryScanTime(sourceId: string, libraryId: string): string | null {
+    const row = this.db.prepare('SELECT last_scan_at FROM library_scans WHERE source_id = ? AND library_id = ?').get(sourceId, libraryId) as { last_scan_at: string } | undefined
+    return row ? row.last_scan_at : null
+  }
+
+  getLibraryScanTimes(sourceId: string): Map<string, any> {
+    const result = new Map<string, any>()
+    const rows = this.db.prepare('SELECT library_id, last_scan_at, items_scanned FROM library_scans WHERE source_id = ?').all(sourceId) as any[]
+    if (rows) rows.forEach(r => result.set(r.library_id, r))
+    return result
+  }
+
+  updateLibraryScanTime(sourceId: string, libraryId: string, items: number): void {
+    this.db.prepare(`
+      INSERT INTO library_scans (source_id, library_id, last_scan_at, items_scanned, created_at, updated_at)
+      VALUES (?, ?, datetime('now'), ?, datetime('now'), datetime('now'))
+      ON CONFLICT(source_id, library_id) DO UPDATE SET last_scan_at = datetime('now'), items_scanned = ?, updated_at = datetime('now')
+    `).run(sourceId, libraryId, items, items)
+    this.updateLastScanAt(sourceId)
+  }
 }

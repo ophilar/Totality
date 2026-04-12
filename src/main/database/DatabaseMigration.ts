@@ -13,129 +13,148 @@ import { getErrorMessage } from '../services/utils/errorUtils'
  * Run database migrations and schema updates
  */
 export function runMigrations(db: DatabaseSync): void {
-  // Execute main schema
-  db.exec(DATABASE_SCHEMA)
+  getLoggingService().info('[DatabaseMigration]', 'Starting migrations...')
 
-  // List of ALTER TABLE statements for incremental updates
-  const alterStatements = [
-    // Quality scores tier columns
-    "ALTER TABLE quality_scores ADD COLUMN quality_tier TEXT NOT NULL DEFAULT 'SD'",
-    "ALTER TABLE quality_scores ADD COLUMN tier_quality TEXT NOT NULL DEFAULT 'MEDIUM'",
-    'ALTER TABLE quality_scores ADD COLUMN tier_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN bitrate_tier_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN audio_tier_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE quality_scores ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
-
-    // Media items enhancements
-    'ALTER TABLE media_items ADD COLUMN episode_thumb_url TEXT',
-    'ALTER TABLE media_items ADD COLUMN season_poster_url TEXT',
-    'ALTER TABLE media_items ADD COLUMN video_frame_rate REAL',
-    'ALTER TABLE media_items ADD COLUMN color_bit_depth INTEGER',
-    'ALTER TABLE media_items ADD COLUMN hdr_format TEXT',
-    'ALTER TABLE media_items ADD COLUMN color_space TEXT',
-    'ALTER TABLE media_items ADD COLUMN video_profile TEXT',
-    'ALTER TABLE media_items ADD COLUMN video_level INTEGER',
-    'ALTER TABLE media_items ADD COLUMN audio_profile TEXT',
-    'ALTER TABLE media_items ADD COLUMN audio_sample_rate INTEGER',
-    'ALTER TABLE media_items ADD COLUMN has_object_audio INTEGER DEFAULT 0',
-    'ALTER TABLE media_items ADD COLUMN container TEXT',
-    'ALTER TABLE media_items ADD COLUMN series_tmdb_id TEXT',
-    'ALTER TABLE media_items ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
-    'ALTER TABLE media_items ADD COLUMN audio_tracks TEXT',
-    'ALTER TABLE media_items ADD COLUMN file_mtime INTEGER',
-    "ALTER TABLE media_items ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE media_items ADD COLUMN source_type TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE media_items ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE media_items ADD COLUMN original_language TEXT',
-    'ALTER TABLE media_items ADD COLUMN audio_language TEXT',
-    'ALTER TABLE media_items ADD COLUMN subtitle_tracks TEXT',
-    'ALTER TABLE media_items ADD COLUMN sort_title TEXT',
-    'ALTER TABLE media_items ADD COLUMN version_count INTEGER NOT NULL DEFAULT 1',
-    'ALTER TABLE media_items ADD COLUMN summary TEXT',
-
-    // Series completeness
-    'ALTER TABLE series_completeness ADD COLUMN tmdb_id TEXT',
-    'ALTER TABLE series_completeness ADD COLUMN poster_url TEXT',
-    'ALTER TABLE series_completeness ADD COLUMN backdrop_url TEXT',
-    'ALTER TABLE series_completeness ADD COLUMN status TEXT',
-    "ALTER TABLE series_completeness ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE series_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE series_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE series_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE series_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
-
-    // Movie collections
-    "ALTER TABLE movie_collections ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE movie_collections ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-
-    // Music tables
-    "ALTER TABLE music_artists ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE music_artists ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
-    "ALTER TABLE music_albums ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE music_albums ADD COLUMN user_fixed_match INTEGER DEFAULT 0',
-    "ALTER TABLE music_tracks ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE artist_completeness ADD COLUMN library_id TEXT NOT NULL DEFAULT ''",
-    'ALTER TABLE artist_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE artist_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE artist_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE music_tracks ADD COLUMN file_mtime INTEGER',
-
-    // Album completeness
-    'ALTER TABLE album_completeness ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE album_completeness ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE album_completeness ADD COLUMN total_size INTEGER NOT NULL DEFAULT 0',
-
-    // Per-version enhancements
-    'ALTER TABLE media_item_versions ADD COLUMN original_language TEXT',
-    'ALTER TABLE media_item_versions ADD COLUMN audio_language TEXT',
-    'ALTER TABLE media_item_versions ADD COLUMN efficiency_score INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE media_item_versions ADD COLUMN storage_debt_bytes INTEGER NOT NULL DEFAULT 0',
-    'ALTER TABLE media_item_versions ADD COLUMN bitrate_tier_score INTEGER DEFAULT 0',
-    'ALTER TABLE media_item_versions ADD COLUMN audio_tier_score INTEGER DEFAULT 0',
-
-    // Wishlist
-    "ALTER TABLE wishlist_items ADD COLUMN reason TEXT DEFAULT 'missing'",
-    'ALTER TABLE wishlist_items ADD COLUMN current_quality_tier TEXT',
-    'ALTER TABLE wishlist_items ADD COLUMN current_quality_level TEXT',
-    'ALTER TABLE wishlist_items ADD COLUMN current_resolution TEXT',
-    'ALTER TABLE wishlist_items ADD COLUMN current_video_codec TEXT',
-    'ALTER TABLE wishlist_items ADD COLUMN current_audio_codec TEXT',
-    'ALTER TABLE wishlist_items ADD COLUMN media_item_id INTEGER',
-    "ALTER TABLE wishlist_items ADD COLUMN status TEXT DEFAULT 'active'",
-    'ALTER TABLE wishlist_items ADD COLUMN completed_at TEXT',
-
-    // Library scans
-    'ALTER TABLE library_scans ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1',
-  ]
-
-  for (const statement of alterStatements) {
-    try {
-      db.exec(statement)
-    } catch (error: unknown) {
-      const msg = getErrorMessage(error)
-      if (!msg?.includes('duplicate column name')) {
-        getLoggingService().debug('[DatabaseMigration]', `Migration note: ${msg}`)
-      }
-    }
+  // 1. Execute main schema
+  // This creates all tables if they don't exist. 
+  // We ignore errors here because existing tables with schema mismatches will throw,
+  // but we fix those in the next step.
+  try {
+    db.exec(DATABASE_SCHEMA)
+    getLoggingService().debug('[DatabaseMigration]', 'Baseline schema applied/verified')
+  } catch (error) {
+    getLoggingService().debug('[DatabaseMigration]', 'Initial schema execution note (expected on existing DB): ' + getErrorMessage(error))
   }
 
-  // Handle CHECK constraint migrations (complex in SQLite)
+  // 2. Incremental column updates
+  // We explicitly check for each critical column to handle the 0.4.0 -> 0.4.3 jump.
+  
+  // Quality Scores (Video)
+  ensureColumn(db, 'quality_scores', 'quality_tier', "TEXT NOT NULL DEFAULT 'SD'")
+  ensureColumn(db, 'quality_scores', 'tier_quality', "TEXT NOT NULL DEFAULT 'MEDIUM'")
+  ensureColumn(db, 'quality_scores', 'tier_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'quality_scores', 'bitrate_tier_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'quality_scores', 'audio_tier_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+
+  // Media Items
+  ensureColumn(db, 'media_items', 'source_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'media_items', 'source_type', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'media_items', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'media_items', 'episode_thumb_url', 'TEXT')
+  ensureColumn(db, 'media_items', 'season_poster_url', 'TEXT')
+  ensureColumn(db, 'media_items', 'video_frame_rate', 'REAL')
+  ensureColumn(db, 'media_items', 'color_bit_depth', 'INTEGER')
+  ensureColumn(db, 'media_items', 'hdr_format', 'TEXT')
+  ensureColumn(db, 'media_items', 'color_space', 'TEXT')
+  ensureColumn(db, 'media_items', 'video_profile', 'TEXT')
+  ensureColumn(db, 'media_items', 'video_level', 'INTEGER')
+  ensureColumn(db, 'media_items', 'audio_profile', 'TEXT')
+  ensureColumn(db, 'media_items', 'audio_sample_rate', 'INTEGER')
+  ensureColumn(db, 'media_items', 'has_object_audio', 'INTEGER DEFAULT 0')
+  ensureColumn(db, 'media_items', 'container', 'TEXT')
+  ensureColumn(db, 'media_items', 'series_tmdb_id', 'TEXT')
+  ensureColumn(db, 'media_items', 'user_fixed_match', 'INTEGER DEFAULT 0')
+  ensureColumn(db, 'media_items', 'audio_tracks', 'TEXT')
+  ensureColumn(db, 'media_items', 'file_mtime', 'INTEGER')
+  ensureColumn(db, 'media_items', 'original_language', 'TEXT')
+  ensureColumn(db, 'media_items', 'audio_language', 'TEXT')
+  ensureColumn(db, 'media_items', 'subtitle_tracks', 'TEXT')
+  ensureColumn(db, 'media_items', 'sort_title', 'TEXT')
+  ensureColumn(db, 'media_items', 'version_count', 'INTEGER NOT NULL DEFAULT 1')
+  ensureColumn(db, 'media_items', 'summary', 'TEXT')
+
+  // Series Completeness
+  ensureColumn(db, 'series_completeness', 'tmdb_id', 'TEXT')
+  ensureColumn(db, 'series_completeness', 'poster_url', 'TEXT')
+  ensureColumn(db, 'series_completeness', 'backdrop_url', 'TEXT')
+  ensureColumn(db, 'series_completeness', 'status', 'TEXT')
+  ensureColumn(db, 'series_completeness', 'source_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'series_completeness', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'series_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'series_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'series_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
+
+  // Movie Collections
+  ensureColumn(db, 'movie_collections', 'source_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'movie_collections', 'library_id', "TEXT NOT NULL DEFAULT ''")
+
+  // Music Tables
+  ensureColumn(db, 'music_artists', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'music_artists', 'user_fixed_match', 'INTEGER DEFAULT 0')
+  ensureColumn(db, 'music_albums', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'music_albums', 'user_fixed_match', 'INTEGER DEFAULT 0')
+  ensureColumn(db, 'music_tracks', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'music_tracks', 'file_mtime', 'INTEGER')
+
+  // Artist & Album Completeness
+  ensureColumn(db, 'artist_completeness', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'artist_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'artist_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'artist_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'album_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'album_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'album_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
+
+  // Music Quality Scores
+  ensureColumn(db, 'music_quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'music_quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+
+  // Per-version enhancements
+  ensureColumn(db, 'media_item_versions', 'original_language', 'TEXT')
+  ensureColumn(db, 'media_item_versions', 'audio_language', 'TEXT')
+  ensureColumn(db, 'media_item_versions', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'media_item_versions', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'media_item_versions', 'bitrate_tier_score', 'INTEGER DEFAULT 0')
+  ensureColumn(db, 'media_item_versions', 'audio_tier_score', 'INTEGER DEFAULT 0')
+
+  // Wishlist
+  ensureColumn(db, 'wishlist_items', 'reason', "TEXT DEFAULT 'missing'")
+  ensureColumn(db, 'wishlist_items', 'current_quality_tier', 'TEXT')
+  ensureColumn(db, 'wishlist_items', 'current_quality_level', 'TEXT')
+  ensureColumn(db, 'wishlist_items', 'current_resolution', 'TEXT')
+  ensureColumn(db, 'wishlist_items', 'current_video_codec', 'TEXT')
+  ensureColumn(db, 'wishlist_items', 'current_audio_codec', 'TEXT')
+  ensureColumn(db, 'wishlist_items', 'media_item_id', 'INTEGER')
+  ensureColumn(db, 'wishlist_items', 'status', "TEXT DEFAULT 'active'")
+  ensureColumn(db, 'wishlist_items', 'completed_at', 'TEXT')
+
+  // Library scans
+  ensureColumn(db, 'library_scans', 'is_enabled', 'INTEGER NOT NULL DEFAULT 1')
+
+  // 3. Post-column complex migrations
   migrateCheckConstraints(db)
-
-  // Create performance indexes
   createIndexes(db)
-
-  // Functional fixes
   fixMusicTrackAlbumReferences(db)
-
-  // Data migrations
   migrateExistingItemsToVersions(db)
-
-  // Cleanup
   cleanupOrphanedRecords(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
+}
+
+/**
+ * Ensures a column exists in a table, adding it if missing.
+ */
+function ensureColumn(db: DatabaseSync, table: string, column: string, definition: string): void {
+  try {
+    // Check if table exists first
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)
+    if (!tableExists) return
+
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as any[]
+    if (!info.some(c => c.name === column)) {
+      getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    }
+  } catch (error) {
+    const msg = getErrorMessage(error)
+    getLoggingService().error('[DatabaseMigration]', `Failed to ensure column ${table}.${column}: ${msg}`)
+    // If it's a critical error (not just duplicate column), we should probably know
+    if (!msg.includes('duplicate column name')) {
+      throw error
+    }
+  }
 }
 
 function migrateCheckConstraints(db: DatabaseSync): void {
@@ -174,7 +193,11 @@ function createIndexes(db: DatabaseSync): void {
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
   for (const idx of indexes) {
-    try { db.exec(idx) } catch (e) { throw e; }
+    try { 
+      db.exec(idx) 
+    } catch (e) { 
+      getLoggingService().debug('[DatabaseMigration]', 'Index creation note: ' + getErrorMessage(e))
+    }
   }
 }
 

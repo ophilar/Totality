@@ -436,6 +436,71 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
+  /**
+   * Get all collections from a library
+   */
+  async getLibraryCollections(libraryKey: string): Promise<PlexCollection[]> {
+    if (!this.selectedServer) {
+      throw new Error('No server selected')
+    }
+
+    try {
+      const baseUrl = this.selectedServer.uri
+      const response = await this.api.get(
+        `${baseUrl}/library/sections/${libraryKey}/all`,
+        {
+          headers: {
+            'X-Plex-Token': this.selectedServer.accessToken,
+          },
+          params: {
+            type: 18, // Type 18 is collections in Plex
+          },
+        }
+      )
+
+      const mediaContainer = (response.data as { MediaContainer?: { Metadata?: PlexCollection[] } })?.MediaContainer
+      return mediaContainer?.Metadata || []
+    } catch (error: unknown) {
+      getLoggingService().error('[PlexProvider]', 'Failed to get library collections:', error)
+      throw new Error('Failed to fetch library collections')
+    }
+  }
+
+  /**
+   * Get all items in a collection
+   */
+  async getCollectionChildren(collectionKey: string): Promise<PlexMediaItem[]> {
+    if (!this.selectedServer) {
+      throw new Error('No server selected')
+    }
+
+    try {
+      const baseUrl = this.selectedServer.uri
+      const response = await this.api.get(
+        `${baseUrl}/library/collections/${collectionKey}/children`,
+        {
+          headers: {
+            'X-Plex-Token': this.selectedServer.accessToken,
+          },
+        }
+      )
+
+      const mediaContainer = (response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } })?.MediaContainer
+      return mediaContainer?.Metadata || []
+    } catch (error) {
+      getLoggingService().error('[PlexProvider]', 'Failed to get collection children:', error)
+      throw new Error('Failed to fetch collection items')
+    }
+  }
+
+  /**
+   * Build full image URL for collection artwork
+   */
+  buildCollectionImageUrl(imagePath: string | undefined): string | undefined {
+    if (!imagePath || !this.selectedServer) return undefined
+    return `${this.selectedServer.uri}${imagePath}?X-Plex-Token=${this.selectedServer.accessToken}`
+  }
+
   // ============================================================================
   // SCANNING
   // ============================================================================
