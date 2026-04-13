@@ -1,5 +1,5 @@
 
-import React, { forwardRef, ReactNode } from 'react'
+import { forwardRef, ReactNode } from 'react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
 

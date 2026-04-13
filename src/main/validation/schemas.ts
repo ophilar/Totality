@@ -495,6 +495,30 @@ export const LetterOffsetSchema = z.object({
 // HELPER FUNCTIONS
 // ============================================================================
 
+// ============================================================================
+// TRANSCODING SCHEMAS
+// ============================================================================
+
+export const TranscodeOptionsSchema = z.object({
+  targetCodec: z.enum(['av1', 'hevc']).optional(),
+  preserveSubtitles: z.boolean().optional(),
+  preserveAllAudio: z.boolean().optional(),
+  overwriteOriginal: z.boolean().optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+}).optional()
+
+export const CheckTranscoderAvailabilitySchema = z.any().optional()
+
+export const GetTranscodeParamsSchema = z.tuple([
+  FilePathSchema,
+  TranscodeOptionsSchema
+])
+
+export const TranscodeMediaItemSchema = z.tuple([
+  z.number().int().positive(),
+  TranscodeOptionsSchema
+])
+
 /**
  * Validate and parse input, throwing a descriptive error on failure
  */

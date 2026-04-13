@@ -41,9 +41,9 @@ describe('DeduplicationService (No Mocks)', () => {
   })
 
   it('should scan and detect movie duplicates by TMDB ID', async () => {
-    db.upsertMediaSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
     
-    const id1 = db.upsertMediaItem(createValidItem({
+    const id1 = db.media.upsertItem(createValidItem({
       plex_id: 'p1',
       title: 'Fight Club',
       tmdb_id: '550',
@@ -52,7 +52,7 @@ describe('DeduplicationService (No Mocks)', () => {
       video_bitrate: 5000
     }))
     
-    const id2 = db.upsertMediaItem(createValidItem({
+    const id2 = db.media.upsertItem(createValidItem({
       plex_id: 'p2',
       title: 'Fight Club (4K)',
       tmdb_id: '550',
@@ -63,7 +63,7 @@ describe('DeduplicationService (No Mocks)', () => {
       height: 2160
     }))
 
-    db.upsertMediaItem(createValidItem({
+    db.media.upsertItem(createValidItem({
       plex_id: 'p3',
       title: 'The Matrix',
       tmdb_id: '603'
@@ -72,16 +72,16 @@ describe('DeduplicationService (No Mocks)', () => {
     const count = await service.scanForDuplicates('src1')
     expect(count).toBe(1)
     
-    const duplicates = db.duplicateRepo.getPendingDuplicates('src1')
+    const duplicates = db.duplicates.getPendingDuplicates('src1')
     expect(duplicates).toHaveLength(1)
     expect(JSON.parse(duplicates[0].media_item_ids)).toContain(id1)
     expect(JSON.parse(duplicates[0].media_item_ids)).toContain(id2)
   })
 
   it('should scan and detect episode duplicates', async () => {
-    db.upsertMediaSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
     
-    const id1 = db.upsertMediaItem(createValidItem({
+    const id1 = db.media.upsertItem(createValidItem({
       plex_id: 'e1',
       title: 'Breaking Bad - S01E01',
       type: 'episode',
@@ -90,7 +90,7 @@ describe('DeduplicationService (No Mocks)', () => {
       episode_number: 1
     }))
     
-    const id2 = db.upsertMediaItem(createValidItem({
+    const id2 = db.media.upsertItem(createValidItem({
       plex_id: 'e2',
       title: 'Pilot',
       type: 'episode',
@@ -100,13 +100,13 @@ describe('DeduplicationService (No Mocks)', () => {
     }))
 
     await service.scanForDuplicates('src1')
-    const duplicates = db.duplicateRepo.getPendingDuplicates('src1')
+    const duplicates = db.duplicates.getPendingDuplicates('src1')
     expect(duplicates).toHaveLength(1)
     expect(duplicates[0].external_id).toBe('1396:S1E1')
   })
 
   it('should recommend retention based on scoring policy', () => {
-    const id1 = db.upsertMediaItem(createValidItem({
+    const id1 = db.media.upsertItem(createValidItem({
       plex_id: 'q1',
       resolution: 'SD',
       video_bitrate: 1500,
@@ -114,7 +114,7 @@ describe('DeduplicationService (No Mocks)', () => {
       audio_language: 'en'
     }))
     
-    const id2 = db.upsertMediaItem(createValidItem({
+    const id2 = db.media.upsertItem(createValidItem({
       plex_id: 'q2',
       resolution: '1080p',
       video_bitrate: 8000,
@@ -122,7 +122,7 @@ describe('DeduplicationService (No Mocks)', () => {
       audio_language: 'fr'
     }))
 
-    const id3 = db.upsertMediaItem(createValidItem({
+    const id3 = db.media.upsertItem(createValidItem({
       plex_id: 'q3',
       resolution: '4K',
       video_bitrate: 20000,
@@ -142,18 +142,18 @@ describe('DeduplicationService (No Mocks)', () => {
   })
 
   it('should resolve duplicates and mark as resolved in DB', async () => {
-    db.upsertMediaSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
-    const id1 = db.upsertMediaItem(createValidItem({ plex_id: 'r1', tmdb_id: '1' }))
-    const id2 = db.upsertMediaItem(createValidItem({ plex_id: 'r2', tmdb_id: '1' }))
+    db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'S1', is_enabled: 1 })
+    const id1 = db.media.upsertItem(createValidItem({ plex_id: 'r1', tmdb_id: '1' }))
+    const id2 = db.media.upsertItem(createValidItem({ plex_id: 'r2', tmdb_id: '1' }))
     
     await service.scanForDuplicates('src1')
-    const duplicates = db.duplicateRepo.getPendingDuplicates('src1')
+    const duplicates = db.duplicates.getPendingDuplicates('src1')
     const dupId = duplicates[0].id!
 
     await service.resolveDuplicate(dupId, id2, false)
 
-    const resolved = (db.duplicateRepo as any).getById(dupId)
+    const resolved = (db.duplicates as any).getById(dupId)
     expect(resolved.status).toBe('resolved')
-    expect(db.getMediaItemById(id1)).toBeDefined()
+    expect(db.media.getItem(id1)).toBeDefined()
   })
 })

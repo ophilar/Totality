@@ -30,7 +30,7 @@ export abstract class BaseRepository<T extends { id?: number }> {
   /**
    * Generic count method
    */
-  protected count(whereSql: string = '1=1', params: unknown[] = []): number {
+  protected countInternal(whereSql: string = '1=1', params: unknown[] = []): number {
     const sql = `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${whereSql}`
     const stmt = this.db.prepare(sql)
     const result = stmt.get(...params) as { count: number }

@@ -8,7 +8,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     super(db, 'series_completeness')
   }
 
-  getTVShowSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
+  getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
     let sql = `
       SELECT sc.*, 
              (SELECT COUNT(*) FROM media_items m WHERE m.series_title = sc.series_title AND m.type = 'episode' AND m.source_id = sc.source_id) as current_episodes
@@ -66,7 +66,11 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return stmt.all(...params) as TVShowSummary[]
   }
 
-  countTVShows(filters?: TVShowFilters): number {
+  getTVShowSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
+    return this.getSummaries(filters)
+  }
+
+  count(filters?: TVShowFilters): number {
     let sql = 'SELECT COUNT(*) as count FROM series_completeness WHERE 1=1'
     const params: unknown[] = []
 
@@ -96,7 +100,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return result?.count || 0
   }
 
-  getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
+  getEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
     let sql = `
       SELECT m.*, q.quality_tier, q.tier_quality, q.tier_score, q.efficiency_score, q.storage_debt_bytes
       FROM media_items m
@@ -115,12 +119,25 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return stmt.all(...params) as MediaItem[]
   }
 
-  getSeriesCompletenessByTitle(title: string, sourceId: string, libraryId: string): SeriesCompleteness | null {
-    const sql = 'SELECT * FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
-    return this.queryOne<SeriesCompleteness>(sql, [title, sourceId, libraryId])
+  getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
+    return this.getEpisodes(seriesTitle, sourceId)
   }
 
-  upsertSeriesCompleteness(data: SeriesCompleteness): number {
+  getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null {
+    let sql = 'SELECT * FROM series_completeness WHERE series_title = ?'
+    const params: any[] = [title]
+    if (sourceId) {
+      sql += ' AND source_id = ?'
+      params.push(sourceId)
+    }
+    if (libraryId) {
+      sql += ' AND library_id = ?'
+      params.push(libraryId)
+    }
+    return this.queryOne<SeriesCompleteness>(sql, params)
+  }
+
+  upsertCompleteness(data: SeriesCompleteness): number {
     const stmt = this.db.prepare(`
       INSERT INTO series_completeness (
         series_title, source_id, library_id, total_seasons, total_episodes,
@@ -164,7 +181,11 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return row?.id || 0
   }
 
-  getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
+  upsertSeriesCompleteness(data: SeriesCompleteness): number {
+    return this.upsertCompleteness(data)
+  }
+
+  getAllCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE 1=1'
     const params = []
     if (sourceId) { sql += ' AND source_id = ?'; params.push(sourceId) }
@@ -174,7 +195,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return stmt.all(...params) as SeriesCompleteness[]
   }
 
-  getIncompleteSeries(sourceId?: string): SeriesCompleteness[] {
+  getIncomplete(sourceId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE completeness_percentage < 100'
     const params = []
     if (sourceId) {
@@ -186,7 +207,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return stmt.all(...params) as SeriesCompleteness[]
   }
 
-  deleteSeriesCompleteness(id: number): void {
+  deleteCompleteness(id: number): void {
     this.db.prepare('DELETE FROM series_completeness WHERE id = ?').run(id)
   }
 }

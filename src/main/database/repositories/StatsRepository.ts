@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness } from '../../types/database'
+import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness, MusicCompletenessStats } from '../../types/database'
 
 export class StatsRepository {
   constructor(private db: DatabaseSync) {}
@@ -421,6 +421,37 @@ export class StatsRepository {
     }
   }
 
+  public getCollections(sourceId?: string): MovieCollection[] {
+    let sql = 'SELECT * FROM movie_collections'
+    const params: any[] = []
+    if (sourceId) {
+      sql += ' WHERE source_id = ?'
+      params.push(sourceId)
+    }
+    sql += ' ORDER BY collection_name ASC'
+    return this.db.prepare(sql).all(...params) as unknown as MovieCollection[]
+  }
+
+  public getMovieCollections(sourceId?: string): MovieCollection[] {
+    return this.getCollections(sourceId)
+  }
+
+  public getIncompleteCollections(sourceId?: string): MovieCollection[] {
+    let sql = 'SELECT * FROM movie_collections WHERE completeness_percentage < 100'
+    const params: any[] = []
+    if (sourceId) {
+      sql += ' AND source_id = ?'
+      params.push(sourceId)
+    }
+    sql += ' ORDER BY completeness_percentage ASC'
+    return this.db.prepare(sql).all(...params) as unknown as MovieCollection[]
+  }
+
+  public deleteCollection(id: number): boolean {
+    const result = this.db.prepare('DELETE FROM movie_collections WHERE id = ?').run(id)
+    return Number(result.changes) > 0
+  }
+
   public getCollectionStats(): {
     total: number
     complete: number
@@ -441,5 +472,29 @@ export class StatsRepository {
       totalMissing: missing?.count || 0,
       avgCompleteness: Math.round(avg?.avg || 0)
     }
+  }
+
+  public upsertMovieCollection(data: any) {
+    this.db.prepare(`
+      INSERT INTO movie_collections (
+        tmdb_collection_id, collection_name, source_id, library_id,
+        total_movies, owned_movies, missing_movies, owned_movie_ids,
+        completeness_percentage, poster_url, backdrop_url, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(tmdb_collection_id, source_id, library_id) DO UPDATE SET
+        collection_name = excluded.collection_name,
+        total_movies = excluded.total_movies,
+        owned_movies = excluded.owned_movies,
+        missing_movies = excluded.missing_movies,
+        owned_movie_ids = excluded.owned_movie_ids,
+        completeness_percentage = excluded.completeness_percentage,
+        poster_url = excluded.poster_url,
+        backdrop_url = excluded.backdrop_url,
+        updated_at = datetime('now')
+    `).run(
+      data.tmdb_collection_id, data.collection_name, data.source_id || '', data.library_id || '',
+      data.total_movies, data.owned_movies, data.missing_movies, data.owned_movie_ids,
+      data.completeness_percentage, data.poster_url || null, data.backdrop_url || null
+    )
   }
 }

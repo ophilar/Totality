@@ -8,6 +8,7 @@
 import type { 
   ProviderType, 
   MediaItem as BaseMediaItem,
+  MediaItemVersion as BaseMediaItemVersion,
   MusicArtist as BaseMusicArtist,
   MusicAlbum as BaseMusicAlbum,
   MusicTrack as BaseMusicTrack,
@@ -38,6 +39,7 @@ export type MediaSource = MediaSourceResponse
 // ============================================================================
 
 export type MediaItem = BaseMediaItem
+export type MediaItemVersion = BaseMediaItemVersion
 export type MusicArtist = BaseMusicArtist
 export type MusicAlbum = BaseMusicAlbum
 export type MusicTrack = BaseMusicTrack

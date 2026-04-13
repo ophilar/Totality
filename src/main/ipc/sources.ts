@@ -293,7 +293,7 @@ export function registerSourceHandlers(): void {
       const libraries = await manager.getLibraries(validSourceId)
 
       // Get stored library settings from database
-      const storedLibraries = db.getSourceLibraries(validSourceId) as Array<{
+      const storedLibraries = db.sources.getSourceLibraries(validSourceId) as Array<{
         libraryId: string
         libraryName: string
         libraryType: string
@@ -332,7 +332,7 @@ export function registerSourceHandlers(): void {
       const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggleLibrary')
       getLoggingService().info('[IPC sources:toggleLibrary]', validSourceId, validLibraryId, validEnabled ? 'enabled' : 'disabled')
       const db = getDatabase()
-      await db.toggleLibrary(validSourceId, validLibraryId, validEnabled)
+      await db.sources.toggleLibrary(validSourceId, validLibraryId, validEnabled)
 
       // Notify renderer that library settings changed
       const win = getWindowFromEvent(event)
@@ -357,7 +357,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:setLibrariesEnabled')
       const db = getDatabase()
-      await db.setLibrariesEnabled(validSourceId, libraries)
+      await db.sources.setLibrariesEnabled(validSourceId, libraries)
       return { success: true }
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error setting libraries enabled:', error)
@@ -372,7 +372,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getEnabledLibraryIds')
       const db = getDatabase()
-      return db.getEnabledLibraryIds(validSourceId)
+      return db.sources.getEnabledLibraryIds(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error getting enabled library IDs:', error)
       throw error

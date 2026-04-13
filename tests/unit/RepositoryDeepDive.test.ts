@@ -42,19 +42,19 @@ describe('Repository Deep Dive (No Mocks)', () => {
         resolution: '720p', width: 1280, height: 720, video_codec: 'h264', video_bitrate: 1, audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
       }
 
-      const id1 = mediaRepo.upsertMediaItem(item1)
-      const id2 = mediaRepo.upsertMediaItem(item2)
+      const id1 = mediaRepo.upsertItem(item1)
+      const id2 = mediaRepo.upsertItem(item2)
 
       // 2. Query filters
       expect(mediaRepo.getMediaItems({ type: 'movie' }).length).toBe(1)
       expect(mediaRepo.getMediaItems({ sourceId: 's1' }).length).toBe(2)
-      expect(mediaRepo.getMediaItemByProviderId('p1', 's1')).toBeDefined()
-      expect(mediaRepo.getMediaItemByPath('f1')).toBeDefined()
+      expect(mediaRepo.getItemByProviderId('p1', 's1')).toBeDefined()
+      expect(mediaRepo.getItemByPath('f1')).toBeDefined()
       expect(mediaRepo.getEpisodesForSeries('Show A', 's1').length).toBe(1)
 
       // 3. Updates
-      mediaRepo.updateMediaItemPathAndStats(id1, 'f1_new', { fileSize: 2000, video: { resolution: '4K' } })
-      expect(mediaRepo.getMediaItemById(id1)?.file_path).toBe('f1_new')
+      mediaRepo.updatePathAndStats(id1, 'f1_new', { fileSize: 2000, video: { resolution: '4K' } })
+      expect(mediaRepo.getItem(id1)?.file_path).toBe('f1_new')
 
       // 4. Versions
       db.prepare(`
@@ -66,8 +66,8 @@ describe('Repository Deep Dive (No Mocks)', () => {
 
       // 5. Cleanup
       mediaRepo.delete(id1)
-      expect(mediaRepo.getMediaItemById(id1)).toBeNull()
-      mediaRepo.deleteMediaItemsForSource('s1')
+      expect(mediaRepo.getItem(id1)).toBeNull()
+      mediaRepo.deleteItemsForSource('s1')
       expect(mediaRepo.getMediaItems({}).length).toBe(0)
     })
   })

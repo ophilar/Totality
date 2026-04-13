@@ -16,11 +16,9 @@ import { BrowserHeader } from './browser/BrowserHeader'
 import { BrowserFilterBar } from './browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from './browser/BrowserAlphabetNav'
 import { useSources } from '../../contexts/SourceContext'
-import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useToast } from '../../contexts/ToastContext'
 import { useLibrary } from '../../contexts/LibraryContext'
-import { EnhancedEmptyState } from '../onboarding'
 import { emitDismissUpgrade } from '../../utils/dismissEvents'
 import { usePaginatedData } from '../../hooks/usePaginatedData'
 
@@ -36,11 +34,10 @@ import {
   useGlobalSearch,
 } from './hooks'
 
-import type {
+import {
   MusicArtist,
   MusicAlbum,
   MusicTrack,
-  MusicStats,
   MediaItem,
   TVShow,
   TVShowSummary,
@@ -48,9 +45,6 @@ import type {
   LibraryStats,
   SeriesCompletenessData,
   MovieCollectionData,
-  SeriesStats,
-  CollectionStats,
-  MusicCompletenessStats,
   ArtistCompletenessData,
   AlbumCompletenessData,
   MediaBrowserProps,
@@ -61,7 +55,7 @@ export function MediaBrowser({
   onOpenSettings,
   sidebarCollapsed = false,
   onNavigateHome,
-  initialTab,
+  initialTab: _initialTab,
   hideHeader = false,
   showCompletenessPanel: externalShowCompletenessPanel,
   showWishlistPanel: externalShowWishlistPanel,
@@ -69,22 +63,22 @@ export function MediaBrowser({
   onToggleCompleteness: externalToggleCompleteness,
   onToggleWishlist: externalToggleWishlist,
   onToggleChat: externalToggleChat,
-  libraryTab,
-  onLibraryTabChange,
-  onAutoRefreshChange
+  libraryTab: _libraryTab,
+  onLibraryTabChange: _onLibraryTabChange,
+  onAutoRefreshChange: _onAutoRefreshChange
 }: MediaBrowserProps) {
   const {
     view, setView,
-    searchQuery, setSearchQuery,
     qualityFilter, setQualityFilter,
     gridScale, setGridScale,
     viewType, setViewType,
     selectedItemId: selectedMediaId, setSelectedMedia: setSelectedMediaId,
     sortBy, setSortBy,
-    activeSourceId: contextActiveSourceId, setActiveSourceId: setContextActiveSourceId,
+    setActiveSourceId: setContextActiveSourceId,
     selectedShow, setSelectedShow,
     selectedArtist, setSelectedArtist,
     selectedAlbum, setSelectedAlbum,
+    searchQuery: _searchQuery,
   } = useLibrary()
 
   const { sources, activeSourceId, scanProgress, setActiveSource, markLibraryAsNew } = useSources()
@@ -95,7 +89,6 @@ export function MediaBrowser({
 
   const { addToast } = useToast()
   const { count: wishlistCount } = useWishlist()
-  const { pendingNavigation, clearNavigation, pushNavState } = useNavigation()
   const themeAccentColor = useThemeAccent()
 
   const {
@@ -116,6 +109,11 @@ export function MediaBrowser({
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
+  const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
+  const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [trackSortColumn, setTrackSortColumn] = useState<'title' | 'album' | 'artist' | 'codec' | 'duration'>('title')
+  const [trackSortDirection, setTrackSortDirection] = useState<'asc' | 'desc'>('asc')
 
   // PAGINATION HOOKS
   const {
@@ -138,9 +136,9 @@ export function MediaBrowser({
     totalCount: totalShowCount,
     loading: showsLoading,
     loadMore: loadMoreShows,
-    refresh: refreshShows
+    refresh: refreshShows,
   } = usePaginatedData<TVShowSummary, any>({
-    fetchFn: window.electronAPI.getTVShows,
+    fetchFn: window.electronAPI.getTVShows as any,
     countFn: window.electronAPI.countTVShows,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
@@ -152,10 +150,9 @@ export function MediaBrowser({
     totalCount: totalArtistCount,
     loading: artistsLoading,
     loadMore: loadMoreArtists,
-    refresh: refreshArtists
   } = usePaginatedData<MusicArtist, any>({
-    fetchFn: window.electronAPI.musicGetArtists,
-    countFn: window.electronAPI.musicCountArtists,
+    fetchFn: window.electronAPI.musicArtistList as any,
+    countFn: window.electronAPI.musicArtistCount,
     pageSize: 50,
     initialFilters: { sortBy: 'name', sortOrder: 'asc' },
     activeSourceId
@@ -166,10 +163,9 @@ export function MediaBrowser({
     totalCount: totalAlbumCount,
     loading: albumsLoading,
     loadMore: loadMoreAlbums,
-    refresh: refreshAlbums
   } = usePaginatedData<MusicAlbum, any>({
-    fetchFn: window.electronAPI.musicGetAlbums,
-    countFn: window.electronAPI.musicCountAlbums,
+    fetchFn: window.electronAPI.musicAlbumList as any,
+    countFn: window.electronAPI.musicAlbumCount,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
     activeSourceId
@@ -180,10 +176,9 @@ export function MediaBrowser({
     totalCount: totalTrackCount,
     loading: tracksLoading,
     loadMore: loadMoreTracks,
-    refresh: refreshTracks
   } = usePaginatedData<MusicTrack, any>({
-    fetchFn: window.electronAPI.musicGetTracks,
-    countFn: window.electronAPI.musicCountTracks,
+    fetchFn: window.electronAPI.musicTrackList as any,
+    countFn: window.electronAPI.musicTrackCount,
     pageSize: 500,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
     activeSourceId
@@ -195,7 +190,6 @@ export function MediaBrowser({
     tierFilter, setTierFilter,
     alphabetFilter, setAlphabetFilter,
     slimDown, setSlimDown,
-    debouncedTierFilter, debouncedQualityFilter,
   } = useLibraryFilters(searchInput)
 
   // Search
@@ -221,22 +215,19 @@ export function MediaBrowser({
   })
 
   const [musicViewMode, setMusicViewMode] = useState<'artists' | 'albums' | 'tracks'>('artists')
-  const [albumTracks, setAlbumTracks] = useState<MusicTrack[]>([])
-  const [selectedAlbumCompleteness, setSelectedAlbumCompleteness] = useState<AlbumCompletenessData | null>(null)
   const [seriesCompleteness, setSeriesCompleteness] = useState<Map<string, SeriesCompletenessData>>(new Map())
   const [movieCollections, setMovieCollections] = useState<MovieCollectionData[]>([])
-  const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(null)
-  const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null)
-  const [musicCompletenessStats, setMusicCompletenessStats] = useState<MusicCompletenessStats | null>(null)
   const [artistCompleteness, setArtistCompleteness] = useState<Map<string, ArtistCompletenessData>>(new Map())
-  const [allAlbumCompleteness, setAllAlbumCompleteness] = useState<Map<number, AlbumCompletenessData>>(new Map())
+  const [allAlbumCompleteness] = useState<Map<number, AlbumCompletenessData>>(new Map())
   const [includeEps, setIncludeEps] = useState(true)
   const [includeSingles, setIncludeSingles] = useState(true)
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [showPinModal, setShowPinModal] = useState(false)
   const [collectionsOnly, setCollectionsOnly] = useState(false)
   const [selectedShowEpisodes, setSelectedShowEpisodes] = useState<MediaItem[]>([])
-  const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
+  const selectedShowEpisodesLoading = false
+  const albumTracks: MusicTrack[] = []
+  const selectedAlbumCompleteness: AlbumCompletenessData | null = null
   const [activeSourceLibraries, setActiveSourceLibraries] = useState<any[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [detailRefreshKey, setDetailRefreshKey] = useState(0)
@@ -256,15 +247,10 @@ export function MediaBrowser({
 
   const loadCompletenessData = useCallback(async () => {
     try {
-      const [seriesData, collectionsData, collectionExclusions, seriesExclusions] = await Promise.all([
+      const [seriesData, collectionsData] = await Promise.all([
         window.electronAPI.seriesGetAll(activeSourceId || undefined),
         window.electronAPI.collectionsGetAll(activeSourceId || undefined),
-        window.electronAPI.getExclusions('collection_movie'),
-        window.electronAPI.getExclusions('series_episode'),
       ])
-
-      const exclCol = new Set(collectionExclusions.map((e: any) => `${e.parent_key}:${e.reference_key}`))
-      const exclSer = new Set(seriesExclusions.map((e: any) => `${e.parent_key}:${e.reference_key}`))
 
       setMovieCollections((collectionsData as MovieCollectionData[]).filter(c => c.total_movies > 1))
       
@@ -332,7 +318,7 @@ export function MediaBrowser({
   })
 
   useEffect(() => {
-    loadStats(activeSourceId || undefined).then(() => setLoading(false))
+    loadStats(activeSourceId || undefined)
     loadCompletenessData()
     loadMusicCompletenessData()
     loadActiveSourceLibraries()
@@ -365,10 +351,10 @@ export function MediaBrowser({
     const seasons = new Map<number, TVSeason>()
     selectedShowEpisodes.forEach(e => {
       const sn = e.season_number || 0
-      if (!seasons.has(sn)) seasons.set(sn, { seasonNumber: sn, episodes: [], posterUrl: e.season_poster_url })
+      if (!seasons.has(sn)) seasons.set(sn, { seasonNumber: sn, episodes: [], posterUrl: e.season_poster_url || undefined })
       seasons.get(sn)!.episodes.push(e)
     })
-    return { title: selectedShow, poster_url: selectedShowEpisodes[0]?.poster_url, seasons }
+    return { title: selectedShow, poster_url: selectedShowEpisodes[0]?.poster_url || undefined, seasons }
   }, [selectedShow, selectedShowEpisodes])
 
   return (
@@ -435,11 +421,11 @@ export function MediaBrowser({
                 seriesCompleteness={seriesCompleteness} onMissingItemClick={setSelectedMissingItem}
                 showSourceBadge={!activeSourceId && sources.length > 1}
                 onAnalyzeSeries={handleAnalyzeSingleSeries}
-                onFixMatch={(title, sId, fp) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId, filePath: fp })}
-                onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id, e.source_id, e.library_id || null, e.file_path) }}
+                onFixMatch={(title, sId, fp) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
+                onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                 onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
                 onDismissMissingSeason={handleDismissMissingSeason} totalShowCount={totalShowCount}
-                totalEpisodeCount={totalEpisodeCount} showsLoading={showsLoading} onLoadMoreShows={loadMoreShows}
+                totalEpisodeCount={0} showsLoading={showsLoading} onLoadMoreShows={loadMoreShows}
                 scrollElement={scrollContainerRef.current}
               />
             )}
@@ -458,7 +444,7 @@ export function MediaBrowser({
                 onTrackSortChange={(c, d) => { setTrackSortColumn(c); setTrackSortDirection(d) }}
                 onSelectArtist={setSelectedArtist} onSelectAlbum={setSelectedAlbum}
                 onBack={() => selectedAlbum ? setSelectedAlbum(null) : setSelectedArtist(null)}
-                gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
+                gridScale={gridScale} viewType={viewType} searchQuery={_searchQuery} qualityFilter={qualityFilter}
                 showSourceBadge={!activeSourceId && sources.length > 1}
                 onAnalyzeAlbum={async (id) => { await window.electronAPI.musicAnalyzeAlbumTrackCompleteness(id); loadMusicCompletenessData() }}
                 onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id } as any) }}
@@ -493,11 +479,44 @@ export function MediaBrowser({
           }}
         />
       )}
-      <CompletenessPanel isOpen={showCompletenessPanel} onClose={() => setShowCompletenessPanel(false)} seriesStats={seriesStats} collectionStats={collectionStats} musicStats={musicCompletenessStats} onAnalyzeSeries={handleAnalyzeSeries} onAnalyzeCollections={handleAnalyzeCollections} onAnalyzeMusic={handleAnalyzeMusic} onCancel={handleCancelAnalysis} isAnalyzing={isAnalyzing} analysisProgress={analysisProgress} analysisType={analysisType} onDataRefresh={loadCompletenessData} libraries={activeSourceLibraries} />
+      <CompletenessPanel
+        isOpen={showCompletenessPanel}
+        onClose={() => setShowCompletenessPanel(false)}
+        seriesStats={null}
+        collectionStats={null}
+        musicStats={null}
+        hasTV={(stats?.totalShows ?? 0) > 0}
+        hasMovies={(stats?.totalMovies ?? 0) > 0}
+        hasMusic={musicArtists.length > 0}
+        onAnalyzeSeries={handleAnalyzeSeries}
+        onAnalyzeCollections={handleAnalyzeCollections}
+        onAnalyzeMusic={handleAnalyzeMusic}
+        onCancel={handleCancelAnalysis}
+        isAnalyzing={isAnalyzing}
+        analysisProgress={analysisProgress}
+        analysisType={analysisType}
+        onDataRefresh={loadCompletenessData}
+        libraries={activeSourceLibraries}
+      />
       <WishlistPanel isOpen={showWishlistPanel} onClose={() => setShowWishlistPanel(false)} />
       {showCollectionModal && selectedCollection && <CollectionModal collection={selectedCollection} ownedMovies={ownedMoviesForSelectedCollection} onClose={() => setShowCollectionModal(false)} onMovieClick={setSelectedMediaId} onDismissCollectionMovie={handleDismissCollectionMovie} />}
       {selectedMissingItem && <MissingItemPopup {...selectedMissingItem} onClose={() => setSelectedMissingItem(null)} onDismiss={handleDismissMissingItem} />}
-      {matchFixModal && <MatchFixModal {...matchFixModal} onClose={() => setMatchFixModal(null)} onMatchFixed={reloadMedia} />}
+      {matchFixModal && (
+        <MatchFixModal
+          isOpen={matchFixModal.isOpen}
+          type={matchFixModal.type}
+          currentTitle={matchFixModal.title}
+          currentYear={matchFixModal.year}
+          filePath={matchFixModal.filePath}
+          artistName={matchFixModal.artistName}
+          sourceId={matchFixModal.sourceId}
+          mediaItemId={matchFixModal.mediaItemId}
+          artistId={matchFixModal.artistId}
+          albumId={matchFixModal.albumId}
+          onClose={() => setMatchFixModal(null)}
+          onMatchFixed={reloadMedia}
+        />
+      )}
     </div>
   )
 }

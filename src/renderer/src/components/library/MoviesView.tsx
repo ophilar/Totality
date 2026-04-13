@@ -90,7 +90,7 @@ export function MoviesView({
     for (const movie of movies) {
       const collection = getCollectionForMovie(movie)
       if (collection) {
-        moviesInCollections.add(movie.id)
+        moviesInCollections.add(movie.id!)
         const existing = collectionMovieMap.get(collection.tmdb_collection_id) || []
         existing.push(movie)
         collectionMovieMap.set(collection.tmdb_collection_id, existing)
@@ -108,7 +108,7 @@ export function MoviesView({
 
     if (!collectionsOnly) {
       for (const movie of movies) {
-        if (!moviesInCollections.has(movie.id)) {
+        if (!moviesInCollections.has(movie.id!)) {
           items.push({ type: 'movie', movie })
         }
       }
@@ -208,17 +208,17 @@ export function MoviesView({
             />
           </div>
         ) : (
-          <div key={`mov-${item.movie.id}`}>
+          <div key={`mov-${item.movie.id!}`}>
             <MovieCard
               movie={item.movie}
-              onClick={() => onSelectMovie(item.movie.id, item.movie)}
+              onClick={() => onSelectMovie(item.movie.id!, item.movie)}
               showSourceBadge={showSourceBadge}
               collectionData={getCollectionForMovie(item.movie)}
-              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id!, item.movie.title, item.movie.year || undefined, item.movie.file_path || undefined) : undefined}
+              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id!, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
               onDismissUpgrade={onDismissUpgrade}
-              isExpanded={expandedRecommendations.has(item.movie.id)}
-              onToggleOptimize={() => toggleRecommendation(item.movie.id)}
+              isExpanded={expandedRecommendations.has(item.movie.id!)}
+              onToggleOptimize={() => toggleRecommendation(item.movie.id!)}
             />
           </div>
         )
@@ -232,17 +232,17 @@ export function MoviesView({
             />
           </div>
         ) : (
-          <div key={`mov-l-${item.movie.id}`}>
+          <div key={`mov-l-${item.movie.id!}`}>
             <MovieListItem
               movie={item.movie}
-              onClick={() => onSelectMovie(item.movie.id, item.movie)}
+              onClick={() => onSelectMovie(item.movie.id!, item.movie)}
               showSourceBadge={showSourceBadge}
               collectionData={getCollectionForMovie(item.movie)}
-              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id!, item.movie.title, item.movie.year || undefined, item.movie.file_path || undefined) : undefined}
+              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id!, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
               onDismissUpgrade={onDismissUpgrade}
-              isExpanded={expandedRecommendations.has(item.movie.id)}
-              onToggleOptimize={() => toggleRecommendation(item.movie.id)}
+              isExpanded={expandedRecommendations.has(item.movie.id!)}
+              onToggleOptimize={() => toggleRecommendation(item.movie.id!)}
             />
           </div>
         )
@@ -492,11 +492,15 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate(movie.video_bitrate || 0)}</div>
         <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes(movie.file_size || 0)}</div>
         <div className="text-center">
-          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${movie.efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' : movie.efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
-            {movie.efficiency_score || 0}%
+          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${(movie.efficiency_score ?? 0) >= 85 ? 'bg-green-500/20 text-green-500' : (movie.efficiency_score ?? 0) >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
+            {(movie.efficiency_score ?? 0)}%
           </div>
         </div>
-        <div className="text-right"><span className={`text-xs font-medium ${movie.storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>{movie.storage_debt_bytes > 0 ? formatBytes(movie.storage_debt_bytes) : '-'}</span></div>
+        <div className="text-right">
+          <span className={`text-xs font-medium ${(movie.storage_debt_bytes ?? 0) > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+            {(movie.storage_debt_bytes ?? 0) > 0 ? formatBytes(movie.storage_debt_bytes ?? 0) : '-'}
+          </span>
+        </div>
         <div className="relative flex justify-center">
           {showMenuButton && (
             <div ref={menuRef}>

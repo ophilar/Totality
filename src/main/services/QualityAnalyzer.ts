@@ -115,7 +115,7 @@ export class QualityAnalyzer {
       const db = getDatabase()
 
       // Batch load all quality settings in a single query
-      const qualitySettings = db.getSettingsByPrefix('quality_')
+      const qualitySettings = db.config.getSettingsByPrefix('quality_')
 
       const getNum = (key: string, defaultVal: number): number => {
         const val = qualitySettings[key]
@@ -677,7 +677,7 @@ export class QualityAnalyzer {
     onProgress?: (current: number, total: number) => void
   ): Promise<number> {
     const db = getDatabase()
-    const mediaItems = db.getMediaItems()
+    const mediaItems = db.media.getItems()
 
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
@@ -685,12 +685,12 @@ export class QualityAnalyzer {
 
     getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
-    db.startBatch()
+    db.beginBatch()
     try {
       for (const item of mediaItems) {
         try {
           const qualityScore = await this.analyzeMediaItem(item)
-          await db.upsertQualityScore(qualityScore)
+          await db.media.upsertQualityScore(qualityScore)
 
           // Track distribution for verbose summary
           const tier = qualityScore.quality_tier || 'SD'
@@ -700,14 +700,14 @@ export class QualityAnalyzer {
 
           // Score individual versions and update best version selection
           if (item.id && item.version_count && item.version_count > 1) {
-            const versions = db.getMediaItemVersions(item.id)
+            const versions = db.media.getItemVersions(item.id)
             for (const version of versions) {
               if (version.id) {
                 const vScore = this.analyzeVersion(version)
-                db.updateMediaItemVersionQuality(version.id, vScore)
+                db.media.updateVersionQuality(version.id, vScore)
               }
             }
-            db.updateBestVersion(item.id)
+            db.media.updateBestVersion(item.id)
           }
 
           analyzed++
@@ -745,7 +745,7 @@ export class QualityAnalyzer {
     }
   } {
     const db = getDatabase()
-    const scores = db.getQualityScores()
+    const scores = db.media.getQualityScores()
 
     const distribution = {
       byTier: {

@@ -71,7 +71,7 @@ export class AutoUpdateService {
           : undefined,
       })
       try {
-        getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
+        getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
       } catch (e) { throw e; }
     })
 
@@ -101,7 +101,7 @@ export class AutoUpdateService {
         lastChecked: new Date().toISOString(),
       })
       try {
-        getDatabaseServiceSync().createNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
+        getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
       } catch (e) { throw e; }
     })
 

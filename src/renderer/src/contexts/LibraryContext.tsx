@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
 import type { MediaViewType, ViewType, QualityFilter } from '../components/library/types'
 
 interface LibraryContextType {

@@ -913,9 +913,9 @@ export class MusicBrainzService extends CancellableOperation {
     const artistFilters = sourceId ? { sourceId } : undefined
     const albumFilters = sourceId ? { sourceId } : undefined
 
-    const artists = db.getMusicArtists(artistFilters)
-    const allSourceAlbums = db.getMusicAlbums(albumFilters) as MusicAlbum[]
-    const allSourceTracks = db.getMusicTracks(albumFilters) as any[]
+    const artists = db.music.getArtists(artistFilters)
+    const allSourceAlbums = db.music.getAlbums(albumFilters) as MusicAlbum[]
+    const allSourceTracks = db.music.getTracks(albumFilters) as any[]
 
     // Group albums by artist_id for fast lookup
     const albumsByArtist = new Map<number, MusicAlbum[]>()
@@ -940,13 +940,13 @@ export class MusicBrainzService extends CancellableOperation {
     const existingAlbumCompleteness = new Map<number, string>()   // album_id -> last_sync_at
 
     if (skipRecentlyAnalyzed) {
-      const allArtistCompleteness = db.getAllArtistCompleteness()
+      const allArtistCompleteness = db.music.getAllArtistCompleteness()
       for (const ac of allArtistCompleteness) {
         if (ac.last_sync_at) {
           existingArtistCompleteness.set(ac.artist_name, ac.last_sync_at)
         }
       }
-      const allAlbumCompleteness = db.getAllAlbumCompleteness()
+      const allAlbumCompleteness = db.music.getAllAlbumCompleteness()
       for (const ac of allAlbumCompleteness) {
         if (ac.last_sync_at && ac.album_id) {
           existingAlbumCompleteness.set(ac.album_id, ac.last_sync_at)
@@ -1024,12 +1024,12 @@ export class MusicBrainzService extends CancellableOperation {
             filterVinylOnly
           )
 
-          await db.upsertArtistCompleteness(completeness)
+          await db.music.upsertArtistCompleteness(completeness)
 
           // Cache the found MBID if we discovered one (and artist doesn't already have one)
           if (completeness.foundMbId && !artist.musicbrainz_id && artist.id) {
             try {
-              await db.updateMusicArtistMbid(artist.id, completeness.foundMbId)
+              await db.music.updateMusicArtistMbid(artist.id, completeness.foundMbId)
               getLoggingService().info('[MusicBrainzService]', `Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
             } catch (e) {
               // Silently ignore - method may not exist yet
@@ -1090,12 +1090,12 @@ export class MusicBrainzService extends CancellableOperation {
           )
 
           if (completeness) {
-            await db.upsertAlbumCompleteness(completeness)
+            await db.music.upsertAlbumCompleteness(completeness)
 
             // Cache the found MBID if we discovered one (and album doesn't already have one)
             if (completeness.foundMbId && !album.musicbrainz_id && album.id) {
               try {
-                await db.updateMusicAlbumMbid(album.id, completeness.foundMbId)
+                await db.music.updateMusicAlbumMbid(album.id, completeness.foundMbId)
                 getLoggingService().info('[MusicBrainzService]', `Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
               } catch (e) {
                 // Silently ignore - method may not exist yet
@@ -1152,9 +1152,9 @@ export class MusicBrainzService extends CancellableOperation {
       const artworkUrl = await this.getCoverArtUrl(releaseGroupId)
 
       if (artworkUrl) {
-        await db.updateMusicAlbumArtwork(album.source_id, album.provider_id, {
+        await db.music.updateMusicAlbumArtwork(album.source_id, album.provider_id, {
           thumbUrl: artworkUrl,
-          artUrl: this.buildCoverArtUrl(releaseGroupId, '1200'), // Large version for art_url
+          artUrl: this.buildCoverArtUrl(releaseGroupId, '1200'),
         })
         getLoggingService().info('[MusicBrainzService]', `Updated artwork for "${album.artist_name} - ${album.title}"`)
       }

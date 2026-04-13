@@ -8,7 +8,7 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     super(db, 'wishlist_items')
   }
 
-  getWishlistItems(filters?: WishlistFilters): WishlistItem[] {
+  getItems(filters?: WishlistFilters): WishlistItem[] {
     let sql = 'SELECT * FROM wishlist_items WHERE 1=1'
     const params: unknown[] = []
 
@@ -46,6 +46,10 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
 
     const stmt = this.db.prepare(sql)
     return stmt.all(...params) as WishlistItem[]
+  }
+
+  getWishlistItems(filters?: WishlistFilters): WishlistItem[] {
+    return this.getItems(filters)
   }
 
   getWishlistItemByTmdbId(tmdbId: string): WishlistItem | null {
@@ -93,6 +97,22 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     return row?.id || 0
   }
 
+  addMany(items: Array<Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>>): number {
+    let count = 0
+    this.db.exec('BEGIN DEFERRED')
+    try {
+      for (const item of items) {
+        this.add(item)
+        count++
+      }
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+    return count
+  }
+
   update(id: number, updates: Partial<WishlistItem>): void {
     const fields: string[] = []
     const params: unknown[] = []
@@ -133,7 +153,7 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     return false
   }
 
-  getWishlistCount(): number {
+  getCount(): number {
     return (this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items').get() as any)?.count || 0
   }
 

@@ -38,7 +38,7 @@ describe('Database Constraint Validation', () => {
 
   it('should successfully upsert a quality score with minimal data using the updated service', () => {
     // First, add a media item
-    const mediaId = mediaRepo.upsertMediaItem({
+    const mediaId = mediaRepo.upsertItem({
       source_id: 'src-1',
       source_type: 'plex',
       plex_id: 'item-1',
@@ -59,7 +59,7 @@ describe('Database Constraint Validation', () => {
 
     // Upsert quality score with only basic fields
     // The service should provide defaults for the NOT NULL columns
-    const scoreId = service.upsertQualityScore({
+    const scoreId = service.media.upsertQualityScore({
       media_item_id: mediaId,
       overall_score: 85,
       needs_upgrade: false
@@ -74,7 +74,7 @@ describe('Database Constraint Validation', () => {
   })
 
   it('should successfully sync media item versions with full metadata', () => {
-    const mediaId = mediaRepo.upsertMediaItem({
+    const mediaId = mediaRepo.upsertItem({
       source_id: 'src-1',
       source_type: 'plex',
       plex_id: 'item-2',
@@ -113,7 +113,7 @@ describe('Database Constraint Validation', () => {
       }
     ]
 
-    service.syncMediaItemVersions(mediaId, versions)
+    service.media.syncItemVersions(mediaId, versions)
 
     const savedVersion = db.prepare('SELECT * FROM media_item_versions WHERE media_item_id = ?').get(mediaId) as any
     expect(savedVersion).toBeDefined()

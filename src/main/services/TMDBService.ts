@@ -731,8 +731,8 @@ export class TMDBService {
           }
 
           if (tmdbId && item.id) {
-            if (type === 'movie') db.mediaRepo.updateMovieWithTMDBId(item.id, tmdbId)
-            else db.mediaRepo.updateSeriesMatch(item.series_title || item.title, item.source_id, tmdbId)
+            if (type === 'movie') db.media.updateMovieWithTMDBId(item.id, tmdbId)
+            else db.media.updateSeriesMatch(item.series_title || item.title, item.source_id, tmdbId)
             return { success: true }
           }
           return { success: false }

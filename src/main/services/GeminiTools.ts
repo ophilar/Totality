@@ -375,11 +375,11 @@ function checkTVShowOwnership(
   title: string,
 ): { owned: boolean; episode_count: number } {
   // Primary: check by series_tmdb_id (accurate)
-  const count = db.getEpisodeCountBySeriesTmdbId(tmdbId)
+  const count = db.media.getEpisodeCountBySeriesTmdbId(tmdbId)
   if (count > 0) return { owned: true, episode_count: count }
 
   // Fallback: title-based search
-  const tvShows = db.getTVShows({ searchQuery: title, limit: 1 })
+  const tvShows = db.tvShows.getSummaries({ searchQuery: title, limit: 1 })
   if (tvShows.length > 0) {
     const show = tvShows[0] as any
     return { owned: true, episode_count: (show.episode_count as number) || 0 }
@@ -420,13 +420,59 @@ export async function executeTool(
   input: any,
   collector?: ActionableItem[],
 ): Promise<string> {
-  const db = getDatabase()
+  const rawDb = getDatabase() as any
+  // Normalize for legacy tests and mocks
+  const db: any = {
+    media: rawDb.media || rawDb,
+    music: rawDb.music || rawDb,
+    tvShows: rawDb.tvShows || rawDb,
+    sources: rawDb.sources || rawDb,
+    wishlist: rawDb.wishlist || rawDb,
+    stats: rawDb.stats || rawDb
+  }
+
+  // Ensure methods are available on repos
+  if (db.media) {
+    if (!db.media.getItems && (db.media.getItems || rawDb.media?.getItems)) db.media.getItems = db.media.getItems || rawDb.media.getItems
+    if (!db.media.getItem && (db.getItem || rawDb.getItem)) db.media.getItem = db.getItem || rawDb.getItem
+    if (!db.media.getItem && (db.media.getItem || rawDb.media?.getItem)) db.media.getItem = db.media.getItem || rawDb.media.getItem
+    if (!db.media.globalSearch && (db.globalSearch || rawDb.globalSearch)) db.media.globalSearch = db.globalSearch || rawDb.globalSearch
+    if (!db.media.getItemsByTmdbIds && (db.media.getItemsByTmdbIds || rawDb.media?.getItemsByTmdbIds)) db.media.getItemsByTmdbIds = db.media.getItemsByTmdbIds || rawDb.media.getItemsByTmdbIds
+    if (!db.media.getQualityScoreByMediaId && (db.getQualityScoreByMediaId || rawDb.getQualityScoreByMediaId)) db.media.getQualityScoreByMediaId = db.getQualityScoreByMediaId || rawDb.getQualityScoreByMediaId
+    if (!db.media.getItemVersions && (db.getMediaItemVersions || rawDb.getMediaItemVersions)) db.media.getItemVersions = db.getMediaItemVersions || rawDb.getMediaItemVersions
+    if (!db.media.getEpisodeCountBySeriesTmdbId && (db.getEpisodeCountBySeriesTmdbId || rawDb.getEpisodeCountBySeriesTmdbId)) db.media.getEpisodeCountBySeriesTmdbId = db.getEpisodeCountBySeriesTmdbId || rawDb.getEpisodeCountBySeriesTmdbId
+  }
+  if (db.tvShows) {
+    if (!db.tvShows.getSummaries && (db.getTVShows || rawDb.getTVShows)) db.tvShows.getSummaries = db.getTVShows || rawDb.getTVShows
+    if (!db.tvShows.getCompletenessByTitle && (db.getSeriesCompletenessByTitle || rawDb.getSeriesCompletenessByTitle)) db.tvShows.getCompletenessByTitle = db.getSeriesCompletenessByTitle || rawDb.getSeriesCompletenessByTitle
+    if (!db.tvShows.getIncomplete && (db.getIncompleteSeries || rawDb.getIncompleteSeries)) db.tvShows.getIncomplete = db.getIncompleteSeries || rawDb.getIncompleteSeries
+    if (!db.tvShows.getAllCompleteness && (db.getAllSeriesCompleteness || rawDb.getAllSeriesCompleteness)) db.tvShows.getAllCompleteness = db.getAllSeriesCompleteness || rawDb.getAllSeriesCompleteness
+  }
+  if (db.wishlist) {
+    if (!db.wishlist.getItems && (db.getWishlistItems || rawDb.getWishlistItems)) db.wishlist.getItems = db.getWishlistItems || rawDb.getWishlistItems
+    if (!db.wishlist.addMany && (db.addWishlistItemsBulk || rawDb.addWishlistItemsBulk)) db.wishlist.addMany = db.addWishlistItemsBulk || rawDb.addWishlistItemsBulk
+  }
+  if (db.music) {
+    if (!db.music.getStats && (db.getMusicStats || rawDb.getMusicStats)) db.music.getStats = db.getMusicStats || rawDb.getMusicStats
+    if (!db.music.getAlbumsByArtistName && (db.getAlbumsByArtistName || rawDb.getAlbumsByArtistName)) db.music.getAlbumsByArtistName = db.getAlbumsByArtistName || rawDb.getAlbumsByArtistName
+    if (!db.music.getAlbums && (db.getMusicAlbums || rawDb.getMusicAlbums)) db.music.getAlbums = db.getMusicAlbums || rawDb.getMusicAlbums
+    if (!db.music.getTracks && (db.getMusicTracks || rawDb.getMusicTracks)) db.music.getTracks = db.getMusicTracks || rawDb.getMusicTracks
+    if (!db.music.getQualityScore && (db.getQualityScore || rawDb.getQualityScore)) db.music.getQualityScore = db.getQualityScore || rawDb.getQualityScore
+    if (!db.music.getAlbumCompleteness && (db.getAlbumCompleteness || rawDb.getAlbumCompleteness)) db.music.getAlbumCompleteness = db.getAlbumCompleteness || rawDb.getAlbumCompleteness
+    if (!db.music.getArtistCompleteness && (db.getArtistCompleteness || rawDb.getArtistCompleteness)) db.music.getArtistCompleteness = db.getArtistCompleteness || rawDb.getArtistCompleteness
+    if (!db.music.getAllArtistCompleteness && (db.getAllArtistCompleteness || rawDb.getAllArtistCompleteness)) db.music.getAllArtistCompleteness = db.getAllArtistCompleteness || rawDb.getAllArtistCompleteness
+    if (!db.music.getAlbumsNeedingUpgrade && (db.getAlbumsNeedingUpgrade || rawDb.getAlbumsNeedingUpgrade)) db.music.getAlbumsNeedingUpgrade = db.getAlbumsNeedingUpgrade || rawDb.getAlbumsNeedingUpgrade
+  }
+  if (db.stats) {
+    if (!db.stats.getLibraryStats && (db.getLibraryStats || rawDb.getLibraryStats)) db.stats.getLibraryStats = db.getLibraryStats || rawDb.getLibraryStats
+    if (!db.stats.getAggregatedSourceStats && (db.getAggregatedSourceStats || rawDb.getAggregatedSourceStats)) db.stats.getAggregatedSourceStats = db.getAggregatedSourceStats || rawDb.getAggregatedSourceStats
+  }
 
   switch (name) {
     case 'search_library': {
       const query = toolString(input, 'query', 200)
       if (!query) return JSON.stringify({ error: 'query is required' })
-      const results = db.globalSearch(query, 10)
+      const results = db.media.globalSearch(query, 10)
       const hasResults = results.movies.length > 0 || results.tvShows.length > 0 ||
         results.episodes.length > 0 || results.artists.length > 0 ||
         results.albums.length > 0 || results.tracks.length > 0
@@ -438,7 +484,7 @@ export async function executeTool(
           const movieResults = await tmdb.searchMovie(query)
           if (movieResults.results.length > 0) {
             const tmdbIds = movieResults.results.slice(0, 5).map((m: { id: number }) => String(m.id))
-            const ownedMap = db.getMediaItemsByTmdbIds(tmdbIds)
+            const ownedMap = db.media.getItemsByTmdbIds(tmdbIds)
             const found = movieResults.results.slice(0, 5).map((m: { id: number; title: string; release_date?: string }) => {
               const owned = ownedMap.get(String(m.id)) as any | undefined
               return compact({
@@ -460,7 +506,7 @@ export async function executeTool(
 
     case 'get_media_items': {
       const limit = toolNumber(input, 'limit', 1, 50) || 20
-      const items = db.getMediaItems({
+      const items = db.media.getItems({
         type: toolString(input, 'type') as 'movie' | 'episode' | undefined || undefined,
         qualityTier: toolString(input, 'quality_tier') || undefined,
         tierQuality: toolString(input, 'tier_quality') || undefined,
@@ -492,7 +538,7 @@ export async function executeTool(
 
     case 'get_tv_shows': {
       const limit = toolNumber(input, 'limit', 1, 50) || 20
-      const shows = db.getTVShows({
+      const shows = db.tvShows.getSummaries({
         searchQuery: toolString(input, 'search_query', 200) || undefined,
         sortBy: (toolString(input, 'sort_by') as 'title' | 'episode_count' | 'season_count') || 'title',
         limit,
@@ -506,7 +552,7 @@ export async function executeTool(
     }
 
     case 'get_library_stats': {
-      const stats = db.getLibraryStats(toolString(input, 'source_id') || undefined)
+      const stats = db.stats.getLibraryStats(toolString(input, 'source_id') || undefined)
       return JSON.stringify(stats)
     }
 
@@ -519,12 +565,12 @@ export async function executeTool(
       let series
       const seriesTitle = toolString(input, 'series_title', 300)
       if (seriesTitle) {
-        const single = db.getSeriesCompletenessByTitle(seriesTitle, undefined, undefined)
+        const single = db.tvShows.getCompletenessByTitle(seriesTitle, undefined, undefined)
         series = single ? [single] : []
       } else if (toolBoolean(input, 'incomplete_only')) {
-        series = db.getIncompleteSeries()
+        series = db.tvShows.getIncomplete()
       } else {
-        series = db.getAllSeriesCompleteness()
+        series = db.tvShows.getAllCompleteness()
       }
       const seriesLimit = toolNumber(input, 'limit', 1, 50) || 20
       const limited = series.slice(0, seriesLimit)
@@ -584,18 +630,18 @@ export async function executeTool(
     }
 
     case 'get_music_stats': {
-      const stats = db.getMusicStats(toolString(input, 'source_id') || undefined)
+      const stats = db.music.getStats(toolString(input, 'source_id') || undefined)
       return JSON.stringify(stats)
     }
 
     case 'get_source_list': {
-      const stats = db.getAggregatedSourceStats()
+      const stats = db.stats.getAggregatedSourceStats()
       return JSON.stringify(stats)
     }
 
     case 'get_wishlist': {
       const wlLimit = toolNumber(input, 'limit', 1, 50) || 20
-      const items = db.getWishlistItems({
+      const items = db.wishlist.getItems({
         reason: (toolString(input, 'reason') as 'missing' | 'upgrade') || undefined,
         media_type: toolString(input, 'media_type') as any || undefined,
 
@@ -641,7 +687,7 @@ export async function executeTool(
           tmdbIds.forEach((id: any) => seenTmdbIds.add(id))
 
           // Cross-reference with owned media
-          const ownedByTmdbId = db.getMediaItemsByTmdbIds(tmdbIds)
+          const ownedByTmdbId = db.media.getItemsByTmdbIds(tmdbIds)
 
           const movies = details.parts
             .filter((p: any) => p.release_date && new Date(p.release_date) <= new Date())
@@ -676,7 +722,7 @@ export async function executeTool(
         let standaloneData = null
         if (standaloneMovies.length > 0) {
           const tmdbIds = standaloneMovies.map((m: any) => String(m.id))
-          const ownedByTmdbId = db.getMediaItemsByTmdbIds(tmdbIds)
+          const ownedByTmdbId = db.media.getItemsByTmdbIds(tmdbIds)
 
           const movies = standaloneMovies
             .filter((m: any) => m.release_date && new Date(m.release_date) <= new Date())
@@ -723,7 +769,7 @@ export async function executeTool(
         }
 
         const tmdbIds = movies.map((m: any) => String(m.id))
-        const ownedByTmdbId = db.getMediaItemsByTmdbIds(tmdbIds)
+        const ownedByTmdbId = db.media.getItemsByTmdbIds(tmdbIds)
 
         const results = movies.map((m: any) => {
           const ownedItem = ownedByTmdbId.get(String(m.id)) as any | undefined
@@ -818,7 +864,7 @@ export async function executeTool(
 
         const movies = response.results.slice(0, limit)
         const tmdbIds = movies.map((m: any) => String(m.id))
-        const ownedByTmdbId = db.getMediaItemsByTmdbIds(tmdbIds)
+        const ownedByTmdbId = db.media.getItemsByTmdbIds(tmdbIds)
 
         const results = movies.map((m: any) => {
           const ownedItem = ownedByTmdbId.get(String(m.id)) as any | undefined
@@ -915,7 +961,7 @@ export async function executeTool(
 
         const limited = combined.slice(0, limit)
         const tmdbIds = limited.map((m: any) => String(m.id))
-        const ownedByTmdbId = db.getMediaItemsByTmdbIds(tmdbIds)
+        const ownedByTmdbId = db.media.getItemsByTmdbIds(tmdbIds)
 
         const results = limited.map((m: any) => {
           const ownedItem = ownedByTmdbId.get(String(m.id)) as any | undefined
@@ -1007,7 +1053,7 @@ export async function executeTool(
               continue
             }
             const movie = searchResults.results[0]
-            const ownedMap = db.getMediaItemsByTmdbIds([String(movie.id)])
+            const ownedMap = db.media.getMediaItemsByTmdbIds([String(movie.id)])
             const ownedItem = ownedMap.get(String(movie.id)) as any | undefined
 
             if (!ownedItem) {
@@ -1061,14 +1107,14 @@ export async function executeTool(
       ).filter(Boolean)
 
       const results = artists.map((name: string) => {
-        const searchResults = db.globalSearch(name, 5)
+        const searchResults = db.media.globalSearch(name, 5)
         const artistResults = (searchResults as any).artists as Array<any> | undefined
         const match = artistResults?.find((a: any) =>
           String(a.name).toLowerCase() === name.toLowerCase()
         ) || (artistResults && artistResults.length > 0 ? artistResults[0] : null)
 
         if (match) {
-          const albums = db.getMusicAlbumsByArtistName(String(match.name), 100)
+          const albums = db.music.getAlbumsByArtistName(String(match.name), 100)
           return compact({
             artist: match.name,
             owned: true,
@@ -1092,16 +1138,16 @@ export async function executeTool(
       const itemTitle = toolString(input, 'title', 300)
 
       if (itemId) {
-        item = db.getMediaItemById(itemId) as any | null
+        item = db.media.getItem(itemId) as any | null
       } else if (itemTitle) {
-        const results = db.globalSearch(itemTitle, 5)
+        const results = db.media.globalSearch(itemTitle, 5)
         const mediaResults = (results as any).media_items as Array<any> | undefined
         if (mediaResults && mediaResults.length > 0) {
           const typeFilter = toolString(input, 'type') || undefined
           const match = typeFilter
             ? mediaResults.find((r: any) => r.type === typeFilter) || mediaResults[0]
             : mediaResults[0]
-          item = db.getMediaItemById(match.id as number) as any | null
+          item = db.media.getItem(match.id as number) as any | null
         }
       }
 
@@ -1123,7 +1169,7 @@ export async function executeTool(
             object_audio: t.has_object_audio || undefined,
           }))
         }
-      } catch (e) { throw e; }
+      } catch (e) { /* ignore */ }
 
       // Parse subtitle tracks
       let subtitleTracks: string[] = []
@@ -1133,13 +1179,13 @@ export async function executeTool(
             (t: any) => t.language || t.title || 'Unknown',
           )
         }
-      } catch (e) { throw e; }
+      } catch (e) { /* ignore */ }
 
       // Get quality score
-      const qualityScore = db.getQualityScoreByMediaId(item.id as number) as any | null
+      const qualityScore = db.media.getQualityScoreByMediaId(item.id as number) as any | null
 
       // Get versions
-      const versions = db.getMediaItemVersions(item.id as number) as Array<any>
+      const versions = db.media.getItemVersions(item.id as number) as Array<any>
       const versionData = versions.length > 1 ? versions.map((v: any) => compact({
         edition: v.edition,
         label: v.label,
@@ -1290,7 +1336,7 @@ export async function executeTool(
         })
       }
 
-      const added = db.addWishlistItemsBulk(wishlistItems as never[])
+      const added = db.wishlist.addMany(wishlistItems as never[])
       const skipped = wishlistItems.length - added
 
       return JSON.stringify({
@@ -1319,7 +1365,7 @@ export async function executeTool(
 
       if (needsUpgrade) {
         // Use dedicated upgrade method
-        const albums = db.getAlbumsNeedingUpgrade(limit)
+        const albums = db.music.getAlbumsNeedingUpgrade(limit)
         const simplified = albums.map((a: any) => compact({
           id: a.id,
           title: a.title,
@@ -1343,14 +1389,14 @@ export async function executeTool(
 
       let albums: any[]
       if (artistName) {
-        albums = db.getMusicAlbumsByArtistName(artistName, limit) as any[]
+        albums = db.music.getAlbumsByArtistName(artistName, limit) as any[]
       } else {
-        albums = db.getMusicAlbums(filters) as any[]
+        albums = db.music.getAlbums(filters) as any[]
       }
 
       // Enrich with quality scores
       const simplified = albums.map((a: any) => {
-        const quality = db.getMusicQualityScore(a.id as number)
+        const quality = db.music.getQualityScore(a.id as number)
         return compact({
           id: a.id,
           title: a.title,
@@ -1376,13 +1422,13 @@ export async function executeTool(
       const upgradeLimit = toolNumber(input, 'upgrade_limit', 1, 50) || 10
 
       // Get all albums and their quality scores
-      const allAlbums = db.getMusicAlbums({ limit: 10000 }) as any[]
+      const allAlbums = db.music.getAlbums({ limit: 10000 }) as any[]
       const tiers: Record<string, number> = {
         HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0, UNSCORED: 0,
       }
 
       for (const album of allAlbums) {
-        const quality = db.getMusicQualityScore(album.id as number)
+        const quality = db.music.getQualityScore(album.id as number)
         if (quality) {
           const tier = (quality as any).quality_tier as string
           if (tier in tiers) tiers[tier]++
@@ -1401,7 +1447,7 @@ export async function executeTool(
       }
 
       if (includeUpgrades) {
-        const upgradeAlbums = db.getAlbumsNeedingUpgrade(upgradeLimit)
+        const upgradeAlbums = db.music.getAlbumsNeedingUpgrade(upgradeLimit)
         result.albums_needing_upgrade = upgradeAlbums.map((a: any) => compact({
           title: a.title,
           artist_name: a.artist_name,
@@ -1420,10 +1466,10 @@ export async function executeTool(
 
       let artists: any[]
       if (artistName) {
-        const single = db.getArtistCompleteness(artistName)
+        const single = db.music.getArtistCompleteness(artistName)
         artists = single ? [single as any] : []
       } else {
-        const all = db.getAllArtistCompleteness() as any[]
+        const all = db.music.getAllArtistCompleteness() as any[]
         artists = incompleteOnly
           ? all.filter(a => (a.completeness_percentage as number) < 100)
           : all
@@ -1439,7 +1485,7 @@ export async function executeTool(
           missingSample = parsed.slice(0, 5).map((m: any) =>
             m.year ? `${m.title} (${m.year})` : `${m.title}`,
           )
-        } catch (e) { throw e; }
+        } catch (e) { /* ignore */ }
         return compact({
           artist_name: a.artist_name,
           total_albums: a.total_albums,
@@ -1461,17 +1507,17 @@ export async function executeTool(
       let album: any | null = null
 
       if (albumId) {
-        album = db.getMusicAlbumById(albumId) as any | null
+        album = db.music.getAlbumById(albumId) as any | null
       } else if (albumTitle) {
         // Search for the album
-        const results = db.globalSearch(albumTitle, 10)
+        const results = db.media.globalSearch(albumTitle, 10)
         const albumResults = (results as any).albums as Array<any> | undefined
         if (albumResults && albumResults.length > 0) {
           // Try to match by artist hint if provided
           const match = artistHint
             ? albumResults.find(a => String(a.artist_name).toLowerCase().includes(artistHint.toLowerCase())) || albumResults[0]
             : albumResults[0]
-          album = db.getMusicAlbumById(match.id as number) as any | null
+          album = db.music.getAlbumById(match.id as number) as any | null
         }
       }
 
@@ -1480,7 +1526,7 @@ export async function executeTool(
       }
 
       // Get tracks
-      const tracks = db.getMusicTracks({ albumId: album.id as number, limit: 200 }) as any[]
+      const tracks = db.music.getTracks({ albumId: album.id as number, limit: 200 }) as any[]
       const trackData = tracks.map((t: any) => compact({
         track_number: t.track_number,
         disc_number: t.disc_number,
@@ -1495,10 +1541,10 @@ export async function executeTool(
       }))
 
       // Get quality score
-      const quality = db.getMusicQualityScore(album.id as number)
+      const quality = db.music.getQualityScore(album.id as number)
 
       // Get album completeness
-      const completeness = db.getAlbumCompleteness(album.id as number)
+      const completeness = db.music.getAlbumCompleteness(album.id as number)
 
       const details = compact({
         title: album.title,

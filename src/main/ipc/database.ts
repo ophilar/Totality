@@ -8,7 +8,6 @@ import { getTMDBService } from '../services/TMDBService'
 import { invalidateNfsMappingsCache } from '../providers/kodi/KodiDatabaseSchema'
 import { getErrorMessage, isNodeError } from './utils'
 import fs from 'fs/promises'
-import type { MediaItem } from '../types/database'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 import { getLoggingService } from '../services/LoggingService'
 
@@ -21,11 +20,11 @@ export function registerDatabaseHandlers() {
   const db = getDatabase()
 
   // Register generic list/count handlers
-  registerListHandlers('db:media', (f) => db.mediaRepo.getMediaItems(f), (f) => db.mediaRepo.count(f), MediaItemFiltersSchema, {
-    listAlias: 'db:getMediaItems',
+  registerListHandlers('db:media', (f) => db.media.getItems(f), (f) => db.media.count(f), MediaItemFiltersSchema, {
+    listAlias: 'db.media.getItems',
     countAlias: 'db:countMediaItems'
   })
-  registerListHandlers('db:tvshows', (f) => db.tvShowRepo.getTVShowSummaries(f), (f) => db.tvShowRepo.countTVShows(f), TVShowFiltersSchema, {
+  registerListHandlers('db:tvshows', (f) => db.tvShows.getSummaries(f), (f) => db.tvShows.count(f), TVShowFiltersSchema, {
     listAlias: 'db:getTVShows',
     countAlias: 'db:countTVShows'
   })
@@ -35,7 +34,7 @@ export function registerDatabaseHandlers() {
   // ============================================================================
 
   // HANDLERS REPLACED BY registerListHandlers:
-  // - db:getMediaItems -> db:media:list
+  // - db.media.getItems -> db:media:list
   // - db:countMediaItems -> db:media:count
   // - db:getTVShows -> db:tvshows:list
   // - db:countTVShows -> db:tvshows:count
@@ -43,7 +42,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:countTVEpisodes', async (_event, filters?: unknown) => {
     try {
       const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVEpisodes')
-      return db.mediaRepo.count({ ...validFilters, type: 'episode' })
+      return db.media.count({ ...validFilters, type: 'episode' } as any)
     } catch (error) {
       getLoggingService().error('[database]', 'Error counting TV episodes:', error)
       throw error
@@ -53,17 +52,17 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getLetterOffset', async (_event, params: unknown) => {
     try {
       const { table, letter, sourceId, libraryId } = validateInput(LetterOffsetSchema, params, 'db:getLetterOffset')
-      return db.mediaRepo.getLetterOffset(table as any, letter, { sourceId, libraryId })
+      return db.media.getLetterOffset(table as any, letter, { sourceId, libraryId })
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting letter offset:', error)
       throw error
     }
   })
 
-  ipcMain.handle('db:getMediaItemById', async (_event, id: unknown) => {
+  ipcMain.handle('db.media.getItem', async (_event, id: unknown) => {
     try {
-      const validId = validateInput(PositiveIntSchema, id, 'db:getMediaItemById')
-      return db.mediaRepo.getMediaItemById(validId)
+      const validId = validateInput(PositiveIntSchema, id, 'db.media.getItem')
+      return db.media.getItem(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting media item:', error)
       throw error
@@ -73,7 +72,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:upsertMediaItem', async (_event, item: unknown) => {
     try {
       const validItem = validateInput(MediaItemSchema, item, 'db:upsertMediaItem')
-      return db.mediaRepo.upsertMediaItem(validItem as any)
+      return db.media.upsertItem(validItem as any)
     } catch (error) {
       getLoggingService().error('[database]', 'Error upserting media item:', error)
       throw error
@@ -83,7 +82,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getMediaItemVersions', async (_event, mediaItemId: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, mediaItemId, 'db:getMediaItemVersions')
-      return db.mediaRepo.getMediaItemVersions(validId)
+      return db.media.getItemVersions(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting media item versions:', error)
       throw error
@@ -93,7 +92,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:deleteMediaItem', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:deleteMediaItem')
-      db.mediaRepo.deleteMediaItem(validId)
+      db.media.deleteItem(validId)
       return true
     } catch (error) {
       getLoggingService().error('[database]', 'Error deleting media item:', error)
@@ -107,7 +106,7 @@ export function registerDatabaseHandlers() {
 
   ipcMain.handle('db:getQualityScores', async () => {
     try {
-      return db.getQualityScores()
+      return db.media.getQualityScores()
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting quality scores:', error)
       throw error
@@ -117,7 +116,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getQualityScoreByMediaId', async (_event, mediaItemId: unknown) => {
     try {
       const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'db:getQualityScoreByMediaId')
-      return db.getQualityScoreByMediaId(validMediaItemId)
+      return db.media.getQualityScoreByMediaId(validMediaItemId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting quality score:', error)
       throw error
@@ -127,7 +126,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:upsertQualityScore', async (_event, score: unknown) => {
     try {
       const validScore = validateInput(QualityScoreSchema, score, 'db:upsertQualityScore')
-      return await db.upsertQualityScore(validScore as any)
+      return await db.media.upsertQualityScore(validScore as any)
     } catch (error) {
       getLoggingService().error('[database]', 'Error upserting quality score:', error)
       throw error
@@ -188,7 +187,7 @@ export function registerDatabaseHandlers() {
 
   ipcMain.handle('db:getAllSettings', async () => {
     try {
-      return db.getAllSettings()
+      return db.config.getAllSettings()
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting all settings:', error)
       throw error
@@ -198,7 +197,7 @@ export function registerDatabaseHandlers() {
   // Library Protection
   ipcMain.handle('db:setLibraryProtected', async (_event, sourceId: string, libraryId: string, isProtected: boolean) => {
     try {
-      db.setLibraryProtected(sourceId, libraryId, isProtected)
+      db.sources.setLibraryProtected(sourceId, libraryId, isProtected)
       return true
     } catch (error) {
       getLoggingService().error('[database]', 'Error setting library protected:', error)
@@ -208,7 +207,7 @@ export function registerDatabaseHandlers() {
 
   ipcMain.handle('db:verifyPin', async (_event, pin: string) => {
     try {
-      return await db.verifyPin(pin)
+      return await db.config.verifyPin(pin)
     } catch (error) {
       getLoggingService().error('[database]', 'Error verifying PIN:', error)
       throw error
@@ -217,7 +216,7 @@ export function registerDatabaseHandlers() {
 
   ipcMain.handle('db:setPin', async (_event, pin: string) => {
     try {
-      await db.setPin(pin)
+      await db.config.setPin(pin)
       return true
     } catch (error) {
       getLoggingService().error('[database]', 'Error setting PIN:', error)
@@ -227,7 +226,7 @@ export function registerDatabaseHandlers() {
 
   ipcMain.handle('db:hasPin', async () => {
     try {
-      return db.hasPin()
+      return db.config.hasPin()
     } catch (error) {
       getLoggingService().error('[database]', 'Error checking for PIN:', error)
       throw error
@@ -299,7 +298,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getLibraryStats', async (_event, sourceId?: unknown) => {
     try {
       const validSourceId = validateInput(OptionalSourceIdSchema, sourceId, 'db:getLibraryStats')
-      return db.getLibraryStats(validSourceId)
+      return db.stats.getLibraryStats(validSourceId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting library stats:', error)
       throw error
@@ -309,7 +308,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getDashboardSummary', async (_event, sourceId?: unknown) => {
     try {
       const validSourceId = validateInput(OptionalSourceIdSchema, sourceId, 'db:getDashboardSummary')
-      return db.getDashboardSummary(validSourceId)
+      return db.stats.getDashboardSummary(validSourceId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting dashboard summary:', error)
       throw error
@@ -380,10 +379,10 @@ export function registerDatabaseHandlers() {
         : undefined
 
       // Update the movie with the new TMDB ID, poster, title, and year
-      await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year)
+      await db.media.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year)
 
       // Check for duplicates in the same source
-      const item = db.getMediaItemById(validMediaItemId)
+      const item = db.media.getItem(validMediaItemId)
       if (item && item.source_id) {
         const { getDeduplicationService } = require('../services/DeduplicationService')
         await getDeduplicationService().scanForDuplicates(item.source_id)
@@ -490,7 +489,7 @@ export function registerDatabaseHandlers() {
       }
 
       // Export data as CSV
-      const csv = db.exportWorkingCSV(validOptions)
+      const csv = db.media.exportWorkingCSV(validOptions)
       await fs.writeFile(result.filePath, csv, 'utf-8')
 
       return { success: true, path: result.filePath }
@@ -568,7 +567,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('media:search', async (_event, query: unknown) => {
     try {
       const validQuery = validateInput(NonEmptyStringSchema, query, 'media:search')
-      return db.globalSearch(validQuery)
+      return db.media.globalSearch(validQuery)
     } catch (error) {
       getLoggingService().error('[database]', 'Error in global search:', error)
       return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
@@ -583,7 +582,7 @@ export function registerDatabaseHandlers() {
     try {
       const validArgs = validateInput(AddExclusionSchema, { exclusionType, referenceId, referenceKey, parentKey, title }, 'db:addExclusion')
       getLoggingService().info('[IPC db:addExclusion]', validArgs.exclusionType, validArgs.title || validArgs.referenceKey || '')
-      return db.addExclusion(validArgs.exclusionType, validArgs.referenceId, validArgs.referenceKey, validArgs.parentKey, validArgs.title)
+      return db.exclusions.addExclusion({ exclusion_type: validArgs.exclusionType as any, reference_id: validArgs.referenceId, reference_key: validArgs.referenceKey, parent_key: validArgs.parentKey, title: validArgs.title })
     } catch (error) {
       getLoggingService().error('[database]', 'Error adding exclusion:', error)
       throw error
@@ -594,7 +593,7 @@ export function registerDatabaseHandlers() {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:removeExclusion')
       getLoggingService().info('[database]', '[IPC db:removeExclusion] id:', validId)
-      db.removeExclusion(validId)
+      db.exclusions.delete(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error removing exclusion:', error)
       throw error
@@ -607,7 +606,7 @@ export function registerDatabaseHandlers() {
     try {
       const validExclusionType = validateInput(OptionalStringSchema, exclusionType, 'db:getExclusions')
       const validParentKey = validateInput(OptionalStringSchema, parentKey, 'db:getExclusions')
-      return db.getExclusions(validExclusionType, validParentKey)
+      return db.exclusions.getExclusions(validExclusionType, validParentKey)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting exclusions:', error)
       return []

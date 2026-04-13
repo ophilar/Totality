@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
 import { ConfigRepository } from '../../src/main/database/repositories/ConfigRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
+import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
 
-// Mock encryption service
+// Mock encryption service (we still mock this as it's a separate domain from the DB)
 vi.mock('../../src/main/services/CredentialEncryptionService', () => ({
   getCredentialEncryptionService: vi.fn(() => ({
     isSensitiveSetting: vi.fn((key: string) => key.includes('api_key')),
@@ -13,13 +12,15 @@ vi.mock('../../src/main/services/CredentialEncryptionService', () => ({
 }))
 
 describe('ConfigRepository', () => {
-  let db: Database.Database
   let repo: ConfigRepository
+  let db: any
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new ConfigRepository(db)
+  beforeEach(async () => {
+    resetBetterSQLiteServiceForTesting()
+    process.env.NODE_ENV = 'test'
+    db = getBetterSQLiteService()
+    await db.initialize()
+    repo = db.config
   })
 
   it('should set and get a simple setting', () => {
@@ -29,8 +30,8 @@ describe('ConfigRepository', () => {
 
   it('should encrypt and decrypt sensitive settings', () => {
     repo.setSetting('tmdb_api_key', 'secret')
-    // Verify it's encrypted in DB
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('tmdb_api_key') as any
+    // Verify it's encrypted in DB via direct query
+    const row = db.db.prepare('SELECT value FROM settings WHERE key = ?').get('tmdb_api_key') as any
     expect(row.value).toBe('enc_secret')
     // Verify it's decrypted on get
     expect(repo.getSetting('tmdb_api_key')).toBe('secret')

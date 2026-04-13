@@ -58,13 +58,13 @@ export function registerQualityHandlers() {
     try {
       const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'quality:getRecommendedFormat')
       const db = getDatabase()
-      const mediaItem = db.getMediaItemById(validMediaItemId)
+      const mediaItem = db.media.getItem(validMediaItemId)
 
       if (!mediaItem) {
         throw new Error('Media item not found')
       }
 
-      const qualityScore = db.getQualityScoreByMediaId(validMediaItemId)
+      const qualityScore = db.media.getQualityScoreByMediaId(validMediaItemId)
       const currentScore = qualityScore?.overall_score || 0
 
       return analyzer.getRecommendedFormat(mediaItem, currentScore)

@@ -147,7 +147,7 @@ export function useGlobalSearch({
       .filter((item) => item.type === 'movie' && item.title.toLowerCase().includes(query))
       .slice(0, maxResults)
       .map((item) => ({
-        id: item.id,
+        id: item.id!,
         title: item.title,
         year: item.year,
         poster_url: item.poster_url,
@@ -176,7 +176,7 @@ export function useGlobalSearch({
       )
       .slice(0, maxResults)
       .map((item) => ({
-        id: item.id,
+        id: item.id!,
         title: item.title,
         series_title: item.series_title,
         season_number: item.season_number,
@@ -191,7 +191,7 @@ export function useGlobalSearch({
       .filter((artist) => artist.name.toLowerCase().includes(query))
       .slice(0, maxResults)
       .map((artist) => ({
-        id: artist.id,
+        id: artist.id!,
         title: artist.name,
         thumb_url: artist.thumb_url,
         type: 'artist' as const,
@@ -206,7 +206,7 @@ export function useGlobalSearch({
       )
       .slice(0, maxResults)
       .map((album) => ({
-        id: album.id,
+        id: album.id!,
         title: album.title,
         subtitle: album.artist_name,
         year: album.year,
@@ -222,7 +222,7 @@ export function useGlobalSearch({
       .map((track) => {
         const album = musicAlbums.find((a) => a.id === track.album_id)
         return {
-          id: track.id,
+          id: track.id!,
           title: track.title,
           album_id: track.album_id!,
           album_title: album?.title,

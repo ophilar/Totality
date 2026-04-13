@@ -52,6 +52,13 @@ import type {
 } from '../../types/plex'
 import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
 
+export interface PlexCollection {
+  key: string
+  title: string
+  type: string
+  childCount?: number
+}
+
 const PLEX_API_URL = 'https://plex.tv/api/v2'
 const PLEX_TV_URL = 'https://plex.tv'
 const CLIENT_IDENTIFIER = 'totality'
@@ -408,6 +415,7 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
+
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
     if (!this.selectedServer) {
       throw new Error('No server selected')
@@ -649,7 +657,7 @@ export class PlexProvider extends BaseMediaProvider {
                 mediaItem.source_type = 'plex'
                 mediaItem.library_id = libraryId
 
-                const id = await db.upsertMediaItem(mediaItem)
+                const id = await db.media.upsertItem(mediaItem)
                 scannedProviderIds.add(mediaItem.plex_id)
 
                 // Sync versions: delete stale, upsert current, update best version
@@ -657,12 +665,12 @@ export class PlexProvider extends BaseMediaProvider {
                   const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
                   return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
                 })
-                db.syncMediaItemVersions(id, scoredVersions)
+                db.media.syncItemVersions(id, scoredVersions)
 
                 // Analyze quality (parent item)
                 mediaItem.id = id
                 const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-                await db.upsertQualityScore(qualityScore)
+                await db.media.upsertQualityScore(qualityScore)
 
                 scanned++
                 result.itemsScanned++
@@ -714,7 +722,7 @@ export class PlexProvider extends BaseMediaProvider {
           result.itemsRemoved = removedCount
 
           // Check for additions (items in Plex but not in DB)
-          const dbItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
+          const dbItems = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
           const dbIds = new Set(dbItems.map((item: typeof dbItems[0]) => item.plex_id))
           const missingIds: string[] = []
           for (const plexId of currentPlexIds) {
@@ -734,7 +742,7 @@ export class PlexProvider extends BaseMediaProvider {
       }
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -751,7 +759,7 @@ export class PlexProvider extends BaseMediaProvider {
 
   private async removeStaleItems(validIds: Set<string>, type: 'movie' | 'episode', libraryId: string): Promise<number> {
     const db = getDatabase()
-    const items = db.getMediaItems({ type, sourceId: this.sourceId, libraryId })
+    const items = db.media.getItems({ type, sourceId: this.sourceId, libraryId })
 
     getLoggingService().info('[PlexProvider ${this.sourceId}]', `Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
 
@@ -760,7 +768,7 @@ export class PlexProvider extends BaseMediaProvider {
       if (!validIds.has(item.plex_id)) {
         if (item.id) {
           getLoggingService().info('[PlexProvider ${this.sourceId}]', `Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
-          await db.deleteMediaItem(item.id)
+          await db.media.deleteItem(item.id)
           removedCount++
         }
       }
@@ -856,21 +864,21 @@ export class PlexProvider extends BaseMediaProvider {
           mediaItem.library_id = libraryId
 
           // Upsert will handle duplicates via unique constraint
-          const itemId = db.upsertMediaItem(mediaItem)
+          const itemId = db.media.upsertItem(mediaItem)
 
           // Sync versions: delete stale, upsert current, update best version
           const scoredVersions = versions.map(version => {
             const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
             return { ...version, media_item_id: itemId, ...vScore } as MediaItemVersion
           })
-          db.syncMediaItemVersions(itemId, scoredVersions)
+          db.media.syncItemVersions(itemId, scoredVersions)
 
           // Analyze quality
           try {
             mediaItem.id = itemId
             const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
             if (qualityScore) {
-              db.upsertQualityScore(qualityScore)
+              db.media.upsertQualityScore(qualityScore)
             }
           } catch (qualityError) {
             getLoggingService().warn('[PlexProvider ${this.sourceId}]', `Failed to analyze quality for ${mediaItem.title}`)
@@ -1766,13 +1774,13 @@ export class PlexProvider extends BaseMediaProvider {
           : 0
 
         // Upsert album
-        const albumId = await db.upsertMusicAlbum(albumData)
+        const albumId = await db.music.upsertAlbum(albumData)
         scannedAlbumIds.add(plexAlbum.ratingKey)
 
         // Upsert tracks
         for (const trackData of trackDataList) {
           trackData.album_id = albumId
-          await db.upsertMusicTrack(trackData)
+          await db.music.upsertTrack(trackData)
           scannedTrackIds.add(trackData.provider_id)
           result.itemsScanned++
         }
@@ -1803,7 +1811,7 @@ export class PlexProvider extends BaseMediaProvider {
           const artistData = artistMetadata ? this.convertToMusicArtist(artistMetadata, libraryId) : this.convertToMusicArtist(plexArtist, libraryId)
 
           // Upsert artist
-          const artistId = await db.upsertMusicArtist(artistData)
+          const artistId = await db.music.upsertArtist(artistData)
           scannedArtistIds.add(plexArtist.ratingKey)
 
           // Get all albums for this artist
@@ -1863,7 +1871,7 @@ export class PlexProvider extends BaseMediaProvider {
           let artistId: number | undefined
 
           // Try to find existing artist
-          const existingArtists = db.getMusicArtists({ sourceId: this.sourceId }) as Array<{ id?: number; name: string }>
+          const existingArtists = db.music.getArtists({ sourceId: this.sourceId }) as Array<{ id?: number; name: string }>
           const existingArtist = existingArtists.find((a: typeof existingArtists[0]) =>
             a.name.toLowerCase() === artistName.toLowerCase()
           )
@@ -1882,7 +1890,7 @@ export class PlexProvider extends BaseMediaProvider {
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }
-            artistId = await db.upsertMusicArtist(newArtistData)
+            artistId = await db.music.upsertArtist(newArtistData)
           }
 
           await processAlbum(plexAlbum, artistId, artistName)
@@ -1906,7 +1914,7 @@ export class PlexProvider extends BaseMediaProvider {
       await (db as any).updateAllMusicArtistCounts(this.sourceId)
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       result.success = true
       result.durationMs = Date.now() - startTime

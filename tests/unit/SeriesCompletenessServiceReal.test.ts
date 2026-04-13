@@ -106,10 +106,10 @@ describe('SeriesCompletenessService (No Mocks)', () => {
   })
 
   it('should analyze a series and find missing episodes', async () => {
-    db.upsertMediaSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
     
     // Only own S1E1
-    db.upsertMediaItem(createEpisode({
+    db.media.upsertItem(createEpisode({
       source_id: 's1',
       library_id: 'tvshows',
       plex_id: 'p1',
@@ -135,9 +135,9 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     })
 
     it('should update artwork for local sources during analysis', async () => {
-    db.upsertMediaSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
 
-    db.upsertMediaItem(createEpisode({
+    db.media.upsertItem(createEpisode({
       source_id: 'local1',
       library_id: 'tvshows',
       plex_id: 'local-ep-1',
@@ -149,7 +149,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
 
     await service.analyzeSeries('Game of Thrones', 'local1', 'tvshows', '1399')
 
-    const item = db.mediaRepo.getMediaItemByProviderId('local-ep-1', 'local1')
+    const item = db.media.getItemByProviderId('local-ep-1', 'local1')
     expect(item).not.toBeNull()
     expect(item!.poster_url).toBe(`https://image.tmdb.org/t/p/w500/poster.jpg`)
     expect(item!.episode_thumb_url).toBe(`https://image.tmdb.org/t/p/w500/still1.jpg`)

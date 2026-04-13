@@ -84,4 +84,69 @@ describe('SourceRepository', () => {
     expect(sources).toHaveLength(2)
     expect(sources[0].display_name).toBe('A')
   })
+
+  describe('Library Scans', () => {
+    const sourceId = 'src-1'
+    const libraries = [
+      { id: 'lib-1', name: 'Movies', type: 'movie', enabled: true },
+      { id: 'lib-2', name: 'TV', type: 'show', enabled: false },
+    ]
+
+    beforeEach(() => {
+      repo.upsertMediaSource({
+        source_id: sourceId,
+        source_type: 'plex',
+        display_name: 'Test Source',
+        is_enabled: true,
+      })
+    })
+
+    it('should set and retrieve library configurations', () => {
+      repo.setLibrariesEnabled(sourceId, libraries)
+
+      const sourceLibs = repo.getSourceLibraries(sourceId)
+      expect(sourceLibs).toHaveLength(2)
+      
+      const lib1 = sourceLibs.find(l => l.libraryId === 'lib-1')
+      expect(lib1.libraryName).toBe('Movies')
+      expect(lib1.isEnabled).toBe(1)
+
+      const lib2 = sourceLibs.find(l => l.libraryId === 'lib-2')
+      expect(lib2.isEnabled).toBe(0)
+    })
+
+    it('should update library scan time without constraint errors', () => {
+      repo.setLibrariesEnabled(sourceId, libraries)
+      
+      // This should NOT throw "NOT NULL constraint failed: library_scans.library_name"
+      repo.updateLibraryScanTime(sourceId, 'lib-1', 150)
+
+      const scanTime = repo.getLibraryScanTime(sourceId, 'lib-1')
+      expect(scanTime).not.toBeNull()
+      
+      const times = repo.getLibraryScanTimes(sourceId)
+      expect(times.get('lib-1').items_scanned).toBe(150)
+    })
+
+    it('should toggle library status', () => {
+      repo.setLibrariesEnabled(sourceId, libraries)
+      
+      repo.toggleLibrary(sourceId, 'lib-1', false)
+      expect(repo.isLibraryEnabled(sourceId, 'lib-1')).toBe(false)
+
+      repo.toggleLibrary(sourceId, 'lib-1', true)
+      expect(repo.isLibraryEnabled(sourceId, 'lib-1')).toBe(true)
+    })
+
+    it('should update source scan time when library is scanned', () => {
+      repo.setLibrariesEnabled(sourceId, libraries)
+      
+      const before = repo.getSourceById(sourceId)!.last_scan_at
+      
+      repo.updateLibraryScanTime(sourceId, 'lib-1', 10)
+      
+      const after = repo.getSourceById(sourceId)!.last_scan_at
+      expect(after).not.toBe(before)
+    })
+  })
 })

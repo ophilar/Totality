@@ -48,17 +48,17 @@ describe('MediaRepository', () => {
   } as MediaItem)
 
   it('should upsert and retrieve a media item', () => {
-    const id = repo.upsertMediaItem(mockItem())
+    const id = repo.upsertItem(mockItem())
     expect(id).toBeGreaterThan(0)
 
-    const item = repo.getMediaItemById(id)
+    const item = repo.getItem(id)
     expect(item).not.toBeNull()
     expect(item!.title).toBe('Test Movie')
   })
 
   it('should filter items by type', () => {
-    repo.upsertMediaItem(mockItem({ plex_id: '1', title: 'Movie', type: 'movie' }))
-    repo.upsertMediaItem(mockItem({ plex_id: '2', title: 'Episode', type: 'episode' }))
+    repo.upsertItem(mockItem({ plex_id: '1', title: 'Movie', type: 'movie' }))
+    repo.upsertItem(mockItem({ plex_id: '2', title: 'Episode', type: 'episode' }))
 
     const movies = repo.getMediaItems({ type: 'movie' })
     expect(movies).toHaveLength(1)
@@ -66,8 +66,8 @@ describe('MediaRepository', () => {
   })
 
   it('should search items by title', () => {
-    repo.upsertMediaItem(mockItem({ plex_id: '1', title: 'The Matrix' }))
-    repo.upsertMediaItem(mockItem({ plex_id: '2', title: 'Inception' }))
+    repo.upsertItem(mockItem({ plex_id: '1', title: 'The Matrix' }))
+    repo.upsertItem(mockItem({ plex_id: '2', title: 'Inception' }))
 
     const results = repo.getMediaItems({ searchQuery: 'Matrix' })
     expect(results).toHaveLength(1)
@@ -75,8 +75,8 @@ describe('MediaRepository', () => {
   })
 
   it('should delete a media item and its cascade data', () => {
-    const id = repo.upsertMediaItem(mockItem())
+    const id = repo.upsertItem(mockItem())
     repo.deleteMediaItem(id)
-    expect(repo.getMediaItemById(id)).toBeNull()
+    expect(repo.getItem(id)).toBeNull()
   })
 })

@@ -32,8 +32,11 @@ release
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+tests/tmp/
 
 # OS
 Thumbs.db
@@ -43,15 +46,20 @@ nul
 .claude/
 CLAUDE.md
 
+# Jules / Gemini CLI
+.jules/
+.gemini/
+dev_docs/phase_5/
+
 # Test coverage
 coverage/
 
+# Repomix
 repomix-output.xml
 repomix-analysis.txt
 repomix.config.json
-
-# Temporary Analysis Files
-repomix-analysis.txt
-repomix.config.json
 repomix-output.txt
+
+# Build and IDE
 *.tsbuildinfo
+.eslintcache

@@ -28,12 +28,12 @@ export class SeriesCompletenessService {
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[] }
 
     try {
-      const shows = db.tvShowRepo.getTVShowSummaries({ sourceId, libraryId })
+      const shows = db.tvShows.getSummaries({ sourceId, libraryId })
       result.totalSeries = shows.length
 
       getLoggingService().info('[SeriesCompletenessService]', `Starting analysis for ${shows.length} series`)
 
-      const allEpisodes = db.mediaRepo.getMediaItems({ type: 'episode', sourceId, libraryId })
+      const allEpisodes = db.media.getItems({ type: 'episode', sourceId, libraryId })
       const episodesBySeries = new Map<string, any[]>()
       for (const ep of allEpisodes) {
         if (ep.series_title) {
@@ -73,7 +73,7 @@ export class SeriesCompletenessService {
   async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: any[]): Promise<SeriesCompleteness | null> {
     const db = getDatabase()
     const tmdb = getTMDBService()
-    const episodes = providedEpisodes || db.tvShowRepo.getTVShowEpisodes(seriesTitle, sourceId)
+    const episodes = providedEpisodes || db.tvShows.getEpisodes(seriesTitle, sourceId)
     getLoggingService().info('[SeriesCompletenessService]', `Analyzing series "${seriesTitle}". Found ${episodes.length} local episodes.`)
     episodes.forEach(e => getLoggingService().info('[SeriesCompletenessService]', ` - ${e.series_title} S${e.season_number}E${e.episode_number} (id: ${e.id})`))
 
@@ -87,8 +87,8 @@ export class SeriesCompletenessService {
 
     if (!tmdbId) {
       const unmatched = this.createUnmatchedResult(seriesTitle, episodes, sourceId || '', libraryId || '')
-      db.tvShowRepo.upsertSeriesCompleteness(unmatched)
-      return db.tvShowRepo.getSeriesCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      db.tvShows.upsertCompleteness(unmatched)
+      return db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     }
 
     try {
@@ -135,24 +135,24 @@ export class SeriesCompletenessService {
         status: showDetails.status,
       }
 
-      db.tvShowRepo.upsertSeriesCompleteness(result)
+      db.tvShows.upsertCompleteness(result)
 
       // Artwork update for local sources
-      const source = db.sourceRepo.getMediaSourceById(sourceId || '')
+      const source = db.sources.getSourceById(sourceId || '')
       if (source && (source.source_type === 'local' || source.source_type === 'kodi-local')) {
         for (const ep of episodes) {
           const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
           if (epData && ep.id) {
-            db.mediaRepo.updateMediaItemArtwork(ep.id, {
+            db.media.updateItemArtwork(ep.id, {
               posterUrl: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
               episodeThumbUrl: tmdb.buildImageUrl(epData.still_path, 'w500') || undefined,
-              seasonPosterUrl: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path, 'w500') || undefined
+              seasonPosterUrl: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path || null, 'w500') || undefined
             })
           }
         }
       }
 
-      return db.tvShowRepo.getSeriesCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      return db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     } catch (error) {
       getLoggingService().error('[SeriesCompletenessService]', `Failed for series ${seriesTitle}:`, error)
       throw error

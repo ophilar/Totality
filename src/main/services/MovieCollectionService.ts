@@ -28,13 +28,6 @@ interface CollectionInfo {
   ownedMovies: MediaItem[]
 }
 
-interface TMDBLookupProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: 'lookup'
-}
-
 export class MovieCollectionService extends CancellableOperation {
   /**
    * Look up TMDB IDs for movies that don't have them
@@ -71,7 +64,7 @@ export class MovieCollectionService extends CancellableOperation {
     onProgress?: (progress: CollectionAnalysisProgress) => void
   ): Promise<MediaItem[]> {
     const db = getDatabase()
-    const allMovies = db.mediaRepo.getMediaItems({ type: 'movie' }) as MediaItem[]
+    const allMovies = db.media.getItems({ type: 'movie' }) as MediaItem[]
     
     const lookupProgressWrapper = onProgress ? (progress: any) => {
       onProgress({
@@ -85,7 +78,7 @@ export class MovieCollectionService extends CancellableOperation {
     await this.lookupMissingTMDBIds(allMovies, lookupProgressWrapper)
     if (this.isCancelled()) return []
 
-    const updatedMovies = db.mediaRepo.getMediaItems({ type: 'movie' }) as MediaItem[]
+    const updatedMovies = db.media.getItems({ type: 'movie' }) as MediaItem[]
     return this.deduplicateMoviesByTmdbId(updatedMovies)
   }
 
@@ -151,7 +144,7 @@ export class MovieCollectionService extends CancellableOperation {
     const db = getDatabase()
     const tmdb = getTMDBService()
 
-    const tmdbApiKey = db.configRepo.getSetting('tmdb_api_key')
+    const tmdbApiKey = db.config.getSetting('tmdb_api_key')
     if (!tmdbApiKey) throw new Error('TMDB API key not configured.')
 
     await tmdb.initialize()
@@ -165,10 +158,10 @@ export class MovieCollectionService extends CancellableOperation {
       movies = await this.getMoviesDeduplicatedByTmdbId(onProgress)
       if (this.isCancelled()) return { completed: false, analyzed: 0, skipped: 0 }
     } else {
-      movies = db.mediaRepo.getMediaItems(filters) as MediaItem[]
+      movies = db.media.getItems(filters) as MediaItem[]
       await this.lookupMissingTMDBIds(movies, onProgress as any)
       if (this.isCancelled()) return { completed: false, analyzed: 0, skipped: 0 }
-      movies = db.mediaRepo.getMediaItems(filters) as MediaItem[]
+      movies = db.media.getItems(filters) as MediaItem[]
     }
 
     const moviesWithTmdb = movies.filter(m => m.tmdb_id)
@@ -208,8 +201,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     const existingCollections = new Map<string, { updatedAt: string; ownedCount: number }>()
     if (skipRecentlyAnalyzed) {
-      const allCollections = db.statsRepo.getCollectionStats() // Simplified, should get all actually
-      db.getMovieCollections(sourceId).forEach(col => {
+      db.stats.getMovieCollections(sourceId).forEach(col => {
         if (col.updated_at && col.tmdb_collection_id) {
           existingCollections.set(col.tmdb_collection_id, { updatedAt: col.updated_at, ownedCount: col.owned_movies })
         }
@@ -220,7 +212,7 @@ export class MovieCollectionService extends CancellableOperation {
     let processedCount = 0
     let skipped = 0
 
-    db.startBatch()
+    db.beginBatch()
     try {
       for (const colInfo of collectionEntries) {
         if (this.isCancelled()) break
@@ -239,7 +231,7 @@ export class MovieCollectionService extends CancellableOperation {
           const result = await this.lookupCollectionCompleteness(colInfo.tmdbCollectionId.toString(), ownedTmdbIds)
 
           if (result) {
-            db.upsertMovieCollection({
+            db.stats.upsertMovieCollection({
               tmdb_collection_id: colInfo.tmdbCollectionId.toString(),
               collection_name: result.collectionName,
               source_id: sourceId,
@@ -259,16 +251,16 @@ export class MovieCollectionService extends CancellableOperation {
         processedCount++
       }
     } finally {
-      await db.endBatch()
+      db.endBatch()
     }
 
     return { completed: !this.isCancelled(), analyzed: processedCount - skipped, skipped }
   }
 
-  getCollections(sourceId?: string): MovieCollection[] { return getDatabase().getMovieCollections(sourceId) }
-  getIncompleteCollections(sourceId?: string): MovieCollection[] { return getDatabase().getIncompleteMovieCollections(sourceId) }
-  async deleteCollection(id: number): Promise<boolean> { return getDatabase().deleteMovieCollection(id) }
-  getStats(): any { return getDatabase().statsRepo.getCollectionStats() }
+  getCollections(sourceId?: string): MovieCollection[] { return getDatabase().stats.getCollections(sourceId) }
+  getIncompleteCollections(sourceId?: string): MovieCollection[] { return getDatabase().stats.getIncompleteCollections(sourceId) }
+  async deleteCollection(id: number): Promise<boolean> { return getDatabase().stats.deleteCollection(id) }
+  getStats(): any { return getDatabase().stats.getCollectionStats() }
 }
 
 let serviceInstance: MovieCollectionService | null = null
