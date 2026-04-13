@@ -11,7 +11,7 @@ export function registerDuplicateHandlers() {
   ipcMain.handle('duplicates:getPending', async (_event, sourceId?: string) => {
     try {
       const db = getDatabase()
-      return db.duplicateRepo.getPendingDuplicates(sourceId)
+      return db.duplicates.getPendingDuplicates(sourceId)
     } catch (error) {
       getLoggingService().error('[duplicates]', 'Error getting pending duplicates:', error)
       throw error

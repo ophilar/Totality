@@ -365,7 +365,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
     const db = getDatabase()
-    const items = db.getMediaItems({ sourceId: this.sourceId }) as MediaItem[]
+    const items = db.media.getItems({ sourceId: this.sourceId }) as MediaItem[]
     const mediaItem = items.find((item: MediaItem) => item.plex_id === itemId)
 
     if (mediaItem) {
@@ -534,7 +534,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               // Check if file is unchanged (skip expensive re-analysis)
               const stat = await fsPromises.stat(filePath)
               const fileMtime = stat.mtime.getTime()
-              const existingItem = db.getMediaItemByPath(filePath)
+              const existingItem = db.media.getItemByPath(filePath)
 
               if (existingItem?.file_mtime === fileMtime) {
                 // File unchanged, mark as present and skip processing
@@ -683,18 +683,18 @@ export class LocalFolderProvider extends BaseMediaProvider {
             // Use first item's plex_id as canonical (stable across rescans)
             mediaItem.plex_id = group[0].metadata.itemId
 
-            const id = await db.upsertMediaItem(mediaItem)
+            const id = await db.media.upsertItem(mediaItem)
 
             // Sync versions: delete stale, upsert current, update best version
             const scoredVersions = versions.map(version => {
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
               return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
             })
-            db.syncMediaItemVersions(id, scoredVersions)
+            db.media.syncItemVersions(id, scoredVersions)
 
             mediaItem.id = id
             const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-            await db.upsertQualityScore(qualityScore)
+            await db.media.upsertQualityScore(qualityScore)
 
             result.itemsScanned++
 
@@ -721,11 +721,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
           percentage: 100,
         })
 
-        const existingItems = db.getMediaItems({ type: scanType, sourceId: this.sourceId, libraryId })
+        const existingItems = db.media.getItems({ type: scanType, sourceId: this.sourceId, libraryId })
         for (const item of existingItems) {
           if (item.file_path && !scannedFilePaths.has(item.file_path)) {
             if (item.id) {
-              await db.deleteMediaItem(item.id)
+              await db.media.deleteItem(item.id)
               result.itemsRemoved++
             }
           }
@@ -733,7 +733,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       }
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       // Log TMDB match statistics
       const movieMatches = Array.from(movieTmdbCache.values()).filter(v => v !== null).length
@@ -822,9 +822,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
       // Handle deleted files
       const deletedFiles = filePaths.filter(filePath => !fs.existsSync(filePath))
       for (const filePath of deletedFiles) {
-        const existingItem = db.getMediaItemByPath(filePath)
+        const existingItem = db.media.getItemByPath(filePath)
         if (existingItem?.id) {
-          await db.deleteMediaItem(existingItem.id)
+          await db.media.deleteItem(existingItem.id)
           result.itemsRemoved++
           getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Removed deleted file: ${path.basename(filePath)}`)
         }
@@ -865,7 +865,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             const fileMtime = stat.mtime.getTime()
 
             // Check if this is a new file or existing
-            const existingItem = db.getMediaItemByPath(filePath)
+            const existingItem = db.media.getItemByPath(filePath)
             const isNew = !existingItem
 
             // Parse filename
@@ -918,17 +918,17 @@ export class LocalFolderProvider extends BaseMediaProvider {
               mediaItem.library_id = libraryId
               mediaItem.file_mtime = fileMtime
 
-              const id = await db.upsertMediaItem(mediaItem)
+              const id = await db.media.upsertItem(mediaItem)
 
               // Sync version: delete stale, upsert current, update best version
               const version = this.convertMetadataToVersion(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime)
               const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-              db.syncMediaItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
+              db.media.syncItemVersions(id, [{ ...version, media_item_id: id, ...vScore } as MediaItemVersion])
 
               // Analyze quality
               mediaItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-              await db.upsertQualityScore(qualityScore)
+              await db.media.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
               if (isNew) {
@@ -1017,9 +1017,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
       getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Checking ${deletedFiles.length} deleted files`)
       for (const filePath of deletedFiles) {
         getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Looking up deleted track: ${path.basename(filePath)}`)
-        const existingTrack = db.getMusicTrackByPath(filePath)
+        const existingTrack = db.music.getTrackByPath(filePath)
         if (existingTrack?.id) {
-          await db.deleteMusicTrack(existingTrack.id)
+          await db.music.deleteMusicTrack(existingTrack.id)
           result.itemsRemoved++
           getLoggingService().info('[LocalFolderProvider ${this.sourceId}]', `Removed deleted track: ${path.basename(filePath)}`)
         } else {
@@ -1056,7 +1056,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
           try {
             // Check if this is a new file or existing
-            const existingTrack = db.getMusicTrackByPath(filePath)
+            const existingTrack = db.music.getTrackByPath(filePath)
             const isNew = !existingTrack
 
             // Parse filename and folder structure
@@ -1103,11 +1103,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
             let artistId = artistMap.get(artistName.toLowerCase())
             if (!artistId) {
               // Check if artist exists in database
-              const existingArtist = db.getMusicArtistByName(artistName, this.sourceId)
+              const existingArtist = db.music.getMusicArtistByName(artistName, this.sourceId)
               if (existingArtist && existingArtist.id) {
                 artistId = existingArtist.id
               } else {
-                artistId = await db.upsertMusicArtist({
+                artistId = await db.music.upsertArtist({
                   source_id: this.sourceId,
                   source_type: 'local',
                   library_id: 'music',
@@ -1127,11 +1127,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             if (!albumId) {
               // Check if album exists in database (artistId is guaranteed to exist at this point)
-              const existingAlbum = db.getMusicAlbumByName(albumName, artistId!)
+              const existingAlbum = db.music.getAlbumByName(albumName, artistId!)
               if (existingAlbum && existingAlbum.id) {
                 albumId = existingAlbum.id
               } else {
-                albumId = await db.upsertMusicAlbum({
+                albumId = await db.music.upsertAlbum({
                   source_id: this.sourceId,
                   source_type: 'local',
                   library_id: 'music',
@@ -1154,13 +1154,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
                 if (audioInfo.hasEmbeddedArtwork && ffprobeAvailable) {
                   const artworkPath = await this.extractAlbumArtwork(filePath, albumId!, fileAnalyzer)
                   if (artworkPath) {
-                    await db.updateMusicAlbumArtwork(albumId!, artworkPath)
+                    await db.music.updateMusicAlbumArtwork(albumId!, artworkPath)
                   }
                 } else {
                   const folderArtwork = await this.findFolderArtwork(path.dirname(filePath))
                   if (folderArtwork) {
                     const artworkUrl = `local-artwork://file?path=${encodeURIComponent(folderArtwork)}`
-                    await db.updateMusicAlbumArtwork(albumId!, artworkUrl)
+                    await db.music.updateMusicAlbumArtwork(albumId!, artworkUrl)
                   }
                 }
               }
@@ -1168,7 +1168,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             }
 
             // Create/update track
-            await db.upsertMusicTrack({
+            await db.music.upsertTrack({
               source_id: this.sourceId,
               source_type: 'local',
               library_id: 'music',
@@ -1213,9 +1213,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
       // Update artist stats for affected artists
       for (const [, artistId] of artistMap) {
-        const albums = db.getMusicAlbums({ artistId })
-        const tracks = db.getMusicTracks({ artistId })
-        await db.updateMusicArtistCounts(artistId, albums.length, tracks.length)
+        const albums = db.music.getMusicAlbums({ artistId })
+        const tracks = db.music.getMusicTracks({ artistId })
+        await db.music.updateMusicArtistCounts(artistId, albums.length, tracks.length)
       }
 
       result.success = true
@@ -2097,7 +2097,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               const fileMtime = stats.mtime.getTime()
 
               // Delta scanning: Check if track exists and is unchanged
-              const existingTrack = db.getMusicTrackByPath(filePath)
+              const existingTrack = db.music.getTrackByPath(filePath)
               if (existingTrack?.file_mtime === fileMtime) {
                 // File unchanged, skip expensive FFprobe analysis
                 scannedFilePaths.add(filePath)
@@ -2187,7 +2187,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             // Get or create artist
             let artistId = artistMap.get(artistName.toLowerCase())
             if (!artistId) {
-              artistId = await db.upsertMusicArtist({
+              artistId = await db.music.upsertArtist({
                 source_id: this.sourceId,
                 source_type: 'local',
                 library_id: 'music',
@@ -2205,7 +2205,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             let albumId = albumMap.get(albumKey)
 
             if (!albumId) {
-              albumId = await db.upsertMusicAlbum({
+              albumId = await db.music.upsertAlbum({
                 source_id: this.sourceId,
                 source_type: 'local',
                 library_id: 'music',
@@ -2263,14 +2263,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
               albumArtworkMap.set(albumKey, artworkPath)
               if (artworkPath) {
-                await db.updateMusicAlbumArtwork(albumId, artworkPath)
+                await db.music.updateMusicAlbumArtwork(albumId, artworkPath)
               } else {
                 getLoggingService().info('[LocalFolderProvider]', `No artwork found for "${artistName} - ${albumName}" - will use Cover Art Archive fallback during completeness analysis`)
               }
             }
 
             // Create track
-            await db.upsertMusicTrack({
+            await db.music.upsertTrack({
               source_id: this.sourceId,
               source_type: 'local',
               library_id: 'music',
@@ -2322,7 +2322,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       await this.updateArtistStats(db, artistMap)
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -2487,15 +2487,15 @@ export class LocalFolderProvider extends BaseMediaProvider {
     // Update album_count and track_count for each artist
     for (const [, artistId] of artistMap) {
       // Count albums for this artist
-      const albums = db.getMusicAlbums({ artistId })
+      const albums = db.music.getMusicAlbums({ artistId })
       const albumCount = albums.length
 
       // Count tracks for this artist
-      const tracks = db.getMusicTracks({ artistId })
+      const tracks = db.music.getMusicTracks({ artistId })
       const trackCount = tracks.length
 
       // Update the artist record
-      await db.updateMusicArtistCounts(artistId, albumCount, trackCount)
+      await db.music.updateMusicArtistCounts(artistId, albumCount, trackCount)
     }
   }
 }

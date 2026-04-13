@@ -26,7 +26,7 @@ describe('BetterSQLiteService Integration', () => {
   describe('Media Sources', () => {
     it('should upsert and retrieve a media source', () => {
       const sourceId = 'test-src-1'
-      service.upsertMediaSource({
+      service.sources.upsertSource({
         source_id: sourceId,
         source_type: 'plex',
         display_name: 'Test Plex',
@@ -34,7 +34,7 @@ describe('BetterSQLiteService Integration', () => {
         is_enabled: true,
       })
 
-      const source = service.getMediaSourceById(sourceId)
+      const source = service.sources.getSourceById(sourceId)
       expect(source).not.toBeNull()
       expect(source!.display_name).toBe('Test Plex')
     })
@@ -42,7 +42,7 @@ describe('BetterSQLiteService Integration', () => {
 
   describe('Media Items', () => {
     it('should retrieve media items with filters', () => {
-      const items = service.getMediaItems({ limit: 10 })
+      const items = service.media.getItems({ limit: 10 })
       expect(Array.isArray(items)).toBe(true)
     })
   })

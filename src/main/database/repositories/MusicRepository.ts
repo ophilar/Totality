@@ -8,7 +8,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     super(db, 'music_tracks') // Default table, methods will override as needed
   }
 
-  getMusicTrackByPath(filePath: string): MusicTrack | null {
+  getTrackByPath(filePath: string): MusicTrack | null {
     const sql = 'SELECT * FROM music_tracks WHERE file_path = ?'
     return this.queryOne<MusicTrack>(sql, [filePath])
   }
@@ -271,7 +271,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     this.db.prepare(sql).run(...params)
   }
 
-  getMusicArtists(filters?: MusicFilters): MusicArtist[] {
+  getArtists(filters?: MusicFilters): MusicArtist[] {
     let sql = 'SELECT * FROM music_artists WHERE 1=1'
     const params: unknown[] = []
 
@@ -322,6 +322,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return stmt.all(...params) as MusicArtist[]
   }
 
+  getMusicArtists(filters: MusicFilters = {}): MusicArtist[] {
+    return this.getArtists(filters)
+  }
+
   countMusicArtists(filters?: MusicFilters): number {
     let sql = 'SELECT COUNT(*) as count FROM music_artists WHERE 1=1'
     const params: unknown[] = []
@@ -337,7 +341,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return row?.count || 0
   }
 
-  getMusicArtistById(id: number): MusicArtist | null {
+  getArtistById(id: number): MusicArtist | null {
     const stmt = this.db.prepare('SELECT * FROM music_artists WHERE id = ?')
     return (stmt.get(id) as MusicArtist) || null
   }
@@ -347,7 +351,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return (stmt.get(name, sourceId) as MusicArtist) || null
   }
 
-  getMusicAlbums(filters?: MusicFilters): MusicAlbum[] {
+  getAlbums(filters?: MusicFilters): MusicAlbum[] {
     let sql = 'SELECT * FROM music_albums WHERE 1=1'
     const params: unknown[] = []
 
@@ -413,6 +417,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return stmt.all(...params) as MusicAlbum[]
   }
 
+  getMusicAlbums(filters: MusicFilters = {}): MusicAlbum[] {
+    return this.getAlbums(filters)
+  }
+
   countMusicAlbums(filters?: MusicFilters): number {
     let sql = 'SELECT COUNT(*) as count FROM music_albums WHERE 1=1'
     const params: unknown[] = []
@@ -434,22 +442,22 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return row?.count || 0
   }
 
-  getMusicAlbumById(id: number): MusicAlbum | null {
+  getAlbumById(id: number): MusicAlbum | null {
     const stmt = this.db.prepare('SELECT * FROM music_albums WHERE id = ?')
     return (stmt.get(id) as MusicAlbum) || null
   }
 
-  getMusicAlbumByName(title: string, artistId: number): MusicAlbum | null {
+  getAlbumByName(title: string, artistId: number): MusicAlbum | null {
     const stmt = this.db.prepare('SELECT * FROM music_albums WHERE title = ? AND artist_id = ?')
     return (stmt.get(title, artistId) as MusicAlbum) || null
   }
 
-  getMusicAlbumsByArtistName(artistName: string, limit = 500): MusicAlbum[] {
+  getAlbumsByArtistName(artistName: string, limit = 500): MusicAlbum[] {
     const stmt = this.db.prepare('SELECT * FROM music_albums WHERE artist_name = ? LIMIT ?')
     return stmt.all(artistName, limit) as MusicAlbum[]
   }
 
-  getMusicTracks(filters?: MusicFilters): MusicTrack[] {
+  getTracks(filters?: MusicFilters): MusicTrack[] {
     let sql = 'SELECT * FROM music_tracks WHERE 1=1'
     const params: unknown[] = []
 
@@ -512,7 +520,11 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return stmt.all(...params) as MusicTrack[]
   }
 
-  getMusicTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> {
+  getMusicTracks(filters: MusicFilters = {}): MusicTrack[] {
+    return this.getTracks(filters)
+  }
+
+  getTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> {
     const result = new Map<number, MusicTrack[]>()
     if (albumIds.length === 0) return result
 
@@ -548,7 +560,7 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return row?.count || 0
   }
 
-  getMusicTrackById(id: number): MusicTrack | null {
+  getTrackById(id: number): MusicTrack | null {
     const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE id = ?')
     return (stmt.get(id) as MusicTrack) || null
   }
@@ -594,6 +606,10 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
   }
 
   upsertMusicQualityScore(score: MusicQualityScore): void {
+    this.upsertQualityScore(score)
+  }
+
+  upsertQualityScore(score: MusicQualityScore): void {
     const stmt = this.db.prepare(`
       INSERT INTO music_quality_scores (
         album_id, quality_tier, tier_quality, tier_score,
@@ -620,9 +636,13 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     )
   }
 
-  getMusicQualityScore(albumId: number): MusicQualityScore | null {
+  getQualityScore(albumId: number): MusicQualityScore | null {
     const stmt = this.db.prepare('SELECT * FROM music_quality_scores WHERE album_id = ?')
     return (stmt.get(albumId) as MusicQualityScore) || null
+  }
+
+  getMusicQualityScore(albumId: number): MusicQualityScore | null {
+    return this.getQualityScore(albumId)
   }
 
   getAlbumsNeedingUpgrade(limit?: number, sourceId?: string): MusicAlbum[] {
@@ -767,29 +787,25 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return stmt.all() as AlbumCompleteness[]
   }
 
-  getMusicAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum> {
+  getAlbumsByMusicbrainzIds(ids: string[]): Map<string, MusicAlbum> {
     const result = new Map<string, MusicAlbum>()
     if (ids.length === 0) return result
 
-    const batchSize = 500
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM music_albums WHERE musicbrainz_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as MusicAlbum[]
-      for (const row of rows) {
-        if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
-      }
+    const placeholders = ids.map(() => '?').join(',')
+    const stmt = this.db.prepare(`SELECT * FROM music_albums WHERE musicbrainz_id IN (${placeholders})`)
+    const rows = stmt.all(...ids) as MusicAlbum[]
+    for (const row of rows) {
+      if (row.musicbrainz_id) result.set(row.musicbrainz_id, row)
     }
     return result
   }
 
-  getMusicTrackByMusicbrainzId(id: string): MusicTrack | null {
+  getTrackByMusicbrainzId(id: string): MusicTrack | null {
     const stmt = this.db.prepare('SELECT * FROM music_tracks WHERE musicbrainz_id = ? LIMIT 1')
     return (stmt.get(id) as MusicTrack) || null
   }
 
-  getMusicStats(sourceId?: string): {
+  getStats(sourceId?: string): {
     totalArtists: number
     totalAlbums: number
     totalTracks: number
@@ -837,5 +853,9 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
       totalSize: albumRow?.total_size || 0,
       avgAudioBitrate: albumRow?.avg_bitrate || 0
     }
+  }
+
+  getMusicStats(sourceId?: string) {
+    return this.getStats(sourceId)
   }
 }

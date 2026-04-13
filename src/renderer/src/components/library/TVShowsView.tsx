@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check, HardDrive, Zap } from 'lucide-react'
-import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { MediaGridView } from './MediaGridView'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
@@ -241,7 +240,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isExpan
           </div>
           <div className="flex gap-4 mt-2 text-sm text-muted-foreground font-mono">
             <span>{episode.resolution}</span>
-            <span>{(episode.video_bitrate / 1000).toFixed(1)} Mbps</span>
+            <span>{((episode.video_bitrate ?? 0) / 1000).toFixed(1)} Mbps</span>
             <span>{episode.audio_channels}.0 Audio</span>
             {episode.file_size && (
               <span>
@@ -862,13 +861,13 @@ export function TVShowsView({
           {allEpisodeItems.map((item) => (
             item.type === 'owned' ? (
               <EpisodeRow
-                key={item.episode.id}
+                key={item.episode.id!}
                 episode={item.episode}
-                onClick={() => onSelectEpisode(item.episode.id)}
+                onClick={() => onSelectEpisode(item.episode.id!)}
                 onRescan={onRescanEpisode}
                 onDismissUpgrade={onDismissUpgrade}
-                isExpanded={expandedRecommendations.has(item.episode.id)}
-                onToggleOptimize={() => toggleRecommendation(item.episode.id)}
+                isExpanded={expandedRecommendations.has(item.episode.id!)}
+                onToggleOptimize={() => toggleRecommendation(item.episode.id!)}
                              />
             ) : (
               <MissingEpisodeRowWithArtwork

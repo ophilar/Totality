@@ -58,7 +58,7 @@ export class NotificationRepository {
     return ids
   }
 
-  getNotifications(options: GetNotificationsOptions = {}): Notification[] {
+  get(options: GetNotificationsOptions = {}): Notification[] {
     const { limit = 100, offset = 0, type, unreadOnly = false } = options
 
     let sql = 'SELECT * FROM notifications WHERE 1=1'

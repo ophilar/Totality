@@ -320,7 +320,7 @@ export class TaskQueueService {
       this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
       
       try {
-        this.db.createNotification({
+        this.db.notifications.addNotification({
           type: 'error',
           title: 'Task failed',
           message: `${task.label}: ${errorMsg}`,
@@ -400,11 +400,11 @@ export class TaskQueueService {
     
     if (!task.artistId) throw new Error('Missing artistId for music completeness analysis')
     
-    const artist = db.getMusicArtistById(task.artistId)
+    const artist = db.music.getArtistById(task.artistId)
     if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
 
     // Get owned albums for this artist
-    const albums = db.getMusicAlbums({ artistId: task.artistId })
+    const albums = db.music.getAlbums({ artistId: task.artistId })
     const ownedAlbumTitles = albums.map((a: any) => a.title)
     const ownedAlbumMbIds = albums.map((a: any) => a.musicbrainz_id).filter((id: any): id is string => !!id)
     

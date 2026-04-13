@@ -4,6 +4,7 @@ import { X, CircleFadingArrowUp, EyeOff } from 'lucide-react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { MissingItemPopup } from './MissingItemPopup'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
+import type { MovieCollectionData, MediaItem } from './types'
 
 interface MissingMovie {
   tmdb_id: string
@@ -12,31 +13,9 @@ interface MissingMovie {
   poster_path?: string
 }
 
-interface MovieCollectionData {
-  id: number
-  tmdb_collection_id: string
-  collection_name: string
-  total_movies: number
-  owned_movies: number
-  missing_movies: string // JSON array
-  owned_movie_ids: string // JSON array
-  completeness_percentage: number
-  poster_url?: string
-}
-
-interface OwnedMovie {
-  id: number
-  title: string
-  year?: number
-  poster_url?: string
-  tmdb_id?: string
-  needs_upgrade?: boolean
-  tier_quality?: string
-}
-
 interface CollectionModalProps {
   collection: MovieCollectionData
-  ownedMovies: OwnedMovie[]
+  ownedMovies: MediaItem[]
   onClose: () => void
   onMovieClick: (movieId: number) => void
   onDismissCollectionMovie?: (tmdbId: string, movieTitle: string) => void
@@ -162,7 +141,7 @@ export const CollectionModal = memo(function CollectionModal({
                 <div
                   key={`${movie.type}-${movie.tmdb_id}`}
                   className="cursor-pointer hover-scale"
-                  onClick={() => handleMovieItemClick(movie)}
+                  onClick={() => handleMovieItemClick({ ...movie, id: movie.id || null, tmdb_id: movie.tmdb_id || undefined })}
                 >
                   <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md">
                     {/* Poster */}

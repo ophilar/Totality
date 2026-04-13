@@ -2,6 +2,27 @@ import { defineConfig } from 'vitest/config'
 import path from 'path'
 
 export default defineConfig({
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 100,
+      ignored: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/dist-electron/**',
+        '**/tests/tmp/**',
+        '**/coverage/**',
+        '**/logs/**',
+        '**/*.db*',
+        '**/*.log*',
+        '**/*.tmp',
+        '**/*.txt',
+        '**/*.ps1',
+        '**/.git/**',
+        '**/.vitest-attachments/**',
+      ],
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

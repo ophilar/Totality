@@ -54,8 +54,8 @@ describe('TVShowRepository', () => {
     } as SeriesCompleteness)
 
     // Insert actual episodes
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 2))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 2))
 
     const summaries = repo.getTVShowSummaries()
     expect(summaries).toHaveLength(1)
@@ -88,8 +88,8 @@ describe('TVShowRepository', () => {
   })
 
   it('should retrieve episodes for a specific show', () => {
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertMediaItem(mockEpisode('The Wire', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
 
     const episodes = repo.getTVShowEpisodes('Breaking Bad')
     expect(episodes).toHaveLength(1)

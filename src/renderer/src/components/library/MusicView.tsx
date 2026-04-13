@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
+import { VirtuosoGrid } from 'react-virtuoso'
 import { MediaGridView } from './MediaGridView'
 import { Music, Disc3, User, MoreVertical, RefreshCw, X, Pencil, CircleFadingArrowUp, Trash2, EyeOff, ChevronDown, ChevronUp, Copy, Check, HardDrive } from 'lucide-react'
 import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
@@ -305,13 +305,13 @@ export function MusicView({
   // Create lookup maps for artist and album names
   const artistNameMap = useMemo(() => {
     const map = new Map<number, string>()
-    artists.forEach(a => map.set(a.id, a.name))
+    artists.forEach(a => { if (a.id !== undefined) map.set(a.id, a.name) })
     return map
   }, [artists])
 
   const albumInfoMap = useMemo(() => {
     const map = new Map<number, { title: string; artistName?: string }>()
-    albums.forEach(a => map.set(a.id, { title: a.title, artistName: a.artist_name }))
+    albums.forEach(a => { if (a.id !== undefined) map.set(a.id, { title: a.title, artistName: a.artist_name }) })
     return map
   }, [albums])
 
@@ -627,7 +627,7 @@ export function MusicView({
           const unifiedTracks: UnifiedTrack[] = [
             // Owned tracks
             ...tracks.map(t => ({
-              id: t.id,
+              id: t.id ?? `owned-${t.provider_id}`,
               title: t.title,
               track_number: t.track_number,
               disc_number: t.disc_number,
@@ -791,194 +791,6 @@ export function MusicView({
             </div>
           )
         })()}
-
-        {/* Track Quality Details Modal */}
-        {selectedTrackForQuality && (() => {
-          const tier = selectedTrackForQuality.qualityTier
-          const bitrateKbps = selectedTrackForQuality.bitrate || 0
-          const isLossy = !selectedTrackForQuality.is_lossless
-          const isHighLossy = isLossy && bitrateKbps >= 256
-          const tierLabel = isHighLossy ? 'High' : tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
-          const tierDescription = tier === 'ultra' ? 'Hi-Res Lossless' :
-                                  tier === 'high' ? 'CD-Quality Lossless' :
-                                  isHighLossy ? 'High Bitrate Lossy' :
-                                  tier === 'medium' ? 'Transparent Lossy' :
-                                  tier === 'low' ? 'Low Bitrate Lossy' : 'Unknown'
-          // Calculate score within tier (not against global ceiling)
-          const sampleRate = selectedTrackForQuality.sample_rate || 44100
-          const bitDepth = selectedTrackForQuality.bit_depth || 16
-          const tierScore = tier === 'ultra' ? 100 :
-                           tier === 'high' ? Math.round(70 + Math.min((sampleRate / 48000), 1) * 15 + Math.min((bitDepth / 24), 1) * 15) :
-                           isHighLossy ? Math.min(Math.round(90 + (bitrateKbps - 256) / 64 * 10), 100) :
-                           tier === 'medium' ? Math.round(40 + ((bitrateKbps - 128) / (256 - 128)) * 50) :
-                           tier === 'low' ? Math.round((bitrateKbps / 192) * 40) : 0
-
-          // Check if bitrate is low (for lossy codecs, below 160kbps for MP3 or 128kbps for AAC)
-          const isLossyCodec = !selectedTrackForQuality.is_lossless
-          const codec = (selectedTrackForQuality.codec || '').toLowerCase()
-          const isAAC = codec.includes('aac')
-          const bitrateLow = isLossyCodec && selectedTrackForQuality.bitrate &&
-            (isAAC ? selectedTrackForQuality.bitrate < 128 : selectedTrackForQuality.bitrate < 160)
-
-          // Get explanation text for low/medium tiers
-          const getIssueText = () => {
-            if (tier === 'low') {
-              return `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps may have audible artifacts. Consider 256+ kbps for transparent quality, or lossless for archival.`
-            }
-            if (tier === 'medium') {
-              return `Good for everyday listening. Lossless (FLAC) available for critical listening or archival.`
-            }
-            return null
-          }
-          const issueText = getIssueText()
-
-          return createPortal(
-            <div
-              className="fixed inset-0 bg-black/60 flex items-center justify-center z-200 p-6"
-              onClick={() => setSelectedTrackForQuality(null)}
-            >
-              <div
-                className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Header — matches MediaDetails pattern */}
-                <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
-                  {/* Album Art */}
-                  {selectedAlbum?.thumb_url && (
-                    <img
-                      src={selectedAlbum.thumb_url}
-                      alt=""
-                      className="w-16 h-16 rounded-lg object-cover shrink-0"
-                      onError={(e) => { e.currentTarget.style.display = 'none' }}
-                    />
-                  )}
-
-                  {/* Title & Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
-                        {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
-                          <p className="text-sm text-muted-foreground truncate">
-                            {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {(tier === 'low' || tier === 'medium') && (
-                          <AddToWishlistButton
-                            mediaType="track"
-                            title={selectedTrackForQuality.title}
-                            artistName={selectedTrackForQuality.artist_name}
-                            albumTitle={selectedTrackForQuality.album_title}
-                            posterUrl={selectedAlbum?.thumb_url || undefined}
-                            reason="upgrade"
-                            compact
-                          />
-                        )}
-                        {(tier === 'low' || tier === 'medium') && (
-                          <button
-                            onClick={() => setSelectedTrackForQuality(null)}
-                            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                            title="Dismiss"
-                          >
-                            <EyeOff className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setSelectedTrackForQuality(null)}
-                          className="text-muted-foreground hover:text-foreground p-1"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="p-4 space-y-4">
-                  {/* Quality Score Card */}
-                  <div className="rounded-lg p-3">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 bg-muted/30 -ml-3 -mt-3 -mb-3 px-4 py-3 rounded-l-lg">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold">{tierLabel}</div>
-                          <div className="text-xs font-medium text-muted-foreground">{tierDescription}</div>
-                        </div>
-                        <div className="h-10 w-px bg-border" />
-                        <div className="text-center">
-                          <div className="text-2xl font-bold">{tierScore}</div>
-                          <div className="text-xs font-medium text-muted-foreground">Score</div>
-                        </div>
-                      </div>
-
-                      {/* Quality Bar + Premium Badges */}
-                      <div className="flex-1 flex items-center gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-sm text-muted-foreground">Quality</span>
-                            <span className="text-sm font-medium tabular-nums">{tierScore}</span>
-                          </div>
-                          <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
-                            <div className="h-full bg-primary transition-all" style={{ width: `${tierScore}%` }} />
-                          </div>
-                          <div className="text-sm text-muted-foreground mt-0.5">
-                            {selectedTrackForQuality.is_lossless
-                              ? `${selectedTrackForQuality.bit_depth || 16}-bit / ${((selectedTrackForQuality.sample_rate || 44100) / 1000).toFixed(1)} kHz`
-                              : `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps`
-                            } · Target: {tier === 'ultra' ? '24-bit+ / 96+ kHz'
-                              : tier === 'high' ? '16-bit+ / 44.1+ kHz'
-                              : isHighLossy ? '256+ kbps'
-                              : tier === 'medium' ? '192-256 kbps'
-                              : '160+ kbps'}
-                          </div>
-                        </div>
-                        {(selectedTrackForQuality.bit_depth ?? 0) >= 24 && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-400">Hi-Res</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Issue text */}
-                    {issueText && (
-                      <div className="mt-3">
-                        <div className="text-sm text-muted-foreground">{issueText}</div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Technical Specs */}
-                  <div className="bg-muted/30 rounded-lg p-3">
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Audio Specs</h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Codec</span>
-                        <span className="font-medium uppercase">{selectedTrackForQuality.codec || 'Unknown'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Bitrate</span>
-                        <span className="font-medium flex items-center">
-                          {selectedTrackForQuality.bitrate ? `${Math.round(selectedTrackForQuality.bitrate)} kbps` : 'N/A'}
-                          {bitrateLow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 ml-1.5" title="Below quality threshold" />}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Sample Rate</span>
-                        <span className="font-medium">{selectedTrackForQuality.sample_rate ? `${(selectedTrackForQuality.sample_rate / 1000).toFixed(1)} kHz` : 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Bit Depth</span>
-                        <span className="font-medium">{selectedTrackForQuality.bit_depth ? `${selectedTrackForQuality.bit_depth}-bit` : 'N/A'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        })()}
       </div>
     )
   }
@@ -1063,7 +875,7 @@ export function MusicView({
             {/* Action buttons row */}
             <div className="flex items-center gap-3 mt-3" ref={artistMenuRef}>
               <button
-                onClick={() => { handleAnalyzeArtist(selectedArtist.id) }}
+                onClick={() => { if (selectedArtist.id !== undefined) handleAnalyzeArtist(selectedArtist.id) }}
                 disabled={isAnalyzingArtist}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 title="Analyze Completeness"
@@ -1073,7 +885,7 @@ export function MusicView({
               </button>
               {onFixArtistMatch && (
                 <button
-                  onClick={() => onFixArtistMatch(selectedArtist.id, selectedArtist.name)}
+                  onClick={() => { if (selectedArtist.id !== undefined) onFixArtistMatch(selectedArtist.id, selectedArtist.name) }}
                   className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                   title="Fix Match"
                 >
@@ -1250,25 +1062,25 @@ export function MusicView({
             </div>
           }
           renderGridItem={(artist) => (
-            <div key={artist.id} data-title={artist.name}>
+            <div key={artist.id!} data-title={artist.name}>
               <ArtistCard
                 artist={artist}
                 onClick={() => onSelectArtist(artist)}
                 showSourceBadge={showSourceBadge}
-                onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                onFixMatch={onFixArtistMatch && artist.id !== undefined ? () => onFixArtistMatch(artist.id!, artist.name) : undefined}
                 onAnalyzeCompleteness={onAnalyzeArtist}
                 artistCompleteness={artistCompleteness}
               />
             </div>
           )}
           renderListItem={(artist) => (
-            <div key={artist.id} data-title={artist.name}>
+            <div key={artist.id!} data-title={artist.name}>
               <ArtistListItem
                 artist={artist}
                 completeness={artistCompleteness.get(artist.name)}
                 onClick={() => onSelectArtist(artist)}
                 showSourceBadge={showSourceBadge}
-                onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id, artist.name) : undefined}
+                onFixMatch={onFixArtistMatch && artist.id !== undefined ? () => onFixArtistMatch(artist.id!, artist.name) : undefined}
                 onAnalyzeCompleteness={onAnalyzeArtist}
               />
             </div>
@@ -1453,9 +1265,6 @@ export function MusicView({
       <div className="flex-1 min-h-0">
         {mainContent}
       </div>
-    </div>
-  )
-}
 
       {/* Empty state for artists view */}
       {musicViewMode === 'artists' && artists.length === 0 && (

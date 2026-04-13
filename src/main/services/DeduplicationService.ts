@@ -23,8 +23,8 @@ export class DeduplicationService {
    */
   async scanForDuplicates(sourceId?: string): Promise<number> {
     const db = getDatabase()
-    const allMovies = db.getMediaItems({ type: 'movie', sourceId })
-    const allEpisodes = db.getMediaItems({ type: 'episode', sourceId })
+    const allMovies = db.media.getItems({ type: 'movie', sourceId })
+    const allEpisodes = db.media.getItems({ type: 'episode', sourceId })
     
     let count = 0
     
@@ -52,7 +52,7 @@ export class DeduplicationService {
     for (const [key, ids] of movieGroups.entries()) {
       if (ids.length > 1) {
         const [sId, tmdbId] = key.split(':')
-        db.duplicateRepo.upsertDuplicate({
+        db.duplicates.upsertDuplicate({
           source_id: sId,
           external_id: tmdbId,
           external_type: 'tmdb_movie',
@@ -68,7 +68,7 @@ export class DeduplicationService {
         const parts = key.split(':')
         const sId = parts[0]
         // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
-        db.duplicateRepo.upsertDuplicate({
+        db.duplicates.upsertDuplicate({
           source_id: sId,
           external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
           external_type: 'tmdb_series',
@@ -102,7 +102,7 @@ export class DeduplicationService {
    */
   recommendRetention(mediaItemIds: number[]): { keep: number; discard: number[]; reason: string } {
     const db = getDatabase()
-    const items = mediaItemIds.map(id => db.getMediaItemById(id)).filter((i): i is MediaItem => !!i)
+    const items = mediaItemIds.map(id => db.media.getItem(id)).filter((i): i is MediaItem => !!i)
     
     if (items.length <= 1) return { keep: items[0]?.id || 0, discard: [], reason: 'Only one item' }
 
@@ -150,7 +150,7 @@ export class DeduplicationService {
    */
   async resolveDuplicate(duplicateId: number, keepItemId: number, deleteOthers: boolean = false): Promise<boolean> {
     const db = getDatabase()
-    const duplicate = db.duplicateRepo.getById(duplicateId)
+    const duplicate = db.duplicates.getById(duplicateId)
     if (!duplicate) throw new Error('Duplicate group not found')
     
     const allIds = JSON.parse(duplicate.media_item_ids) as number[]
@@ -161,7 +161,7 @@ export class DeduplicationService {
 
     if (actualDelete) {
       for (const id of discardIds) {
-        const item = db.getMediaItemById(id)
+        const item = db.media.getItem(id)
         if (item && item.file_path) {
           try {
             const fs = require('fs')
@@ -169,7 +169,7 @@ export class DeduplicationService {
               getLoggingService().info('[DeduplicationService]', `Deleting duplicate file: ${item.file_path}`)
               fs.unlinkSync(item.file_path)
             }
-            db.deleteMediaItem(id)
+            db.media.deleteItem(id)
           } catch (err) {
             getLoggingService().error('[DeduplicationService]', `Failed to delete file ${item.file_path}:`, err)
           }
@@ -180,7 +180,7 @@ export class DeduplicationService {
       // Maybe we should hide them from UI?
     }
     
-    db.duplicateRepo.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
+    db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
     return true
   }
 }

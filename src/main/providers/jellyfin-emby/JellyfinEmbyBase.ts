@@ -901,7 +901,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               || `${this.providerType}-boxset-${boxset.Id}`
 
             const db = getDatabase()
-            await db.upsertMovieCollection({
+            await db.stats.upsertMovieCollection({
               tmdb_collection_id: tmdbCollectionId,
               collection_name: boxset.Name,
               source_id: this.sourceId,
@@ -1113,7 +1113,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               canonicalItem.source_type = this.providerType
               canonicalItem.library_id = libraryId
 
-              const id = await db.upsertMediaItem(canonicalItem)
+              const id = await db.media.upsertItem(canonicalItem)
               scannedProviderIds.add(canonicalItem.plex_id)
 
               // Sync versions: delete stale, upsert current, update best version
@@ -1121,12 +1121,12 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
                 const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
                 return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
               })
-              db.syncMediaItemVersions(id, scoredVersions)
+              db.media.syncItemVersions(id, scoredVersions)
 
               // Analyze quality (parent item)
               canonicalItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(canonicalItem)
-              await db.upsertQualityScore(qualityScore)
+              await db.media.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
             }
@@ -1161,12 +1161,12 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       // Remove stale items (only for full scans, not incremental)
       if (!isIncremental && scannedProviderIds.size > 0) {
         const itemType = libraryType === 'show' ? 'episode' : 'movie'
-        const items = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
+        const items = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
         for (const item of items) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
-              await db.deleteMediaItem(item.id)
+              await db.media.deleteItem(item.id)
               result.itemsRemoved++
             }
           }
@@ -1174,7 +1174,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       }
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -2016,13 +2016,13 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         albumData.avg_audio_bitrate = stats.avgBitrate
 
         // Upsert album
-        const albumId = await db.upsertMusicAlbum(albumData)
+        const albumId = await db.music.upsertAlbum(albumData)
         scannedAlbumIds.add(jellyfinAlbum.Id)
 
         // Upsert tracks
         for (const trackData of trackDataList) {
           trackData.album_id = albumId
-          await db.upsertMusicTrack(trackData)
+          await db.music.upsertTrack(trackData)
           scannedTrackIds.add(trackData.provider_id)
           result.itemsScanned++
         }
@@ -2051,7 +2051,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           const artistData = this.convertToMusicArtist(jellyfinArtist, libraryId)
 
           // Upsert artist
-          const artistId = await db.upsertMusicArtist(artistData)
+          const artistId = await db.music.upsertArtist(artistData)
           scannedArtistIds.add(jellyfinArtist.Id)
 
           // Get all albums for this artist
@@ -2067,7 +2067,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }
 
           // Update artist counts
-          await db.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
+          await db.music.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
 
           processed++
           if (onProgress) {

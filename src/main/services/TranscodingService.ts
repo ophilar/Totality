@@ -178,7 +178,7 @@ export class TranscodingService {
     onProgress?: (progress: TranscodeProgress) => void
   ): Promise<boolean> {
     const db = getDatabase()
-    const item = db.getMediaItemById(mediaItemId)
+    const item = db.media.getItem(mediaItemId)
     if (!item || !item.file_path) throw new Error('Media item or file path not found')
 
     const availability = await this.checkAvailability()
@@ -253,8 +253,7 @@ export class TranscodingService {
           const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
           if (newAnalysis.success) {
              // Update item in database with new path and stats
-             // This needs a specific repo method or direct DB access
-             db.updateMediaItemPathAndStats(mediaItemId, finalPath, newAnalysis)
+             db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
           }
         } catch (err) {
           // Restore from backup if move failed

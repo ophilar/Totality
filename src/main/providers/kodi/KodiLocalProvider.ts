@@ -94,4 +94,36 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
       this.db = null
     }
   }
+
+  async scanMusicLibrary(progress?: any): Promise<any> {
+    return this.scanLibrary('music', { onProgress: progress })
+  }
+
+  cancelScan(): void {
+    // Basic implementation for KodiLocal
+  }
+
+  async importCollections(onProgress?: (progress: { current: number; total: number; currentItem: string }) => void): Promise<void> {
+    // Stub
+  }
+
+  async getCollections(): Promise<any[]> {
+    return []
+  }
+
+  setFFprobeAnalysis(_enabled: boolean): void {
+    // Stub
+  }
+
+  isFFprobeAnalysisEnabled(): boolean {
+    return false
+  }
+
+  isFFprobeAvailable(): boolean {
+    return false
+  }
+
+  getFFprobeVersion(): string {
+    return 'N/A'
+  }
 }

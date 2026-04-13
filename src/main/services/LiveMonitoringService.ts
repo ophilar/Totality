@@ -233,7 +233,7 @@ export class LiveMonitoringService {
 
     // Get all enabled sources
     const db = getDatabase()
-    const sources = db.getEnabledMediaSources()
+    const sources = db.sources.getEnabledSources()
 
     for (const source of sources) {
       this.startMonitoringSource(source.source_id, source.source_type as ProviderType, source.connection_config)
@@ -384,7 +384,7 @@ export class LiveMonitoringService {
 
       // Get source display name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
+      const source = db.sources.getSourceById(sourceId)
       const sourceName = source?.display_name || config.name || sourceId
 
       // Determine if we should use polling (for network paths)
@@ -481,7 +481,7 @@ export class LiveMonitoringService {
 
     // Get source name for debug output
     const db = getDatabase()
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sources.getSourceById(sourceId)
     const sourceName = source?.display_name || sourceId
 
     getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
@@ -551,7 +551,7 @@ export class LiveMonitoringService {
     const db = getDatabase()
 
     // Get source info
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sources.getSourceById(sourceId)
     if (!source) {
       getLoggingService().info('[LiveMonitoring]', `Source ${sourceId} not found`)
       return []
@@ -559,7 +559,7 @@ export class LiveMonitoringService {
 
     // Get libraries for this source
     type LibraryInfo = { libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean; lastScanAt: string | null; itemsScanned: number }
-    const libraries = db.getSourceLibraries(sourceId) as LibraryInfo[]
+    const libraries = db.sources.getSourceLibraries(sourceId) as LibraryInfo[]
     const enabledLibraries = libraries.filter((lib: LibraryInfo) => lib.isEnabled)
 
     const events: SourceChangeEvent[] = []
@@ -598,12 +598,12 @@ export class LiveMonitoringService {
             if (isMusic) {
               // Look up each track by its file path
               for (const filePath of existingFiles) {
-                const track = db.getMusicTrackByPath(filePath)
+                const track = db.music.getTrackByPath(filePath)
                 if (track) {
                   // Get album artwork if available
                   let posterUrl: string | undefined
                   if (track.album_id) {
-                    const album = db.getMusicAlbumById(track.album_id)
+                    const album = db.music.getAlbumById(track.album_id)
                     posterUrl = album?.thumb_url || undefined
                   }
 
@@ -619,7 +619,7 @@ export class LiveMonitoringService {
             } else {
               // Look up each video item by its file path
               for (const filePath of existingFiles) {
-                const item = db.getMediaItemByPath(filePath)
+                const item = db.media.getItemByPath(filePath)
                 if (item) {
                   changedItems.push({
                     id: item.id?.toString() || '',
@@ -691,7 +691,7 @@ export class LiveMonitoringService {
           // Create notification for library changes
           if (totalChanges > 0) {
             try {
-              getDatabase().createNotification({
+              db.notifications.createNotification({
                 type: 'source_change',
                 title: 'Library updated',
                 message: `${source.display_name}: ${changeDescription}`,
@@ -757,7 +757,7 @@ export class LiveMonitoringService {
 
       // Get source name for debug output
       const db = getDatabase()
-      const source = db.getMediaSourceById(sourceId)
+      const source = db.sources.getSourceById(sourceId)
       const sourceName = source?.display_name || sourceId
 
       getLoggingService().info('[LiveMonitoring]', `Polling ${sourceName}...`)
@@ -809,7 +809,7 @@ export class LiveMonitoringService {
     const db = getDatabase()
 
     // Get source info
-    const source = db.getMediaSourceById(sourceId)
+    const source = db.sources.getSourceById(sourceId)
     if (!source) {
       getLoggingService().info('[LiveMonitoring]', `Source ${sourceId} not found`)
       return []
@@ -817,7 +817,7 @@ export class LiveMonitoringService {
 
     // Get libraries for this source
     type LibraryInfo = { libraryId: string; libraryName: string; libraryType: string; isEnabled: boolean; lastScanAt: string | null; itemsScanned: number }
-    const libraries = db.getSourceLibraries(sourceId) as LibraryInfo[]
+    const libraries = db.sources.getSourceLibraries(sourceId) as LibraryInfo[]
     const enabledLibraries = libraries.filter((lib: LibraryInfo) => lib.isEnabled)
 
     const events: SourceChangeEvent[] = []
@@ -834,7 +834,7 @@ export class LiveMonitoringService {
         // Check for both added AND updated items
         if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0)) {
           // Get recently changed items from THIS library (sorted by updated_at)
-          const recentItems = db.getMediaItems({
+          const recentItems = db.media.getItems({
             sourceId,
             libraryId: library.libraryId,
             sortBy: 'updated_at',
@@ -928,7 +928,7 @@ export class LiveMonitoringService {
       if (totalUpdated > 0) parts.push(`${totalUpdated} updated`)
       if (totalRemoved > 0) parts.push(`${totalRemoved} removed`)
       try {
-        getDatabase().createNotification({
+        db.notifications.createNotification({
           type: 'source_change',
           title: 'Library updated',
           message: `${source.display_name}: ${parts.join(', ')}`,
@@ -1022,7 +1022,7 @@ export class LiveMonitoringService {
     if (!this.isActive || this.shouldPause()) return
 
     const db = getDatabase()
-    const sources = db.getEnabledMediaSources()
+    const sources = db.sources.getEnabledSources()
 
     for (const source of sources) {
       const isRemote = source.source_type !== 'local' && source.source_type !== 'kodi-local'

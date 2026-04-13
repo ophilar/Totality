@@ -8,17 +8,32 @@ export class SourceRepository extends BaseRepository<MediaSource> {
     super(db, 'media_sources')
   }
 
-  getMediaSources(): MediaSource[] {
-    const stmt = this.db.prepare('SELECT * FROM media_sources ORDER BY display_name ASC')
-    return stmt.all() as MediaSource[]
+  getSources(type?: string): MediaSource[] {
+    let sql = 'SELECT * FROM media_sources'
+    const params = []
+    if (type) {
+      sql += ' WHERE source_type = ?'
+      params.push(type)
+    }
+    sql += ' ORDER BY display_name ASC'
+    const stmt = this.db.prepare(sql)
+    return stmt.all(...params) as MediaSource[]
   }
 
-  getMediaSourceById(sourceId: string): MediaSource | null {
+  getMediaSources(type?: string): MediaSource[] {
+    return this.getSources(type)
+  }
+
+  getSourceById(sourceId: string): MediaSource | null {
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE source_id = ?')
     return (stmt.get(sourceId) as MediaSource) || null
   }
 
-  upsertMediaSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): number {
+  getMediaSourceById(sourceId: string): MediaSource | null {
+    return this.getSourceById(sourceId)
+  }
+
+  upsertSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): number {
     const stmt = this.db.prepare(`
       INSERT INTO media_sources (
         source_id, source_type, display_name, connection_config, is_enabled, last_connected_at, last_scan_at
@@ -45,7 +60,11 @@ export class SourceRepository extends BaseRepository<MediaSource> {
     return Number(result.lastInsertRowid)
   }
 
-  deleteMediaSource(sourceId: string): void {
+  upsertMediaSource(source: any): number {
+    return this.upsertSource(source)
+  }
+
+  deleteSource(sourceId: string): void {
     const db = this.db
     
     // Execute all deletions in a transaction
@@ -124,8 +143,8 @@ export class SourceRepository extends BaseRepository<MediaSource> {
     }
   }
 
-  updateLastScanAt(sourceId: string): void {
-    this.db.prepare("UPDATE media_sources SET last_scan_at = datetime('now') WHERE source_id = ?").run(sourceId)
+  deleteMediaSource(sourceId: string): void {
+    this.deleteSource(sourceId)
   }
 
   updateSourceConnectionTime(sourceId: string): void {
@@ -133,22 +152,10 @@ export class SourceRepository extends BaseRepository<MediaSource> {
   }
 
   updateSourceScanTime(sourceId: string): void {
-    this.updateLastScanAt(sourceId)
+    this.db.prepare("UPDATE media_sources SET last_scan_at = datetime('now') WHERE source_id = ?").run(sourceId)
   }
 
-  getMediaSources(type?: string): MediaSource[] {
-    let sql = 'SELECT * FROM media_sources'
-    const params = []
-    if (type) {
-      sql += ' WHERE source_type = ?'
-      params.push(type)
-    }
-    sql += ' ORDER BY display_name ASC'
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MediaSource[]
-  }
-
-  getEnabledMediaSources(): MediaSource[] {
+  getEnabledSources(): MediaSource[] {
     const stmt = this.db.prepare('SELECT * FROM media_sources WHERE is_enabled = 1 ORDER BY display_name ASC')
     return stmt.all() as MediaSource[]
   }
@@ -176,10 +183,32 @@ export class SourceRepository extends BaseRepository<MediaSource> {
 
   toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): void {
     this.db.prepare(`
-      INSERT INTO library_scans (source_id, library_id, is_enabled, created_at, updated_at)
-      VALUES (?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, library_id) DO UPDATE SET is_enabled = ?, updated_at = datetime('now')
-    `).run(sourceId, libraryId, enabled ? 1 : 0, enabled ? 1 : 0)
+      UPDATE library_scans 
+      SET is_enabled = ?, updated_at = datetime('now')
+      WHERE source_id = ? AND library_id = ?
+    `).run(enabled ? 1 : 0, sourceId, libraryId)
+  }
+
+  setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): void {
+    this.db.exec('BEGIN')
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(source_id, library_id) DO UPDATE SET 
+          library_name = excluded.library_name,
+          library_type = excluded.library_type,
+          is_enabled = excluded.is_enabled, 
+          updated_at = datetime('now')
+      `)
+      for (const lib of libraries) {
+        stmt.run(sourceId, lib.id, lib.name, lib.type, lib.enabled ? 1 : 0)
+      }
+      this.db.exec('COMMIT')
+    } catch (e) {
+      this.db.exec('ROLLBACK')
+      throw e
+    }
   }
 
   getEnabledLibraryIds(sourceId: string): string[] {
@@ -211,10 +240,10 @@ export class SourceRepository extends BaseRepository<MediaSource> {
 
   updateLibraryScanTime(sourceId: string, libraryId: string, items: number): void {
     this.db.prepare(`
-      INSERT INTO library_scans (source_id, library_id, last_scan_at, items_scanned, created_at, updated_at)
-      VALUES (?, ?, datetime('now'), ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, library_id) DO UPDATE SET last_scan_at = datetime('now'), items_scanned = ?, updated_at = datetime('now')
-    `).run(sourceId, libraryId, items, items)
-    this.updateLastScanAt(sourceId)
+      UPDATE library_scans
+      SET last_scan_at = datetime('now'), items_scanned = ?, updated_at = datetime('now')
+      WHERE source_id = ? AND library_id = ?
+    `).run(items, sourceId, libraryId)
+    this.updateSourceScanTime(sourceId)
   }
 }
