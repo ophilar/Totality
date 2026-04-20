@@ -92,9 +92,13 @@ describe('Transaction Lock and Yield Integrity', () => {
      expect(db.startBatch).toBeDefined()
      expect(db.beginBatch).toBeDefined()
      
-     // Test that startBatch actually starts a transaction (verified by exception on second call)
+     // Test that startBatch is nested-safe
      db.startBatch()
-     expect(() => db.startBatch()).toThrow(/within a transaction/)
+     expect(() => db.startBatch()).not.toThrow()
+     expect(db.isInTransaction()).toBe(true)
      db.endBatch()
+     db.endBatch()
+     expect(db.isInTransaction()).toBe(false)
+
   })
 })

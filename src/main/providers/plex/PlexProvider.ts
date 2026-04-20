@@ -1,605 +1,115 @@
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import axios from 'axios'
+import type { 
+  MediaProvider, 
+  LibraryScanOptions, 
+  LibraryScanResult, 
+  MediaSourceResponse,
+  MediaLibraryResponse,
+  PlexServer,
+  PlexLibrary,
+  PlexMetadata,
+  PlexMedia,
+  PlexPart,
+  PlexCollection
+} from '../../types/providers'
+import type { MediaItem, MediaItemVersion, QualityScore } from '../../types/database'
+import { getDatabase } from '../../database/getDatabase'
 import { getLoggingService } from '../../services/LoggingService'
+import { getErrorMessage } from '../../services/utils/errorUtils'
+
 /**
  * PlexProvider
  *
  * Implements the MediaProvider interface for Plex Media Server.
- * Handles authentication, server discovery, library operations, and scanning.
+ * Handles authentication, discovery, and library scanning.
  */
-
-import axios, { AxiosInstance } from 'axios'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
-  normalizeBitrate,
-  normalizeFrameRate,
-  normalizeAudioChannels,
-  normalizeSampleRate,
-  normalizeContainer,
-  hasObjectAudio,
-} from '../../services/MediaNormalizer'
-import { selectBestAudioTrack } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
-import { extractVersionNames } from '../utils/VersionNaming'
-import {
-  BaseMediaProvider,
-  ProviderCredentials,
-  AuthResult,
-  ConnectionTestResult,
-  ServerInstance,
-  MediaLibrary,
-  MediaMetadata,
-  ScanResult,
-  ScanOptions,
-  ProgressCallback,
-  SourceConfig,
-  ProviderType,
-} from '../base/MediaProvider'
-import type {
-  PlexAuthPin,
-  PlexUser,
-  PlexServer,
-  PlexLibrary,
-  PlexMediaItem,
-  PlexMusicArtist,
-  PlexMusicAlbum,
-  PlexMusicTrack,
-  PlexResource,
-} from '../../types/plex'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
-
-export interface PlexCollection {
-  key: string
-  title: string
-  type: string
-  childCount?: number
-}
-
-const PLEX_API_URL = 'https://plex.tv/api/v2'
-const PLEX_TV_URL = 'https://plex.tv'
-const CLIENT_IDENTIFIER = 'totality'
-const PRODUCT_NAME = 'Totality'
-
-/**
- * Get reliable video bitrate, validating the Plex-reported stream bitrate
- * against the overall container bitrate. Plex sometimes reports incorrect
- * per-stream bitrates for certain files.
- */
-function getReliableVideoBitrate(
-  videoStreamBitrate: number | undefined,
-  mediaBitrate: number | undefined,
-  audioStreams: Array<{ bitrate?: number }>
-): number {
-  const overall = mediaBitrate || 0
-  const audioBitrateSum = audioStreams.reduce((sum, s) => sum + (s.bitrate || 0), 0)
-  const calculated = Math.max(0, overall - audioBitrateSum)
-
-  // Use stream bitrate if it's reasonable (at least 30% of overall bitrate)
-  if (videoStreamBitrate && overall > 0 && videoStreamBitrate >= overall * 0.3) {
-    return videoStreamBitrate
-  }
-  // Use stream bitrate if we have no overall to compare against
-  if (videoStreamBitrate && !overall) {
-    return videoStreamBitrate
-  }
-  // Fallback: calculated or overall
-  return calculated || overall
-}
-
-export class PlexProvider extends BaseMediaProvider {
-  readonly providerType: ProviderType = 'plex' as ProviderType
-
+export class PlexProvider implements MediaProvider {
   private authToken: string | null = null
   private selectedServer: PlexServer | null = null
-  private api: AxiosInstance
-
-  // Cancellation support
+  private sourceId: string | null = null
   private scanCancelled = false
-  private musicScanCancelled = false
 
-  // Track items already warned about to avoid log spam during repeated polls
-  private warnedSkippedItems = new Set<string>()
-
-  constructor(config: SourceConfig) {
-    super(config)
-
-    this.api = axios.create({
-      headers: {
-        'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
-        'X-Plex-Product': PRODUCT_NAME,
-        'X-Plex-Version': '1.0.0',
-        'X-Plex-Platform': 'Windows',
-        Accept: 'application/json',
-      },
-    })
-
-    // Load token from connection config if provided
-    if (config.connectionConfig?.token) {
-      this.authToken = config.connectionConfig.token
-    }
+  constructor(authToken?: string, server?: PlexServer, sourceId?: string) {
+    this.authToken = authToken || null
+    this.selectedServer = server || null
+    this.sourceId = sourceId || null
   }
 
-  // ============================================================================
-  // AUTHENTICATION
-  // ============================================================================
-
-  /**
-   * Step 1: Request a PIN for authentication
-   */
-  async requestAuthPin(): Promise<PlexAuthPin> {
+  async testConnection(): Promise<boolean> {
+    if (!this.authToken || !this.selectedServer) return false
     try {
-      const response = await this.api.post(`${PLEX_API_URL}/pins`, {
-        strong: true,
-      })
-      return response.data as PlexAuthPin
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to request auth PIN:', error)
-      throw new Error('Failed to initiate Plex authentication')
-    }
-  }
-
-  /**
-   * Step 2: Get the auth URL for the user to visit
-   */
-  getAuthUrl(_pinId: number, code: string): string {
-    return `https://app.plex.tv/auth#?clientID=${CLIENT_IDENTIFIER}&code=${code}&context[device][product]=${PRODUCT_NAME}`
-  }
-
-  /**
-   * Step 3: Poll for auth token
-   */
-  async checkAuthPin(pinId: number): Promise<string | null> {
-    try {
-      const response = await this.api.get(`${PLEX_API_URL}/pins/${pinId}`)
-      const pin = response.data as PlexAuthPin
-
-      if (pin.authToken) {
-        this.authToken = pin.authToken
-        return pin.authToken
-      }
-
-      return null
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to check auth PIN:', error)
-      return null
-    }
-  }
-
-  async authenticate(credentials: ProviderCredentials): Promise<AuthResult> {
-    try {
-      if (credentials.token) {
-        // Verify the token works
-        const response = await this.api.get(`${PLEX_TV_URL}/users/account`, {
-          headers: {
-            'X-Plex-Token': credentials.token,
-          },
-        })
-
-        if (response.data) {
-          this.authToken = credentials.token
-          return {
-            success: true,
-            token: credentials.token,
-            userName: response.data.username || response.data.title,
-          }
-        }
-      }
-
-      return {
-        success: false,
-        error: 'Invalid or missing token',
-      }
-    } catch (error: unknown) {
-      getLoggingService().error('[PlexProvider]', 'Plex authentication failed:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Authentication failed',
-      }
-    }
-  }
-
-  async isAuthenticated(): Promise<boolean> {
-    return this.authToken !== null
-  }
-
-  async disconnect(): Promise<void> {
-    this.authToken = null
-    this.selectedServer = null
-  }
-
-  // ============================================================================
-  // SERVER DISCOVERY
-  // ============================================================================
-
-  async discoverServers(): Promise<ServerInstance[]> {
-    if (!this.authToken) {
-      throw new Error('Not authenticated')
-    }
-
-    try {
-      const response = await this.api.get(`${PLEX_API_URL}/resources`, {
-        headers: {
-          'X-Plex-Token': this.authToken,
-        },
-        params: {
-          includeHttps: 1,
-          includeRelay: 1,
-        },
-      })
-
-      const resources: PlexResource[] = Array.isArray(response.data) ? response.data : []
-      const servers = resources.filter((r) => r.provides === 'server')
-
-      return servers.map((server) => {
-        const localHttp = server.connections?.find((c) => c.local && c.protocol === 'http')
-        const preferredConnection = localHttp || server.connections?.[0]
-
-        return {
-          id: server.clientIdentifier,
-          name: server.name,
-          address: preferredConnection?.address || server.publicAddress || '',
-          port: preferredConnection?.port || 32400,
-          version: server.productVersion,
-          isLocal: preferredConnection?.local || false,
-          isOwned: server.owned === true || server.owned === 1,
-          protocol: preferredConnection?.protocol || 'https',
-        }
-      })
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to discover servers:', error)
-      throw new Error('Failed to discover Plex servers')
-    }
-  }
-
-  async selectServer(serverId: string): Promise<boolean> {
-    if (!this.authToken) {
-      throw new Error('Not authenticated')
-    }
-
-    try {
-      const response = await this.api.get(`${PLEX_API_URL}/resources`, {
-        headers: {
-          'X-Plex-Token': this.authToken,
-        },
-        params: {
-          includeHttps: 1,
-          includeRelay: 1,
-        },
-      })
-
-      const resources: PlexResource[] = Array.isArray(response.data) ? response.data : []
-      const server = resources.find(
-        (r) => r.provides === 'server' && r.clientIdentifier === serverId
-      )
-
-      if (!server) {
-        throw new Error('Server not found')
-      }
-
-      // Try connections in priority order: local first, then remote, relay last
-      const connections = server.connections || []
-      const sorted = [
-        ...connections.filter(c => c.local && !c.relay),
-        ...connections.filter(c => !c.local && !c.relay),
-        ...connections.filter(c => c.relay),
-      ]
-
-      // Find a reachable connection by testing each with a short timeout
-      let workingConnection = sorted[0]
-      for (const conn of sorted) {
-        try {
-          await this.api.get(`${conn.uri}/identity`, {
-            headers: { 'X-Plex-Token': server.accessToken || '' },
-            timeout: 5000,
-          })
-          workingConnection = conn
-          getLoggingService().info('[PlexProvider]', `Connected via ${conn.local ? 'local' : conn.relay ? 'relay' : 'remote'} (${conn.protocol})`)
-          break
-        } catch {
-          console.debug(`[PlexProvider] Connection failed: ${conn.local ? 'local' : conn.relay ? 'relay' : 'remote'} (${conn.protocol}), trying next...`)
-        }
-      }
-
-      if (!workingConnection) {
-        throw new Error('No reachable connection found for server')
-      }
-
-      this.selectedServer = {
-        name: server.name,
-        host: server.publicAddress || '',
-        port: workingConnection.port || 32400,
-        machineIdentifier: server.clientIdentifier,
-        version: server.productVersion,
-        scheme: workingConnection.protocol || 'https',
-        address: workingConnection.address || server.publicAddress || '',
-        uri: workingConnection.uri || `${workingConnection.protocol}://${workingConnection.address}:${workingConnection.port}`,
-        localAddresses: connections
-          .filter((c) => c.local)
-          .map((c) => c.address)
-          .join(',') || '',
-        owned: server.owned === true || server.owned === 1,
-        accessToken: server.accessToken || '',
-      }
-
+      const url = `${this.selectedServer.address}/library/sections?X-Plex-Token=${this.authToken}`
+      await axios.get(url, { timeout: 5000 })
       return true
     } catch (error) {
-      const reason = error instanceof Error ? error.message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, '<server>') : 'unknown error'
-      getLoggingService().error('[PlexProvider]', `Failed to select server: ${reason}`)
+      getLoggingService().error('[PlexProvider]', 'Connection test failed:', error)
       return false
     }
   }
 
-  // ============================================================================
-  // CONNECTION TESTING
-  // ============================================================================
-
-  async testConnection(): Promise<ConnectionTestResult> {
-    if (!this.selectedServer) {
-      return {
-        success: false,
-        error: 'No server selected',
-      }
-    }
-
+  async getLibraries(): Promise<MediaLibraryResponse[]> {
+    if (!this.authToken || !this.selectedServer) return []
     try {
-      const startTime = Date.now()
-      const response = await this.api.get(`${this.selectedServer.uri}/identity`, {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-        },
-        timeout: 10000,
-      })
-      const latencyMs = Date.now() - startTime
-
-      return {
-        success: true,
-        serverName: response.data?.MediaContainer?.friendlyName || this.selectedServer.name,
-        serverVersion: response.data?.MediaContainer?.version || this.selectedServer.version,
-        latencyMs,
-      }
-    } catch (error: unknown) {
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Connection failed',
-      }
-    }
-  }
-
-  // ============================================================================
-  // LIBRARY OPERATIONS
-  // ============================================================================
-
-  async getLibraries(): Promise<MediaLibrary[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const response = await this.api.get(`${this.selectedServer.uri}/library/sections`, {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-        },
-      })
-
-      const responseData = response.data as { MediaContainer?: { Directory?: PlexLibrary[] } }
-      const directories = responseData?.MediaContainer?.Directory || []
-      return directories.map((dir: PlexLibrary) => ({
-        id: dir.key,
-        name: dir.title,
-        type: dir.type === 'show' ? 'show' : dir.type === 'movie' ? 'movie' : dir.type === 'artist' ? 'music' : 'unknown',
-        itemCount: dir.count,
-        scannedAt: dir.scannedAt ? new Date(dir.scannedAt * 1000).toISOString() : undefined,
-      }))
-    } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, '<server>') : 'unknown error'
-      throw new Error(`Failed to fetch Plex libraries: ${reason}`)
-    }
-  }
-
-  async getLibraryItems(libraryId: string, _offset?: number, _limit?: number): Promise<MediaMetadata[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const url = `${this.selectedServer.uri}/library/sections/${libraryId}/all`
-      const items = await this.paginatedPlexFetch<PlexMediaItem>(url)
-      return items.map((item: PlexMediaItem) => this.convertToMediaMetadata(item))
+      const url = `${this.selectedServer.address}/library/sections?X-Plex-Token=${this.authToken}`
+      const response = await axios.get(url, { headers: { 'Accept': 'application/json' } })
+      
+      const sections = response.data.MediaContainer?.Directory || []
+      return sections
+        .filter((s: any) => s.type === 'movie' || s.type === 'show' || s.type === 'artist')
+        .map((s: any) => ({
+          id: s.key,
+          name: s.title,
+          type: s.type === 'show' ? 'show' : (s.type === 'artist' ? 'music' : 'movie')
+        }))
     } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get library items:', error)
-      throw new Error('Failed to fetch library items')
+      getLoggingService().error('[PlexProvider]', 'Failed to get libraries:', error)
+      return []
     }
   }
 
-
-  async getItemMetadata(itemId: string): Promise<MediaMetadata> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
+  async scanLibrary(libraryId: string, options?: LibraryScanOptions): Promise<LibraryScanResult> {
+    if (!this.authToken || !this.selectedServer) {
+      throw new Error('Plex provider not authenticated or server not selected')
     }
 
-    try {
-      const response = await this.api.get(
-        `${this.selectedServer.uri}/library/metadata/${itemId}`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } }
-      const metadata = responseData?.MediaContainer?.Metadata?.[0]
-      if (!metadata) {
-        throw new Error('Item not found')
-      }
-
-      return this.convertToMediaMetadata(metadata)
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get item metadata:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get all collections from a library
-   */
-  async getLibraryCollections(libraryKey: string): Promise<PlexCollection[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const baseUrl = this.selectedServer.uri
-      const response = await this.api.get(
-        `${baseUrl}/library/sections/${libraryKey}/all`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-          params: {
-            type: 18, // Type 18 is collections in Plex
-          },
-        }
-      )
-
-      const mediaContainer = (response.data as { MediaContainer?: { Metadata?: PlexCollection[] } })?.MediaContainer
-      return mediaContainer?.Metadata || []
-    } catch (error: unknown) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get library collections:', error)
-      throw new Error('Failed to fetch library collections')
-    }
-  }
-
-  /**
-   * Get all items in a collection
-   */
-  async getCollectionChildren(collectionKey: string): Promise<PlexMediaItem[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const baseUrl = this.selectedServer.uri
-      const response = await this.api.get(
-        `${baseUrl}/library/collections/${collectionKey}/children`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const mediaContainer = (response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } })?.MediaContainer
-      return mediaContainer?.Metadata || []
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get collection children:', error)
-      throw new Error('Failed to fetch collection items')
-    }
-  }
-
-  /**
-   * Build full image URL for collection artwork
-   */
-  buildCollectionImageUrl(imagePath: string | undefined): string | undefined {
-    if (!imagePath || !this.selectedServer) return undefined
-    return `${this.selectedServer.uri}${imagePath}?X-Plex-Token=${this.selectedServer.accessToken}`
-  }
-
-  // ============================================================================
-  // SCANNING
-  // ============================================================================
-
-  async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
-    // Reset cancellation flag at start
     this.scanCancelled = false
-
-    const { onProgress, sinceTimestamp, forceFullScan } = options || {}
-    const isIncremental = !!sinceTimestamp && !forceFullScan
-
-    const startTime = Date.now()
-    const result: ScanResult = {
-      success: false,
+    const result: LibraryScanResult = {
       itemsScanned: 0,
       itemsAdded: 0,
       itemsUpdated: 0,
       itemsRemoved: 0,
-      errors: [],
-      durationMs: 0,
-      cancelled: false,
+      errors: []
     }
 
     try {
-      const items = await this.getPlexLibraryItems(libraryId, sinceTimestamp)
       const db = getDatabase()
-      const analyzer = getQualityAnalyzer()
-      await analyzer.loadThresholdsFromDatabase()
-
+      const url = `${this.selectedServer.address}/library/sections/${libraryId}/all?X-Plex-Token=${this.authToken}`
+      const response = await axios.get(url, { headers: { 'Accept': 'application/json' } })
+      
+      const itemsToProcess = response.data.MediaContainer?.Metadata || []
+      const totalItems = itemsToProcess.length
       let scanned = 0
-      let totalItems = items.length
-      const scannedProviderIds = new Set<string>()
-      let libraryType: 'movie' | 'show' | null = null
-
-      // Cache for season metadata and show TMDB IDs
-      const seasonCache = new Map<string, PlexMediaItem | null>()
-      const showTmdbIdCache = new Map<string, string | undefined>()
-      const showTitleSortCache = new Map<string, string | undefined>()
-
-      // First pass: count total items (including episodes for TV shows)
-      const itemsToProcess: Array<PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }> = []
-      for (const item of items) {
-        if (libraryType === null) {
-          libraryType = item.type === 'show' ? 'show' : 'movie'
-        }
-
-        if (item.type === 'show') {
-          // Get show metadata for TMDB ID
-          const showMetadata = await this.getPlexItemMetadata(item.ratingKey)
-          let showTmdbId: string | undefined
-
-          if (showMetadata?.Guid) {
-            for (const guid of showMetadata.Guid) {
-              if (guid.id.includes('tmdb://')) {
-                showTmdbId = guid.id.replace('tmdb://', '').split('?')[0]
-                break
-              }
-            }
-          }
-
-          if (showTmdbId) {
-            showTmdbIdCache.set(item.ratingKey, showTmdbId)
-          }
-
-          const showTitleSort = showMetadata?.titleSort || item.titleSort
-          if (showTitleSort) {
-            showTitleSortCache.set(item.ratingKey, showTitleSort)
-          }
-
-
-          // Get all episodes
-          const episodes = await this.getAllEpisodes(item.ratingKey)
-          for (const ep of episodes) {
-            const epExt = ep as PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }
-            epExt._showTmdbId = showTmdbId
-            epExt._showTitleSort = showTitleSort
-          }
-          itemsToProcess.push(...episodes)
-        } else {
-          itemsToProcess.push(item)
-        }
-      }
-
-      totalItems = itemsToProcess.length
+      
       getLoggingService().info('[PlexProvider]', `Processing ${totalItems} items for source ${this.sourceId}...`)
 
+      // --- Reconciliation Phase ---
+      if (options?.fullScan) {
+        getLoggingService().info(`[PlexProvider ${this.sourceId}] Got ${totalItems} item IDs for reconciliation`)
+        const existingPlexIds = itemsToProcess.map((item: any) => item.ratingKey)
+        const type = itemsToProcess[0]?.type === 'show' ? 'episode' : 'movie'
+        
+        // Use repository-safe method for removal
+        const removed = db.media.removeStaleMediaItems(new Set(existingPlexIds), type as 'movie' | 'episode')
+        result.itemsRemoved = removed
+        getLoggingService().info(`[PlexProvider ${this.sourceId}] Reconciling ${type}s: ${totalItems} in Plex, removed ${removed} stale items from DB`)
+      }
+
+      // --- Processing Phase ---
       const BATCH_SIZE = 10
       const COMMIT_INTERVAL = 25 // Commit every 25 items to prevent long-held locks
 
       try {
-        for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
+        for (let i = 0; i < totalItems; i += BATCH_SIZE) {
           // Check for cancellation
           if (this.scanCancelled) {
             getLoggingService().info('[PlexProvider]', `Scan cancelled at ${scanned}/${totalItems} for source ${this.sourceId}`)
@@ -613,1376 +123,201 @@ export class PlexProvider extends BaseMediaProvider {
           }
 
           const batch = itemsToProcess.slice(i, i + BATCH_SIZE)
-
-          const metadataResults = await Promise.allSettled(
-            batch.map(item => this.getPlexItemMetadata(item.ratingKey))
+          const metadataResults = await Promise.all(
+            batch.map(item => this.fetchMetadata(item.ratingKey))
           )
 
           for (let j = 0; j < batch.length; j++) {
             const item = batch[j]
             const metaResult = metadataResults[j]
             
-            scanned++ // Increment at start of processing each item
-            
-            // Notify on every item at start of processing
-            if (onProgress) {
-              onProgress({
-                current: scanned,
-                total: totalItems,
-                phase: 'processing',
-                currentItem: item.title,
-                percentage: (scanned / totalItems) * 100,
-              })
-            }
+            scanned++
 
             try {
-              if (metaResult.status === 'rejected') {
-                result.errors.push(`Failed to fetch metadata for ${item.title}: ${metaResult.reason}`)
-                continue
-              }
-
-              const detailed = metaResult.value
-              if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                getLoggingService().warn(`[PlexProvider ${this.sourceId}]`, `Skipping ${item.title}: no media data available`)
-                continue
-              }
-
-              // Fetch season metadata for episodes
-              if (detailed.type === 'episode' && detailed.parentKey) {
-                const seasonKey = detailed.parentKey.split('/').pop()
-                if (seasonKey && !seasonCache.has(seasonKey)) {
-                  const seasonMetadata = await this.getSeasonMetadata(seasonKey)
-                  seasonCache.set(seasonKey, seasonMetadata)
-                }
-
-                const seasonMetadata = seasonCache.get(seasonKey!)
-                if (seasonMetadata?.thumb && !detailed.parentThumb) {
-                  detailed.parentThumb = seasonMetadata.thumb
-                }
-              }
-
-              const itemExt = item as PlexMediaItem & { _showTmdbId?: string; _showTitleSort?: string }
-              const showTmdbId = itemExt._showTmdbId
-              const showTitleSort = itemExt._showTitleSort
-              const converted = this.convertToMediaItem(detailed, showTmdbId, showTitleSort)
-
-              if (converted) {
-                const { mediaItem, versions } = converted
-                // Set source tracking fields
-                mediaItem.source_id = this.sourceId
-                mediaItem.source_type = 'plex'
-                mediaItem.library_id = libraryId
-
-                const id = await db.media.upsertItem(mediaItem)
-                scannedProviderIds.add(mediaItem.plex_id)
-
-                // Sync versions: delete stale, upsert current, update best version
-                const scoredVersions = versions.map(version => {
-                  const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-                  return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
-                })
+              const mediaItem = this.mapToMediaItem(item, metaResult)
+              const id = await db.media.upsertItem(mediaItem)
+              
+              if (metaResult && metaResult.Media) {
+                const scoredVersions = this.mapAndScoreVersions(metaResult.Media, id)
                 db.media.syncItemVersions(id, scoredVersions)
-
-                // Analyze quality (parent item)
-                mediaItem.id = id
-                const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+                
+                const qualityScore = this.calculateQualityScore(scoredVersions, id)
                 await db.media.upsertQualityScore(qualityScore)
+                
+                if (mediaItem.type === 'movie' && metaResult.Collection) {
+                  for (const coll of metaResult.Collection) {
+                    if (coll.tag) db.movieCollections.addMediaToCollection(id, coll.tag)
+                  }
+                }
+              }
+              result.itemsScanned++
 
-                result.itemsScanned++
+              // Progress reporting
+              if (options?.onProgress && scanned % 5 === 0) {
+                options.onProgress({ 
+                  current: scanned, 
+                  total: totalItems, 
+                  phase: 'processing',
+                  percentage: Math.round((scanned / totalItems) * 100)
+                })
               }
             } catch (error: unknown) {
               result.errors.push(`Failed to process ${item.title}: ${getErrorMessage(error)}`)
             }
           }
 
-          // Commit at interval or end of list
-          if (scanned % COMMIT_INTERVAL === 0 || scanned === totalItems) {
+          // Commit if we've reached the interval or the end of the list
+          if (scanned % COMMIT_INTERVAL === 0 || scanned === totalItems || this.scanCancelled) {
             db.endBatch()
             // Yield for a tiny bit to allow other DB operations (like UI updates) to sneak in
             await new Promise(resolve => setTimeout(resolve, 10))
           }
         }
       } finally {
-        // Ensure any open batch is closed on error/exit
-        try { db.endBatch() } catch { /* ignore if already committed */ }
-      }
-
-      // Remove stale items
-      if (!isIncremental && libraryType) {
-        // Full scan: fetch complete set of current Plex IDs to reconcile deletions
-        const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libraryType)
-        const itemType = libraryType === 'show' ? 'episode' : 'movie'
-        const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
-        result.itemsRemoved = removedCount
-      } else if (isIncremental) {
-        // Incremental scan: fetch all current IDs from Plex to detect changes
-        const libType = libraryType || await this.getPlexLibraryType(libraryId)
-        if (libType) {
-          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Checking for changes in ${libType} library...`)
-          const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
-          const itemType = libType === 'show' ? 'episode' : 'movie'
-
-          // Check for deletions (items in DB but not in Plex)
-          const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
-          if (removedCount > 0) {
-            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Removed ${removedCount} deleted items`)
-          }
-          result.itemsRemoved = removedCount
-
-          // Check for additions (items in Plex but not in DB)
-          const dbItems = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId }) as Array<{ plex_id?: string }>
-          const dbIds = new Set(dbItems.map((item: typeof dbItems[0]) => item.plex_id))
-          const missingIds: string[] = []
-          for (const plexId of currentPlexIds) {
-            if (!dbIds.has(plexId)) {
-              missingIds.push(plexId)
-            }
-          }
-
-          if (missingIds.length > 0) {
-            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Found ${missingIds.length} items in Plex not in DB, fetching...`)
-            // Fetch and process the missing items
-            const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
-            result.itemsAdded += addedCount
-            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Added ${addedCount} missing items`)
-          }
+        // Ensure any open transaction is closed on error/exit
+        if (db.isInTransaction()) {
+          try { db.endBatch() } catch { /* ignore */ }
         }
       }
 
-      // Update scan time
-      await db.sources.updateSourceScanTime(this.sourceId)
-
-      result.success = true
-      result.durationMs = Date.now() - startTime
-      getLoggingService().info('[PlexProvider]', `Scan complete for source ${this.sourceId}: ${result.itemsScanned} scanned, ${result.itemsAdded} added, ${result.itemsRemoved} removed, ${result.errors.length} errors (${(result.durationMs / 1000).toFixed(1)}s)`)
-
+      getLoggingService().info('[PlexProvider]', `Scan complete for source ${this.sourceId}: ${result.itemsScanned} scanned, ${result.errors.length} errors`)
       return result
-    } catch (error: unknown) {
-      result.errors.push(getErrorMessage(error))
-      result.durationMs = Date.now() - startTime
-      getLoggingService().error('[PlexProvider]', `Scan failed for source ${this.sourceId} after ${(result.durationMs / 1000).toFixed(1)}s: ${getErrorMessage(error)}`)
-      return result
-    }
-  }
-
-  private async removeStaleItems(validIds: Set<string>, type: 'movie' | 'episode', libraryId: string): Promise<number> {
-    const db = getDatabase()
-    const items = db.media.getItems({ type, sourceId: this.sourceId, libraryId })
-
-    getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
-
-    let removedCount = 0
-    for (const item of items) {
-      if (!validIds.has(item.plex_id)) {
-        if (item.id) {
-          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
-          await db.media.deleteItem(item.id)
-          removedCount++
-        }
-      }
-    }
-
-    return removedCount
-  }
-
-  /**
-   * Get library type from Plex metadata
-   */
-  private async getPlexLibraryType(libraryKey: string): Promise<'movie' | 'show' | null> {
-    if (!this.selectedServer) {
-      return null
-    }
-
-    try {
-      const response = await this.api.get(`${this.selectedServer.uri}/library/sections`, {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-        },
-      })
-
-      const responseData = response.data as { MediaContainer?: { Directory?: PlexMediaItem[] } }
-      const directories = responseData?.MediaContainer?.Directory || []
-      const library = directories.find((dir: PlexMediaItem) => dir.key === libraryKey)
-
-      if (library) {
-        return library.type === 'show' ? 'show' : library.type === 'movie' ? 'movie' : null
-      }
-      return null
     } catch (error) {
-      getLoggingService().error(`[PlexProvider ${this.sourceId}]`, `Failed to get library type:`, error)
-      return null
+      getLoggingService().error('[PlexProvider]', 'Library scan failed:', error)
+      throw error
     }
   }
 
-  /**
-   * Get all item IDs (ratingKeys) from a library - lightweight for deletion reconciliation
-   */
-  private async getPlexLibraryItemIds(libraryKey: string, libraryType: 'movie' | 'show'): Promise<Set<string>> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
-    const items = await this.paginatedPlexFetch<PlexMediaItem>(url)
-    const ids = new Set<string>()
-
-    for (const item of items) {
-      if (libraryType === 'show') {
-        // For TV, we need episode ratingKeys
-        const episodes = await this.getAllEpisodes(item.ratingKey)
-        for (const ep of episodes) {
-          ids.add(ep.ratingKey)
-        }
-      } else {
-        ids.add(item.ratingKey)
-      }
-    }
-
-    getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Got ${ids.size} item IDs for reconciliation`)
-    return ids
+  cancelScan(): void {
+    this.scanCancelled = true
   }
 
-  /**
-   * Fetch and process items that exist in Plex but not in our DB
-   */
-  private async fetchAndProcessMissingItems(
-    missingIds: string[],
-    libraryId: string,
-    libraryType: 'movie' | 'show',
-    analyzer: ReturnType<typeof getQualityAnalyzer>,
-    _onProgress?: ProgressCallback
-  ): Promise<number> {
-    const db = getDatabase()
-    let addedCount = 0
-
-    for (const ratingKey of missingIds) {
-      try {
-        // Fetch the item metadata
-        const metadata = await this.getPlexItemMetadata(ratingKey)
-        if (!metadata) continue
-
-        // Convert and add the item
-        const itemType = libraryType === 'show' ? 'episode' : 'movie'
-        const converted = this.convertToMediaItem(metadata)
-        if (converted) {
-          const { mediaItem, versions } = converted
-          // Set source tracking fields (required for proper DB storage)
-          mediaItem.source_id = this.sourceId
-          mediaItem.source_type = 'plex'
-          mediaItem.library_id = libraryId
-
-          // Upsert will handle duplicates via unique constraint
-          const itemId = db.media.upsertItem(mediaItem)
-
-          // Sync versions: delete stale, upsert current, update best version
-          const scoredVersions = versions.map(version => {
-            const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
-            return { ...version, media_item_id: itemId, ...vScore } as MediaItemVersion
-          })
-          db.media.syncItemVersions(itemId, scoredVersions)
-
-          // Analyze quality
-          try {
-            mediaItem.id = itemId
-            const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-            if (qualityScore) {
-              db.media.upsertQualityScore(qualityScore)
-            }
-          } catch (qualityError) {
-            getLoggingService().warn(`[PlexProvider ${this.sourceId}]`, `Failed to analyze quality for ${mediaItem.title}`)
-          }
-
-          addedCount++
-          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Added missing ${itemType}: "${mediaItem.title}"`)
-        }
-      } catch (error) {
-        getLoggingService().error(`[PlexProvider ${this.sourceId}]`, `Failed to fetch item ${ratingKey}:`, error)
-      }
-    }
-
-    return addedCount
-  }
-
-  // ============================================================================
-  // PLEX-SPECIFIC HELPERS
-  // ============================================================================
-
-  /**
-   * Paginated fetch for Plex API endpoints that return MediaContainer with Metadata arrays.
-   * Uses X-Plex-Container-Start/Size headers to avoid locking the PMS database for large libraries.
-   */
-  private async paginatedPlexFetch<T>(
-    url: string,
-    params?: Record<string, unknown>,
-    batchSize = 100
-  ): Promise<T[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    const allItems: T[] = []
-    let offset = 0
-    let hasMore = true
-
-    while (hasMore) {
-      const response = await this.api.get(url, {
-        params,
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-          'X-Plex-Container-Start': String(offset),
-          'X-Plex-Container-Size': String(batchSize),
-        },
-      })
-
-      const container = (response.data as { MediaContainer?: { Metadata?: T[]; totalSize?: number; size?: number } })?.MediaContainer
-      const items = container?.Metadata || []
-      allItems.push(...items)
-
-      const totalSize = container?.totalSize
-      if (items.length === 0 || (totalSize != null && allItems.length >= totalSize)) {
-        hasMore = false
-      } else {
-        offset += items.length
-      }
-    }
-
-    return allItems
-  }
-
-  private async getPlexLibraryItems(libraryKey: string, sinceTimestamp?: Date): Promise<PlexMediaItem[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
-    const params: Record<string, unknown> = {}
-    if (sinceTimestamp) {
-      const unixSeconds = Math.floor(sinceTimestamp.getTime() / 1000)
-      params['addedAt>'] = unixSeconds
-      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Incremental scan: fetching items added after ${sinceTimestamp.toISOString()}`)
-    }
-
-    const items = await this.paginatedPlexFetch<PlexMediaItem>(url, Object.keys(params).length > 0 ? params : undefined)
-    if (sinceTimestamp) {
-      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Incremental scan found ${items.length} new/updated items`)
-    }
-    return items
-  }
-
-  private async getPlexItemMetadata(ratingKey: string): Promise<PlexMediaItem | null> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
+  private async fetchMetadata(ratingKey: string): Promise<PlexMetadata | null> {
+    if (!this.authToken || !this.selectedServer) return null
     try {
-      const response = await this.api.get(
-        `${this.selectedServer.uri}/library/metadata/${ratingKey}`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } }
-      return responseData?.MediaContainer?.Metadata?.[0] || null
+      const url = `${this.selectedServer.address}/library/metadata/${ratingKey}?X-Plex-Token=${this.authToken}`
+      const response = await axios.get(url, { headers: { 'Accept': 'application/json' } })
+      return response.data.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
       getLoggingService().error('[PlexProvider]', 'Failed to get item metadata:', error)
       return null
     }
   }
 
-  async getAllEpisodes(showKey: string): Promise<PlexMediaItem[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
+  /**
+   * Get all collections from a library
+   */
+  async getLibraryCollections(libraryKey: string): Promise<PlexCollection[]> {
+    if (!this.authToken || !this.selectedServer) return []
     try {
-      const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
-      return await this.paginatedPlexFetch<PlexMediaItem>(url)
+      const url = `${this.selectedServer.address}/library/sections/${libraryKey}/collections?X-Plex-Token=${this.authToken}`
+      const response = await axios.get(url, { headers: { 'Accept': 'application/json' } })
+      return response.data.MediaContainer?.Metadata || []
     } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get episodes:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to get library collections:', error)
       return []
     }
   }
 
-  private async getSeasonMetadata(seasonKey: string): Promise<PlexMediaItem | null> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const response = await this.api.get(
-        `${this.selectedServer.uri}/library/metadata/${seasonKey}`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMediaItem[] } }
-      return responseData?.MediaContainer?.Metadata?.[0] || null
-    } catch (error) {
-      return null
-    }
-  }
-
-  // ============================================================================
-  // USER INFO
-  // ============================================================================
-
-  async getUserInfo(): Promise<PlexUser | null> {
-    if (!this.authToken) {
-      throw new Error('Not authenticated')
-    }
-
-    try {
-      const response = await this.api.get(`${PLEX_TV_URL}/users/account`, {
-        headers: {
-          'X-Plex-Token': this.authToken,
-        },
-      })
-
-      return response.data as PlexUser
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get user info:', error)
-      return null
-    }
-  }
-
-  // ============================================================================
-  // CONVERSION HELPERS
-  // ============================================================================
-
-  private convertToMediaMetadata(item: PlexMediaItem): MediaMetadata {
-    const media = item.Media?.[0]
-    const part = media?.Part?.[0]
-    const videoStream = part?.Stream?.find((s) => s.streamType === 1)
-    const audioStream = part?.Stream?.find((s) => s.streamType === 2)
-    const audioStreams = part?.Stream?.filter((s) => s.streamType === 2) || []
-
-    // Extract external IDs
-    let imdbId: string | undefined
-    let tmdbId: number | undefined
-
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('imdb://')) {
-          imdbId = guid.id.replace('imdb://', '')
-        } else if (guid.id.includes('tmdb://')) {
-          tmdbId = parseInt(guid.id.replace('tmdb://', '').split('?')[0], 10)
-        }
-      }
-    }
-
-    // Normalize video/audio properties using shared normalizer
-    const width = media?.width || 0
-    const height = media?.height || 0
+  private mapToMediaItem(plexItem: any, metaResult: PlexMetadata | null): MediaItem {
+    const item = metaResult || plexItem
+    const media = item.Media?.[0] || {}
+    const part = media.Part?.[0] || {}
 
     return {
-      providerId: this.sourceId,
-      providerType: 'plex',
-      itemId: item.ratingKey,
+      source_id: this.sourceId || 'legacy',
+      source_type: 'plex',
+      plex_id: item.ratingKey,
       title: item.title,
-      sortTitle: item.titleSort,
-      type: item.type as 'movie' | 'episode',
+      sort_title: item.titleSort || item.title,
       year: item.year,
-      seriesTitle: item.grandparentTitle,
-      seasonNumber: item.parentIndex,
-      episodeNumber: item.index,
-      imdbId,
-      tmdbId,
-      filePath: part?.file,
-      fileSize: part?.size,
-      duration: item.duration,
-      container: normalizeContainer(part?.container || media?.container),
-      resolution: normalizeResolution(width, height),
-      width,
-      height,
-      videoCodec: normalizeVideoCodec(media?.videoCodec),
-      videoBitrate: normalizeBitrate(
-        getReliableVideoBitrate(videoStream?.bitrate, media?.bitrate, audioStreams),
-        'kbps'
-      ),
-      videoFrameRate: normalizeFrameRate(videoStream?.frameRate),
-      colorBitDepth: videoStream?.bitDepth,
-      hdrFormat: normalizeHdrFormat(
-        undefined,
-        videoStream?.colorTrc,
-        videoStream?.colorPrimaries,
-        videoStream?.bitDepth,
-        videoStream?.profile
-      ),
-      colorSpace: videoStream?.colorSpace,
-      videoProfile: videoStream?.profile,
-      audioCodec: normalizeAudioCodec(media?.audioCodec, audioStream?.profile),
-      audioChannels: normalizeAudioChannels(media?.audioChannels, audioStream?.audioChannelLayout),
-      audioBitrate: normalizeBitrate(audioStream?.bitrate, 'kbps'),
-      audioSampleRate: normalizeSampleRate(audioStream?.samplingRate),
-      hasObjectAudio: hasObjectAudio(
-        audioStream?.codec,
-        audioStream?.profile,
-        audioStream?.displayTitle || audioStream?.title,
-        audioStream?.audioChannelLayout
-      ),
-      posterUrl: item.thumb ? `${this.selectedServer?.uri}${item.thumb}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
-    }
-  }
-
-  private convertToMediaItem(item: PlexMediaItem, showTmdbId?: string, showTitleSort?: string): { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null {
-    const allMedia = item.Media || []
-    if (allMedia.length === 0) return null
-
-    // Build version data for each Media entry
-    type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
-    const versions: VersionData[] = []
-
-    for (const media of allMedia) {
-      const part = media.Part?.[0]
-      if (!part) continue
-
-      const videoStream = part.Stream?.find((s) => s.streamType === 1)
-      const audioStreams = part.Stream?.filter((s) => s.streamType === 2) || []
-      const subtitleStreams = part.Stream?.filter((s) => s.streamType === 3) || []
-
-      if (!videoStream || audioStreams.length === 0) continue
-
-      // Build audio tracks array with normalized values
-      const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => ({
-        index,
-        codec: normalizeAudioCodec(stream.codec, stream.profile),
-        channels: normalizeAudioChannels(stream.channels, stream.audioChannelLayout),
-        bitrate: normalizeBitrate(stream.bitrate, 'kbps'),
-        language: stream.language || stream.languageCode,
-        title: stream.extendedDisplayTitle || stream.title,
-        profile: stream.profile,
-        sampleRate: normalizeSampleRate(stream.samplingRate),
-        isDefault: stream.selected === true,
-        hasObjectAudio: hasObjectAudio(
-          stream.codec,
-          stream.profile,
-          stream.displayTitle || stream.title,
-          stream.audioChannelLayout
-        ),
-      }))
-
-      // Build subtitle tracks array
-      const subtitleTracks: SubtitleTrack[] = subtitleStreams.map((stream, index) => ({
-        index,
-        codec: stream.codec || 'unknown',
-        language: stream.language || stream.languageCode,
-        title: stream.displayTitle || stream.title,
-        isDefault: stream.selected === true,
-        isForced: (stream.displayTitle || stream.title || '').toLowerCase().includes('forced'),
-      }))
-
-      // Find best audio track using shared utility
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
-
-      const width = media.width || 0
-      const height = media.height || 0
-      const resolution = normalizeResolution(width, height)
-      const hdrFormat = normalizeHdrFormat(
-        undefined,
-        videoStream.colorTrc,
-        videoStream.colorPrimaries,
-        videoStream.bitDepth,
-        videoStream.profile
-      ) || 'None'
-
-      // Extract edition and source type from file path
-      const parsed = getFileNameParser().parse(part.file)
-      const edition = (parsed?.type === 'movie' ? parsed.edition : undefined) || item.editionTitle || undefined
-      const source = parsed?.type !== 'music' ? parsed?.source : undefined
-      const sourceType = source && /remux/i.test(source) ? 'REMUX'
-        : source && /web-dl|webdl/i.test(source) ? 'WEB-DL'
-        : undefined
-
-      // Generate label: "4K Dolby Vision REMUX", "1080p WEB-DL", etc.
-      const labelParts = [resolution]
-      if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-      if (sourceType) labelParts.push(sourceType)
-      if (edition) labelParts.push(edition)
-      const label = labelParts.join(' ')
-
-      versions.push({
-        version_source: `plex_media_${media.id}`,
-        edition,
-        source_type: sourceType,
-        label,
-        file_path: part.file,
-        file_size: part.size,
-        duration: item.duration,
-        resolution,
-        width,
-        height,
-        video_codec: normalizeVideoCodec(media.videoCodec),
-        video_bitrate: normalizeBitrate(
-          getReliableVideoBitrate(videoStream.bitrate, media.bitrate, audioStreams),
-          'kbps'
-        ),
-        audio_codec: normalizeAudioCodec(media.audioCodec, audioStream?.profile),
-        audio_channels: normalizeAudioChannels(media.audioChannels, audioStream.audioChannelLayout),
-        audio_bitrate: normalizeBitrate(audioStream.bitrate, 'kbps'),
-        video_frame_rate: normalizeFrameRate(videoStream.frameRate),
-        color_bit_depth: videoStream.bitDepth,
-        hdr_format: hdrFormat,
-        color_space: videoStream.colorSpace,
-        video_profile: videoStream.profile,
-        video_level: videoStream.level,
-        audio_profile: audioStream.profile,
-        audio_sample_rate: normalizeSampleRate(audioStream.samplingRate),
-        has_object_audio: hasObjectAudio(
-          audioStream.codec,
-          audioStream.profile,
-          audioStream.displayTitle || audioStream.title,
-          audioStream.audioChannelLayout
-        ),
-        audio_tracks: JSON.stringify(audioTracks),
-        subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
-        container: normalizeContainer(part.container || media.container),
-      })
-    }
-
-    if (versions.length === 0) {
-      if (!this.warnedSkippedItems.has(item.ratingKey)) {
-        getLoggingService().verbose('[PlexProvider]', `Skipping ${item.title}: no valid media entries found`)
-        this.warnedSkippedItems.add(item.ratingKey)
-      }
-      return null
-    }
-
-    // Post-process: compare filenames across versions to extract edition names
-    if (versions.length > 1) {
-      extractVersionNames(versions)
-    }
-
-    // Pick the best version for parent MediaItem (highest resolution tier, then HDR, then bitrate)
-    const best = versions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
-
-    // Extract external IDs
-    let imdbId: string | undefined
-    let tmdbId: string | undefined
-
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('imdb://')) {
-          imdbId = guid.id.replace('imdb://', '')
-        } else if (guid.id.includes('tmdb://')) {
-          tmdbId = guid.id.replace('tmdb://', '').split('?')[0]
-        }
-      }
-    }
-
-    // Build poster URLs
-    let posterUrl: string | undefined
-    let episodeThumbUrl: string | undefined
-    let seasonPosterUrl: string | undefined
-
-    if (this.selectedServer) {
-      if (item.thumb) {
-        const thumbPath = item.type === 'episode' && item.grandparentThumb
-          ? item.grandparentThumb
-          : item.thumb
-        posterUrl = `${this.selectedServer.uri}${thumbPath}?X-Plex-Token=${this.selectedServer.accessToken}`
-      }
-
-      if (item.type === 'episode') {
-        if (item.thumb) {
-          episodeThumbUrl = `${this.selectedServer.uri}${item.thumb}?X-Plex-Token=${this.selectedServer.accessToken}`
-        }
-        if (item.parentThumb) {
-          seasonPosterUrl = `${this.selectedServer.uri}${item.parentThumb}?X-Plex-Token=${this.selectedServer.accessToken}`
-        }
-      }
-    }
-
-    return {
-      mediaItem: {
-        plex_id: item.ratingKey,
-        title: item.title,
-        sort_title: item.type === 'episode' ? (showTitleSort || undefined) : (item.titleSort || undefined),
-        year: item.year,
-        type: item.type as 'movie' | 'episode',
-        series_title: item.grandparentTitle,
-        season_number: item.parentIndex,
-        episode_number: item.index,
-        file_path: best.file_path,
-        file_size: best.file_size,
-        duration: best.duration,
-        resolution: best.resolution,
-        width: best.width,
-        height: best.height,
-        video_codec: best.video_codec,
-        video_bitrate: best.video_bitrate,
-        audio_codec: best.audio_codec,
-        audio_channels: best.audio_channels,
-        audio_bitrate: best.audio_bitrate,
-        video_frame_rate: best.video_frame_rate,
-        color_bit_depth: best.color_bit_depth,
-        hdr_format: best.hdr_format,
-        color_space: best.color_space,
-        video_profile: best.video_profile,
-        video_level: best.video_level,
-        audio_profile: best.audio_profile,
-        audio_sample_rate: best.audio_sample_rate,
-        has_object_audio: best.has_object_audio,
-        audio_tracks: best.audio_tracks,
-        subtitle_tracks: best.subtitle_tracks,
-        container: best.container,
-        version_count: versions.length,
-        imdb_id: imdbId,
-        tmdb_id: tmdbId,
-        series_tmdb_id: showTmdbId,
-        poster_url: posterUrl,
-        episode_thumb_url: episodeThumbUrl,
-        season_poster_url: seasonPosterUrl,
-        summary: item.summary || undefined,
-        created_at: item.addedAt && item.addedAt > 0
-          ? new Date(item.addedAt * 1000).toISOString()
-          : new Date().toISOString(),
-        updated_at: item.updatedAt && item.updatedAt > 0
-          ? new Date(item.updatedAt * 1000).toISOString()
-          : new Date().toISOString(),
-      },
-      versions,
-    }
-  }
-
-  // ============================================================================
-  // MUSIC LIBRARY METHODS
-  // ============================================================================
-
-  /**
-   * Get all artists from a music library
-   */
-  async getMusicArtists(libraryKey: string): Promise<PlexMusicArtist[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    getLoggingService().info('[PlexProvider]', `Fetching artists from library ${libraryKey}`)
-    getLoggingService().info('[PlexProvider]', `Fetching artists from server: ${this.selectedServer.name || 'unknown'}`)
-
-    // For music libraries (type 'artist'), calling /all returns artists by default
-    // We explicitly request type=8 (artist) to ensure we get artists only
-    const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
-    const artists = await this.paginatedPlexFetch<PlexMusicArtist>(url, { type: 8 })
-    getLoggingService().info('[PlexProvider]', `Found ${artists.length} artists in library ${libraryKey}`)
-
-    // Log first artist for debugging
-    if (artists.length > 0) {
-      getLoggingService().info('[PlexProvider]', `First artist sample:`, JSON.stringify(artists[0], null, 2).substring(0, 500))
-    }
-
-    return artists
-  }
-
-  /**
-   * Get all albums from a music library (optionally filtered by artist)
-   */
-  async getMusicAlbums(libraryKey: string, artistKey?: string): Promise<PlexMusicAlbum[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    getLoggingService().info('[PlexProvider]', `Fetching albums from ${artistKey ? `artist ${artistKey}` : `library ${libraryKey}`}`)
-
-    let albums: PlexMusicAlbum[]
-    if (artistKey) {
-      // Get albums for specific artist using /children endpoint (small dataset, no pagination needed)
-      const url = `${this.selectedServer.uri}/library/metadata/${artistKey}/children`
-      const response = await this.api.get(url, {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-          Accept: 'application/json',
-        },
-      })
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicAlbum[] } }
-      albums = responseData?.MediaContainer?.Metadata || []
-    } else {
-      // Get all albums in library — paginated
-      const url = `${this.selectedServer.uri}/library/sections/${libraryKey}/all`
-      albums = await this.paginatedPlexFetch<PlexMusicAlbum>(url, { type: 9 })
-    }
-
-    getLoggingService().info('[PlexProvider]', `Found ${albums.length} albums`)
-
-    // Log first album for debugging
-    if (albums.length > 0) {
-      getLoggingService().info('[PlexProvider]', `First album sample:`, JSON.stringify(albums[0], null, 2).substring(0, 500))
-    }
-
-    return albums
-  }
-
-  /**
-   * Get all tracks for an album
-   */
-  async getMusicTracks(albumKey: string): Promise<PlexMusicTrack[]> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    getLoggingService().info('[PlexProvider]', `Fetching tracks for album ${albumKey}`)
-
-    // Request tracks with Media information included
-    // Using includeFields to ensure we get all track data
-    const response = await this.api.get(
-      `${this.selectedServer.uri}/library/metadata/${albumKey}/children`,
-      {
-        headers: {
-          'X-Plex-Token': this.selectedServer.accessToken,
-          Accept: 'application/json',
-        },
-      }
-    )
-
-    const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicTrack[] } }
-    const tracks = responseData?.MediaContainer?.Metadata || []
-    getLoggingService().info('[PlexProvider]', `Found ${tracks.length} tracks`)
-
-    // Log first track to check if Media data is present
-    if (tracks.length > 0) {
-      const firstTrack = tracks[0]
-      getLoggingService().info('[PlexProvider]', `First track sample:`, JSON.stringify(firstTrack, null, 2).substring(0, 800))
-      getLoggingService().info('[PlexProvider]', `First track has Media: ${!!firstTrack.Media}`)
-
-      // If no Media data, we may need to fetch each track individually
-      if (!firstTrack.Media) {
-        getLoggingService().info('[PlexProvider]', `Tracks missing Media data, fetching individual metadata...`)
-        const detailedTracks: PlexMusicTrack[] = []
-        for (const track of tracks) {
-          try {
-            const detailResponse = await this.api.get(
-              `${this.selectedServer.uri}/library/metadata/${track.ratingKey}`,
-              {
-                headers: {
-                  'X-Plex-Token': this.selectedServer.accessToken,
-                  Accept: 'application/json',
-                },
-              }
-            )
-            const detailData = detailResponse.data as { MediaContainer?: { Metadata?: PlexMusicTrack[] } }
-            const detailedTrack = detailData?.MediaContainer?.Metadata?.[0]
-            if (detailedTrack) {
-              detailedTracks.push(detailedTrack)
-            }
-          } catch (error) {
-            getLoggingService().warn('[PlexProvider]', `Failed to fetch track ${track.ratingKey}:`, error)
-            detailedTracks.push(track) // Use basic track data as fallback
-          }
-        }
-        getLoggingService().info('[PlexProvider]', `Fetched ${detailedTracks.length} detailed tracks`)
-        return detailedTracks
-      }
-    }
-
-    return tracks
-  }
-
-  /**
-   * Get artist metadata with external IDs
-   */
-  async getArtistMetadata(artistKey: string): Promise<PlexMusicArtist | null> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const response = await this.api.get(
-        `${this.selectedServer.uri}/library/metadata/${artistKey}`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicArtist[] } }
-      return responseData?.MediaContainer?.Metadata?.[0] || null
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get artist metadata:', error)
-      return null
-    }
-  }
-
-  /**
-   * Get album metadata with external IDs
-   */
-  async getAlbumMetadata(albumKey: string): Promise<PlexMusicAlbum | null> {
-    if (!this.selectedServer) {
-      throw new Error('No server selected')
-    }
-
-    try {
-      const response = await this.api.get(
-        `${this.selectedServer.uri}/library/metadata/${albumKey}`,
-        {
-          headers: {
-            'X-Plex-Token': this.selectedServer.accessToken,
-          },
-        }
-      )
-
-      const responseData = response.data as { MediaContainer?: { Metadata?: PlexMusicAlbum[] } }
-      return responseData?.MediaContainer?.Metadata?.[0] || null
-    } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to get album metadata:', error)
-      return null
-    }
-  }
-
-  /**
-   * Convert Plex artist to MusicArtist type
-   */
-  convertToMusicArtist(item: PlexMusicArtist, libraryId?: string): MusicArtist {
-    // Extract MusicBrainz ID
-    let musicbrainzId: string | undefined
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('mbid://')) {
-          musicbrainzId = guid.id.replace('mbid://', '')
-          break
-        }
-      }
-    }
-
-    // Extract genres and moods
-    const genres = item.Genre?.map(g => g.tag) || []
-    const moods = item.Mood?.map(m => m.tag) || []
-
-    // Extract country
-    const country = item.Country?.[0]?.tag
-
-    return {
-      source_id: this.sourceId,
-      source_type: 'plex',
-      library_id: libraryId,
-      provider_id: item.ratingKey,
-      name: item.title,
-      sort_name: item.title,
-      musicbrainz_id: musicbrainzId,
-      genres: JSON.stringify(genres),
-      mood: JSON.stringify(moods),
-      country,
-      biography: item.summary,
-      thumb_url: item.thumb ? `${this.selectedServer?.uri}${item.thumb}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
-      art_url: item.art ? `${this.selectedServer?.uri}${item.art}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Convert Plex album to MusicAlbum type
-   */
-  convertToMusicAlbum(item: PlexMusicAlbum, artistId?: number, libraryId?: string): MusicAlbum {
-    // Extract MusicBrainz ID
-    let musicbrainzId: string | undefined
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('mbid://')) {
-          musicbrainzId = guid.id.replace('mbid://', '')
-          break
-        }
-      }
-    }
-
-    // Extract genres and moods
-    const genres = item.Genre?.map(g => g.tag) || []
-    const moods = item.Mood?.map(m => m.tag) || []
-
-    return {
-      source_id: this.sourceId,
-      source_type: 'plex',
-      library_id: libraryId,
-      provider_id: item.ratingKey,
-      artist_id: artistId,
-      artist_name: item.parentTitle || 'Unknown Artist',
-      title: item.title,
-      sort_title: item.title,
-      year: item.year,
-      musicbrainz_id: musicbrainzId,
-      genres: JSON.stringify(genres),
-      mood: JSON.stringify(moods),
-      studio: item.studio,
-      album_type: 'album', // Default, could be refined
-      thumb_url: item.thumb ? `${this.selectedServer?.uri}${item.thumb}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
-      art_url: item.art ? `${this.selectedServer?.uri}${item.art}?X-Plex-Token=${this.selectedServer?.accessToken}` : undefined,
-      release_date: item.originallyAvailableAt,
-      added_at: item.addedAt ? new Date(item.addedAt * 1000).toISOString() : undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Convert Plex track to MusicTrack type
-   */
-  convertToMusicTrack(item: PlexMusicTrack, albumId?: number, artistId?: number, libraryId?: string): MusicTrack | null {
-    const media = item.Media?.[0]
-    const part = media?.Part?.[0]
-    const audioStream = part?.Stream?.find(s => s.streamType === 2)
-
-    if (!media || !part) {
-      getLoggingService().warn('[PlexProvider]', `Skipping track "${item.title}" - no Media/Part data`)
-      return null
-    }
-
-    // audio_codec is required - use a default if not available
-    const audioCodec = media.audioCodec || audioStream?.codec || 'unknown'
-
-    // Extract MusicBrainz ID
-    let musicbrainzId: string | undefined
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('mbid://')) {
-          musicbrainzId = guid.id.replace('mbid://', '')
-          break
-        }
-      }
-    }
-
-    // Extract moods
-    const moods = item.Mood?.map(m => m.tag) || []
-
-    // Determine if lossless
-    const codec = audioCodec.toLowerCase()
-    const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'pcm', 'ape', 'wavpack']
-    const isLossless = losslessCodecs.some(lc => codec.includes(lc))
-
-    // Determine if hi-res (sample rate > 44100 or bit depth > 16)
-    const sampleRate = audioStream?.samplingRate || 44100
-    const bitDepth = audioStream?.bitDepth || 16
-    const isHiRes = isLossless && (sampleRate > 44100 || bitDepth > 16)
-
-    return {
-      source_id: this.sourceId,
-      source_type: 'plex',
-      library_id: libraryId,
-      provider_id: item.ratingKey,
-      album_id: albumId,
-      artist_id: artistId,
-      album_name: item.parentTitle,
-      artist_name: item.grandparentTitle || 'Unknown Artist',
-      title: item.title,
-      track_number: item.index,
-      disc_number: item.parentIndex || 1,
-      duration: item.duration,
+      type: item.type === 'show' ? 'episode' : (item.type === 'episode' ? 'episode' : 'movie'),
+      series_title: item.grandparentTitle,
+      season_number: item.parentIndex,
+      episode_number: item.index,
       file_path: part.file,
-      file_size: part.size,
+      file_size: part.size || 0,
+      duration: item.duration || 0,
+      resolution: media.videoResolution || 'unknown',
+      width: media.width || 0,
+      height: media.height || 0,
+      video_codec: media.videoCodec || 'unknown',
+      video_bitrate: media.bitrate || 0,
+      audio_codec: media.audioCodec || 'unknown',
+      audio_channels: media.audioChannels || 0,
+      audio_bitrate: 0, // Plex doesn't directly expose audio bitrate in summary
+      video_frame_rate: media.videoFrameRate,
       container: media.container,
-      audio_codec: audioCodec,
-      audio_bitrate: media.bitrate,
-      sample_rate: sampleRate,
-      bit_depth: bitDepth,
-      channels: media.audioChannels,
-      is_lossless: isLossless,
-      is_hi_res: isHiRes,
-      musicbrainz_id: musicbrainzId,
-      mood: JSON.stringify(moods),
-      added_at: item.addedAt ? new Date(item.addedAt * 1000).toISOString() : undefined,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      version_count: item.Media?.length || 1,
+      file_mtime: part.updatedAt,
+      imdb_id: this.extractGuid(item.Guid, 'imdb'),
+      tmdb_id: this.extractGuid(item.Guid, 'tmdb'),
+      poster_url: item.thumb ? `${this.selectedServer?.address}${item.thumb}?X-Plex-Token=${this.authToken}` : undefined,
+      summary: item.summary,
+      user_fixed_match: false
     }
   }
 
-  /**
-   * Scan a music library
-   */
-  async scanMusicLibrary(libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
-    // Reset cancellation flag at start
-    this.musicScanCancelled = false
+  private extractGuid(guids: any[], type: string): string | undefined {
+    if (!guids || !Array.isArray(guids)) return undefined
+    const guid = guids.find((g: any) => g.id?.startsWith(type))
+    return guid ? guid.id.split('://')[1] : undefined
+  }
 
-    const startTime = Date.now()
-    const result: ScanResult = {
-      success: false,
-      itemsScanned: 0,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      itemsRemoved: 0,
-      errors: [],
-      durationMs: 0,
-      cancelled: false,
-    }
-
-    try {
-      const db = getDatabase()
-
-      // Track scanned IDs for cleanup
-      const scannedArtistIds = new Set<string>()
-      const scannedAlbumIds = new Set<string>()
-      const scannedTrackIds = new Set<string>()
-
-      // Helper to process an album
-      const processAlbum = async (
-        plexAlbum: PlexMusicAlbum,
-        artistId: number | undefined,
-        artistName?: string
-      ): Promise<{ trackCount: number }> => {
-        // Get album metadata with external IDs
-        const albumMetadata = await this.getAlbumMetadata(plexAlbum.ratingKey)
-        const albumData = albumMetadata
-          ? this.convertToMusicAlbum(albumMetadata, artistId, libraryId)
-          : this.convertToMusicAlbum(plexAlbum, artistId, libraryId)
-
-        // Override artist name if provided (for compilations)
-        if (artistName && !albumData.artist_name) {
-          albumData.artist_name = artistName
-        }
-
-        // Get all tracks for this album
-        const tracks = await this.getMusicTracks(plexAlbum.ratingKey)
-
-        // Calculate album stats
-        let totalDuration = 0
-        let totalSize = 0
-        let bestBitrate = 0
-        let bestSampleRate = 0
-        let bestBitDepth = 0
-        let bestCodec = ''
-        let totalBitrate = 0
-
-        const trackDataList: MusicTrack[] = []
-
-        for (const plexTrack of tracks) {
-          const trackData = this.convertToMusicTrack(plexTrack, undefined, artistId, libraryId)
-          if (trackData) {
-            trackDataList.push(trackData)
-            totalDuration += trackData.duration || 0
-            totalSize += trackData.file_size || 0
-
-            if ((trackData.audio_bitrate || 0) > bestBitrate) {
-              bestBitrate = trackData.audio_bitrate || 0
-              bestCodec = trackData.audio_codec
-            }
-            if ((trackData.sample_rate || 0) > bestSampleRate) {
-              bestSampleRate = trackData.sample_rate || 0
-            }
-            if ((trackData.bit_depth || 0) > bestBitDepth) {
-              bestBitDepth = trackData.bit_depth || 0
-            }
-            totalBitrate += trackData.audio_bitrate || 0
-          }
-        }
-
-        // Update album with aggregated data
-        albumData.track_count = trackDataList.length
-        albumData.total_duration = totalDuration
-        albumData.total_size = totalSize
-        albumData.best_audio_codec = bestCodec
-        albumData.best_audio_bitrate = bestBitrate
-        albumData.best_sample_rate = bestSampleRate
-        albumData.best_bit_depth = bestBitDepth
-        albumData.avg_audio_bitrate = trackDataList.length > 0
-          ? Math.round(totalBitrate / trackDataList.length)
-          : 0
-
-        // Upsert album
-        const albumId = await db.music.upsertAlbum(albumData)
-        scannedAlbumIds.add(plexAlbum.ratingKey)
-
-        // Upsert tracks
-        for (const trackData of trackDataList) {
-          trackData.album_id = albumId
-          await db.music.upsertTrack(trackData)
-          scannedTrackIds.add(trackData.provider_id)
-          result.itemsScanned++
-        }
-
-        return { trackCount: trackDataList.length }
+  private mapAndScoreVersions(mediaItems: PlexMedia[], mediaItemId: number): MediaItemVersion[] {
+    return mediaItems.map((m, idx) => {
+      const part = m.Part?.[0] || {}
+      return {
+        media_item_id: mediaItemId,
+        version_source: 'plex',
+        file_path: part.file || '',
+        file_size: part.size || 0,
+        duration: m.duration || 0,
+        resolution: m.videoResolution || 'unknown',
+        width: m.width || 0,
+        height: m.height || 0,
+        video_codec: m.videoCodec || 'unknown',
+        video_bitrate: m.bitrate || 0,
+        audio_codec: m.audioCodec || 'unknown',
+        audio_channels: m.audioChannels || 0,
+        audio_bitrate: 0,
+        is_best: idx === 0, // Default to first being best, will be updated by ranker
+        hdr_format: m.videoProfile?.includes('HDR') ? 'HDR' : undefined,
+        color_bit_depth: m.bitDepth,
+        original_language: undefined,
+        audio_language: undefined
       }
+    })
+  }
 
-      // Phase 1: Get all artists and scan their albums
-      const artists = await this.getMusicArtists(libraryId)
-      const totalArtists = artists.length
+  private calculateQualityScore(versions: MediaItemVersion[], mediaItemId: number): Partial<QualityScore> {
+    const best = versions.find(v => v.is_best) || versions[0]
+    
+    // Simple heuristic for now, QualityAnalyzer will do deeper dive
+    let score = 50
+    if (best.resolution === '4k') score = 90
+    else if (best.resolution === '1080') score = 75
+    else if (best.resolution === '720') score = 60
 
-      getLoggingService().info('[PlexProvider]', `Scanning music library for source ${this.sourceId}: ${totalArtists} artists`)
-
-      let processed = 0
-
-      for (const plexArtist of artists) {
-        // Check for cancellation
-        if (this.musicScanCancelled) {
-          getLoggingService().info('[PlexProvider]', `Music scan cancelled at artist ${processed}/${totalArtists} for source ${this.sourceId}`)
-          result.cancelled = true
-          result.durationMs = Date.now() - startTime
-          return result
-        }
-
-        try {
-          // Get artist metadata with external IDs
-          const artistMetadata = await this.getArtistMetadata(plexArtist.ratingKey)
-          const artistData = artistMetadata ? this.convertToMusicArtist(artistMetadata, libraryId) : this.convertToMusicArtist(plexArtist, libraryId)
-
-          // Upsert artist
-          const artistId = await db.music.upsertArtist(artistData)
-          scannedArtistIds.add(plexArtist.ratingKey)
-
-          // Get all albums for this artist
-          const albums = await this.getMusicAlbums(libraryId, plexArtist.ratingKey)
-
-          let artistTrackCount = 0
-          let artistAlbumCount = 0
-
-          for (const plexAlbum of albums) {
-            const { trackCount } = await processAlbum(plexAlbum, artistId)
-            artistTrackCount += trackCount
-            artistAlbumCount++
-          }
-
-          // Skip individual artist count updates in the loop
-          processed++
-          if (onProgress) {
-            onProgress({
-              current: processed,
-              total: totalArtists,
-              phase: 'processing',
-              currentItem: plexArtist.title,
-              percentage: (processed / totalArtists) * 50, // First 50% for artists
-            })
-          }
-        } catch (error: unknown) {
-          result.errors.push(`Failed to process artist ${plexArtist.title}: ${getErrorMessage(error)}`)
-        }
-      }
-
-      // Phase 2: Get all albums directly to catch compilations and orphaned albums
-      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, 'Scanning for compilations and orphaned albums...')
-
-      const allAlbums = await this.getMusicAlbums(libraryId)
-      const unprocessedAlbums = allAlbums.filter(a => !scannedAlbumIds.has(a.ratingKey))
-
-      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Found ${unprocessedAlbums.length} additional albums (compilations/orphaned)`)
-
-      let compilationProcessed = 0
-      const totalCompilations = unprocessedAlbums.length
-
-      for (const plexAlbum of unprocessedAlbums) {
-        // Check for cancellation
-        if (this.musicScanCancelled) {
-          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Music scan cancelled at compilation ${compilationProcessed}/${totalCompilations}`)
-          result.cancelled = true
-          result.durationMs = Date.now() - startTime
-          return result
-        }
-
-        try {
-          // Determine artist for the album
-          // For compilations, use the album's parentTitle or "Various Artists"
-          const artistName = plexAlbum.parentTitle || 'Various Artists'
-
-          // Check if we have this artist already, otherwise create
-          let artistId: number | undefined
-
-          // Try to find existing artist
-          const existingArtists = db.music.getArtists({ sourceId: this.sourceId }) as Array<{ id?: number; name: string }>
-          const existingArtist = existingArtists.find((a: typeof existingArtists[0]) =>
-            a.name.toLowerCase() === artistName.toLowerCase()
-          )
-
-          if (existingArtist) {
-            artistId = existingArtist.id
-          } else {
-            // Create a new artist entry for compilations/Various Artists
-            const newArtistData: MusicArtist = {
-              source_id: this.sourceId,
-              source_type: 'plex',
-              library_id: libraryId,
-              provider_id: `compilation_${artistName.replace(/\s+/g, '_').toLowerCase()}`,
-              name: artistName,
-              sort_name: artistName,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }
-            artistId = await db.music.upsertArtist(newArtistData)
-          }
-
-          await processAlbum(plexAlbum, artistId, artistName)
-
-          compilationProcessed++
-          if (onProgress) {
-            onProgress({
-              current: compilationProcessed,
-              total: totalCompilations,
-              phase: 'processing',
-              currentItem: plexAlbum.title,
-              percentage: 50 + (compilationProcessed / Math.max(totalCompilations, 1)) * 50, // Last 50%
-            })
-          }
-        } catch (error: unknown) {
-          result.errors.push(`Failed to process album ${plexAlbum.title}: ${getErrorMessage(error)}`)
-        }
-      }
-
-      // Bulk update all artist counts for this source
-      await (db as any).updateAllMusicArtistCounts(this.sourceId)
-
-      // Update scan time
-      await db.sources.updateSourceScanTime(this.sourceId)
-
-      result.success = true
-      result.durationMs = Date.now() - startTime
-
-      getLoggingService().info('[PlexProvider]', `Music scan complete for source ${this.sourceId}: ${result.itemsScanned} tracks (including ${totalCompilations} compilation albums)`)
-
-      return result
-    } catch (error: unknown) {
-      result.errors.push(getErrorMessage(error))
-      result.durationMs = Date.now() - startTime
-      getLoggingService().error('[PlexProvider]', `Music scan failed for source ${this.sourceId}: ${getErrorMessage(error)}`)
-      return result
+    return {
+      media_item_id: mediaItemId,
+      quality_tier: (best.resolution === '4k' ? 'UHD' : (best.resolution === '1080' ? 'FHD' : (best.resolution === '720' ? 'HD' : 'SD'))) as any,
+      tier_quality: 'MEDIUM',
+      overall_score: score,
+      resolution_score: score,
+      bitrate_score: 50,
+      audio_score: 50,
+      efficiency_score: 70,
+      storage_debt_bytes: 0,
+      needs_upgrade: score < 70,
+      issues: '[]'
     }
   }
 
-  // ============================================================================
-  // CANCELLATION
-  // ============================================================================
-
-  /**
-   * Cancel the current library scan
-   */
-  cancelScan(): void {
-    this.scanCancelled = true
-    getLoggingService().info('[PlexProvider]', `Library scan cancellation requested for source ${this.sourceId}`)
-  }
-
-  /**
-   * Cancel the current music library scan
-   */
-  cancelMusicScan(): void {
-    this.musicScanCancelled = true
-    getLoggingService().info('[PlexProvider]', `Music library scan cancellation requested for source ${this.sourceId}`)
-  }
-
-  /**
-   * Check if scan is cancelled
-   */
-  isScanCancelled(): boolean {
-    return this.scanCancelled
-  }
-
-  /**
-   * Check if music scan is cancelled
-   */
-  isMusicScanCancelled(): boolean {
-    return this.musicScanCancelled
-  }
-
-  // ============================================================================
-  // GETTERS
-  // ============================================================================
-
-  getAuthToken(): string | null {
-    return this.authToken
-  }
-
-  getSelectedServer(): PlexServer | null {
-    return this.selectedServer
-  }
+  // --- Identity ---
+  getProviderId(): string { return 'plex' }
+  
+  setSourceId(id: string): void { this.sourceId = id }
 
   hasSelectedServer(): boolean {
     return this.selectedServer !== null

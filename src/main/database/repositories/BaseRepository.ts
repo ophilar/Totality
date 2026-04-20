@@ -9,6 +9,34 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 export abstract class BaseRepository<T extends { id?: number }> {
   constructor(protected db: DatabaseSync, protected tableName: string) {}
 
+  protected beginBatch(): void {
+    const service = (this.db as any).__service
+    if (service) {
+      service.beginBatch()
+    } else {
+      this.db.exec('BEGIN IMMEDIATE')
+    }
+  }
+
+  protected endBatch(): void {
+    const service = (this.db as any).__service
+    if (service) {
+      service.endBatch()
+    } else {
+      this.db.exec('COMMIT')
+    }
+  }
+
+  protected rollback(): void {
+    const service = (this.db as any).__service
+    if (service) {
+      service.rollbackBatch()
+    } else {
+      this.db.exec('ROLLBACK')
+    }
+  }
+
+
   /**
    * Get a single record by ID
    */
