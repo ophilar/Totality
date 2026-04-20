@@ -9,6 +9,7 @@ import { getSourceManager } from './SourceManager'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getMovieCollectionService } from './MovieCollectionService'
 import { getMusicBrainzService } from './MusicBrainzService'
+import { safeSend } from '../ipc/utils/safeSend'
 
 export interface TaskProgress {
   current: number
@@ -69,6 +70,7 @@ export class TaskQueueService {
   private movieCollection: any
   private musicBrainz: any
   private transcoding: any
+  private mainWindow: any = null
 
   constructor(deps: TaskQueueDependencies = {}) {
     this.db = deps.db || getDatabase()
@@ -110,8 +112,8 @@ export class TaskQueueService {
     return this.transcoding
   }
 
-  setMainWindow(_win: any): void {
-    // No longer needed but kept for API compatibility
+  setMainWindow(win: any): void {
+    this.mainWindow = win
   }
 
   loadPersistedHistory(): void {
@@ -327,7 +329,9 @@ export class TaskQueueService {
           sourceId: task.sourceId,
           sourceName: task.label,
         })
-      } catch (e) { }
+      } catch (e) {
+        getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)
+      }
     } finally {
       task.completedAt = new Date().toISOString()
       this.completedTasks.unshift(task)
@@ -335,16 +339,30 @@ export class TaskQueueService {
         this.completedTasks.pop()
       }
       
+      const prevTask = task
       this.currentTask = null
       this.saveState()
       this.notifyListeners()
       
       // Emit completion event for UI sounds/effects
-      if (task.status === 'completed') {
-        try {
-          const windows = require('electron').BrowserWindow.getAllWindows()
-          windows[0]?.webContents.send('taskQueue:taskComplete', task)
-        } catch (e) {}
+      if (prevTask.status === 'completed' && this.mainWindow) {
+        safeSend(this.mainWindow, 'taskQueue:taskComplete', prevTask)
+
+        // Special case: Scan tasks should also emit scan:completed
+        if (prevTask.type === 'library-scan' || prevTask.type === 'source-scan' || prevTask.type === 'music-scan') {
+          const res = prevTask.result as any
+          if (res) {
+            safeSend(this.mainWindow, 'scan:completed', {
+              sourceId: prevTask.sourceId,
+              libraryId: prevTask.libraryId,
+              libraryName: prevTask.label.replace('Scan ', ''),
+              itemsScanned: res.itemsScanned || 0,
+              itemsAdded: res.itemsAdded || 0,
+              itemsUpdated: res.itemsUpdated || 0,
+              isFirstScan: false
+            })
+          }
+        }
       }
 
       // Small delay before next task
@@ -457,15 +475,9 @@ export class TaskQueueService {
 
   private notifyListeners(): void {
     const state = this.getState()
-    try {
-      const electron = require('electron')
-      if (electron && electron.BrowserWindow) {
-        const windows = electron.BrowserWindow.getAllWindows()
-        for (const win of windows) {
-          win.webContents.send('taskQueue:updated', state)
-        }
-      }
-    } catch (error) { }
+    if (this.mainWindow) {
+      safeSend(this.mainWindow, 'taskQueue:updated', state)
+    }
   }
 
   private saveState(): void {
@@ -475,7 +487,9 @@ export class TaskQueueService {
         completedTasks: this.completedTasks,
         isPaused: this.isPaused
       }))
-    } catch (e) { }
+    } catch (e) {
+      getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', e)
+    }
   }
 
   private loadState(): void {
@@ -490,7 +504,9 @@ export class TaskQueueService {
         // Reset any tasks that were running to queued
         this.queue.forEach(t => { if (t.status === 'running') t.status = 'queued' })
       }
-    } catch (e) { }
+    } catch (e) {
+      getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', e)
+    }
   }
 }
 

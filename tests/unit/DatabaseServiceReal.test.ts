@@ -1,49 +1,39 @@
-import { describe, it, expect, beforeAll } from 'vitest'
-import { BetterSQLiteService } from '../../src/main/database/BetterSQLiteService'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
 
-describe('BetterSQLiteService Integration', () => {
-  let service: BetterSQLiteService
+describe('BetterSQLiteService Integration (Real DB)', () => {
+  let db: any
 
-  beforeAll(() => {
-    service = new BetterSQLiteService()
-    // Override dbPath for testing to use in-memory
-    ;(service as any).dbPath = ':memory:'
-    service.initialize()
+  beforeEach(async () => {
+    db = await setupTestDb()
   })
 
-  it('should be initialized', () => {
-    expect(service.isInitialized).toBe(true)
+  afterEach(() => {
+    cleanupTestDb()
   })
 
-  describe('Settings', () => {
-    // Note: BetterSQLiteService should have getSetting/setSetting or delegate them
-    it('should be able to initialize and run migrations', () => {
-      // If migrations ran, settings table should exist
-      expect(service.isInitialized).toBe(true)
-    })
+  it('should initialize with all repositories', () => {
+    expect(db.media).toBeDefined()
+    expect(db.sources).toBeDefined()
+    expect(db.music).toBeDefined()
+    expect(db.tvShows).toBeDefined()
+    expect(db.stats).toBeDefined()
+    expect(db.wishlist).toBeDefined()
   })
 
-  describe('Media Sources', () => {
-    it('should upsert and retrieve a media source', () => {
-      const sourceId = 'test-src-1'
-      service.sources.upsertSource({
-        source_id: sourceId,
-        source_type: 'plex',
-        display_name: 'Test Plex',
-        connection_config: '{}',
-        is_enabled: true,
-      })
-
-      const source = service.sources.getSourceById(sourceId)
-      expect(source).not.toBeNull()
-      expect(source!.display_name).toBe('Test Plex')
-    })
+  it('should persist settings', () => {
+    db.setSetting('test_theme', 'dark')
+    expect(db.getSetting('test_theme')).toBe('dark')
   })
 
-  describe('Media Items', () => {
-    it('should retrieve media items with filters', () => {
-      const items = service.media.getItems({ limit: 10 })
-      expect(Array.isArray(items)).toBe(true)
-    })
+  it('should run multiple operations in a batch (manual transaction)', () => {
+    // We use manual transaction here since we removed internal startBatch from provider
+    // but the service still supports it for callers that need it.
+    db.db.exec('BEGIN')
+    db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's2', source_type: 'local', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
+    db.db.exec('COMMIT')
+
+    expect(db.sources.getSources()).toHaveLength(2)
   })
 })

@@ -5,10 +5,10 @@
  * Handles source CRUD operations, provider lifecycle, and aggregated scanning.
  */
 
-import { getDatabase } from '../database/getDatabase'
-import { getLiveMonitoringService } from './LiveMonitoringService'
-import { getTaskQueueService } from './TaskQueueService'
-import { getLoggingService } from './LoggingService'
+import { getDatabase, type BetterSQLiteService } from '../database/getDatabase'
+import { getLiveMonitoringService, type LiveMonitoringService } from './LiveMonitoringService'
+import { getTaskQueueService, type TaskQueueService } from './TaskQueueService'
+import { getLoggingService, type LoggingService } from './LoggingService'
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs/promises'
@@ -40,64 +40,39 @@ export type AggregateProgressCallback = (
 ) => void
 
 export interface SourceManagerDependencies {
-  db?: any
-  liveMonitoring?: any
-  taskQueue?: any
-  logging?: any
+  db?: BetterSQLiteService
+  liveMonitoring?: LiveMonitoringService
+  taskQueue?: TaskQueueService
+  logging?: LoggingService
 }
 
 export class SourceManager {
   private providers: Map<string, MediaProvider> = new Map()
   private initPromise: Promise<void> | null = null
   private scanCancelled: boolean = false
-  private isScanning: boolean = false
+  private activeScans: number = 0
   private getLibrariesPromises: Map<string, Promise<MediaLibrary[]>> = new Map()
   
-  private db: any
-  private liveMonitoring: any
-  private taskQueue: any
-  private logging: any
+  private db: BetterSQLiteService
+  private liveMonitoring: LiveMonitoringService | null
+  private taskQueue: TaskQueueService | null
+  private logging: LoggingService
 
   constructor(deps: SourceManagerDependencies = {}) {
-    const db = deps.db || getDatabase()
-    // Normalize for legacy tests and mocks
-    if (db) {
-      if (!db.sources && db.sourceRepo) db.sources = db.sourceRepo
-      if (db.sources) {
-        if (!db.sources.getSources && db.sources.getMediaSources) db.sources.getSources = db.sources.getMediaSources
-        if (!db.sources.getSourceById && db.sources.getMediaSourceById) db.sources.getSourceById = db.sources.getMediaSourceById
-        if (!db.sources.upsertSource && db.sources.upsertMediaSource) db.sources.upsertSource = db.sources.upsertMediaSource
-        if (!db.sources.deleteSource && db.sources.deleteMediaSource) db.sources.deleteSource = db.sources.deleteMediaSource
-      }
-
-      if (!db.media && db.mediaRepo) db.media = db.mediaRepo
-      if (db.media) {
-        if (!db.media.getItems && db.media.getMediaItems) db.media.getItems = db.media.getMediaItems
-        if (!db.media.getItem && db.media.getMediaItemById) db.media.getItem = db.media.getMediaItemById
-        if (!db.media.upsertItem && db.media.upsertMediaItem) db.media.upsertItem = db.media.upsertMediaItem
-        if (!db.media.deleteItem && db.media.deleteMediaItem) db.media.deleteItem = db.media.deleteMediaItem
-      }
-
-      if (!db.music && db.musicRepo) db.music = db.musicRepo
-      if (!db.tvShows && db.tvShowRepo) db.tvShows = db.tvShowRepo
-      if (!db.notifications && db.notificationRepo) db.notifications = db.notificationRepo
-      if (!db.stats && db.statsRepo) db.stats = db.statsRepo
-      if (!db.wishlist && db.wishlistRepo) db.wishlist = db.wishlistRepo
-    }
-    this.db = db
+    this.db = deps.db || getDatabase()
     this.liveMonitoring = deps.liveMonitoring || null // Lazy load if not provided
     this.taskQueue = deps.taskQueue || null // Lazy load if not provided
     this.logging = deps.logging || getLoggingService()
   }
 
-  private getLiveMonitoring(): any {
+  private getLiveMonitoring(): LiveMonitoringService {
     if (!this.liveMonitoring) {
       this.liveMonitoring = getLiveMonitoringService()
     }
     return this.liveMonitoring
   }
 
-  private getTaskQueue(): any {
+  private getTaskQueue(): TaskQueueService {
     if (!this.taskQueue) {
       this.taskQueue = getTaskQueueService()
     }
@@ -108,7 +83,7 @@ export class SourceManager {
    * Check if a scan is currently in progress
    */
   isScanInProgress(): boolean {
-    return this.isScanning
+    return this.activeScans > 0
   }
 
   /**
@@ -116,7 +91,7 @@ export class SourceManager {
    * Used by LiveMonitoringService to pause during manual scans
    */
   isManualScanInProgress(): boolean {
-    return this.isScanning
+    return this.activeScans > 0
   }
 
   /**
@@ -130,7 +105,7 @@ export class SourceManager {
    * Stop the current scan
    */
   stopScan(): void {
-    if (this.isScanning) {
+    if (this.activeScans > 0) {
       this.logging.info('[SourceManager]', '[SourceManager] Stopping scan...')
       this.scanCancelled = true
     }
@@ -163,7 +138,7 @@ export class SourceManager {
       const names = unavailableSources.map(s => s.name).join(', ')
       this.logging.warn('[SourceManager]', `Unavailable sources at startup: ${names}`)
       try {
-        db.notifications.add({
+        db.notifications.addNotification({
           type: 'error',
           title: 'Media source unavailable',
           message: unavailableSources.length === 1
@@ -178,20 +153,20 @@ export class SourceManager {
 
   private async loadSingleSource(
     source: MediaSource,
-    db: any,
+    db: BetterSQLiteService,
     unavailableSources: Array<{ name: string; type: string }>
   ): Promise<void> {
     try {
       const connectionConfig = JSON.parse(source.connection_config)
       const config: SourceConfig = {
         sourceId: source.source_id,
-        sourceType: source.source_type,
+        sourceType: source.source_type as ProviderType,
         displayName: source.display_name,
         connectionConfig,
-        isEnabled: source.is_enabled,
+        isEnabled: !!source.is_enabled,
       }
 
-      const provider = createProvider(source.source_type, config)
+      const provider = createProvider(source.source_type as ProviderType, config)
       this.providers.set(source.source_id, provider)
 
       // For Plex providers with saved serverId, restore server selection with timeout
@@ -222,7 +197,7 @@ export class SourceManager {
     plexProvider: PlexProvider,
     connectionConfig: Record<string, unknown>,
     source: MediaSource,
-    db: any
+    db: BetterSQLiteService
   ): Promise<boolean> {
     // Set token first (should be set in constructor, but ensure it's set)
     if (!await plexProvider.isAuthenticated()) {
@@ -290,7 +265,7 @@ export class SourceManager {
       is_enabled: config.isEnabled !== false,
     }
 
-    await db.sources.upsertSource(sourceRecord as any)
+    await db.sources.upsertSource(sourceRecord)
 
     // Add to active providers
     this.providers.set(sourceId, provider)
@@ -325,7 +300,7 @@ export class SourceManager {
       connection_config: updates.connectionConfig
         ? JSON.stringify(updates.connectionConfig)
         : existing.connection_config,
-      is_enabled: updates.isEnabled !== undefined ? updates.isEnabled : existing.is_enabled,
+      is_enabled: updates.isEnabled !== undefined ? updates.isEnabled : !!existing.is_enabled,
     }
 
     await db.sources.upsertSource(updatedSource)
@@ -334,12 +309,12 @@ export class SourceManager {
     if (updates.connectionConfig) {
       const config: SourceConfig = {
         sourceId,
-        sourceType: updatedSource.source_type,
+        sourceType: updatedSource.source_type as ProviderType,
         displayName: updatedSource.display_name,
         connectionConfig: updates.connectionConfig,
-        isEnabled: updatedSource.is_enabled,
+        isEnabled: !!updatedSource.is_enabled,
       }
-      const provider = createProvider(updatedSource.source_type, config)
+      const provider = createProvider(updatedSource.source_type as ProviderType, config)
       this.providers.set(sourceId, provider)
     }
 
@@ -364,7 +339,7 @@ export class SourceManager {
     this.providers.delete(sourceId)
 
     // 4. Remove from database (includes notifications cleanup)
-    await db.sources.deleteSource(sourceId)
+    db.sources.deleteSource(sourceId)
 
     // 5. Clean up cached artwork files
     await this.cleanupArtworkCache(sourceId)
@@ -393,7 +368,7 @@ export class SourceManager {
     await this.initialize()
 
     const db = this.db
-    return db.sources.getSources(type) as any
+    return db.sources.getSources(type)
   }
 
   /**
@@ -486,7 +461,7 @@ export class SourceManager {
     const elapsed = Date.now() - startTime
 
     if (result.success) {
-      await db.sources.updateSourceConnectionTime(sourceId)
+      db.sources.updateSourceConnectionTime(sourceId)
       this.logging.verbose('[SourceManager]', `Connection test passed for ${currentProvider.providerType} source in ${elapsed}ms`, result.serverVersion ? `Server version: ${result.serverVersion}` : undefined)
     } else {
       this.logging.verbose('[SourceManager]', `Connection test failed for ${currentProvider.providerType} source in ${elapsed}ms`, result.error || undefined)
@@ -502,7 +477,7 @@ export class SourceManager {
   private async authenticateJellyfinEmbyIfNeeded(
     sourceId: string,
     provider: MediaProvider,
-    db: any,
+    db: BetterSQLiteService,
   ): Promise<ConnectionTestResult | null> {
     const source = db.sources.getSourceById(sourceId)
     if (!source) return null
@@ -531,21 +506,21 @@ export class SourceManager {
         password: undefined,
       }
 
-      await db.sources.upsertSource({
+      db.sources.upsertSource({
         source_id: sourceId,
         source_type: source.source_type,
         display_name: source.display_name,
         connection_config: JSON.stringify(updatedConfig),
         is_enabled: source.is_enabled,
-      } as any)
+      })
 
       // Recreate provider with new credentials
-      const newProvider = createProvider(source.source_type, {
+      const newProvider = createProvider(source.source_type as ProviderType, {
         sourceId,
         sourceType: source.source_type as ProviderType,
         displayName: source.display_name,
         connectionConfig: updatedConfig,
-        isEnabled: source.is_enabled,
+        isEnabled: !!source.is_enabled,
       })
       this.providers.set(sourceId, newProvider)
 
@@ -704,32 +679,59 @@ export class SourceManager {
     libraryId: string,
     onProgress?: ProgressCallback
   ): Promise<ScanResult> {
-    await this.initialize()
-
-    const provider = this.providers.get(sourceId)
-    if (!provider) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    // Set scanning state
-    this.isScanning = true
-    this.scanCancelled = false
+    // Set scanning state immediately before any awaits
+    this.activeScans++
 
     try {
+      await this.initialize()
+
+      const provider = this.providers.get(sourceId)
+      if (!provider) {
+        throw new Error(`Source not found: ${sourceId}`)
+      }
+
       // Get library info for timestamp recording
       const libraries = await provider.getLibraries()
       const library = libraries.find(lib => lib.id === libraryId)
 
-      // Wrap progress callback to check for cancellation
-      const wrappedProgress: ProgressCallback | undefined = onProgress ? (progress) => {
+      // Wrap progress callback to handle cancellation and periodic updates
+      let lastNotifyTime = 0
+      const wrappedProgress: ProgressCallback = (progress) => {
         if (this.scanCancelled) {
           throw new Error('Scan cancelled by user')
         }
-        onProgress(progress)
-      } : undefined
+
+        // Notify renderer periodically during processing to show dynamic progress
+        if (progress.phase === 'processing' && progress.current > 0) {
+          const now = Date.now()
+          // Notify on first item, then every 5 seconds
+          if (lastNotifyTime === 0 || now - lastNotifyTime > 5000) {
+            this.getLiveMonitoring().sendToRenderer('library:updated', { type: 'media' })
+            lastNotifyTime = now
+          }
+        }
+
+        if (onProgress) {
+          onProgress(progress)
+        }
+      }
 
       this.logging.info('[SourceManager]', `Starting scan: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}`)
       const result = await provider.scanLibrary(libraryId, { onProgress: wrappedProgress })
+      
+      // Check if cancelled after the provider finishes
+      if (this.scanCancelled) {
+        return {
+          success: false,
+          itemsScanned: result.itemsScanned,
+          itemsAdded: result.itemsAdded,
+          itemsUpdated: result.itemsUpdated,
+          itemsRemoved: 0,
+          errors: ['Scan cancelled by user'],
+          durationMs: result.durationMs,
+        }
+      }
+
       this.logging.info('[SourceManager]', `Scan result: itemsScanned=${result.itemsScanned}, itemsAdded=${result.itemsAdded}, itemsUpdated=${result.itemsUpdated}, itemsRemoved=${result.itemsRemoved}, success=${result.success}, errors=${result.errors.length}`)
 
       // Verbose scan summary
@@ -767,21 +769,24 @@ export class SourceManager {
           const tq = this.getTaskQueue()
 
           // 1. Completeness Checks
-          if (library.type === 'tv' || library.type === 'mixed') {
-            tq.addTask({
-              type: 'series-completeness',
-              label: `Post-scan Series Analysis: ${library.name}`,
-              sourceId,
-              libraryId
-            })
-          }
-          if (library.type === 'movie' || library.type === 'mixed') {
-            tq.addTask({
-              type: 'collection-completeness',
-              label: `Post-scan Collection Analysis: ${library.name}`,
-              sourceId,
-              libraryId
-            })
+          const hasTmdbKey = db.getSetting('tmdb_api_key')
+          if (hasTmdbKey) {
+            if (library.type === 'tv' || library.type === 'mixed') {
+              tq.addTask({
+                type: 'series-completeness',
+                label: `Post-scan Series Analysis: ${library.name}`,
+                sourceId,
+                libraryId
+              })
+            }
+            if (library.type === 'movie' || library.type === 'mixed') {
+              tq.addTask({
+                type: 'collection-completeness',
+                label: `Post-scan Collection Analysis: ${library.name}`,
+                sourceId,
+                libraryId
+              })
+            }
           }
 
           // 2. Wishlist check (decoupled from task queue)
@@ -795,8 +800,10 @@ export class SourceManager {
 
       return result
     } finally {
-      this.isScanning = false
-      this.scanCancelled = false
+      this.activeScans--
+      if (this.activeScans === 0) {
+        this.scanCancelled = false
+      }
 
       // Notify renderer that library data has changed
       try {
@@ -834,16 +841,15 @@ export class SourceManager {
    * Scan all libraries across all enabled sources
    */
   async scanAllSources(onProgress?: AggregateProgressCallback): Promise<Map<string, ScanResult>> {
-    await this.initialize()
-
-    // Set scanning state
-    this.isScanning = true
-    this.scanCancelled = false
-
-    const results = new Map<string, ScanResult>()
-    const enabledSources = await this.getEnabledSources()
+    // Set scanning state immediately before any awaits
+    this.activeScans++
 
     try {
+      await this.initialize()
+
+      const results = new Map<string, ScanResult>()
+      const enabledSources = await this.getEnabledSources()
+
       for (const source of enabledSources) {
         // Check for cancellation before each source
         if (this.scanCancelled) {
@@ -889,12 +895,23 @@ export class SourceManager {
 
             this.logging.verbose('[SourceManager]', `Scanning library: ${library.name} (${library.type}) from ${source.display_name}`)
 
+            let lastNotifyTime = 0
             const result = await provider.scanLibrary(library.id, {
               onProgress: (progress) => {
                 // Check for cancellation during progress
                 if (this.scanCancelled) {
                   throw new Error('Scan cancelled by user')
                 }
+
+                // Notify renderer periodically during processing to show dynamic progress
+                if (progress.phase === 'processing' && progress.current > 0) {
+                  const now = Date.now()
+                  if (lastNotifyTime === 0 || now - lastNotifyTime > 5000) {
+                    this.getLiveMonitoring().sendToRenderer('library:updated', { type: 'media' })
+                    lastNotifyTime = now
+                  }
+                }
+
                 if (onProgress) {
                   onProgress(source.source_id, source.display_name, progress)
                 }
@@ -922,21 +939,24 @@ export class SourceManager {
                 const tq = this.getTaskQueue()
 
                 // 1. Completeness Checks
-                if (library.type === 'tv' || library.type === 'mixed') {
-                  tq.addTask({
-                    type: 'series-completeness',
-                    label: `Post-scan Series Analysis: ${library.name}`,
-                    sourceId: source.source_id,
-                    libraryId: library.id
-                  })
-                }
-                if (library.type === 'movie' || library.type === 'mixed') {
-                  tq.addTask({
-                    type: 'collection-completeness',
-                    label: `Post-scan Collection Analysis: ${library.name}`,
-                    sourceId: source.source_id,
-                    libraryId: library.id
-                  })
+                const hasTmdbKey = db.getSetting('tmdb_api_key')
+                if (hasTmdbKey) {
+                  if (library.type === 'tv' || library.type === 'mixed') {
+                    tq.addTask({
+                      type: 'series-completeness',
+                      label: `Post-scan Series Analysis: ${library.name}`,
+                      sourceId: source.source_id,
+                      libraryId: library.id
+                    })
+                  }
+                  if (library.type === 'movie' || library.type === 'mixed') {
+                    tq.addTask({
+                      type: 'collection-completeness',
+                      label: `Post-scan Collection Analysis: ${library.name}`,
+                      sourceId: source.source_id,
+                      libraryId: library.id
+                    })
+                  }
                 }
 
                 // 2. Wishlist check (decoupled from task queue)
@@ -968,8 +988,10 @@ export class SourceManager {
 
       return results
     } finally {
-      this.isScanning = false
-      this.scanCancelled = false
+      this.activeScans--
+      if (this.activeScans === 0) {
+        this.scanCancelled = false
+      }
 
       // Notify renderer that library data has changed
       try {
@@ -978,6 +1000,59 @@ export class SourceManager {
         this.logging.error('[SourceManager]', 'Failed to notify library update:', err)
       }
     }
+  }
+
+  /**
+   * Trigger post-scan background tasks for all libraries.
+   * Useful when a configuration change (like adding an API key) enables new features.
+   */
+  async triggerPostScanAnalysis(sourceId?: string, libraryId?: string): Promise<void> {
+    const db = this.db
+    const tq = this.getTaskQueue()
+    const { getWishlistCompletionService } = await import('./WishlistCompletionService')
+
+    const sources = sourceId
+      ? [db.sources.getSourceById(sourceId)].filter(Boolean)
+      : db.sources.getEnabledSources()
+
+    for (const source of sources) {
+      if (!source) continue
+      const libraries = await this.getLibraries(source.source_id)
+      const filteredLibraries = libraryId
+        ? libraries.filter(l => l.id === libraryId)
+        : libraries
+
+      for (const library of filteredLibraries) {
+        // Check if library is enabled in DB
+        if (!db.sources.isLibraryEnabled(source.source_id, library.id)) continue
+
+        // 1. Completeness Checks
+        const hasTmdbKey = db.getSetting('tmdb_api_key')
+        if (hasTmdbKey) {
+          if (library.type === 'tv' || library.type === 'show' || library.type === 'mixed') {
+            tq.addTask({
+              type: 'series-completeness',
+              label: `Background Series Analysis: ${library.name}`,
+              sourceId: source.source_id,
+              libraryId: library.id
+            })
+          }
+          if (library.type === 'movie' || library.type === 'mixed') {
+            tq.addTask({
+              type: 'collection-completeness',
+              label: `Background Collection Analysis: ${library.name}`,
+              sourceId: source.source_id,
+              libraryId: library.id
+            })
+          }
+        }
+      }
+    }
+
+    // 2. Wishlist check
+    getWishlistCompletionService().checkAndComplete().catch(err => {
+      this.logging.error('[SourceManager]', 'Background wishlist check failed:', err)
+    })
   }
 
   // ============================================================================

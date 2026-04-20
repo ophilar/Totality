@@ -414,6 +414,21 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[IPC sources:scanLibrary]', `Scan complete, sent ${progressCount} progress events`)
+
+      // Emit scan:completed for toast and refresh
+      if (result.success && !result.cancelled) {
+        const source = await manager.getSource(validSourceId)
+        safeSend(win, 'scan:completed', {
+          sourceId: validSourceId,
+          libraryId: validLibraryId,
+          libraryName: source?.display_name || 'Library',
+          itemsScanned: result.itemsScanned,
+          itemsAdded: result.itemsAdded,
+          itemsUpdated: result.itemsUpdated,
+          isFirstScan: false // Manual scans aren't necessarily first
+        })
+      }
+
       return result
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error scanning library:', error)
@@ -434,6 +449,23 @@ export function registerSourceHandlers(): void {
       const results = await manager.scanAllSources((sourceId, sourceName, progress) => {
         onProgress(progress, { sourceId, sourceName })
       })
+
+      // Emit scan:completed for each library that was successful
+      for (const [key, result] of results.entries()) {
+        if (result.success && !result.cancelled) {
+          const [sourceId, libraryId] = key.split(':')
+          const source = await manager.getSource(sourceId)
+          safeSend(win, 'scan:completed', {
+            sourceId,
+            libraryId,
+            libraryName: source?.display_name || 'Library',
+            itemsScanned: result.itemsScanned,
+            itemsAdded: result.itemsAdded,
+            itemsUpdated: result.itemsUpdated,
+            isFirstScan: (result as any).isFirstScan || false
+          })
+        }
+      }
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({
@@ -511,6 +543,21 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Scan complete: ${result.itemsScanned} items`)
+
+      // Emit scan:completed for toast and refresh
+      if (result.success && !result.cancelled) {
+        const source = await manager.getSource(validSourceId)
+        safeSend(win, 'scan:completed', {
+          sourceId: validSourceId,
+          libraryId: validLibraryId,
+          libraryName: source?.display_name || 'Library',
+          itemsScanned: result.itemsScanned,
+          itemsAdded: result.itemsAdded,
+          itemsUpdated: result.itemsUpdated,
+          isFirstScan: false
+        })
+      }
+
       return result
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error in incremental library scan:', error)
@@ -534,6 +581,23 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Incremental scan complete')
+
+      // Emit scan:completed for each library that was successful
+      for (const [key, result] of results.entries()) {
+        if (result.success && !result.cancelled) {
+          const [sourceId, libraryId] = key.split(':')
+          const source = await manager.getSource(sourceId)
+          safeSend(win, 'scan:completed', {
+            sourceId,
+            libraryId,
+            libraryName: source?.display_name || 'Library',
+            itemsScanned: result.itemsScanned,
+            itemsAdded: result.itemsAdded,
+            itemsUpdated: result.itemsUpdated,
+            isFirstScan: false
+          })
+        }
+      }
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({

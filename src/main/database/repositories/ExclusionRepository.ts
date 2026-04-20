@@ -1,10 +1,9 @@
-// @ts-nocheck
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import { BaseRepository } from './BaseRepository'
 
 export interface Exclusion {
   id?: number
-  exclusion_type: 'media_upgrade' | 'collection_movie' | 'series_episode' | 'artist_album'
+  exclusion_type: 'media_upgrade' | 'collection_movie' | 'series_episode' | 'artist_album' | 'cleanup_radar'
   reference_id?: number
   reference_key?: string
   parent_key?: string
@@ -47,7 +46,7 @@ export class ExclusionRepository extends BaseRepository<Exclusion> {
 
   getExclusions(type?: string, parentKey?: string): Exclusion[] {
     let sql = 'SELECT * FROM exclusions WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     if (type) {
       sql += ' AND exclusion_type = ?'
@@ -60,6 +59,6 @@ export class ExclusionRepository extends BaseRepository<Exclusion> {
 
     sql += ' ORDER BY created_at DESC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as Exclusion[]
+    return stmt.all(...params) as unknown as Exclusion[]
   }
 }

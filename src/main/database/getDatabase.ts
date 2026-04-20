@@ -12,6 +12,7 @@
 
 import { getBetterSQLiteService, BetterSQLiteService } from './BetterSQLiteService'
 
+export { BetterSQLiteService }
 /**
  * Get the database service instance (synchronous)
  */

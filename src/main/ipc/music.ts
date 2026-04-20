@@ -124,7 +124,7 @@ export function registerMusicHandlers(): void {
 
       // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = db.music.getTracksByAlbumIds(albumIds)
+      const tracksByAlbum = db.music.getMusicTracksByAlbumIds(albumIds)
 
       db.startBatch()
       for (const album of albums) {
@@ -270,7 +270,7 @@ export function registerMusicHandlers(): void {
 
       // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = db.music.getTracksByAlbumIds(albumIds)
+      const tracksByAlbum = db.music.getMusicTracksByAlbumIds(albumIds)
 
       let processed = 0
 

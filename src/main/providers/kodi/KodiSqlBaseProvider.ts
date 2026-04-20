@@ -143,6 +143,20 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
         for (const group of groups) {
           if (this.scanCancelled) break
 
+          // Report progress for each item in the group BEFORE processing
+          for (const item of group) {
+            itemIndex++
+            if (onProgress) {
+              onProgress({
+                current: itemIndex,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.title,
+                percentage: (itemIndex / totalItems) * 100,
+              })
+            }
+          }
+
           try {
             for (let i = 0; i < group.length; i++) {
               if (this.useFFprobeAnalysis && this.ffprobeAvailable && this.needsFFprobeEnhancement(group[i])) {
@@ -183,11 +197,6 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
             }
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${group[0]?.title}: ${getErrorMessage(error)}`)
-          }
-
-          itemIndex += group.length
-          if (onProgress) {
-            onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: group[0]?.title, percentage: (itemIndex / totalItems) * 100 })
           }
         }
       } finally {

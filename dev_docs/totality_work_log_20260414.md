@@ -1,0 +1,16 @@
+## 2026-04-14
+- **Task:** Investigated and resolved reported "scanning and UI" issues, focusing on redundancies, "empty library" bugs, and improving UX during scans.
+- **Major Refactoring (LocalFolderProvider):**
+    - **Unified Scan Logic:** Consolidated `scanLibrary` and `scanTargetedFiles` into a unified pipeline using a new `saveMediaItems` helper. This ensures that live monitoring (targeted scans) now correctly performs multi-version grouping.
+    - **Fixed Multi-version Incremental Bug:** Resolved a critical issue where incremental scans would delete existing versions of a movie. The system now merges new scan results with existing database versions.
+    - **Stable Canonical IDs:** Implemented `generateCanonicalPlexId` for local items to ensure database stability across rescans and renames.
+- **UI & UX Enhancements (Scaffolding & Progress):**
+    - **Skeleton Loaders:** Created a `Skeleton` component and implemented scaffolding in `MediaGridView` and `Dashboard`. The UI now shows animated placeholders instead of an empty screen while data is loading.
+    - **Scanning Status Banner:** Added a new `ScanningStatus` component to the `BrowserHeader`. It displays real-time scan phase, progress percentage, and the current file being processed.
+    - **Informative Empty States:** Updated `MoviesView` and `TVShowsView` to detect active scans. If a library is empty but a scan is running, the user sees a "Scan in Progress" view with live counts and current activity.
+    - **Analysis Feedback:** Added an "Analyzing..." overlay to `MovieCard` and `ShowCard`. Items that are newly added but not yet fully quality-analyzed show this status to the user.
+- **Test Infrastructure:**
+    - **New Regression Suite:** Added `tests/unit/LocalFolderProviderReal.test.ts` to cover complex scanning scenarios (multi-version merging and stable ID generation). This addresses the gap where 600+ tests failed to catch the reported bugs.
+- **Verification:**
+    - All 669 existing unit tests pass.
+    - Verified new UI components integrate correctly with `SourceContext` progress state.

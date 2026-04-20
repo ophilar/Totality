@@ -1,6 +1,11 @@
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '../types/database'
+import {
+  VIDEO_BITRATE_THRESHOLDS,
+  AUDIO_BITRATE_THRESHOLDS,
+  MIN_EFFICIENCY_SCORE,
+} from '../constants/quality'
 
 /**
  * Shared input shape for quality scoring.
@@ -33,20 +38,10 @@ export interface VersionQualityResult {
 
 // Default video bitrate thresholds (MEDIUM and HIGH per tier)
 // Below MEDIUM = LOW, MEDIUM to HIGH = MEDIUM, above HIGH = HIGH
-const DEFAULT_VIDEO_THRESHOLDS = {
-  'SD': { medium: 1500, high: 3500 },
-  '720p': { medium: 3000, high: 8000 },
-  '1080p': { medium: 6000, high: 15000 },
-  '4K': { medium: 15000, high: 40000 }
-}
+const DEFAULT_VIDEO_THRESHOLDS = VIDEO_BITRATE_THRESHOLDS
 
 // Default audio bitrate thresholds (MEDIUM and HIGH per tier)
-const DEFAULT_AUDIO_THRESHOLDS = {
-  'SD': { medium: 128, high: 192 },
-  '720p': { medium: 192, high: 320 },
-  '1080p': { medium: 256, high: 640 },
-  '4K': { medium: 320, high: 1000 }
-}
+const DEFAULT_AUDIO_THRESHOLDS = AUDIO_BITRATE_THRESHOLDS
 
 type QualityTier = 'SD' | '720p' | '1080p' | '4K'
 type TierQuality = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -91,7 +86,7 @@ export class QualityAnalyzer {
   private audioThresholds = { ...DEFAULT_AUDIO_THRESHOLDS }
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
   private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
-  private efficiencyTrashThreshold = 60
+  private efficiencyTrashThreshold = MIN_EFFICIENCY_SCORE
   private losslessAudioAllowance = 4000 // kbps (4 Mbps)
   private hdrOverheadMultiplier = 1.10 // 10% more bitrate allowed for HDR
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
@@ -746,20 +741,19 @@ export class QualityAnalyzer {
   } {
     const db = getDatabase()
     const scores = db.media.getQualityScores()
-
-    const distribution = {
-      byTier: {
-        'SD': { low: 0, medium: 0, high: 0 },
-        '720p': { low: 0, medium: 0, high: 0 },
-        '1080p': { low: 0, medium: 0, high: 0 },
-        '4K': { low: 0, medium: 0, high: 0 }
-      },
-      byQuality: {
-        low: 0,
-        medium: 0,
-        high: 0
-      }
-    }
+const distribution = {
+  byTier: {
+    'SD': { low: 0, medium: 0, high: 0 },
+    '720p': { low: 0, medium: 0, high: 0 },
+    '1080p': { low: 0, medium: 0, high: 0 },
+    '4K': { low: 0, medium: 0, high: 0 }
+  },
+  byQuality: {
+    low: 0,
+    medium: 0,
+    high: 0
+  }
+}
 
     scores.forEach((score: QualityScore) => {
       const tier = (score.quality_tier || 'SD') as QualityTier

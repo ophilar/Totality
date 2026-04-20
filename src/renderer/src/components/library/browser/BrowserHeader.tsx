@@ -3,6 +3,7 @@ import React from 'react'
 import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
 import logoImage from '../../../assets/totality_header_logo.png'
 import { SearchAutocomplete } from './SearchAutocomplete'
+import { ScanningStatus } from './ScanningStatus'
 import { ActivityPanel } from '../../ui/ActivityPanel'
 
 interface BrowserHeaderProps {
@@ -57,6 +58,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
           <SearchAutocomplete {...searchProps} />
+          <ScanningStatus />
         </div>
 
         <div className="shrink-0 flex gap-1" role="tablist">

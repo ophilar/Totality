@@ -869,10 +869,10 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
                 const movieDetails = await tmdb.getMovieDetails(ownedTmdbIds[0])
                 if (movieDetails?.belongs_to_collection?.id) {
                   resolvedTmdbCollectionId = movieDetails.belongs_to_collection.id.toString()
-                  console.log(`[${this.providerType}Provider] Derived TMDB collection ID ${resolvedTmdbCollectionId} for BoxSet "${boxset.Name}" from movie ${ownedTmdbIds[0]}`)
+                  getLoggingService().info(`[${this.providerType}Provider]`, `Derived TMDB collection ID ${resolvedTmdbCollectionId} for BoxSet "${boxset.Name}" from movie ${ownedTmdbIds[0]}`)
                 }
               } catch (error) {
-                console.warn(`[${this.providerType}Provider] Failed to derive TMDB collection ID for BoxSet "${boxset.Name}":`, error)
+                getLoggingService().warn(`[${this.providerType}Provider]`, `Failed to derive TMDB collection ID for BoxSet "${boxset.Name}":`, error)
               }
             }
 
@@ -901,7 +901,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               || `${this.providerType}-boxset-${boxset.Id}`
 
             const db = getDatabase()
-            await db.stats.upsertMovieCollection({
+            await db.movieCollections.upsertCollection({
               tmdb_collection_id: tmdbCollectionId,
               collection_name: boxset.Name,
               source_id: this.sourceId,
@@ -1056,6 +1056,20 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         let itemIndex = 0
 
         for (const group of groups) {
+          // Report progress for each item in the group BEFORE processing
+          for (const item of group) {
+            itemIndex++
+            if (onProgress) {
+              onProgress({
+                current: itemIndex,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.Name,
+                percentage: (itemIndex / totalItems) * 100,
+              })
+            }
+          }
+
           try {
             // Convert each item in the group, collecting all versions
             const allVersions: VersionData[] = []

@@ -1,6 +1,6 @@
+import * as fs from 'fs'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
-import { MediaItem } from '../types/database'
 
 export interface RetentionPolicy {
   preferHighestResolution: boolean
@@ -102,7 +102,7 @@ export class DeduplicationService {
    */
   recommendRetention(mediaItemIds: number[]): { keep: number; discard: number[]; reason: string } {
     const db = getDatabase()
-    const items = mediaItemIds.map(id => db.media.getItem(id)).filter((i): i is MediaItem => !!i)
+    const items = db.media.getItemsByIds(mediaItemIds)
     
     if (items.length <= 1) return { keep: items[0]?.id || 0, discard: [], reason: 'Only one item' }
 
@@ -139,7 +139,7 @@ export class DeduplicationService {
     const discardIds = scores.slice(1).map(s => s.id)
     
     return {
-      keep: keepId,
+      keep: keepId!,
       discard: discardIds,
       reason: `Based on policy: Highest score (${scores[0].score.toFixed(1)})`
     }
@@ -160,24 +160,26 @@ export class DeduplicationService {
     const actualDelete = deleteOthers && (policy.autoDelete || true) // If manual resolve, we respect the deleteOthers flag
 
     if (actualDelete) {
-      for (const id of discardIds) {
-        const item = db.media.getItem(id)
-        if (item && item.file_path) {
+      const items = db.media.getItemsByIds(discardIds)
+      for (const item of items) {
+        if (item.file_path) {
           try {
-            const fs = require('fs')
             if (fs.existsSync(item.file_path)) {
               getLoggingService().info('[DeduplicationService]', `Deleting duplicate file: ${item.file_path}`)
               fs.unlinkSync(item.file_path)
             }
-            db.media.deleteItem(id)
+            // Only delete from DB if file unlinked successfully (or didn't exist)
+            db.media.deleteItem(item.id!)
           } catch (err) {
             getLoggingService().error('[DeduplicationService]', `Failed to delete file ${item.file_path}:`, err)
           }
+        } else {
+          // No path, just delete record
+          db.media.deleteItem(item.id!)
         }
       }
     } else {
       // Just mark them as resolved but don't delete files
-      // Maybe we should hide them from UI?
     }
     
     db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')

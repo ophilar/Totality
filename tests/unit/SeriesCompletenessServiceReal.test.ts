@@ -106,7 +106,13 @@ describe('SeriesCompletenessService (No Mocks)', () => {
   })
 
   it('should analyze a series and find missing episodes', async () => {
-    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
+    db.sources.upsertSource({ 
+      source_id: 's1', 
+      source_type: 'plex', 
+      display_name: 'S1', 
+      connection_config: '{}',
+      is_enabled: 1 
+    })
     
     // Only own S1E1
     db.media.upsertItem(createEpisode({
@@ -135,7 +141,13 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     })
 
     it('should update artwork for local sources during analysis', async () => {
-    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
+    db.sources.upsertSource({ 
+      source_id: 'local1', 
+      source_type: 'local', 
+      display_name: 'Local', 
+      connection_config: '{}',
+      is_enabled: 1 
+    })
 
     db.media.upsertItem(createEpisode({
       source_id: 'local1',

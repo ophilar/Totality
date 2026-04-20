@@ -1,82 +1,76 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { MediaRepository } from '../../src/main/database/repositories/MediaRepository'
 import { SourceRepository } from '../../src/main/database/repositories/SourceRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
-import type { MediaItem } from '../../src/main/types/database'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
+import { MediaItem } from '../../src/main/types/database'
 
-describe('MediaRepository', () => {
-  let db: Database.Database
+describe('MediaRepository (Real DB)', () => {
   let repo: MediaRepository
   let sourceRepo: SourceRepository
+  let db: any
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new MediaRepository(db)
-    sourceRepo = new SourceRepository(db)
-    
+  beforeEach(async () => {
+    db = await setupTestDb()
+    repo = db.media
+    sourceRepo = db.sources
+
     // Setup a source
-    sourceRepo.upsertMediaSource({
+    sourceRepo.upsertSource({
       source_id: 'src-1',
       source_type: 'plex',
-      display_name: 'Test Plex',
+      display_name: 'Test Source',
       connection_config: '{}',
-      is_enabled: true,
+      is_enabled: 1,
     })
   })
 
-  const mockItem = (overrides: Partial<MediaItem> = {}): MediaItem => ({
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  const mockItem = (title = 'Test Movie'): MediaItem => ({
     source_id: 'src-1',
     source_type: 'plex',
-    library_id: 'lib-1',
-    plex_id: '123',
-    title: 'Test Movie',
+    plex_id: `p-${Math.random()}`,
+    title,
     type: 'movie',
-    file_path: '/path/to/movie.mkv',
-    file_size: 1000,
-    duration: 3600,
+    file_path: `/path/to/${title}.mkv`,
     resolution: '1080p',
-    width: 1920,
-    height: 1080,
-    video_codec: 'h264',
-    video_bitrate: 5000,
-    audio_codec: 'aac',
-    audio_channels: 2,
-    audio_bitrate: 192,
-    ...overrides
-  } as MediaItem)
+  } as any)
 
   it('should upsert and retrieve a media item', () => {
-    const id = repo.upsertItem(mockItem())
+    const item = mockItem()
+    const id = repo.upsertItem(item)
     expect(id).toBeGreaterThan(0)
 
-    const item = repo.getItem(id)
-    expect(item).not.toBeNull()
-    expect(item!.title).toBe('Test Movie')
+    const retrieved = repo.getItem(id)
+    expect(retrieved).toBeDefined()
+    expect(retrieved?.title).toBe(item.title)
   })
 
   it('should filter items by type', () => {
-    repo.upsertItem(mockItem({ plex_id: '1', title: 'Movie', type: 'movie' }))
-    repo.upsertItem(mockItem({ plex_id: '2', title: 'Episode', type: 'episode' }))
+    repo.upsertItem(mockItem('Movie 1'))
+    const ep = mockItem('Episode 1')
+    ep.type = 'episode'
+    repo.upsertItem(ep)
 
-    const movies = repo.getMediaItems({ type: 'movie' })
+    const movies = repo.getItems({ type: 'movie' })
     expect(movies).toHaveLength(1)
     expect(movies[0].type).toBe('movie')
   })
 
   it('should search items by title', () => {
-    repo.upsertItem(mockItem({ plex_id: '1', title: 'The Matrix' }))
-    repo.upsertItem(mockItem({ plex_id: '2', title: 'Inception' }))
+    repo.upsertItem(mockItem('The Matrix'))
+    repo.upsertItem(mockItem('Inception'))
 
-    const results = repo.getMediaItems({ searchQuery: 'Matrix' })
+    const results = repo.getItems({ searchQuery: 'Matrix' })
     expect(results).toHaveLength(1)
     expect(results[0].title).toBe('The Matrix')
   })
 
   it('should delete a media item and its cascade data', () => {
     const id = repo.upsertItem(mockItem())
-    repo.deleteMediaItem(id)
+    repo.deleteItem(id)
     expect(repo.getItem(id)).toBeNull()
   })
 })

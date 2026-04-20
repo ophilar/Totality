@@ -31,7 +31,13 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
     wishlistService = new WishlistCompletionService()
     dedupService = new DeduplicationService()
     
-    dbService.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'S1', is_enabled: true } as any)
+    dbService.sources.upsertSource({ 
+      source_id: 's1', 
+      source_type: 'local', 
+      display_name: 'S1', 
+      connection_config: '{}',
+      is_enabled: true 
+    } as any)
   })
 
   afterEach(() => {

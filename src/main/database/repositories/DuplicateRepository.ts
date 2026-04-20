@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { DatabaseSync } from 'node:sqlite'
 import { BaseRepository } from './BaseRepository'
 

@@ -46,7 +46,7 @@ const MAX_IMPORTANT_ENTRIES = 500
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DatabaseGetter = () => any
 
-class LoggingService {
+export class LoggingService {
   private infoLogs: LogEntry[] = [] // Circular buffer for info/debug/verbose
   private importantLogs: LogEntry[] = [] // Protected buffer for warn/error
   private mainWindow: BrowserWindow | null = null

@@ -411,6 +411,8 @@ export interface TVShowSummary {
   series_title: string
   episode_count: number
   season_count: number
+  total_episodes: number // Alias for episode_count
+  total_seasons: number  // Alias for season_count
   poster_url?: string
   source_id?: string
   source_type?: string

@@ -24,7 +24,7 @@ export const mediaApi = {
   countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke('db:countTVEpisodes', filters),
   getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
     ipcRenderer.invoke('db:getLetterOffset', params),
-  getMediaItem: (id: number) => ipcRenderer.invoke('db:getMediaItemById', id),
+  getMediaItem: (id: number) => ipcRenderer.invoke('db:media:getItem', id),
   upsertMediaItem: (item: unknown) => ipcRenderer.invoke('db:upsertMediaItem', item),
   deleteMediaItem: (id: number) => ipcRenderer.invoke('db:deleteMediaItem', id),
   getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke('db:getMediaItemVersions', mediaItemId),

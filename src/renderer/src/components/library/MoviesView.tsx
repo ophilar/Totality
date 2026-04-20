@@ -1,11 +1,12 @@
 import { useState, useMemo, useCallback, memo, useRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film } from 'lucide-react'
 import { MediaGridView } from './MediaGridView'
 import { QualityBadges } from './QualityBadges'
 import { SlimDownBanner } from './SlimDownBanner'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
+import { useSources } from '../../contexts/SourceContext'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
 
@@ -174,13 +175,40 @@ export function MoviesView({
     </div>
   )
 
+  const { isScanning, scanProgress } = useSources()
+  const activeScan = Array.from(scanProgress.values())[0]
+
   const emptyState = (
-    <div className="flex flex-col items-center justify-center text-center p-12">
-      <MoviePlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
-      <p className="text-muted-foreground text-xl font-medium">No movies found</p>
-      <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs">
-        Scan a movie library from the sidebar to start analyzing your collection
-      </p>
+    <div className="flex flex-col items-center justify-center text-center p-12 animate-in fade-in duration-700">
+      {isScanning ? (
+        <div className="flex flex-col items-center">
+          <div className="relative mb-6">
+            <RefreshCw className="w-16 h-16 text-primary animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Film className="w-6 h-6 text-primary/50" />
+            </div>
+          </div>
+          <p className="text-primary text-xl font-bold tracking-tight">Scan in Progress</p>
+          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
+            {activeScan ? (
+              <>
+                Found <span className="text-foreground font-semibold">{totalMovieCount}</span> items so far...
+                <br />
+                Currently <span className="text-primary font-medium">{activeScan.phase}</span>
+                {activeScan.currentItem && <span className="block mt-1 italic text-[10px] truncate max-w-[200px] mx-auto opacity-80">{activeScan.currentItem}</span>}
+              </>
+            ) : 'Discovering movies in your libraries...'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <MoviePlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
+          <p className="text-muted-foreground text-xl font-medium">No movies found</p>
+          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
+            Scan a movie library from the sidebar to start analyzing your collection
+          </p>
+        </>
+      )}
     </div>
   )
 
@@ -429,6 +457,14 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
           <img src={movie.poster_url} alt={movie.title} loading="lazy" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><MoviePlaceholder className="w-20 h-20 text-muted-foreground" /></div>
+        )}
+
+        {/* Analyzing Overlay */}
+        {(movie.efficiency_score === null || movie.efficiency_score === undefined) && (
+          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
+            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
+            <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
+          </div>
         )}
       </div>
 

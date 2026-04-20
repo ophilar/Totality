@@ -81,7 +81,7 @@ export function MediaBrowser({
     searchQuery: _searchQuery,
   } = useLibrary()
 
-  const { sources, activeSourceId, scanProgress, setActiveSource, markLibraryAsNew } = useSources()
+  const { sources, activeSourceId, setActiveSource, markLibraryAsNew } = useSources()
 
   useEffect(() => {
     setContextActiveSourceId(activeSourceId)
@@ -308,7 +308,7 @@ export function MediaBrowser({
   }, [refreshMovies, refreshShows, selectedShow, activeSourceId])
 
   useLibraryEventListeners({
-    activeSourceId, scanProgressSize: scanProgress.size,
+    activeSourceId,
     loadMedia: reloadMedia, loadStats, loadCompletenessData,
     loadMusicData: async () => {}, loadMusicCompletenessData,
     loadActiveSourceLibraries, loadEpSingleSettings,

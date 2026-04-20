@@ -66,7 +66,7 @@ describe('IPC Handler Registration', () => {
       'db:media:count',
       'db:tvshows:list',
       'db:tvshows:count',
-      'db.media.getItem',
+      'db:media:getItem',
       'db:getSetting',
       'db:setSetting',
     ]
@@ -75,8 +75,8 @@ describe('IPC Handler Registration', () => {
     }
   })
 
-  it('db.media.getItem validates input', async () => {
-    const handler = handlers.get('db.media.getItem')!
+  it('db:media:getItem validates input', async () => {
+    const handler = handlers.get('db:media:getItem')!
     // Real validation via Zod should throw
     await expect(handler({} as any, -1)).rejects.toThrow()
   })

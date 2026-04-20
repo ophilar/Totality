@@ -32,3 +32,10 @@
 - **Atomic File Operations:** When modifying or replacing media files (e.g., transcoding), use a "Write-Rename-Cleanup" pattern with backup support to prevent data loss.
 - **AI-Augmented Transcoding:** Leverage LLMs (Gemini) to determine optimal per-video encoding parameters, balancing quality and compression beyond generic presets.
 - **Safe Deduplication:** Automatic file deletion is strictly opt-in. The system should identify and recommend actions, but manual confirmation is the default for destructive operations.
+
+## Architectural Standardization (v0.4.4)
+
+- **IPC Channel Naming:** All IPC channels must follow a colon-separated resource-based naming convention (e.g., `db:media:list`, `monitoring:status`). Dot-notation is deprecated and must only exist as temporary aliases for backward compatibility.
+- **1:1 UI Update Mandate:** To ensure maximum responsiveness, backend services (scanners, analyzers) must notify the renderer on every single item processed (1:1 ratio). Throttling must be handled by the renderer or specialized IPC utility layers, not the business logic.
+- **Reactive Background Analysis:** Adding or updating service configurations (e.g., TMDB or Gemini API keys) must automatically trigger relevant background analysis for the existing library without requiring a manual full scan.
+- **Non-Blocking Discovery:** Media scanning and discovery must proceed using local metadata even if external services (TMDB, Gemini, FFmpeg) are unconfigured or fail. Background analysis is an enhancement, not a prerequisite for core library visibility.

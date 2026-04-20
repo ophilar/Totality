@@ -46,25 +46,17 @@ let networkDriveLetters: Set<string> = new Set()
 
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
-  try {
-    const { stdout } = await execAsync('wmic logicaldisk get DeviceID,DriveType', {
-      encoding: 'utf-8',
-      timeout: 5000,
-      windowsHide: true,
-    })
-    // Output looks like:
-    // DeviceID  DriveType
-    // C:        3
-    // Z:        4
-    const detected = new Set<string>()
-    for (const line of stdout.split('\n')) {
-      const match = line.match(/^([A-Z]):?\s+(\d+)/)
-      if (match && match[2] === '4') {
-        detected.add(match[1])
-      }
-    }
-    networkDriveLetters = detected
-  } catch (error) { throw error }
+  
+  const { stdout } = await execAsync('powershell.exe -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID"', {
+    timeout: 5000,
+    windowsHide: true,
+  })
+  const detected = new Set<string>()
+  for (const line of stdout.split('\n')) {
+    const drive = line.trim().replace(':', '')
+    if (drive.length === 1) detected.add(drive.toUpperCase())
+  }
+  networkDriveLetters = detected
 }
 
 /**
@@ -597,24 +589,32 @@ export class LiveMonitoringService {
 
             if (isMusic) {
               // Look up each track by its file path
+              const tracks = []
+              const albumIds = new Set<number>()
               for (const filePath of existingFiles) {
                 const track = db.music.getTrackByPath(filePath)
                 if (track) {
-                  // Get album artwork if available
-                  let posterUrl: string | undefined
-                  if (track.album_id) {
-                    const album = db.music.getAlbumById(track.album_id)
-                    posterUrl = album?.thumb_url || undefined
-                  }
-
-                  changedItems.push({
-                    id: track.id?.toString() || '',
-                    title: track.title,
-                    type: 'track',
-                    artistName: track.artist_name || undefined,
-                    posterUrl,
-                  })
+                  tracks.push(track)
+                  if (track.album_id) albumIds.add(track.album_id)
                 }
+              }
+
+              // Bolt ⚡ Optimization: Batch fetch all albums to avoid N+1 queries
+              const albumMap = new Map<number, any>()
+              if (albumIds.size > 0) {
+                const albums = db.music.getAlbumsByIds(Array.from(albumIds))
+                for (const album of albums) albumMap.set(album.id!, album)
+              }
+
+              for (const track of tracks) {
+                const album = track.album_id ? albumMap.get(track.album_id) : undefined
+                changedItems.push({
+                  id: track.id?.toString() || '',
+                  title: track.title,
+                  type: 'track',
+                  artistName: track.artist_name || undefined,
+                  posterUrl: album?.thumb_url || undefined,
+                })
               }
             } else {
               // Look up each video item by its file path
@@ -692,12 +692,10 @@ export class LiveMonitoringService {
           if (totalChanges > 0) {
             try {
               db.notifications.createNotification({
-                type: 'source_change',
+                type: 'info',
                 title: 'Library updated',
                 message: `${source.display_name}: ${changeDescription}`,
-                sourceId,
-                sourceName: source.display_name,
-                itemCount: totalChanges,
+                reference_id: sourceId,
               })
 
               // Notify renderer that library data has changed
@@ -929,12 +927,10 @@ export class LiveMonitoringService {
       if (totalRemoved > 0) parts.push(`${totalRemoved} removed`)
       try {
         db.notifications.createNotification({
-          type: 'source_change',
+          type: 'info',
           title: 'Library updated',
           message: `${source.display_name}: ${parts.join(', ')}`,
-          sourceId,
-          sourceName: source.display_name,
-          itemCount: totalAdded + totalUpdated + totalRemoved,
+          reference_id: sourceId,
         })
       } catch (e) { throw e; }
     }
@@ -994,7 +990,7 @@ export class LiveMonitoringService {
   /**
    * Send event to renderer process
    */
-  private sendToRenderer(channel: string, data: unknown): void {
+  public sendToRenderer(channel: string, data: unknown): void {
     if (this.mainWindow) {
       safeSend(this.mainWindow, channel, data)
     }

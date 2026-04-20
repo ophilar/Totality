@@ -10,6 +10,7 @@ import { getErrorMessage, isNodeError } from './utils'
 import fs from 'fs/promises'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 import { getLoggingService } from '../services/LoggingService'
+import { getSourceManager } from '../services/SourceManager'
 
 import { registerListHandlers } from './utils/genericHandlers'
 
@@ -21,7 +22,7 @@ export function registerDatabaseHandlers() {
 
   // Register generic list/count handlers
   registerListHandlers('db:media', (f) => db.media.getItems(f), (f) => db.media.count(f), MediaItemFiltersSchema, {
-    listAlias: 'db.media.getItems',
+    listAlias: 'db:getMediaItems',
     countAlias: 'db:countMediaItems'
   })
   registerListHandlers('db:tvshows', (f) => db.tvShows.getSummaries(f), (f) => db.tvShows.count(f), TVShowFiltersSchema, {
@@ -34,7 +35,7 @@ export function registerDatabaseHandlers() {
   // ============================================================================
 
   // HANDLERS REPLACED BY registerListHandlers:
-  // - db.media.getItems -> db:media:list
+  // - db:getMediaItems -> db:media:list
   // - db:countMediaItems -> db:media:count
   // - db:getTVShows -> db:tvshows:list
   // - db:countTVShows -> db:tvshows:count
@@ -59,15 +60,18 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db.media.getItem', async (_event, id: unknown) => {
+  const getMediaItemHandler = async (_event: unknown, id: unknown) => {
     try {
-      const validId = validateInput(PositiveIntSchema, id, 'db.media.getItem')
+      const validId = validateInput(PositiveIntSchema, id, 'db:media:getItem')
       return db.media.getItem(validId)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting media item:', error)
       throw error
     }
-  })
+  }
+
+  ipcMain.handle('db:media:getItem', getMediaItemHandler)
+  ipcMain.handle('db:getMediaItemById', getMediaItemHandler)
 
   ipcMain.handle('db:upsertMediaItem', async (_event, item: unknown) => {
     try {
@@ -165,11 +169,28 @@ export function registerDatabaseHandlers() {
       // Refresh TMDB API key when it changes (no restart needed)
       if (validKey === 'tmdb_api_key') {
         getTMDBService().refreshApiKey()
+        if (validValue && validValue !== '') {
+          getSourceManager().triggerPostScanAnalysis().catch(err => {
+            getLoggingService().error('[database]', 'Failed to trigger background analysis after TMDB key change:', err)
+          })
+        }
       }
 
       // Refresh Gemini API key/model/enabled when they change (no restart needed)
       if (validKey === 'gemini_api_key' || validKey === 'gemini_model' || validKey === 'ai_enabled') {
         getGeminiService().refreshApiKey()
+        // Trigger AI background analysis if newly enabled and key exists
+        if (validKey === 'gemini_api_key' && validValue && validValue !== '') {
+          const { getGeminiAnalysisService } = await import('../services/GeminiAnalysisService')
+          getGeminiAnalysisService().generateCompletenessInsights(() => {}).catch(() => {})
+        }
+      }
+
+      // Trigger quality analysis for all items if ffprobe is newly enabled
+      if (validKey === 'ffprobe_enabled' && validValue === 'true') {
+        getQualityAnalyzer().analyzeAllMediaItems().catch(err => {
+          getLoggingService().error('[database]', 'Failed to trigger quality analysis after enabling ffprobe:', err)
+        })
       }
 
       // Broadcast settings change event to all windows

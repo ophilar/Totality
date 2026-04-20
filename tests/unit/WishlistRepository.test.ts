@@ -1,45 +1,45 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WishlistRepository } from '../../src/main/database/repositories/WishlistRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
 
-describe('WishlistRepository', () => {
-  let db: Database.Database
+describe('WishlistRepository (Real DB)', () => {
   let repo: WishlistRepository
+  let db: any
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new WishlistRepository(db)
+  beforeEach(async () => {
+    db = await setupTestDb()
+    repo = db.wishlist
   })
 
-  it('should add and retrieve wishlist items', () => {
-    repo.add({
-      title: 'The Matrix',
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('should add and retrieve a wishlist item', () => {
+    const item = {
       media_type: 'movie',
-      status: 'active',
+      title: 'Wish Movie',
       reason: 'missing',
-      tmdb_id: '603'
-    })
+      priority: 5,
+    } as any
 
-    const items = repo.getWishlistItems()
-    expect(items).toHaveLength(1)
-    expect(items[0].title).toBe('The Matrix')
+    const id = repo.add(item)
+    expect(id).toBeGreaterThan(0)
+
+    const all = repo.getItems()
+    expect(all).toHaveLength(1)
+    expect(all[0].title).toBe('Wish Movie')
   })
 
-  it('should filter items by media type', () => {
-    repo.add({ title: 'Movie', media_type: 'movie' })
-    repo.add({ title: 'Episode', media_type: 'episode' })
-
-    const movies = repo.getWishlistItems({ mediaType: 'movie' })
-    expect(movies).toHaveLength(1)
-    expect(movies[0].media_type).toBe('movie')
+  it('should delete a wishlist item', () => {
+    const id = repo.add({ media_type: 'movie', title: 'To Delete' } as any)
+    repo.delete(id)
+    expect(repo.getItems()).toHaveLength(0)
   })
 
-  it('should find item by TMDB ID', () => {
-    repo.add({ title: 'Matrix', media_type: 'movie', tmdb_id: '603' })
-    const item = repo.getWishlistItemByTmdbId('603')
-    expect(item).not.toBeNull()
-    expect(item!.title).toBe('Matrix')
+  it('should get count', () => {
+    repo.add({ media_type: 'movie', title: 'A' } as any)
+    repo.add({ media_type: 'movie', title: 'B' } as any)
+    expect(repo.getCount()).toBe(2)
   })
 })
