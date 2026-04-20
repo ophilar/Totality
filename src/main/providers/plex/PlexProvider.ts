@@ -525,13 +525,6 @@ export class PlexProvider extends BaseMediaProvider {
     // 5. Update Quality Score
     const score = await getQualityAnalyzer().analyzeMediaItem(mapped.mediaItem)
     db.media.upsertQualityScore(score)
-
-    // 6. Map collections
-    if (mapped.mediaItem.type === 'movie' && detail.Collection) {
-      for (const coll of detail.Collection) {
-        if (coll.tag) db.movieCollections.addMediaToCollection(mediaId, coll.tag)
-      }
-    }
   }
 
   // ============================================================================
