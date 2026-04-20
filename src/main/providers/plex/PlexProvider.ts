@@ -595,10 +595,8 @@ export class PlexProvider extends BaseMediaProvider {
       totalItems = itemsToProcess.length
       getLoggingService().info('[PlexProvider]', `Processing ${totalItems} items for source ${this.sourceId}...`)
 
-      // Start batch mode
-      db.startBatch()
-
       const BATCH_SIZE = 10
+      const COMMIT_INTERVAL = 25 // Commit every 25 items to prevent long-held locks
 
       try {
         for (let i = 0; i < itemsToProcess.length; i += BATCH_SIZE) {
@@ -607,6 +605,11 @@ export class PlexProvider extends BaseMediaProvider {
             getLoggingService().info('[PlexProvider]', `Scan cancelled at ${scanned}/${totalItems} for source ${this.sourceId}`)
             result.cancelled = true
             break
+          }
+
+          // Start a new transaction for this commit interval
+          if (scanned % COMMIT_INTERVAL === 0) {
+            db.startBatch()
           }
 
           const batch = itemsToProcess.slice(i, i + BATCH_SIZE)
@@ -692,13 +695,16 @@ export class PlexProvider extends BaseMediaProvider {
             }
           }
 
-          // Periodic checkpoint
-          if (scanned % 50 === 0 && scanned > 0) {
-            await db.forceSave()
+          // Commit at interval or end of list
+          if (scanned % COMMIT_INTERVAL === 0 || scanned === totalItems) {
+            db.endBatch()
+            // Yield for a tiny bit to allow other DB operations (like UI updates) to sneak in
+            await new Promise(resolve => setTimeout(resolve, 10))
           }
         }
       } finally {
-        await db.endBatch()
+        // Ensure any open batch is closed on error/exit
+        try { db.endBatch() } catch { /* ignore if already committed */ }
       }
 
       // Remove stale items

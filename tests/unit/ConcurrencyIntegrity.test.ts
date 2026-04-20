@@ -27,6 +27,17 @@ describe('Concurrency and Scan State Integrity', () => {
        expect(result.timeout).toBe(5000)
     })
 
+    it('should have WAL mode enabled', () => {
+       const result = db.db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
+       expect(result.journal_mode.toLowerCase()).toBe('wal')
+    })
+
+    it('should have synchronous mode set to NORMAL', () => {
+       const result = db.db.prepare('PRAGMA synchronous').get() as { synchronous: number }
+       // 1 = NORMAL
+       expect(result.synchronous).toBe(1)
+    })
+
     it('should use PASSIVE checkpointing which is non-blocking', () => {
        expect(() => db.forceSave()).not.toThrow()
     })

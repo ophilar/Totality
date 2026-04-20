@@ -228,7 +228,7 @@ export class BetterSQLiteService {
     let imported = 0
     let errors = 0
 
-    this.db.exec('BEGIN TRANSACTION')
+    this.db.exec('BEGIN IMMEDIATE')
     try {
       for (const [table, rows] of Object.entries(data)) {
         if (table === '_meta' || !Array.isArray(rows)) continue
@@ -256,8 +256,8 @@ export class BetterSQLiteService {
   public async resetDatabase(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized')
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions', 'media_item_versions', 'media_item_collections']
-    
-    this.db.exec('BEGIN TRANSACTION')
+
+    this.db.exec('BEGIN IMMEDIATE')
     try {
       for (const table of tables) {
         this.db.exec(`DELETE FROM ${table}`)

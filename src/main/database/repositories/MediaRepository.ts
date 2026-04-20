@@ -371,7 +371,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
 
   deleteItem(id: number): void {
     const db = this.db
-    db.exec('BEGIN')
+    db.exec('BEGIN IMMEDIATE')
     try {
       const item = db.prepare(
         'SELECT tmdb_id, source_id, library_id, type, series_title, season_number, episode_number FROM media_items WHERE id = ?'
@@ -417,7 +417,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
                 WHERE collection_id = movie_collections.id
               ),
               completeness_percentage = CASE WHEN total_movies > 0
-                THEN ROUND(CAST((SELECT COUNT(DISTINCT media_item_id) FROM media_item_collections WHERE collection_id = movie_collections.id) AS REAL) * 100.0 / total_movies)
+                THEN ROUND(CAST((SELECT COUNTINCT media_item_id) FROM media_item_collections WHERE collection_id = movie_collections.id) AS REAL) * 100.0 / total_movies)
                 ELSE 0 END,
               updated_at = datetime('now')
             WHERE id = ?
@@ -437,7 +437,7 @@ export class MediaRepository extends BaseRepository<MediaItem> {
 
   deleteItemsForSource(sourceId: string): void {
     const db = this.db
-    db.exec('BEGIN')
+    db.exec('BEGIN IMMEDIATE')
     try {
       // 1. Get all media item IDs for this source
       const itemIds = db.prepare('SELECT id FROM media_items WHERE source_id = ?').all(sourceId).map((row: any) => row.id)
@@ -824,7 +824,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
 
   syncItemVersions(mediaItemId: number, versions: any[]): void {
     const db = this.db
-    db.exec('BEGIN DEFERRED')
+    db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
       for (const v of versions) {
@@ -867,7 +867,7 @@ WHERE m.type = 'episode' AND m.series_title = ?`
 
   updateBestVersion(mediaItemId: number): void {
     const db = this.db
-    db.exec('BEGIN DEFERRED')
+    db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
       db.prepare(`
