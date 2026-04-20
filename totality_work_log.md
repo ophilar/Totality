@@ -1,9 +1,16 @@
-## 2026-04-13
-- **Test Infrastructure Stability:**
-    - Fixed an infinite test loop where Vitest's watch mode was triggered by its own SQLite database artifacts and internal results cache.
-    - Identified that `test.watchExclude` is deprecated in Vitest 4.x/Vite 8.x; migrated all ignore patterns to the root-level `server.watch.ignored` configuration.
-    - Explicitly excluded `node_modules`, `dist`, and SQLite journal files (`**/*.db-*`) from the watcher to prevent self-triggering re-runs.
-    - Verified 665 passing tests with stable execution in watch mode.
+## 2026-04-20
+- **Database Concurrency & Stability (v0.4.4):**
+    - **Transaction Standardization:** Implemented a global transition to `BEGIN IMMEDIATE` for all database write transactions across `BetterSQLiteService`, `MediaRepository`, `SourceRepository`, `WishlistRepository`, and `DatabaseMigration`. This ensures write locks are acquired immediately and properly queued, resolving recurring "database table is locked" errors.
+    - **Plex Provider Optimization:** Refactored `PlexProvider.ts` to process library scans in smaller, 25-item commit batches. Added event loop yielding (`setTimeout`) between batches to allow the UI and background tasks to interleave with heavy scans, significantly improving system responsiveness.
+    - **High-Fidelity Concurrency Tests:** Created a new `TransactionLockIntegrity.test.ts` suite to verify non-blocking concurrent writes using real SQLite instances in WAL mode. Enhanced `ConcurrencyIntegrity.test.ts` to strictly verify WAL, Synchronous NORMAL, and Busy Timeout (5s) configurations.
+- **Security & Dependency Hardening:**
+    - **Vulnerability Resolution:** Addressed a critical arbitrary code execution vulnerability in `protobufjs` (7.5.5) and a moderate authentication leak in `follow-redirects` (1.16.0) using npm `overrides`.
+    - **Supply Chain Protection:** Updated `axios` to 1.15.1 and `@google/genai` to 1.50.1 to ensure protection against recent upstream security incidents and to leverage the latest AI features.
+- **Repository Consolidation:**
+    - **Unified Main Branch:** Successfully merged all verified progress from `fix/series-completeness-strict-data` into `master`, making it the single, stable source of truth.
+    - **Cleanup:** Deleted 5 redundant feature and fix branches (local and remote) to streamline the development workflow and reduce repository noise.
+    - **Milestone Tagging:** Created the `v0.4.3-stable` tag to mark this high-integrity release point.
+    - **Total Tests:** Reached a project record of **707 passing tests** with 0 failures and 0 vulnerabilities.
 
 ## 2026-04-11
 - **Phase 5: Reliability & Optimization Completion (v0.4.3):**
