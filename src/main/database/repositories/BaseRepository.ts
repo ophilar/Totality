@@ -29,7 +29,7 @@ export abstract class BaseRepository<T extends { id?: number }> {
 
   protected rollback(): void {
     const service = (this.db as any).__service
-    if (service) {
+    if (service && typeof service.rollbackBatch === 'function') {
       service.rollbackBatch()
     } else {
       this.db.exec('ROLLBACK')

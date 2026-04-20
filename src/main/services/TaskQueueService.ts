@@ -9,6 +9,7 @@ import { getSourceManager } from './SourceManager'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getMovieCollectionService } from './MovieCollectionService'
 import { getMusicBrainzService } from './MusicBrainzService'
+import { getTranscodingService } from './TranscodingService'
 import { safeSend } from '../ipc/utils/safeSend'
 
 export interface TaskProgress {
@@ -106,7 +107,6 @@ export class TaskQueueService {
 
   private getTranscoding(): any {
     if (!this.transcoding) {
-      const { getTranscodingService } = require('./TranscodingService')
       this.transcoding = getTranscodingService()
     }
     return this.transcoding
