@@ -414,26 +414,26 @@ export function normalizeBitrate(
   const value = typeof bitrate === 'string' ? parseFloat(bitrate) : bitrate
   if (isNaN(value) || value <= 0) return 0
 
-  if (sourceUnit === 'bps') {
-    return Math.round(value / 1000)
+  switch (sourceUnit) {
+    case 'bps':
+      return Math.round(value / 1000)
+    case 'mbps':
+      return Math.round(value * 1000)
+    case 'kbps':
+      return Math.round(value)
+    case 'auto':
+    default:
+      // Auto-detect: if value > 100000, it's likely bps
+      if (value > 100000) {
+        return Math.round(value / 1000)
+      }
+      // If value < 100, it's likely Mbps
+      if (value < 100) {
+        return Math.round(value * 1000)
+      }
+      // Otherwise assume kbps
+      return Math.round(value)
   }
-  if (sourceUnit === 'mbps') {
-    return Math.round(value * 1000)
-  }
-  if (sourceUnit === 'kbps') {
-    return Math.round(value)
-  }
-
-  // Auto-detect: if value > 100000, it's likely bps
-  if (value > 100000) {
-    return Math.round(value / 1000)
-  }
-  // If value < 100, it's likely Mbps
-  if (value < 100) {
-    return Math.round(value * 1000)
-  }
-  // Otherwise assume kbps
-  return Math.round(value)
 }
 
 // ============================================================================

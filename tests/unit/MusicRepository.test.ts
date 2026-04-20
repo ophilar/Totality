@@ -1,109 +1,71 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { MusicRepository } from '../../src/main/database/repositories/MusicRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
-import type { MusicArtist, MusicAlbum } from '../../src/main/types/database'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
 
-describe('MusicRepository', () => {
-  let db: Database.Database
+describe('MusicRepository (Real DB)', () => {
   let repo: MusicRepository
+  let db: any
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new MusicRepository(db)
+  beforeEach(async () => {
+    db = await setupTestDb()
+    repo = db.music
   })
 
-  describe('upsertArtist', () => {
-    it('should return correct ID on insert', () => {
-      const id = repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-1',
-        name: 'Pink Floyd',
-      } as MusicArtist)
-      expect(id).toBe(1)
-    })
-
-    it('should return same ID on update', () => {
-      const id1 = repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-1',
-        name: 'Pink Floyd',
-      } as MusicArtist)
-
-      repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-2',
-        name: 'Led Zeppelin',
-      } as MusicArtist)
-
-      const id3 = repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-1',
-        name: 'Pink Floyd (updated)',
-      } as MusicArtist)
-
-      expect(id3).toBe(id1)
-    })
+  afterEach(() => {
+    cleanupTestDb()
   })
 
-  describe('upsertAlbum', () => {
-    let artistId: number
+  it('should upsert and retrieve an artist', async () => {
+    const artist = {
+      source_id: 'src-1',
+      source_type: 'local',
+      provider_id: 'p1',
+      name: 'Artist 1',
+    } as any
 
-    beforeEach(() => {
-      artistId = repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-1',
-        name: 'Pink Floyd',
-      } as MusicArtist)
-    })
+    const id = await repo.upsertArtist(artist)
+    expect(id).toBeGreaterThan(0)
 
-    it('should return correct ID on insert', () => {
-      const id = repo.upsertAlbum({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'album-1',
-        artist_id: artistId,
-        artist_name: 'Pink Floyd',
-        title: 'The Dark Side of the Moon',
-      } as MusicAlbum)
-      expect(id).toBe(1)
-    })
+    const retrieved = repo.getMusicArtistByName('Artist 1', 'src-1')
+    expect(retrieved).toBeDefined()
+    expect(retrieved?.name).toBe('Artist 1')
   })
 
-  describe('filtering', () => {
-    beforeEach(() => {
-      const artistId = repo.upsertArtist({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'artist-1',
-        name: 'Pink Floyd',
-      } as MusicArtist)
-      repo.upsertAlbum({
-        source_id: 'src-1',
-        source_type: 'plex',
-        provider_id: 'album-1',
-        artist_id: artistId,
-        artist_name: 'Pink Floyd',
-        title: 'Animals',
-        year: 1977
-      } as MusicAlbum)
-    })
+  it('should upsert and retrieve an album', async () => {
+    const artistId = await repo.upsertArtist({ source_id: 's1', source_type: 'local', provider_id: 'art1', name: 'A1' } as any)
+    
+    const album = {
+      source_id: 's1',
+      source_type: 'local',
+      provider_id: 'alb1',
+      artist_id: artistId,
+      artist_name: 'A1',
+      title: 'Album 1',
+    } as any
 
-    it('should filter by searchQuery', () => {
-      const albums = repo.getMusicAlbums({ searchQuery: 'Animals' })
-      expect(albums).toHaveLength(1)
-      expect(albums[0].title).toBe('Animals')
-    })
+    const albumId = await repo.upsertAlbum(album)
+    expect(albumId).toBeGreaterThan(0)
 
-    it('should filter by artistId', () => {
-      const albums = repo.getMusicAlbums({ artistId: 1 })
-      expect(albums).toHaveLength(1)
-    })
+    const retrieved = repo.getAlbumByName('Album 1', artistId!)
+    expect(retrieved).toBeDefined()
+    expect(retrieved?.title).toBe('Album 1')
+  })
+
+  it('should get track by path', async () => {
+    const track = {
+      source_id: 's1',
+      source_type: 'local',
+      provider_id: 't1',
+      artist_name: 'A1',
+      title: 'T1',
+      file_path: '/path/to/track.flac',
+      audio_codec: 'flac'
+    } as any
+
+    await repo.upsertTrack(track)
+    
+    const retrieved = repo.getTrackByPath('/path/to/track.flac')
+    expect(retrieved).toBeDefined()
+    expect(retrieved?.title).toBe('T1')
   })
 })

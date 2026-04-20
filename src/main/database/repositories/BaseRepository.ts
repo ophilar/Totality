@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 
 /**
  * BaseRepository
@@ -15,7 +14,7 @@ export abstract class BaseRepository<T extends { id?: number }> {
    */
   getById(id: number): T | null {
     const stmt = this.db.prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`)
-    return (stmt.get(id) as T) || null
+    return (stmt.get(id) as unknown as T) || null
   }
 
   /**
@@ -23,17 +22,17 @@ export abstract class BaseRepository<T extends { id?: number }> {
    */
   delete(id: number): boolean {
     const stmt = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`)
-    const info = stmt.run(id) as { changes: number }
-    return info.changes > 0
+    const info = stmt.run(id) as unknown as { changes: number | bigint }
+    return Number(info.changes) > 0
   }
 
   /**
    * Generic count method
    */
-  protected count(whereSql: string = '1=1', params: unknown[] = []): number {
+  protected countInternal(whereSql: string = '1=1', params: SQLInputValue[] = []): number {
     const sql = `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${whereSql}`
     const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as { count: number }
+    const result = stmt.get(...params) as unknown as { count: number } | undefined
     return result ? result.count : 0
   }
 
@@ -62,16 +61,16 @@ export abstract class BaseRepository<T extends { id?: number }> {
   /**
    * Execute a raw query and return results
    */
-  protected queryAll<R = T>(sql: string, params: unknown[] = []): R[] {
+  protected queryAll<R = T>(sql: string, params: SQLInputValue[] = []): R[] {
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as R[]
+    return stmt.all(...params) as unknown as R[]
   }
 
   /**
    * Execute a raw query and return a single result
    */
-  protected queryOne<R = T>(sql: string, params: unknown[] = []): R | null {
+  protected queryOne<R = T>(sql: string, params: SQLInputValue[] = []): R | null {
     const stmt = this.db.prepare(sql)
-    return (stmt.get(...params) as R) || null
+    return (stmt.get(...params) as unknown as R) || null
   }
 }

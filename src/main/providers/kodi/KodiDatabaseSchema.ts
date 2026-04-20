@@ -399,6 +399,11 @@ export const QUERY_MOVIE_COUNT = `SELECT COUNT(*) as count FROM movie`
 export const QUERY_EPISODE_COUNT = `SELECT COUNT(*) as count FROM episode`
 
 /**
+ * Query to count music songs
+ */
+export const QUERY_MUSIC_SONG_COUNT = `SELECT COUNT(*) as count FROM song`
+
+/**
  * Query to get a single movie by ID with details
  */
 export const QUERY_MOVIE_BY_ID = `

@@ -16,6 +16,7 @@ import {
 import { useDashboardData } from './hooks/useDashboardData'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from './UpgradeRows'
 import { CollectionRow, SeriesRow, ArtistRow } from './CompletenessRows'
+import { DashboardRowSkeleton } from '../ui/Skeleton'
 import {
   MOVIE_ITEM_HEIGHT,
   MUSIC_ITEM_HEIGHT,
@@ -99,6 +100,23 @@ export function Dashboard({
   const collectionsListInstanceRef = useRef<any>(null)
   const seriesListInstanceRef = useRef<any>(null)
   const artistsListInstanceRef = useRef<any>(null)
+
+  // Reset virtual list caches when data changes or tabs switch
+  useEffect(() => {
+    upgradeListInstanceRef.current?.resetAfterIndex(0)
+  }, [movieUpgrades, tvUpgrades, musicUpgrades, upgradeTab, isLoading])
+
+  useEffect(() => {
+    collectionsListInstanceRef.current?.resetAfterIndex(0)
+  }, [collections, isLoading])
+
+  useEffect(() => {
+    seriesListInstanceRef.current?.resetAfterIndex(0)
+  }, [series, isLoading])
+
+  useEffect(() => {
+    artistsListInstanceRef.current?.resetAfterIndex(0)
+  }, [artists, isLoading])
 
   // Measure list container heights
   useEffect(() => {
@@ -351,17 +369,13 @@ export function Dashboard({
     collections.length === 0 && series.length === 0 && artists.length === 0
   )
 
-  if (isLoading) {
-    return (
-      <div
-        ref={containerRef}
-        className="fixed top-[88px] bottom-4 flex items-center justify-center transition-[left,right] duration-300 ease-out"
-        style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}
-      >
-        <div className="text-muted-foreground">Loading dashboard...</div>
-      </div>
-    )
-  }
+  const renderSkeletons = (count = 6) => (
+    <div className="space-y-1">
+      {[...Array(count)].map((_, i) => (
+        <DashboardRowSkeleton key={i} />
+      ))}
+    </div>
+  )
 
   if (error) {
     return (
@@ -387,7 +401,51 @@ export function Dashboard({
       className="fixed top-[88px] bottom-4 flex flex-col overflow-hidden transition-[left,right] duration-300 ease-out"
       style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}
     >
-      {hasNothing && (
+      {isLoading ? (
+        <div className="flex-1 flex gap-4 px-4 pb-4 overflow-x-auto overflow-y-hidden animate-in fade-in duration-500">
+          {/* Upgrades Skeleton */}
+          <div className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden opacity-60">
+            <div className="shrink-0 p-4 border-b border-border/30 flex items-center gap-2">
+              <CircleFadingArrowUp className="w-4 h-4 text-muted-foreground" />
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Upgrades</h2>
+            </div>
+            <div className="flex-1 min-h-0 p-2">{renderSkeletons(8)}</div>
+          </div>
+
+          {/* Collections Skeleton */}
+          {hasMovies && (
+            <div className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden opacity-60">
+              <div className="shrink-0 p-4 border-b border-border/30 flex items-center gap-2">
+                <Film className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Collections</h2>
+              </div>
+              <div className="flex-1 min-h-0 p-2">{renderSkeletons(6)}</div>
+            </div>
+          )}
+
+          {/* Series Skeleton */}
+          {hasTV && (
+            <div className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden opacity-60">
+              <div className="shrink-0 p-4 border-b border-border/30 flex items-center gap-2">
+                <Tv className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">TV Series</h2>
+              </div>
+              <div className="flex-1 min-h-0 p-2">{renderSkeletons(6)}</div>
+            </div>
+          )}
+
+          {/* Music Skeleton */}
+          {hasMusic && !hasMovies && !hasTV && (
+            <div className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden opacity-60">
+              <div className="shrink-0 p-4 border-b border-border/30 flex items-center gap-2">
+                <Music className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Music</h2>
+              </div>
+              <div className="flex-1 min-h-0 p-2">{renderSkeletons(6)}</div>
+            </div>
+          )}
+        </div>
+      ) : hasNothing ? (
         <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
           {sources.length === 0 ? (
             <>
@@ -407,9 +465,7 @@ export function Dashboard({
             </>
           )}
         </div>
-      )}
-
-      {!hasNothing && (
+      ) : (
         <div className="flex-1 flex gap-4 px-4 pb-4 overflow-x-auto overflow-y-hidden">
           {/* Upgrades Column */}
           <div className="flex-1 min-w-[280px] flex flex-col bg-sidebar-gradient rounded-2xl shadow-xl overflow-hidden">

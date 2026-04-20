@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS media_items (
   -- Container metadata
   container TEXT,
 
+  -- Version count (for multi-version items)
+  version_count INTEGER DEFAULT 1,
+
   -- File modification tracking (for skip-unchanged optimization)
   file_mtime INTEGER,
 

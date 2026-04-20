@@ -86,7 +86,7 @@ export function useDismissHandlers({
       setSelectedShowEpisodes(prev => prev.map(e =>
         e.id === item.id ? { ...e, needs_upgrade: false, tier_quality: e.tier_quality === 'LOW' ? 'MEDIUM' : e.tier_quality } : e
       ))
-      emitDismissUpgrade({ mediaId: item.id })
+      emitDismissUpgrade({ mediaId: item.id! })
       addToast({
         type: 'success',
         title: 'Upgrade dismissed',

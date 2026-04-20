@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
+import { existsSync } from 'fs'
 import * as path from 'path'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
@@ -42,6 +43,7 @@ export class TranscodingService {
   private mkvmergePath: string | null = null
   private ffmpegPath: string | null = null
   private availabilityOverride: { handbrake?: boolean; mkvtoolnix?: boolean; ffmpeg?: boolean } | null = null
+  private activeJobs = new Map<number, AbortController>()
 
   constructor() {
     this.initializePaths()
@@ -103,6 +105,18 @@ export class TranscodingService {
         resolve(false)
       }
     })
+  }
+
+  /**
+   * Cancel an active transcode job
+   */
+  cancelTranscode(mediaItemId: number): void {
+    const controller = this.activeJobs.get(mediaItemId)
+    if (controller) {
+      controller.abort()
+      this.activeJobs.delete(mediaItemId)
+      getLoggingService().info('[TranscodingService]', `Cancelled transcode for item ${mediaItemId}`)
+    }
   }
 
   /**
@@ -178,13 +192,18 @@ export class TranscodingService {
     onProgress?: (progress: TranscodeProgress) => void
   ): Promise<boolean> {
     const db = getDatabase()
-    const item = db.getMediaItemById(mediaItemId)
+    const item = db.media.getItem(mediaItemId)
     if (!item || !item.file_path) throw new Error('Media item or file path not found')
 
     const availability = await this.checkAvailability()
     if (!availability.handbrake) {
       throw new Error('HandBrakeCLI not found. Please install it and set the path in settings.')
     }
+
+    const controller = new AbortController()
+    this.activeJobs.set(mediaItemId, controller)
+
+    let tempPath: string | null = null
 
     try {
       onProgress?.({ percent: 0, status: 'initializing' })
@@ -193,7 +212,7 @@ export class TranscodingService {
       const params = await this.getTranscodeParameters(inputPath, options)
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
-      const tempPath = path.join(
+      tempPath = path.join(
         path.dirname(inputPath),
         `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       )
@@ -214,51 +233,44 @@ export class TranscodingService {
           eta: p.eta, 
           status: 'encoding' 
         })
-      })
+      }, controller.signal)
 
       if (!success) {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath)
+        if (controller.signal.aborted) {
+          onProgress?.({ percent: 0, status: 'cancelled' })
+          return false
+        }
         throw new Error('Handbrake encoding failed')
-      }
-
-      // Optional: Post-process with mkvmerge if requested
-      if (availability.mkvtoolnix && params.mkvmergeArgs && params.mkvmergeArgs.length > 0) {
-        onProgress?.({ percent: 100, status: 'muxing' })
-        // Muxing logic here if needed to preserve attachments/tags Handbrake might drop
       }
 
       onProgress?.({ percent: 100, status: 'verifying' })
       
       // Verify the output file exists and is not empty
-      if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size === 0) {
-        throw new Error('Transcoded file is missing or empty')
+      const stats = await fs.stat(tempPath)
+      if (stats.size === 0) {
+        throw new Error('Transcoded file is empty')
       }
 
       // Atomic replacement
       if (options.overwriteOriginal) {
         getLoggingService().info('[TranscodingService]', `Replacing original file: ${inputPath}`)
         
-        // Update DB before moving if the extension changed
         const finalPath = path.join(path.dirname(inputPath), path.basename(inputPath, path.extname(inputPath)) + outputExt)
-        
-        // Backup original (or just delete if requested)
         const backupPath = inputPath + '.bak'
-        fs.renameSync(inputPath, backupPath)
+        
+        await fs.rename(inputPath, backupPath)
         
         try {
-          fs.renameSync(tempPath, finalPath)
-          if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath)
+          await fs.rename(tempPath, finalPath)
+          if (existsSync(backupPath)) await fs.unlink(backupPath)
           
           // Re-analyze the new file
           const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
           if (newAnalysis.success) {
-             // Update item in database with new path and stats
-             // This needs a specific repo method or direct DB access
-             db.updateMediaItemPathAndStats(mediaItemId, finalPath, newAnalysis)
+             db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
           }
         } catch (err) {
-          // Restore from backup if move failed
-          if (fs.existsSync(backupPath)) fs.renameSync(backupPath, inputPath)
+          if (existsSync(backupPath)) await fs.rename(backupPath, inputPath)
           throw err
         }
       }
@@ -269,18 +281,31 @@ export class TranscodingService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
+      
+      if (tempPath && existsSync(tempPath)) {
+        await fs.unlink(tempPath).catch(() => {})
+      }
+
       onProgress?.({ percent: 0, status: 'failed', error: msg })
       return false
+    } finally {
+      this.activeJobs.delete(mediaItemId)
     }
   }
 
-  private runHandbrake(args: string[], onProgress: (p: any) => void): Promise<boolean> {
+  private runHandbrake(args: string[], onProgress: (p: any) => void, signal?: AbortSignal): Promise<boolean> {
     return new Promise((resolve) => {
       const proc = spawn(this.handbrakePath || 'HandBrakeCLI', args)
       
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          proc.kill()
+          resolve(false)
+        })
+      }
+
       proc.stdout.on('data', (data) => {
         const line = data.toString()
-        // Handbrake progress pattern: Encoding: task 1 of 1, 12.34 % (50.00 fps, avg 45.00 fps, ETA 00h10m00s)
         const match = line.match(/(\d+\.\d+)\s*%\s*\((\d+\.\d+)\s*fps,\s*avg\s*(\d+\.\d+)\s*fps,\s*ETA\s*([^)]+)\)/)
         if (match) {
           onProgress({
@@ -300,6 +325,7 @@ export class TranscodingService {
       })
 
       proc.on('error', (err) => {
+        if (signal?.aborted) return
         getLoggingService().error('[Handbrake]', 'Process error:', err)
         resolve(false)
       })

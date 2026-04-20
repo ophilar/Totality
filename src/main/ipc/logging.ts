@@ -80,7 +80,7 @@ async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
     const libraries = sources.map((s) => ({
       sourceName: s.display_name,
       sourceType: s.source_type,
-      itemCount: db.getMediaItemsCountBySource(s.source_id),
+      itemCount: db.stats.getItemsCountBySource(s.source_id),
     }))
 
     return {

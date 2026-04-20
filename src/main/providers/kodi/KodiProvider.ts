@@ -605,7 +605,7 @@ export class KodiProvider extends BaseMediaProvider {
 
             // Log grouping info for first 10 items or potential multi-versions
             if (groupMap.size < 10 || groupMap.has(groupKey)) {
-              console.log(`[KodiProvider] Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
+              getLoggingService().debug('[KodiProvider]', `Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
             }
 
             if (!groupMap.has(groupKey)) groupMap.set(groupKey, [])
@@ -623,6 +623,20 @@ export class KodiProvider extends BaseMediaProvider {
 
         let itemIndex = 0
         for (const group of groups) {
+          // Report progress for each item in the group BEFORE processing
+          for (const item of group) {
+            itemIndex++
+            if (onProgress) {
+              onProgress({
+                current: itemIndex,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.title,
+                percentage: (itemIndex / totalItems) * 100,
+              })
+            }
+          }
+
           try {
             const versions: VersionData[] = group.map(m => this.convertMetadataToVersion(m))
 
@@ -641,7 +655,7 @@ export class KodiProvider extends BaseMediaProvider {
               mediaItem.version_count = versions.length
               mediaItem.plex_id = group[0].itemId
 
-              const id = await db.upsertMediaItem(mediaItem)
+              const id = await db.media.upsertItem(mediaItem)
               scannedProviderIds.add(mediaItem.plex_id)
 
               // Sync versions: delete stale, upsert current, update best version
@@ -649,24 +663,17 @@ export class KodiProvider extends BaseMediaProvider {
                 const vScore = analyzer.analyzeVersion(version as MediaItemVersion)
                 return { ...version, media_item_id: id, ...vScore } as MediaItemVersion
               })
-              db.syncMediaItemVersions(id, scoredVersions)
+              db.media.syncItemVersions(id, scoredVersions)
 
               mediaItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-              await db.upsertQualityScore(qualityScore)
+              await db.media.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
             }
           } catch (error: unknown) {
             const names = group.map(g => g.title).join(', ')
             result.errors.push(`Failed to process ${names}: ${getErrorMessage(error)}`)
-          }
-
-          for (const item of group) {
-            itemIndex++
-            if (onProgress) {
-              onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: item.title, percentage: (itemIndex / totalItems) * 100 })
-            }
           }
 
           if (result.itemsScanned % 50 === 0 && result.itemsScanned > 0) {
@@ -680,12 +687,12 @@ export class KodiProvider extends BaseMediaProvider {
       // Remove stale items (only for full scans, not incremental)
       if (!isIncremental && scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
-        const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
+        const existingItems = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
 
         for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
-              await db.deleteMediaItem(item.id)
+              await db.media.deleteItem(item.id)
               result.itemsRemoved++
             }
           }
@@ -693,7 +700,7 @@ export class KodiProvider extends BaseMediaProvider {
       }
 
       // Update scan time
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
 
       result.success = true
       result.durationMs = Date.now() - startTime
@@ -1509,13 +1516,13 @@ export class KodiProvider extends BaseMediaProvider {
         albumData.avg_audio_bitrate = stats.avgBitrate
 
         // Upsert album
-        const albumId = await db.upsertMusicAlbum(albumData)
+        const albumId = await db.music.upsertAlbum(albumData)
         scannedAlbumIds.add(String(kodiAlbum.albumid))
 
         // Upsert tracks
         for (const trackData of trackDataList) {
           trackData.album_id = albumId
-          await db.upsertMusicTrack(trackData)
+          await db.music.upsertTrack(trackData)
           scannedTrackIds.add(trackData.provider_id)
           result.itemsScanned++
         }
@@ -1544,7 +1551,7 @@ export class KodiProvider extends BaseMediaProvider {
           const artistData = this.convertToMusicArtist(kodiArtist)
 
           // Upsert artist
-          const artistId = await db.upsertMusicArtist(artistData)
+          const artistId = await db.music.upsertArtist(artistData)
           scannedArtistIds.add(String(kodiArtist.artistid))
 
           // Get all albums for this artist
@@ -1560,7 +1567,7 @@ export class KodiProvider extends BaseMediaProvider {
           }
 
           // Update artist counts
-          await db.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
+          await db.music.updateMusicArtistCounts(artistId, artistAlbumCount, artistTrackCount)
 
           processed++
           if (onProgress) {

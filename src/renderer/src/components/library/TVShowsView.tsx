@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, memo, useRef, forwardRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check, HardDrive, Zap } from 'lucide-react'
-import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
+import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, Trash2, ChevronDown, ChevronUp, Copy, Check, HardDrive, Zap, Tv } from 'lucide-react'
 import { MediaGridView } from './MediaGridView'
 import { QualityBadges } from './QualityBadges'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
@@ -8,6 +7,7 @@ import { MissingItemCard } from './MissingItemCard'
 import { SlimDownBanner } from './SlimDownBanner'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import { useMenuClose } from '../../hooks/useMenuClose'
+import { useSources } from '../../contexts/SourceContext'
 import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
@@ -241,7 +241,7 @@ const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isExpan
           </div>
           <div className="flex gap-4 mt-2 text-sm text-muted-foreground font-mono">
             <span>{episode.resolution}</span>
-            <span>{(episode.video_bitrate / 1000).toFixed(1)} Mbps</span>
+            <span>{((episode.video_bitrate ?? 0) / 1000).toFixed(1)} Mbps</span>
             <span>{episode.audio_channels}.0 Audio</span>
             {episode.file_size && (
               <span>
@@ -515,16 +515,43 @@ export function TVShowsView({
     return widthMap[gridScale] || widthMap[5]
   }, [gridScale])
 
+  const { isScanning, scanProgress } = useSources()
+  const activeScan = Array.from(scanProgress.values())[0]
+
   // Show list view (top level - all shows)
   if (!selectedShow) {
     if (shows.length === 0 && !showsLoading) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-          <TvPlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-lg">No TV shows found</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            Scan a TV library from the sidebar to get started
-          </p>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in fade-in duration-700">
+          {isScanning ? (
+            <div className="flex flex-col items-center">
+              <div className="relative mb-6">
+                <RefreshCw className="w-16 h-16 text-primary animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Tv className="w-6 h-6 text-primary/50" />
+                </div>
+              </div>
+              <p className="text-primary text-xl font-bold tracking-tight">Scan in Progress</p>
+              <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
+                {activeScan ? (
+                  <>
+                    Found <span className="text-foreground font-semibold">{totalShowCount}</span> shows so far...
+                    <br />
+                    Currently <span className="text-primary font-medium">{activeScan.phase}</span>
+                    {activeScan.currentItem && <span className="block mt-1 italic text-[10px] truncate max-w-[200px] mx-auto opacity-80">{activeScan.currentItem}</span>}
+                  </>
+                ) : 'Discovering TV series in your libraries...'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <TvPlaceholder className="w-20 h-20 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground text-lg">No TV shows found</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Scan a TV library from the sidebar to get started
+              </p>
+            </>
+          )}
         </div>
       )
     }
@@ -862,13 +889,13 @@ export function TVShowsView({
           {allEpisodeItems.map((item) => (
             item.type === 'owned' ? (
               <EpisodeRow
-                key={item.episode.id}
+                key={item.episode.id!}
                 episode={item.episode}
-                onClick={() => onSelectEpisode(item.episode.id)}
+                onClick={() => onSelectEpisode(item.episode.id!)}
                 onRescan={onRescanEpisode}
                 onDismissUpgrade={onDismissUpgrade}
-                isExpanded={expandedRecommendations.has(item.episode.id)}
-                onToggleOptimize={() => toggleRecommendation(item.episode.id)}
+                isExpanded={expandedRecommendations.has(item.episode.id!)}
+                onToggleOptimize={() => toggleRecommendation(item.episode.id!)}
                              />
             ) : (
               <MissingEpisodeRowWithArtwork
@@ -1022,6 +1049,14 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-20 h-20 text-muted-foreground" /></div>
+        )}
+
+        {/* Analyzing Overlay */}
+        {completenessData && (completenessData as any).efficiency_score === null && (
+          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
+            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
+            <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
+          </div>
         )}
       </div>
 

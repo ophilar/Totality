@@ -82,10 +82,10 @@ describe('MovieCollectionService (No Mocks)', () => {
     process.env.NODE_ENV = 'test'
 
     db = getBetterSQLiteService()
-    db.initialize()
+    await db.initialize()
     
-    db.setSetting('tmdb_api_key', 'test-key')
-    db.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
+    db.config.setSetting('tmdb_api_key', 'test-key')
+    db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
 
     tmdb = getTMDBService()
     await tmdb.initialize()
@@ -95,10 +95,10 @@ describe('MovieCollectionService (No Mocks)', () => {
 
   it('should deduplicate movies by TMDB ID', async () => {
     // Insert duplicate movies from different sources
-    db.upsertMediaSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
-    db.upsertMediaSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
 
-    db.upsertMediaItem(createMovie({
+    db.media.upsertItem(createMovie({
       source_id: 's1',
       plex_id: 'p1',
       title: 'Fight Club',
@@ -106,7 +106,7 @@ describe('MovieCollectionService (No Mocks)', () => {
       video_bitrate: 5000
     }))
 
-    db.upsertMediaItem(createMovie({
+    db.media.upsertItem(createMovie({
       source_id: 's2',
       plex_id: 'p2',
       title: 'Fight Club',
@@ -125,8 +125,8 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   it('should analyze collections and find missing movies', async () => {
-     db.upsertMediaSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
-     db.upsertMediaItem(createMovie({
+     db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+     db.media.upsertItem(createMovie({
       source_id: 's1',
       plex_id: 'p1',
       title: 'Fight Club',
@@ -147,8 +147,8 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   it('should lookup missing TMDB IDs for local sources', async () => {
-    db.upsertMediaSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
-    db.upsertMediaItem(createMovie({
+    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
+    db.media.upsertItem(createMovie({
       source_id: 'local1',
       plex_id: 'local-file-1',
       title: 'Fight Club',
@@ -159,7 +159,7 @@ describe('MovieCollectionService (No Mocks)', () => {
     // @ts-ignore
     await service.getMoviesDeduplicatedByTmdbId()
 
-    const item = db.getMediaItemByPlexId('local1', 'local-file-1')
+    const item = db.media.getItemByProviderId('local-file-1', 'local1')
     expect(item.tmdb_id).toBe('550')
   })
 })

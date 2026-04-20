@@ -1,4 +1,3 @@
-// @ts-nocheck
 export * from './BaseRepository'
 export * from './MediaRepository'
 export * from './MusicRepository'
@@ -11,3 +10,4 @@ export * from './WishlistRepository'
 export * from './ExclusionRepository'
 export * from './TaskRepository'
 export * from './DuplicateRepository'
+export * from './MovieCollectionRepository'

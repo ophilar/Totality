@@ -46,8 +46,8 @@ export function DuplicatesView() {
         const itemIds = JSON.parse(group.media_item_ids) as number[]
         
         // Fetch full media item records
-        const items = await Promise.all(itemIds.map(id => window.electronAPI.getMediaItemById(id)))
-        const validItems = items.filter((i): i is MediaItem => !!i)
+        const items = await Promise.all(itemIds.map(id => window.electronAPI.getMediaItem(id)))
+        const validItems = items.filter((i: any): i is MediaItem => !!i)
         
         // Get recommendation
         const recommendation = await window.electronAPI.duplicatesGetRecommendation(itemIds)

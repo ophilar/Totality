@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
 import type { MediaViewType, ViewType, QualityFilter } from '../components/library/types'
 
 interface LibraryContextType {
@@ -18,6 +18,14 @@ interface LibraryContextType {
   selectedItemId: number | null
   selectedItemType: 'movie' | 'episode' | 'track' | null
   setSelectedMedia: (id: number | null, type?: 'movie' | 'episode' | 'track') => void
+  
+  // Navigation State (Current Selections)
+  selectedShow: string | null
+  setSelectedShow: (title: string | null) => void
+  selectedArtist: any | null
+  setSelectedArtist: (artist: any | null) => void
+  selectedAlbum: any | null
+  setSelectedAlbum: (album: any | null) => void
   
   // Sort State
   sortBy: string
@@ -41,6 +49,10 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null)
   const [selectedItemType, setSelectedItemType] = useState<'movie' | 'episode' | 'track' | null>(null)
+
+  const [selectedShow, setSelectedShow] = useState<string | null>(null)
+  const [selectedArtist, setSelectedArtist] = useState<any | null>(null)
+  const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null)
 
   // Persist view preferences
   const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number }>>({})
@@ -85,6 +97,9 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       gridScale, setGridScale,
       viewType, setViewType,
       selectedItemId, selectedItemType, setSelectedMedia,
+      selectedShow, setSelectedShow,
+      selectedArtist, setSelectedArtist,
+      selectedAlbum, setSelectedAlbum,
       sortBy, setSortBy,
       activeSourceId, setActiveSourceId
     }}>

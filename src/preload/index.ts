@@ -11,6 +11,7 @@ import { monitoringApi, MonitoringAPI } from './api/monitoring'
 import { aiApi, AiAPI } from './api/ai'
 import { loggingApi, LoggingAPI } from './api/logging'
 import { notificationsApi, NotificationsAPI } from './api/notifications'
+import { transcodingAPI } from './api/transcoding'
 
 // Import types
 import type {
@@ -57,7 +58,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ...monitoringApi,
   ...aiApi,
   ...loggingApi,
-  ...notificationsApi
+  ...notificationsApi,
+  ...transcodingAPI
 })
 
 // Type definitions for window object
@@ -70,7 +72,8 @@ export type ElectronAPI = AppAPI &
   MonitoringAPI &
   AiAPI &
   LoggingAPI &
-  NotificationsAPI
+  NotificationsAPI &
+  typeof transcodingAPI
 
 declare global {
   interface Window {

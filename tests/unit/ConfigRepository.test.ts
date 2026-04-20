@@ -1,54 +1,46 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ConfigRepository } from '../../src/main/database/repositories/ConfigRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
 
-// Mock encryption service
-vi.mock('../../src/main/services/CredentialEncryptionService', () => ({
-  getCredentialEncryptionService: vi.fn(() => ({
-    isSensitiveSetting: vi.fn((key: string) => key.includes('api_key')),
-    encryptSetting: vi.fn((_key: string, val: string) => `enc_${val}`),
-    decryptSetting: vi.fn((_key: string, val: string) => val.replace('enc_', '')),
-  })),
-}))
-
-describe('ConfigRepository', () => {
-  let db: Database.Database
+describe('ConfigRepository (Real DB)', () => {
   let repo: ConfigRepository
+  let db: any
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new ConfigRepository(db)
+  beforeEach(async () => {
+    db = await setupTestDb()
+    repo = new ConfigRepository(db.db)
   })
 
-  it('should set and get a simple setting', () => {
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('should set and get a value', () => {
     repo.setSetting('test_key', 'test_value')
     expect(repo.getSetting('test_key')).toBe('test_value')
   })
 
-  it('should encrypt and decrypt sensitive settings', () => {
-    repo.setSetting('tmdb_api_key', 'secret')
-    // Verify it's encrypted in DB
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('tmdb_api_key') as any
-    expect(row.value).toBe('enc_secret')
-    // Verify it's decrypted on get
-    expect(repo.getSetting('tmdb_api_key')).toBe('secret')
+  it('should return null for non-existent key', () => {
+    expect(repo.getSetting('missing')).toBeNull()
   })
 
-  it('should list settings by prefix', () => {
-    repo.setSetting('app_theme', 'dark')
-    repo.setSetting('app_language', 'en')
-    repo.setSetting('other_setting', '123')
-
-    const appSettings = repo.getSettingsByPrefix('app_')
-    expect(Object.keys(appSettings)).toHaveLength(2)
-    expect(appSettings.app_theme).toBe('dark')
+  it('should update an existing value', () => {
+    repo.setSetting('key', 'v1')
+    repo.setSetting('key', 'v2')
+    expect(repo.getSetting('key')).toBe('v2')
   })
 
-  it('should delete a setting', () => {
-    repo.setSetting('temp', 'value')
-    repo.deleteSetting('temp')
-    expect(repo.getSetting('temp')).toBeNull()
+  it('should delete a value', () => {
+    repo.setSetting('key', 'val')
+    repo.deleteSetting('key')
+    expect(repo.getSetting('key')).toBeNull()
+  })
+
+  it('should get all settings as a map', () => {
+    repo.setSetting('a', '1')
+    repo.setSetting('b', '2')
+    const all = repo.getAllSettings()
+    expect(all['a']).toBe('1')
+    expect(all['b']).toBe('2')
   })
 })

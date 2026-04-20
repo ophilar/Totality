@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { WishlistItem, WishlistFilters } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
@@ -8,9 +7,9 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     super(db, 'wishlist_items')
   }
 
-  getWishlistItems(filters?: WishlistFilters): WishlistItem[] {
+  getItems(filters?: WishlistFilters): WishlistItem[] {
     let sql = 'SELECT * FROM wishlist_items WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     const mediaType = filters?.media_type || (filters as any)?.mediaType
     if (mediaType) {
@@ -45,17 +44,21 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     }
 
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as WishlistItem[]
+    return stmt.all(...params) as unknown as WishlistItem[]
+  }
+
+  getWishlistItems(filters?: WishlistFilters): WishlistItem[] {
+    return this.getItems(filters)
   }
 
   getWishlistItemByTmdbId(tmdbId: string): WishlistItem | null {
     const stmt = this.db.prepare('SELECT * FROM wishlist_items WHERE tmdb_id = ?')
-    return (stmt.get(tmdbId) as WishlistItem) || null
+    return (stmt.get(tmdbId) as unknown as WishlistItem) || null
   }
 
   getWishlistItemByMusicbrainzId(mbid: string): WishlistItem | null {
     const stmt = this.db.prepare('SELECT * FROM wishlist_items WHERE musicbrainz_id = ?')
-    return (stmt.get(mbid) as WishlistItem) || null
+    return (stmt.get(mbid) as unknown as WishlistItem) || null
   }
 
   add(item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): number {
@@ -88,19 +91,35 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
       item.priority || 3,
       item.notes || null,
       item.status || 'active'
-    ) as { id: number } | undefined
+    ) as unknown as { id: number } | undefined
 
     return row?.id || 0
   }
 
+  addMany(items: Array<Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>>): number {
+    let count = 0
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const item of items) {
+        this.add(item)
+        count++
+      }
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+    return count
+  }
+
   update(id: number, updates: Partial<WishlistItem>): void {
     const fields: string[] = []
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     for (const [key, value] of Object.entries(updates)) {
       if (key === 'id' || key === 'added_at' || key === 'updated_at') continue
       fields.push(`${key} = ?`)
-      params.push(value === undefined ? null : value)
+      params.push(value === undefined ? null : (value as any))
     }
 
     if (fields.length === 0) return
@@ -116,8 +135,9 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     this.db.prepare(sql).run(...params)
   }
 
-  delete(id: number): void {
-    this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id)
+  delete(id: number): boolean {
+    const result = this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id) as unknown as { changes: number | bigint }
+    return Number(result.changes) > 0
   }
 
   exists(tmdbId?: string, musicbrainzId?: string, mediaItemId?: number): boolean {
@@ -133,18 +153,19 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     return false
   }
 
-  getWishlistCount(): number {
-    return (this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items').get() as any)?.count || 0
+  getCount(): number {
+    const result = this.db.prepare('SELECT COUNT(*) as count FROM wishlist_items').get() as unknown as { count: number } | undefined
+    return result?.count || 0
   }
 
   getCountsByReason(): Record<string, number> {
-    const rows = this.db.prepare('SELECT reason, COUNT(*) as count FROM wishlist_items GROUP BY reason').all() as Array<{ reason: string; count: number }>
+    const rows = this.db.prepare('SELECT reason, COUNT(*) as count FROM wishlist_items GROUP BY reason').all() as unknown as Array<{ reason: string; count: number }>
     const counts: Record<string, number> = {}
     if (rows) rows.forEach(r => counts[r.reason] = r.count)
     return counts
   }
 
   getWishlistItemById(id: number): WishlistItem | null {
-    return (this.db.prepare('SELECT * FROM wishlist_items WHERE id = ?').get(id) as WishlistItem) || null
+    return (this.db.prepare('SELECT * FROM wishlist_items WHERE id = ?').get(id) as unknown as WishlistItem) || null
   }
 }

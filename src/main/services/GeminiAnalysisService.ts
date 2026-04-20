@@ -32,9 +32,14 @@ export class GeminiAnalysisService {
    */
   async getCompressionAdvice(
     mediaId: number,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
-    const item = db.getMediaItemById(mediaId)
+    const item = db.media.getItem(mediaId)
 
     if (!item) {
       throw new Error(`Media item with ID ${mediaId} not found`)
@@ -92,12 +97,17 @@ export class GeminiAnalysisService {
    */
   async generateQualityReport(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
-    const stats = db.getLibraryStats()
+    const stats = db.stats.getLibraryStats()
     const distribution = getQualityAnalyzer().getQualityDistribution()
 
-    const lowQualityItems = db.getMediaItems({
+    const lowQualityItems = db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
@@ -148,23 +158,28 @@ export class GeminiAnalysisService {
    */
   async generateUpgradePriorities(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const lowItems = db.getMediaItems({
+    const lowItems = db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 30,
     })
-    const mediumItems = db.getMediaItems({
+    const mediumItems = db.media.getItems({
       tierQuality: 'MEDIUM',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 20,
     })
 
-    const stats = db.getLibraryStats()
+    const stats = db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',
@@ -223,12 +238,17 @@ export class GeminiAnalysisService {
    */
   async generateCompletenessInsights(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const incompleteSeries = db.getIncompleteSeries()
-    const incompleteCollections = db.getIncompleteMovieCollections()
-    const stats = db.getLibraryStats()
+    const incompleteSeries = db.tvShows.getIncomplete()
+    const incompleteCollections = db.movieCollections.getIncompleteCollections()
+    const stats = db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',
@@ -304,11 +324,16 @@ export class GeminiAnalysisService {
    */
   async generateWishlistAdvice(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
-    const wishlistItems = db.getWishlistItems({ status: 'active', limit: 50 })
-    const stats = db.getLibraryStats()
+    const wishlistItems = db.wishlist.getItems({ status: 'active', limit: 50 })
+    const stats = db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',

@@ -19,7 +19,7 @@ const dbPath = path.join(__dirname, 'renderer-integration.db')
 
 function setupRealBridge(dbService: BetterSQLiteService) {
   (window as any).electronAPI = {
-    sourcesList: () => Promise.resolve(dbService.sourceRepo.getMediaSources()),
+    sourcesList: () => Promise.resolve(dbService.sources.getSources()),
     sourcesGetStats: () => Promise.resolve({
       totalSources: 1,
       enabledSources: 1,
@@ -29,22 +29,22 @@ function setupRealBridge(dbService: BetterSQLiteService) {
     sourcesGetSupportedProviders: () => Promise.resolve(['plex', 'local']),
     sourcesGetLibrariesWithStatus: () => Promise.resolve([]),
     sourcesTestConnection: () => Promise.resolve({ success: true }),
-    getSetting: (key: string) => Promise.resolve(dbService.configRepo.getSetting(key)),
-    getAllSettings: () => Promise.resolve(dbService.configRepo.getAllSettings()),
+    getSetting: (key: string) => Promise.resolve(dbService.config.getSetting(key)),
+    getAllSettings: () => Promise.resolve(dbService.config.getAllSettings()),
     setSetting: (key: string, value: string) => {
-      dbService.configRepo.setSetting(key, value)
+      dbService.config.setSetting(key, value)
       return Promise.resolve(true)
     },
     // Wishlist API
     wishlistGetAll: (filters: any) => {
-      const items = dbService.wishlistRepo.getWishlistItems(filters)
+      const items = dbService.wishlist.getWishlistItems(filters)
       return Promise.resolve(items)
     },
-    wishlistGetCount: () => Promise.resolve(dbService.getWishlistCount()),
-    wishlistGetCountsByReason: () => Promise.resolve(dbService.getWishlistCountsByReason()),
+    wishlistGetCount: () => Promise.resolve(dbService.wishlist.getCount()),
+    wishlistGetCountsByReason: () => Promise.resolve(dbService.wishlist.getCountsByReason()),
     wishlistGetRegion: () => Promise.resolve('us'),
     wishlistAdd: (item: any) => {
-      const id = dbService.wishlistRepo.add(item)
+      const id = dbService.wishlist.add(item)
       return Promise.resolve(id)
     },
     
@@ -117,7 +117,7 @@ describe('Renderer Integration (No Mocks)', () => {
   })
 
   it('should load sources from the real database into the React context', async () => {
-    dbService.sourceRepo.upsertMediaSource({ 
+    dbService.sources.upsertSource({ 
       source_id: 's1', 
       source_type: 'local', 
       display_name: 'Test Source',
@@ -153,8 +153,8 @@ describe('Renderer Integration (No Mocks)', () => {
   })
 
   it('should sync theme with database settings', async () => {
-    dbService.configRepo.setSetting('theme', 'slate')
-    dbService.configRepo.setSetting('theme_mode', 'light')
+    dbService.config.setSetting('theme', 'slate')
+    dbService.config.setSetting('theme_mode', 'light')
 
     render(
       React.createElement(ThemeProvider, null,
@@ -170,7 +170,7 @@ describe('Renderer Integration (No Mocks)', () => {
     fireEvent.click(screen.getByText('SetSlate'))
     
     await waitFor(() => {
-      expect(dbService.configRepo.getSetting('theme')).toBe('slate')
+      expect(dbService.config.getSetting('theme')).toBe('slate')
     })
   })
 
@@ -196,6 +196,6 @@ describe('Renderer Integration (No Mocks)', () => {
       expect(screen.getByText('Items: 1')).toBeTruthy()
     }, { timeout: 2000 })
     
-    expect(dbService.getWishlistCount()).toBe(1)
+    expect(dbService.wishlist.getCount()).toBe(1)
   })
 })

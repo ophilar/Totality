@@ -194,7 +194,7 @@ export const SeriesRow = React.memo(({ s, index, style, isExpanded, onToggleExpa
                 seriesTitle={s.series_title}
                 seasonNumber={group.seasonNumber}
                 tmdbId={s.tmdb_id}
-                posterUrl={s.poster_url}
+                posterUrl={s.poster_url || undefined}
                 reason="missing"
                 compact
               />

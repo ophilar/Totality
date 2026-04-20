@@ -143,6 +143,20 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
         for (const group of groups) {
           if (this.scanCancelled) break
 
+          // Report progress for each item in the group BEFORE processing
+          for (const item of group) {
+            itemIndex++
+            if (onProgress) {
+              onProgress({
+                current: itemIndex,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.title,
+                percentage: (itemIndex / totalItems) * 100,
+              })
+            }
+          }
+
           try {
             for (let i = 0; i < group.length; i++) {
               if (this.useFFprobeAnalysis && this.ffprobeAvailable && this.needsFFprobeEnhancement(group[i])) {
@@ -166,28 +180,23 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
               mediaItem.version_count = versions.length
               mediaItem.plex_id = group[0].itemId
 
-              const id = await db.upsertMediaItem(mediaItem)
+              const id = await db.media.upsertItem(mediaItem)
               scannedProviderIds.add(mediaItem.plex_id)
 
               const scoredVersions = versions.map(v => {
                 const vScore = analyzer.analyzeVersion(v as any)
                 return { ...v, media_item_id: id, ...vScore }
               })
-              db.syncMediaItemVersions(id, scoredVersions)
+              db.media.syncItemVersions(id, scoredVersions)
 
               mediaItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
-              await db.upsertQualityScore(qualityScore)
+              await db.media.upsertQualityScore(qualityScore)
 
               result.itemsScanned++
             }
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${group[0]?.title}: ${getErrorMessage(error)}`)
-          }
-
-          itemIndex += group.length
-          if (onProgress) {
-            onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: group[0]?.title, percentage: (itemIndex / totalItems) * 100 })
           }
         }
       } finally {
@@ -196,18 +205,18 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
 
       if (scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
-        const existingItems = db.getMediaItems({ type: itemType, sourceId: this.sourceId, libraryId })
+        const existingItems = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
         for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
-              db.deleteMediaItem(item.id)
+              db.media.deleteItem(item.id)
               result.itemsRemoved++
             }
           }
         }
       }
 
-      await db.updateSourceScanTime(this.sourceId)
+      await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true
       result.durationMs = Date.now() - startTime
       return result

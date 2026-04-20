@@ -98,24 +98,17 @@ You will receive JSON metadata: title, resolution, video_codec, video_bitrate, h
 Return a valid JSON object with the following structure:
 {
   "summary": "Short explanation of why this file is inefficient and how much space can be saved.",
-  "av1": {
-    "ffmpeg": "Full ffmpeg command using libsvtav1",
-    "handbrake": "Handbrake CLI or description of settings",
-    "tuning_explanation": "Why these specific AV1 parameters (CRF, preset, grain) were chosen."
-  },
-  "hevc": {
-    "ffmpeg": "Full ffmpeg command using libx265",
-    "handbrake": "Handbrake CLI or description of settings",
-    "tuning_explanation": "Why these specific x265 parameters (CRF, preset, tune) were chosen."
-  },
-  "audio_strategy": "Recommendation for audio (passthrough vs transcode to Opus/AAC) based on source tracks.",
+  "handbrakeArgs": ["--arg1", "val1", ...],
+  "mkvmergeArgs": ["--arg1", "val1", ...],
+  "expectedSizeReduction": "e.g. 60%",
   "warnings": ["Any warnings about source quality being too low or HDR complexity."]
 }
 
 ## Encoding Guidelines
-- **AV1**: Use CRF 20-28 (higher for 4K). Preset 6-8. Use film-grain-synthesis for older/grainy content.
+- **AV1 (Preferred)**: Use CRF 20-28 (higher for 4K). Preset 6-8. Use film-grain-synthesis for older/grainy content.
 - **HEVC**: Use CRF 18-24. Preset slow/slower. 10-bit (yuv420p10le) always preferred for quality.
 - **HDR**: Ensure 10-bit and metadata preservation (HDR10, DV).
 - **Audio**: Favor Opus 5.1/7.1 for efficiency, AAC for compatibility. Keep lossless as-is unless storage is critical.
+- **Important**: handbrakeArgs MUST be an array of strings suitable for child_process.spawn. Do NOT include the -i or -o flags.
 `
 

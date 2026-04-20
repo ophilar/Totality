@@ -22,7 +22,7 @@ export const MovieUpgradeRow = React.memo(({ item, index, style, isExpanded, onT
     <div style={style} className="px-2 overflow-hidden">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(item.id)}
+        onClick={() => onSelect(item.id!)}
       >
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
           {item.poster_url ? (
@@ -47,7 +47,7 @@ export const MovieUpgradeRow = React.memo(({ item, index, style, isExpanded, onT
             </span>
             {parseFloat(wasteGB) > 0.5 && (
               <button
-                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id) }}
+                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
                 className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
                   isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
                 }`}
@@ -61,14 +61,14 @@ export const MovieUpgradeRow = React.memo(({ item, index, style, isExpanded, onT
           <AddToWishlistButton
             mediaType="movie"
             title={item.title}
-            year={item.year}
-            tmdbId={item.tmdb_id}
-            posterUrl={item.poster_url}
+            year={item.year ?? undefined}
+            tmdbId={item.tmdb_id ?? undefined}
+            posterUrl={item.poster_url ?? undefined}
             reason="upgrade"
-            mediaItemId={item.id}
+            mediaItemId={item.id!}
             currentQualityTier={item.quality_tier}
             currentQualityLevel={item.tier_quality}
-            currentResolution={item.resolution}
+            currentResolution={item.resolution ?? undefined}
             compact
           />
           <button
@@ -92,7 +92,7 @@ export const TvUpgradeRow = React.memo(({ item, index, style, isExpanded, onTogg
     <div style={style} className="px-2 overflow-hidden">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(item.id)}
+        onClick={() => onSelect(item.id!)}
       >
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
           {item.poster_url ? (
@@ -119,7 +119,7 @@ export const TvUpgradeRow = React.memo(({ item, index, style, isExpanded, onTogg
             </span>
             {parseFloat(wasteGB) > 0.5 && (
               <button
-                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id) }}
+                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
                 className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
                   isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
                 }`}
@@ -132,18 +132,18 @@ export const TvUpgradeRow = React.memo(({ item, index, style, isExpanded, onTogg
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <AddToWishlistButton
             mediaType="episode"
-            title={item.title}
-            year={item.year}
-            tmdbId={item.tmdb_id}
-            posterUrl={item.poster_url}
-            seriesTitle={item.series_title}
-            seasonNumber={item.season_number}
-            episodeNumber={item.episode_number}
+            title={item.title!}
+            year={item.year ?? undefined}
+            tmdbId={item.tmdb_id ?? undefined}
+            posterUrl={item.poster_url ?? undefined}
+            seriesTitle={item.series_title ?? undefined}
+            seasonNumber={item.season_number ?? undefined}
+            episodeNumber={item.episode_number ?? undefined}
             reason="upgrade"
-            mediaItemId={item.id}
+            mediaItemId={item.id!}
             currentQualityTier={item.quality_tier}
             currentQualityLevel={item.tier_quality}
-            currentResolution={item.resolution}
+            currentResolution={item.resolution ?? undefined}
             compact
           />
           <button
@@ -173,7 +173,7 @@ export const MusicUpgradeRow = React.memo(({ album, index, style, onSelect, onDi
     <div style={style} className="px-2">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(album.id)}
+        onClick={() => onSelect(album.id!)}
       >
         <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
           {album.thumb_url ? (
@@ -188,7 +188,7 @@ export const MusicUpgradeRow = React.memo(({ album, index, style, onSelect, onDi
           <div className="font-medium text-sm truncate">{album.title}</div>
           <div className="text-xs text-muted-foreground truncate">{album.artist_name}</div>
           <div className="text-[10px] text-muted-foreground mt-1">
-            {album.quality_tier} · {album.tier_quality}{album.best_bitrate ? ` · ${Math.round(album.best_bitrate)} kbps` : ''}
+            {album.quality_tier} · {album.tier_quality}{album.best_audio_bitrate ? ` · ${Math.round(album.best_audio_bitrate)} kbps` : ''}
           </div>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
