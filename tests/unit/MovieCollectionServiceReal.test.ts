@@ -95,8 +95,8 @@ describe('MovieCollectionService (No Mocks)', () => {
 
   it('should deduplicate movies by TMDB ID', async () => {
     // Insert duplicate movies from different sources
-    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
-    db.sources.upsertSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
 
     db.media.upsertItem(createMovie({
       source_id: 's1',
@@ -125,7 +125,7 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   it('should analyze collections and find missing movies', async () => {
-     db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
+     db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
      db.media.upsertItem(createMovie({
       source_id: 's1',
       plex_id: 'p1',
@@ -147,7 +147,7 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   it('should lookup missing TMDB IDs for local sources', async () => {
-    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
+    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
     db.media.upsertItem(createMovie({
       source_id: 'local1',
       plex_id: 'local-file-1',

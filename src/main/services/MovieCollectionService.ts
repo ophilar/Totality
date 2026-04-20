@@ -133,7 +133,7 @@ export class MovieCollectionService extends CancellableOperation {
     sourceId?: string,
     libraryId?: string,
     options: CollectionAnalysisOptions = {}
-  ): Promise<{ completed: boolean; analyzed: number; skipped: number }> {
+  ): Promise<{ completed: boolean; analyzed: number; skipped: number; skipped_due_to_config?: boolean }> {
     const {
       skipRecentlyAnalyzed = true,
       reanalyzeAfterDays = 7,
@@ -145,7 +145,10 @@ export class MovieCollectionService extends CancellableOperation {
     const tmdb = getTMDBService()
 
     const tmdbApiKey = db.config.getSetting('tmdb_api_key')
-    if (!tmdbApiKey) throw new Error('TMDB API key not configured.')
+    if (!tmdbApiKey) {
+      getLoggingService().info('[MovieCollectionService]', 'TMDB API key not configured. Skipping collection analysis.')
+      return { completed: true, analyzed: 0, skipped: 0, skipped_due_to_config: true }
+    }
 
     await tmdb.initialize()
 
@@ -201,7 +204,7 @@ export class MovieCollectionService extends CancellableOperation {
 
     const existingCollections = new Map<string, { updatedAt: string; ownedCount: number }>()
     if (skipRecentlyAnalyzed) {
-      db.stats.getMovieCollections(sourceId).forEach(col => {
+      db.movieCollections.getCollections(sourceId).forEach(col => {
         if (col.updated_at && col.tmdb_collection_id) {
           existingCollections.set(col.tmdb_collection_id, { updatedAt: col.updated_at, ownedCount: col.owned_movies })
         }
@@ -231,7 +234,7 @@ export class MovieCollectionService extends CancellableOperation {
           const result = await this.lookupCollectionCompleteness(colInfo.tmdbCollectionId.toString(), ownedTmdbIds)
 
           if (result) {
-            db.stats.upsertMovieCollection({
+            db.movieCollections.upsertCollection({
               tmdb_collection_id: colInfo.tmdbCollectionId.toString(),
               collection_name: result.collectionName,
               source_id: sourceId,
@@ -257,10 +260,10 @@ export class MovieCollectionService extends CancellableOperation {
     return { completed: !this.isCancelled(), analyzed: processedCount - skipped, skipped }
   }
 
-  getCollections(sourceId?: string): MovieCollection[] { return getDatabase().stats.getCollections(sourceId) }
-  getIncompleteCollections(sourceId?: string): MovieCollection[] { return getDatabase().stats.getIncompleteCollections(sourceId) }
-  async deleteCollection(id: number): Promise<boolean> { return getDatabase().stats.deleteCollection(id) }
-  getStats(): any { return getDatabase().stats.getCollectionStats() }
+  getCollections(sourceId?: string): MovieCollection[] { return getDatabase().movieCollections.getCollections(sourceId) }
+  getIncompleteCollections(sourceId?: string): MovieCollection[] { return getDatabase().movieCollections.getIncompleteCollections(sourceId) }
+  async deleteCollection(id: number): Promise<boolean> { return getDatabase().movieCollections.deleteCollection(id) }
+  getStats(): any { return getDatabase().movieCollections.getStats() }
 }
 
 let serviceInstance: MovieCollectionService | null = null

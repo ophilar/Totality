@@ -1,6 +1,7 @@
 import { getLoggingService } from '../services/LoggingService'
 import { DatabaseSync } from 'node:sqlite'
 import * as path from 'path'
+import * as fs from 'fs'
 import { app } from 'electron'
 import { runMigrations } from './DatabaseMigration'
 import {
@@ -14,8 +15,10 @@ import {
   WishlistRepository,
   ExclusionRepository,
   TaskRepository,
-  DuplicateRepository
+  DuplicateRepository,
+  MovieCollectionRepository
 } from './repositories'
+import type { MusicTrack } from '../types/database'
 
 // Singleton instance
 let serviceInstance: BetterSQLiteService | null = null
@@ -55,12 +58,13 @@ export class BetterSQLiteService {
   private _exclusionRepo: ExclusionRepository | null = null
   private _taskRepo: TaskRepository | null = null
   private _duplicateRepo: DuplicateRepository | null = null
+  private _movieCollectionRepo: MovieCollectionRepository | null = null
 
   constructor() {
     try {
       if (process.env.NODE_ENV === 'test') {
         const tempDir = path.join(process.cwd(), 'tests', 'tmp')
-        if (!require('fs').existsSync(tempDir)) require('fs').mkdirSync(tempDir, { recursive: true })
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
         this.dbPath = path.join(tempDir, `test-${Math.random().toString(36).substring(7)}.db`)
       } else {
         const userDataPath = app.getPath('userData')
@@ -82,6 +86,7 @@ export class BetterSQLiteService {
       this.db.exec('PRAGMA journal_mode = WAL')
       this.db.exec('PRAGMA synchronous = NORMAL')
       this.db.exec('PRAGMA foreign_keys = ON')
+      this.db.exec('PRAGMA busy_timeout = 5000')
       
       // Run migrations
       await runMigrations(this.db)
@@ -172,26 +177,45 @@ export class BetterSQLiteService {
     return this._duplicateRepo
   }
 
+  public get movieCollections(): MovieCollectionRepository {
+    if (!this.db) throw new Error('Database not initialized')
+    if (!this._movieCollectionRepo) this._movieCollectionRepo = new MovieCollectionRepository(this.db)
+    return this._movieCollectionRepo
+  }
+
+  // Bolt ⚡ Optimization Methods
+  public getMusicTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> {
+    return this.music.getMusicTracksByAlbumIds(albumIds)
+  }
+
   // --- Core Database Methods ---
   public getDbPath(): string { return this.dbPath }
   
-  public getSetting(key: string, defaultValue?: any) { return this.config.getSetting(key) || defaultValue }
-  public setSetting(key: string, value: any) { return this.config.setSetting(key, String(value)) }
-  public deleteSetting(key: string) { return this.config.deleteSetting(key) }
+  public getSetting(key: string, defaultValue?: string): string | null { 
+    return this.config.getSetting(key) || defaultValue || null 
+  }
+  
+  public setSetting(key: string, value: string | boolean | number): void { 
+    this.config.setSetting(key, String(value)) 
+  }
+  
+  public deleteSetting(key: string): void { 
+    this.config.deleteSetting(key) 
+  }
 
   public beginBatch(): void { this.db?.exec('BEGIN IMMEDIATE') }
   public startBatch(): void { this.beginBatch() }
   public endBatch(): void { this.db?.exec('COMMIT') }
-  public forceSave(): void { this.db?.exec('PRAGMA wal_checkpoint(TRUNCATE)') }
+  public forceSave(): void { this.db?.exec('PRAGMA wal_checkpoint(PASSIVE)') }
 
-  public exportData(): any {
+  public exportData(): Record<string, any[]> {
     if (!this.db) throw new Error('Database not initialized')
-    const data: any = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
+    const data: Record<string, any[]> = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
     
     for (const table of tables) {
       try {
-        data[table] = (this.db as any).prepare(`SELECT * FROM ${table}`).all()
+        data[table] = this.db.prepare(`SELECT * FROM ${table}`).all() as any[]
       } catch (e) {
         getLoggingService().warn('Database', `Could not export table ${table}: ${e}`)
       }
@@ -199,7 +223,7 @@ export class BetterSQLiteService {
     return data
   }
 
-  public async importData(data: any): Promise<{ imported: number, errors: number }> {
+  public async importData(data: Record<string, any[]>): Promise<{ imported: number, errors: number }> {
     if (!this.db) throw new Error('Database not initialized')
     let imported = 0
     let errors = 0
@@ -211,10 +235,10 @@ export class BetterSQLiteService {
         
         for (const row of rows) {
           try {
-            const keys = Object.keys(row as any)
+            const keys = Object.keys(row)
             const placeholders = keys.map(() => '?').join(',')
             const columns = keys.join(',')
-            this.db.prepare(`INSERT OR REPLACE INTO ${table} (${columns}) VALUES (${placeholders})`).run(...(Object.values(row as any) as any[]))
+            this.db.prepare(`INSERT OR REPLACE INTO ${table} (${columns}) VALUES (${placeholders})`).run(...(Object.values(row) as any[]))
             imported++
           } catch (e) {
             errors++

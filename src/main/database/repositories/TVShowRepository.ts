@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
@@ -15,7 +14,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
       FROM series_completeness sc
       WHERE 1=1
     `
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     if (filters?.sourceId) {
       sql += ' AND sc.source_id = ?'
@@ -63,16 +62,12 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     }
 
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as TVShowSummary[]
-  }
-
-  getTVShowSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
-    return this.getSummaries(filters)
+    return stmt.all(...params) as unknown as TVShowSummary[]
   }
 
   count(filters?: TVShowFilters): number {
     let sql = 'SELECT COUNT(*) as count FROM series_completeness WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     if (filters?.sourceId) {
       sql += ' AND source_id = ?'
@@ -96,7 +91,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     }
 
     const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as { count: number }
+    const result = stmt.get(...params) as unknown as { count: number } | undefined
     return result?.count || 0
   }
 
@@ -107,7 +102,7 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.series_title = ? AND m.type = 'episode'
     `
-    const params: unknown[] = [seriesTitle]
+    const params: SQLInputValue[] = [seriesTitle]
 
     if (sourceId) {
       sql += ' AND m.source_id = ?'
@@ -116,16 +111,12 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
 
     sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MediaItem[]
-  }
-
-  getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
-    return this.getEpisodes(seriesTitle, sourceId)
+    return stmt.all(...params) as unknown as MediaItem[]
   }
 
   getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null {
     let sql = 'SELECT * FROM series_completeness WHERE series_title = ?'
-    const params: any[] = [title]
+    const params: SQLInputValue[] = [title]
     if (sourceId) {
       sql += ' AND source_id = ?'
       params.push(sourceId)
@@ -181,30 +172,26 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return row?.id || 0
   }
 
-  upsertSeriesCompleteness(data: SeriesCompleteness): number {
-    return this.upsertCompleteness(data)
-  }
-
   getAllCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE 1=1'
-    const params = []
+    const params: SQLInputValue[] = []
     if (sourceId) { sql += ' AND source_id = ?'; params.push(sourceId) }
     if (libraryId) { sql += ' AND library_id = ?'; params.push(libraryId) }
     sql += ' ORDER BY series_title ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as SeriesCompleteness[]
+    return stmt.all(...params) as unknown as SeriesCompleteness[]
   }
 
   getIncomplete(sourceId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE completeness_percentage < 100'
-    const params = []
+    const params: SQLInputValue[] = []
     if (sourceId) {
       sql += ' AND source_id = ?'
       params.push(sourceId)
     }
     sql += ' ORDER BY completeness_percentage ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as SeriesCompleteness[]
+    return stmt.all(...params) as unknown as SeriesCompleteness[]
   }
 
   deleteCompleteness(id: number): void {

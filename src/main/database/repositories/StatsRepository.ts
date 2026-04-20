@@ -1,17 +1,17 @@
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness, MusicCompletenessStats } from '../../types/database'
 
 export class StatsRepository {
   constructor(private db: DatabaseSync) {}
 
   public getDashboardSummary(sourceId?: string): DashboardSummary {
-    const params: any[] = []
+    const params: SQLInputValue[] = []
     const sourceFilter = sourceId ? 'AND m.source_id = ?' : ''
     if (sourceId) params.push(sourceId)
 
     // 1. Settings
-    const settings = this.db.prepare("SELECT key, value FROM settings WHERE key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort')").all() as any[]
-    const settingsMap = settings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as any)
+    const settings = this.db.prepare("SELECT key, value FROM settings WHERE key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort')").all() as unknown as Array<{ key: string; value: string }>
+    const settingsMap = settings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>)
 
     const uSort = settingsMap['dashboard_upgrade_sort'] || 'quality'
     
@@ -52,7 +52,7 @@ export class StatsRepository {
       ORDER BY ${upgradeOrderBy}
       LIMIT 100
     `
-    const movieUpgrades = (this.db.prepare(movieUpgradesSql).all(...params) as any) as MediaItem[]
+    const movieUpgrades = this.db.prepare(movieUpgradesSql).all(...params) as unknown as MediaItem[]
 
     // 3. TV Upgrades
     const tvUpgradesSql = `
@@ -68,7 +68,7 @@ export class StatsRepository {
       ORDER BY ${upgradeOrderBy}
       LIMIT 100
     `
-    const tvUpgrades = (this.db.prepare(tvUpgradesSql).all(...params) as any) as MediaItem[]
+    const tvUpgrades = this.db.prepare(tvUpgradesSql).all(...params) as unknown as MediaItem[]
 
     // 4. Music Upgrades
     let musicUpgradeOrderBy = 'q.tier_score ASC'
@@ -94,7 +94,7 @@ export class StatsRepository {
       ORDER BY ${musicUpgradeOrderBy}
       LIMIT 100
     `
-    const musicUpgrades = (this.db.prepare(musicUpgradesSql).all(...(sourceId ? [sourceId] : [])) as any) as MusicAlbum[]
+    const musicUpgrades = this.db.prepare(musicUpgradesSql).all(...(sourceId ? [sourceId] : [])) as unknown as MusicAlbum[]
 
     // 5. Incomplete Collections
     const collectionsSql = `
@@ -106,7 +106,7 @@ export class StatsRepository {
       ${sourceId ? 'AND c.source_id = ?' : ''}
       ORDER BY ${collOrderBy}
     `
-    const incompleteCollectionsRaw = (this.db.prepare(collectionsSql).all(...(sourceId ? [sourceId] : [])) as any) as MovieCollection[]
+    const incompleteCollectionsRaw = this.db.prepare(collectionsSql).all(...(sourceId ? [sourceId] : [])) as unknown as MovieCollection[]
 
     // 6. Incomplete Series
     const seriesSql = `
@@ -118,7 +118,7 @@ export class StatsRepository {
       ${sourceId ? 'AND sc.source_id = ?' : ''}
       ORDER BY ${seriesOrderBy}
     `
-    const incompleteSeriesRaw = (this.db.prepare(seriesSql).all(...(sourceId ? [sourceId] : [])) as any) as SeriesCompleteness[]
+    const incompleteSeriesRaw = this.db.prepare(seriesSql).all(...(sourceId ? [sourceId] : [])) as unknown as SeriesCompleteness[]
 
     // 7. Incomplete Artists
     const artistsSql = `
@@ -133,12 +133,12 @@ export class StatsRepository {
       )
       ORDER BY ${artistOrderBy}
     `
-    const incompleteArtistsRaw = (this.db.prepare(artistsSql).all() as any) as ArtistCompleteness[]
+    const incompleteArtistsRaw = this.db.prepare(artistsSql).all() as unknown as ArtistCompleteness[]
 
     // Fetch Exclusions for filtering JSON arrays
-    const collEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'collection_movie'").all() as any[]
-    const serEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'series_episode'").all() as any[]
-    const artEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'artist_album'").all() as any[]
+    const collEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'collection_movie'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
+    const serEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'series_episode'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
+    const artEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'artist_album'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
 
     // Process Collections exclusions
     const incompleteCollections: MovieCollection[] = []
@@ -217,7 +217,7 @@ export class StatsRepository {
       ORDER BY q.storage_debt_bytes DESC
       LIMIT 50
     `
-    const storageWaste = (this.db.prepare(wasteSql).all(...params) as any) as MediaItem[]
+    const storageWaste = this.db.prepare(wasteSql).all(...params) as unknown as MediaItem[]
 
     return {
       movieUpgrades,
@@ -251,7 +251,7 @@ export class StatsRepository {
     }>
   } {
     const sources = this.getSourceStats()
-    const allSources = this.db.prepare('SELECT is_enabled FROM media_sources').all() as any[]
+    const allSources = this.db.prepare('SELECT is_enabled FROM media_sources').all() as unknown as Array<{ is_enabled: number }>
 
     return {
       totalSources: allSources.length,
@@ -274,7 +274,7 @@ export class StatsRepository {
     tvNeedsUpgradeCount: number
     tvAverageQualityScore: number
   } {
-    const params: any[] = []
+    const params: SQLInputValue[] = []
     const sourceFilter = sourceId ? 'AND m.source_id = ?' : ''
     if (sourceId) params.push(sourceId)
 
@@ -284,7 +284,7 @@ export class StatsRepository {
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
-    `).get(...params) as any
+    `).get(...params) as unknown as { count: number } | undefined
     
     const totalMoviesRow = this.db.prepare(`
       SELECT COUNT(*) as count FROM media_items m
@@ -293,7 +293,7 @@ export class StatsRepository {
       WHERE m.type = 'movie' 
       AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
-    `).get(...params) as any
+    `).get(...params) as unknown as { count: number } | undefined
     
     const totalEpisodesRow = this.db.prepare(`
       SELECT COUNT(*) as count FROM media_items m
@@ -302,7 +302,7 @@ export class StatsRepository {
       WHERE m.type = 'episode' 
       AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
-    `).get(...params) as any
+    `).get(...params) as unknown as { count: number } | undefined
     
     const totalShowsRow = this.db.prepare(`
       SELECT COUNT(DISTINCT series_title) as count FROM media_items m
@@ -311,7 +311,7 @@ export class StatsRepository {
       WHERE m.type = 'episode' 
       AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
-    `).get(...params) as any
+    `).get(...params) as unknown as { count: number } | undefined
 
     const qualityStatsRow = this.db.prepare(`
       SELECT 
@@ -328,7 +328,15 @@ export class StatsRepository {
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       ${sourceFilter}
-    `).get(...params) as any
+    `).get(...params) as unknown as {
+      lowQualityCount: number
+      needsUpgradeCount: number
+      averageQualityScore: number
+      movieNeedsUpgradeCount: number
+      movieAverageQualityScore: number
+      tvNeedsUpgradeCount: number
+      tvAverageQualityScore: number
+    } | undefined
 
     return {
       totalItems: totalItemsRow?.count || 0,
@@ -345,14 +353,14 @@ export class StatsRepository {
     }
   }
 
-  getMediaItemsCountBySource(sourceId: string): number {
+  getItemsCountBySource(sourceId: string): number {
     const row = this.db.prepare(`
       SELECT COUNT(*) as count FROM media_items m
       JOIN media_sources s ON m.source_id = s.source_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE m.source_id = ?
       AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-    `).get(sourceId) as any
+    `).get(sourceId) as unknown as { count: number } | undefined
     return row?.count || 0
   }
 
@@ -370,7 +378,7 @@ export class StatsRepository {
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
       WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
       GROUP BY s.source_id
-    `).all() as any[]
+    `).all() as unknown as any[]
 
     return rows.map(row => ({
       sourceId: row.source_id,
@@ -404,12 +412,12 @@ export class StatsRepository {
     }
 
     const params = sourceId ? [sourceId] : []
-    const total = (this.db.prepare(sqlTotal).get(...params) as any)?.count || 0
-    const analyzed = (this.db.prepare(sqlAnalyzed).get(...params) as any)?.count || 0
-    const complete = (this.db.prepare(sqlComplete).get(...params) as any)?.count || 0
-    const incomplete = (this.db.prepare(sqlIncomplete).get(...params) as any)?.count || 0
-    const missing = (this.db.prepare(sqlMissing).get(...params) as any)?.total || 0
-    const avg = (this.db.prepare(sqlAvg).get(...params) as any)?.avg || 0
+    const total = (this.db.prepare(sqlTotal).get(...params) as unknown as { count: number } | undefined)?.count || 0
+    const analyzed = (this.db.prepare(sqlAnalyzed).get(...params) as unknown as { count: number } | undefined)?.count || 0
+    const complete = (this.db.prepare(sqlComplete).get(...params) as unknown as { count: number } | undefined)?.count || 0
+    const incomplete = (this.db.prepare(sqlIncomplete).get(...params) as unknown as { count: number } | undefined)?.count || 0
+    const missing = (this.db.prepare(sqlMissing).get(...params) as unknown as { total: number } | undefined)?.total || 0
+    const avg = (this.db.prepare(sqlAvg).get(...params) as unknown as { avg: number } | undefined)?.avg || 0
 
     return {
       totalArtists: total,
@@ -421,80 +429,16 @@ export class StatsRepository {
     }
   }
 
-  public getCollections(sourceId?: string): MovieCollection[] {
-    let sql = 'SELECT * FROM movie_collections'
-    const params: any[] = []
-    if (sourceId) {
-      sql += ' WHERE source_id = ?'
-      params.push(sourceId)
+  public getMusicQualityDistribution(): Record<string, number> {
+    const rows = this.db.prepare('SELECT quality_tier, COUNT(*) as count FROM music_quality_scores GROUP BY quality_tier').all() as unknown as Array<{ quality_tier: string; count: number }>
+    const distribution: Record<string, number> = {
+      HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0
     }
-    sql += ' ORDER BY collection_name ASC'
-    return this.db.prepare(sql).all(...params) as unknown as MovieCollection[]
-  }
-
-  public getMovieCollections(sourceId?: string): MovieCollection[] {
-    return this.getCollections(sourceId)
-  }
-
-  public getIncompleteCollections(sourceId?: string): MovieCollection[] {
-    let sql = 'SELECT * FROM movie_collections WHERE completeness_percentage < 100'
-    const params: any[] = []
-    if (sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(sourceId)
+    for (const row of rows) {
+      if (row.quality_tier in distribution) {
+        distribution[row.quality_tier] = row.count
+      }
     }
-    sql += ' ORDER BY completeness_percentage ASC'
-    return this.db.prepare(sql).all(...params) as unknown as MovieCollection[]
-  }
-
-  public deleteCollection(id: number): boolean {
-    const result = this.db.prepare('DELETE FROM movie_collections WHERE id = ?').run(id)
-    return Number(result.changes) > 0
-  }
-
-  public getCollectionStats(): {
-    total: number
-    complete: number
-    incomplete: number
-    totalMissing: number
-    avgCompleteness: number
-  } {
-    const total = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections').get() as any
-    const complete = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage >= 100').get() as any
-    const incomplete = this.db.prepare('SELECT COUNT(*) as count FROM movie_collections WHERE completeness_percentage < 100').get() as any
-    const missing = this.db.prepare('SELECT SUM(total_movies - owned_movies) as count FROM movie_collections').get() as any
-    const avg = this.db.prepare('SELECT AVG(completeness_percentage) as avg FROM movie_collections').get() as any
-
-    return {
-      total: total?.count || 0,
-      complete: complete?.count || 0,
-      incomplete: incomplete?.count || 0,
-      totalMissing: missing?.count || 0,
-      avgCompleteness: Math.round(avg?.avg || 0)
-    }
-  }
-
-  public upsertMovieCollection(data: any) {
-    this.db.prepare(`
-      INSERT INTO movie_collections (
-        tmdb_collection_id, collection_name, source_id, library_id,
-        total_movies, owned_movies, missing_movies, owned_movie_ids,
-        completeness_percentage, poster_url, backdrop_url, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(tmdb_collection_id, source_id, library_id) DO UPDATE SET
-        collection_name = excluded.collection_name,
-        total_movies = excluded.total_movies,
-        owned_movies = excluded.owned_movies,
-        missing_movies = excluded.missing_movies,
-        owned_movie_ids = excluded.owned_movie_ids,
-        completeness_percentage = excluded.completeness_percentage,
-        poster_url = excluded.poster_url,
-        backdrop_url = excluded.backdrop_url,
-        updated_at = datetime('now')
-    `).run(
-      data.tmdb_collection_id, data.collection_name, data.source_id || '', data.library_id || '',
-      data.total_movies, data.owned_movies, data.missing_movies, data.owned_movie_ids,
-      data.completeness_percentage, data.poster_url || null, data.backdrop_url || null
-    )
+    return distribution
   }
 }

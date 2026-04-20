@@ -71,7 +71,7 @@ export function usePaginatedData<T, TFilters>({
       offsetRef.current += newItems.length
       hasInitialLoadRef.current = true
     } catch (err) {
-      console.error('[usePaginatedData] Error:', err)
+      window.electronAPI.log.error('usePaginatedData', 'Error loading data:', err)
       setError('Failed to load data')
     } finally {
       setLoading(false)

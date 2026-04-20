@@ -19,7 +19,7 @@ const dbPath = path.join(__dirname, 'renderer-integration.db')
 
 function setupRealBridge(dbService: BetterSQLiteService) {
   (window as any).electronAPI = {
-    sourcesList: () => Promise.resolve(dbService.sources.getMediaSources()),
+    sourcesList: () => Promise.resolve(dbService.sources.getSources()),
     sourcesGetStats: () => Promise.resolve({
       totalSources: 1,
       enabledSources: 1,
@@ -117,7 +117,7 @@ describe('Renderer Integration (No Mocks)', () => {
   })
 
   it('should load sources from the real database into the React context', async () => {
-    dbService.sources.upsertMediaSource({ 
+    dbService.sources.upsertSource({ 
       source_id: 's1', 
       source_type: 'local', 
       display_name: 'Test Source',

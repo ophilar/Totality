@@ -103,7 +103,7 @@ export class CredentialEncryptionService {
       const encryptedBuffer = Buffer.from(encryptedBase64, 'base64')
       return safeStorage.decryptString(encryptedBuffer)
     } catch (error) {
-      console.error('[CredentialEncryption] Failed to decrypt value — credential must be re-entered:', error)
+      getLoggingService().error('[CredentialEncryption]', 'Failed to decrypt value — credential must be re-entered:', error)
       // Track that a decryption failure occurred so callers can notify the user
       this.lastDecryptionFailed = true
       // Return empty string on failure to force re-authentication,

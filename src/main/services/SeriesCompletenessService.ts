@@ -22,12 +22,22 @@ export class SeriesCompletenessService {
     complete: number
     incomplete: number
     errors: string[]
+    skipped?: boolean
   }> {
     this.cancelRequested = false
     const db = getDatabase()
+    const tmdb = getTMDBService()
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[] }
 
+    // Task Prevention: Check for TMDB API key before starting
+    const tmdbApiKey = db.config.getSetting('tmdb_api_key')
+    if (!tmdbApiKey) {
+      getLoggingService().info('[SeriesCompletenessService]', 'TMDB API key not configured. Skipping series analysis.')
+      return { ...result, skipped: true }
+    }
+
     try {
+      await tmdb.initialize()
       const shows = db.tvShows.getSummaries({ sourceId, libraryId })
       result.totalSeries = shows.length
 
@@ -42,22 +52,27 @@ export class SeriesCompletenessService {
         }
       }
 
-      for (let i = 0; i < shows.length; i++) {
-        if (this.cancelRequested) break
-        const title = shows[i].series_title
-        onProgress?.({ current: i + 1, total: shows.length, percentage: Math.round(((i + 1) / shows.length) * 100), phase: 'analyzing', currentItem: title })
+      db.beginBatch()
+      try {
+        for (let i = 0; i < shows.length; i++) {
+          if (this.cancelRequested) break
+          const title = shows[i].series_title
+          onProgress?.({ current: i + 1, total: shows.length, percentage: Math.round(((i + 1) / shows.length) * 100), phase: 'analyzing', currentItem: title })
 
-        try {
-          const episodes = episodesBySeries.get(title) || []
-          const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes)
-          if (analysis) {
-            result.analyzed++
-            if (analysis.completeness_percentage >= 100) result.complete++
-            else result.incomplete++
+          try {
+            const episodes = episodesBySeries.get(title) || []
+            const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes)
+            if (analysis) {
+              result.analyzed++
+              if (analysis.completeness_percentage >= 100) result.complete++
+              else result.incomplete++
+            }
+          } catch (error) {
+            result.errors.push(`"${title}": ${getErrorMessage(error)}`)
           }
-        } catch (error) {
-          result.errors.push(`"${title}": ${getErrorMessage(error)}`)
         }
+      } finally {
+        db.endBatch()
       }
 
       return result
@@ -106,16 +121,16 @@ export class SeriesCompletenessService {
       }
 
       const fullDetails = await tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
-      console.log('fullDetails from TMDB:', JSON.stringify(fullDetails, null, 2))
+      getLoggingService().debug('[SeriesCompleteness]', 'fullDetails from TMDB fetched')
       
       for (const sn of seasonNums) {
         const season = fullDetails[`season/${sn}`]
         if (season) targetEpisodes.push(...season.episodes)
       }
-      console.log('targetEpisodes:', JSON.stringify(targetEpisodes, null, 2))
+      getLoggingService().debug('[SeriesCompleteness]', `targetEpisodes identified: ${targetEpisodes.length}`)
 
       const ownedKeys = new Set(episodes.map(e => `S${e.season_number}E${e.episode_number}`))
-      console.log('ownedKeys:', Array.from(ownedKeys))
+      getLoggingService().debug('[SeriesCompleteness]', `ownedKeys size: ${ownedKeys.size}`)
       const analysis = CompletenessEngine.calculateEpisodic(targetEpisodes, ownedKeys)
 
       const result: SeriesCompleteness = {
@@ -140,15 +155,32 @@ export class SeriesCompletenessService {
       // Artwork update for local sources
       const source = db.sources.getSourceById(sourceId || '')
       if (source && (source.source_type === 'local' || source.source_type === 'kodi-local')) {
-        for (const ep of episodes) {
+        const commonArtwork = {
+          posterUrl: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
+        }
+
+        // Group by season to batch update season posters
+        const seasonPosterUrls = new Map<number, string | undefined>()
+        for (const s of showDetails.seasons) {
+          seasonPosterUrls.set(s.season_number, tmdb.buildImageUrl(s.poster_path, 'w500') || undefined)
+        }
+
+        // Pre-calculate all artwork data
+        const artworkUpdates = episodes.map(ep => {
           const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
-          if (epData && ep.id) {
-            db.media.updateItemArtwork(ep.id, {
-              posterUrl: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
-              episodeThumbUrl: tmdb.buildImageUrl(epData.still_path, 'w500') || undefined,
-              seasonPosterUrl: tmdb.buildImageUrl(showDetails.seasons.find(s => s.season_number === ep.season_number)?.poster_path || null, 'w500') || undefined
-            })
+          return {
+            id: ep.id!,
+            artwork: {
+              ...commonArtwork,
+              episodeThumbUrl: epData ? tmdb.buildImageUrl(epData.still_path, 'w500') || undefined : undefined,
+              seasonPosterUrl: seasonPosterUrls.get(ep.season_number)
+            }
           }
+        })
+
+        // Apply updates
+        for (const update of artworkUpdates) {
+          db.media.updateItemArtwork(update.id, update.artwork)
         }
       }
 

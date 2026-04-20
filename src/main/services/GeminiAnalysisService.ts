@@ -32,7 +32,12 @@ export class GeminiAnalysisService {
    */
   async getCompressionAdvice(
     mediaId: number,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
     const item = db.media.getItem(mediaId)
 
@@ -92,7 +97,12 @@ export class GeminiAnalysisService {
    */
   async generateQualityReport(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
     const stats = db.stats.getLibraryStats()
     const distribution = getQualityAnalyzer().getQualityDistribution()
@@ -148,7 +158,12 @@ export class GeminiAnalysisService {
    */
   async generateUpgradePriorities(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
     const lowItems = db.media.getItems({
@@ -223,11 +238,16 @@ export class GeminiAnalysisService {
    */
   async generateCompletenessInsights(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
     const incompleteSeries = db.tvShows.getIncomplete()
-    const incompleteCollections = db.stats.getIncompleteCollections()
+    const incompleteCollections = db.movieCollections.getIncompleteCollections()
     const stats = db.stats.getLibraryStats()
 
     const dataContext = [
@@ -304,7 +324,12 @@ export class GeminiAnalysisService {
    */
   async generateWishlistAdvice(
     onDelta: (text: string) => void,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; skipped?: boolean }> {
+    const gemini = getGeminiService()
+    if (!gemini.isConfigured()) {
+      return { text: 'Gemini AI is not configured. Please add your API key in Settings > Services.', skipped: true }
+    }
+
     const db = getDatabase()
 
     const wishlistItems = db.wishlist.getItems({ status: 'active', limit: 50 })

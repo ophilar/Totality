@@ -49,7 +49,7 @@ export class AutoUpdateService {
     this.initialized = true
 
     if (!app.isPackaged) {
-      console.log('[AutoUpdate] Dev mode — checking works, download/install disabled')
+      getLoggingService().info('[AutoUpdate]', 'Dev mode — checking works, download/install disabled')
     }
 
     // Configure autoUpdater
@@ -72,7 +72,9 @@ export class AutoUpdateService {
       })
       try {
         getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
-      } catch (e) { throw e; }
+      } catch (e) {
+        getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
+      }
     })
 
     autoUpdater.on('update-not-available', (_info: UpdateInfo) => {
@@ -102,7 +104,9 @@ export class AutoUpdateService {
       })
       try {
         getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
-      } catch (e) { throw e; }
+      } catch (e) {
+        getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
+      }
     })
 
     autoUpdater.on('error', (err: Error) => {

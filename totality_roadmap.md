@@ -44,3 +44,11 @@
 - [x] **Protected Libraries**: Sensitive library protection via SHA-256 PIN lock and secure session state. (v0.4.3)
 - [x] **AI Upgrade Recommendations**: Retention scoring engine suggesting high-quality version preservation during deduplication. (v0.4.3)
 
+## Phase 6: Standardization & Real-Time Scanning (Complete)
+- [x] **IPC Standardization**: Transition all IPC channels to colon-separated resource naming (`db:media:list`, `db:media:getItem`).
+- [x] **1:1 UI Update Mandate**: Notify the renderer for every single item scanned/processed to provide fluid real-time feedback.
+- [x] **Reactive Analysis**: Automatically trigger background TMDB/Gemini analysis upon configuration updates (API key additions).
+- [x] **Provider Resilience**: Refactor all providers (Plex, Jellyfin, Emby, Kodi) for consistent progress reporting and failure handling.
+- [x] **Integration Integrity**: Establish permanent suite-wide integration tests for library scanning and IPC registration. (v0.4.4)
+- [x] **Database Concurrency**: Resolve "database table is locked" errors via SQLite `busy_timeout` and counter-based scan state management. (v0.4.4)
+

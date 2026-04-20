@@ -11,6 +11,7 @@
 
 import { BrowserWindow } from 'electron'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 import { safeSend } from '../ipc/utils/safeSend'
 import type { WishlistItem } from '../types/database'
 
@@ -83,9 +84,9 @@ export class WishlistCompletionService {
       // Notify the renderer
       safeSend(this.mainWindow, 'wishlist:autoCompleted', completed)
 
-      console.log(
-        `[WishlistCompletion] Auto-completed ${completed.length} item(s):`,
-        completed.map((c) => c.title).join(', ')
+      getLoggingService().info(
+        '[WishlistCompletion]',
+        `Auto-completed ${completed.length} item(s): ${completed.map((c) => c.title).join(', ')}`
       )
     }
   }

@@ -618,6 +618,19 @@ export class PlexProvider extends BaseMediaProvider {
           for (let j = 0; j < batch.length; j++) {
             const item = batch[j]
             const metaResult = metadataResults[j]
+            
+            scanned++ // Increment at start of processing each item
+            
+            // Notify on every item at start of processing
+            if (onProgress) {
+              onProgress({
+                current: scanned,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.title,
+                percentage: (scanned / totalItems) * 100,
+              })
+            }
 
             try {
               if (metaResult.status === 'rejected') {
@@ -627,7 +640,7 @@ export class PlexProvider extends BaseMediaProvider {
 
               const detailed = metaResult.value
               if (!detailed || !detailed.Media || detailed.Media.length === 0) {
-                getLoggingService().warn('[PlexProvider ${this.sourceId}]', `Skipping ${item.title}: no media data available`)
+                getLoggingService().warn(`[PlexProvider ${this.sourceId}]`, `Skipping ${item.title}: no media data available`)
                 continue
               }
 
@@ -672,18 +685,7 @@ export class PlexProvider extends BaseMediaProvider {
                 const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
                 await db.media.upsertQualityScore(qualityScore)
 
-                scanned++
                 result.itemsScanned++
-              }
-
-              if (onProgress) {
-                onProgress({
-                  current: scanned,
-                  total: totalItems,
-                  phase: 'processing',
-                  currentItem: item.title,
-                  percentage: (scanned / totalItems) * 100,
-                })
               }
             } catch (error: unknown) {
               result.errors.push(`Failed to process ${item.title}: ${getErrorMessage(error)}`)
@@ -710,14 +712,14 @@ export class PlexProvider extends BaseMediaProvider {
         // Incremental scan: fetch all current IDs from Plex to detect changes
         const libType = libraryType || await this.getPlexLibraryType(libraryId)
         if (libType) {
-          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Checking for changes in ${libType} library...`)
+          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Checking for changes in ${libType} library...`)
           const currentPlexIds = await this.getPlexLibraryItemIds(libraryId, libType)
           const itemType = libType === 'show' ? 'episode' : 'movie'
 
           // Check for deletions (items in DB but not in Plex)
           const removedCount = await this.removeStaleItems(currentPlexIds, itemType, libraryId)
           if (removedCount > 0) {
-            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Removed ${removedCount} deleted items`)
+            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Removed ${removedCount} deleted items`)
           }
           result.itemsRemoved = removedCount
 
@@ -732,11 +734,11 @@ export class PlexProvider extends BaseMediaProvider {
           }
 
           if (missingIds.length > 0) {
-            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Found ${missingIds.length} items in Plex not in DB, fetching...`)
+            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Found ${missingIds.length} items in Plex not in DB, fetching...`)
             // Fetch and process the missing items
             const addedCount = await this.fetchAndProcessMissingItems(missingIds, libraryId, libType, analyzer, onProgress)
             result.itemsAdded += addedCount
-            getLoggingService().info('[PlexProvider ${this.sourceId}]', `Added ${addedCount} missing items`)
+            getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Added ${addedCount} missing items`)
           }
         }
       }
@@ -761,13 +763,13 @@ export class PlexProvider extends BaseMediaProvider {
     const db = getDatabase()
     const items = db.media.getItems({ type, sourceId: this.sourceId, libraryId })
 
-    getLoggingService().info('[PlexProvider ${this.sourceId}]', `Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
+    getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Reconciling ${type}s: ${items.length} in DB, ${validIds.size} in Plex`)
 
     let removedCount = 0
     for (const item of items) {
       if (!validIds.has(item.plex_id)) {
         if (item.id) {
-          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
+          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Removing deleted ${type}: "${item.title}" (ID: ${item.plex_id})`)
           await db.media.deleteItem(item.id)
           removedCount++
         }
@@ -801,7 +803,7 @@ export class PlexProvider extends BaseMediaProvider {
       }
       return null
     } catch (error) {
-      getLoggingService().error('[PlexProvider ${this.sourceId}]', `Failed to get library type:`, error)
+      getLoggingService().error(`[PlexProvider ${this.sourceId}]`, `Failed to get library type:`, error)
       return null
     }
   }
@@ -830,7 +832,7 @@ export class PlexProvider extends BaseMediaProvider {
       }
     }
 
-    getLoggingService().info('[PlexProvider ${this.sourceId}]', `Got ${ids.size} item IDs for reconciliation`)
+    getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Got ${ids.size} item IDs for reconciliation`)
     return ids
   }
 
@@ -881,14 +883,14 @@ export class PlexProvider extends BaseMediaProvider {
               db.media.upsertQualityScore(qualityScore)
             }
           } catch (qualityError) {
-            getLoggingService().warn('[PlexProvider ${this.sourceId}]', `Failed to analyze quality for ${mediaItem.title}`)
+            getLoggingService().warn(`[PlexProvider ${this.sourceId}]`, `Failed to analyze quality for ${mediaItem.title}`)
           }
 
           addedCount++
-          getLoggingService().info('[PlexProvider ${this.sourceId}]', `Added missing ${itemType}: "${mediaItem.title}"`)
+          getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Added missing ${itemType}: "${mediaItem.title}"`)
         }
       } catch (error) {
-        getLoggingService().error('[PlexProvider ${this.sourceId}]', `Failed to fetch item ${ratingKey}:`, error)
+        getLoggingService().error(`[PlexProvider ${this.sourceId}]`, `Failed to fetch item ${ratingKey}:`, error)
       }
     }
 
@@ -951,12 +953,12 @@ export class PlexProvider extends BaseMediaProvider {
     if (sinceTimestamp) {
       const unixSeconds = Math.floor(sinceTimestamp.getTime() / 1000)
       params['addedAt>'] = unixSeconds
-      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Incremental scan: fetching items added after ${sinceTimestamp.toISOString()}`)
+      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Incremental scan: fetching items added after ${sinceTimestamp.toISOString()}`)
     }
 
     const items = await this.paginatedPlexFetch<PlexMediaItem>(url, Object.keys(params).length > 0 ? params : undefined)
     if (sinceTimestamp) {
-      getLoggingService().info('[PlexProvider ${this.sourceId}]', `Incremental scan found ${items.length} new/updated items`)
+      getLoggingService().info(`[PlexProvider ${this.sourceId}]`, `Incremental scan found ${items.length} new/updated items`)
     }
     return items
   }

@@ -227,7 +227,7 @@ export class MusicBrainzService extends CancellableOperation {
         retryableStatuses: [429, 500, 502, 503, 504],
         onRetry: (attempt, error, delay) => {
           getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
-          console.warn(`[MusicBrainzService] ${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
+          getLoggingService().warn('[MusicBrainzService]', `${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
         }
       }
     )
@@ -532,15 +532,15 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      console.log(`[MusicBrainzService] Total tracks extracted: ${tracks.length}`)
+      getLoggingService().info('[MusicBrainzService]', `Total tracks extracted: ${tracks.length}`)
       return { releaseId, tracks }
     } catch (error) {
       // 404 is expected when album isn't in MusicBrainz — log as warning without stack trace
       const is404 = error instanceof Error && error.message.includes('404')
       if (is404) {
-        console.warn('[MusicBrainzService] Track list not found in MusicBrainz (404)')
+        getLoggingService().warn('[MusicBrainzService]', 'Track list not found in MusicBrainz (404)')
       } else {
-        console.error('[MusicBrainzService] Track list fetch failed:', error)
+        getLoggingService().error('[MusicBrainzService]', 'Track list fetch failed:', error)
       }
       return null
     }

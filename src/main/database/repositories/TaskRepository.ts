@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { DatabaseSync } from 'node:sqlite'
 import { BaseRepository } from './BaseRepository'
 
@@ -55,12 +54,12 @@ export class TaskRepository extends BaseRepository<TaskHistoryEntry> {
 
   getTaskHistory(limit = 50): TaskHistoryEntry[] {
     const stmt = this.db.prepare('SELECT * FROM task_history ORDER BY recorded_at DESC LIMIT ?')
-    return stmt.all(limit) as TaskHistoryEntry[]
+    return stmt.all(limit) as unknown as TaskHistoryEntry[]
   }
 
   getActivityLogs(limit = 100): ActivityLogEntry[] {
     const stmt = this.db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?')
-    return stmt.all(limit) as ActivityLogEntry[]
+    return stmt.all(limit) as unknown as ActivityLogEntry[]
   }
 
   clearHistory(): void {

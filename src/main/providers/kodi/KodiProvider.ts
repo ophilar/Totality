@@ -605,7 +605,7 @@ export class KodiProvider extends BaseMediaProvider {
 
             // Log grouping info for first 10 items or potential multi-versions
             if (groupMap.size < 10 || groupMap.has(groupKey)) {
-              console.log(`[KodiProvider] Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
+              getLoggingService().debug('[KodiProvider]', `Grouping "${item.title}" → key="${groupKey}" (tmdb=${item.tmdbId || 'none'}, imdb=${item.imdbId || 'none'})`)
             }
 
             if (!groupMap.has(groupKey)) groupMap.set(groupKey, [])
@@ -623,6 +623,20 @@ export class KodiProvider extends BaseMediaProvider {
 
         let itemIndex = 0
         for (const group of groups) {
+          // Report progress for each item in the group BEFORE processing
+          for (const item of group) {
+            itemIndex++
+            if (onProgress) {
+              onProgress({
+                current: itemIndex,
+                total: totalItems,
+                phase: 'processing',
+                currentItem: item.title,
+                percentage: (itemIndex / totalItems) * 100,
+              })
+            }
+          }
+
           try {
             const versions: VersionData[] = group.map(m => this.convertMetadataToVersion(m))
 
@@ -660,13 +674,6 @@ export class KodiProvider extends BaseMediaProvider {
           } catch (error: unknown) {
             const names = group.map(g => g.title).join(', ')
             result.errors.push(`Failed to process ${names}: ${getErrorMessage(error)}`)
-          }
-
-          for (const item of group) {
-            itemIndex++
-            if (onProgress) {
-              onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: item.title, percentage: (itemIndex / totalItems) * 100 })
-            }
           }
 
           if (result.itemsScanned % 50 === 0 && result.itemsScanned > 0) {
