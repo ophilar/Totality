@@ -62,10 +62,15 @@ describe('TranscodingService (No Mocks)', () => {
     const originalFetch = globalThis.fetch
     vi.stubGlobal('fetch', async (url: any, init: any) => {
       const urlStr = url.toString()
-      if (urlStr.includes('googleapis.com') || urlStr.includes('googlegenerativeai.com')) {
+      try {
         const u = new URL(urlStr)
-        const mockUrl = `http://127.0.0.1:${serverPort}${u.pathname}${u.search}`
-        return originalFetch(mockUrl, init)
+        // Securely check if the request is destined for Google's Gemini API
+        if (u.hostname === 'generativelanguage.googleapis.com' || u.hostname === 'googlegenerativeai.com') {
+          const mockUrl = `http://127.0.0.1:${serverPort}${u.pathname}${u.search}`
+          return originalFetch(mockUrl, init)
+        }
+      } catch (e) {
+        // Ignore parsing errors for non-URL strings
       }
       return originalFetch(url, init)
     })
