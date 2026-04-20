@@ -85,7 +85,7 @@ export class SourceRepository extends BaseRepository<MediaSource> {
 
   setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): void {
     const db = this.db
-    db.exec('BEGIN')
+    db.exec('BEGIN IMMEDIATE')
     try {
       const stmt = db.prepare(`
         INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, created_at, updated_at)

@@ -98,7 +98,7 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
 
   addMany(items: Array<Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>>): number {
     let count = 0
-    this.db.exec('BEGIN DEFERRED')
+    this.db.exec('BEGIN IMMEDIATE')
     try {
       for (const item of items) {
         this.add(item)
