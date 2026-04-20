@@ -78,30 +78,4 @@ export class MovieCollectionRepository extends BaseRepository<MovieCollection> {
       data.completeness_percentage || 0, data.poster_url || null, data.backdrop_url || null
     )
   }
-
-  /**
-   * Links a media item to a collection (by tag name).
-   * Creates the collection entry if it doesn't exist.
-   */
-  public addMediaToCollection(mediaItemId: number, collectionTag: string): void {
-    // 1. Ensure collection exists
-    this.db.prepare(`
-      INSERT INTO movie_collections (collection_name, tmdb_collection_id, source_id, library_id, total_movies, owned_movies, missing_movies, owned_movie_ids, completeness_percentage, created_at, updated_at)
-      SELECT ?, NULL, source_id, library_id, 0, 0, '[]', '[]', 0, datetime('now'), datetime('now')
-      FROM media_items WHERE id = ?
-      WHERE NOT EXISTS (
-        SELECT 1 FROM movie_collections c
-        JOIN media_items m ON m.source_id = c.source_id AND m.library_id = c.library_id
-        WHERE c.collection_name = ? AND m.id = ?
-      )
-    `).run(collectionTag, mediaItemId, collectionTag, mediaItemId)
-
-    // 2. Link item to collection
-    this.db.prepare(`
-      INSERT INTO media_item_collections (media_item_id, collection_id)
-      SELECT ?, id FROM movie_collections 
-      WHERE collection_name = ?
-      ON CONFLICT DO NOTHING
-    `).run(mediaItemId, collectionTag)
-  }
 }
