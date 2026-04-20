@@ -3,7 +3,6 @@ import type { AnalysisProgress } from '../types'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null
-  scanProgressSize: number
   loadMedia: () => Promise<void>
   loadStats: (sourceId?: string) => Promise<void>
   loadCompletenessData: () => Promise<void>
@@ -36,9 +35,8 @@ interface UseLibraryEventListenersOptions {
  */
 export function useLibraryEventListeners({
   activeSourceId,
-  scanProgressSize: _scanProgressSize,
-  loadMedia: _loadMedia,
-  loadStats: _loadStats,
+  loadMedia,
+  loadStats,
   loadCompletenessData,
   loadMusicData,
   loadMusicCompletenessData,
@@ -58,28 +56,32 @@ export function useLibraryEventListeners({
 
   const handleLibraryUpdate = useCallback(
     (data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
-      // Only handle library toggle events (enable/disable libraries)
-      // Media and music reloads are handled manually by the user navigating
-      if (data.type !== 'libraryToggle') {
-        return
-      }
-
       // Debounce updates to avoid excessive refreshes
       if (pendingUpdateRef.current) {
         clearTimeout(pendingUpdateRef.current)
       }
       pendingUpdateRef.current = setTimeout(() => {
-        // Refresh enabled libraries when a library is toggled
-        // Only refresh if it's the active source or no sourceId specified
-        if (!data.sourceId || data.sourceId === activeSourceId) {
-          loadActiveSourceLibraries()
+        if (data.type === 'libraryToggle') {
+          // Refresh enabled libraries when a library is toggled
+          // Only refresh if it's the active source or no sourceId specified
+          if (!data.sourceId || data.sourceId === activeSourceId) {
+            loadActiveSourceLibraries()
+          }
+        } else if (data.type === 'media' || data.type === 'music') {
+          // Automatic reload for media/music when library is updated (e.g. during scan)
+          if (!data.sourceId || data.sourceId === activeSourceId) {
+            loadMedia()
+            loadStats(data.sourceId)
+          }
         }
         pendingUpdateRef.current = null
-      }, 500) // 500ms debounce for live updates
+      }, 1000) // 1000ms debounce for live updates during scans
     },
     [
       activeSourceId,
       loadActiveSourceLibraries,
+      loadMedia,
+      loadStats,
     ]
   )
 

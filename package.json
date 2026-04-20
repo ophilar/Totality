@@ -41,9 +41,9 @@
         "@dnd-kit/modifiers": "^9.0.0",
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
-        "@google/genai": "^1.46.0",
+        "@google/genai": "^1.50.1",
         "adm-zip": "^0.5.16",
-        "axios": "^1.14.0",
+        "axios": "1.15.1",
         "electron-updater": "^6.8.3",
         "lucide-react": "^1.7.0",
         "react": "^19.2.4",
@@ -52,6 +52,10 @@
         "react-virtuoso": "^4.18.3",
         "react-window": "^2.2.7",
         "zod": "^4.3.6"
+    },
+    "overrides": {
+        "follow-redirects": "1.16.0",
+        "protobufjs": "7.5.5"
     },
     "optionalDependencies": {
         "mysql2": "^3.20.0"

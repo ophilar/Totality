@@ -114,7 +114,7 @@ export function WishlistView(_props: WishlistViewProps) {
     try {
       await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
       setUpgrades(prev => prev.filter(u => u.id !== item.id))
-      emitDismissUpgrade({ mediaId: item.id })
+      emitDismissUpgrade({ mediaId: item.id! })
       addToast({ title: `Dismissed upgrade for ${item.title}`, type: 'success' })
     } catch (err) {
       window.electronAPI.log.error('[WishlistView]', 'Failed to dismiss upgrade:', err)

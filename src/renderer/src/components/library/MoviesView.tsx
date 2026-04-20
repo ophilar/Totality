@@ -1,11 +1,12 @@
 import { useState, useMemo, useCallback, memo, useRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film } from 'lucide-react'
 import { MediaGridView } from './MediaGridView'
 import { QualityBadges } from './QualityBadges'
 import { SlimDownBanner } from './SlimDownBanner'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
+import { useSources } from '../../contexts/SourceContext'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
 
@@ -90,7 +91,7 @@ export function MoviesView({
     for (const movie of movies) {
       const collection = getCollectionForMovie(movie)
       if (collection) {
-        moviesInCollections.add(movie.id)
+        moviesInCollections.add(movie.id!)
         const existing = collectionMovieMap.get(collection.tmdb_collection_id) || []
         existing.push(movie)
         collectionMovieMap.set(collection.tmdb_collection_id, existing)
@@ -108,7 +109,7 @@ export function MoviesView({
 
     if (!collectionsOnly) {
       for (const movie of movies) {
-        if (!moviesInCollections.has(movie.id)) {
+        if (!moviesInCollections.has(movie.id!)) {
           items.push({ type: 'movie', movie })
         }
       }
@@ -174,13 +175,40 @@ export function MoviesView({
     </div>
   )
 
+  const { isScanning, scanProgress } = useSources()
+  const activeScan = Array.from(scanProgress.values())[0]
+
   const emptyState = (
-    <div className="flex flex-col items-center justify-center text-center p-12">
-      <MoviePlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
-      <p className="text-muted-foreground text-xl font-medium">No movies found</p>
-      <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs">
-        Scan a movie library from the sidebar to start analyzing your collection
-      </p>
+    <div className="flex flex-col items-center justify-center text-center p-12 animate-in fade-in duration-700">
+      {isScanning ? (
+        <div className="flex flex-col items-center">
+          <div className="relative mb-6">
+            <RefreshCw className="w-16 h-16 text-primary animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Film className="w-6 h-6 text-primary/50" />
+            </div>
+          </div>
+          <p className="text-primary text-xl font-bold tracking-tight">Scan in Progress</p>
+          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
+            {activeScan ? (
+              <>
+                Found <span className="text-foreground font-semibold">{totalMovieCount}</span> items so far...
+                <br />
+                Currently <span className="text-primary font-medium">{activeScan.phase}</span>
+                {activeScan.currentItem && <span className="block mt-1 italic text-[10px] truncate max-w-[200px] mx-auto opacity-80">{activeScan.currentItem}</span>}
+              </>
+            ) : 'Discovering movies in your libraries...'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <MoviePlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
+          <p className="text-muted-foreground text-xl font-medium">No movies found</p>
+          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
+            Scan a movie library from the sidebar to start analyzing your collection
+          </p>
+        </>
+      )}
     </div>
   )
 
@@ -208,17 +236,17 @@ export function MoviesView({
             />
           </div>
         ) : (
-          <div key={`mov-${item.movie.id}`}>
+          <div key={`mov-${item.movie.id!}`}>
             <MovieCard
               movie={item.movie}
-              onClick={() => onSelectMovie(item.movie.id, item.movie)}
+              onClick={() => onSelectMovie(item.movie.id!, item.movie)}
               showSourceBadge={showSourceBadge}
               collectionData={getCollectionForMovie(item.movie)}
-              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id!, item.movie.title, item.movie.year || undefined, item.movie.file_path || undefined) : undefined}
+              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id!, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
               onDismissUpgrade={onDismissUpgrade}
-              isExpanded={expandedRecommendations.has(item.movie.id)}
-              onToggleOptimize={() => toggleRecommendation(item.movie.id)}
+              isExpanded={expandedRecommendations.has(item.movie.id!)}
+              onToggleOptimize={() => toggleRecommendation(item.movie.id!)}
             />
           </div>
         )
@@ -232,17 +260,17 @@ export function MoviesView({
             />
           </div>
         ) : (
-          <div key={`mov-l-${item.movie.id}`}>
+          <div key={`mov-l-${item.movie.id!}`}>
             <MovieListItem
               movie={item.movie}
-              onClick={() => onSelectMovie(item.movie.id, item.movie)}
+              onClick={() => onSelectMovie(item.movie.id!, item.movie)}
               showSourceBadge={showSourceBadge}
               collectionData={getCollectionForMovie(item.movie)}
-              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id, item.movie.title, item.movie.year, item.movie.file_path) : undefined}
-              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
+              onFixMatch={onFixMatch ? () => onFixMatch(item.movie.id!, item.movie.title, item.movie.year || undefined, item.movie.file_path || undefined) : undefined}
+              onRescan={onRescan && item.movie.source_id && item.movie.file_path ? () => onRescan(item.movie.id!, item.movie.source_id!, item.movie.library_id || null, item.movie.file_path!) : undefined}
               onDismissUpgrade={onDismissUpgrade}
-              isExpanded={expandedRecommendations.has(item.movie.id)}
-              onToggleOptimize={() => toggleRecommendation(item.movie.id)}
+              isExpanded={expandedRecommendations.has(item.movie.id!)}
+              onToggleOptimize={() => toggleRecommendation(item.movie.id!)}
             />
           </div>
         )
@@ -430,6 +458,14 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><MoviePlaceholder className="w-20 h-20 text-muted-foreground" /></div>
         )}
+
+        {/* Analyzing Overlay */}
+        {(movie.efficiency_score === null || movie.efficiency_score === undefined) && (
+          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
+            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
+            <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
+          </div>
+        )}
       </div>
 
       <div className="pt-2 flex gap-2 items-start">
@@ -492,11 +528,15 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate(movie.video_bitrate || 0)}</div>
         <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes(movie.file_size || 0)}</div>
         <div className="text-center">
-          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${movie.efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' : movie.efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
-            {movie.efficiency_score || 0}%
+          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${(movie.efficiency_score ?? 0) >= 85 ? 'bg-green-500/20 text-green-500' : (movie.efficiency_score ?? 0) >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
+            {(movie.efficiency_score ?? 0)}%
           </div>
         </div>
-        <div className="text-right"><span className={`text-xs font-medium ${movie.storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>{movie.storage_debt_bytes > 0 ? formatBytes(movie.storage_debt_bytes) : '-'}</span></div>
+        <div className="text-right">
+          <span className={`text-xs font-medium ${(movie.storage_debt_bytes ?? 0) > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+            {(movie.storage_debt_bytes ?? 0) > 0 ? formatBytes(movie.storage_debt_bytes ?? 0) : '-'}
+          </span>
+        </div>
         <div className="relative flex justify-center">
           {showMenuButton && (
             <div ref={menuRef}>

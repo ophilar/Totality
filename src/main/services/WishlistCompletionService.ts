@@ -11,6 +11,7 @@
 
 import { BrowserWindow } from 'electron'
 import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from './LoggingService'
 import { safeSend } from '../ipc/utils/safeSend'
 import type { WishlistItem } from '../types/database'
 
@@ -57,7 +58,7 @@ export class WishlistCompletionService {
    */
   async checkAndComplete(): Promise<void> {
     const db = getDatabase()
-    const activeItems = db.getActiveWishlistItems() as WishlistItem[]
+    const activeItems = db.wishlist.getItems({ status: 'active' }) as WishlistItem[]
 
     if (activeItems.length === 0) return
 
@@ -77,15 +78,15 @@ export class WishlistCompletionService {
     if (completed.length > 0) {
       // Mark items as completed in the database
       for (const item of completed) {
-        db.updateWishlistItem(item.id, { status: 'completed' })
+        db.wishlist.update(item.id, { status: 'completed' })
       }
 
       // Notify the renderer
       safeSend(this.mainWindow, 'wishlist:autoCompleted', completed)
 
-      console.log(
-        `[WishlistCompletion] Auto-completed ${completed.length} item(s):`,
-        completed.map((c) => c.title).join(', ')
+      getLoggingService().info(
+        '[WishlistCompletion]',
+        `Auto-completed ${completed.length} item(s): ${completed.map((c) => c.title).join(', ')}`
       )
     }
   }
@@ -111,7 +112,7 @@ export class WishlistCompletionService {
     // Batch check movies by TMDB ID
     if (movieItems.length > 0) {
       const tmdbIds = movieItems.map((i) => i.tmdb_id!)
-      const foundMovies = db.getMediaItemsByTmdbIds(tmdbIds)
+      const foundMovies = db.media.getItemsByTmdbIds(tmdbIds)
 
       for (const item of movieItems) {
         if (foundMovies.has(item.tmdb_id!)) {
@@ -127,7 +128,7 @@ export class WishlistCompletionService {
 
     // Check seasons by series_title + season_number
     for (const item of seasonItems) {
-      const count = db.getEpisodeCountForSeason(item.series_title!, item.season_number!)
+      const count = db.media.getEpisodeCountForSeason(item.series_title!, item.season_number!)
       if (count > 0) {
         completed.push({
           id: item.id!,
@@ -140,7 +141,7 @@ export class WishlistCompletionService {
 
     // Check episodes by series_title + season_number + episode_number
     for (const item of episodeItems) {
-      const count = db.getEpisodeCountForSeasonEpisode(item.series_title!, item.season_number!, item.episode_number!)
+      const count = db.media.getEpisodeCountForSeasonEpisode(item.series_title!, item.season_number!, item.episode_number!)
       if (count > 0) {
         completed.push({
           id: item.id!,
@@ -154,7 +155,7 @@ export class WishlistCompletionService {
     // Batch check albums by MusicBrainz ID
     if (albumItems.length > 0) {
       const mbIds = albumItems.map((i) => i.musicbrainz_id!)
-      const foundAlbums = db.getMusicAlbumsByMusicbrainzIds(mbIds)
+      const foundAlbums = db.music.getAlbumsByMusicbrainzIds(mbIds)
 
       for (const item of albumItems) {
         if (foundAlbums.has(item.musicbrainz_id!)) {
@@ -170,7 +171,7 @@ export class WishlistCompletionService {
 
     // Check tracks by MusicBrainz ID
     for (const item of trackItems) {
-      const track = db.getMusicTrackByMusicbrainzId(item.musicbrainz_id!)
+      const track = db.music.getTrackByMusicbrainzId(item.musicbrainz_id!)
       if (track) {
         completed.push({
           id: item.id!,
@@ -205,7 +206,7 @@ export class WishlistCompletionService {
     // Batch check video quality scores
     if (videoItems.length > 0) {
       const mediaItemIds = videoItems.map((i) => i.media_item_id!)
-      const qualityScores = db.getQualityScoresByMediaItemIds(mediaItemIds)
+      const qualityScores = db.media.getQualityScoresByMediaItemIds(mediaItemIds)
 
       for (const item of videoItems) {
         const score = qualityScores.get(item.media_item_id!)
@@ -224,11 +225,11 @@ export class WishlistCompletionService {
 
     // Check music album quality
     for (const item of musicItems) {
-      const albums = db.getMusicAlbumsByMusicbrainzIds([item.musicbrainz_id!])
+      const albums = db.music.getAlbumsByMusicbrainzIds([item.musicbrainz_id!])
       const album = albums.get(item.musicbrainz_id!)
       if (!album || !album.id) continue
 
-      const qualityScore = db.getMusicQualityScore(album.id)
+      const qualityScore = db.music.getQualityScore(album.id)
       if (!qualityScore) continue
 
       if (this.isMusicQualityImproved(item, qualityScore.quality_tier)) {

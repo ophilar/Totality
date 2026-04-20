@@ -1,28 +1,17 @@
-/**
- * QualityAnalyzer Unit Tests
- *
- * Tests for quality scoring logic including resolution tiers,
- * bitrate analysis, codec efficiency, and audio quality.
- */
-
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// Mock database getter before importing QualityAnalyzer
-vi.mock('../../src/main/database/getDatabase', () => ({
-  getDatabase: vi.fn(() => ({
-    getSettingsByPrefix: vi.fn(() => ({})),
-    upsertQualityScore: vi.fn(),
-  })),
-}))
-
 import { QualityAnalyzer } from '../../src/main/services/QualityAnalyzer'
+import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
 import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityScore } from '../../src/main/types/database'
 
 describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
+  let db: any
 
-  beforeEach(() => {
-    vi.clearAllMocks()
+  beforeEach(async () => {
+    resetBetterSQLiteServiceForTesting()
+    process.env.NODE_ENV = 'test'
+    db = getBetterSQLiteService()
+    await db.initialize()
     analyzer = new QualityAnalyzer()
   })
 

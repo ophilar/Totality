@@ -40,7 +40,7 @@ export function useDashboardData(activeSourceId: string | null) {
       setIncludeEps(summary.settings.includeEps)
       setIncludeSingles(summary.settings.includeSingles)
     } catch (err) {
-      console.error('Failed to load dashboard summary:', err)
+      window.electronAPI.log.error('Dashboard', 'Failed to load dashboard summary:', err)
       setError('Failed to load dashboard data. Please try again.')
     } finally {
       setIsLoading(false)
@@ -62,6 +62,20 @@ export function useDashboardData(activeSourceId: string | null) {
 
   useEffect(() => {
     const cleanup = window.electronAPI.onScanCompleted?.(() => {
+      loadDashboardData()
+    })
+    return () => cleanup?.()
+  }, [loadDashboardData])
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.onTaskQueueTaskComplete?.(() => {
+      loadDashboardData()
+    })
+    return () => cleanup?.()
+  }, [loadDashboardData])
+
+  useEffect(() => {
+    const cleanup = window.electronAPI.onLibraryUpdated?.(() => {
       loadDashboardData()
     })
     return () => cleanup?.()

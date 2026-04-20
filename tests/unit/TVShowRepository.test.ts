@@ -42,7 +42,7 @@ describe('TVShowRepository', () => {
 
   it('should return TV show summaries with episode counts', () => {
     // Use repository method instead of raw SQL to ensure all NOT NULL columns are handled
-    repo.upsertSeriesCompleteness({
+    repo.upsertCompleteness({
       series_title: 'Breaking Bad',
       source_id: 'src-1',
       library_id: 'lib-1',
@@ -54,17 +54,17 @@ describe('TVShowRepository', () => {
     } as SeriesCompleteness)
 
     // Insert actual episodes
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 2))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 2))
 
-    const summaries = repo.getTVShowSummaries()
+    const summaries = repo.getSummaries()
     expect(summaries).toHaveLength(1)
     expect(summaries[0].series_title).toBe('Breaking Bad')
     expect(summaries[0].current_episodes).toBe(2)
   })
 
   it('should filter TV shows by search query', () => {
-    repo.upsertSeriesCompleteness({
+    repo.upsertCompleteness({
       series_title: 'The Wire',
       total_seasons: 5,
       total_episodes: 60,
@@ -73,7 +73,7 @@ describe('TVShowRepository', () => {
       completeness_percentage: 100,
     } as SeriesCompleteness)
     
-    repo.upsertSeriesCompleteness({
+    repo.upsertCompleteness({
       series_title: 'Breaking Bad',
       total_seasons: 5,
       total_episodes: 62,
@@ -82,16 +82,16 @@ describe('TVShowRepository', () => {
       completeness_percentage: 100,
     } as SeriesCompleteness)
 
-    const results = repo.getTVShowSummaries({ searchQuery: 'Wire' })
+    const results = repo.getSummaries({ searchQuery: 'Wire' })
     expect(results).toHaveLength(1)
     expect(results[0].series_title).toBe('The Wire')
   })
 
   it('should retrieve episodes for a specific show', () => {
-    mediaRepo.upsertMediaItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertMediaItem(mockEpisode('The Wire', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
 
-    const episodes = repo.getTVShowEpisodes('Breaking Bad')
+    const episodes = repo.getEpisodes('Breaking Bad')
     expect(episodes).toHaveLength(1)
     expect(episodes[0].series_title).toBe('Breaking Bad')
   })

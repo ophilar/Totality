@@ -19,7 +19,7 @@ export function registerWishlistHandlers() {
   const storeService = getStoreSearchService()
 
   // Register generic list/count handlers
-  registerListHandlers('wishlist', (f) => db.wishlistRepo.getWishlistItems(f as any), () => db.wishlistRepo.getWishlistCount(), WishlistFiltersSchema, {
+  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as any), () => db.wishlist.getCount(), WishlistFiltersSchema, {
     listAlias: 'wishlist:getAll',
     countAlias: 'wishlist:getCount'
   })
@@ -50,7 +50,7 @@ export function registerWishlistHandlers() {
         } catch (e) { /* ignore TMDB errors */ }
       }
 
-      return db.wishlistRepo.add(validItem as any)
+      return db.wishlist.add(validItem as any)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error adding wishlist item:', error)
       throw error
@@ -65,7 +65,7 @@ export function registerWishlistHandlers() {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
       getLoggingService().info('[wishlist]', '[IPC wishlist:update] id:', validId)
-      db.wishlistRepo.update(validId, validUpdates as any)
+      db.wishlist.update(validId, validUpdates as any)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error updating wishlist item:', error)
@@ -80,23 +80,10 @@ export function registerWishlistHandlers() {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
       getLoggingService().info('[wishlist]', '[IPC wishlist:remove] id:', validId)
-      db.wishlistRepo.delete(validId)
+      db.wishlist.delete(validId)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error removing wishlist item:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get all wishlist items with optional filters
-   */
-  ipcMain.handle('wishlist:getAll', async (_event, filters?: unknown) => {
-    try {
-      const validFilters = validateInput(WishlistFiltersSchema, filters, 'wishlist:getAll')
-      return db.wishlistRepo.getWishlistItems(validFilters as any)
-    } catch (error) {
-      getLoggingService().error('[wishlist]', 'Error getting wishlist items:', error)
       throw error
     }
   })
@@ -107,21 +94,9 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getById', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
-      return db.wishlistRepo.getWishlistItemById(validId)
+      return db.wishlist.getWishlistItemById(validId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist item:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get the total count of wishlist items
-   */
-  ipcMain.handle('wishlist:getCount', async () => {
-    try {
-      return db.getWishlistCount()
-    } catch (error) {
-      getLoggingService().error('[wishlist]', 'Error getting wishlist count:', error)
       throw error
     }
   })
@@ -134,7 +109,7 @@ export function registerWishlistHandlers() {
       const validTmdbId = tmdbId !== undefined ? validateInput(z.string().max(20), tmdbId, 'wishlist:checkExists') : undefined
       const validMusicbrainzId = musicbrainzId !== undefined ? validateInput(z.string().max(100), musicbrainzId, 'wishlist:checkExists') : undefined
       const validMediaItemId = mediaItemId !== undefined ? validateInput(PositiveIntSchema, mediaItemId, 'wishlist:checkExists') : undefined
-      return db.wishlistRepo.exists(validTmdbId, validMusicbrainzId, validMediaItemId)
+      return db.wishlist.exists(validTmdbId, validMusicbrainzId, validMediaItemId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error checking wishlist existence:', error)
       throw error
@@ -146,7 +121,7 @@ export function registerWishlistHandlers() {
    */
   ipcMain.handle('wishlist:getCountsByReason', async () => {
     try {
-      return db.getWishlistCountsByReason()
+      return db.wishlist.getCountsByReason()
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist counts by reason:', error)
       throw error
@@ -177,7 +152,7 @@ export function registerWishlistHandlers() {
         }
       }
 
-      const added = await db.addWishlistItemsBulk(validItems as any)
+      const added = db.wishlist.addMany(validItems as any)
       return { success: true, added }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error bulk adding wishlist items:', error)
@@ -274,7 +249,7 @@ export function registerWishlistHandlers() {
       }
 
       // Get all items sorted for export
-      const items = db.getWishlistItems({
+      const items = db.wishlist.getItems({
         sortBy: 'priority',
         sortOrder: 'desc'
       })

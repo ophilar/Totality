@@ -1,7 +1,8 @@
 
-import React, { forwardRef, ReactNode } from 'react'
+import { forwardRef, ReactNode } from 'react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
+import { MediaCardSkeleton, Skeleton } from '../ui/Skeleton'
 
 interface MediaGridViewProps<T> {
   /** The data to display */
@@ -52,7 +53,43 @@ export function MediaGridView<T>({
   scrollElement,
 }: MediaGridViewProps<T>) {
   
-  if (items.length === 0 && !loading) {
+  if (items.length === 0) {
+    if (loading) {
+      return (
+        <div className="h-full flex flex-col">
+          {statsBar}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {viewType === 'list' ? (
+              <div className="space-y-2 p-4">
+                {[...Array(10)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 py-2 border-b border-border/10">
+                    <Skeleton className="w-10 h-14 shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/4" />
+                      <Skeleton className="h-3 w-1/6" />
+                    </div>
+                    <Skeleton className="w-20 h-4" />
+                    <Skeleton className="w-20 h-4" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                className="grid gap-8 p-4"
+                style={{
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))`
+                }}
+              >
+                {[...Array(12)].map((_, i) => (
+                  <MediaCardSkeleton key={i} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="h-full flex flex-col">
         {statsBar}

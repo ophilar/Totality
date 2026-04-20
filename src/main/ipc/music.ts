@@ -27,15 +27,15 @@ export function registerMusicHandlers(): void {
   const db = getDatabase()
 
   // Register generic list/count handlers
-  registerListHandlers('music:artists', (f) => db.musicRepo.getMusicArtists(f), (f) => db.musicRepo.countMusicArtists(f), MusicFiltersSchema, {
+  registerListHandlers('music:artists', (f) => db.music.getArtists(f), (f) => db.music.countMusicArtists(f), MusicFiltersSchema, {
     listAlias: 'music:getArtists',
     countAlias: 'music:countArtists'
   })
-  registerListHandlers('music:albums', (f) => db.musicRepo.getMusicAlbums(f), (f) => db.musicRepo.countMusicAlbums(f), MusicFiltersSchema, {
+  registerListHandlers('music:albums', (f) => db.music.getAlbums(f), (f) => db.music.countMusicAlbums(f), MusicFiltersSchema, {
     listAlias: 'music:getAlbums',
     countAlias: 'music:countAlbums'
   })
-  registerListHandlers('music:tracks', (f) => db.musicRepo.getMusicTracks(f), (f) => db.musicRepo.countMusicTracks(f), MusicFiltersSchema, {
+  registerListHandlers('music:tracks', (f) => db.music.getTracks(f), (f) => db.music.countMusicTracks(f), MusicFiltersSchema, {
     listAlias: 'music:getTracks',
     countAlias: 'music:countTracks'
   })
@@ -119,24 +119,24 @@ export function registerMusicHandlers(): void {
       // Analyze quality for all albums
       const db = getDatabase()
       const analyzer = getQualityAnalyzer()
-      const albums = db.musicRepo.getMusicAlbums({ sourceId: validSourceId })
+      const albums = db.music.getMusicAlbums({ sourceId: validSourceId })
       getLoggingService().info('[music:scanLibrary]', `Found ${albums.length} albums in database for sourceId=${validSourceId}`)
 
       // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = db.musicRepo.getMusicTracksByAlbumIds(albumIds)
+      const tracksByAlbum = db.music.getMusicTracksByAlbumIds(albumIds)
 
       db.startBatch()
       for (const album of albums) {
         const tracks = tracksByAlbum.get(album.id!) || []
         const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
-        db.musicRepo.upsertMusicQualityScore(qualityScore)
+        db.music.upsertQualityScore(qualityScore)
       }
       await db.endBatch()
 
       // Update library scan timestamp if successful
       if (result.success && library) {
-        db.sourceRepo.updateLibraryScanTime(
+        db.sources.updateLibraryScanTime(
           validSourceId,
           validLibraryId,
           result.itemsScanned
@@ -172,7 +172,7 @@ export function registerMusicHandlers(): void {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'music:getArtistById')
       const db = getDatabase()
-      return db.musicRepo.getMusicArtistById(validId)
+      return db.music.getArtistById(validId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getArtistById] Error:', error)
       throw error
@@ -186,7 +186,7 @@ export function registerMusicHandlers(): void {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'music:getAlbumById')
       const db = getDatabase()
-      return db.musicRepo.getMusicAlbumById(validId)
+      return db.music.getAlbumById(validId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAlbumById] Error:', error)
       throw error
@@ -200,7 +200,7 @@ export function registerMusicHandlers(): void {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getTracksByAlbum')
       const db = getDatabase()
-      return db.musicRepo.getMusicTracks({ albumId: validAlbumId })
+      return db.music.getTracks({ albumId: validAlbumId })
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getTracksByAlbum] Error:', error)
       throw error
@@ -214,7 +214,7 @@ export function registerMusicHandlers(): void {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
       const db = getDatabase()
-      return db.musicRepo.getMusicStats(validSourceId)
+      return db.music.getStats(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getStats] Error:', error)
       throw error
@@ -232,7 +232,7 @@ export function registerMusicHandlers(): void {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumQuality')
       const db = getDatabase()
-      return db.musicRepo.getMusicQualityScore(validAlbumId)
+      return db.music.getQualityScore(validAlbumId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAlbumQuality] Error:', error)
       throw error
@@ -247,7 +247,7 @@ export function registerMusicHandlers(): void {
       const validLimit = limit !== undefined ? validateInput(z.number().int().positive().optional(), limit, 'music:getAlbumsNeedingUpgrade') : undefined
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAlbumsNeedingUpgrade') : undefined
       const db = getDatabase()
-      return db.musicRepo.getAlbumsNeedingUpgrade(validLimit, validSourceId)
+      return db.music.getAlbumsNeedingUpgrade(validLimit, validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAlbumsNeedingUpgrade] Error:', error)
       throw error
@@ -266,11 +266,11 @@ export function registerMusicHandlers(): void {
 
     try {
       const filters: MusicFilters = validSourceId ? { sourceId: validSourceId } : {}
-      const albums = db.musicRepo.getMusicAlbums(filters)
+      const albums = db.music.getMusicAlbums(filters)
 
       // Bolt ⚡ Optimization: Batch fetch all tracks to avoid N+1 queries.
       const albumIds = albums.map((a: { id?: number }) => a.id).filter((id: number | undefined): id is number => id != null)
-      const tracksByAlbum = db.musicRepo.getMusicTracksByAlbumIds(albumIds)
+      const tracksByAlbum = db.music.getMusicTracksByAlbumIds(albumIds)
 
       let processed = 0
 
@@ -278,7 +278,7 @@ export function registerMusicHandlers(): void {
       for (const album of albums) {
         const tracks = tracksByAlbum.get(album.id!) || []
         const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
-        db.musicRepo.upsertMusicQualityScore(qualityScore)
+        db.music.upsertQualityScore(qualityScore)
 
         processed++
         onProgress({
@@ -367,14 +367,14 @@ export function registerMusicHandlers(): void {
       const db = getDatabase()
       const mbService = getMusicBrainzService()
 
-      const artist = db.musicRepo.getMusicArtistById(validArtistId)
+      const artist = db.music.getArtistById(validArtistId)
       if (!artist) {
         throw new Error(`Artist not found: ${validArtistId}`)
       }
 
       // Get albums by artist_id AND by artist_name to catch all albums
-      const albumsById = db.musicRepo.getMusicAlbums({ artistId: validArtistId })
-      const albumsByName = db.musicRepo.getMusicAlbumsByArtistName(artist.name)
+      const albumsById = db.music.getAlbums({ artistId: validArtistId })
+      const albumsByName = db.music.getAlbumsByArtistName(artist.name)
 
       // Combine and deduplicate by album id
       const albumMap = new Map<number, typeof albumsById[0]>()
@@ -395,14 +395,14 @@ export function registerMusicHandlers(): void {
         ownedMbIds
       )
 
-      db.musicRepo.upsertArtistCompleteness(completeness)
+      db.music.upsertArtistCompleteness(completeness)
 
       // Also analyze track completeness for all owned albums
       getLoggingService().info('[music:analyzeArtistCompleteness]', `Analyzing track completeness for ${albums.length} albums...`)
       for (const album of albums) {
         if (!album.id) continue
         try {
-          const tracks = db.musicRepo.getMusicTracks({ albumId: album.id }) as MusicTrack[]
+          const tracks = db.music.getTracks({ albumId: album.id }) as MusicTrack[]
           const trackTitles = tracks.map((t: MusicTrack) => t.title)
 
           const albumCompleteness = await mbService.analyzeAlbumTrackCompleteness(
@@ -414,7 +414,7 @@ export function registerMusicHandlers(): void {
           )
 
           if (albumCompleteness) {
-            db.musicRepo.upsertAlbumCompleteness(albumCompleteness)
+            db.music.upsertAlbumCompleteness(albumCompleteness)
             getLoggingService().info('[music:analyzeArtistCompleteness]', `${album.title}: ${albumCompleteness.owned_tracks}/${albumCompleteness.total_tracks} tracks`)
           }
         } catch (albumError) {
@@ -436,7 +436,7 @@ export function registerMusicHandlers(): void {
     try {
       const validArtistName = validateInput(NonEmptyStringSchema, artistName, 'music:getArtistCompleteness')
       const db = getDatabase()
-      return db.musicRepo.getArtistCompleteness(validArtistName)
+      return db.music.getArtistCompleteness(validArtistName)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getArtistCompleteness] Error:', error)
       throw error
@@ -450,7 +450,7 @@ export function registerMusicHandlers(): void {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getAllArtistCompleteness') : undefined
       const db = getDatabase()
-      return db.musicRepo.getAllArtistCompleteness(validSourceId)
+      return db.music.getAllArtistCompleteness(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAllArtistCompleteness] Error:', error)
       throw error
@@ -466,14 +466,14 @@ export function registerMusicHandlers(): void {
       const db = getDatabase()
       const mbService = getMusicBrainzService()
 
-      const album = db.musicRepo.getMusicAlbumById(validAlbumId)
+      const album = db.music.getAlbumById(validAlbumId)
       if (!album) {
         throw new Error(`Album not found: ${validAlbumId}`)
       }
 
       getLoggingService().info('[music:analyzeAlbumTrackCompleteness]', `Analyzing: ${album.artist_name} - ${album.title} (id=${validAlbumId}, mbid=${album.musicbrainz_id || 'none'})`)
 
-      const tracks = db.musicRepo.getMusicTracks({ albumId: validAlbumId }) as MusicTrack[]
+      const tracks = db.music.getTracks({ albumId: validAlbumId }) as MusicTrack[]
       const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
       getLoggingService().info('[music:analyzeAlbumTrackCompleteness]', `Owned tracks: ${ownedTrackTitles.length}`)
 
@@ -487,7 +487,7 @@ export function registerMusicHandlers(): void {
 
       if (completeness) {
         getLoggingService().info('[music:analyzeAlbumTrackCompleteness]', `Found completeness: ${completeness.owned_tracks}/${completeness.total_tracks} tracks, missing: ${completeness.total_tracks - completeness.owned_tracks}`)
-        db.musicRepo.upsertAlbumCompleteness(completeness)
+        db.music.upsertAlbumCompleteness(completeness)
       } else {
         getLoggingService().info('[music:analyzeAlbumTrackCompleteness]', `No completeness data found (album not in MusicBrainz?)`)
       }
@@ -506,7 +506,7 @@ export function registerMusicHandlers(): void {
     try {
       const validAlbumId = validateInput(PositiveIntSchema, albumId, 'music:getAlbumCompleteness')
       const db = getDatabase()
-      return db.musicRepo.getAlbumCompleteness(validAlbumId)
+      return db.music.getAlbumCompleteness(validAlbumId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAlbumCompleteness] Error:', error)
       throw error
@@ -519,7 +519,7 @@ export function registerMusicHandlers(): void {
   ipcMain.handle('music:getAllAlbumCompleteness', async () => {
     try {
       const db = getDatabase()
-      return db.musicRepo.getAllAlbumCompleteness()
+      return db.music.getAllAlbumCompleteness()
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getAllAlbumCompleteness] Error:', error)
       throw error
@@ -532,7 +532,7 @@ export function registerMusicHandlers(): void {
   ipcMain.handle('music:getIncompleteAlbums', async () => {
     try {
       const db = getDatabase()
-      return db.musicRepo.getIncompleteAlbums()
+      return db.music.getIncompleteAlbums()
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getIncompleteAlbums] Error:', error)
       throw error
@@ -597,17 +597,17 @@ export function registerMusicHandlers(): void {
       const win = getWindowFromEvent(event)
 
       // Get the artist
-      const artist = db.getMusicArtistById(validArtistId)
+      const artist = db.music.getArtistById(validArtistId)
       if (!artist) {
         throw new Error(`Artist not found: ${validArtistId}`)
       }
 
       // Update the artist with the new MusicBrainz ID
-      await db.updateArtistMatch(validArtistId, validMusicbrainzId)
+      db.music.updateMusicArtistMbid(validArtistId, validMusicbrainzId)
 
       // Get albums for re-analysis
-      const albumsById = db.getMusicAlbums({ artistId: validArtistId })
-      const albumsByName = db.getMusicAlbumsByArtistName(artist.name)
+      const albumsById = db.music.getAlbums({ artistId: validArtistId })
+      const albumsByName = db.music.getAlbumsByArtistName(artist.name)
 
       // Combine and deduplicate
       const albumMap = new Map<number, typeof albumsById[0]>()
@@ -629,7 +629,7 @@ export function registerMusicHandlers(): void {
         ownedMbIds
       )
 
-      await db.upsertArtistCompleteness(completeness)
+      db.music.upsertArtistCompleteness(completeness)
 
       // Send library update for live refresh
       safeSend(win, 'library:updated', { type: 'music' })
@@ -672,16 +672,16 @@ export function registerMusicHandlers(): void {
       const win = getWindowFromEvent(event)
 
       // Get the album
-      const album = db.getMusicAlbumById(validAlbumId)
+      const album = db.music.getAlbumById(validAlbumId)
       if (!album) {
         throw new Error(`Album not found: ${validAlbumId}`)
       }
 
       // Update the album with the new MusicBrainz ID
-      await db.updateAlbumMatch(validAlbumId, validMusicbrainzReleaseGroupId)
+      db.music.updateMusicAlbumMbid(validAlbumId, validMusicbrainzReleaseGroupId)
 
       // Get tracks for re-analysis
-      const tracks = db.getMusicTracks({ albumId: validAlbumId }) as MusicTrack[]
+      const tracks = db.music.getTracks({ albumId: validAlbumId }) as MusicTrack[]
       const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
 
       // Re-analyze track completeness with the new MusicBrainz ID
@@ -694,7 +694,7 @@ export function registerMusicHandlers(): void {
       )
 
       if (completeness) {
-        await db.upsertAlbumCompleteness(completeness)
+        db.music.upsertAlbumCompleteness(completeness)
       }
 
       // Send library update for live refresh

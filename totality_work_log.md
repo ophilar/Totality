@@ -1,3 +1,10 @@
+## 2026-04-13
+- **Test Infrastructure Stability:**
+    - Fixed an infinite test loop where Vitest's watch mode was triggered by its own SQLite database artifacts and internal results cache.
+    - Identified that `test.watchExclude` is deprecated in Vitest 4.x/Vite 8.x; migrated all ignore patterns to the root-level `server.watch.ignored` configuration.
+    - Explicitly excluded `node_modules`, `dist`, and SQLite journal files (`**/*.db-*`) from the watcher to prevent self-triggering re-runs.
+    - Verified 665 passing tests with stable execution in watch mode.
+
 ## 2026-04-11
 - **Phase 5: Reliability & Optimization Completion (v0.4.3):**
     - **Intra-Source Deduplication:** Implemented a new `DeduplicationService` and `DuplicatesView` UI to detect and resolve redundant files within the same provider. Features a retention scoring engine that favors high resolution (4K > 1080p) and original language matches.

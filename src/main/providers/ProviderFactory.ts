@@ -48,19 +48,20 @@ export function createProvider(type: ProviderType, config: SourceConfig): MediaP
   }
 }
 
+const SUPPORTED_PROVIDERS: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
+
 /**
  * Check if a provider type is supported
  */
 export function isProviderSupported(type: ProviderType): boolean {
-  const supportedProviders: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
-  return supportedProviders.includes(type)
+  return SUPPORTED_PROVIDERS.includes(type)
 }
 
 /**
  * Get list of all supported provider types
  */
 export function getSupportedProviders(): ProviderType[] {
-  return ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
+  return [...SUPPORTED_PROVIDERS]
 }
 
 /**

@@ -68,7 +68,7 @@ export function registerCollectionHandlers() {
   // Get collection stats
   ipcMain.handle('collections:getStats', async () => {
     try {
-      return service.getStats()
+      return getMovieCollectionService().getStats()
     } catch (error) {
       getLoggingService().error('[collections]', 'Error getting collection stats:', error)
       throw error

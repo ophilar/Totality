@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '../../types/database'
 import { BaseRepository } from './BaseRepository'
 
@@ -8,14 +7,14 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     super(db, 'series_completeness')
   }
 
-  getTVShowSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
+  getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): TVShowSummary[] {
     let sql = `
       SELECT sc.*, 
              (SELECT COUNT(*) FROM media_items m WHERE m.series_title = sc.series_title AND m.type = 'episode' AND m.source_id = sc.source_id) as current_episodes
       FROM series_completeness sc
       WHERE 1=1
     `
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     if (filters?.sourceId) {
       sql += ' AND sc.source_id = ?'
@@ -63,12 +62,12 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     }
 
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as TVShowSummary[]
+    return stmt.all(...params) as unknown as TVShowSummary[]
   }
 
-  countTVShows(filters?: TVShowFilters): number {
+  count(filters?: TVShowFilters): number {
     let sql = 'SELECT COUNT(*) as count FROM series_completeness WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLInputValue[] = []
 
     if (filters?.sourceId) {
       sql += ' AND source_id = ?'
@@ -92,18 +91,18 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     }
 
     const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as { count: number }
+    const result = stmt.get(...params) as unknown as { count: number } | undefined
     return result?.count || 0
   }
 
-  getTVShowEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
+  getEpisodes(seriesTitle: string, sourceId?: string): MediaItem[] {
     let sql = `
       SELECT m.*, q.quality_tier, q.tier_quality, q.tier_score, q.efficiency_score, q.storage_debt_bytes
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       WHERE m.series_title = ? AND m.type = 'episode'
     `
-    const params: unknown[] = [seriesTitle]
+    const params: SQLInputValue[] = [seriesTitle]
 
     if (sourceId) {
       sql += ' AND m.source_id = ?'
@@ -112,15 +111,24 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
 
     sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as MediaItem[]
+    return stmt.all(...params) as unknown as MediaItem[]
   }
 
-  getSeriesCompletenessByTitle(title: string, sourceId: string, libraryId: string): SeriesCompleteness | null {
-    const sql = 'SELECT * FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
-    return this.queryOne<SeriesCompleteness>(sql, [title, sourceId, libraryId])
+  getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null {
+    let sql = 'SELECT * FROM series_completeness WHERE series_title = ?'
+    const params: SQLInputValue[] = [title]
+    if (sourceId) {
+      sql += ' AND source_id = ?'
+      params.push(sourceId)
+    }
+    if (libraryId) {
+      sql += ' AND library_id = ?'
+      params.push(libraryId)
+    }
+    return this.queryOne<SeriesCompleteness>(sql, params)
   }
 
-  upsertSeriesCompleteness(data: SeriesCompleteness): number {
+  upsertCompleteness(data: SeriesCompleteness): number {
     const stmt = this.db.prepare(`
       INSERT INTO series_completeness (
         series_title, source_id, library_id, total_seasons, total_episodes,
@@ -164,29 +172,29 @@ export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
     return row?.id || 0
   }
 
-  getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
+  getAllCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE 1=1'
-    const params = []
+    const params: SQLInputValue[] = []
     if (sourceId) { sql += ' AND source_id = ?'; params.push(sourceId) }
     if (libraryId) { sql += ' AND library_id = ?'; params.push(libraryId) }
     sql += ' ORDER BY series_title ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as SeriesCompleteness[]
+    return stmt.all(...params) as unknown as SeriesCompleteness[]
   }
 
-  getIncompleteSeries(sourceId?: string): SeriesCompleteness[] {
+  getIncomplete(sourceId?: string): SeriesCompleteness[] {
     let sql = 'SELECT * FROM series_completeness WHERE completeness_percentage < 100'
-    const params = []
+    const params: SQLInputValue[] = []
     if (sourceId) {
       sql += ' AND source_id = ?'
       params.push(sourceId)
     }
     sql += ' ORDER BY completeness_percentage ASC'
     const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as SeriesCompleteness[]
+    return stmt.all(...params) as unknown as SeriesCompleteness[]
   }
 
-  deleteSeriesCompleteness(id: number): void {
+  deleteCompleteness(id: number): void {
     this.db.prepare('DELETE FROM series_completeness WHERE id = ?').run(id)
   }
 }

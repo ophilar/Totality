@@ -293,7 +293,7 @@ export function registerSourceHandlers(): void {
       const libraries = await manager.getLibraries(validSourceId)
 
       // Get stored library settings from database
-      const storedLibraries = db.getSourceLibraries(validSourceId) as Array<{
+      const storedLibraries = db.sources.getSourceLibraries(validSourceId) as Array<{
         libraryId: string
         libraryName: string
         libraryType: string
@@ -332,7 +332,7 @@ export function registerSourceHandlers(): void {
       const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggleLibrary')
       getLoggingService().info('[IPC sources:toggleLibrary]', validSourceId, validLibraryId, validEnabled ? 'enabled' : 'disabled')
       const db = getDatabase()
-      await db.toggleLibrary(validSourceId, validLibraryId, validEnabled)
+      await db.sources.toggleLibrary(validSourceId, validLibraryId, validEnabled)
 
       // Notify renderer that library settings changed
       const win = getWindowFromEvent(event)
@@ -357,7 +357,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:setLibrariesEnabled')
       const db = getDatabase()
-      await db.setLibrariesEnabled(validSourceId, libraries)
+      await db.sources.setLibrariesEnabled(validSourceId, libraries)
       return { success: true }
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error setting libraries enabled:', error)
@@ -372,7 +372,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getEnabledLibraryIds')
       const db = getDatabase()
-      return db.getEnabledLibraryIds(validSourceId)
+      return db.sources.getEnabledLibraryIds(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error getting enabled library IDs:', error)
       throw error
@@ -414,6 +414,21 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[IPC sources:scanLibrary]', `Scan complete, sent ${progressCount} progress events`)
+
+      // Emit scan:completed for toast and refresh
+      if (result.success && !result.cancelled) {
+        const source = await manager.getSource(validSourceId)
+        safeSend(win, 'scan:completed', {
+          sourceId: validSourceId,
+          libraryId: validLibraryId,
+          libraryName: source?.display_name || 'Library',
+          itemsScanned: result.itemsScanned,
+          itemsAdded: result.itemsAdded,
+          itemsUpdated: result.itemsUpdated,
+          isFirstScan: false // Manual scans aren't necessarily first
+        })
+      }
+
       return result
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error scanning library:', error)
@@ -434,6 +449,23 @@ export function registerSourceHandlers(): void {
       const results = await manager.scanAllSources((sourceId, sourceName, progress) => {
         onProgress(progress, { sourceId, sourceName })
       })
+
+      // Emit scan:completed for each library that was successful
+      for (const [key, result] of results.entries()) {
+        if (result.success && !result.cancelled) {
+          const [sourceId, libraryId] = key.split(':')
+          const source = await manager.getSource(sourceId)
+          safeSend(win, 'scan:completed', {
+            sourceId,
+            libraryId,
+            libraryName: source?.display_name || 'Library',
+            itemsScanned: result.itemsScanned,
+            itemsAdded: result.itemsAdded,
+            itemsUpdated: result.itemsUpdated,
+            isFirstScan: (result as any).isFirstScan || false
+          })
+        }
+      }
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({
@@ -511,6 +543,21 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Scan complete: ${result.itemsScanned} items`)
+
+      // Emit scan:completed for toast and refresh
+      if (result.success && !result.cancelled) {
+        const source = await manager.getSource(validSourceId)
+        safeSend(win, 'scan:completed', {
+          sourceId: validSourceId,
+          libraryId: validLibraryId,
+          libraryName: source?.display_name || 'Library',
+          itemsScanned: result.itemsScanned,
+          itemsAdded: result.itemsAdded,
+          itemsUpdated: result.itemsUpdated,
+          isFirstScan: false
+        })
+      }
+
       return result
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error in incremental library scan:', error)
@@ -534,6 +581,23 @@ export function registerSourceHandlers(): void {
       })
 
       getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Incremental scan complete')
+
+      // Emit scan:completed for each library that was successful
+      for (const [key, result] of results.entries()) {
+        if (result.success && !result.cancelled) {
+          const [sourceId, libraryId] = key.split(':')
+          const source = await manager.getSource(sourceId)
+          safeSend(win, 'scan:completed', {
+            sourceId,
+            libraryId,
+            libraryName: source?.display_name || 'Library',
+            itemsScanned: result.itemsScanned,
+            itemsAdded: result.itemsAdded,
+            itemsUpdated: result.itemsUpdated,
+            isFirstScan: false
+          })
+        }
+      }
 
       // Convert Map to array for IPC
       return Array.from(results.entries()).map(([key, value]) => ({

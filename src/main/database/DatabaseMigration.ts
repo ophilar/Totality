@@ -241,17 +241,17 @@ function migrateExistingItemsToVersions(db: DatabaseSync): void {
 
 function cleanupOrphanedRecords(db: DatabaseSync): void {
   try {
-    db.exec('BEGIN DEFERRED')
+    db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
       db.prepare('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
       db.prepare('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)').run()
       db.exec('COMMIT')
-    } catch(err) { 
+    } catch(err) {
       db.exec('ROLLBACK')
-      throw err 
+      throw err
     }
-  } catch (e) { 
+  } catch (e) {
     getLoggingService().error('[DatabaseMigration]', 'Cleanup error: ' + getErrorMessage(e))
   }
 }

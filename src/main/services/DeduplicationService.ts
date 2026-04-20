@@ -1,6 +1,6 @@
+import * as fs from 'fs'
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
-import { MediaItem } from '../types/database'
 
 export interface RetentionPolicy {
   preferHighestResolution: boolean
@@ -23,8 +23,8 @@ export class DeduplicationService {
    */
   async scanForDuplicates(sourceId?: string): Promise<number> {
     const db = getDatabase()
-    const allMovies = db.getMediaItems({ type: 'movie', sourceId })
-    const allEpisodes = db.getMediaItems({ type: 'episode', sourceId })
+    const allMovies = db.media.getItems({ type: 'movie', sourceId })
+    const allEpisodes = db.media.getItems({ type: 'episode', sourceId })
     
     let count = 0
     
@@ -52,7 +52,7 @@ export class DeduplicationService {
     for (const [key, ids] of movieGroups.entries()) {
       if (ids.length > 1) {
         const [sId, tmdbId] = key.split(':')
-        db.duplicateRepo.upsertDuplicate({
+        db.duplicates.upsertDuplicate({
           source_id: sId,
           external_id: tmdbId,
           external_type: 'tmdb_movie',
@@ -68,7 +68,7 @@ export class DeduplicationService {
         const parts = key.split(':')
         const sId = parts[0]
         // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
-        db.duplicateRepo.upsertDuplicate({
+        db.duplicates.upsertDuplicate({
           source_id: sId,
           external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
           external_type: 'tmdb_series',
@@ -102,7 +102,7 @@ export class DeduplicationService {
    */
   recommendRetention(mediaItemIds: number[]): { keep: number; discard: number[]; reason: string } {
     const db = getDatabase()
-    const items = mediaItemIds.map(id => db.getMediaItemById(id)).filter((i): i is MediaItem => !!i)
+    const items = db.media.getItemsByIds(mediaItemIds)
     
     if (items.length <= 1) return { keep: items[0]?.id || 0, discard: [], reason: 'Only one item' }
 
@@ -139,7 +139,7 @@ export class DeduplicationService {
     const discardIds = scores.slice(1).map(s => s.id)
     
     return {
-      keep: keepId,
+      keep: keepId!,
       discard: discardIds,
       reason: `Based on policy: Highest score (${scores[0].score.toFixed(1)})`
     }
@@ -150,7 +150,7 @@ export class DeduplicationService {
    */
   async resolveDuplicate(duplicateId: number, keepItemId: number, deleteOthers: boolean = false): Promise<boolean> {
     const db = getDatabase()
-    const duplicate = db.duplicateRepo.getById(duplicateId)
+    const duplicate = db.duplicates.getById(duplicateId)
     if (!duplicate) throw new Error('Duplicate group not found')
     
     const allIds = JSON.parse(duplicate.media_item_ids) as number[]
@@ -160,27 +160,29 @@ export class DeduplicationService {
     const actualDelete = deleteOthers && (policy.autoDelete || true) // If manual resolve, we respect the deleteOthers flag
 
     if (actualDelete) {
-      for (const id of discardIds) {
-        const item = db.getMediaItemById(id)
-        if (item && item.file_path) {
+      const items = db.media.getItemsByIds(discardIds)
+      for (const item of items) {
+        if (item.file_path) {
           try {
-            const fs = require('fs')
             if (fs.existsSync(item.file_path)) {
               getLoggingService().info('[DeduplicationService]', `Deleting duplicate file: ${item.file_path}`)
               fs.unlinkSync(item.file_path)
             }
-            db.deleteMediaItem(id)
+            // Only delete from DB if file unlinked successfully (or didn't exist)
+            db.media.deleteItem(item.id!)
           } catch (err) {
             getLoggingService().error('[DeduplicationService]', `Failed to delete file ${item.file_path}:`, err)
           }
+        } else {
+          // No path, just delete record
+          db.media.deleteItem(item.id!)
         }
       }
     } else {
       // Just mark them as resolved but don't delete files
-      // Maybe we should hide them from UI?
     }
     
-    db.duplicateRepo.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
+    db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
     return true
   }
 }

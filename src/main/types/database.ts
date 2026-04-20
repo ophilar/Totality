@@ -188,8 +188,13 @@ export interface MediaItem {
   quality_tier?: string
   tier_quality?: string
   tier_score?: number
+  overall_score?: number
   efficiency_score?: number
   storage_debt_bytes?: number
+  needs_upgrade?: boolean
+  bitrate_tier_score?: number
+  audio_tier_score?: number
+  issues?: string
 
   // Timestamps
   created_at?: string
@@ -329,6 +334,8 @@ export interface SeriesCompleteness {
   backdrop_url?: string | null | undefined
   status?: string // "Returning Series", "Ended", "Canceled"
 
+  last_sync_at?: string
+
   created_at?: string
   updated_at?: string
 }
@@ -404,6 +411,8 @@ export interface TVShowSummary {
   series_title: string
   episode_count: number
   season_count: number
+  total_episodes: number // Alias for episode_count
+  total_seasons: number  // Alias for season_count
   poster_url?: string
   source_id?: string
   source_type?: string
@@ -488,6 +497,7 @@ export interface MusicAlbum {
   // Quality info
   track_count?: number
   total_duration?: number
+  duration_ms?: number // Alias for total_duration used by renderer
   total_size?: number
 
   // Audio quality (best track)
@@ -533,6 +543,7 @@ export interface MusicTrack {
   track_number?: number
   disc_number?: number
   duration?: number // Duration in ms
+  duration_ms?: number // Alias for duration used by renderer
 
   // File information
   file_path?: string

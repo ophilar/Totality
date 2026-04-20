@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { DatabaseSync } from 'node:sqlite'
 import { getCredentialEncryptionService } from '../../services/CredentialEncryptionService'
 
@@ -59,16 +58,16 @@ export class ConfigRepository {
   }
 
   async setPin(pin: string): Promise<void> {
-    const { hash } = await import('node:crypto')
-    const hashed = hash('sha256', pin)
+    const { createHash } = await import('node:crypto')
+    const hashed = createHash('sha256').update(pin).digest('hex')
     this.setSetting('app_pin_hash', hashed)
   }
 
   async verifyPin(pin: string): Promise<boolean> {
     const stored = this.getSetting('app_pin_hash')
     if (!stored) return true // No PIN set
-    const { hash } = await import('node:crypto')
-    const hashed = hash('sha256', pin)
+    const { createHash } = await import('node:crypto')
+    const hashed = createHash('sha256').update(pin).digest('hex')
     return hashed === stored
   }
 

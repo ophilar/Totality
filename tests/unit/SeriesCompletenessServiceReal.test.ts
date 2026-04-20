@@ -35,27 +35,32 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       if (req.url?.includes('/tv/1399')) { // Game of Thrones
-         if (req.url?.includes('/season/1')) {
+         const baseData = {
+           id: 1399,
+           name: 'Game of Thrones',
+           number_of_seasons: 8,
+           number_of_episodes: 73,
+           seasons: [
+             { season_number: 1, episode_count: 10, air_date: '2011-04-17', poster_path: '/season1.jpg' }
+           ],
+           poster_path: '/poster.jpg',
+           backdrop_path: '/backdrop.jpg',
+           status: 'Ended'
+         }
+
+         if (req.url?.includes('append_to_response=season/1') || req.url?.includes('append_to_response=season%2F1')) {
             res.end(JSON.stringify({
-              season_number: 1,
-              episodes: [
-                { id: 1, season_number: 1, episode_number: 1, name: 'Winter Is Coming', air_date: '2011-04-17', still_path: '/still1.jpg' },
-                { id: 2, season_number: 1, episode_number: 2, name: 'The Kingsroad', air_date: '2011-04-24', still_path: '/still2.jpg' }
-              ]
+              ...baseData,
+              'season/1': {
+                season_number: 1,
+                episodes: [
+                  { id: 1, season_number: 1, episode_number: 1, name: 'Winter Is Coming', air_date: '2011-04-17', still_path: '/still1.jpg' },
+                  { id: 2, season_number: 1, episode_number: 2, name: 'The Kingsroad', air_date: '2011-04-24', still_path: '/still2.jpg' }
+                ]
+              }
             }))
          } else {
-            res.end(JSON.stringify({
-              id: 1399,
-              name: 'Game of Thrones',
-              number_of_seasons: 8,
-              number_of_episodes: 73,
-              seasons: [
-                { season_number: 1, episode_count: 10, air_date: '2011-04-17', poster_path: '/season1.jpg' }
-              ],
-              poster_path: '/poster.jpg',
-              backdrop_path: '/backdrop.jpg',
-              status: 'Ended'
-            }))
+            res.end(JSON.stringify(baseData))
          }
       } else if (req.url?.includes('/search/tv')) {
          res.end(JSON.stringify({
@@ -101,11 +106,18 @@ describe('SeriesCompletenessService (No Mocks)', () => {
   })
 
   it('should analyze a series and find missing episodes', async () => {
-    db.upsertMediaSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', is_enabled: 1 })
+    db.sources.upsertSource({ 
+      source_id: 's1', 
+      source_type: 'plex', 
+      display_name: 'S1', 
+      connection_config: '{}',
+      is_enabled: 1 
+    })
     
     // Only own S1E1
-    db.upsertMediaItem(createEpisode({
+    db.media.upsertItem(createEpisode({
       source_id: 's1',
+      library_id: 'tvshows',
       plex_id: 'p1',
       series_title: 'Game of Thrones',
       season_number: 1,
@@ -113,7 +125,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       series_tmdb_id: '1399'
     }))
 
-    const completeness = await service.analyzeSeries('Game of Thrones', 's1')
+    const completeness = await service.analyzeSeries('Game of Thrones', 's1', 'tvshows', '1399')
     
     expect(completeness).not.toBeNull()
     expect(completeness!.series_title).toBe('Game of Thrones')
@@ -121,17 +133,25 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     
     const missing = JSON.parse(completeness!.missing_episodes)
     // S1E2 is missing (based on our mock season 1 having 2 episodes)
+    // Note: Analysis engine uses 'S1E2' key format.
     expect(missing).toContainEqual(expect.objectContaining({
       season_number: 1,
       episode_number: 2
     }))
-  })
+    })
 
-  it('should update artwork for local sources during analysis', async () => {
-    db.upsertMediaSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', is_enabled: 1 })
-    
-    db.upsertMediaItem(createEpisode({
+    it('should update artwork for local sources during analysis', async () => {
+    db.sources.upsertSource({ 
+      source_id: 'local1', 
+      source_type: 'local', 
+      display_name: 'Local', 
+      connection_config: '{}',
+      is_enabled: 1 
+    })
+
+    db.media.upsertItem(createEpisode({
       source_id: 'local1',
+      library_id: 'tvshows',
       plex_id: 'local-ep-1',
       series_title: 'Game of Thrones',
       season_number: 1,
@@ -139,11 +159,12 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       series_tmdb_id: '1399'
     }))
 
-    await service.analyzeSeries('Game of Thrones', 'local1')
+    await service.analyzeSeries('Game of Thrones', 'local1', 'tvshows', '1399')
 
-    const item = db.getMediaItemByPlexId('local1', 'local-ep-1')
-    expect(item.poster_url).toContain('/poster.jpg')
-    expect(item.episode_thumb_url).toContain('/still1.jpg')
-    expect(item.season_poster_url).toContain('/season1.jpg')
-  })
+    const item = db.media.getItemByProviderId('local-ep-1', 'local1')
+    expect(item).not.toBeNull()
+    expect(item!.poster_url).toBe(`https://image.tmdb.org/t/p/w500/poster.jpg`)
+    expect(item!.episode_thumb_url).toBe(`https://image.tmdb.org/t/p/w500/still1.jpg`)
+    expect(item!.season_poster_url).toBe(`https://image.tmdb.org/t/p/w500/season1.jpg`)
+    })
 })
