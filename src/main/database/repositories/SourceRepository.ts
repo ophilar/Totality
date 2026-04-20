@@ -84,10 +84,9 @@ export class SourceRepository extends BaseRepository<MediaSource> {
   }
 
   setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): void {
-    const db = this.db
-    db.exec('BEGIN IMMEDIATE')
+    this.beginBatch()
     try {
-      const stmt = db.prepare(`
+      const stmt = this.db.prepare(`
         INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
         ON CONFLICT(source_id, library_id) DO UPDATE SET
@@ -97,9 +96,9 @@ export class SourceRepository extends BaseRepository<MediaSource> {
       for (const lib of libraries) {
         stmt.run(sourceId, lib.id, lib.name, lib.type, lib.enabled ? 1 : 0)
       }
-      db.exec('COMMIT')
+      this.endBatch()
     } catch (err) {
-      db.exec('ROLLBACK')
+      this.rollback()
       throw err
     }
   }

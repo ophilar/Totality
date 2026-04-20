@@ -82,6 +82,10 @@ export class BetterSQLiteService {
     try {
       this.db = new DatabaseSync(this.dbPath)
       
+      // Attach service to DB instance to avoid circular dependencies in repositories
+      // @ts-ignore
+      this.db.__service = this
+      
       // Optimization: WAL mode for better concurrency
       this.db.exec('PRAGMA journal_mode = WAL')
       this.db.exec('PRAGMA synchronous = NORMAL')
@@ -203,9 +207,37 @@ export class BetterSQLiteService {
     this.config.deleteSetting(key) 
   }
 
-  public beginBatch(): void { this.db?.exec('BEGIN IMMEDIATE') }
+  public beginBatch(): void { 
+    if (this.transactionDepth === 0) {
+      this.db?.exec('BEGIN IMMEDIATE')
+    }
+    this.transactionDepth++
+  }
+
   public startBatch(): void { this.beginBatch() }
-  public endBatch(): void { this.db?.exec('COMMIT') }
+
+  public endBatch(): void { 
+    if (this.transactionDepth === 1) {
+      this.db?.exec('COMMIT')
+    }
+    if (this.transactionDepth > 0) {
+      this.transactionDepth--
+    }
+  }
+
+  public rollbackBatch(): void {
+    if (this.transactionDepth > 0) {
+      this.db?.exec('ROLLBACK')
+      this.transactionDepth = 0
+    }
+  }
+
+  private transactionDepth = 0
+
+  public isInTransaction(): boolean {
+    return this.transactionDepth > 0
+  }
+
   public forceSave(): void { this.db?.exec('PRAGMA wal_checkpoint(PASSIVE)') }
 
   public exportData(): Record<string, any[]> {

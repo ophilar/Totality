@@ -449,9 +449,9 @@ export class TaskQueueService {
   }
 
   private async executeMusicScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
-    if (!task.sourceId) throw new Error('Missing sourceId')
+    if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
     const manager = this.getSourceManager()
-    await manager.scanSource(task.sourceId, onProgress)
+    await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {

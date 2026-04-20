@@ -13,7 +13,7 @@ import { WishlistProvider } from './contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { ThemeProvider } from './contexts/ThemeContext'
-import { LibraryProvider } from './contexts/LibraryContext'
+import { LibraryProvider, useLibrary } from './contexts/LibraryContext'
 import { AddSourceModal } from './components/sources/AddSourceModal'
 import { AboutModal } from './components/ui/AboutModal'
 import { SettingsPanel } from './components/settings'
@@ -36,7 +36,7 @@ function AppContent() {
   const [splashComplete, setSplashComplete] = useState(() => sessionStorage.getItem('splashShown') === 'true')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
   const [currentView, setCurrentView] = useState<AppView>('dashboard')
-  const [libraryTab, setLibraryTab] = useState<MediaViewType>('movies')
+  const { view: libraryTab, setView: setLibraryTab } = useLibrary()
 
   // Navigation history
   const { pushNavState, goBack, goForward, canGoBack, canGoForward } = useNavigation()

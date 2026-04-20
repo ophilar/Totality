@@ -370,9 +370,9 @@ export class MediaRepository extends BaseRepository<MediaItem> {
   }
 
   deleteItem(id: number): void {
-    const db = this.db
-    db.exec('BEGIN IMMEDIATE')
+    this.beginBatch()
     try {
+      const db = this.db
       const item = db.prepare(
         'SELECT tmdb_id, source_id, library_id, type, series_title, season_number, episode_number FROM media_items WHERE id = ?'
       ).get(id) as { tmdb_id?: string; source_id: string; library_id?: string; type: string; series_title?: string; season_number?: number; episode_number?: number } | undefined
@@ -428,17 +428,17 @@ export class MediaRepository extends BaseRepository<MediaItem> {
           }
         }
       }
-      db.exec('COMMIT')
+      this.endBatch()
     } catch (err) {
-      db.exec('ROLLBACK')
+      this.rollback()
       throw err
     }
   }
 
   deleteItemsForSource(sourceId: string): void {
-    const db = this.db
-    db.exec('BEGIN IMMEDIATE')
+    this.beginBatch()
     try {
+      const db = this.db
       // 1. Get all media item IDs for this source
       const itemIds = db.prepare('SELECT id FROM media_items WHERE source_id = ?').all(sourceId).map((row: any) => row.id)
       
@@ -456,9 +456,9 @@ export class MediaRepository extends BaseRepository<MediaItem> {
       db.prepare('DELETE FROM series_completeness WHERE source_id = ?').run(sourceId)
       db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
       
-      db.exec('COMMIT')
+      this.endBatch()
     } catch (err) {
-      db.exec('ROLLBACK')
+      this.rollback()
       throw err
     }
   }
@@ -539,11 +539,11 @@ export class MediaRepository extends BaseRepository<MediaItem> {
   removeStaleMediaItems(validPlexIds: Set<string>, type: 'movie' | 'episode'): number {
     const db = this.db
     
-    db.exec('BEGIN')
+    this.beginBatch()
     try {
       if (validPlexIds.size === 0) {
         const result = db.prepare('DELETE FROM media_items WHERE type = ?').run(type) as unknown as { changes: number | bigint }
-        db.exec('COMMIT')
+        this.endBatch()
         return Number(result.changes)
       }
 
@@ -560,10 +560,10 @@ export class MediaRepository extends BaseRepository<MediaItem> {
         WHERE type = ? AND plex_id NOT IN (SELECT plex_id FROM valid_plex_ids)
       `).run(type) as unknown as { changes: number | bigint }
 
-      db.exec('COMMIT')
+      this.endBatch()
       return Number(result.changes)
     } catch (err) {
-      db.exec('ROLLBACK')
+      this.rollback()
       throw err
     }
   }
@@ -823,12 +823,11 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   }
 
   syncItemVersions(mediaItemId: number, versions: any[]): void {
-    const db = this.db
-    db.exec('BEGIN IMMEDIATE')
+    this.beginBatch()
     try {
-      db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+      this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
       for (const v of versions) {
-        db.prepare(`
+        this.db.prepare(`
           INSERT INTO media_item_versions (
             media_item_id, version_source, file_path, file_size, duration,
             resolution, width, height, video_codec, video_bitrate,
@@ -856,8 +855,8 @@ WHERE m.type = 'episode' AND m.series_title = ?`
           v.audio_language ?? null
         )
       }
-      db.exec('COMMIT')
-    } catch(err) { db.exec('ROLLBACK'); throw err; }
+      this.endBatch()
+    } catch(err) { this.rollback(); throw err; }
   }
 
   updateMediaItemVersionQuality(id: number, score: any): void {
@@ -866,17 +865,16 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   }
 
   updateBestVersion(mediaItemId: number): void {
-    const db = this.db
-    db.exec('BEGIN IMMEDIATE')
+    this.beginBatch()
     try {
-      db.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
-      db.prepare(`
+      this.db.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
+      this.db.prepare(`
         UPDATE media_item_versions SET is_best = 1 WHERE id = (
           SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY efficiency_score DESC, file_size DESC LIMIT 1
         )
       `).run(mediaItemId)
-      db.exec('COMMIT')
-    } catch(err) { db.exec('ROLLBACK'); throw err; }
+      this.endBatch()
+    } catch(err) { this.rollback(); throw err; }
   }
 
   updateVersionQuality(id: number, score: any): void {
