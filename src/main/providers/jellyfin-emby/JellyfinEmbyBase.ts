@@ -525,13 +525,5 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     return result
   }
 
-  calculateVersionScore(v: any): number {
-    const res = v.resolution || 'SD'
-    const tierRank = res.includes('2160') ? 4 : res.includes('1080') ? 3 : res.includes('720') ? 2 : 1
-    const hdrBonus = (v.hdr_format && v.hdr_format !== 'None') ? 1000 : 0
-    const bitrateScore = (v.video_bitrate || 0) / 1000
-    return tierRank * 100000 + hdrBonus + bitrateScore
-  }
-
   cancelMusicScan(): void { this.musicScanCancelled = true }
 }

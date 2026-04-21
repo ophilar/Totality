@@ -19,11 +19,15 @@ export const parseMissingEpisodes = (s: SeriesCompletenessData): MissingEpisode[
   try {
     const parsed = JSON.parse(s.missing_episodes)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((ep): ep is MissingEpisode =>
+    return parsed.filter((ep): ep is any =>
       ep && typeof ep === 'object' &&
       typeof ep.season_number === 'number' &&
       typeof ep.episode_number === 'number'
-    )
+    ).map(ep => ({
+      ...ep,
+      series_title: s.series_title,
+      tmdb_id: s.tmdb_id
+    }))
   } catch {
     return []
   }
@@ -34,23 +38,28 @@ export const parseMissingAlbums = (artist: ArtistCompletenessData, includeEps: b
   const isValidAlbum = (a: unknown): a is { title: string; musicbrainz_id?: string; year?: number } =>
     a !== null && typeof a === 'object' && typeof (a as { title?: string }).title === 'string'
 
+  const base = {
+    artist_name: artist.artist_name,
+    artist_mbid: artist.musicbrainz_id || ''
+  }
+
   try {
     if (artist.missing_albums) {
       const parsed = JSON.parse(artist.missing_albums)
       if (Array.isArray(parsed)) {
-        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'album' }))
+        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...base, ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'album' }))
       }
     }
     if (includeEps && artist.missing_eps) {
       const parsed = JSON.parse(artist.missing_eps)
       if (Array.isArray(parsed)) {
-        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'ep' }))
+        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...base, ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'ep' }))
       }
     }
     if (includeSingles && artist.missing_singles) {
       const parsed = JSON.parse(artist.missing_singles)
       if (Array.isArray(parsed)) {
-        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'single' }))
+        parsed.filter(isValidAlbum).forEach(a => albums.push({ ...base, ...a, musicbrainz_id: a.musicbrainz_id || '', album_type: 'single' }))
       }
     }
   } catch {

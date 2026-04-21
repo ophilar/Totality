@@ -12,7 +12,7 @@ import {
   normalizeContainer,
   hasObjectAudio,
 } from '../../services/MediaNormalizer'
-import { selectBestAudioTrack } from '../utils/ProviderUtils'
+import { selectBestAudioTrack, calculateVersionScore } from '../utils/ProviderUtils'
 import { getFileNameParser } from '../../services/FileNameParser'
 import { extractVersionNames } from '../utils/VersionNaming'
 import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
@@ -335,7 +335,7 @@ export class JellyfinItemMapper {
     if (versions.length === 0) return null
     if (versions.length > 1) extractVersionNames(versions)
 
-    const best = versions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
+    const best = versions.reduce((a, b) => calculateVersionScore(b as any) > calculateVersionScore(a as any) ? b : a)
     const isEpisode = item.Type === 'Episode'
 
     let posterUrl: string | undefined
@@ -536,14 +536,6 @@ export class JellyfinItemMapper {
     return title.toLowerCase().trim()
       .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
       .replace(/\s*\(\s*\)\s*$/, '').trim()
-  }
-
-  private calculateVersionScore(v: Partial<MediaItemVersion>): number {
-    const res = v.resolution || 'SD'
-    const tierRank = res.includes('2160') ? 4 : res.includes('1080') ? 3 : res.includes('720') ? 2 : 1
-    const hdrBonus = (v.hdr_format && v.hdr_format !== 'None') ? 1000 : 0
-    const bitrateScore = (v.video_bitrate || 0) / 1000
-    return tierRank * 100000 + hdrBonus + bitrateScore
   }
 
   private async getAudioBitratesViaFFprobe(filePath: string): Promise<Map<number, number> | null> {

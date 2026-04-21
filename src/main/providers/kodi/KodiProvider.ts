@@ -11,7 +11,7 @@ import {
   ScanOptions,
   SourceConfig,
 } from '../base/MediaProvider'
-import type { MediaItemVersion, MusicTrack } from '../../types/database'
+import type { MusicTrack } from '../../types/database'
 import {
   calculateAlbumStats,
 } from '../base/MusicScannerUtils'
@@ -257,17 +257,6 @@ export class KodiProvider extends BaseMediaProvider {
     
     result.durationMs = Date.now() - startTime
     return result
-  }
-
-  calculateVersionScore(v: Partial<MediaItemVersion>): number {
-    const res = v.resolution || 'SD'
-    let tierRank = 1
-    if (res.includes('2160')) tierRank = 4
-    else if (res.includes('1080')) tierRank = 3
-    else if (res.includes('720')) tierRank = 2
-    const hdrBonus = (v.hdr_format && v.hdr_format !== 'None') ? 1000 : 0
-    const bitrateScore = (v.video_bitrate || 0) / 1000
-    return (tierRank * 100000) + hdrBonus + bitrateScore
   }
 
   cancelMusicScan(): void {

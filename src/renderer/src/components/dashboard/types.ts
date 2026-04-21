@@ -15,12 +15,16 @@ export interface MissingMovie {
 }
 
 export interface MissingEpisode {
+  series_title: string
+  tmdb_id: string
   season_number: number
   episode_number: number
   episode_title?: string
 }
 
 export interface MissingAlbumItem {
+  artist_name: string
+  artist_mbid: string
   musicbrainz_id: string
   title: string
   year?: number
