@@ -11,11 +11,11 @@ import {
   normalizeSampleRate,
   normalizeContainer,
   hasObjectAudio,
-} from '../../services/MediaNormalizer'
-import { selectBestAudioTrack, calculateVersionScore } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
-import { extractVersionNames } from '../utils/VersionNaming'
-import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
+} from '@main/services/MediaNormalizer'
+import { selectBestAudioTrack, calculateVersionScore } from '@main/providers/utils/ProviderUtils'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import {
   isLosslessCodec,
   isHiRes,
@@ -23,10 +23,10 @@ import {
   MUSICBRAINZ_ARTIST_KEYS,
   MUSICBRAINZ_ALBUM_KEYS,
   MUSICBRAINZ_TRACK_KEYS,
-} from '../base/MusicScannerUtils'
+} from '@main/providers/base/MusicScannerUtils'
 import type {
   MediaMetadata,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 import type {
   MediaItem,
   MediaItemVersion,
@@ -35,7 +35,7 @@ import type {
   MusicArtist,
   MusicAlbum,
   MusicTrack,
-} from '../../types/database'
+} from '@main/types/database'
 import type {
   JellyfinMediaItem,
   JellyfinMusicArtist,

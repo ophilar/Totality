@@ -1,10 +1,12 @@
 import React from 'react'
 import { Film, Tv, Music } from 'lucide-react'
-import { DashboardColumn } from './DashboardColumn'
-import { CollectionRow, SeriesRow, ArtistRow } from './CompletenessRows'
+import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
+import { CollectionRow, SeriesRow, ArtistRow } from '@/components/dashboard/CompletenessRows'
 import * as ReactWindow from 'react-window'
-import type { MissingMovie, MissingEpisode, MissingAlbumItem } from './types'
-import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '../library/types'
+import type { MissingMovie, MissingEpisode, MissingAlbumItem } from '@/components/dashboard/types'
+import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
+// @ts-expect-error react-window types
+import type { VariableSizeList } from 'react-window'
 
 const List = (ReactWindow as any).VariableSizeList
 
@@ -14,7 +16,7 @@ interface CollectionColumnProps {
   setSortBy: (sort: string) => void
   listHeight: number
   itemSize: (index: number) => number
-  listRef: React.RefObject<any>
+  listRef: React.RefObject<VariableSizeList | null>
   expandedCollections: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, movie: MissingMovie) => void
@@ -23,7 +25,7 @@ interface CollectionColumnProps {
 export function CollectionsColumn({
   collections, sortBy, setSortBy, listHeight, itemSize, listRef, expandedCollections, toggleExpand, onDismiss
 }: CollectionColumnProps) {
-  const row = ({ index, style }: any) => (
+  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <CollectionRow
       index={index}
       style={style}
@@ -55,7 +57,7 @@ interface SeriesColumnProps {
   setSortBy: (sort: string) => void
   listHeight: number
   itemSize: (index: number) => number
-  listRef: React.RefObject<any>
+  listRef: React.RefObject<VariableSizeList | null>
   expandedSeries: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, episode: MissingEpisode) => void
@@ -64,7 +66,7 @@ interface SeriesColumnProps {
 export function SeriesColumn({
   series, sortBy, setSortBy, listHeight, itemSize, listRef, expandedSeries, toggleExpand, onDismiss
 }: SeriesColumnProps) {
-  const row = ({ index, style }: any) => (
+  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <SeriesRow
       index={index}
       style={style}
@@ -96,7 +98,7 @@ interface ArtistColumnProps {
   setSortBy: (sort: string) => void
   listHeight: number
   itemSize: (index: number) => number
-  listRef: React.RefObject<any>
+  listRef: React.RefObject<VariableSizeList | null>
   expandedArtists: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, album: MissingAlbumItem) => void
@@ -107,7 +109,7 @@ interface ArtistColumnProps {
 export function ArtistColumn({
   artists, sortBy, setSortBy, listHeight, itemSize, listRef, expandedArtists, toggleExpand, onDismiss, includeEps, includeSingles
 }: ArtistColumnProps) {
-  const row = ({ index, style }: any) => (
+  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <ArtistRow
       index={index}
       style={style}

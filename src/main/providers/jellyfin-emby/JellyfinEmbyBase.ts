@@ -11,18 +11,18 @@ import {
   ScanOptions,
   SourceConfig,
 } from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, MusicTrack } from '../../types/database'
+import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import {
   calculateAlbumStats,
 } from '../base/MusicScannerUtils'
-import { getLoggingService } from '../../services/LoggingService'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import { getTMDBService } from '../../services/TMDBService'
-import { getMovieCollectionService } from '../../services/MovieCollectionService'
-import { calculateVersionScore } from '../utils/ProviderUtils'
-import { extractVersionNames } from '../utils/VersionNaming'
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getTMDBService } from '@main/services/TMDBService'
+import { getMovieCollectionService } from '@main/services/MovieCollectionService'
+import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 // Jellyfin/Emby API response types
 export interface JellyfinAuthResponse {
@@ -410,7 +410,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               canonicalItem.library_id = libraryId
               const id = await db.media.upsertItem(canonicalItem)
               scannedProviderIds.add(canonicalItem.plex_id)
-              const scoredVersions = allVersions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as any) }))
+              const scoredVersions = allVersions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
               db.media.syncItemVersions(id, scoredVersions)
               canonicalItem.id = id
               await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(canonicalItem))

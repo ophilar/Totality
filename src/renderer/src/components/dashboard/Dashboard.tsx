@@ -5,17 +5,17 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MediaDetails } from '../library/MediaDetails'
-import { useSources } from '../../contexts/SourceContext'
+import { MediaDetails } from '@/components/library/MediaDetails'
+import { useSources } from '@/contexts/SourceContext'
 import {
   emitDismissUpgrade,
   emitDismissCollectionMovie,
-} from '../../utils/dismissEvents'
-import { useDashboardData } from './hooks/useDashboardData'
-import { UpgradesColumn } from './UpgradesColumn'
-import { CollectionsColumn, SeriesColumn, ArtistColumn } from './CompletenessColumns'
-import { EmptyDashboard } from './EmptyDashboard'
-import { DashboardSkeleton } from './DashboardSkeleton'
+} from '@/utils/dismissEvents'
+import { useDashboardData } from '@/components/dashboard/hooks/useDashboardData'
+import { UpgradesColumn } from '@/components/dashboard/UpgradesColumn'
+import { CollectionsColumn, SeriesColumn, ArtistColumn } from '@/components/dashboard/CompletenessColumns'
+import { EmptyDashboard } from '@/components/dashboard/EmptyDashboard'
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import {
   MOVIE_ITEM_HEIGHT,
   MUSIC_ITEM_HEIGHT,
@@ -24,14 +24,16 @@ import {
   EXPANDED_MARGIN,
   EXPANDED_ITEM_HEIGHT,
   ITEM_GAP
-} from './constants'
+} from '@/components/dashboard/constants'
+// @ts-expect-error react-window types
+import type { VariableSizeList } from 'react-window'
 import {
   parseMissingMovies,
   groupEpisodesBySeason,
   parseMissingAlbums,
   parseMissingEpisodes
-} from './dashboardUtils'
-import type { DashboardProps, UpgradeTab, MissingMovie, MissingEpisode, MissingAlbumItem, MusicAlbumUpgrade } from './types'
+} from '@/components/dashboard/dashboardUtils'
+import type { DashboardProps, UpgradeTab, MissingMovie, MissingEpisode, MissingAlbumItem, MusicAlbumUpgrade } from '@/components/dashboard/types'
 
 export function Dashboard({
   onAddSource,
@@ -90,10 +92,10 @@ export function Dashboard({
   const [expandedArtists, setExpandedArtists] = useState<Set<number>>(new Set())
 
   // VariableSizeList refs for resetting cached sizes on expand/collapse
-  const upgradeListInstanceRef = useRef<any>(null)
-  const collectionsListInstanceRef = useRef<any>(null)
-  const seriesListInstanceRef = useRef<any>(null)
-  const artistsListInstanceRef = useRef<any>(null)
+  const upgradeListInstanceRef = useRef<VariableSizeList>(null)
+  const collectionsListInstanceRef = useRef<VariableSizeList>(null)
+  const seriesListInstanceRef = useRef<VariableSizeList>(null)
+  const artistsListInstanceRef = useRef<VariableSizeList>(null)
 
   // Reset virtual list caches when data changes or tabs switch
   useEffect(() => {

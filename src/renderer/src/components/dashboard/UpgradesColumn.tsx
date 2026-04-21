@@ -1,10 +1,12 @@
 import React from 'react'
 import { CircleFadingArrowUp } from 'lucide-react'
-import { DashboardColumn } from './DashboardColumn'
-import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from './UpgradeRows'
+import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
+import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from '@/components/dashboard/UpgradeRows'
 import * as ReactWindow from 'react-window'
-import type { UpgradeTab, MusicAlbumUpgrade } from './types'
-import type { MediaItem } from '../../../../main/types/database'
+import type { UpgradeTab, MusicAlbumUpgrade } from '@/components/dashboard/types'
+import type { MediaItem } from '@main/types/database'
+// @ts-expect-error react-window types
+import type { VariableSizeList } from 'react-window'
 
 const List = (ReactWindow as any).VariableSizeList
 
@@ -21,7 +23,7 @@ interface UpgradesColumnProps {
   hasMusic: boolean
   listHeight: number
   itemSize: (index: number) => number
-  listRef: React.RefObject<any>
+  listRef: React.RefObject<VariableSizeList | null>
   onSelect: (id: number) => void
   onDismissMovie: (index: number) => void
   onDismissTv: (index: number) => void
@@ -39,7 +41,7 @@ export function UpgradesColumn({
   onSelect, onDismissMovie, onDismissTv, onDismissMusic,
   expandedRecommendations, toggleRecommendation
 }: UpgradesColumnProps) {
-  const movieRow = ({ index, style }: any) => (
+  const movieRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <MovieUpgradeRow
       index={index}
       style={style}
@@ -51,7 +53,7 @@ export function UpgradesColumn({
     />
   )
 
-  const tvRow = ({ index, style }: any) => (
+  const tvRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <TvUpgradeRow
       index={index}
       style={style}
@@ -63,7 +65,7 @@ export function UpgradesColumn({
     />
   )
 
-  const musicRow = ({ index, style }: any) => (
+  const musicRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <MusicUpgradeRow
       index={index}
       style={style}

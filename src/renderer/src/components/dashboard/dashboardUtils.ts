@@ -1,5 +1,5 @@
-import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '../library/types'
-import type { MissingMovie, MissingEpisode, MissingAlbumItem, SeasonGroup } from './types'
+import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
+import type { MissingMovie, MissingEpisode, MissingAlbumItem, SeasonGroup } from '@/components/dashboard/types'
 
 export const parseMissingMovies = (collection: MovieCollectionData): MissingMovie[] => {
   if (!collection.missing_movies) return []
@@ -22,8 +22,9 @@ export const parseMissingEpisodes = (s: SeriesCompletenessData): MissingEpisode[
     return parsed.filter((ep: unknown): ep is { season_number: number; episode_number: number; episode_title?: string } => {
       const e = ep as Record<string, unknown>
       return e !== null && typeof e === 'object' &&
-        typeof e.season_number === 'number' &&
-        typeof e.episode_number === 'number'
+        typeof (e as Record<string, unknown>).season_number === 'number' &&
+        typeof (e as Record<string, unknown>).episode_number === 'number'
+
     }).map(ep => ({
       ...ep,
       series_title: s.series_title,
