@@ -3,16 +3,17 @@ import { CircleFadingArrowUp } from 'lucide-react'
 import { DashboardColumn } from './DashboardColumn'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from './UpgradeRows'
 import * as ReactWindow from 'react-window'
-import type { UpgradeTab } from './types'
+import type { UpgradeTab, MusicAlbumUpgrade } from './types'
+import type { MediaItem } from '../../../../main/types/database'
 
-const { VariableSizeList } = ReactWindow as any
+const List = (ReactWindow as any).VariableSizeList
 
 interface UpgradesColumnProps {
   upgradeTab: UpgradeTab
   setUpgradeTab: (tab: UpgradeTab) => void
-  movieUpgrades: any[]
-  tvUpgrades: any[]
-  musicUpgrades: any[]
+  movieUpgrades: MediaItem[]
+  tvUpgrades: MediaItem[]
+  musicUpgrades: MusicAlbumUpgrade[]
   upgradeSortBy: string
   setUpgradeSortBy: (sort: string) => void
   hasMovies: boolean
@@ -43,7 +44,7 @@ export function UpgradesColumn({
       index={index}
       style={style}
       item={movieUpgrades[index]}
-      isExpanded={expandedRecommendations.has(movieUpgrades[index].id)}
+      isExpanded={expandedRecommendations.has(movieUpgrades[index].id!)}
       onToggleExpand={toggleRecommendation}
       onSelect={onSelect}
       onDismiss={onDismissMovie}
@@ -55,7 +56,7 @@ export function UpgradesColumn({
       index={index}
       style={style}
       item={tvUpgrades[index]}
-      isExpanded={expandedRecommendations.has(tvUpgrades[index].id)}
+      isExpanded={expandedRecommendations.has(tvUpgrades[index].id!)}
       onToggleExpand={toggleRecommendation}
       onSelect={onSelect}
       onDismiss={onDismissTv}
@@ -108,13 +109,13 @@ export function UpgradesColumn({
         <div className="flex-1 min-h-0 relative">
           <div className="absolute inset-0">
             {upgradeTab === 'movies' && movieUpgrades.length > 0 && (
-              <VariableSizeList ref={listRef} height={listHeight} itemCount={movieUpgrades.length} itemSize={itemSize} width="100%">{movieRow}</VariableSizeList>
+              <List ref={listRef} height={listHeight} itemCount={movieUpgrades.length} itemSize={itemSize} width="100%">{movieRow}</List>
             )}
             {upgradeTab === 'tv' && tvUpgrades.length > 0 && (
-              <VariableSizeList ref={listRef} height={listHeight} itemCount={tvUpgrades.length} itemSize={itemSize} width="100%">{tvRow}</VariableSizeList>
+              <List ref={listRef} height={listHeight} itemCount={tvUpgrades.length} itemSize={itemSize} width="100%">{tvRow}</List>
             )}
             {upgradeTab === 'music' && musicUpgrades.length > 0 && (
-              <VariableSizeList ref={listRef} height={listHeight} itemCount={musicUpgrades.length} itemSize={itemSize} width="100%">{musicRow}</VariableSizeList>
+              <List ref={listRef} height={listHeight} itemCount={musicUpgrades.length} itemSize={itemSize} width="100%">{musicRow}</List>
             )}
           </div>
         </div>

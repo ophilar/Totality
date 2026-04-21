@@ -174,9 +174,9 @@ export function isEstimatedBitrate(bitrate: number): boolean {
  * - Bitrate: + (video_bitrate / 1000)
  */
 export function calculateVersionScore(v: {
-  resolution?: string
-  hdr_format?: string
-  video_bitrate?: number
+  resolution?: string | null
+  hdr_format?: string | null
+  video_bitrate?: number | null
 }): number {
   const res = v.resolution || 'SD'
   const tierRank = res.includes('2160') ? 4 : res.includes('1080') ? 3 : res.includes('720') ? 2 : 1

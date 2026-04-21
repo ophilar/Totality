@@ -25,6 +25,18 @@ export class JellyfinApiClient {
     })
   }
 
+  setServerUrl(url: string) {
+    this.options.serverUrl = url.replace(/\/$/, '')
+  }
+
+  setApiKey(apiKey: string) {
+    this.options.apiKey = apiKey
+  }
+
+  getApiKey() {
+    return this.options.apiKey
+  }
+
   setAccessToken(token: string, userId: string) {
     this.options.accessToken = token
     this.options.userId = userId
@@ -49,7 +61,7 @@ export class JellyfinApiClient {
     return headers
   }
 
-  private buildAuthHeader(): string {
+  buildAuthHeader(): string {
     const parts = [
       `MediaBrowser Client="${this.options.clientName}"`,
       `Device="Totality"`,
@@ -60,7 +72,7 @@ export class JellyfinApiClient {
     return parts.join(', ')
   }
 
-  async get<T>(url: string, params?: any): Promise<T> {
+  async get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
     const fullUrl = url.startsWith('http') ? url : `${this.options.serverUrl}${url}`
     const response = await this.api.get<T>(fullUrl, {
       params,
@@ -69,7 +81,7 @@ export class JellyfinApiClient {
     return response.data
   }
 
-  async post<T>(url: string, data?: any, extraHeaders?: any): Promise<T> {
+  async post<T>(url: string, data?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
     const fullUrl = url.startsWith('http') ? url : `${this.options.serverUrl}${url}`
     const response = await this.api.post<T>(fullUrl, data, {
       headers: { ...this.getAuthHeaders(), ...extraHeaders }
@@ -106,7 +118,7 @@ export class JellyfinApiClient {
    */
   async isQuickConnectEnabled(): Promise<boolean> {
     try {
-      const response = await this.api.get(`${this.options.serverUrl}/QuickConnect/Enabled`, {
+      const response = await this.api.get<boolean>(`${this.options.serverUrl}/QuickConnect/Enabled`, {
         timeout: 5000,
       })
       return response.data === true
@@ -118,14 +130,15 @@ export class JellyfinApiClient {
    */
   async initiateQuickConnect(): Promise<{ secret: string; code: string } | null> {
     try {
-      const response = await this.api.post(
+      const response = await this.api.post<{ Secret: string; Code: string }>(
         `${this.options.serverUrl}/QuickConnect/Initiate`,
         null,
         { headers: { 'X-Emby-Authorization': this.buildAuthHeader() } }
       )
       return { secret: response.data.Secret, code: response.data.Code }
-    } catch (error: any) {
-      getLoggingService().error(`[${this.options.providerType}]`, 'Failed to initiate Quick Connect:', error.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      getLoggingService().error(`[${this.options.providerType}]`, 'Failed to initiate Quick Connect:', message)
       throw new Error('Failed to initiate Quick Connect')
     }
   }
@@ -135,7 +148,7 @@ export class JellyfinApiClient {
    */
   async checkQuickConnectStatus(secret: string): Promise<{ authenticated: boolean; error?: string }> {
     try {
-      const response = await this.api.get(
+      const response = await this.api.get<{ Authenticated: boolean }>(
         `${this.options.serverUrl}/QuickConnect/Connect`,
         {
           params: { Secret: secret },
@@ -143,8 +156,9 @@ export class JellyfinApiClient {
         }
       )
       return { authenticated: response.data.Authenticated === true }
-    } catch (error: any) {
-      return { authenticated: false, error: error.message }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      return { authenticated: false, error: message }
     }
   }
 
@@ -153,7 +167,11 @@ export class JellyfinApiClient {
    */
   async completeQuickConnect(secret: string): Promise<{ success: boolean; token?: string; userId?: string; userName?: string; error?: string }> {
     try {
-      const response = await this.api.post<any>(
+      interface QuickConnectResponse {
+        AccessToken: string
+        User: { Id: string; Name: string }
+      }
+      const response = await this.api.post<QuickConnectResponse>(
         `${this.options.serverUrl}/Users/AuthenticateWithQuickConnect`,
         { Secret: secret },
         { headers: { 'X-Emby-Authorization': this.buildAuthHeader() } }
@@ -169,8 +187,9 @@ export class JellyfinApiClient {
         }
       }
       return { success: false, error: 'No access token received' }
-    } catch (error: any) {
-      return { success: false, error: error.message }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      return { success: false, error: message }
     }
   }
 }

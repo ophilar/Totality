@@ -11,7 +11,7 @@ import {
   ScanOptions,
   SourceConfig,
 } from '../base/MediaProvider'
-import type { MusicTrack } from '../../types/database'
+import type { MediaItem, MediaItemVersion, MusicTrack } from '../../types/database'
 import {
   calculateAlbumStats,
 } from '../base/MusicScannerUtils'
@@ -20,6 +20,7 @@ import { getDatabase } from '../../database/getDatabase'
 import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
 import { getTMDBService } from '../../services/TMDBService'
 import { getMovieCollectionService } from '../../services/MovieCollectionService'
+import { calculateVersionScore } from '../utils/ProviderUtils'
 import { extractVersionNames } from '../utils/VersionNaming'
 import { getErrorMessage } from '../../services/utils/errorUtils'
 
@@ -64,6 +65,7 @@ export interface JellyfinMediaItem {
   DateCreated?: string
   PremiereDate?: string
   SortName?: string
+  _seriesSortName?: string // Internal property added by mapper
 }
 
 export interface JellyfinMediaSource {
@@ -189,11 +191,10 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
   async authenticate(credentials: ProviderCredentials): Promise<AuthResult> {
     try {
       if (!credentials.serverUrl) return { success: false, error: 'Server URL is required' }
-      const options = (this.client as any).options
-      options.serverUrl = credentials.serverUrl.replace(/\/$/, '')
+      this.client.setServerUrl(credentials.serverUrl)
 
       if (credentials.apiKey) {
-        options.apiKey = credentials.apiKey
+        this.client.setApiKey(credentials.apiKey)
         const testResult = await this.testConnection()
         if (testResult.success) return { success: true, apiKey: credentials.apiKey, serverName: testResult.serverName }
         return { success: false, error: testResult.error || 'Invalid API key' }
@@ -203,7 +204,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         const response = await this.client.post<JellyfinAuthResponse>(
           '/Users/AuthenticateByName',
           { Username: credentials.username, Pw: credentials.password },
-          { 'X-Emby-Authorization': (this.client as any).buildAuthHeader() }
+          { 'X-Emby-Authorization': this.client.buildAuthHeader() }
         )
 
         if (response.AccessToken) {
@@ -218,19 +219,19 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         }
       }
       return { success: false, error: 'Invalid credentials' }
-    } catch (error: any) {
+    } catch (error: unknown) {
       getLoggingService().error('[JellyfinEmbyBase]', `${this.providerType} authentication failed:`, error)
-      return { success: false, error: error.response?.data?.Message || error.message || 'Authentication failed' }
+      return { success: false, error: getErrorMessage(error) }
     }
   }
 
   async isAuthenticated(): Promise<boolean> {
-    return !!(this.client.getAccessToken() || (this.client as any).options.apiKey)
+    return !!(this.client.getAccessToken() || this.client.getApiKey())
   }
 
   async disconnect(): Promise<void> {
     this.client.setAccessToken('', '')
-    ;(this.client as any).options.apiKey = ''
+    this.client.setApiKey('')
   }
 
   async isQuickConnectEnabled(): Promise<boolean> { return this.client.isQuickConnectEnabled() }
@@ -242,9 +243,9 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     if (!this.client.getServerUrl()) return { success: false, error: 'Server URL not configured' }
     try {
       const startTime = Date.now()
-      const response = await this.client.get<any>('/System/Info/Public')
+      const response = await this.client.get<{ ServerName: string; Version: string }>('/System/Info/Public')
       return { success: true, serverName: response.ServerName, serverVersion: response.Version, latencyMs: Date.now() - startTime }
-    } catch (error: any) { return { success: false, error: error.message || 'Connection failed' } }
+    } catch (error: unknown) { return { success: false, error: getErrorMessage(error) } }
   }
 
   async getLibraries(): Promise<MediaLibrary[]> {
@@ -270,13 +271,13 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           if (libraries.length > 0) return libraries
         } catch { /* fallback */ }
       }
-      const response = await this.client.get<any>('/Library/VirtualFolders')
-      const folders = Array.isArray(response) ? response : (response as { Items?: JellyfinLibrary[] }).Items || []
+      const response = await this.client.get<JellyfinLibrary[] | { Items: JellyfinLibrary[] }>('/Library/VirtualFolders')
+      const folders = Array.isArray(response) ? response : response.Items || []
       const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'music', 'boxsets']
       return folders
         .filter((lib: JellyfinLibrary) => mediaTypes.includes((lib.CollectionType || '').toLowerCase()))
         .map((lib: JellyfinLibrary) => ({ id: lib.ItemId || lib.Id, name: lib.Name, type: this.mapper.mapLibraryType(lib.CollectionType), collectionType: (lib.CollectionType || '').toLowerCase(), itemCount: lib.ItemCount }))
-    } catch (error: any) { throw new Error(`Failed to fetch libraries: ${error.message}`) }
+    } catch (error: unknown) { throw new Error(`Failed to fetch libraries: ${getErrorMessage(error)}`) }
   }
 
   async getLibraryItems(libraryId: string, offset = 0, limit = 100): Promise<MediaMetadata[]> {
@@ -284,7 +285,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     try {
       const response = await this.client.get<{ Items: JellyfinMediaItem[] }>('/Items', { ParentId: libraryId, Recursive: true, IncludeItemTypes: 'Movie,Episode', Fields: 'Path,MediaSources,ProviderIds,Overview', StartIndex: offset, Limit: limit })
       return response.Items.map(item => this.mapper.convertToMediaMetadata(item))
-    } catch (error: any) { throw new Error(`Failed to fetch library items: ${error.message}`) }
+    } catch (error: unknown) { throw new Error(`Failed to fetch library items: ${getErrorMessage(error)}`) }
   }
 
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
@@ -292,7 +293,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     try {
       const response = await this.client.get<JellyfinMediaItem>(`/Items/${itemId}`, { Fields: 'Path,MediaSources,ProviderIds,Overview' })
       return this.mapper.convertToMediaMetadata(response)
-    } catch (error: any) { throw new Error(`Failed to fetch item metadata: ${error.message}`) }
+    } catch (error: unknown) { throw new Error(`Failed to fetch item metadata: ${getErrorMessage(error)}`) }
   }
 
   async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
@@ -348,7 +349,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         let offset = 0
         let hasMoreItems = true
         while (hasMoreItems) {
-          const params: any = { ParentId: libraryId, Recursive: true, IncludeItemTypes: libraryType === 'show' ? 'Episode' : 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', EnableTotalRecordCount: true, StartIndex: offset, Limit: batchSize }
+          const params: Record<string, unknown> = { ParentId: libraryId, Recursive: true, IncludeItemTypes: libraryType === 'show' ? 'Episode' : 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', EnableTotalRecordCount: true, StartIndex: offset, Limit: batchSize }
           if (isIncremental && sinceTimestamp) params.MinDateLastSaved = sinceTimestamp.toISOString()
           const response = await this.client.get<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>('/Items', params)
           allItems.push(...response.Items)
@@ -367,7 +368,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               allItems.filter(item => item.SeriesId === series.Id).forEach(item => {
                 item.SeriesProviderIds = series.ProviderIds
                 if (!item.SeriesPrimaryImageTag && series.ImageTags?.Primary) item.SeriesPrimaryImageTag = series.ImageTags.Primary
-                if (series.SortName) (item as any)._seriesSortName = series.SortName
+                if (series.SortName) item._seriesSortName = series.SortName
               })
             }
           } catch { /* ignore */ }
@@ -389,8 +390,8 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
             if (onProgress) onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: item.Name, percentage: (itemIndex / totalItems) * 100 })
           }
           try {
-            const allVersions: any[] = []
-            let canonicalItem: any = null
+            const allVersions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
+            let canonicalItem: MediaItem | null = null
             for (const item of group) {
               const converted = await this.mapper.convertToMediaItem(item)
               if (!converted) continue
@@ -400,7 +401,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
             if (canonicalItem && allVersions.length > 0) {
               if (allVersions.length > 1) {
                 extractVersionNames(allVersions)
-                const best = allVersions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
+                const best = allVersions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
                 Object.assign(canonicalItem, best)
               }
               canonicalItem.version_count = allVersions.length
@@ -409,13 +410,13 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               canonicalItem.library_id = libraryId
               const id = await db.media.upsertItem(canonicalItem)
               scannedProviderIds.add(canonicalItem.plex_id)
-              const scoredVersions = allVersions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v) }))
+              const scoredVersions = allVersions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as any) }))
               db.media.syncItemVersions(id, scoredVersions)
               canonicalItem.id = id
               await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(canonicalItem))
               result.itemsScanned++
             }
-          } catch (e) { result.errors.push(`Failed to process ${group[0]?.Name}: ${getErrorMessage(e)}`) }
+          } catch (e: unknown) { result.errors.push(`Failed to process ${group[0]?.Name}: ${getErrorMessage(e)}`) }
           if (result.itemsScanned % 50 === 0) await db.forceSave()
         }
       } finally { await db.endBatch() }
@@ -427,7 +428,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       }
       await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true
-    } catch (error: any) { result.errors.push(error.message); }
+    } catch (error: unknown) { result.errors.push(getErrorMessage(error)); }
     result.durationMs = Date.now() - startTime
     return result
   }
@@ -456,7 +457,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       const batchSize = 100
       let hasMore = true
       while (hasMore) {
-        const params: any = { IncludeItemTypes: 'MusicAlbum', Recursive: true, Fields: 'ProviderIds,Genres,ImageTags,ChildCount,RunTimeTicks,AlbumArtist,AlbumArtists,Artists,PrimaryImageAspectRatio', EnableImages: true, EnableImageTypes: 'Primary,Thumb', StartIndex: startIndex, Limit: batchSize, EnableTotalRecordCount: true }
+        const params: Record<string, unknown> = { IncludeItemTypes: 'MusicAlbum', Recursive: true, Fields: 'ProviderIds,Genres,ImageTags,ChildCount,RunTimeTicks,AlbumArtist,AlbumArtists,Artists,PrimaryImageAspectRatio', EnableImages: true, EnableImageTypes: 'Primary,Thumb', StartIndex: startIndex, Limit: batchSize, EnableTotalRecordCount: true }
         if (artistId) params.AlbumArtistIds = artistId; else params.ParentId = libraryId
         const res = await this.client.get<{ Items: JellyfinMusicAlbum[]; TotalRecordCount?: number }>('/Items', params)
         const items = res.Items || []
@@ -475,7 +476,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     } catch { throw new Error('Failed to fetch music tracks') }
   }
 
-  async scanMusicLibrary(libraryId: string, onProgress?: (p: any) => void): Promise<ScanResult> {
+  async scanMusicLibrary(libraryId: string, onProgress?: (p: { current: number; total: number; phase: string; currentItem: string; percentage: number }) => void): Promise<ScanResult> {
     this.musicScanCancelled = false
     const startTime = Date.now()
     const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0, cancelled: false }
@@ -505,7 +506,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           for (const album of albums) { await processAlbum(album, artistId); ac++; tc += (album.ChildCount || 0) }
           await db.music.updateMusicArtistCounts(artistId, ac, tc)
           if (onProgress) onProgress({ current: idx + 1, total: artists.length, phase: 'processing', currentItem: artist.Name, percentage: ((idx + 1) / artists.length) * 50 })
-        } catch (e) { result.errors.push(`Artist ${artist.Name}: ${getErrorMessage(e)}`) }
+        } catch (e: unknown) { result.errors.push(`Artist ${artist.Name}: ${getErrorMessage(e)}`) }
       }
 
       if (!result.cancelled) {
@@ -516,11 +517,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           try {
             await processAlbum(album, undefined, album.AlbumArtist || album.AlbumArtists?.[0]?.Name || 'Various Artists')
             if (onProgress) onProgress({ current: idx + 1, total: unprocessed.length, phase: 'processing compilations', currentItem: album.Name, percentage: 50 + ((idx + 1) / unprocessed.length) * 50 })
-          } catch (e) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
+          } catch (e: unknown) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
         }
       }
       result.success = true
-    } catch (e) { result.errors.push(getErrorMessage(e)) }
+    } catch (e: unknown) { result.errors.push(getErrorMessage(e)) }
     result.durationMs = Date.now() - startTime
     return result
   }

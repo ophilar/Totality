@@ -335,7 +335,8 @@ export class JellyfinItemMapper {
     if (versions.length === 0) return null
     if (versions.length > 1) extractVersionNames(versions)
 
-    const best = versions.reduce((a, b) => calculateVersionScore(b as any) > calculateVersionScore(a as any) ? b : a)
+    const best = versions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
+
     const isEpisode = item.Type === 'Episode'
 
     let posterUrl: string | undefined
@@ -383,7 +384,7 @@ export class JellyfinItemMapper {
       mediaItem: {
         plex_id: item.Id,
         title: item.Name,
-        sort_title: isEpisode ? ((item as any)._seriesSortName || undefined) : (item.SortName || undefined),
+        sort_title: isEpisode ? (item._seriesSortName || undefined) : (item.SortName || undefined),
         year: item.ProductionYear,
         type: isEpisode ? 'episode' : 'movie',
         series_title: item.SeriesName,

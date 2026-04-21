@@ -4,11 +4,12 @@ import { DashboardColumn } from './DashboardColumn'
 import { CollectionRow, SeriesRow, ArtistRow } from './CompletenessRows'
 import * as ReactWindow from 'react-window'
 import type { MissingMovie, MissingEpisode, MissingAlbumItem } from './types'
+import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '../library/types'
 
-const { VariableSizeList } = ReactWindow as any
+const List = (ReactWindow as any).VariableSizeList
 
 interface CollectionColumnProps {
-  collections: any[]
+  collections: MovieCollectionData[]
   sortBy: string
   setSortBy: (sort: string) => void
   listHeight: number
@@ -42,14 +43,14 @@ export function CollectionsColumn({
   return (
     <DashboardColumn icon={<Film className="w-4 h-4" />} title="Collections" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {collections.length > 0 && <VariableSizeList ref={listRef} height={listHeight} itemCount={collections.length} itemSize={itemSize} width="100%">{row}</VariableSizeList>}
+        {collections.length > 0 && <List ref={listRef} height={listHeight} itemCount={collections.length} itemSize={itemSize} width="100%">{row}</List>}
       </div>
     </DashboardColumn>
   )
 }
 
 interface SeriesColumnProps {
-  series: any[]
+  series: SeriesCompletenessData[]
   sortBy: string
   setSortBy: (sort: string) => void
   listHeight: number
@@ -83,14 +84,14 @@ export function SeriesColumn({
   return (
     <DashboardColumn icon={<Tv className="w-4 h-4" />} title="TV Series" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {series.length > 0 && <VariableSizeList ref={listRef} height={listHeight} itemCount={series.length} itemSize={itemSize} width="100%">{row}</VariableSizeList>}
+        {series.length > 0 && <List ref={listRef} height={listHeight} itemCount={series.length} itemSize={itemSize} width="100%">{row}</List>}
       </div>
     </DashboardColumn>
   )
 }
 
 interface ArtistColumnProps {
-  artists: any[]
+  artists: ArtistCompletenessData[]
   sortBy: string
   setSortBy: (sort: string) => void
   listHeight: number
@@ -128,7 +129,7 @@ export function ArtistColumn({
   return (
     <DashboardColumn icon={<Music className="w-4 h-4" />} title="Music" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {artists.length > 0 && <VariableSizeList ref={listRef} height={listHeight} itemCount={artists.length} itemSize={itemSize} width="100%">{row}</VariableSizeList>}
+        {artists.length > 0 && <List ref={listRef} height={listHeight} itemCount={artists.length} itemSize={itemSize} width="100%">{row}</List>}
       </div>
     </DashboardColumn>
   )
