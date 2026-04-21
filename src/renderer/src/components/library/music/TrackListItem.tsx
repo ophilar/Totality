@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { CircleFadingArrowUp, Trash2, HardDrive } from 'lucide-react'
 import { AddToWishlistButton } from '../../wishlist/AddToWishlistButton'
 import type { MusicTrack } from '../types'

@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { Disc3 } from 'lucide-react'
 import { providerColors } from '../mediaUtils'
 import type { MusicAlbum, AlbumCompletenessData } from '../types'

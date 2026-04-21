@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { MissingItemCard } from '../MissingItemCard'
 import { formatSeasonLabel } from '../mediaUtils'
 

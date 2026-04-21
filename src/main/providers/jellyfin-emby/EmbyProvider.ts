@@ -32,8 +32,9 @@ export class EmbyProvider extends JellyfinEmbyBase {
       `Version="${this.clientVersion}"`,
     ]
 
-    if (this.accessToken) {
-      parts.push(`Token="${this.accessToken}"`)
+    const token = this.client.getAccessToken()
+    if (token) {
+      parts.push(`Token="${token}"`)
     }
 
     return parts.join(', ')

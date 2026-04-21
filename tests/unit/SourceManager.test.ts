@@ -114,10 +114,18 @@ describe('SourceManager', () => {
     })
     await manager.initialize()
 
-    // Simulate slow scan
-    mockProvider.scanLibrary.mockImplementation(async () => {
+    // Simulate slow scan that calls progress
+    mockProvider.scanLibrary.mockImplementation(async (_id: string, options?: { onProgress?: (p: any) => void }) => {
       // Small delay to allow stopScan to be called
       await new Promise(resolve => setTimeout(resolve, 50))
+      // Trigger progress check
+      if (options?.onProgress) {
+        try {
+          options.onProgress({ phase: 'fetching', current: 1, total: 10, percentage: 10 })
+        } catch (err) {
+          return { success: false, itemsScanned: 1, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [(err as Error).message], durationMs: 50 }
+        }
+      }
       return { success: true, itemsScanned: 10, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 100 }
     })
 

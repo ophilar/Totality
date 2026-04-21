@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useRef } from 'react'
+import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
 import { QualityBadges } from '../QualityBadges'
 import { EpisodePlaceholder } from '../../ui/MediaPlaceholders'

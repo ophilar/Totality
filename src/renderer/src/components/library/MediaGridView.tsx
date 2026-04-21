@@ -93,6 +93,7 @@ export function MediaGridView<T>({
     return (
       <div className="h-full flex flex-col">
         {statsBar}
+        {banner}
         <div className="flex-1 flex items-center justify-center">
           {emptyState}
         </div>

@@ -32,7 +32,7 @@ describe('JellyfinProvider', () => {
   })
 
   it('should authenticate with the server', async () => {
-    const mockAxiosInstance = (provider as any).api
+    const mockAxiosInstance = (provider as any).client.api
     mockAxiosInstance.post.mockResolvedValueOnce({
       data: {
         AccessToken: 'test-token',
@@ -52,11 +52,11 @@ describe('JellyfinProvider', () => {
   })
 
   it('should fetch libraries from the server', async () => {
-    const mockAxiosInstance = (provider as any).api
+    const mockAxiosInstance = (provider as any).client.api
     // Set internal state for testing
-    ;(provider as any).accessToken = 'token'
-    ;(provider as any).userId = 'u1'
-    ;(provider as any).serverUrl = 'http://localhost:8096'
+    ;(provider as any).client.options.accessToken = 'token'
+    ;(provider as any).client.options.userId = 'u1'
+    ;(provider as any).client.options.serverUrl = 'http://localhost:8096'
     
     mockAxiosInstance.get.mockResolvedValueOnce({
       data: {

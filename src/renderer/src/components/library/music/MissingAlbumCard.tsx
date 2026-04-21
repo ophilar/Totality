@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react'
+import { useState, memo } from 'react'
 import { Disc3, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '../../wishlist/AddToWishlistButton'
 import type { MissingAlbum } from '../types'

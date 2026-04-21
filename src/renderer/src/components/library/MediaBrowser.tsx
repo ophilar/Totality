@@ -421,7 +421,7 @@ export function MediaBrowser({
                 seriesCompleteness={seriesCompleteness} onMissingItemClick={setSelectedMissingItem}
                 showSourceBadge={!activeSourceId && sources.length > 1}
                 onAnalyzeSeries={handleAnalyzeSingleSeries}
-                onFixMatch={(title, sId, fp) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
+                onFixMatch={(title: string, sId: string, fp?: string) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
                 onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                 onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
                 onDismissMissingSeason={handleDismissMissingSeason} totalShowCount={totalShowCount}

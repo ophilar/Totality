@@ -1,4 +1,3 @@
-import React from 'react'
 import { formatSeasonLabel } from '../mediaUtils'
 import { EpisodeRow } from './EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from './MissingEpisodeRowWithArtwork'

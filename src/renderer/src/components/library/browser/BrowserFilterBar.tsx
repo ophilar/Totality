@@ -1,5 +1,5 @@
 
-import React from 'react'
+
 import { Unlock, Lock, Layers, Grid3x3, List } from 'lucide-react'
 
 interface BrowserFilterBarProps {
