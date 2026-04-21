@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { MediaItem, MovieCollection, SeriesCompleteness, ArtistCompleteness, DashboardSummary, MusicAlbum } from '../../../../../main/types/database'
+import type { MediaItem, MovieCollection, SeriesCompleteness, ArtistCompleteness, DashboardSummary, MusicAlbum } from '@main/types/database'
 
 export function useDashboardData(activeSourceId: string | null) {
   const [movieUpgrades, setMovieUpgrades] = useState<MediaItem[]>([])

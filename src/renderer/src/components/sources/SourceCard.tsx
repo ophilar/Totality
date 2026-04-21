@@ -6,8 +6,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
+import { useSources, type ProviderType } from '@/contexts/SourceContext'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/index'
 
 // Extended library type with enabled status
 interface LibraryWithStatus extends MediaLibraryResponse {

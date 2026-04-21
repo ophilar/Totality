@@ -14,10 +14,10 @@ import {
 import { QualityBadges } from './QualityBadges'
 import { ConversionRecommendation } from './ConversionRecommendation'
 import { TranscodeModal } from './TranscodeModal'
-import { useToast } from '../../contexts/ToastContext'
-import { toSafeNumber, toSafeString } from '../../utils/typeSafety'
+import { useToast } from '@/contexts/ToastContext'
+import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { Zap } from 'lucide-react'
-import type { MediaItem, MediaItemVersion } from '../../../../main/types/database'
+import type { MediaItem, MediaItemVersion } from '@main/types/database'
 
 interface MediaDetailsProps {
   mediaId: number

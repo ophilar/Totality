@@ -7,14 +7,15 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
-import { useToast } from './ToastContext'
+import { useToast } from '@/contexts/ToastContext'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
   ServerInstanceResponse,
   ScanResultResponse,
   ConnectionTestResult,
-} from '../../../preload/index'
+} from '@preload/index'
+
 
 // Types for source context
 export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
@@ -422,7 +423,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
   useEffect(() => {
     const updateProgress = (state: any) => {
       const { currentTask } = state
-      if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan')) {
+      if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan' || currentTask.type === 'music-scan')) {
         setIsScanning(true)
         if (currentTask.progress) {
           setScanProgress(prev => {
@@ -433,7 +434,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
               libraryId: currentTask.libraryId,
               current: currentTask.progress.current,
               total: currentTask.progress.total,
-              phase: currentTask.progress.phase,
+              phase: currentTask.progress.phase as any,
               currentItem: currentTask.progress.currentItem,
               percentage: currentTask.progress.percentage,
             })

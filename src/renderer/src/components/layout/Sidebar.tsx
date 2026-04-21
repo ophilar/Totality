@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
-import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { AddSourceModal } from '../sources/AddSourceModal'
-import type { MediaSourceResponse, MediaLibraryResponse } from '../../../../preload/index'
+import { useSources, type ProviderType } from '@/contexts/SourceContext'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/index'
 
 // Task queue types
 interface QueuedTask {
