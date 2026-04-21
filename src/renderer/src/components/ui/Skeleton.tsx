@@ -15,7 +15,7 @@ export function Skeleton({ className, ...props }: SkeletonProps) {
 
 export function MediaCardSkeleton() {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid="media-card-skeleton">
       <Skeleton className="aspect-2/3 w-full rounded-lg" />
       <div className="space-y-2">
         <Skeleton className="h-4 w-3/4" />

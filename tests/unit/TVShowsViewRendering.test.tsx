@@ -12,14 +12,30 @@ vi.mock('../../src/renderer/src/contexts/SourceContext', () => ({
   useSources: vi.fn(),
 }))
 
-// Mock MediaGridView to simplify rendering
-vi.mock('../../src/renderer/src/components/library/MediaGridView', () => ({
-  MediaGridView: ({ items, renderGridItem, emptyState, banner }: any) => (
-    <div data-testid="media-grid">
-      {banner}
-      {items.length > 0 ? items.map((item: any) => renderGridItem(item)) : emptyState}
+// Mock react-virtuoso to render items in JSDOM
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({ data, itemContent, components }: any) => (
+    <div data-testid="virtuoso-list">
+      {data.map((item: any, index: number) => (
+        <div key={index}>{itemContent(index, item)}</div>
+      ))}
+      {components?.Footer && <components.Footer />}
     </div>
   ),
+  VirtuosoGrid: ({ data, itemContent, components }: any) => {
+    const List = components?.List || (({ children }: any) => <div>{children}</div>)
+    const Item = components?.Item || (({ children }: any) => <div>{children}</div>)
+    return (
+      <div data-testid="virtuoso-grid">
+        <List>
+          {data.map((item: any, index: number) => (
+            <Item key={index}>{itemContent(index, item)}</Item>
+          ))}
+        </List>
+        {components?.Footer && <components.Footer />}
+      </div>
+    )
+  }
 }))
 
 describe('TVShowsView Rendering', () => {
