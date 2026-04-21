@@ -244,6 +244,10 @@ export class TaskQueueService {
 
   getQueueState() { return this.getState() }
 
+  getTasks(): QueuedTask[] {
+    return [...this.queue, ...(this.currentTask ? [this.currentTask] : []), ...this.completedTasks]
+  }
+
   getTaskHistory(): any[] { return this.completedTasks }
   getMonitoringHistory(): any[] { return [] }
   clearTaskHistory(): void { this.completedTasks = []; this.saveState(); this.notifyListeners() }
