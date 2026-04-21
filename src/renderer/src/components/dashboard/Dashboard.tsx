@@ -31,7 +31,7 @@ import {
   parseMissingAlbums,
   parseMissingEpisodes
 } from './dashboardUtils'
-import type { DashboardProps, UpgradeTab, MissingMovie, MissingEpisode, MissingAlbumItem } from './types'
+import type { DashboardProps, UpgradeTab, MissingMovie, MissingEpisode, MissingAlbumItem, MusicAlbumUpgrade } from './types'
 
 export function Dashboard({
   onAddSource,
@@ -136,7 +136,7 @@ export function Dashboard({
   const getCollectionRowHeight = useCallback((index: number) => {
     const collection = collections[index]
     if (!collection || !expandedCollections.has(index)) return COLLAPSED_HEIGHT
-    const missing = parseMissingMovies(collection as any)
+    const missing = parseMissingMovies(collection)
     if (missing.length === 0) return COLLAPSED_HEIGHT
     let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
     height += missing.length * EXPANDED_ITEM_HEIGHT
@@ -147,9 +147,9 @@ export function Dashboard({
   const getSeriesRowHeight = useCallback((index: number) => {
     const s = series[index]
     if (!s || !expandedSeries.has(index)) return COLLAPSED_HEIGHT
-    const episodes = parseMissingEpisodes(s as any)
+    const episodes = parseMissingEpisodes(s)
     if (episodes.length === 0) return COLLAPSED_HEIGHT
-    const seasons = groupEpisodesBySeason(s as any)
+    const seasons = groupEpisodesBySeason(s)
     let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
     height += seasons.length * 28
     height += episodes.length * EXPANDED_ITEM_HEIGHT
@@ -160,7 +160,7 @@ export function Dashboard({
   const getArtistRowHeight = useCallback((index: number) => {
     const artist = artists[index]
     if (!artist || !expandedArtists.has(index)) return COLLAPSED_HEIGHT_ARTIST
-    const missing = parseMissingAlbums(artist as any, includeEps, includeSingles)
+    const missing = parseMissingAlbums(artist, includeEps, includeSingles)
     if (missing.length === 0) return COLLAPSED_HEIGHT_ARTIST
     let height = COLLAPSED_HEIGHT_ARTIST + EXPANDED_MARGIN
     height += missing.length * EXPANDED_ITEM_HEIGHT
@@ -173,7 +173,7 @@ export function Dashboard({
     const list = upgradeTab === 'movies' ? movieUpgrades : tvUpgrades
     const item = list[index]
     if (!item) return MOVIE_ITEM_HEIGHT
-    return expandedRecommendations.has(item.id as any) ? 280 : MOVIE_ITEM_HEIGHT
+    return expandedRecommendations.has(item.id!) ? 280 : MOVIE_ITEM_HEIGHT
   }, [upgradeTab, movieUpgrades, tvUpgrades, expandedRecommendations])
 
   // Handlers
@@ -289,7 +289,7 @@ export function Dashboard({
         <div className="flex-1 flex gap-4 px-4 pb-4 overflow-x-auto overflow-y-hidden">
           <UpgradesColumn
             upgradeTab={upgradeTab} setUpgradeTab={setUpgradeTab}
-            movieUpgrades={movieUpgrades} tvUpgrades={tvUpgrades} musicUpgrades={musicUpgrades}
+            movieUpgrades={movieUpgrades} tvUpgrades={tvUpgrades} musicUpgrades={musicUpgrades as MusicAlbumUpgrade[]}
             upgradeSortBy={upgradeSortBy} setUpgradeSortBy={setUpgradeSortBy}
             hasMovies={hasMovies} hasTV={hasTV} hasMusic={hasMusic}
             listHeight={upgradeListHeight} itemSize={getUpgradeRowHeight} listRef={upgradeListInstanceRef}

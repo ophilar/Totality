@@ -19,14 +19,15 @@ export const parseMissingEpisodes = (s: SeriesCompletenessData): MissingEpisode[
   try {
     const parsed = JSON.parse(s.missing_episodes)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((ep): ep is any =>
-      ep && typeof ep === 'object' &&
-      typeof ep.season_number === 'number' &&
-      typeof ep.episode_number === 'number'
-    ).map(ep => ({
+    return parsed.filter((ep: unknown): ep is { season_number: number; episode_number: number; episode_title?: string } => {
+      const e = ep as Record<string, unknown>
+      return e !== null && typeof e === 'object' &&
+        typeof e.season_number === 'number' &&
+        typeof e.episode_number === 'number'
+    }).map(ep => ({
       ...ep,
       series_title: s.series_title,
-      tmdb_id: s.tmdb_id
+      tmdb_id: s.tmdb_id || ''
     }))
   } catch {
     return []
