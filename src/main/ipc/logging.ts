@@ -30,7 +30,7 @@ async function getSourceInfo(): Promise<SourceInfo[]> {
     const sources = await manager.getSources()
 
     const results = await Promise.all(
-      sources.map(async (source) => {
+      sources.map(async (source: any) => {
         let serverVersion: string | null = null
         const provider = manager.getProvider(source.source_id)
         if (provider) {
@@ -77,7 +77,7 @@ async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
     } catch (error) { throw error }
 
     const sources = await manager.getSources()
-    const libraries = sources.map((s) => ({
+    const libraries = (sources as any[]).map((s: any) => ({
       sourceName: s.display_name,
       sourceType: s.source_type,
       itemCount: db.stats.getItemsCountBySource(s.source_id),

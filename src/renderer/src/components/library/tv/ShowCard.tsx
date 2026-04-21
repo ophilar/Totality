@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useRef } from 'react'
+import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Trash2, HardDrive, Tv as TvPlaceholder } from 'lucide-react'
 import { useMenuClose } from '../../../hooks/useMenuClose'
 import { providerColors } from '../mediaUtils'

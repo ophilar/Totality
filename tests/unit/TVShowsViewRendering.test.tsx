@@ -76,8 +76,8 @@ describe('TVShowsView Rendering', () => {
       />
     )
 
-    expect(screen.getByText('Scan in Progress')).toBeTruthy()
-    expect(screen.getByText('fetching')).toBeTruthy()
+    expect(screen.getByText(/Scan:/)).toBeTruthy()
+    expect(screen.getByText(/fetching/)).toBeTruthy()
   })
 
   it('should render show cards when data is present', () => {

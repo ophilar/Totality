@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { SeasonCard } from './SeasonCard'
 import { MissingSeasonCardWithArtwork } from './MissingSeasonCardWithArtwork'

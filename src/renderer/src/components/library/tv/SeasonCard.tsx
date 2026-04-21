@@ -1,4 +1,4 @@
-import React, { memo, useRef } from 'react'
+import { memo, useRef } from 'react'
 import { Folder } from 'lucide-react'
 import { formatSeasonLabel } from '../mediaUtils'
 import type { SeasonInfo } from '../types'

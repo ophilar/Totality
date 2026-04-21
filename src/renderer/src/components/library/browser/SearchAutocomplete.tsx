@@ -1,5 +1,5 @@
 
-import React from 'react'
+
 import { Search, X, Film, Tv, User, Disc3, Music, CircleFadingArrowUp } from 'lucide-react'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '../../ui/MediaPlaceholders'
 import type { MediaItem, MusicArtist, MusicAlbum, MusicTrack } from '../../../../../main/types/database'

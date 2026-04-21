@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useRef } from 'react'
+import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil } from 'lucide-react'
 import { TvPlaceholder } from '../../ui/MediaPlaceholders'
 import { useMenuClose } from '../../../hooks/useMenuClose'

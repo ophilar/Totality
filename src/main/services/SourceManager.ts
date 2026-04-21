@@ -9,11 +9,11 @@ import { getDatabase, type BetterSQLiteService } from '../database/getDatabase'
 import { getLiveMonitoringService, type LiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService, type TaskQueueService } from './TaskQueueService'
 import { getLoggingService, type LoggingService } from './LoggingService'
-import { app } from 'electron'
-import * as path from 'path'
-import * as fs from 'fs/promises'
 import { createProvider, getSupportedProviders } from '../providers/ProviderFactory'
 import { PlexProvider } from '../providers/plex/PlexProvider'
+import { SourceScannerService, type AggregateProgressCallback } from './SourceScannerService'
+import { SourceCrudService } from './SourceCrudService'
+import { PlexAuthService } from './PlexAuthService'
 import type {
   MediaProvider,
   ProviderType,
@@ -21,23 +21,9 @@ import type {
   ConnectionTestResult,
   ScanResult,
   ProgressCallback,
-  ServerInstance,
   MediaLibrary,
 } from '../providers/base/MediaProvider'
 import type { MediaSource } from '../types/database'
-
-// Progress callback that includes source information
-export type AggregateProgressCallback = (
-  sourceId: string,
-  sourceName: string,
-  progress: {
-    current: number
-    total: number
-    phase: 'fetching' | 'processing' | 'analyzing' | 'saving'
-    currentItem?: string
-    percentage: number
-  }
-) => void
 
 export interface SourceManagerDependencies {
   db?: BetterSQLiteService
@@ -49,10 +35,11 @@ export interface SourceManagerDependencies {
 export class SourceManager {
   private providers: Map<string, MediaProvider> = new Map()
   private initPromise: Promise<void> | null = null
-  private scanCancelled: boolean = false
-  private activeScans: number = 0
   private getLibrariesPromises: Map<string, Promise<MediaLibrary[]>> = new Map()
-  
+  private scanner: SourceScannerService | null = null
+  private crud: SourceCrudService | null = null
+  private plexAuth: PlexAuthService | null = null
+
   private db: BetterSQLiteService
   private liveMonitoring: LiveMonitoringService | null
   private taskQueue: TaskQueueService | null
@@ -60,64 +47,41 @@ export class SourceManager {
 
   constructor(deps: SourceManagerDependencies = {}) {
     this.db = deps.db || getDatabase()
-    this.liveMonitoring = deps.liveMonitoring || null // Lazy load if not provided
-    this.taskQueue = deps.taskQueue || null // Lazy load if not provided
+    this.liveMonitoring = deps.liveMonitoring || null
+    this.taskQueue = deps.taskQueue || null
     this.logging = deps.logging || getLoggingService()
   }
 
+  private getScanner(): SourceScannerService {
+    if (!this.scanner) this.scanner = new SourceScannerService(this.db, this.providers, this.logging)
+    return this.scanner
+  }
+
+  private getCrud(): SourceCrudService {
+    if (!this.crud) this.crud = new SourceCrudService(this.db, this.providers, this.logging)
+    return this.crud
+  }
+
+  private getPlexAuth(): PlexAuthService {
+    if (!this.plexAuth) this.plexAuth = new PlexAuthService(this.providers, this.db)
+    return this.plexAuth
+  }
+
   private getLiveMonitoring(): LiveMonitoringService {
-    if (!this.liveMonitoring) {
-      this.liveMonitoring = getLiveMonitoringService()
-    }
+    if (!this.liveMonitoring) this.liveMonitoring = getLiveMonitoringService()
     return this.liveMonitoring
   }
 
   private getTaskQueue(): TaskQueueService {
-    if (!this.taskQueue) {
-      this.taskQueue = getTaskQueueService()
-    }
+    if (!this.taskQueue) this.taskQueue = getTaskQueueService()
     return this.taskQueue
-  }
-
-  /**
-   * Check if a scan is currently in progress
-   */
-  isScanInProgress(): boolean {
-    return this.activeScans > 0
-  }
-
-  /**
-   * Check if a manual scan is in progress
-   * Used by LiveMonitoringService to pause during manual scans
-   */
-  isManualScanInProgress(): boolean {
-    return this.activeScans > 0
-  }
-
-  /**
-   * Check if scan has been cancelled
-   */
-  isScanCancelled(): boolean {
-    return this.scanCancelled
-  }
-
-  /**
-   * Stop the current scan
-   */
-  stopScan(): void {
-    if (this.activeScans > 0) {
-      this.logging.info('[SourceManager]', '[SourceManager] Stopping scan...')
-      this.scanCancelled = true
-    }
   }
 
   /**
    * Initialize the source manager - loads all sources from database
    */
   async initialize(): Promise<void> {
-    if (!this.initPromise) {
-      this.initPromise = this.loadSources()
-    }
+    if (!this.initPromise) this.initPromise = this.loadSources()
     return this.initPromise
   }
 
@@ -126,34 +90,28 @@ export class SourceManager {
     const sources = db.sources.getSources()
     const unavailableSources: Array<{ name: string; type: string }> = []
 
-    // Load all providers in parallel with per-source timeout
     await Promise.allSettled(
-      sources.map((source: MediaSource) => this.loadSingleSource(source, db, unavailableSources))
+      sources.map((source: MediaSource) => this.loadSingleSource(source, unavailableSources))
     )
 
     this.logging.info('[SourceManager]', `Initialized with ${this.providers.size} providers`)
 
-    // Create notifications for unavailable sources (after startup)
     if (unavailableSources.length > 0) {
       const names = unavailableSources.map(s => s.name).join(', ')
-      this.logging.warn('[SourceManager]', `Unavailable sources at startup: ${names}`)
       try {
         db.notifications.addNotification({
           type: 'error',
           title: 'Media source unavailable',
           message: unavailableSources.length === 1
-            ? `"${unavailableSources[0].name}" could not be reached at startup. Please check the connection.`
-            : `${unavailableSources.length} sources could not be reached at startup: ${names}. Please check their connections.`,
+            ? `"${unavailableSources[0].name}" could not be reached at startup.`
+            : `${unavailableSources.length} sources could not be reached at startup: ${names}.`,
         })
-      } catch (err) {
-        this.logging.warn('[SourceManager]', '[SourceManager] Could not create notification for unavailable sources:', err)
-      }
+      } catch { /* ignore */ }
     }
   }
 
   private async loadSingleSource(
     source: MediaSource,
-    db: BetterSQLiteService,
     unavailableSources: Array<{ name: string; type: string }>
   ): Promise<void> {
     try {
@@ -169,1165 +127,227 @@ export class SourceManager {
       const provider = createProvider(source.source_type as ProviderType, config)
       this.providers.set(source.source_id, provider)
 
-      // For Plex providers with saved serverId, restore server selection with timeout
       if (source.source_type === 'plex' && connectionConfig.serverId && connectionConfig.token) {
         const plexProvider = provider as PlexProvider
         try {
-          const restored = await this.withTimeout(
-            this.restorePlexServer(plexProvider, connectionConfig, source, db),
-            5000,
-            `Plex server "${source.display_name}" connection timed out`
-          )
-          if (!restored) {
-            unavailableSources.push({ name: source.display_name, type: source.source_type })
-          }
-        } catch (error) {
-          this.logging.warn('[SourceManager]', `Could not restore server for ${source.display_name}:`, error)
+          const success = await Promise.race([
+            plexProvider.selectServer(connectionConfig.serverId as string),
+            new Promise<boolean>((_, r) => setTimeout(() => r(new Error('Timeout')), 5000))
+          ])
+          if (!success) unavailableSources.push({ name: source.display_name, type: source.source_type })
+        } catch {
           unavailableSources.push({ name: source.display_name, type: source.source_type })
         }
       }
-
-      this.logging.info('[SourceManager]', `Loaded provider: ${source.display_name} (${source.source_type})`)
     } catch (error) {
       this.logging.error('[SourceManager]', `Failed to load provider ${source.source_id}:`, error)
     }
   }
 
-  private async restorePlexServer(
-    plexProvider: PlexProvider,
-    connectionConfig: Record<string, unknown>,
-    source: MediaSource,
-    db: BetterSQLiteService
-  ): Promise<boolean> {
-    // Set token first (should be set in constructor, but ensure it's set)
-    if (!await plexProvider.isAuthenticated()) {
-      plexProvider.setAuthToken(connectionConfig.token as string)
-    }
-    // Restore server selection
-    const success = await plexProvider.selectServer(connectionConfig.serverId as string)
-    if (success) {
-      const server = plexProvider.getSelectedServer()
-      // Update display name to actual server name if it differs
-      if (server && server.name && server.name !== source.display_name) {
-        await db.sources.upsertSource({
-          ...source,
-          display_name: server.name,
-        })
-        this.logging.info('[SourceManager]', `Restored server selection: ${server.name}`)
-      } else {
-        this.logging.info('[SourceManager]', `Restored server selection for ${source.display_name}`)
-      }
-
-      return true
-    } else {
-      this.logging.warn('[SourceManager]', `Failed to restore server selection for ${source.display_name}`)
-      return false
-    }
-  }
-
-  /**
-   * Run a promise with a timeout. Rejects if the promise doesn't resolve within the given ms.
-   */
-  private withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_resolve, reject) =>
-        setTimeout(() => reject(new Error(timeoutMessage)), ms)
-      ),
-    ])
-  }
-
-  // ============================================================================
-  // SOURCE CRUD
-  // ============================================================================
-
-  /**
-   * Add a new media source
-   */
-  async addSource(config: SourceConfig): Promise<MediaSource> {
-    await this.initialize()
-
-    const db = this.db
-    const sourceId = config.sourceId || this.generateSourceId(config.sourceType)
-
-    // Create the provider instance
-    const provider = createProvider(config.sourceType, {
-      ...config,
-      sourceId,
-    })
-
-    // Store in database
-    const sourceRecord: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'> = {
-      source_id: sourceId,
-      source_type: config.sourceType,
-      display_name: config.displayName,
-      connection_config: JSON.stringify(config.connectionConfig),
-      is_enabled: config.isEnabled !== false,
-    }
-
-    await db.sources.upsertSource(sourceRecord)
-
-    // Add to active providers
-    this.providers.set(sourceId, provider)
-
-    // Return the full source record
-    const source = db.sources.getSourceById(sourceId)
-    if (!source) {
-      throw new Error('Failed to retrieve created source')
-    }
-
-    this.logging.info('[SourceManager]', `Added source: ${config.displayName} (${sourceId})`)
-    return source
-  }
-
-  /**
-   * Update an existing media source
-   */
-  async updateSource(sourceId: string, updates: Partial<SourceConfig>): Promise<void> {
-    await this.initialize()
-
-    const db = this.db
-    const existing = db.sources.getSourceById(sourceId)
-
-    if (!existing) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    const updatedSource: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'> = {
-      source_id: sourceId,
-      source_type: updates.sourceType || existing.source_type,
-      display_name: updates.displayName || existing.display_name,
-      connection_config: updates.connectionConfig
-        ? JSON.stringify(updates.connectionConfig)
-        : existing.connection_config,
-      is_enabled: updates.isEnabled !== undefined ? updates.isEnabled : !!existing.is_enabled,
-    }
-
-    await db.sources.upsertSource(updatedSource)
-
-    // If connection config changed, recreate provider
-    if (updates.connectionConfig) {
-      const config: SourceConfig = {
-        sourceId,
-        sourceType: updatedSource.source_type as ProviderType,
-        displayName: updatedSource.display_name,
-        connectionConfig: updates.connectionConfig,
-        isEnabled: !!updatedSource.is_enabled,
-      }
-      const provider = createProvider(updatedSource.source_type as ProviderType, config)
-      this.providers.set(sourceId, provider)
-    }
-
-    this.logging.info('[SourceManager]', `Updated source: ${sourceId}`)
-  }
-
-  /**
-   * Remove a media source and all its data
-   */
-  async removeSource(sourceId: string): Promise<void> {
-    await this.initialize()
-
-    const db = this.db
-
-    // 1. Stop live monitoring for this source
-    this.getLiveMonitoring().removeSource(sourceId)
-
-    // 2. Cancel and remove any queued tasks for this source
-    this.getTaskQueue().removeTasksForSource(sourceId)
-
-    // 3. Remove from providers map
-    this.providers.delete(sourceId)
-
-    // 4. Remove from database (includes notifications cleanup)
-    db.sources.deleteSource(sourceId)
-
-    // 5. Clean up cached artwork files
-    await this.cleanupArtworkCache(sourceId)
-
-    this.logging.info('[SourceManager]', `Removed source: ${sourceId}`)
-  }
-
-  /**
-   * Clean up cached artwork files for a deleted source
-   */
-  private async cleanupArtworkCache(sourceId: string): Promise<void> {
-    const artworkPath = path.join(app.getPath('userData'), 'artwork', sourceId)
-    try {
-      await fs.rm(artworkPath, { recursive: true, force: true })
-      this.logging.info('[SourceManager]', `Cleaned up artwork cache for ${sourceId}`)
-    } catch (error) {
-      // Ignore if folder doesn't exist or other errors
-      this.logging.info('[SourceManager]', `No artwork cache to clean up for ${sourceId}`)
-    }
-  }
-
-  /**
-   * Get all configured sources
-   */
-  async getSources(type?: ProviderType): Promise<MediaSource[]> {
-    await this.initialize()
-
-    const db = this.db
-    return db.sources.getSources(type)
-  }
-
-  /**
-   * Get a specific source by ID
-   */
-  async getSource(sourceId: string): Promise<MediaSource | null> {
-    await this.initialize()
-
-    const db = this.db
-    return db.sources.getSourceById(sourceId)
-  }
-
-  /**
-   * Get enabled sources only
-   */
-  async getEnabledSources(): Promise<MediaSource[]> {
-    await this.initialize()
-
-    const db = this.db
-    return db.sources.getEnabledSources()
-  }
-
-  /**
-   * Toggle source enabled status
-   */
-  async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
-    await this.initialize()
-
-    const db = this.db
-    const source = db.sources.getSourceById(sourceId)
-    if (source) {
-      db.sources.upsertSource({ ...source, is_enabled: enabled })
-    }
-  }
-
-  // ============================================================================
-  // PROVIDER MANAGEMENT
-  // ============================================================================
-
-  /**
-   * Get a provider instance by source ID
-   */
-  getProvider(sourceId: string): MediaProvider | undefined {
-    return this.providers.get(sourceId)
-  }
-
-  /**
-   * Get Plex provider (typed version)
-   */
-  getPlexProvider(sourceId: string): PlexProvider | undefined {
-    const provider = this.providers.get(sourceId)
-    if (provider?.providerType === 'plex') {
-      return provider as PlexProvider
-    }
-    return undefined
-  }
-
-  /**
-   * Test connection for a source
-   */
-  async testConnection(sourceId: string): Promise<ConnectionTestResult> {
-    await this.initialize()
-
-    const provider = this.providers.get(sourceId)
-    if (!provider) {
-      return { success: false, error: `Source not found: ${sourceId}` }
-    }
-
-    // For Plex sources, check if a server is selected before trying to get libraries
-    if (provider.providerType === 'plex') {
-      const plexProvider = provider as PlexProvider
-      if (!plexProvider.hasSelectedServer()) {
-        this.logging.info('[SourceManager]', `Plex source ${sourceId} has no server selected, returning empty libraries`)
-        return { success: false, error: 'No server selected - please complete setup' }
-      }
-    }
-
-    const db = this.db
-
-    // For Jellyfin/Emby: authenticate with credentials if no access token
-    if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
-      const authResult = await this.authenticateJellyfinEmbyIfNeeded(sourceId, provider, db)
-      if (authResult) return authResult // Returns error result if auth failed
-    }
-
-    // Run the actual connection test
-    const currentProvider = this.providers.get(sourceId) || provider
-    const startTime = Date.now()
-    const result = await currentProvider.testConnection()
-    const elapsed = Date.now() - startTime
-
-    if (result.success) {
-      db.sources.updateSourceConnectionTime(sourceId)
-      this.logging.verbose('[SourceManager]', `Connection test passed for ${currentProvider.providerType} source in ${elapsed}ms`, result.serverVersion ? `Server version: ${result.serverVersion}` : undefined)
-    } else {
-      this.logging.verbose('[SourceManager]', `Connection test failed for ${currentProvider.providerType} source in ${elapsed}ms`, result.error || undefined)
-    }
-
-    return result
-  }
-
-  /**
-   * Authenticate Jellyfin/Emby with username/password if no access token exists.
-   * Returns a ConnectionTestResult on failure, or null if auth succeeded or wasn't needed.
-   */
-  private async authenticateJellyfinEmbyIfNeeded(
-    sourceId: string,
-    provider: MediaProvider,
-    db: BetterSQLiteService,
-  ): Promise<ConnectionTestResult | null> {
-    const source = db.sources.getSourceById(sourceId)
-    if (!source) return null
-
-    try {
-      const config = JSON.parse(source.connection_config)
-      if (!config.username || !config.password || config.accessToken) return null
-
-      this.logging.info('[SourceManager]', `Authenticating ${provider.providerType} with username/password`)
-
-      const authResult = await provider.authenticate({
-        serverUrl: config.serverUrl,
-        username: config.username,
-        password: config.password,
-      })
-
-      if (!authResult.success || !authResult.token) {
-        return { success: false, error: authResult.error || 'Authentication failed' }
-      }
-
-      // Save token and remove password from stored config
-      const updatedConfig = {
-        ...config,
-        accessToken: authResult.token,
-        userId: authResult.userId,
-        password: undefined,
-      }
-
-      db.sources.upsertSource({
-        source_id: sourceId,
-        source_type: source.source_type,
-        display_name: source.display_name,
-        connection_config: JSON.stringify(updatedConfig),
-        is_enabled: source.is_enabled,
-      })
-
-      // Recreate provider with new credentials
-      const newProvider = createProvider(source.source_type as ProviderType, {
-        sourceId,
-        sourceType: source.source_type as ProviderType,
-        displayName: source.display_name,
-        connectionConfig: updatedConfig,
-        isEnabled: !!source.is_enabled,
-      })
-      this.providers.set(sourceId, newProvider)
-
-      this.logging.info('[SourceManager]', `${provider.providerType} authenticated and credentials saved`)
-      return null // Auth succeeded
-    } catch (err: unknown) {
-      this.logging.error('[SourceManager]', `Error during ${provider.providerType} authentication:`, err)
-      return { success: false, error: err instanceof Error ? err.message : 'Authentication error' }
-    }
-  }
-
-  // ============================================================================
-  // PLEX-SPECIFIC AUTHENTICATION
-  // ============================================================================
-
-  /**
-   * Start Plex OAuth flow
-   */
-  async plexStartAuth(): Promise<{ pinId: number; code: string; authUrl: string }> {
-    // Create a temporary provider for auth
-    const tempProvider = new PlexProvider({
-      sourceId: 'temp-auth',
-      sourceType: 'plex',
-      displayName: 'Temp Auth',
-      connectionConfig: {},
-    })
-
-    const pin = await tempProvider.requestAuthPin()
-    const authUrl = tempProvider.getAuthUrl(pin.id, pin.code)
-
-    return {
-      pinId: pin.id,
-      code: pin.code,
-      authUrl,
-    }
-  }
-
-  /**
-   * Complete Plex OAuth flow
-   */
-  async plexCompleteAuth(pinId: number): Promise<string | null> {
-    const tempProvider = new PlexProvider({
-      sourceId: 'temp-auth',
-      sourceType: 'plex',
-      displayName: 'Temp Auth',
-      connectionConfig: {},
-    })
-
-    return tempProvider.checkAuthPin(pinId)
-  }
-
-  /**
-   * Authenticate with Plex token and get servers
-   */
-  async plexAuthenticateAndDiscover(
-    token: string,
-    displayName: string
-  ): Promise<{ source: MediaSource; servers: ServerInstance[] }> {
-    // Create provider with token
-    const config: SourceConfig = {
-      sourceType: 'plex',
-      displayName,
-      connectionConfig: { token },
-    }
-
-    const provider = new PlexProvider(config) as PlexProvider
-    const authResult = await provider.authenticate({ token })
-
-    if (!authResult.success) {
-      throw new Error(authResult.error || 'Authentication failed')
-    }
-
-    // Discover servers
-    const servers = await provider.discoverServers()
-
-    // Add the source
-    const source = await this.addSource({
-      ...config,
-      sourceId: provider.sourceId,
-      connectionConfig: { token },
-    })
-
-    // Update provider in map
-    this.providers.set(source.source_id, provider)
-
-    return { source, servers }
-  }
-
-  /**
-   * Select a Plex server for a source
-   */
-  async plexSelectServer(
-    sourceId: string,
-    serverId: string
-  ): Promise<{ success: boolean; libraries?: MediaLibrary[] }> {
-    const provider = this.getPlexProvider(sourceId)
-    if (!provider) {
-      throw new Error(`Plex source not found: ${sourceId}`)
-    }
-
-    const success = await provider.selectServer(serverId)
-    if (!success) {
-      return { success: false }
-    }
-
-    // Update connection config and display name with selected server
-    const server = provider.getSelectedServer()
-    if (server) {
-      const db = this.db
-      const source = db.sources.getSourceById(sourceId)
-      if (source) {
-        const config = JSON.parse(source.connection_config)
-        config.serverId = server.machineIdentifier
-        config.serverUrl = server.uri
-
-        await db.sources.upsertSource({
-          ...source,
-          display_name: server.name || source.display_name, // Use actual server name
-          connection_config: JSON.stringify(config),
-        })
-      }
-    }
-
-    // Get libraries
-    const libraries = await provider.getLibraries()
-
-    return { success: true, libraries }
-  }
-
-  /**
-   * Get Plex servers for a source
-   */
-  async plexGetServers(sourceId: string): Promise<ServerInstance[]> {
-    const provider = this.getPlexProvider(sourceId)
-    if (!provider) {
-      throw new Error(`Plex source not found: ${sourceId}`)
-    }
-
-    if (!provider.discoverServers) {
-      throw new Error('Provider does not support server discovery')
-    }
-
-    return provider.discoverServers()
-  }
-
-  // ============================================================================
-  // SCANNING
-  // ============================================================================
-
-  /**
-   * Scan a library for a specific source
-   * Updates the library scan timestamp after successful scan
-   */
-  async scanLibrary(
-    sourceId: string,
-    libraryId: string,
-    onProgress?: ProgressCallback
-  ): Promise<ScanResult> {
-    // Set scanning state immediately before any awaits
-    this.activeScans++
-
+  // Delegate Scanning to SourceScannerService
+  isScanInProgress(): boolean { return this.getScanner().isScanInProgress() }
+  isManualScanInProgress(): boolean { return this.getScanner().isScanInProgress() }
+  stopScan(): void { this.getScanner().stopScan() }
+
+  async scanLibrary(sourceId: string, libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
+    const scanner = this.getScanner()
+    scanner.activeScans++
     try {
       await this.initialize()
-
-      const provider = this.providers.get(sourceId)
-      if (!provider) {
-        throw new Error(`Source not found: ${sourceId}`)
-      }
-
-      // Get library info for timestamp recording
-      const libraries = await provider.getLibraries()
-      const library = libraries.find(lib => lib.id === libraryId)
-
-      // Wrap progress callback to handle cancellation and periodic updates
-      let lastNotifyTime = 0
-      const wrappedProgress: ProgressCallback = (progress) => {
-        if (this.scanCancelled) {
-          throw new Error('Scan cancelled by user')
-        }
-
-        // Notify renderer periodically during processing to show dynamic progress
-        if (progress.phase === 'processing' && progress.current > 0) {
-          const now = Date.now()
-          // Notify on first item, then every 5 seconds
-          if (lastNotifyTime === 0 || now - lastNotifyTime > 5000) {
-            this.getLiveMonitoring().sendToRenderer('library:updated', { type: 'media' })
-            lastNotifyTime = now
-          }
-        }
-
-        if (onProgress) {
-          onProgress(progress)
-        }
-      }
-
-      this.logging.info('[SourceManager]', `Starting scan: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}`)
-      const result = await provider.scanLibrary(libraryId, { onProgress: wrappedProgress })
-      
-      // Check if cancelled after the provider finishes
-      if (this.scanCancelled) {
-        return {
-          success: false,
-          itemsScanned: result.itemsScanned,
-          itemsAdded: result.itemsAdded,
-          itemsUpdated: result.itemsUpdated,
-          itemsRemoved: 0,
-          errors: ['Scan cancelled by user'],
-          durationMs: result.durationMs,
-        }
-      }
-
-      this.logging.info('[SourceManager]', `Scan result: itemsScanned=${result.itemsScanned}, itemsAdded=${result.itemsAdded}, itemsUpdated=${result.itemsUpdated}, itemsRemoved=${result.itemsRemoved}, success=${result.success}, errors=${result.errors.length}`)
-
-      // Verbose scan summary
-      const durationSec = (result.durationMs / 1000).toFixed(1)
-      this.logging.verbose('[SourceManager]',
-        `Scan complete: ${library?.name || libraryId} — ${result.itemsScanned} items (${result.itemsAdded} new, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed) in ${durationSec}s`,
-        result.errors.length > 0 ? `Errors: ${result.errors.join('; ')}` : undefined)
-
-      // Check if cancelled
-      if (this.scanCancelled) {
-        return {
-          success: false,
-          itemsScanned: result.itemsScanned,
-          itemsAdded: result.itemsAdded,
-          itemsUpdated: result.itemsUpdated,
-          itemsRemoved: 0,
-          errors: ['Scan cancelled by user'],
-          durationMs: result.durationMs,
-        }
-      }
-
-      // Update library scan timestamp if successful
-      if (result.success && library) {
-        const db = this.db
-        await db.sources.updateLibraryScanTime(
-          sourceId,
-          libraryId,
-          result.itemsScanned
-        )
-        this.logging.info('[SourceManager]', `Updated scan timestamp for library ${library.name}`)
-
-        // Start post-scan background tasks
-        try {
-          const { getWishlistCompletionService } = await import('./WishlistCompletionService')
-          const tq = this.getTaskQueue()
-
-          // 1. Completeness Checks
-          const hasTmdbKey = db.getSetting('tmdb_api_key')
-          if (hasTmdbKey) {
-            if (library.type === 'tv' || library.type === 'mixed') {
-              tq.addTask({
-                type: 'series-completeness',
-                label: `Post-scan Series Analysis: ${library.name}`,
-                sourceId,
-                libraryId
-              })
-            }
-            if (library.type === 'movie' || library.type === 'mixed') {
-              tq.addTask({
-                type: 'collection-completeness',
-                label: `Post-scan Collection Analysis: ${library.name}`,
-                sourceId,
-                libraryId
-              })
-            }
-          }
-
-          // 2. Wishlist check (decoupled from task queue)
-          getWishlistCompletionService().checkAndComplete().catch(err => {
-            this.logging.error('[SourceManager]', 'Post-scan wishlist check failed:', err)
-          })
-        } catch (err) {
-          this.logging.error('[SourceManager]', 'Failed to start post-scan background tasks:', err)
-        }
-      }
-
-      return result
-    } finally {
-      this.activeScans--
-      if (this.activeScans === 0) {
-        this.scanCancelled = false
-      }
-
-      // Notify renderer that library data has changed
-      try {
-        this.getLiveMonitoring().notifyLibraryUpdated()
-      } catch (err) {
-        this.logging.error('[SourceManager]', 'Failed to notify library update:', err)
-      }
+      // Subtract the immediate increment since scanner.scanLibrary will also increment
+      scanner.activeScans-- 
+      return await scanner.scanLibrary(sourceId, libraryId, onProgress)
+    } catch (error) {
+      scanner.activeScans--
+      throw error
     }
   }
 
-  /**
-   * Scan all libraries for a specific source
-   */
   async scanSource(sourceId: string, onProgress?: ProgressCallback): Promise<void> {
     await this.initialize()
     const provider = this.providers.get(sourceId)
     if (!provider) throw new Error(`Source not found: ${sourceId}`)
-
     const libraries = await provider.getLibraries()
     for (const library of libraries) {
-      if (this.scanCancelled) break
-
-      // Music libraries are scanned separately via music service
       if (library.type === 'music') continue
-
-      // Skip disabled libraries
-      const db = this.db
-      if (!db.sources.isLibraryEnabled(sourceId, library.id)) continue
-
+      if (!this.db.sources.isLibraryEnabled(sourceId, library.id)) continue
       await this.scanLibrary(sourceId, library.id, onProgress)
     }
   }
 
-  /**
-   * Scan all libraries across all enabled sources
-   */
   async scanAllSources(onProgress?: AggregateProgressCallback): Promise<Map<string, ScanResult>> {
-    // Set scanning state immediately before any awaits
-    this.activeScans++
-
+    const scanner = this.getScanner()
+    scanner.activeScans++
     try {
       await this.initialize()
-
-      const results = new Map<string, ScanResult>()
-      const enabledSources = await this.getEnabledSources()
-
-      for (const source of enabledSources) {
-        // Check for cancellation before each source
-        if (this.scanCancelled) {
-          this.logging.info('[SourceManager]', '[SourceManager] Scan cancelled by user')
-          break
-        }
-
-        const provider = this.providers.get(source.source_id)
-        if (!provider) {
-          this.logging.warn('[SourceManager]', `Provider not found for source: ${source.source_id}`)
-          continue
-        }
-
-        // Skip Plex sources without a server selected
-        if (provider.providerType === 'plex') {
-          const plexProvider = provider as PlexProvider
-          if (!plexProvider.hasSelectedServer()) {
-            this.logging.info('[SourceManager]', `Skipping Plex source ${source.source_id} - no server selected`)
-            continue
-          }
-        }
-
-        try {
-          // Get libraries for this source
-          const libraries = await provider.getLibraries()
-          const db = this.db
-
-          for (const library of libraries) {
-            // Check for cancellation before each library
-            if (this.scanCancelled) {
-              this.logging.info('[SourceManager]', '[SourceManager] Scan cancelled by user')
-              break
-            }
-
-            // Music libraries are scanned separately via music:scanLibrary
-            if (library.type === 'music') continue
-
-            // Skip disabled libraries
-            if (!db.sources.isLibraryEnabled(source.source_id, library.id)) {
-              this.logging.info('[SourceManager]', `Skipping disabled library: ${library.name}`)
-              continue
-            }
-
-            this.logging.verbose('[SourceManager]', `Scanning library: ${library.name} (${library.type}) from ${source.display_name}`)
-
-            let lastNotifyTime = 0
-            const result = await provider.scanLibrary(library.id, {
-              onProgress: (progress) => {
-                // Check for cancellation during progress
-                if (this.scanCancelled) {
-                  throw new Error('Scan cancelled by user')
-                }
-
-                // Notify renderer periodically during processing to show dynamic progress
-                if (progress.phase === 'processing' && progress.current > 0) {
-                  const now = Date.now()
-                  if (lastNotifyTime === 0 || now - lastNotifyTime > 5000) {
-                    this.getLiveMonitoring().sendToRenderer('library:updated', { type: 'media' })
-                    lastNotifyTime = now
-                  }
-                }
-
-                if (onProgress) {
-                  onProgress(source.source_id, source.display_name, progress)
-                }
-              }
-            })
-
-            const durationSec = (result.durationMs / 1000).toFixed(1)
-            this.logging.verbose('[SourceManager]',
-              `Scan complete: "${source.display_name}/${library.name}" — ${result.itemsScanned} items (${result.itemsAdded} new, ${result.itemsUpdated} updated, ${result.itemsRemoved} removed) in ${durationSec}s`,
-              result.errors.length > 0 ? `Errors:\n${result.errors.join('\n')}` : undefined)
-
-            results.set(`${source.source_id}:${library.id}`, result)
-
-            // Update library scan timestamp if successful
-            if (result.success) {
-              await db.sources.updateLibraryScanTime(
-                source.source_id,
-                library.id,
-                result.itemsScanned
-              )
-
-              // Start post-scan background tasks
-              try {
-                const { getWishlistCompletionService } = await import('./WishlistCompletionService')
-                const tq = this.getTaskQueue()
-
-                // 1. Completeness Checks
-                const hasTmdbKey = db.getSetting('tmdb_api_key')
-                if (hasTmdbKey) {
-                  if (library.type === 'tv' || library.type === 'mixed') {
-                    tq.addTask({
-                      type: 'series-completeness',
-                      label: `Post-scan Series Analysis: ${library.name}`,
-                      sourceId: source.source_id,
-                      libraryId: library.id
-                    })
-                  }
-                  if (library.type === 'movie' || library.type === 'mixed') {
-                    tq.addTask({
-                      type: 'collection-completeness',
-                      label: `Post-scan Collection Analysis: ${library.name}`,
-                      sourceId: source.source_id,
-                      libraryId: library.id
-                    })
-                  }
-                }
-
-                // 2. Wishlist check (decoupled from task queue)
-                getWishlistCompletionService().checkAndComplete().catch(err => {
-                  this.logging.error('[SourceManager]', 'Post-scan wishlist check failed:', err)
-                })
-              } catch (err) {
-                this.logging.error('[SourceManager]', 'Failed to start post-scan background tasks:', err)
-              }
-            }
-          }
-        } catch (error) {
-          // If cancelled, just break out
-          if (this.scanCancelled) {
-            break
-          }
-          this.logging.error('[SourceManager]', `Failed to scan source ${source.source_id}:`, error)
-          results.set(source.source_id, {
-            success: false,
-            itemsScanned: 0,
-            itemsAdded: 0,
-            itemsUpdated: 0,
-            itemsRemoved: 0,
-            errors: [(error as Error).message],
-            durationMs: 0,
-          })
-        }
-      }
-
-      return results
-    } finally {
-      this.activeScans--
-      if (this.activeScans === 0) {
-        this.scanCancelled = false
-      }
-
-      // Notify renderer that library data has changed
-      try {
-        this.getLiveMonitoring().notifyLibraryUpdated()
-      } catch (err) {
-        this.logging.error('[SourceManager]', 'Failed to notify library update:', err)
-      }
+      scanner.activeScans--
+      return await scanner.scanAllSources(onProgress)
+    } catch (error) {
+      scanner.activeScans--
+      throw error
     }
   }
 
-  /**
-   * Trigger post-scan background tasks for all libraries.
-   * Useful when a configuration change (like adding an API key) enables new features.
-   */
-  async triggerPostScanAnalysis(sourceId?: string, libraryId?: string): Promise<void> {
-    const db = this.db
-    const tq = this.getTaskQueue()
-    const { getWishlistCompletionService } = await import('./WishlistCompletionService')
-
-    const sources = sourceId
-      ? [db.sources.getSourceById(sourceId)].filter(Boolean)
-      : db.sources.getEnabledSources()
-
-    for (const source of sources) {
-      if (!source) continue
-      const libraries = await this.getLibraries(source.source_id)
-      const filteredLibraries = libraryId
-        ? libraries.filter(l => l.id === libraryId)
-        : libraries
-
-      for (const library of filteredLibraries) {
-        // Check if library is enabled in DB
-        if (!db.sources.isLibraryEnabled(source.source_id, library.id)) continue
-
-        // 1. Completeness Checks
-        const hasTmdbKey = db.getSetting('tmdb_api_key')
-        if (hasTmdbKey) {
-          if (library.type === 'tv' || library.type === 'show' || library.type === 'mixed') {
-            tq.addTask({
-              type: 'series-completeness',
-              label: `Background Series Analysis: ${library.name}`,
-              sourceId: source.source_id,
-              libraryId: library.id
-            })
-          }
-          if (library.type === 'movie' || library.type === 'mixed') {
-            tq.addTask({
-              type: 'collection-completeness',
-              label: `Background Collection Analysis: ${library.name}`,
-              sourceId: source.source_id,
-              libraryId: library.id
-            })
-          }
-        }
-      }
-    }
-
-    // 2. Wishlist check
-    getWishlistCompletionService().checkAndComplete().catch(err => {
-      this.logging.error('[SourceManager]', 'Background wishlist check failed:', err)
-    })
-  }
-
-  // ============================================================================
-  // INCREMENTAL SCANNING
-  // ============================================================================
-
-  /**
-   * Perform an incremental scan of a library (only items added/modified since last scan)
-   * Falls back to full scan if no previous scan timestamp exists
-   */
-  async scanLibraryIncremental(
-    sourceId: string,
-    libraryId: string,
-    onProgress?: ProgressCallback
-  ): Promise<ScanResult> {
+  async scanTargetedFiles(sourceId: string, libraryId: string, filePaths: string[], onProgress?: ProgressCallback): Promise<ScanResult> {
     await this.initialize()
-
-    const db = this.db
-    const lastScanTime = db.sources.getLibraryScanTime(sourceId, libraryId)
-
-    // If never scanned, do full scan
-    if (!lastScanTime) {
-      this.logging.info('[SourceManager]', `No previous scan for ${sourceId}:${libraryId}, doing full scan`)
-      return this.scanLibrary(sourceId, libraryId, onProgress)
-    }
-
-    const sinceTimestamp = new Date(lastScanTime)
-    this.logging.info('[SourceManager]', `Incremental scan for ${sourceId}:${libraryId} since ${sinceTimestamp.toISOString()}`)
-
     const provider = this.providers.get(sourceId)
-    if (!provider) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
+    if (!provider) throw new Error(`Source not found: ${sourceId}`)
+    return provider.scanLibrary(libraryId, { onProgress, targetFiles: filePaths })
+  }
 
-    // Get library info for updating scan timestamp
-    const libraries = await provider.getLibraries()
-    const library = libraries.find(l => l.id === libraryId)
-
-    const result = await provider.scanLibrary(libraryId, {
-      onProgress,
-      sinceTimestamp,
-    })
-
-    // Update library scan timestamp if successful
-    if (result.success && library) {
-      await db.sources.updateLibraryScanTime(
-        sourceId,
-        libraryId,
-        result.itemsScanned
-      )
-    }
-
+  async scanLibraryIncremental(sourceId: string, libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
+    await this.initialize()
+    const lastScanTime = this.db.sources.getLibraryScanTime(sourceId, libraryId)
+    if (!lastScanTime) return this.scanLibrary(sourceId, libraryId, onProgress)
+    const provider = this.providers.get(sourceId)
+    if (!provider) throw new Error(`Source not found: ${sourceId}`)
+    const result = await provider.scanLibrary(libraryId, { onProgress, sinceTimestamp: new Date(lastScanTime) })
+    if (result.success) await this.db.sources.updateLibraryScanTime(sourceId, libraryId, result.itemsScanned)
     return result
   }
 
-  /**
-   * Scan specific files (for live monitoring when file changes detected)
-   * Much faster than full or incremental scan
-   */
-  async scanTargetedFiles(
-    sourceId: string,
-    libraryId: string,
-    filePaths: string[],
-    onProgress?: ProgressCallback
-  ): Promise<ScanResult> {
+  async scanAllIncremental(onProgress?: AggregateProgressCallback): Promise<Map<string, ScanResult>> {
     await this.initialize()
-
-    const provider = this.providers.get(sourceId)
-    if (!provider) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    this.logging.info('[SourceManager]', `Targeted scan of ${filePaths.length} files for ${sourceId}:${libraryId}`)
-
-    const result = await provider.scanLibrary(libraryId, {
-      onProgress,
-      targetFiles: filePaths,
-    })
-
-    return result
-  }
-
-  /**
-   * Perform incremental scan of all libraries across all enabled sources
-   * This is intended for quick refresh on app startup
-   */
-  async scanAllIncremental(
-    onProgress?: AggregateProgressCallback
-  ): Promise<Map<string, ScanResult>> {
-    await this.initialize()
-
-    const db = this.db
-    const enabledSources = db.sources.getEnabledSources()
+    const enabledSources = this.db.sources.getEnabledSources()
     const results = new Map<string, ScanResult>()
-
-    this.logging.info('[SourceManager]', `Starting incremental scan of ${enabledSources.length} sources`)
-
     for (const source of enabledSources) {
       const provider = this.providers.get(source.source_id)
       if (!provider) continue
-
       try {
         const libraries = await provider.getLibraries()
-
         for (const library of libraries) {
-          // Skip music libraries
           if (library.type === 'music') continue
-
-          // Skip disabled libraries
-          if (!db.sources.isLibraryEnabled(source.source_id, library.id)) {
-            this.logging.info('[SourceManager]', `Skipping disabled library: ${source.display_name}/${library.name}`)
-            continue
-          }
-
-          const lastScanTime = db.sources.getLibraryScanTime(source.source_id, library.id)
-          const sinceTimestamp = lastScanTime ? new Date(lastScanTime) : undefined
-
-          if (sinceTimestamp) {
-            this.logging.info('[SourceManager]', `Incremental scan: ${source.display_name}/${library.name} since ${sinceTimestamp.toISOString()}`)
-          } else {
-            this.logging.info('[SourceManager]', `Full scan (no previous): ${source.display_name}/${library.name}`)
-          }
-
-          const result = await provider.scanLibrary(library.id, {
-            sinceTimestamp,
-            onProgress: onProgress ? (progress) => {
-              onProgress(source.source_id, source.display_name, progress)
-            } : undefined,
-          })
-
-          // Update library scan timestamp if successful
-          if (result.success) {
-            await db.sources.updateLibraryScanTime(
-              source.source_id,
-              library.id,
-              result.itemsScanned
-            )
-          }
-
+          if (!this.db.sources.isLibraryEnabled(source.source_id, library.id)) continue
+          const lastScanTime = this.db.sources.getLibraryScanTime(source.source_id, library.id)
+          const result = await provider.scanLibrary(library.id, { sinceTimestamp: lastScanTime ? new Date(lastScanTime) : undefined, onProgress: onProgress ? (p) => onProgress(source.source_id, source.display_name, p) : undefined })
+          if (result.success) await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
           results.set(`${source.source_id}:${library.id}`, result)
         }
-      } catch (error) {
-        this.logging.error('[SourceManager]', `Incremental scan failed for ${source.source_id}:`, error)
-      }
+      } catch { /* ignore */ }
     }
-
-    this.logging.info('[SourceManager]', `Incremental scan complete: ${results.size} libraries processed`)
     return results
   }
 
-  /**
-   * Get libraries for a source
-   * Libraries are enriched with scan timestamps from the database
-   */
-  async getLibraries(sourceId: string): Promise<MediaLibrary[]> {
+  // Delegate CRUD to SourceCrudService
+  async addSource(config: SourceConfig): Promise<MediaSource> {
     await this.initialize()
+    return this.getCrud().addSource(config)
+  }
 
+  async updateSource(sourceId: string, updates: Partial<SourceConfig>): Promise<void> {
+    await this.initialize()
+    return this.getCrud().updateSource(sourceId, updates)
+  }
+
+  async removeSource(sourceId: string): Promise<void> {
+    await this.initialize()
+    this.getLiveMonitoring().removeSource(sourceId)
+    this.getTaskQueue().removeTasksForSource(sourceId)
+    return this.getCrud().removeSource(sourceId)
+  }
+
+  async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
+    await this.initialize()
+    const source = this.db.sources.getSourceById(sourceId)
+    if (source) this.db.sources.upsertSource({ ...source, is_enabled: enabled })
+  }
+
+  // Delegate Plex Auth to PlexAuthService
+  async plexStartAuth() { return this.getPlexAuth().startAuth() }
+  async plexCompleteAuth(pinId: number) { return this.getPlexAuth().completeAuth(pinId) }
+  async plexAuthenticateAndDiscover(token: string, displayName: string) { return this.getPlexAuth().authenticateAndDiscover(token, displayName) }
+  async plexSelectServer(sourceId: string, serverId: string) { return this.getPlexAuth().selectServer(sourceId, serverId) }
+  async plexGetServers(sourceId: string) {
+    const p = this.getPlexProvider(sourceId)
+    if (!p) throw new Error('Not found')
+    return p.discoverServers()
+  }
+
+  // Rest of SourceManager logic
+  async getSources(type?: ProviderType) { await this.initialize(); return this.db.sources.getSources(type) }
+  async getSource(sourceId: string) { await this.initialize(); return this.db.sources.getSourceById(sourceId) }
+  async getEnabledSources() { await this.initialize(); return this.db.sources.getEnabledSources() }
+  getProvider(sourceId: string) { return this.providers.get(sourceId) }
+  getPlexProvider(sourceId: string) {
+    const p = this.providers.get(sourceId)
+    return p?.providerType === 'plex' ? p as PlexProvider : undefined
+  }
+
+  async testConnection(sourceId: string): Promise<ConnectionTestResult> {
+    await this.initialize()
     const provider = this.providers.get(sourceId)
-    if (!provider) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    // For Plex sources, check if a server is selected before trying to get libraries
-    if (provider.providerType === 'plex') {
-      const plexProvider = provider as PlexProvider
-      if (!plexProvider.hasSelectedServer()) {
-        this.logging.info('[SourceManager]', `Plex source ${sourceId} has no server selected, returning empty libraries`)
-        return []
+    if (!provider) return { success: false, error: 'Not found' }
+    if (provider.providerType === 'plex' && !(provider as PlexProvider).hasSelectedServer()) return { success: false, error: 'No server selected' }
+    
+    // Auth check for JF/Emby
+    if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
+      const source = this.db.sources.getSourceById(sourceId)
+      if (source) {
+        const config = JSON.parse(source.connection_config)
+        if (config.username && config.password && !config.accessToken) {
+          const res = await provider.authenticate({ serverUrl: config.serverUrl, username: config.username, password: config.password })
+          if (res.success) {
+            const updated = { ...config, accessToken: res.token, userId: res.userId, password: undefined }
+            this.db.sources.upsertSource({ ...source, connection_config: JSON.stringify(updated) })
+            this.providers.set(sourceId, createProvider(source.source_type as ProviderType, { sourceId, sourceType: source.source_type as ProviderType, displayName: source.display_name, connectionConfig: updated, isEnabled: !!source.is_enabled }))
+          }
+        }
       }
     }
 
-    // Deduplicate concurrent calls for the same source
+    const res = await this.providers.get(sourceId)!.testConnection()
+    if (res.success) this.db.sources.updateSourceConnectionTime(sourceId)
+    return res
+  }
+
+  async getLibraries(sourceId: string): Promise<MediaLibrary[]> {
+    await this.initialize()
+    const provider = this.providers.get(sourceId)
+    if (!provider) throw new Error('Not found')
+    if (provider.providerType === 'plex' && !(provider as PlexProvider).hasSelectedServer()) return []
+    
     const existing = this.getLibrariesPromises.get(sourceId)
-    if (existing) {
-      return existing
-    }
-
-    const promise = this.fetchLibraries(sourceId, provider)
+    if (existing) return existing
+    
+    const promise = (async () => {
+      const libs = await provider.getLibraries()
+      const scanTimes = this.db.sources.getLibraryScanTimes(sourceId)
+      return libs.map(l => ({ ...l, scannedAt: scanTimes.get(l.id)?.lastScanAt || l.scannedAt, itemCount: scanTimes.get(l.id)?.itemsScanned || l.itemCount }))
+    })()
+    
     this.getLibrariesPromises.set(sourceId, promise)
-    try {
-      return await promise
-    } finally {
-      this.getLibrariesPromises.delete(sourceId)
+    try { return await promise } finally { this.getLibrariesPromises.delete(sourceId) }
+  }
+
+  async triggerPostScanAnalysis(sourceId?: string, libraryId?: string): Promise<void> {
+    const sources = sourceId ? [this.db.sources.getSourceById(sourceId)].filter(Boolean) : this.db.sources.getEnabledSources()
+    const { getWishlistCompletionService } = await import('./WishlistCompletionService')
+    for (const source of sources) {
+      if (!source) continue
+      const libs = await this.getLibraries(source.source_id)
+      for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
+        if (!this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
+        if (this.db.getSetting('tmdb_api_key')) {
+          if (lib.type === 'tv' || lib.type === 'show' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'series-completeness', label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+          if (lib.type === 'movie' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'collection-completeness', label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+        }
+      }
     }
+    getWishlistCompletionService().checkAndComplete().catch(() => {})
   }
 
-  private async fetchLibraries(sourceId: string, provider: MediaProvider): Promise<MediaLibrary[]> {
-    this.logging.info('[SourceManager]', `Getting libraries for ${sourceId} (${provider.providerType})`)
-    const libraries = await provider.getLibraries()
-
-    // Enrich libraries with scan timestamps from database
-    const db = this.db
-    const scanTimes = db.sources.getLibraryScanTimes(sourceId)
-
-    return libraries.map(lib => ({
-      ...lib,
-      scannedAt: scanTimes.get(lib.id)?.lastScanAt || lib.scannedAt,
-      itemCount: scanTimes.get(lib.id)?.itemsScanned || lib.itemCount,
-    }))
-  }
-
-  // ============================================================================
-  // STATISTICS
-  // ============================================================================
-
-  /**
-   * Get aggregated stats across all sources
-   */
-  async getAggregatedStats(): Promise<{
-    totalSources: number
-    enabledSources: number
-    totalItems: number
-    bySource: Array<{
-      sourceId: string
-      displayName: string
-      sourceType: string
-      itemCount: number
-      lastScanAt?: string
-    }>
-  }> {
+  async getAggregatedStats() { await this.initialize(); return this.db.stats.getAggregatedSourceStats() }
+  getSupportedProviders() { return getSupportedProviders() }
+  async reloadProvider(sourceId: string) {
     await this.initialize()
-
-    const db = this.db
-    return db.stats.getAggregatedSourceStats()
-  }
-
-  // ============================================================================
-  // UTILITY
-  // ============================================================================
-
-  private generateSourceId(type: ProviderType): string {
-    return `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * Get supported provider types
-   */
-  getSupportedProviders(): ProviderType[] {
-    return getSupportedProviders()
-  }
-
-  /**
-   * Reload a provider (e.g., after config change)
-   */
-  async reloadProvider(sourceId: string): Promise<void> {
-    await this.initialize()
-
-    const db = this.db
-    const source = db.sources.getSourceById(sourceId)
-
-    if (!source) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    const config: SourceConfig = {
-      sourceId: source.source_id,
-      sourceType: source.source_type,
-      displayName: source.display_name,
-      connectionConfig: JSON.parse(source.connection_config),
-      isEnabled: source.is_enabled,
-    }
-
-    const provider = createProvider(source.source_type, config)
-    this.providers.set(sourceId, provider)
-
-    this.logging.info('[SourceManager]', `Reloaded provider: ${sourceId}`)
+    const s = this.db.sources.getSourceById(sourceId)
+    if (!s) throw new Error('Not found')
+    this.providers.set(sourceId, createProvider(s.source_type as ProviderType, { sourceId: s.source_id, sourceType: s.source_type as ProviderType, displayName: s.display_name, connectionConfig: JSON.parse(s.connection_config), isEnabled: !!s.is_enabled }))
   }
 }
 
-// Singleton instance
 let sourceManagerInstance: SourceManager | null = null
-
 export function getSourceManager(): SourceManager {
-  if (!sourceManagerInstance) {
-    sourceManagerInstance = new SourceManager()
-  }
+  if (!sourceManagerInstance) sourceManagerInstance = new SourceManager()
   return sourceManagerInstance
 }

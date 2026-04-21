@@ -1,5 +1,5 @@
 
-import React from 'react'
+
 import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
 import logoImage from '../../../assets/totality_header_logo.png'
 import { SearchAutocomplete } from './SearchAutocomplete'

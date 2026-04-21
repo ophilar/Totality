@@ -32,7 +32,7 @@ describe('KodiProvider', () => {
   })
 
   it('should test connection successfully', async () => {
-    const mockAxiosInstance = (provider as any).api
+    const mockAxiosInstance = (provider as any).rpc.api
     mockAxiosInstance.post.mockResolvedValueOnce({
       data: {
         jsonrpc: '2.0',
@@ -52,9 +52,9 @@ describe('KodiProvider', () => {
     })
 
     expect(result.success).toBe(true)
-    expect(mockAxiosInstance.post).toHaveBeenCalledWith('http://localhost:8080/jsonrpc', expect.objectContaining({
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/jsonrpc', expect.objectContaining({
       method: 'JSONRPC.Version'
-    }), expect.anything())
+    }))
   })
 
   it('should get libraries (mocked Kodi libraries)', async () => {
