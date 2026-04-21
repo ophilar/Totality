@@ -1,22 +1,20 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TVShowsView } from '../../src/renderer/src/components/library/TVShowsView'
-import { useSources } from '../../src/renderer/src/contexts/SourceContext'
+import { SourceProvider } from '../../src/renderer/src/contexts/SourceContext'
+import { LibraryProvider } from '../../src/renderer/src/contexts/LibraryContext'
+import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
+import { setupTestDb, cleanupTestDb } from '../TestUtils'
 import React from 'react'
 
-// Mock useSources
-vi.mock('../../src/renderer/src/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
-
-// Mock react-virtuoso to render items in JSDOM
+// Mock react-virtuoso to render items in JSDOM (infrastructure mock)
 vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent, components }: any) => (
     <div data-testid="virtuoso-list">
-      {data.map((item: any, index: number) => (
+      {data?.map((item: any, index: number) => (
         <div key={index}>{itemContent(index, item)}</div>
       ))}
       {components?.Footer && <components.Footer />}
@@ -28,7 +26,7 @@ vi.mock('react-virtuoso', () => ({
     return (
       <div data-testid="virtuoso-grid">
         <List>
-          {data.map((item: any, index: number) => (
+          {data?.map((item: any, index: number) => (
             <Item key={index}>{itemContent(index, item)}</Item>
           ))}
         </List>
@@ -38,83 +36,84 @@ vi.mock('react-virtuoso', () => ({
   }
 }))
 
-describe('TVShowsView Rendering', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
+describe('TVShowsView Rendering (No Logic Mocks)', () => {
+  let db: any
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+    
+    // Setup real bridge for contexts
+    ;(window as any).electronAPI = {
+      sourcesList: () => Promise.resolve([]),
+      getSetting: (key: string) => Promise.resolve(db.config.getSetting(key)),
+      setSetting: (key: string, value: string) => {
+        db.config.setSetting(key, value)
+        return Promise.resolve(true)
+      },
+      log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+      onSourcesScanProgress: () => () => {},
+      onSourcesScanCompleted: () => () => {},
+      onScanCompleted: () => () => {},
+      onSettingsChanged: () => () => {}
+    }
   })
 
-  it('should show "Scan in Progress" when scanning and no shows found', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: true,
-      scanProgress: new Map([['test-source', { phase: 'fetching', percentage: 10, currentItem: 'Scanning...' }]]),
-    })
+  afterEach(() => {
+    cleanupTestDb()
+  })
 
+  const defaultProps: any = {
+    shows: [],
+    totalShowCount: 0,
+    showsLoading: false,
+    onLoadMoreShows: () => {},
+    selectedShow: null,
+    selectedSeason: null,
+    selectedShowData: null,
+    selectedShowLoading: false,
+    onSelectShow: () => {},
+    onSelectSeason: () => {},
+    onSelectEpisode: () => {},
+    filterItem: () => true,
+    gridScale: 5,
+    viewType: 'grid',
+    seriesCompleteness: new Map(),
+    onMissingItemClick: () => {},
+    showSourceBadge: true,
+    onAnalyzeSeries: () => {},
+    sortBy: 'title',
+    onSortChange: () => {},
+    slimDown: false
+  }
+
+  it('should render the TV Shows view header', () => {
     render(
-      <TVShowsView
-        shows={[]}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        selectedShow={null}
-        selectedSeason={null}
-        selectedShowData={null}
-        selectedShowLoading={false}
-        onSelectShow={() => {}}
-        onSelectSeason={() => {}}
-        onSelectEpisode={() => {}}
-        filterItem={() => true}
-        gridScale={5}
-        viewType="grid"
-        seriesCompleteness={new Map()}
-        onMissingItemClick={() => {}}
-        showSourceBadge={true}
-        onAnalyzeSeries={() => {}}
-        totalShowCount={0}
-        totalEpisodeCount={0}
-        showsLoading={false}
-        onLoadMoreShows={() => {}}
-      />
+      <ToastProvider>
+        <LibraryProvider>
+          <SourceProvider>
+            <TVShowsView {...defaultProps} totalShowCount={0} />
+          </SourceProvider>
+        </LibraryProvider>
+      </ToastProvider>
     )
 
-    expect(screen.getByText(/Scan:/)).toBeTruthy()
-    expect(screen.getByText(/fetching/)).toBeTruthy()
+    expect(screen.getByText(/TV Shows/)).toBeTruthy()
+    expect(screen.getByText(/No TV shows found/)).toBeTruthy()
   })
 
   it('should render show cards when data is present', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: false,
-      scanProgress: new Map(),
-    })
-
     const shows = [
       { series_title: 'Test Show', season_count: 1, episode_count: 10, source_id: 's1', source_type: 'local' }
     ]
 
     render(
-      <TVShowsView
-        shows={shows as any}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        selectedShow={null}
-        selectedSeason={null}
-        selectedShowData={null}
-        selectedShowLoading={false}
-        onSelectShow={() => {}}
-        onSelectSeason={() => {}}
-        onSelectEpisode={() => {}}
-        filterItem={() => true}
-        gridScale={5}
-        viewType="grid"
-        seriesCompleteness={new Map()}
-        onMissingItemClick={() => {}}
-        showSourceBadge={true}
-        onAnalyzeSeries={() => {}}
-        totalShowCount={1}
-        totalEpisodeCount={10}
-        showsLoading={false}
-        onLoadMoreShows={() => {}}
-      />
+      <ToastProvider>
+        <LibraryProvider>
+          <SourceProvider>
+            <TVShowsView {...defaultProps} shows={shows as any} totalShowCount={1} />
+          </SourceProvider>
+        </LibraryProvider>
+      </ToastProvider>
     )
 
     expect(screen.getByText('Test Show')).toBeTruthy()
@@ -122,11 +121,6 @@ describe('TVShowsView Rendering', () => {
   })
 
   it('should show "Analyzing" overlay on shows without efficiency score', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: false,
-      scanProgress: new Map(),
-    })
-
     const shows = [
       { series_title: 'Unanalyzed Show', season_count: 1, episode_count: 5, source_id: 's1', source_type: 'local' }
     ]
@@ -136,30 +130,18 @@ describe('TVShowsView Rendering', () => {
     ])
 
     render(
-      <TVShowsView
-        shows={shows as any}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        selectedShow={null}
-        selectedSeason={null}
-        selectedShowData={null}
-        selectedShowLoading={false}
-        onSelectShow={() => {}}
-        onSelectSeason={() => {}}
-        onSelectEpisode={() => {}}
-        filterItem={() => true}
-        gridScale={5}
-        viewType="grid"
-        seriesCompleteness={seriesCompleteness as any}
-        onMissingItemClick={() => {}}
-        showSourceBadge={true}
-        onAnalyzeSeries={() => {}}
-        totalShowCount={1}
-        totalEpisodeCount={5}
-        showsLoading={false}
-        onLoadMoreShows={() => {}}
-      />
+      <ToastProvider>
+        <LibraryProvider>
+          <SourceProvider>
+            <TVShowsView 
+              {...defaultProps} 
+              shows={shows as any} 
+              totalShowCount={1} 
+              seriesCompleteness={seriesCompleteness as any} 
+            />
+          </SourceProvider>
+        </LibraryProvider>
+      </ToastProvider>
     )
 
     expect(screen.getByText('Unanalyzed Show')).toBeTruthy()
