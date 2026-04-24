@@ -155,7 +155,7 @@ export class SourceScannerService {
       const tq = getTaskQueueService()
       const hasTmdbKey = this.db.getSetting('tmdb_api_key')
       if (hasTmdbKey) {
-        if (library.type === 'tv' || library.type === 'mixed') {
+        if (library.type === 'show' || library.type === 'mixed') {
           tq.addTask({ type: 'series-completeness', label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
         }
         if (library.type === 'movie' || library.type === 'mixed') {
