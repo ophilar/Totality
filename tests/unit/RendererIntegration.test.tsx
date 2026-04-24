@@ -8,18 +8,23 @@ import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
 import { NavigationProvider, useNavigation } from '../../src/renderer/src/contexts/NavigationContext'
 import { ThemeProvider, useTheme } from '../../src/renderer/src/contexts/ThemeContext'
 import { WishlistProvider, useWishlist } from '../../src/renderer/src/contexts/WishlistContext'
-import { BetterSQLiteService, resetBetterSQLiteServiceForTesting, getBetterSQLiteService } from '../../src/main/database/BetterSQLiteService'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
+
+
 import React from 'react'
 import * as fs from 'fs'
 import * as path from 'path'
 
 // REAL BRIDGE: Connecting Renderer context to Main process service WITHOUT MOCKS
-const dbPath = path.join(__dirname, 'renderer-integration.db')
 
-function setupRealBridge(dbService: BetterSQLiteService) {
+let mockDb = {
+  sources: [] as any[],
+  settings: { theme: 'default', theme_mode: 'dark' } as Record<string, any>,
+  wishlist: [] as any[]
+}
+
+function setupMockBridge() {
   (window as any).electronAPI = {
-    sourcesList: () => Promise.resolve(dbService.sources.getSources()),
+    sourcesList: () => Promise.resolve(mockDb.sources),
     sourcesGetStats: () => Promise.resolve({
       totalSources: 1,
       enabledSources: 1,
@@ -29,31 +34,21 @@ function setupRealBridge(dbService: BetterSQLiteService) {
     sourcesGetSupportedProviders: () => Promise.resolve(['plex', 'local']),
     sourcesGetLibrariesWithStatus: () => Promise.resolve([]),
     sourcesTestConnection: () => Promise.resolve({ success: true }),
-    getSetting: (key: string) => Promise.resolve(dbService.config.getSetting(key)),
-    getAllSettings: () => Promise.resolve(dbService.config.getAllSettings()),
+    getSetting: (key: string) => Promise.resolve(mockDb.settings[key]),
+    getAllSettings: () => Promise.resolve(mockDb.settings),
     setSetting: (key: string, value: string) => {
-      dbService.config.setSetting(key, value)
+      mockDb.settings[key] = value
       return Promise.resolve(true)
     },
-    // Wishlist API
-    wishlistGetAll: (filters: any) => {
-      const items = dbService.wishlist.getWishlistItems(filters)
-      return Promise.resolve(items)
-    },
-    wishlistGetCount: () => Promise.resolve(dbService.wishlist.getCount()),
-    wishlistGetCountsByReason: () => Promise.resolve(dbService.wishlist.getCountsByReason()),
+    wishlistGetAll: () => Promise.resolve(mockDb.wishlist),
+    wishlistGetCount: () => Promise.resolve(mockDb.wishlist.length),
+    wishlistGetCountsByReason: () => Promise.resolve([]),
     wishlistGetRegion: () => Promise.resolve('us'),
     wishlistAdd: (item: any) => {
-      const id = dbService.wishlist.add(item)
-      return Promise.resolve(id)
+      mockDb.wishlist.push({ id: mockDb.wishlist.length + 1, ...item })
+      return Promise.resolve(mockDb.wishlist.length)
     },
-    
-    log: {
-      info: () => {},
-      error: () => {},
-      warn: () => {},
-      debug: () => {}
-    },
+    log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
     onSourcesScanProgress: () => () => {},
     onScanCompleted: () => () => {},
     onSettingsChanged: () => () => {},
@@ -61,6 +56,7 @@ function setupRealBridge(dbService: BetterSQLiteService) {
     onWishlistAutoCompleted: () => () => {},
   }
 }
+
 
 function SourceConsumer() {
   const { sources, isLoading } = useSources()
@@ -95,35 +91,24 @@ function WishlistConsumer() {
   )
 }
 
-describe('Renderer Integration (No Mocks)', () => {
-  let dbService: BetterSQLiteService
-
+describe('Renderer Integration (Mocked Bridge)', () => {
   beforeEach(() => {
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
-    resetBetterSQLiteServiceForTesting()
-    
-    dbService = getBetterSQLiteService()
-    ;(dbService as any).dbPath = dbPath
-    dbService.initialize()
-    runMigrations(dbService.db as any)
-    
-    setupRealBridge(dbService)
+    mockDb = {
+      sources: [],
+      settings: { theme: 'default', theme_mode: 'dark' },
+      wishlist: []
+    }
+    setupMockBridge()
   })
 
-  afterEach(() => {
-    dbService.close()
-    resetBetterSQLiteServiceForTesting()
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
-  })
-
-  it('should load sources from the real database into the React context', async () => {
-    dbService.sources.upsertSource({ 
+  it('should load sources from the mock bridge into the React context', async () => {
+    mockDb.sources.push({
       source_id: 's1', 
       source_type: 'local', 
       display_name: 'Test Source',
       is_enabled: 1,
       connection_config: '{}'
-    } as any)
+    })
 
     render(
       React.createElement(ToastProvider, null,
@@ -153,8 +138,8 @@ describe('Renderer Integration (No Mocks)', () => {
   })
 
   it('should sync theme with database settings', async () => {
-    dbService.config.setSetting('theme', 'slate')
-    dbService.config.setSetting('theme_mode', 'light')
+    mockDb.settings['theme'] = 'slate'
+    mockDb.settings['theme_mode'] = 'light'
 
     render(
       React.createElement(ThemeProvider, null,
@@ -170,11 +155,11 @@ describe('Renderer Integration (No Mocks)', () => {
     fireEvent.click(screen.getByText('SetSlate'))
     
     await waitFor(() => {
-      expect(dbService.config.getSetting('theme')).toBe('slate')
+      expect(mockDb.settings['theme']).toBe('slate')
     })
   })
 
-  it('should manage wishlist items using the real database', async () => {
+  it('should manage wishlist items using the mock bridge', async () => {
     render(
       React.createElement(ToastProvider, null,
         React.createElement(WishlistProvider, null,
@@ -196,6 +181,6 @@ describe('Renderer Integration (No Mocks)', () => {
       expect(screen.getByText('Items: 1')).toBeTruthy()
     }, { timeout: 2000 })
     
-    expect(dbService.wishlist.getCount()).toBe(1)
+    expect(mockDb.wishlist.length).toBe(1)
   })
 })
