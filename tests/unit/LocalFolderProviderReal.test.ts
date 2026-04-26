@@ -32,7 +32,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     })
     
     // Enable library
-    db.sources.setLibrariesEnabled(sourceId, [{ id: 'movies', name: 'Movies', type: 'movies', enabled: true }])
+    db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: 'movie', enabled: true }])
     
     // Set TMDB key so lookup logic proceeds
     db.config.setSetting('tmdb_api_key', 'fake-key')
@@ -103,7 +103,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const movieFile = path.join(tempDir.path, 'Movie (2020).mkv')
     fs.writeFileSync(movieFile, 'fake video content')
 
-    const result = await provider.scanLibrary('movies')
+    const result = await provider.scanLibrary('movie')
     
     if (result.errors.length > 0) {
       console.error('Scan Errors:', result.errors)
@@ -123,7 +123,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(file1, 'content 1')
 
     // 1. Initial scan
-    await provider.scanLibrary('movies')
+    await provider.scanLibrary('movie')
     const items1 = db.media.getItems({ sourceId })
     expect(items1).toHaveLength(1)
     expect(items1[0].version_count).toBe(1)
@@ -133,7 +133,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(file2, 'content 2')
     
     // Simulate incremental scan
-    const result = await provider.scanLibrary('movies', { sinceTimestamp: new Date(Date.now() - 10000) })
+    const result = await provider.scanLibrary('movie', { sinceTimestamp: new Date(Date.now() - 10000) })
     
     if (result.errors.length > 0) {
       console.error('Incremental Scan Errors:', result.errors)
@@ -156,14 +156,14 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(file2, 'delete')
 
     // Initial scan
-    const res1 = await provider.scanLibrary('movies')
+    const res1 = await provider.scanLibrary('movie')
     expect(res1.itemsAdded + res1.itemsUpdated).toBe(2)
     expect(db.media.getItems({ sourceId })).toHaveLength(2)
 
     // Delete file2 and rescan
     fs.unlinkSync(file2)
     
-    const result = await provider.scanLibrary('movies')
+    const result = await provider.scanLibrary('movie')
     expect(result.itemsRemoved).toBe(1)
     
     const items = db.media.getItems({ sourceId })
@@ -182,7 +182,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     // Update source config to support music library
     db.sources.setLibrariesEnabled(sourceId, [
-      { id: 'movies', name: 'Movies', type: 'movies', enabled: true },
+      { id: 'movie', name: 'Movies', type: 'movie', enabled: true },
       { id: 'music', name: 'Music', type: 'music', enabled: true }
     ])
 
@@ -207,10 +207,10 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     // Update source config
     db.sources.setLibrariesEnabled(sourceId, [
-      { id: 'tvshows', name: 'TV Shows', type: 'tvshows', enabled: true }
+      { id: 'show', name: 'TV Shows', type: 'show', enabled: true }
     ])
 
-    const result = await provider.scanLibrary('tvshows')
+    const result = await provider.scanLibrary('show')
     expect(result.success).toBe(true)
     
     const items = db.media.getItems({ sourceId, type: 'episode' })
@@ -226,7 +226,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(movieFile, 'movie')
     fs.writeFileSync(extrasFile, 'trailer')
 
-    const result = await provider.scanLibrary('movies')
+    const result = await provider.scanLibrary('movie')
     expect(result.itemsAdded + result.itemsUpdated).toBe(1)
     
     const items = db.media.getItems({ sourceId })
@@ -247,7 +247,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(path.join(tempDir.path, 'Short.mkv'), 'short')
     fs.writeFileSync(path.join(tempDir.path, 'Long.mkv'), 'long')
 
-    const result = await provider.scanLibrary('movies')
+    const result = await provider.scanLibrary('movie')
     expect(result.itemsAdded + result.itemsUpdated).toBe(1)
     
     const items = db.media.getItems({ sourceId })

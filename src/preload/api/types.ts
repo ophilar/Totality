@@ -1,6 +1,7 @@
 import type { ConnectionTestResult } from '@main/types/ipc'
+import type { LibraryType } from '@main/types/database'
 
-export type { ConnectionTestResult }
+export type { ConnectionTestResult, LibraryType }
 
 // Type definitions for multi-source support
 export interface MediaSourceResponse {
@@ -30,7 +31,7 @@ export interface ServerInstanceResponse {
 export interface MediaLibraryResponse {
   id: string
   name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
+  type: LibraryType
   collectionType?: string
   itemCount?: number
   scannedAt?: string

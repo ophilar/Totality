@@ -38,19 +38,20 @@ import {
   SourceConfig,
   ProviderType,
   AudioStreamInfo,
+  LibraryType,
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/database'
 import { extractVersionNames } from '../utils/VersionNaming'
 
 export interface LocalFolderConfig {
   folderPath: string
-  mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
+  mediaType: LibraryType
   name?: string
   // Custom library configurations from user selection
   customLibraries?: Array<{
     name: string
     path: string
-    mediaType: 'movies' | 'tvshows' | 'music'
+    mediaType: LibraryType
     enabled: boolean
   }>
 }
@@ -95,7 +96,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = 'local' as ProviderType
 
   private folderPath: string = ''
-  private mediaType: 'movies' | 'tvshows' | 'music' | 'mixed' = 'mixed'
+  private mediaType: LibraryType = 'mixed'
   private displayName: string = ''
   private customLibraries: LocalFolderConfig['customLibraries'] = undefined
   protected scanCancelled: boolean = false
@@ -181,9 +182,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     if (this.customLibraries && this.customLibraries.length > 0) {
       for (const lib of this.customLibraries) {
         if (!lib.enabled) continue
-        const libType: 'movie' | 'show' | 'music' = lib.mediaType === 'movies' ? 'movie' :
-          lib.mediaType === 'tvshows' ? 'show' : 'music'
-        libraries.push({ id: `${lib.mediaType}:${lib.name}`, name: lib.name, type: libType })
+        libraries.push({ id: `${lib.mediaType}:${lib.name}`, name: lib.name, type: lib.mediaType })
       }
       return libraries
     }
@@ -195,22 +194,22 @@ export class LocalFolderProvider extends BaseMediaProvider {
           if (!entry.isDirectory()) continue
           const folderNameLower = entry.name.toLowerCase()
           if (LocalFolderProvider.MOVIE_FOLDER_NAMES.includes(folderNameLower)) {
-            libraries.push({ id: `movies:${entry.name}`, name: entry.name, type: 'movie' })
+            libraries.push({ id: `movie:${entry.name}`, name: entry.name, type: 'movie' })
           } else if (LocalFolderProvider.TVSHOW_FOLDER_NAMES.includes(folderNameLower)) {
-            libraries.push({ id: `tvshows:${entry.name}`, name: entry.name, type: 'show' })
+            libraries.push({ id: `show:${entry.name}`, name: entry.name, type: 'show' })
           } else if (LocalFolderProvider.MUSIC_FOLDER_NAMES.includes(folderNameLower)) {
             libraries.push({ id: `music:${entry.name}`, name: entry.name, type: 'music' })
           }
         }
-        if (libraries.length === 0) libraries.push({ id: 'movies', name: 'Movies', type: 'movie' })
+        if (libraries.length === 0) libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
       } catch (error) {
-        libraries.push({ id: 'movies', name: 'Movies', type: 'movie' })
+        libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
       }
       return libraries
     }
 
-    if (this.mediaType === 'movies') libraries.push({ id: 'movies', name: 'Movies', type: 'movie' })
-    if (this.mediaType === 'tvshows') libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show' })
+    if (this.mediaType === 'movie') libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
+    if (this.mediaType === 'show') libraries.push({ id: 'show', name: 'TV Shows', type: 'show' })
     if (this.mediaType === 'music') libraries.push({ id: 'music', name: 'Music', type: 'music' })
 
     return libraries
@@ -269,7 +268,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeBatchSize = parseInt(db.config.getSetting('ffprobe_batch_size') || '25', 10)
 
       const scannedFilePaths = new Set<string>()
-      const scanType = libraryType === 'movies' ? 'movie' : 'episode'
+      const scanType = libraryType === 'movie' ? 'movie' : 'episode'
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
 
