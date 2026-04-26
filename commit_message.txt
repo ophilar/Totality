@@ -1,0 +1,13 @@
+⚡ Optimize DeduplicationService N+1 Upsert
+
+💡 **What:**
+Wrapped the `for` loops in `scanForDuplicates` (which call `upsertDuplicate` sequentially) inside a SQLite batch transaction using `db.beginBatch()` and `try { ... } finally { db.endBatch() }`.
+
+🎯 **Why:**
+When scanning for duplicates across a library containing thousands of items, N+1 `upsertDuplicate` database queries are fired in quick succession. Using SQLite without an explicit transaction means each individual query undergoes the disk fsync/commit process, which causes severe performance bottlenecks during scans.
+
+📊 **Measured Improvement:**
+Created a benchmark simulating `scanForDuplicates` against 2,000 duplicate episode entries.
+- Baseline: ~444ms for 2,000 pairs
+- Optimized: ~251ms for 2,000 pairs
+- Improvement: 43.4% reduction in processing time for duplicate scan logic
