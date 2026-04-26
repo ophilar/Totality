@@ -26,6 +26,9 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     removeHandler: vi.fn(),
   },
+  contextBridge: {
+    exposeInMainWorld: vi.fn(),
+  },
   BrowserWindow: vi.fn(() => ({
     webContents: {
       send: vi.fn(),

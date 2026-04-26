@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SourceManager } from '../../src/main/services/SourceManager'
+import { LibraryType } from '../../src/main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -67,7 +68,7 @@ describe('SourceManager (No Mocks)', () => {
     const source = await manager.addSource({
       sourceType: 'local' as any,
       displayName: 'Local Video',
-      connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
 
     await manager.initialize()
@@ -94,7 +95,7 @@ describe('SourceManager (No Mocks)', () => {
     const source = await manager.addSource({
       sourceType: 'local' as any,
       displayName: 'Cancel Test',
-      connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
 
     await manager.initialize()

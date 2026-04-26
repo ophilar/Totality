@@ -187,30 +187,30 @@ export class LocalFolderProvider extends BaseMediaProvider {
       return libraries
     }
 
-    if (this.mediaType === 'mixed') {
+    if (this.mediaType === LibraryType.Mixed) {
       try {
         const entries = await fsPromises.readdir(this.folderPath, { withFileTypes: true })
         for (const entry of entries) {
           if (!entry.isDirectory()) continue
           const folderNameLower = entry.name.toLowerCase()
           if (LocalFolderProvider.MOVIE_FOLDER_NAMES.includes(folderNameLower)) {
-            libraries.push({ id: `movie:${entry.name}`, name: entry.name, type: 'movie' })
+            libraries.push({ id: `movie:${entry.name}`, name: entry.name, type: LibraryType.Movie })
           } else if (LocalFolderProvider.TVSHOW_FOLDER_NAMES.includes(folderNameLower)) {
-            libraries.push({ id: `show:${entry.name}`, name: entry.name, type: 'show' })
+            libraries.push({ id: `show:${entry.name}`, name: entry.name, type: LibraryType.Show })
           } else if (LocalFolderProvider.MUSIC_FOLDER_NAMES.includes(folderNameLower)) {
-            libraries.push({ id: `music:${entry.name}`, name: entry.name, type: 'music' })
+            libraries.push({ id: `music:${entry.name}`, name: entry.name, type: LibraryType.Music })
           }
         }
-        if (libraries.length === 0) libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
+        if (libraries.length === 0) libraries.push({ id: 'movie', name: 'Movies', type: LibraryType.Movie })
       } catch (error) {
-        libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
+        libraries.push({ id: 'movie', name: 'Movies', type: LibraryType.Movie })
       }
       return libraries
     }
 
-    if (this.mediaType === 'movie') libraries.push({ id: 'movie', name: 'Movies', type: 'movie' })
-    if (this.mediaType === 'show') libraries.push({ id: 'show', name: 'TV Shows', type: 'show' })
-    if (this.mediaType === 'music') libraries.push({ id: 'music', name: 'Music', type: 'music' })
+    if (this.mediaType === LibraryType.Movie) libraries.push({ id: 'movie', name: 'Movies', type: LibraryType.Movie })
+    if (this.mediaType === LibraryType.Show) libraries.push({ id: 'show', name: 'TV Shows', type: LibraryType.Show })
+    if (this.mediaType === LibraryType.Music) libraries.push({ id: 'music', name: 'Music', type: LibraryType.Music })
 
     return libraries
   }

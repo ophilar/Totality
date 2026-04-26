@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useSources, type ProviderType } from '@/contexts/SourceContext'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import { LibraryType } from '@preload/index'
 import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/index'
 
 // Task queue types
@@ -39,9 +40,9 @@ const PROVIDER_COLORS: Record<ProviderType, string> = {
 }
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {
-  movie: Film,
-  show: Tv,
-  music: Music,
+  [LibraryType.Movie]: Film,
+  [LibraryType.Show]: Tv,
+  [LibraryType.Music]: Music,
 }
 
 function formatRelativeTime(dateStr?: string): string | null {
@@ -270,7 +271,7 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
 
       // Queue scan tasks for every enabled library in this source
       for (const library of libraries) {
-        const taskType = library.type === 'music' ? 'music-scan' : 'library-scan'
+        const taskType = library.type === LibraryType.Music ? 'music-scan' : 'library-scan'
         await window.electronAPI.taskQueueAddTask({
           type: taskType,
           label: `Scan ${library.name} (${sourceName})`,
@@ -281,21 +282,21 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
 
       // Queue analysis tasks for this source based on library types present
       const libraryTypes = new Set(libraries.map(l => l.type))
-      if (libraryTypes.has('show')) {
+      if (libraryTypes.has(LibraryType.Show)) {
         await window.electronAPI.taskQueueAddTask({
           type: 'series-completeness',
           label: `Analyze TV Series (${sourceName})`,
           sourceId,
         })
       }
-      if (libraryTypes.has('movie')) {
+      if (libraryTypes.has(LibraryType.Movie)) {
         await window.electronAPI.taskQueueAddTask({
           type: 'collection-completeness',
           label: `Analyze Collections (${sourceName})`,
           sourceId,
         })
       }
-      if (libraryTypes.has('music')) {
+      if (libraryTypes.has(LibraryType.Music)) {
         await window.electronAPI.taskQueueAddTask({
           type: 'music-completeness',
           label: `Analyze Music (${sourceName})`,

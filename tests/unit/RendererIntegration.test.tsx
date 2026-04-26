@@ -8,6 +8,7 @@ import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
 import { NavigationProvider, useNavigation } from '../../src/renderer/src/contexts/NavigationContext'
 import { ThemeProvider, useTheme } from '../../src/renderer/src/contexts/ThemeContext'
 import { WishlistProvider, useWishlist } from '../../src/renderer/src/contexts/WishlistContext'
+import { LibraryType } from '../../src/main/types/database'
 
 
 import React from 'react'
@@ -67,7 +68,7 @@ function SourceConsumer() {
 function NavConsumer() {
   const { navigateTo, pendingNavigation, canGoBack, pushNavState } = useNavigation()
   return React.createElement('div', null, 
-    React.createElement('button', { onClick: () => navigateTo({ type: 'movie', id: 1 }) }, 'Nav'),
+    React.createElement('button', { onClick: () => navigateTo({ type: LibraryType.Movie as any, id: 1 }) }, 'Nav'),
     React.createElement('button', { onClick: () => pushNavState({ view: 'library' }) }, 'Push'),
     React.createElement('span', null, `Pending: ${pendingNavigation?.id || 'none'}`),
     React.createElement('span', null, `Back: ${canGoBack}`)
@@ -87,7 +88,7 @@ function WishlistConsumer() {
   const { items, addItem } = useWishlist()
   return React.createElement('div', null,
     React.createElement('span', null, `Items: ${items.length}`),
-    React.createElement('button', { onClick: () => addItem({ title: 'New', media_type: 'movie', priority: 3, reason: 'missing', status: 'active' } as any) }, 'Add')
+    React.createElement('button', { onClick: () => addItem({ title: 'New', media_type: LibraryType.Movie as any, priority: 3, reason: 'missing', status: 'active' } as any) }, 'Add')
   )
 }
 

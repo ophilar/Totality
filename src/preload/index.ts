@@ -14,7 +14,8 @@ import { notificationsApi, NotificationsAPI } from './api/notifications'
 import { transcodingAPI } from './api/transcoding'
 
 // Import types
-import type {
+import {
+  LibraryType,
   ConnectionTestResult,
   MediaSourceResponse,
   ServerInstanceResponse,
@@ -24,6 +25,7 @@ import type {
 } from './api/types'
 
 // Re-export for consumers of this module
+export { LibraryType }
 export type {
   ConnectionTestResult,
   MediaSourceResponse,

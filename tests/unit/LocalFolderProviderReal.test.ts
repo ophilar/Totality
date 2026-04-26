@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { LocalFolderProvider } from '../../src/main/providers/local/LocalFolderProvider'
+import { LibraryType } from '../../src/main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
 
 describe('LocalFolderProvider Integration (Real FS)', () => {
@@ -32,7 +33,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     })
     
     // Enable library
-    db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: 'movie', enabled: true }])
+    db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true }])
     
     // Set TMDB key so lookup logic proceeds
     db.config.setSetting('tmdb_api_key', 'fake-key')
@@ -182,8 +183,8 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     // Update source config to support music library
     db.sources.setLibrariesEnabled(sourceId, [
-      { id: 'movie', name: 'Movies', type: 'movie', enabled: true },
-      { id: 'music', name: 'Music', type: 'music', enabled: true }
+      { id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true },
+      { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
     ])
 
     const result = await provider.scanLibrary('music')
@@ -207,7 +208,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     // Update source config
     db.sources.setLibrariesEnabled(sourceId, [
-      { id: 'show', name: 'TV Shows', type: 'show', enabled: true }
+      { id: 'show', name: 'TV Shows', type: LibraryType.Show, enabled: true }
     ])
 
     const result = await provider.scanLibrary('show')

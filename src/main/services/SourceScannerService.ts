@@ -1,4 +1,4 @@
-import { BetterSQLiteService } from '../database/getDatabase'
+import { LibraryType } from '../types/database'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService } from './TaskQueueService'
 import { LoggingService, getLoggingService } from './LoggingService'
@@ -109,7 +109,7 @@ export class SourceScannerService {
           const libraries = await provider.getLibraries()
           for (const library of libraries) {
             if (this.scanCancelled) break
-            if (library.type === 'music') continue
+            if (library.type === LibraryType.Music) continue
             if (!this.db.sources.isLibraryEnabled(source.source_id, library.id)) continue
 
             const result = await provider.scanLibrary(library.id, {
@@ -155,10 +155,10 @@ export class SourceScannerService {
       const tq = getTaskQueueService()
       const hasTmdbKey = this.db.config.getSetting('tmdb_api_key')
       if (hasTmdbKey) {
-        if (library.type === 'show' || library.type === 'mixed') {
+        if (library.type === LibraryType.Show || library.type === LibraryType.Mixed) {
           tq.addTask({ type: 'series-completeness', label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
         }
-        if (library.type === 'movie' || library.type === 'mixed') {
+        if (library.type === LibraryType.Movie || library.type === LibraryType.Mixed) {
           tq.addTask({ type: 'collection-completeness', label: `Post-scan Collection Analysis: ${library.name}`, sourceId, libraryId })
         }
       }

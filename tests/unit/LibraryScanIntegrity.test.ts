@@ -4,6 +4,7 @@ import { ipcMain } from 'electron'
 import { getMovieCollectionService } from '../../src/main/services/MovieCollectionService'
 import { SourceManager } from '../../src/main/services/SourceManager'
 import { getLiveMonitoringService } from '../../src/main/services/LiveMonitoringService'
+import { LibraryType } from '../../src/main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -82,7 +83,7 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
         sourceId: 's1',
         sourceType: 'local' as any,
         displayName: 'Local',
-        connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
+        connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
         isEnabled: true
       })
       await manager.initialize()
@@ -107,7 +108,7 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
         sourceId: 's1',
         sourceType: 'local' as any,
         displayName: 'Local TV',
-        connectionConfig: { folderPath: tempDir.path, mediaType: 'show' },
+        connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Show },
         isEnabled: true
       })
       await manager.initialize()

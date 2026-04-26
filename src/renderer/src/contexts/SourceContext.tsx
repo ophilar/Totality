@@ -14,6 +14,7 @@ import type {
   ServerInstanceResponse,
   ScanResultResponse,
   ConnectionTestResult,
+  LibraryType,
 } from '@preload/index'
 
 
@@ -287,9 +288,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
       if (result.status !== 'fulfilled') continue
       for (const lib of result.value.libraries) {
         if (lib.isEnabled) {
-          if (lib.type === 'movie') movies = true
-          if (lib.type === 'show') tv = true
-          if (lib.type === 'music') music = true
+          if (lib.type === LibraryType.Movie) movies = true
+          if (lib.type === LibraryType.Show) tv = true
+          if (lib.type === LibraryType.Music) music = true
         }
       }
     }

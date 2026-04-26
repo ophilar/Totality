@@ -8,8 +8,9 @@
 import {
   normalizeResolution,
 } from '../../services/MediaNormalizer'
-import type { MediaItemVersion, ProviderType, LibraryType } from '../../types/database'
-export type { ProviderType, LibraryType }
+import { ProviderType, LibraryType } from '../../types/database'
+import type { MediaItemVersion } from '../../types/database'
+export { ProviderType, LibraryType }
 
 // Import and re-export shared IPC types
 import type { ConnectionTestResult } from '../../types/ipc'

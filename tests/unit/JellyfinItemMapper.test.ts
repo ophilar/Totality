@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { JellyfinItemMapper } from '../../src/main/providers/jellyfin-emby/JellyfinItemMapper'
 import { JellyfinApiClient } from '../../src/main/providers/jellyfin-emby/JellyfinApiClient'
+import { LibraryType } from '../../src/main/types/database'
 
 describe('JellyfinItemMapper', () => {
   const client = new JellyfinApiClient({
@@ -60,9 +61,9 @@ describe('JellyfinItemMapper', () => {
   })
 
   it('should correctly map library types', () => {
-    expect(mapper.mapLibraryType('movies')).toBe('movie')
-    expect(mapper.mapLibraryType('tvshows')).toBe('show')
-    expect(mapper.mapLibraryType('music')).toBe('music')
-    expect(mapper.mapLibraryType('unknown')).toBe('unknown')
+    expect(mapper.mapLibraryType('movies')).toBe(LibraryType.Movie)
+    expect(mapper.mapLibraryType('tvshows')).toBe(LibraryType.Show)
+    expect(mapper.mapLibraryType('music')).toBe(LibraryType.Music)
+    expect(mapper.mapLibraryType('unknown')).toBe(LibraryType.Unknown)
   })
 })
