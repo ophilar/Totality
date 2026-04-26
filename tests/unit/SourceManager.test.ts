@@ -67,13 +67,13 @@ describe('SourceManager (No Mocks)', () => {
     const source = await manager.addSource({
       sourceType: 'local' as any,
       displayName: 'Local Video',
-      connectionConfig: { folderPath: tempDir.path, mediaType: 'movies' },
+      connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
     })
 
     await manager.initialize()
     
-    // Pass 'movies' as library ID which matches the config
-    const result = await manager.scanLibrary(source.source_id, 'movies')
+    // Pass 'movie' as library ID which matches the config
+    const result = await manager.scanLibrary(source.source_id, 'movie')
     
     expect(result.success).toBe(true)
     expect(result.itemsScanned).toBeGreaterThan(0)
@@ -94,13 +94,13 @@ describe('SourceManager (No Mocks)', () => {
     const source = await manager.addSource({
       sourceType: 'local' as any,
       displayName: 'Cancel Test',
-      connectionConfig: { folderPath: tempDir.path, mediaType: 'movies' },
+      connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
     })
 
     await manager.initialize()
 
     // Start scan and immediately stop
-    const scanPromise = manager.scanLibrary(source.source_id, 'movies')
+    const scanPromise = manager.scanLibrary(source.source_id, 'movie')
     
     // Give it a tiny bit of time to start
     await new Promise(resolve => setTimeout(resolve, 5))

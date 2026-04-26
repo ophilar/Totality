@@ -7,7 +7,7 @@ import { TVShowsView } from '../../src/renderer/src/components/library/TVShowsVi
 import { SourceProvider } from '../../src/renderer/src/contexts/SourceContext'
 import { LibraryProvider } from '../../src/renderer/src/contexts/LibraryContext'
 import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
-import { setupTestDb, cleanupTestDb } from '../TestUtils'
+
 import React from 'react'
 
 // Mock react-virtuoso to render items in JSDOM (infrastructure mock)
@@ -36,18 +36,18 @@ vi.mock('react-virtuoso', () => ({
   }
 }))
 
-describe('TVShowsView Rendering (No Logic Mocks)', () => {
-  let db: any
+describe('TVShowsView Rendering (Mocked Bridge)', () => {
+  let mockConfig: Record<string, any> = {}
 
   beforeEach(async () => {
-    db = await setupTestDb()
+    mockConfig = {}
     
     // Setup real bridge for contexts
     ;(window as any).electronAPI = {
       sourcesList: () => Promise.resolve([]),
-      getSetting: (key: string) => Promise.resolve(db.config.getSetting(key)),
+      getSetting: (key: string) => Promise.resolve(mockConfig[key]),
       setSetting: (key: string, value: string) => {
-        db.config.setSetting(key, value)
+        mockConfig[key] = value
         return Promise.resolve(true)
       },
       log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
@@ -58,9 +58,7 @@ describe('TVShowsView Rendering (No Logic Mocks)', () => {
     }
   })
 
-  afterEach(() => {
-    cleanupTestDb()
-  })
+  afterEach(() => {})
 
   const defaultProps: any = {
     shows: [],
