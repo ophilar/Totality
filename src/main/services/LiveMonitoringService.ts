@@ -115,19 +115,19 @@ export class LiveMonitoringService {
     await detectWindowsNetworkDrivesAsync()
 
     const db = getDatabase()
-    const enabled = db.getSetting('monitoring_enabled')
+    const enabled = db.config.getSetting('monitoring_enabled')
     this.config.enabled = enabled === 'true'
 
-    const startOnLaunch = db.getSetting('monitoring_start_on_launch')
+    const startOnLaunch = db.config.getSetting('monitoring_start_on_launch')
     this.config.startOnLaunch = startOnLaunch !== 'false' // Default true
 
-    const pauseDuringManualScan = db.getSetting('monitoring_pause_during_scan')
+    const pauseDuringManualScan = db.config.getSetting('monitoring_pause_during_scan')
     this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
 
     // Load per-provider intervals
     const providerTypes: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local']
     for (const provider of providerTypes) {
-      const interval = db.getSetting(`monitoring_interval_${provider}`)
+      const interval = db.config.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
         if (!Number.isNaN(parsed)) {
@@ -173,17 +173,17 @@ export class LiveMonitoringService {
     // Persist to database
     const db = getDatabase()
     if (config.enabled !== undefined) {
-      await db.setSetting('monitoring_enabled', config.enabled.toString())
+      await db.config.setSetting('monitoring_enabled', config.enabled.toString())
     }
     if (config.startOnLaunch !== undefined) {
-      await db.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
+      await db.config.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
     }
     if (config.pauseDuringManualScan !== undefined) {
-      await db.setSetting('monitoring_pause_during_scan', config.pauseDuringManualScan.toString())
+      await db.config.setSetting('monitoring_pause_during_scan', config.pauseDuringManualScan.toString())
     }
     if (config.pollingIntervals) {
       for (const [provider, interval] of Object.entries(config.pollingIntervals)) {
-        await db.setSetting(`monitoring_interval_${provider}`, interval.toString())
+        await db.config.setSetting(`monitoring_interval_${provider}`, interval.toString())
       }
     }
 

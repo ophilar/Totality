@@ -327,7 +327,7 @@ export class SourceManager {
       const libs = await this.getLibraries(source.source_id)
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
-        if (this.db.getSetting('tmdb_api_key')) {
+        if (this.db.config.getSetting('tmdb_api_key')) {
           if (lib.type === 'tv' || lib.type === 'show' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'series-completeness', label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
           if (lib.type === 'movie' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'collection-completeness', label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
         }

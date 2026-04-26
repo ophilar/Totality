@@ -153,7 +153,7 @@ function createWindow() {
     if (isQuitting) return
 
     const db = getDatabaseServiceSync()
-    const minimizeToTray = db.isInitialized ? db.getSetting('minimize_to_tray') : null
+    const minimizeToTray = db.isInitialized ? db.config.getSetting('minimize_to_tray') : null
 
     if (minimizeToTray === 'true') {
       event.preventDefault()
@@ -397,8 +397,8 @@ app.whenReady().then(async () => {
     createTray()
 
     // Handle "start minimized to tray" setting
-    const startMinimized = db.getSetting('start_minimized_to_tray')
-    if (startMinimized === 'true' && db.getSetting('minimize_to_tray') === 'true') {
+    const startMinimized = db.config.getSetting('start_minimized_to_tray')
+    if (startMinimized === 'true' && db.config.getSetting('minimize_to_tray') === 'true') {
       win?.hide()
     }
 

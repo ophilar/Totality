@@ -160,9 +160,9 @@ export function registerLoggingHandlers(): void {
     try {
       const db = getDatabase()
       return {
-        enabled: db.getSetting('file_logging_enabled') !== 'false',
-        minLevel: (db.getSetting('file_logging_min_level') || 'info') as LogLevel,
-        retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
+        enabled: db.config.getSetting('file_logging_enabled') !== 'false',
+        minLevel: (db.config.getSetting('file_logging_min_level') || 'info') as LogLevel,
+        retentionDays: parseInt(db.config.getSetting('log_retention_days') || '7', 10),
       }
     } catch (error) {
       getLoggingService().error('[logging]', '[IPC logs:getFileLoggingSettings] Error:', error)
@@ -174,9 +174,9 @@ export function registerLoggingHandlers(): void {
     try {
       const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
       const db = getDatabase()
-      if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
-      if (valid.minLevel !== undefined) db.setSetting('file_logging_min_level', valid.minLevel)
-      if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
+      if (valid.enabled !== undefined) db.config.setSetting('file_logging_enabled', String(valid.enabled))
+      if (valid.minLevel !== undefined) db.config.setSetting('file_logging_min_level', valid.minLevel)
+      if (valid.retentionDays !== undefined) db.config.setSetting('log_retention_days', String(valid.retentionDays))
       getLoggingService().updateFileLoggingSettings(valid)
       return { success: true }
     } catch (error) {

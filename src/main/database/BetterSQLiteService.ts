@@ -194,18 +194,6 @@ export class BetterSQLiteService {
 
   // --- Core Database Methods ---
   public getDbPath(): string { return this.dbPath }
-  
-  public getSetting(key: string, defaultValue?: string): string | null { 
-    return this.config.getSetting(key) || defaultValue || null 
-  }
-  
-  public setSetting(key: string, value: string | boolean | number): void { 
-    this.config.setSetting(key, String(value)) 
-  }
-  
-  public deleteSetting(key: string): void { 
-    this.config.deleteSetting(key) 
-  }
 
   public beginBatch(): void { 
     if (this.transactionDepth === 0) {

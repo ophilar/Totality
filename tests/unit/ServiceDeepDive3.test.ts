@@ -108,7 +108,7 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
       } as any)
 
       // Ensure setting is configured to prefer highest resolution
-      dbService.setSetting('dup_policy_highest_res', 'true')
+      dbService.config.setSetting('dup_policy_highest_res', 'true')
 
       const recommendation = dedupService.recommendRetention([id1, id2])
       expect(recommendation.keep).toBe(id2) // 4K

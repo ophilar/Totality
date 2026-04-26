@@ -201,7 +201,7 @@ export function registerWishlistHandlers() {
       const validRegion = validateInput(StoreRegionSchema, region, 'wishlist:setRegion')
       storeService.setRegion(validRegion as StoreRegion)
       // Save to settings
-      await db.setSetting('store_region', validRegion)
+      await db.config.setSetting('store_region', validRegion)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error setting store region:', error)
@@ -214,7 +214,7 @@ export function registerWishlistHandlers() {
    */
   ipcMain.handle('wishlist:getRegion', async () => {
     try {
-      const region = db.getSetting('store_region')
+      const region = db.config.getSetting('store_region')
       return region || 'us'
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting store region:', error)

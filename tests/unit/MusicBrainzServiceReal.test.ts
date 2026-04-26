@@ -64,9 +64,9 @@ describe('MusicBrainzService (No Mocks)', () => {
     process.env.NODE_ENV = 'test'
 
     db = getBetterSQLiteService()
-    db.initialize()
+    await db.initialize()
     
-    db.setSetting('musicbrainz_base_url', `http://127.0.0.1:${serverPort}`)
+    db.config.setSetting('musicbrainz_base_url', `http://127.0.0.1:${serverPort}`)
 
     service = new MusicBrainzService()
   })

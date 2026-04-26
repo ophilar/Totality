@@ -26,7 +26,7 @@ import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBacko
 export class TMDBService {
   private static get BASE_URL(): string {
     const db = getDatabase()
-    return db.getSetting('tmdb_base_url') || 'https://api.themoviedb.org/3'
+    return db.config.getSetting('tmdb_base_url') || 'https://api.themoviedb.org/3'
   }
   private static readonly IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
   private static readonly CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
@@ -47,7 +47,7 @@ export class TMDBService {
    */
   async initialize(): Promise<void> {
     const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
+    const setting = db.config.getSetting('tmdb_api_key')
     this.apiKey = setting || null
 
     if (!this.apiKey || this.apiKey === '') {
@@ -60,7 +60,7 @@ export class TMDBService {
    */
   refreshApiKey(): void {
     const db = getDatabase()
-    const setting = db.getSetting('tmdb_api_key')
+    const setting = db.config.getSetting('tmdb_api_key')
     this.apiKey = setting || null
   }
 

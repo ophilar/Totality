@@ -486,7 +486,7 @@ export class TaskQueueService {
 
   private saveState(): void {
     try {
-      this.db.setSetting('task_queue_state', JSON.stringify({
+      this.db.config.setSetting('task_queue_state', JSON.stringify({
         queue: this.queue,
         completedTasks: this.completedTasks,
         isPaused: this.isPaused
@@ -498,7 +498,7 @@ export class TaskQueueService {
 
   private loadState(): void {
     try {
-      const stateStr = this.db.getSetting('task_queue_state')
+      const stateStr = this.db.config.getSetting('task_queue_state')
       if (stateStr) {
         const state = JSON.parse(stateStr)
         this.queue = state.queue || []

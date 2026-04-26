@@ -261,11 +261,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdb = getTMDBService()
 
       await analyzer.loadThresholdsFromDatabase()
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
-      const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '25', 10)
+      const ffprobeParallelEnabled = db.config.getSetting('ffprobe_parallel_enabled') !== 'false'
+      const ffprobeBatchSize = parseInt(db.config.getSetting('ffprobe_batch_size') || '25', 10)
 
       const scannedFilePaths = new Set<string>()
       const scanType = libraryType === 'movie' ? 'movie' : 'episode'
@@ -395,7 +395,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdb = getTMDBService()
 
       await analyzer.loadThresholdsFromDatabase()
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
       const scanType = libraryType === 'movies' ? 'movie' : 'episode'
@@ -469,7 +469,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
     try {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
-      const ffprobeEnabled = db.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const validFiles = filePaths.filter(fp => fs.existsSync(fp) && parser.isAudioFile(path.basename(fp)))
       const deletedFiles = filePaths.filter(fp => !fs.existsSync(fp))
@@ -568,14 +568,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private async isTMDBConfigured(): Promise<boolean> {
     try {
-      const db = getDatabase(); const apiKey = await db.getSetting('tmdb_api_key')
+      const db = getDatabase(); const apiKey = await db.config.getSetting('tmdb_api_key')
       return !!apiKey && apiKey.length > 0
     } catch (error) { throw error }
   }
 
   private async isMusicBrainzNameCorrectionEnabled(): Promise<boolean> {
     try {
-      const db = getDatabase(); const setting = db.getSetting('musicbrainz_name_correction')
+      const db = getDatabase(); const setting = db.config.getSetting('musicbrainz_name_correction')
       return setting !== 'false'
     } catch (error) { throw error }
   }
@@ -750,9 +750,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
     try {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
-      const ffprobeAvailable = db.getSetting('ffprobe_enabled') !== 'false' && await fileAnalyzer.isAvailable()
+      const ffprobeAvailable = db.config.getSetting('ffprobe_enabled') !== 'false' && await fileAnalyzer.isAvailable()
       const mbNameCorrectionEnabled = await this.isMusicBrainzNameCorrectionEnabled(), scannedFilePaths = new Set<string>(), mbArtistNameCache = new Map<string, string>()
-      const ffprobeParallelEnabled = db.getSetting('ffprobe_parallel_enabled') !== 'false', ffprobeBatchSize = parseInt(db.getSetting('ffprobe_batch_size') || '50', 10)
+      const ffprobeParallelEnabled = db.config.getSetting('ffprobe_parallel_enabled') !== 'false', ffprobeBatchSize = parseInt(db.config.getSetting('ffprobe_batch_size') || '50', 10)
 
       onProgress?.({ current: 0, total: 100, phase: 'fetching', currentItem: 'Scanning for music files...', percentage: 0 })
       const audioFiles = await this.discoverAudioFiles(musicPath); const totalFiles = audioFiles.length

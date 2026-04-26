@@ -63,12 +63,12 @@ export class GeminiService {
 
   constructor() {
     const db = getDatabase()
-    this.apiKey = db.getSetting('gemini_api_key') || null
-    this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
-    this.enabled = db.getSetting('ai_enabled') !== 'false'
+    this.apiKey = db.config.getSetting('gemini_api_key') || null
+    this.model = db.config.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
+    this.enabled = db.config.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
-      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.getSetting('gemini_base_url')
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.config.getSetting('gemini_base_url')
       this.client = new GoogleGenAI({ 
         apiKey: this.apiKey,
         httpOptions: baseUrl ? { baseUrl } : undefined
@@ -81,12 +81,12 @@ export class GeminiService {
    */
   refreshApiKey(): void {
     const db = getDatabase()
-    this.apiKey = db.getSetting('gemini_api_key') || null
-    this.model = db.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
-    this.enabled = db.getSetting('ai_enabled') !== 'false'
+    this.apiKey = db.config.getSetting('gemini_api_key') || null
+    this.model = db.config.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
+    this.enabled = db.config.getSetting('ai_enabled') !== 'false'
 
     if (this.apiKey && this.enabled) {
-      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.getSetting('gemini_base_url')
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.config.getSetting('gemini_base_url')
       this.client = new GoogleGenAI({ 
         apiKey: this.apiKey,
         httpOptions: baseUrl ? { baseUrl } : undefined
