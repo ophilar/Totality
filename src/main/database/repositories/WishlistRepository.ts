@@ -135,6 +135,16 @@ export class WishlistRepository extends BaseRepository<WishlistItem> {
     this.db.prepare(sql).run(...params)
   }
 
+  updateStatusMany(ids: number[], status: string): void {
+    if (!ids || ids.length === 0) return
+
+    const placeholders = ids.map(() => '?').join(', ')
+    const completedAtSql = status === 'completed' ? ", completed_at = datetime('now')" : ""
+    const sql = `UPDATE wishlist_items SET status = ?, updated_at = datetime('now')${completedAtSql} WHERE id IN (${placeholders})`
+
+    this.db.prepare(sql).run(status, ...ids)
+  }
+
   delete(id: number): boolean {
     const result = this.db.prepare('DELETE FROM wishlist_items WHERE id = ?').run(id) as unknown as { changes: number | bigint }
     return Number(result.changes) > 0

@@ -76,10 +76,9 @@ export class WishlistCompletionService {
     }
 
     if (completed.length > 0) {
-      // Mark items as completed in the database
-      for (const item of completed) {
-        db.wishlist.update(item.id, { status: 'completed' })
-      }
+      // Mark items as completed in the database in a single batch query
+      const completedIds = completed.map(item => item.id)
+      db.wishlist.updateStatusMany(completedIds, 'completed')
 
       // Notify the renderer
       safeSend(this.mainWindow, 'wishlist:autoCompleted', completed)

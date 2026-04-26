@@ -11,6 +11,23 @@ describe('WishlistRepository (Real DB)', () => {
     repo = db.wishlist
   })
 
+  it('should update multiple items statuses at once', () => {
+    const id1 = repo.add({ media_type: 'movie', title: 'Movie 1' } as any)
+    const id2 = repo.add({ media_type: 'movie', title: 'Movie 2' } as any)
+    const id3 = repo.add({ media_type: 'movie', title: 'Movie 3' } as any)
+
+    repo.updateStatusMany([id1, id2], 'completed')
+
+    const items = repo.getItems()
+    const item1 = items.find(i => i.id === id1)
+    const item2 = items.find(i => i.id === id2)
+    const item3 = items.find(i => i.id === id3)
+
+    expect(item1?.status).toBe('completed')
+    expect(item2?.status).toBe('completed')
+    expect(item3?.status).toBe('active') // Default status
+  })
+
   afterEach(() => {
     cleanupTestDb()
   })
