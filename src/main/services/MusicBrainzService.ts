@@ -106,9 +106,9 @@ export class MusicBrainzService extends CancellableOperation {
   private readonly MAX_RETRIES = 3
   private readonly RETRY_DELAY_MS = 5000
 
-  private static get BASE_URL(): string {
+  private getBaseUrl(): string {
     const db = getDatabase()
-    return db.getSetting('musicbrainz_base_url') || 'https://musicbrainz.org/ws/2'
+    return db.config.getSetting('musicbrainz_base_url') || 'https://musicbrainz.org/ws/2'
   }
 
   // User-Agent per MusicBrainz guidelines
@@ -120,7 +120,7 @@ export class MusicBrainzService extends CancellableOperation {
   constructor() {
     super()
     this.api = axios.create({
-      baseURL: MusicBrainzService.BASE_URL,
+      baseURL: this.getBaseUrl(),
       headers: {
         'User-Agent': this.USER_AGENT,
         'Accept': 'application/json',
@@ -738,8 +738,8 @@ export class MusicBrainzService extends CancellableOperation {
     // Calculate completeness (albums weighted more heavily)
     // Read settings for whether to include EPs and singles
     const db = getDatabase()
-    const includeEps = db.getSetting('completeness_include_eps') !== 'false'
-    const includeSingles = db.getSetting('completeness_include_singles') !== 'false'
+    const includeEps = db.config.getSetting('completeness_include_eps') !== 'false'
+    const includeSingles = db.config.getSetting('completeness_include_singles') !== 'false'
 
     const totalItems = discography.albums.length * 3
       + (includeEps ? discography.eps.length * 2 : 0)

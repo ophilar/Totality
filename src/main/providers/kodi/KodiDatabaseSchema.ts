@@ -33,7 +33,7 @@ function getNfsMountMappings(): Record<string, string> {
   if (cachedNfsMappings === null) {
     try {
       const db = getDatabase()
-      const mappingsJson = db.getSetting('nfs_mount_mappings')
+      const mappingsJson = db.config.getSetting('nfs_mount_mappings')
       cachedNfsMappings = mappingsJson ? JSON.parse(mappingsJson) : {}
     } catch {
       cachedNfsMappings = {}

@@ -96,8 +96,8 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     db = getBetterSQLiteService()
     db.initialize()
     
-    db.setSetting('tmdb_api_key', 'test-key')
-    db.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
+    db.config.setSetting('tmdb_api_key', 'test-key')
+    db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
 
     tmdb = getTMDBService()
     await tmdb.initialize()

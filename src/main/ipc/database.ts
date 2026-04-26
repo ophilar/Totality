@@ -145,7 +145,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('db:getSetting', async (_event, key: unknown) => {
     try {
       const validKey = validateInput(SettingKeySchema, key, 'db:getSetting')
-      return db.getSetting(validKey)
+      return db.config.getSetting(validKey)
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting setting:', error)
       throw error
@@ -159,7 +159,7 @@ export function registerDatabaseHandlers() {
       const validKey = validateInput(SettingKeySchema, key, 'db:setSetting')
       const validValue = validateInput(SettingValueSchema, value, 'db:setSetting')
       getLoggingService().info('[IPC db:setSetting]', validKey, sensitiveSettingKeys.has(validKey) ? '(redacted)' : validValue)
-      await db.setSetting(validKey, validValue)
+      await db.config.setSetting(validKey, validValue)
 
       // Invalidate quality analyzer cache when quality settings change
       if (validKey.startsWith('quality_')) {
@@ -257,7 +257,7 @@ export function registerDatabaseHandlers() {
   // NFS Mount Mappings (for Kodi NFS path conversion)
   ipcMain.handle('settings:getNfsMappings', async () => {
     try {
-      const json = db.getSetting('nfs_mount_mappings')
+      const json = db.config.getSetting('nfs_mount_mappings')
       return json ? JSON.parse(json) : {}
     } catch (error) {
       getLoggingService().error('[database]', 'Error getting NFS mappings:', error)
@@ -268,7 +268,7 @@ export function registerDatabaseHandlers() {
   ipcMain.handle('settings:setNfsMappings', async (_event, mappings: unknown) => {
     try {
       const validMappings = validateInput(NfsMappingsSchema, mappings, 'settings:setNfsMappings')
-      await db.setSetting('nfs_mount_mappings', JSON.stringify(validMappings))
+      await db.config.setSetting('nfs_mount_mappings', JSON.stringify(validMappings))
       invalidateNfsMappingsCache()
       return true
     } catch (error) {

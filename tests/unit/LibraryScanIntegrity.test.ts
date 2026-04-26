@@ -60,7 +60,7 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
   describe('MovieCollectionService - Optional TMDB API Key', () => {
     it('should skip analysis and return successfully when TMDB API key is missing', async () => {
       const service = getMovieCollectionService()
-      db.deleteSetting('tmdb_api_key')
+      db.config.deleteSetting('tmdb_api_key')
       const result = await service.analyzeAllCollections()
       expect(result.completed).toBe(true)
       expect(result.analyzed).toBe(0)
@@ -113,12 +113,12 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
       await manager.initialize()
 
       // Case 1: TMDB key missing
-      db.deleteSetting('tmdb_api_key')
+      db.config.deleteSetting('tmdb_api_key')
       await manager.scanLibrary('s1', 'show')
       expect((manager as any).getTaskQueue().getTasks().length).toBe(0)
 
       // Case 2: TMDB key present
-      db.setSetting('tmdb_api_key', 'test-key')
+      db.config.setSetting('tmdb_api_key', 'test-key')
       await manager.scanLibrary('s1', 'show')
       const tasks = (manager as any).getTaskQueue().getTasks()
       expect(tasks.some((t: any) => t.type === 'series-completeness')).toBe(true)

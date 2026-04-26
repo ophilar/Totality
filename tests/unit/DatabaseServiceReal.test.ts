@@ -22,8 +22,8 @@ describe('BetterSQLiteService Integration (Real DB)', () => {
   })
 
   it('should persist settings', () => {
-    db.setSetting('test_theme', 'dark')
-    expect(db.getSetting('test_theme')).toBe('dark')
+    db.config.setSetting('test_theme', 'dark')
+    expect(db.config.getSetting('test_theme')).toBe('dark')
   })
 
   it('should run multiple operations in a batch (manual transaction)', () => {
