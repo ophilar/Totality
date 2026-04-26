@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react'
 import { useSources } from '../../contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
+import type { LibraryType } from '@preload/api/types'
 
 interface LocalFolderFlowProps {
   onSuccess: () => void
@@ -17,8 +18,8 @@ interface LocalFolderFlowProps {
 interface DetectedLibrary {
   name: string
   path: string
-  suggestedType: 'movies' | 'tvshows' | 'music' | 'unknown'
-  selectedType: 'movies' | 'tvshows' | 'music'
+  suggestedType: LibraryType
+  selectedType: LibraryType
   enabled: boolean
 }
 
@@ -27,10 +28,10 @@ const MOVIE_PATTERNS = ['movies', 'films', 'movie', 'film']
 const TV_PATTERNS = ['tv shows', 'tv', 'shows', 'series', 'television', 'tvshows']
 const MUSIC_PATTERNS = ['music', 'audio', 'songs', 'albums', 'artists']
 
-function detectMediaType(folderName: string): 'movies' | 'tvshows' | 'music' | 'unknown' {
+function detectMediaType(folderName: string): LibraryType {
   const lower = folderName.toLowerCase()
-  if (MOVIE_PATTERNS.includes(lower)) return 'movies'
-  if (TV_PATTERNS.includes(lower)) return 'tvshows'
+  if (MOVIE_PATTERNS.includes(lower)) return 'movie'
+  if (TV_PATTERNS.includes(lower)) return 'show'
   if (MUSIC_PATTERNS.includes(lower)) return 'music'
   return 'unknown'
 }
@@ -227,7 +228,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
     ))
   }
 
-  const setLibraryType = (index: number, type: 'movies' | 'tvshows' | 'music') => {
+  const setLibraryType = (index: number, type: LibraryType) => {
     setLibraries(prev => prev.map((lib, i) =>
       i === index ? { ...lib, selectedType: type } : lib
     ))
@@ -241,10 +242,10 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
     setLibraries(prev => prev.map(lib => ({ ...lib, enabled: false })))
   }
 
-  const getTypeIcon = (type: 'movies' | 'tvshows' | 'music' | 'unknown') => {
+  const getTypeIcon = (type: LibraryType) => {
     switch (type) {
-      case 'movies': return <Film className="w-4 h-4" />
-      case 'tvshows': return <Tv className="w-4 h-4" />
+      case 'movie': return <Film className="w-4 h-4" />
+      case 'show': return <Tv className="w-4 h-4" />
       case 'music': return <Music className="w-4 h-4" />
       default: return <HelpCircle className="w-4 h-4" />
     }
@@ -370,11 +371,11 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
                 {/* Type selector */}
                 <select
                   value={lib.selectedType}
-                  onChange={(e) => setLibraryType(index, e.target.value as 'movies' | 'tvshows' | 'music')}
+                  onChange={(e) => setLibraryType(index, e.target.value as LibraryType)}
                   className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
                 >
-                  <option value="movies">Movies</option>
-                  <option value="tvshows">TV Shows</option>
+                  <option value="movie">Movies</option>
+                  <option value="show">TV Shows</option>
                   <option value="music">Music</option>
                 </select>
               </div>
@@ -397,16 +398,16 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
             <div className="flex-1">
               <p className="text-sm font-medium">{libraries[0].name}</p>
               <p className="text-xs text-muted-foreground">
-                Detected as {libraries[0].selectedType === 'movies' ? 'Movies' : libraries[0].selectedType === 'tvshows' ? 'TV Shows' : 'Music'} library
+                Detected as {libraries[0].selectedType === 'movie' ? 'Movies' : libraries[0].selectedType === 'show' ? 'TV Shows' : 'Music'} library
               </p>
             </div>
             <select
               value={libraries[0].selectedType}
-              onChange={(e) => setLibraryType(0, e.target.value as 'movies' | 'tvshows' | 'music')}
+              onChange={(e) => setLibraryType(0, e.target.value as LibraryType)}
               className="text-xs bg-muted border border-border rounded px-2 py-1 outline-hidden focus:ring-1 focus:ring-primary"
             >
-              <option value="movies">Movies</option>
-              <option value="tvshows">TV Shows</option>
+              <option value="movie">Movies</option>
+              <option value="show">TV Shows</option>
               <option value="music">Music</option>
             </select>
           </div>
