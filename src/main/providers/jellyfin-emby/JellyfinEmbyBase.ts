@@ -10,6 +10,7 @@ import {
   ScanResult,
   ScanOptions,
   SourceConfig,
+  LibraryType,
 } from '../base/MediaProvider'
 import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import {
@@ -304,7 +305,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     try {
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
-      const libraryType = library?.type || 'movie'
+      const libraryType = library?.type || LibraryType.Movie
       const isBoxsets = library?.collectionType === 'boxsets'
       const allItems: JellyfinMediaItem[] = []
       const batchSize = 100
@@ -349,7 +350,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         let offset = 0
         let hasMoreItems = true
         while (hasMoreItems) {
-          const params: Record<string, unknown> = { ParentId: libraryId, Recursive: true, IncludeItemTypes: libraryType === 'show' ? 'Episode' : 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', EnableTotalRecordCount: true, StartIndex: offset, Limit: batchSize }
+          const params: Record<string, unknown> = { ParentId: libraryId, Recursive: true, IncludeItemTypes: libraryType === LibraryType.Show ? 'Episode' : 'Movie', Fields: fieldsParam, EnableImageTypes: 'Primary,Thumb,Screenshot,Banner,Backdrop', EnableTotalRecordCount: true, StartIndex: offset, Limit: batchSize }
           if (isIncremental && sinceTimestamp) params.MinDateLastSaved = sinceTimestamp.toISOString()
           const response = await this.client.get<{ Items: JellyfinMediaItem[]; TotalRecordCount: number }>('/Items', params)
           allItems.push(...response.Items)
@@ -358,7 +359,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         }
       }
 
-      if (libraryType === 'show') {
+      if (libraryType === LibraryType.Show) {
         const seriesIds = Array.from(new Set(allItems.map(i => i.SeriesId).filter(Boolean))) as string[]
         for (let i = 0; i < seriesIds.length; i += 50) {
           const batchIds = seriesIds.slice(i, i + 50)

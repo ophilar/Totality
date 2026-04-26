@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SourceRepository } from '../../src/main/database/repositories/SourceRepository'
+import { LibraryType } from '../../src/main/types/database'
 import { setupTestDb, cleanupTestDb } from '../TestUtils'
 
 describe('SourceRepository (Real DB)', () => {
@@ -103,8 +104,8 @@ describe('SourceRepository (Real DB)', () => {
 
     it('should set and retrieve library configurations', () => {
       const libs = [
-        { id: 'l1', name: 'Movies', type: 'movies', enabled: true },
-        { id: 'l2', name: 'TV', type: 'tvshows', enabled: false }
+        { id: 'l1', name: 'Movies', type: LibraryType.Movie, enabled: true },
+        { id: 'l2', name: 'TV', type: LibraryType.Show, enabled: false }
       ]
       
       repo.setLibrariesEnabled(sourceId, libs)
@@ -116,7 +117,7 @@ describe('SourceRepository (Real DB)', () => {
     })
 
     it('should toggle library status', () => {
-      repo.setLibrariesEnabled(sourceId, [{ id: 'l1', name: 'Movies', type: 'movies', enabled: true }])
+      repo.setLibrariesEnabled(sourceId, [{ id: 'l1', name: 'Movies', type: LibraryType.Movie, enabled: true }])
       repo.toggleLibrary(sourceId, 'l1', false)
       
       expect(repo.isLibraryEnabled(sourceId, 'l1')).toBe(false)

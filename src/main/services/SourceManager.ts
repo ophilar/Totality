@@ -17,6 +17,7 @@ import { PlexAuthService } from './PlexAuthService'
 import type {
   MediaProvider,
   ProviderType,
+  LibraryType,
   SourceConfig,
   ConnectionTestResult,
   ScanResult,
@@ -169,7 +170,7 @@ export class SourceManager {
     if (!provider) throw new Error(`Source not found: ${sourceId}`)
     const libraries = await provider.getLibraries()
     for (const library of libraries) {
-      if (library.type === 'music') continue
+      if (library.type === LibraryType.Music) continue
       if (!this.db.sources.isLibraryEnabled(sourceId, library.id)) continue
       await this.scanLibrary(sourceId, library.id, onProgress)
     }
@@ -216,7 +217,7 @@ export class SourceManager {
       try {
         const libraries = await provider.getLibraries()
         for (const library of libraries) {
-          if (library.type === 'music') continue
+          if (library.type === LibraryType.Music) continue
           if (!this.db.sources.isLibraryEnabled(source.source_id, library.id)) continue
           const lastScanTime = this.db.sources.getLibraryScanTime(source.source_id, library.id)
           const result = await provider.scanLibrary(library.id, { sinceTimestamp: lastScanTime ? new Date(lastScanTime) : undefined, onProgress: onProgress ? (p) => onProgress(source.source_id, source.display_name, p) : undefined })
@@ -328,8 +329,8 @@ export class SourceManager {
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
         if (this.db.config.getSetting('tmdb_api_key')) {
-          if (lib.type === 'tv' || lib.type === 'show' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'series-completeness', label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-          if (lib.type === 'movie' || lib.type === 'mixed') this.getTaskQueue().addTask({ type: 'collection-completeness', label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+          if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: 'series-completeness', label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+          if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: 'collection-completeness', label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
         }
       }
     }

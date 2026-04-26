@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react'
 import { useSources } from '../../contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
-import type { LibraryType } from '@preload/api/types'
+import { LibraryType } from '@preload/index'
 
 interface LocalFolderFlowProps {
   onSuccess: () => void
@@ -81,7 +81,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
         // Check if the folder itself is a known media type
         const folderMediaType = detectMediaType(folderName)
 
-        if (folderMediaType !== 'unknown') {
+        if (folderMediaType !== LibraryType.Unknown) {
           // The folder itself is a media library (e.g., "Movies" or "TV Shows")
           setIsSingleLibrary(true)
           setLibraries([{
@@ -122,10 +122,10 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       const detected: DetectedLibrary[] = result.subfolders.map(sf => ({
         name: sf.name,
         path: sf.path,
-        suggestedType: sf.suggestedType,
-        selectedType: sf.suggestedType === 'unknown' ? 'movies' : sf.suggestedType,
+        suggestedType: sf.suggestedType as LibraryType,
+        selectedType: (sf.suggestedType === LibraryType.Unknown ? LibraryType.Movie : sf.suggestedType) as LibraryType,
         // Auto-enable folders with known types
-        enabled: sf.suggestedType !== 'unknown',
+        enabled: sf.suggestedType !== LibraryType.Unknown,
       }))
 
       setLibraries(detected)
@@ -169,7 +169,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
         const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
         for (const srcLib of sourceLibraries) {
           try {
-            const taskType = srcLib.type === 'music' ? 'music-scan' : 'library-scan'
+            const taskType = srcLib.type === LibraryType.Music ? 'music-scan' : 'library-scan'
             await window.electronAPI.taskQueueAddTask({
               type: taskType,
               label: `Scan ${srcLib.name} (${displayName.trim()})`,

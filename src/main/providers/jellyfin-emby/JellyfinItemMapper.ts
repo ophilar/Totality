@@ -27,6 +27,7 @@ import {
 import type {
   MediaMetadata,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType } from '@main/types/database'
 import type {
   MediaItem,
   MediaItemVersion,
@@ -51,19 +52,19 @@ export class JellyfinItemMapper {
     private client: JellyfinApiClient
   ) {}
 
-  mapLibraryType(collectionType?: string): 'movie' | 'show' | 'music' | 'unknown' {
+  mapLibraryType(collectionType?: string): LibraryType {
     switch (collectionType) {
       case 'movies':
       case 'homevideos':
       case 'musicvideos':
       case 'boxsets':
-        return 'movie'
+        return LibraryType.Movie
       case 'tvshows':
-        return 'show'
+        return LibraryType.Show
       case 'music':
-        return 'music'
+        return LibraryType.Music
       default:
-        return 'unknown'
+        return LibraryType.Unknown
     }
   }
 
@@ -521,8 +522,8 @@ export class JellyfinItemMapper {
     }
   }
 
-  groupMovieVersions(items: JellyfinMediaItem[], libraryType: string): JellyfinMediaItem[][] {
-    if (libraryType === 'show') return items.map(item => [item])
+  groupMovieVersions(items: JellyfinMediaItem[], libraryType: LibraryType): JellyfinMediaItem[][] {
+    if (libraryType === LibraryType.Show) return items.map(item => [item])
     const groups = new Map<string, JellyfinMediaItem[]>()
     for (const item of items) {
       const tmdbId = item.ProviderIds?.Tmdb

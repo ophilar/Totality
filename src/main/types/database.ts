@@ -68,7 +68,13 @@ export interface KodiMySQLConnectionConfig {
   connectionTimeout?: number
 }
 
-export type LibraryType = 'movie' | 'show' | 'music' | 'mixed' | 'unknown'
+export enum LibraryType {
+  Movie = 'movie',
+  Show = 'show',
+  Music = 'music',
+  Mixed = 'mixed',
+  Unknown = 'unknown'
+}
 
 export interface LocalFolderConnectionConfig {
   folderPath: string

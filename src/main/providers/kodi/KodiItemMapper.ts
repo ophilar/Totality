@@ -15,6 +15,7 @@ import {
 import type {
   MediaMetadata,
 } from '../base/MediaProvider'
+import { LibraryType } from '../../types/database'
 import type {
   MediaItem,
   MediaItemVersion,

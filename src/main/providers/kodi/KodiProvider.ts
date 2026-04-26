@@ -10,6 +10,7 @@ import {
   ScanResult,
   ScanOptions,
   SourceConfig,
+  LibraryType,
 } from '../base/MediaProvider'
 import type { MusicTrack } from '../../types/database'
 import {
@@ -155,9 +156,9 @@ export class KodiProvider extends BaseMediaProvider {
 
   async getLibraries(): Promise<MediaLibrary[]> {
     return [
-      { id: 'movies', name: 'Movies', type: 'movie' },
-      { id: 'shows', name: 'TV Shows', type: 'show' },
-      { id: 'music', name: 'Music', type: 'music' },
+      { id: 'movies', name: 'Movies', type: LibraryType.Movie },
+      { id: 'shows', name: 'TV Shows', type: LibraryType.Show },
+      { id: 'music', name: 'Music', type: LibraryType.Music },
     ]
   }
 

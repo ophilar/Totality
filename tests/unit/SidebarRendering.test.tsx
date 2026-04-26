@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Sidebar } from '../../src/renderer/src/components/layout/Sidebar'
 import { useSources } from '../../src/renderer/src/contexts/SourceContext'
+import { LibraryType } from '../../src/main/types/database'
 import React from 'react'
 
 // Mock useSources
