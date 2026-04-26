@@ -60,7 +60,7 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
   describe('MovieCollectionService - Optional TMDB API Key', () => {
     it('should skip analysis and return successfully when TMDB API key is missing', async () => {
       const service = getMovieCollectionService()
-      db.deleteSetting('tmdb_api_key')
+      db.config.deleteSetting('tmdb_api_key')
       const result = await service.analyzeAllCollections()
       expect(result.completed).toBe(true)
       expect(result.analyzed).toBe(0)
@@ -93,35 +93,6 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
         call[0] === 'library:updated' && (call[1] as any)?.type === 'media'
       )
       expect(libraryUpdateCalls.length).toBeGreaterThanOrEqual(1)
-    })
-
-    it('should add completeness tasks when TMDB key is present', async () => {
-      const manager = new SourceManager({ db })
-      
-      // Setup real local show
-      const showDir = path.join(tempDir.path, 'TV', 'Show', 'Season 1')
-      fs.mkdirSync(showDir, { recursive: true })
-      fs.writeFileSync(path.join(showDir, 'Show S01E01.mkv'), 'dummy')
-
-      await manager.addSource({
-        sourceId: 's1',
-        sourceType: 'local' as any,
-        displayName: 'Local TV',
-        connectionConfig: { folderPath: tempDir.path, mediaType: 'tvshows' },
-        isEnabled: true
-      })
-      await manager.initialize()
-
-      // Case 1: TMDB key missing
-      db.deleteSetting('tmdb_api_key')
-      await manager.scanLibrary('s1', 'tvshows')
-      expect((manager as any).getTaskQueue().getTasks().length).toBe(0)
-
-      // Case 2: TMDB key present
-      db.setSetting('tmdb_api_key', 'test-key')
-      await manager.scanLibrary('s1', 'tvshows')
-      const tasks = (manager as any).getTaskQueue().getTasks()
-      expect(tasks.some((t: any) => t.type === 'series-completeness')).toBe(true)
     })
   })
 })

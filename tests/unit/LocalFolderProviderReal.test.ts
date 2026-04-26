@@ -35,7 +35,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     db.sources.setLibrariesEnabled(sourceId, [{ id: 'movies', name: 'Movies', type: 'movies', enabled: true }])
     
     // Set TMDB key so lookup logic proceeds
-    db.setSetting('tmdb_api_key', 'fake-key')
+    db.config.setSetting('tmdb_api_key', 'fake-key')
   })
 
   afterEach(() => {

@@ -89,11 +89,11 @@ export class DeduplicationService {
   getRetentionPolicy(): RetentionPolicy {
     const db = getDatabase()
     return {
-      preferHighestResolution: db.getSetting('dup_policy_highest_res') !== 'false',
-      preferOriginalLanguage: db.getSetting('dup_policy_orig_lang') !== 'false',
-      subtitleLanguagesWhitelist: JSON.parse(db.getSetting('dup_policy_sub_whitelist') || '[]'),
-      preserveCommentary: db.getSetting('dup_policy_commentary') !== 'false',
-      autoDelete: db.getSetting('dup_policy_auto_delete') === 'true'
+      preferHighestResolution: db.config.getSetting('dup_policy_highest_res') !== 'false',
+      preferOriginalLanguage: db.config.getSetting('dup_policy_orig_lang') !== 'false',
+      subtitleLanguagesWhitelist: JSON.parse(db.config.getSetting('dup_policy_sub_whitelist') || '[]'),
+      preserveCommentary: db.config.getSetting('dup_policy_commentary') !== 'false',
+      autoDelete: db.config.getSetting('dup_policy_auto_delete') === 'true'
     }
   }
 

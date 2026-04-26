@@ -75,8 +75,8 @@ describe('TranscodingService (No Mocks)', () => {
       return originalFetch(url, init)
     })
 
-    db.setSetting('gemini_api_key', 'AIzaSyB-TEST-KEY-1234567890-ABCDEF')
-    db.setSetting('ai_enabled', 'true')
+    db.config.setSetting('gemini_api_key', 'AIzaSyB-TEST-KEY-1234567890-ABCDEF')
+    db.config.setSetting('ai_enabled', 'true')
 
     service = getTranscodingService()
     service.setAvailabilityOverride({ handbrake: true, ffmpeg: true })
@@ -115,7 +115,7 @@ describe('TranscodingService (No Mocks)', () => {
   })
 
   it('should fail parameters if Gemini is not configured', async () => {
-    db.setSetting('ai_enabled', 'false')
+    db.config.setSetting('ai_enabled', 'false')
     resetGeminiServiceForTesting() // Need to reset so it picks up the change
     
     const filePath = '/path/to/video.mkv'

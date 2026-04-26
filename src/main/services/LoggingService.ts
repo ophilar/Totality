@@ -260,7 +260,7 @@ export class LoggingService {
     try {
       if (this.dbGetter) {
         const db = this.dbGetter()
-        db.setSetting('verbose_logging_enabled', String(enabled))
+        db.config.setSetting('verbose_logging_enabled', String(enabled))
       }
     } catch (e) { throw e; }
   }
@@ -361,9 +361,9 @@ export class LoggingService {
     try {
       if (!this.dbGetter) return
       const db = this.dbGetter()
-      const enabled = db.getSetting('file_logging_enabled')
-      const minLevel = db.getSetting('file_logging_min_level')
-      const retention = db.getSetting('log_retention_days')
+      const enabled = db.config.getSetting('file_logging_enabled')
+      const minLevel = db.config.getSetting('file_logging_min_level')
+      const retention = db.config.getSetting('log_retention_days')
 
       if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
       if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
@@ -372,7 +372,7 @@ export class LoggingService {
       if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
 
       // Restore verbose setting
-      const verbose = db.getSetting('verbose_logging_enabled')
+      const verbose = db.config.getSetting('verbose_logging_enabled')
       if (verbose === 'true') this.verboseEnabled = true
     } catch (error) { throw error }
   }

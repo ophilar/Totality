@@ -58,8 +58,8 @@ export class TranscodingService {
 
   private initializePaths() {
     const db = getDatabase()
-    this.handbrakePath = db.getSetting('handbrake_path') || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
-    this.mkvmergePath = db.getSetting('mkvmerge_path') || (process.platform === 'win32' ? 'mkvmerge.exe' : 'mkvmerge')
+    this.handbrakePath = db.config.getSetting('handbrake_path') || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
+    this.mkvmergePath = db.config.getSetting('mkvmerge_path') || (process.platform === 'win32' ? 'mkvmerge.exe' : 'mkvmerge')
     
     // Fallback FFmpeg from MediaFileAnalyzer
     const analyzer = getMediaFileAnalyzer()

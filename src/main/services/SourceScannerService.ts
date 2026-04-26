@@ -153,7 +153,7 @@ export class SourceScannerService {
     try {
       const { getWishlistCompletionService } = await import('./WishlistCompletionService')
       const tq = getTaskQueueService()
-      const hasTmdbKey = this.db.getSetting('tmdb_api_key')
+      const hasTmdbKey = this.db.config.getSetting('tmdb_api_key')
       if (hasTmdbKey) {
         if (library.type === 'tv' || library.type === 'mixed') {
           tq.addTask({ type: 'series-completeness', label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
