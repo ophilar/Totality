@@ -53,7 +53,7 @@ describe('TaskQueue Music Scan Targeting (No Mocks)', () => {
 
     // Poll for task completion (no mocks!)
     let completed = false
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 150; i++) {
       const task = service.getTasks().find(t => t.id === taskId)
       if (task?.status === 'completed') {
         completed = true

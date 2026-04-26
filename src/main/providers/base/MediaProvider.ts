@@ -8,8 +8,8 @@
 import {
   normalizeResolution,
 } from '../../services/MediaNormalizer'
-import type { MediaItemVersion, ProviderType } from '../../types/database'
-export type { ProviderType }
+import type { MediaItemVersion, ProviderType, LibraryType } from '../../types/database'
+export type { ProviderType, LibraryType }
 
 // Import and re-export shared IPC types
 import type { ConnectionTestResult } from '../../types/ipc'
@@ -48,12 +48,12 @@ export interface ProviderCredentials {
 
   // Local folder
   folderPath?: string
-  mediaType?: 'movies' | 'tvshows' | 'mixed'
+  mediaType?: LibraryType
   name?: string
   customLibraries?: Array<{
     name: string
     path: string
-    mediaType: 'movies' | 'tvshows' | 'music'
+    mediaType: LibraryType
     enabled: boolean
   }>
 
@@ -91,7 +91,7 @@ export interface ServerInstance {
 export interface MediaLibrary {
   id: string
   name: string
-  type: 'movie' | 'show' | 'tv' | 'music' | 'mixed' | 'unknown'
+  type: LibraryType
   collectionType?: string // Raw provider-specific type (e.g., 'boxsets', 'movies', 'tvshows')
   itemCount?: number
   scannedAt?: string

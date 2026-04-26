@@ -82,12 +82,12 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
         sourceId: 's1',
         sourceType: 'local' as any,
         displayName: 'Local',
-        connectionConfig: { folderPath: tempDir.path, mediaType: 'movies' },
+        connectionConfig: { folderPath: tempDir.path, mediaType: 'movie' },
         isEnabled: true
       })
       await manager.initialize()
 
-      await manager.scanLibrary('s1', 'movies')
+      await manager.scanLibrary('s1', 'movie')
 
       const libraryUpdateCalls = sendToRendererSpy.mock.calls.filter(call => 
         call[0] === 'library:updated' && (call[1] as any)?.type === 'media'
@@ -107,19 +107,19 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
         sourceId: 's1',
         sourceType: 'local' as any,
         displayName: 'Local TV',
-        connectionConfig: { folderPath: tempDir.path, mediaType: 'tvshows' },
+        connectionConfig: { folderPath: tempDir.path, mediaType: 'show' },
         isEnabled: true
       })
       await manager.initialize()
 
       // Case 1: TMDB key missing
       db.deleteSetting('tmdb_api_key')
-      await manager.scanLibrary('s1', 'tvshows')
+      await manager.scanLibrary('s1', 'show')
       expect((manager as any).getTaskQueue().getTasks().length).toBe(0)
 
       // Case 2: TMDB key present
       db.setSetting('tmdb_api_key', 'test-key')
-      await manager.scanLibrary('s1', 'tvshows')
+      await manager.scanLibrary('s1', 'show')
       const tasks = (manager as any).getTaskQueue().getTasks()
       expect(tasks.some((t: any) => t.type === 'series-completeness')).toBe(true)
     })

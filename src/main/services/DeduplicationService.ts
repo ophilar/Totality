@@ -52,34 +52,34 @@ export class DeduplicationService {
     db.beginBatch()
     try {
       for (const [key, ids] of movieGroups.entries()) {
-      if (ids.length > 1) {
-        const [sId, tmdbId] = key.split(':')
-        db.duplicates.upsertDuplicate({
-          source_id: sId,
-          external_id: tmdbId,
-          external_type: 'tmdb_movie',
-          media_item_ids: JSON.stringify(ids),
-          status: 'pending'
-        })
-        count++
+        if (ids.length > 1) {
+          const [sId, tmdbId] = key.split(':')
+          db.duplicates.upsertDuplicate({
+            source_id: sId,
+            external_id: tmdbId,
+            external_type: 'tmdb_movie',
+            media_item_ids: JSON.stringify(ids),
+            status: 'pending'
+          })
+          count++
+        }
       }
-    }
-    
-    for (const [key, ids] of episodeGroups.entries()) {
-      if (ids.length > 1) {
-        const parts = key.split(':')
-        const sId = parts[0]
-        // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
-        db.duplicates.upsertDuplicate({
-          source_id: sId,
-          external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
-          external_type: 'tmdb_series',
-          media_item_ids: JSON.stringify(ids),
-          status: 'pending'
-        })
-        count++
+
+      for (const [key, ids] of episodeGroups.entries()) {
+        if (ids.length > 1) {
+          const parts = key.split(':')
+          const sId = parts[0]
+          // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
+          db.duplicates.upsertDuplicate({
+            source_id: sId,
+            external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
+            external_type: 'tmdb_series',
+            media_item_ids: JSON.stringify(ids),
+            status: 'pending'
+          })
+          count++
+        }
       }
-    }
     } finally {
       db.endBatch()
     }
