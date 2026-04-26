@@ -49,7 +49,9 @@ export class DeduplicationService {
     }
     
     // Save detected duplicates
-    for (const [key, ids] of movieGroups.entries()) {
+    db.beginBatch()
+    try {
+      for (const [key, ids] of movieGroups.entries()) {
       if (ids.length > 1) {
         const [sId, tmdbId] = key.split(':')
         db.duplicates.upsertDuplicate({
@@ -77,6 +79,9 @@ export class DeduplicationService {
         })
         count++
       }
+    }
+    } finally {
+      db.endBatch()
     }
     
     getLoggingService().info('[DeduplicationService]', `Duplicate scan complete. Found ${count} duplicate groups.`)
