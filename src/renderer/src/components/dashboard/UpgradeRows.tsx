@@ -1,8 +1,8 @@
 import React from 'react'
 import { Film, Tv, Disc3, Trash2, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import { ConversionRecommendation } from '../library/ConversionRecommendation'
-import type { MediaItem } from '../library/types'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
+import type { MediaItem } from '@/components/library/types'
 import type { MusicAlbumUpgrade } from './types'
 
 interface UpgradeRowProps {

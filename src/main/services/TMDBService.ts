@@ -11,8 +11,8 @@ import {
   TMDBConfiguration,
   TMDBGenre,
   TMDBGenreListResponse,
-} from '../types/tmdb'
-import { getDatabase } from '../database/getDatabase'
+} from '@main/types/tmdb'
+import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import { getGeminiService } from './GeminiService'
 import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'

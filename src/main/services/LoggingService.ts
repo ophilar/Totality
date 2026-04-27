@@ -9,7 +9,7 @@
  */
 
 import { BrowserWindow, app } from 'electron'
-import { safeSend } from '../ipc/utils/safeSend'
+import { safeSend } from '@main/ipc/utils/safeSend'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'

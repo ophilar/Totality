@@ -1,9 +1,9 @@
 import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil } from 'lucide-react'
-import { TvPlaceholder } from '../../ui/MediaPlaceholders'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import { providerColors, getStatusBadge } from '../mediaUtils'
-import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '../types'
+import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
+import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 
 export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: {
   show: TVShowSummary

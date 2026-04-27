@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from '../services/LoggingService'
-import { getDeduplicationService } from '../services/DeduplicationService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
 
 export function registerDuplicateHandlers() {
   

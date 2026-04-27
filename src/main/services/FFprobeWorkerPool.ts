@@ -10,7 +10,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { app } from 'electron'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from './utils/errorUtils'
 
 

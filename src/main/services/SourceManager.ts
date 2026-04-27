@@ -5,16 +5,16 @@
  * Handles source CRUD operations, provider lifecycle, and aggregated scanning.
  */
 
-import { getDatabase, type BetterSQLiteService } from '../database/getDatabase'
+import { getDatabase, type BetterSQLiteService } from '@main/database/getDatabase'
 import { getLiveMonitoringService, type LiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService, type TaskQueueService } from './TaskQueueService'
 import { getLoggingService, type LoggingService } from './LoggingService'
-import { createProvider, getSupportedProviders } from '../providers/ProviderFactory'
-import { PlexProvider } from '../providers/plex/PlexProvider'
+import { createProvider, getSupportedProviders } from '@main/providers/ProviderFactory'
+import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { SourceScannerService, type AggregateProgressCallback } from './SourceScannerService'
 import { SourceCrudService } from './SourceCrudService'
 import { PlexAuthService } from './PlexAuthService'
-import { LibraryType } from '../providers/base/MediaProvider'
+import { LibraryType } from '@main/providers/base/MediaProvider'
 import type {
   MediaProvider,
   ProviderType,
@@ -23,8 +23,8 @@ import type {
   ScanResult,
   ProgressCallback,
   MediaLibrary,
-} from '../providers/base/MediaProvider'
-import type { MediaSource } from '../types/database'
+} from '@main/providers/base/MediaProvider'
+import type { MediaSource } from '@main/types/database'
 
 export interface SourceManagerDependencies {
   db?: BetterSQLiteService

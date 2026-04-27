@@ -6,7 +6,7 @@
  * Strictly uses BetterSQLite3 for performance and modern feature support.
  *
  * Usage:
- *   import { getDatabase } from '../database/getDatabase'
+ *   import { getDatabase } from '@main/database/getDatabase'
  *   const db = getDatabase()
  */
 

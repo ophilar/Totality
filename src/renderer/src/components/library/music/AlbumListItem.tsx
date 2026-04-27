@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Disc3 } from 'lucide-react'
-import { providerColors } from '../mediaUtils'
-import type { MusicAlbum, AlbumCompletenessData } from '../types'
+import { providerColors } from '@/components/library/mediaUtils'
+import type { MusicAlbum, AlbumCompletenessData } from '@/components/library/types'
 
 export const AlbumListItem = memo(({ album, onClick, showArtist = true, showSourceBadge, completeness }: {
   album: MusicAlbum

@@ -1,10 +1,10 @@
 
-import { getDatabase } from '../database/getDatabase'
-import { getTMDBService } from './TMDBService'
-import { getLoggingService } from './LoggingService'
-import { SeriesCompleteness } from '../types/database'
-import { getErrorMessage } from './utils/errorUtils'
-import { CompletenessEngine } from './CompletenessEngine'
+import { getDatabase } from '@main/database/getDatabase'
+import { getTMDBService } from '@main/services/TMDBService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { SeriesCompleteness, MediaItem } from '@main/types/database'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { CompletenessEngine } from '@main/services/CompletenessEngine'
 
 export class SeriesCompletenessService {
   private cancelRequested = false
@@ -16,7 +16,7 @@ export class SeriesCompletenessService {
   /**
    * Analyze all TV series in the library
    */
-  async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: any) => void): Promise<{
+  async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: { current: number, total: number, percentage: number, phase: string, currentItem: string }) => void): Promise<{
     totalSeries: number
     analyzed: number
     complete: number
@@ -85,7 +85,7 @@ export class SeriesCompletenessService {
   /**
    * Analyze a single TV series
    */
-  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: any[]): Promise<SeriesCompleteness | null> {
+  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: MediaItem[]): Promise<SeriesCompleteness | null> {
     const db = getDatabase()
     const tmdb = getTMDBService()
     const episodes = providedEpisodes || db.tvShows.getEpisodes(seriesTitle, sourceId)
@@ -173,7 +173,7 @@ export class SeriesCompletenessService {
             artwork: {
               ...commonArtwork,
               episodeThumbUrl: epData ? tmdb.buildImageUrl(epData.still_path, 'w500') || undefined : undefined,
-              seasonPosterUrl: seasonPosterUrls.get(ep.season_number)
+              seasonPosterUrl: ep.season_number != null ? seasonPosterUrls.get(ep.season_number) : undefined
             }
           }
         })
@@ -191,7 +191,7 @@ export class SeriesCompletenessService {
     }
   }
 
-  private createUnmatchedResult(title: string, owned: any[], sourceId: string, libraryId: string): SeriesCompleteness {
+  private createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string): SeriesCompleteness {
     return {
       series_title: title,
       source_id: sourceId,

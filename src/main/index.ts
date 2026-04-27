@@ -117,7 +117,7 @@ function createWindow() {
     minHeight: 600,
     icon: path.join(VITE_PUBLIC, 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.cjs'),
+      preload: path.join(__dirname, '@preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,

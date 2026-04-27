@@ -1,8 +1,8 @@
 import { useState, useCallback, memo } from 'react'
 import { MoreVertical, RefreshCw, Pencil, HardDrive, Disc3 } from 'lucide-react'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import { providerColors } from '../mediaUtils'
-import type { MusicAlbum, AlbumCompletenessData } from '../types'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import { providerColors } from '@/components/library/mediaUtils'
+import type { MusicAlbum, AlbumCompletenessData } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {

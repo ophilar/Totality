@@ -6,7 +6,7 @@
  */
 
 import { JellyfinEmbyBase } from './JellyfinEmbyBase'
-import type { SourceConfig } from '../base/MediaProvider'
+import type { SourceConfig } from '@main/providers/base/MediaProvider'
 
 export class JellyfinProvider extends JellyfinEmbyBase {
   readonly providerType = 'jellyfin' as const

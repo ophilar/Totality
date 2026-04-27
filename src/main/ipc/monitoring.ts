@@ -3,9 +3,9 @@
  */
 
 import { ipcMain } from 'electron'
-import { getLiveMonitoringService } from '../services/LiveMonitoringService'
-import { validateInput, MonitoringConfigSchema, SourceIdSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { validateInput, MonitoringConfigSchema, SourceIdSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export function registerMonitoringHandlers(): void {
   const service = getLiveMonitoringService()

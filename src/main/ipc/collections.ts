@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
-import { getMovieCollectionService } from '../services/MovieCollectionService'
+import { getMovieCollectionService } from '@main/services/MovieCollectionService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
-import { validateInput, OptionalSourceIdSchema, PositiveIntSchema, NonEmptyStringSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { validateInput, OptionalSourceIdSchema, PositiveIntSchema, NonEmptyStringSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export function registerCollectionHandlers() {
   const service = getMovieCollectionService()

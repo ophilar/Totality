@@ -10,10 +10,10 @@
  */
 
 import { BrowserWindow } from 'electron'
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from './LoggingService'
-import { safeSend } from '../ipc/utils/safeSend'
-import type { WishlistItem } from '../types/database'
+import { safeSend } from '@main/ipc/utils/safeSend'
+import type { WishlistItem } from '@main/types/database'
 
 // Video quality tier rankings (higher = better)
 const VIDEO_TIER_RANK: Record<string, number> = {

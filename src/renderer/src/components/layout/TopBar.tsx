@@ -6,12 +6,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight } from 'lucide-react'
-import { useSources } from '../../contexts/SourceContext'
-import { useWishlist } from '../../contexts/WishlistContext'
-import { useNavigation } from '../../contexts/NavigationContext'
-import { ActivityPanel } from '../ui/ActivityPanel'
-import logoImage from '../../assets/totality_header_logo.png'
-import type { MediaViewType } from '../library/types'
+import { useSources } from '@/contexts/SourceContext'
+import { useWishlist } from '@/contexts/WishlistContext'
+import { useNavigation } from '@/contexts/NavigationContext'
+import { ActivityPanel } from '@/components/ui/ActivityPanel'
+import logoImage from '@/assets/totality_header_logo.png'
+import type { MediaViewType } from '@/components/library/types'
 
 // Search results type
 interface SearchResults {

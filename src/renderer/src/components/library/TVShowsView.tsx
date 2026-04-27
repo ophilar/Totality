@@ -5,9 +5,9 @@ import { ShowCard } from './tv/ShowCard'
 import { ShowListItem } from './tv/ShowListItem'
 import { TVSeasonDetails } from './tv/TVSeasonDetails'
 import { TVShowDetails } from './tv/TVShowDetails'
-import { useSources } from '../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from './MediaGridView'
-import { TvPlaceholder } from '../ui/MediaPlaceholders'
+import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from './types'
 
 export function TVShowsView({

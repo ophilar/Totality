@@ -12,7 +12,7 @@
  */
 
 import { safeStorage } from 'electron'
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 
 // Fields that should be encrypted in connection configs
 const SENSITIVE_CONFIG_FIELDS = [

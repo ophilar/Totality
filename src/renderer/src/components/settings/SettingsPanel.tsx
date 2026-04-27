@@ -1,6 +1,6 @@
 import { useState, useCallback, useId, useRef, useEffect } from 'react'
 import { X, Settings, Sliders, Wrench, Palette, Database, Bug, ArrowUpCircle, Library } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { GeneralTab } from './tabs/GeneralTab'
 import { QualitySettingsTab } from './tabs/QualitySettingsTab'
 import { ServicesTab } from './tabs/ServicesTab'

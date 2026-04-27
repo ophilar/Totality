@@ -12,9 +12,9 @@ import {
   normalizeResolution,
   normalizeAudioCodec,
 } from './MediaNormalizer'
-import type { MediaMetadata } from '../providers/base/MediaProvider'
-import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '../workers/ffprobe-worker'
-import { getLoggingService } from '../services/LoggingService'
+import type { MediaMetadata } from '@main/providers/base/MediaProvider'
+import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '@main/workers/ffprobe-worker'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
 

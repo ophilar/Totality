@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { AnalysisProgress, MediaSource } from '../types'
+import type { AnalysisProgress, MediaSource } from '@/components/library/types'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 

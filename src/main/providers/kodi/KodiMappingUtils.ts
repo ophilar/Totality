@@ -3,9 +3,9 @@ import {
   normalizeVideoCodec,
   normalizeAudioCodec,
   normalizeResolution,
-} from '../../services/MediaNormalizer'
-import type { MediaMetadata } from '../base/MediaProvider'
-import type { MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '../../types/database'
+} from '@main/services/MediaNormalizer'
+import type { MediaMetadata } from '@main/providers/base/MediaProvider'
+import type { MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '@main/types/database'
 import {
   KodiMovieWithDetails,
   KodiEpisodeWithDetails,
@@ -20,7 +20,7 @@ import {
   buildMusicFilePath,
   guessCodecFromExtension,
 } from './KodiMusicDatabaseSchema'
-import { isLosslessCodec } from '../base/MusicScannerUtils'
+import { isLosslessCodec } from '@main/providers/base/MusicScannerUtils'
 
 /**
  * KodiMappingUtils

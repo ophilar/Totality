@@ -5,7 +5,7 @@
  * Extracted to avoid code duplication between providers.
  */
 
-import { AudioCodecRanker } from '../../services/AudioCodecRanker'
+import { AudioCodecRanker } from '@main/services/AudioCodecRanker'
 
 /**
  * Audio track interface for provider utilities

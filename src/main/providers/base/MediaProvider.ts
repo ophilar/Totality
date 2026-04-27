@@ -7,14 +7,14 @@
 
 import {
   normalizeResolution,
-} from '../../services/MediaNormalizer'
-import { LibraryType } from '../../types/database'
-import type { ProviderType, MediaItemVersion } from '../../types/database'
+} from '@main/services/MediaNormalizer'
+import { LibraryType } from '@main/types/database'
+import type { ProviderType, MediaItemVersion } from '@main/types/database'
 export { LibraryType }
 export type { ProviderType }
 
 // Import and re-export shared IPC types
-import type { ConnectionTestResult } from '../../types/ipc'
+import type { ConnectionTestResult } from '@main/types/ipc'
 export type { ConnectionTestResult }
 
 // Credentials for different provider types

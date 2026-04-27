@@ -3,8 +3,8 @@
  */
 
 import { ipcMain } from 'electron'
-import { getAutoUpdateService } from '../services/AutoUpdateService'
-import { getLoggingService } from '../services/LoggingService'
+import { getAutoUpdateService } from '@main/services/AutoUpdateService'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export function registerAutoUpdateHandlers(): void {
   const service = getAutoUpdateService()

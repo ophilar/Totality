@@ -7,9 +7,9 @@
 
 import { app, BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-updater'
-import { safeSend } from '../ipc/utils/safeSend'
-import { getDatabaseServiceSync } from '../database/DatabaseFactory'
-import { getLoggingService } from '../services/LoggingService'
+import { safeSend } from '@main/ipc/utils/safeSend'
+import { getDatabaseServiceSync } from '@main/database/DatabaseFactory'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export type UpdateStatus =
   | 'idle'

@@ -5,9 +5,9 @@
  */
 
 import { DatabaseSync } from 'node:sqlite'
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 import { DATABASE_SCHEMA } from './schema'
-import { getErrorMessage } from '../services/utils/errorUtils'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 /**
  * Run database migrations and schema updates

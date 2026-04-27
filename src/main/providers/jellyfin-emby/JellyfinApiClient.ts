@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
-import { getLoggingService } from '../../services/LoggingService'
-import { retryWithBackoff } from '../../services/utils/retryWithBackoff'
+import { getLoggingService } from '@main/services/LoggingService'
+import { retryWithBackoff } from '@main/services/utils/retryWithBackoff'
 
 export interface JellyfinApiClientOptions {
   serverUrl: string

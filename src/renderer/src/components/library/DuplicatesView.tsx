@@ -4,9 +4,9 @@ import {
   ChevronDown, ChevronRight, Info, Search,
   HardDrive
 } from 'lucide-react'
-import { useSources } from '../../contexts/SourceContext'
-import { useToast } from '../../contexts/ToastContext'
-import { MoviePlaceholder, TvPlaceholder } from '../ui/MediaPlaceholders'
+import { useSources } from '@/contexts/SourceContext'
+import { useToast } from '@/contexts/ToastContext'
+import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import type { MediaItem } from './types'
 
 interface DuplicateGroup {

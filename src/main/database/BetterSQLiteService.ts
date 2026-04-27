@@ -1,4 +1,4 @@
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 import { DatabaseSync } from 'node:sqlite'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -18,7 +18,7 @@ import {
   DuplicateRepository,
   MovieCollectionRepository
 } from './repositories'
-import type { MusicTrack } from '../types/database'
+import type { MusicTrack } from '@main/types/database'
 
 // Singleton instance
 let serviceInstance: BetterSQLiteService | null = null

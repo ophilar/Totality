@@ -3,10 +3,10 @@
  */
 
 import { ipcMain } from 'electron'
-import { getTaskQueueService } from '../services/TaskQueueService'
-import { validateInput, TaskDefinitionSchema, NonEmptyStringSchema } from '../validation/schemas'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { validateInput, TaskDefinitionSchema, NonEmptyStringSchema } from '@main/validation/schemas'
 import { z } from 'zod'
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export function registerTaskQueueHandlers(): void {
   const service = getTaskQueueService()

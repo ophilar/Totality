@@ -1,11 +1,11 @@
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from './LoggingService'
-import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '../types/database'
+import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '@main/types/database'
 import {
   VIDEO_BITRATE_THRESHOLDS,
   AUDIO_BITRATE_THRESHOLDS,
   MIN_EFFICIENCY_SCORE,
-} from '../constants/quality'
+} from '@main/constants/quality'
 
 /**
  * Shared input shape for quality scoring.

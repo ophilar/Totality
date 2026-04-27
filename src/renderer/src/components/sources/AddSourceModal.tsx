@@ -6,8 +6,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Server, HardDrive } from 'lucide-react'
-import { useSources, type ProviderType } from '../../contexts/SourceContext'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useSources, type ProviderType } from '@/contexts/SourceContext'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { PlexAuthFlow } from './PlexAuthFlow'
 import { JellyfinAuthFlow } from './JellyfinAuthFlow'
 import { KodiConnectionFlow } from './KodiConnectionFlow'

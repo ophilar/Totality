@@ -3,10 +3,10 @@
  */
 
 import { ipcMain } from 'electron'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from '../services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getLoggingService } from '@main/services/LoggingService'
 
-import { GetNotificationsOptions } from '../types/monitoring'
+import { GetNotificationsOptions } from '@main/types/monitoring'
 
 export function registerNotificationHandlers(): void {
   ipcMain.handle('notifications:getAll', async (_event, options?: any) => {

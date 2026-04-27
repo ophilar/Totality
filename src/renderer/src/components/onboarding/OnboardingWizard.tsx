@@ -7,12 +7,12 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Search, CircleFadingArrowUp, Library, SlidersHorizontal, ChevronRight, ChevronLeft, Server, HardDrive } from 'lucide-react'
-import logoAnimation from '../../assets/totality_anim.webm'
-import logoImage from '../../assets/logo.png'
-import qualityAuditImg from '../../assets/onboarding/quality-audit.png'
-import qualityTargetsImg from '../../assets/onboarding/quality-targets.png'
-import upgradeRadarImg from '../../assets/onboarding/upgrade-radar.png'
-import collectionGapsImg from '../../assets/onboarding/collection-gaps.png'
+import logoAnimation from '@/assets/totality_anim.webm'
+import logoImage from '@/assets/logo.png'
+import qualityAuditImg from '@/assets/onboarding/quality-audit.png'
+import qualityTargetsImg from '@/assets/onboarding/quality-targets.png'
+import upgradeRadarImg from '@/assets/onboarding/upgrade-radar.png'
+import collectionGapsImg from '@/assets/onboarding/collection-gaps.png'
 
 interface OnboardingWizardProps {
   onComplete: () => void

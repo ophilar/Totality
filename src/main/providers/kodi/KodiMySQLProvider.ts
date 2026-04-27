@@ -6,18 +6,18 @@ import {
   ProviderType,
   ProviderCredentials,
   AuthResult,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 import {
   getKodiMySQLConnectionService,
   type KodiMySQLConfig,
-} from '../../services/KodiMySQLConnectionService'
+} from '@main/services/KodiMySQLConnectionService'
 import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT,
   QUERY_MUSIC_SONG_COUNT
 } from './KodiDatabaseSchema'
-import { getLoggingService } from '../../services/LoggingService'
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import type { Pool } from 'mysql2/promise'
 
 /**

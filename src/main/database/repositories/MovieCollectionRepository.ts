@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { MovieCollection } from '../../types/database'
+import type { MovieCollection } from '@main/types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class MovieCollectionRepository extends BaseRepository<MovieCollection> {

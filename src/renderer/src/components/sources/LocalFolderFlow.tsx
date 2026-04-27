@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { useSources } from '../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
 import { LibraryType } from '@preload/index'
 

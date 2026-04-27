@@ -9,7 +9,7 @@ import { ArtistListItem } from './music/ArtistListItem'
 import { AlbumListItem } from './music/AlbumListItem'
 import { MusicAlbumDetails } from './music/MusicAlbumDetails'
 import { MusicArtistDetails } from './music/MusicArtistDetails'
-import { useSources } from '../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import type {
   MusicArtist,
   MusicAlbum,

@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { MediaSource } from '../../types/database'
+import type { MediaSource } from '@main/types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class SourceRepository extends BaseRepository<MediaSource> {

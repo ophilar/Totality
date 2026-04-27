@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
-import type { MediaItem, MovieCollectionData } from '../types'
+import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 
 interface UseCollectionsReturn {
   showCollectionModal: boolean

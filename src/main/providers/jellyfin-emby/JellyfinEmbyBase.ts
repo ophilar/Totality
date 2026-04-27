@@ -11,11 +11,11 @@ import {
   ScanOptions,
   SourceConfig,
   LibraryType,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import {
   calculateAlbumStats,
-} from '../base/MusicScannerUtils'
+} from '@main/providers/base/MusicScannerUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase } from '@main/database/getDatabase'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'

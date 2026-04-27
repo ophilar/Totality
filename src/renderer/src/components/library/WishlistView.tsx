@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 import { ArrowUpCircle, X, HardDrive, Zap, Info } from 'lucide-react'
-import { MoviePlaceholder, TvPlaceholder } from '../ui/MediaPlaceholders'
-import { emitDismissUpgrade } from '../../utils/dismissEvents'
+import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
+import { emitDismissUpgrade } from '@/utils/dismissEvents'
 import type { MediaItem, SeriesCompletenessData, MovieCollectionData } from './types'
-import { useToast } from '../../contexts/ToastContext'
+import { useToast } from '@/contexts/ToastContext'
 
 interface WishlistViewProps {
   onSelectMovie?: (id: number) => void

@@ -1,4 +1,4 @@
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 /**
  * IPC Handlers for Jellyfin and Emby operations
  *
@@ -6,15 +6,15 @@ import { getLoggingService } from '../services/LoggingService'
  */
 
 import { ipcMain } from 'electron'
-import { getUdpDiscoveryService } from '../services/UdpDiscoveryService'
-import { getSourceManager } from '../services/SourceManager'
-import { JellyfinProvider } from '../providers/jellyfin-emby/JellyfinProvider'
+import { getUdpDiscoveryService } from '@main/services/UdpDiscoveryService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { JellyfinProvider } from '@main/providers/jellyfin-emby/JellyfinProvider'
 import { getErrorMessage } from './utils'
 import {
   validateInput,
   JellyfinApiKeyAuthSchema,
   SafeUrlSchema,
-} from '../validation/schemas'
+} from '@main/validation/schemas'
 
 export function registerJellyfinHandlers(): void {
   const discovery = getUdpDiscoveryService()
@@ -70,7 +70,7 @@ export function registerJellyfinHandlers(): void {
           displayName,
         }, `${type}:authenticateApiKey`)
 
-        const { EmbyProvider } = await import('../providers/jellyfin-emby/EmbyProvider')
+        const { EmbyProvider } = await import('@main/providers/jellyfin-emby/EmbyProvider')
         const ProviderClass = type === 'emby' ? EmbyProvider : JellyfinProvider
 
         const provider = new ProviderClass({
@@ -218,7 +218,7 @@ export function registerJellyfinHandlers(): void {
   ) => {
     try {
       const providerType = isEmby ? 'emby' : 'jellyfin'
-      const { EmbyProvider } = await import('../providers/jellyfin-emby/EmbyProvider')
+      const { EmbyProvider } = await import('@main/providers/jellyfin-emby/EmbyProvider')
 
       const ProviderClass = isEmby ? EmbyProvider : JellyfinProvider
       const provider = new ProviderClass({

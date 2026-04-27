@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { useSources } from '../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import { Music } from 'lucide-react'
 
 interface MediaMonkeyFlowProps {

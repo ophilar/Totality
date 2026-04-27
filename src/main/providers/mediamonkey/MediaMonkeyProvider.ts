@@ -19,15 +19,15 @@ import {
   SourceConfig,
   ProviderType,
   LibraryType,
-} from '../base/MediaProvider'
-import type { MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
-import { getLoggingService } from '../../services/LoggingService'
-import { getDatabase } from '../../database/getDatabase'
+} from '@main/providers/base/MediaProvider'
+import type { MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
 import {
   isLosslessCodec,
   isHiRes,
   calculateAlbumStats,
-} from '../base/MusicScannerUtils'
+} from '@main/providers/base/MusicScannerUtils'
 
 export interface MediaMonkeyConfig {
   databasePath: string

@@ -10,7 +10,7 @@ import { getErrorMessage } from './utils/errorUtils'
  */
 
 // Dynamic import for optional mysql2 dependency
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 let mysql: typeof import('mysql2/promise') | null = null
 let mysqlAvailable = false
 

@@ -1,7 +1,7 @@
 import React from 'react'
 import { Film, Tv, Music, ChevronDown, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '../library/types'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
 import type { MissingMovie, MissingEpisode, MissingAlbumItem } from './types'
 import { parseMissingMovies, groupEpisodesBySeason, parseMissingAlbums } from './dashboardUtils'
 

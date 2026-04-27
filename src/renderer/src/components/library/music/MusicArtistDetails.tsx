@@ -5,7 +5,7 @@ import { AlbumCard } from './AlbumCard'
 import { AlbumListItem } from './AlbumListItem'
 import { MissingAlbumCard } from './MissingAlbumCard'
 import { MissingAlbumListItem } from './MissingAlbumListItem'
-import type { MusicArtist, MusicAlbum, ArtistCompletenessData, MissingAlbum, AlbumCompletenessData } from '../types'
+import type { MusicArtist, MusicAlbum, ArtistCompletenessData, MissingAlbum, AlbumCompletenessData } from '@/components/library/types'
 
 export function MusicArtistDetails({
   selectedArtist,

@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, CircleFadingArrowUp, EyeOff } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { MissingItemPopup } from './MissingItemPopup'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MovieCollectionData, MediaItem } from './types'
 
 interface MissingMovie {

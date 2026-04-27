@@ -1,7 +1,7 @@
-import { PlexProvider } from '../providers/plex/PlexProvider'
-import { BetterSQLiteService } from '../database/getDatabase'
-import type { MediaProvider, SourceConfig, ServerInstance, MediaLibrary } from '../providers/base/MediaProvider'
-import type { MediaSource } from '../types/database'
+import { PlexProvider } from '@main/providers/plex/PlexProvider'
+import { BetterSQLiteService } from '@main/database/getDatabase'
+import type { MediaProvider, SourceConfig, ServerInstance, MediaLibrary } from '@main/providers/base/MediaProvider'
+import type { MediaSource } from '@main/types/database'
 
 export class PlexAuthService {
   constructor(

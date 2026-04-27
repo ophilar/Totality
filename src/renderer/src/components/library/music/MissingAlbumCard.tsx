@@ -1,7 +1,7 @@
 import { useState, memo } from 'react'
 import { Disc3, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../../wishlist/AddToWishlistButton'
-import type { MissingAlbum } from '../types'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MissingAlbum } from '@/components/library/types'
 
 export const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
   album: MissingAlbum

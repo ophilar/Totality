@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, ProviderType, AudioStreamInfo } from '../base/MediaProvider'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import { getMediaFileAnalyzer } from '../../services/MediaFileAnalyzer'
-import { getLoggingService } from '../../services/LoggingService'
-import { getErrorMessage } from '../../services/utils/errorUtils'
-import { extractVersionNames } from '../utils/VersionNaming'
+import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, ProviderType, AudioStreamInfo } from '@main/providers/base/MediaProvider'
+import { getDatabase } from '@main/database/getDatabase'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { KodiMappingUtils } from './KodiMappingUtils'
 import { 
   QUERY_MOVIES_WITH_DETAILS, 
@@ -13,8 +13,8 @@ import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT
 } from './KodiDatabaseSchema'
-import { hasObjectAudio } from '../../services/MediaNormalizer'
-import { estimateAudioBitrate } from '../utils/ProviderUtils'
+import { hasObjectAudio } from '@main/services/MediaNormalizer'
+import { estimateAudioBitrate } from '@main/providers/utils/ProviderUtils'
 
 /**
  * Base class for Kodi SQL-based providers (Local SQLite and Remote MySQL).

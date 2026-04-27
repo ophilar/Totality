@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Star } from 'lucide-react'
-import { useWishlist, WishlistMediaType, WishlistReason } from '../../contexts/WishlistContext'
+import { useWishlist, WishlistMediaType, WishlistReason } from '@/contexts/WishlistContext'
 
 interface AddToWishlistButtonProps {
   mediaType: WishlistMediaType

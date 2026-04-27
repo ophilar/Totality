@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, memo, useRef } from 'react'
 import { MoreVertical, EyeOff } from 'lucide-react'
-import { EpisodePlaceholder } from '../../ui/MediaPlaceholders'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import type { MissingEpisode } from '../types'
+import { EpisodePlaceholder } from '@/components/ui/MediaPlaceholders'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import type { MissingEpisode } from '@/components/library/types'
 
 export const MissingEpisodeRowWithArtwork = memo(({
   episode,

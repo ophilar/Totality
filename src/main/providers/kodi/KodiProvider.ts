@@ -11,14 +11,14 @@ import {
   ScanOptions,
   SourceConfig,
   LibraryType,
-} from '../base/MediaProvider'
-import type { MusicTrack } from '../../types/database'
+} from '@main/providers/base/MediaProvider'
+import type { MusicTrack } from '@main/types/database'
 import {
   calculateAlbumStats,
-} from '../base/MusicScannerUtils'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import { getErrorMessage } from '../../services/utils/errorUtils'
+} from '@main/providers/base/MusicScannerUtils'
+import { getDatabase } from '@main/database/getDatabase'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 // Kodi JSON-RPC types (exported for mapper)
 export interface KodiMovie {

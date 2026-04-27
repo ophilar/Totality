@@ -1,11 +1,11 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { z } from 'zod'
-import { getGeminiService, RateLimitError } from '../services/GeminiService'
-import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '../services/GeminiTools'
-import { LIBRARY_CHAT_SYSTEM_PROMPT } from '../services/ai-system-prompts'
-import { getGeminiAnalysisService } from '../services/GeminiAnalysisService'
-import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { getGeminiService, RateLimitError } from '@main/services/GeminiService'
+import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '@main/services/GeminiTools'
+import { LIBRARY_CHAT_SYSTEM_PROMPT } from '@main/services/ai-system-prompts'
+import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
+import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 const AiChatMessageSchema = z.object({
   messages: z.array(z.object({

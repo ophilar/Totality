@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness, MusicCompletenessStats } from '../../types/database'
+import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
 
 export class StatsRepository {
   constructor(private db: DatabaseSync) {}

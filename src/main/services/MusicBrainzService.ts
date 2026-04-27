@@ -16,7 +16,7 @@ import { retryWithBackoff } from './utils/retryWithBackoff'
  */
 
 import axios, { AxiosInstance } from 'axios'
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import { RateLimiters, SimpleDelayRateLimiter } from './utils/RateLimiter'
 import {
@@ -24,7 +24,7 @@ import {
   wasRecentlyAnalyzed,
   type AnalysisOptions,
 } from './utils/ProgressTracker'
-import type { ArtistCompleteness, AlbumCompleteness, MissingAlbum, MissingTrack, MusicAlbum } from '../types/database'
+import type { ArtistCompleteness, AlbumCompleteness, MissingAlbum, MissingTrack, MusicAlbum } from '@main/types/database'
 
 // MusicBrainz API response types
 interface MBReleaseGroup {

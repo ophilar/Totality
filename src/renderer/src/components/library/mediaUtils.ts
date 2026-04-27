@@ -4,7 +4,7 @@
  * Shared utilities used across media browser components.
  */
 
-import type { ProviderType } from '../../contexts/SourceContext'
+import type { ProviderType } from '@/contexts/SourceContext'
 
 // ============================================================================
 // Constants

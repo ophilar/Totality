@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Disc3, RefreshCw, Copy, Check, CircleFadingArrowUp, MoreVertical, X, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../../wishlist/AddToWishlistButton'
-import type { MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '../types'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '@/components/library/types'
 
 export function MusicAlbumDetails({
   selectedAlbum,
