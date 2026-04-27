@@ -1,11 +1,12 @@
 import { ipcRenderer } from 'electron'
-import type { 
+import { 
   ConnectionTestResult, 
   DiscoveredServerResponse, 
   MediaLibraryResponse, 
   MediaSourceResponse, 
   ScanResultResponse, 
-  ServerInstanceResponse 
+  ServerInstanceResponse,
+  LibraryType
 } from './types'
 
 export const sourcesApi = {
@@ -213,7 +214,7 @@ export const sourcesApi = {
   localSelectFile: (options?: unknown) => ipcRenderer.invoke('local:selectFile', options),
 
   // Add a local folder as a media source
-  localAddSource: (config: { folderPath: string; displayName: string; mediaType: 'movies' | 'tvshows' | 'music' | 'mixed' }) =>
+  localAddSource: (config: { folderPath: string; displayName: string; mediaType: LibraryType }) =>
     ipcRenderer.invoke('local:addSource', config),
 
   // MediaMonkey 5 source management
@@ -229,7 +230,7 @@ export const sourcesApi = {
     libraries: Array<{
       name: string
       path: string
-      mediaType: 'movies' | 'tvshows' | 'music'
+      mediaType: LibraryType
       enabled: boolean
     }>
   }) => ipcRenderer.invoke('local:addSourceWithLibraries', config),
@@ -555,7 +556,7 @@ export interface SourcesAPI {
     subfolders: Array<{
       name: string
       path: string
-      suggestedType: 'movies' | 'tvshows' | 'music' | 'unknown'
+      suggestedType: LibraryType
     }>
     error?: string
   }>
@@ -564,7 +565,7 @@ export interface SourcesAPI {
   localAddSource: (config: {
     folderPath: string
     displayName: string
-    mediaType: 'movies' | 'tvshows' | 'music' | 'mixed'
+    mediaType: LibraryType
   }) => Promise<MediaSourceResponse>
 
   // MediaMonkey 5 source management
@@ -578,7 +579,7 @@ export interface SourcesAPI {
     libraries: Array<{
       name: string
       path: string
-      mediaType: 'movies' | 'tvshows' | 'music'
+      mediaType: LibraryType
       enabled: boolean
     }>
   }) => Promise<MediaSourceResponse>

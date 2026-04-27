@@ -30,10 +30,10 @@ const MUSIC_PATTERNS = ['music', 'audio', 'songs', 'albums', 'artists']
 
 function detectMediaType(folderName: string): LibraryType {
   const lower = folderName.toLowerCase()
-  if (MOVIE_PATTERNS.includes(lower)) return 'movie'
-  if (TV_PATTERNS.includes(lower)) return 'show'
-  if (MUSIC_PATTERNS.includes(lower)) return 'music'
-  return 'unknown'
+  if (MOVIE_PATTERNS.includes(lower)) return LibraryType.Movie
+  if (TV_PATTERNS.includes(lower)) return LibraryType.Show
+  if (MUSIC_PATTERNS.includes(lower)) return LibraryType.Music
+  return LibraryType.Unknown
 }
 
 export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {

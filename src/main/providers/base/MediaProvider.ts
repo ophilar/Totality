@@ -8,9 +8,10 @@
 import {
   normalizeResolution,
 } from '../../services/MediaNormalizer'
-import { ProviderType, LibraryType } from '../../types/database'
-import type { MediaItemVersion } from '../../types/database'
-export { ProviderType, LibraryType }
+import { LibraryType } from '../../types/database'
+import type { ProviderType, MediaItemVersion } from '../../types/database'
+export { LibraryType }
+export type { ProviderType }
 
 // Import and re-export shared IPC types
 import type { ConnectionTestResult } from '../../types/ipc'
@@ -20,6 +21,7 @@ export type { ConnectionTestResult }
 export interface ProviderCredentials {
   // Plex: OAuth token
   token?: string
+  serverId?: string
 
   // Jellyfin/Emby: Server URL + credentials
   serverUrl?: string

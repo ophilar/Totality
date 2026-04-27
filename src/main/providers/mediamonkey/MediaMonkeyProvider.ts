@@ -18,6 +18,7 @@ import {
   ScanOptions,
   SourceConfig,
   ProviderType,
+  LibraryType,
 } from '../base/MediaProvider'
 import type { MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
 import { getLoggingService } from '../../services/LoggingService'
@@ -109,7 +110,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
       {
         id: 'mm5-music',
         name: 'MediaMonkey Music',
-        type: 'music',
+        type: LibraryType.Music,
         itemCount: 0 // Will be populated by scan
       }
     ]

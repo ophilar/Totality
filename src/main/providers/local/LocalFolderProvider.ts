@@ -96,7 +96,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = 'local' as ProviderType
 
   private folderPath: string = ''
-  private mediaType: LibraryType = 'mixed'
+  private mediaType: LibraryType = LibraryType.Mixed
   private displayName: string = ''
   private customLibraries: LocalFolderConfig['customLibraries'] = undefined
   protected scanCancelled: boolean = false
@@ -106,7 +106,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     if (config.connectionConfig) {
       const connConfig = config.connectionConfig as LocalFolderConfig
       this.folderPath = connConfig.folderPath || ''
-      this.mediaType = connConfig.mediaType || 'mixed'
+      this.mediaType = connConfig.mediaType || LibraryType.Mixed
       this.displayName = connConfig.name || path.basename(this.folderPath) || 'Local Folder'
       this.customLibraries = connConfig.customLibraries
     }
@@ -121,7 +121,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       if (!stats.isDirectory()) return { success: false, error: 'Path is not a directory' }
 
       this.folderPath = config.folderPath
-      this.mediaType = config.mediaType || 'mixed'
+      this.mediaType = config.mediaType || LibraryType.Mixed
       this.displayName = config.name || path.basename(this.folderPath)
       return { success: true, serverName: this.displayName }
     } catch (error: unknown) {
