@@ -16,17 +16,17 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getSourceManager } from './SourceManager'
 import { getLoggingService } from './LoggingService'
-import { safeSend } from '../ipc/utils/safeSend'
+import { safeSend } from '@main/ipc/utils/safeSend'
 import {
   MonitoringConfig,
   DEFAULT_MONITORING_CONFIG,
   SourceChangeEvent,
   ChangedItem,
-} from '../types/monitoring'
-import type { ProviderType } from '../types/database'
+} from '@main/types/monitoring'
+import type { ProviderType } from '@main/types/database'
 
 // Media file extensions to watch
 const MEDIA_EXTENSIONS = new Set([

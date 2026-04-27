@@ -6,14 +6,14 @@ import {
   SourceConfig,
   MediaLibrary,
   ProviderType,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT,
   QUERY_MUSIC_SONG_COUNT
 } from './KodiDatabaseSchema'
-import { getLoggingService } from '../../services/LoggingService'
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 /**
  * KodiLocalProvider

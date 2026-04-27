@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Star, ExternalLink, ChevronDown } from 'lucide-react'
-import type { StoreLink } from '../../contexts/WishlistContext'
+import type { StoreLink } from '@/contexts/WishlistContext'
 
 interface StoreLinksMenuProps {
   storeLinks: StoreLink[]

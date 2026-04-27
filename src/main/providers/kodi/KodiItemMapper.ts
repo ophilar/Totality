@@ -3,18 +3,18 @@ import {
   normalizeResolution,
   normalizeHdrFormat,
   hasObjectAudio,
-} from '../../services/MediaNormalizer'
+} from '@main/services/MediaNormalizer'
 import {
   estimateAudioBitrate,
-} from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
+} from '@main/providers/utils/ProviderUtils'
+import { getFileNameParser } from '@main/services/FileNameParser'
 import {
   isLosslessCodec,
   isHiRes,
-} from '../base/MusicScannerUtils'
+} from '@main/providers/base/MusicScannerUtils'
 import type {
   MediaMetadata,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 import type {
   MediaItem,
   MediaItemVersion,
@@ -23,7 +23,7 @@ import type {
   MusicArtist,
   MusicAlbum,
   MusicTrack,
-} from '../../types/database'
+} from '@main/types/database'
 import type {
   KodiMovie,
   KodiEpisode,

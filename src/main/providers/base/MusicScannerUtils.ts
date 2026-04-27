@@ -5,7 +5,7 @@
  * Contains codec detection, hi-res detection, and album statistics calculation.
  */
 
-import type { MusicTrack } from '../../types/database'
+import type { MusicTrack } from '@main/types/database'
 
 /**
  * List of lossless audio codecs

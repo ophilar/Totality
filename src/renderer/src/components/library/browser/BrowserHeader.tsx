@@ -1,10 +1,10 @@
 
 
 import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
-import logoImage from '../../../assets/totality_header_logo.png'
+import logoImage from '@/assets/totality_header_logo.png'
 import { SearchAutocomplete } from './SearchAutocomplete'
 import { ScanningStatus } from './ScanningStatus'
-import { ActivityPanel } from '../../ui/ActivityPanel'
+import { ActivityPanel } from '@/components/ui/ActivityPanel'
 
 interface BrowserHeaderProps {
   view: string

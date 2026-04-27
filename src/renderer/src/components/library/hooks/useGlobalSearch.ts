@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, RefObject } from 'react'
-import type { MediaItem, MusicArtist, MusicAlbum, MusicTrack, TVShow } from '../types'
+import type { MediaItem, MusicArtist, MusicAlbum, MusicTrack, TVShow } from '@/components/library/types'
 
 interface MovieSearchResult {
   id: number

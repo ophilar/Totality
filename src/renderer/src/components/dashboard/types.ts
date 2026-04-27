@@ -1,4 +1,4 @@
-import type { MusicAlbum } from '../library/types'
+import type { MusicAlbum } from '@/components/library/types'
 
 export interface MusicAlbumUpgrade extends MusicAlbum {
   quality_tier: string

@@ -1,8 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { getQualityAnalyzer } from '../services/QualityAnalyzer'
-import { getDatabase } from '../database/getDatabase'
-import { validateInput, PositiveIntSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getDatabase } from '@main/database/getDatabase'
+import { validateInput, PositiveIntSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * Register all quality analysis IPC handlers

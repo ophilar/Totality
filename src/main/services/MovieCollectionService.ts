@@ -1,4 +1,4 @@
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getTMDBService } from './TMDBService'
 import { getLoggingService } from './LoggingService'
 import {
@@ -7,8 +7,8 @@ import {
   type AnalysisProgress,
   type AnalysisOptions,
 } from './utils/ProgressTracker'
-import type { MovieCollection, MissingMovie, MediaItem } from '../types/database'
-import type { TMDBCollection, TMDBMovieDetails } from '../types/tmdb'
+import type { MovieCollection, MissingMovie, MediaItem } from '@main/types/database'
+import type { TMDBCollection, TMDBMovieDetails } from '@main/types/tmdb'
 import { CompletenessEngine } from './CompletenessEngine'
 
 /** Progress phases for collection analysis */

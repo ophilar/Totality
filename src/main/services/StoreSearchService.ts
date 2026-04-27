@@ -5,7 +5,7 @@
  * Supports video (movies/TV) and music stores, including physical media retailers.
  */
 
-import type { WishlistItem, WishlistMediaType } from '../types/database'
+import type { WishlistItem, WishlistMediaType } from '@main/types/database'
 
 export interface StoreLink {
   name: string

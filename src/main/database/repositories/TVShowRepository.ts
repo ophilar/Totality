@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '../../types/database'
+import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class TVShowRepository extends BaseRepository<SeriesCompleteness> {

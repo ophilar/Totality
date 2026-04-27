@@ -2,7 +2,7 @@
 import { forwardRef, ReactNode } from 'react'
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
-import { MediaCardSkeleton, Skeleton } from '../ui/Skeleton'
+import { MediaCardSkeleton, Skeleton } from '@/components/ui/Skeleton'
 
 interface MediaGridViewProps<T> {
   /** The data to display */

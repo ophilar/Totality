@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { MediaItem } from '../types'
+import type { MediaItem } from '@/components/library/types'
 
 type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 type QualityFilter = 'all' | 'low' | 'medium' | 'high'

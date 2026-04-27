@@ -1,15 +1,15 @@
-import { LibraryType } from '../types/database'
-import { BetterSQLiteService } from '../database/BetterSQLiteService'
-import { getLiveMonitoringService } from './LiveMonitoringService'
-import { getTaskQueueService } from './TaskQueueService'
-import { LoggingService, getLoggingService } from './LoggingService'
-import { PlexProvider } from '../providers/plex/PlexProvider'
+import { LibraryType } from '@main/types/database'
+import { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { LoggingService, getLoggingService } from '@main/services/LoggingService'
+import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import type {
   MediaProvider,
   ScanResult,
   ProgressCallback,
   MediaLibrary,
-} from '../providers/base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 
 export type AggregateProgressCallback = (
   sourceId: string,

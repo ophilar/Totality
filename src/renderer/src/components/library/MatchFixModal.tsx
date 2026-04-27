@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Search, Check, Star, Calendar, Loader2 } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 interface TMDBSearchResult {
   id: number

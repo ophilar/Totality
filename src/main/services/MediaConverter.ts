@@ -6,8 +6,8 @@
  * and AudioCodecRanker for best audio track selection.
  */
 
-import type { MediaMetadata, AudioStreamInfo, SubtitleStreamInfo, ProviderType } from '../providers/base/MediaProvider'
-import type { MediaItem, AudioTrack, SubtitleTrack } from '../types/database'
+import type { MediaMetadata, AudioStreamInfo, SubtitleStreamInfo, ProviderType } from '@main/providers/base/MediaProvider'
+import type { MediaItem, AudioTrack, SubtitleTrack } from '@main/types/database'
 import {
   normalizeVideoCodec,
   normalizeAudioCodec,

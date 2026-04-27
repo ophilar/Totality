@@ -1,6 +1,6 @@
 
 import { RefreshCw } from 'lucide-react'
-import { useSources } from '../../../contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 
 export const ScanningStatus: React.FC = () => {
   const { isScanning, scanProgress } = useSources()

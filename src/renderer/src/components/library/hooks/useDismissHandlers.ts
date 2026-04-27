@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import {
   emitDismissUpgrade,
   emitDismissCollectionMovie,
-} from '../../../utils/dismissEvents'
+} from '@/utils/dismissEvents'
 import type {
   MediaItem,
   MissingEpisode,
@@ -10,7 +10,7 @@ import type {
   SeriesCompletenessData,
   MovieCollectionData,
   ArtistCompletenessData,
-} from '../types'
+} from '@/components/library/types'
 
 interface MissingItemPopupState {
   type: 'episode' | 'season' | 'movie'

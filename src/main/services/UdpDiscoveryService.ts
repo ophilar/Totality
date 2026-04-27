@@ -1,7 +1,7 @@
 import { getErrorMessage } from './utils/errorUtils'
 import * as dgram from 'dgram'
 import axios from 'axios'
-import { getLoggingService } from '../services/LoggingService'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * UdpDiscoveryService

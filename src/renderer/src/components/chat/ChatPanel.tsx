@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
-import { useChat, type ViewContext } from '../../hooks/useChat'
+import { useChat, type ViewContext } from '@/hooks/useChat'
 import { ChatMessage } from './ChatMessage'
 
 interface ChatPanelProps {

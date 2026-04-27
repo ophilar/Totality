@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
-import { getTranscodingService, TranscodeOptions } from '../services/TranscodingService'
-import { validateInput, GetTranscodeParamsSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { getTranscodingService, TranscodeOptions } from '@main/services/TranscodingService'
+import { validateInput, GetTranscodeParamsSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * Transcoding IPC Handlers

@@ -6,12 +6,12 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { X, Info, Heart, Scale } from 'lucide-react'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { useTheme } from '../../contexts/ThemeContext'
-import tmdbLogo from '../../assets/tmdb-logo.svg'
-import musicbrainzLogo from '../../assets/musicbrainz-logo.svg'
-import logoImage from '../../assets/logo.png'
-import logoBlackImage from '../../assets/logo_black.png'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { useTheme } from '@/contexts/ThemeContext'
+import tmdbLogo from '@/assets/tmdb-logo.svg'
+import musicbrainzLogo from '@/assets/musicbrainz-logo.svg'
+import logoImage from '@/assets/logo.png'
+import logoBlackImage from '@/assets/logo_black.png'
 
 interface AboutModalProps {
   isOpen: boolean

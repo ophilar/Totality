@@ -1,4 +1,4 @@
-import { getErrorMessage } from '../../services/utils/errorUtils'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 interface ProcessedItem {
   metadata: MediaMetadata
@@ -17,14 +17,14 @@ import * as fs from 'fs'
 import * as fsPromises from 'fs/promises'
 import * as path from 'path'
 import { app } from 'electron'
-import { getDatabase } from '../../database/getDatabase'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
-import { getMediaFileAnalyzer, type FileAnalysisResult } from '../../services/MediaFileAnalyzer'
-import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '../../services/FileNameParser'
-import { getTMDBService } from '../../services/TMDBService'
-import { getLoggingService } from '../../services/LoggingService'
-import { getMusicBrainzService } from '../../services/MusicBrainzService'
-import { normalizeAudioCodec } from '../../services/MediaNormalizer'
+import { getDatabase } from '@main/database/getDatabase'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getMediaFileAnalyzer, type FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '@main/services/FileNameParser'
+import { getTMDBService } from '@main/services/TMDBService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
 import {
   BaseMediaProvider,
   ProviderCredentials,
@@ -39,9 +39,9 @@ import {
   ProviderType,
   AudioStreamInfo,
   LibraryType,
-} from '../base/MediaProvider'
-import type { MediaItem, MediaItemVersion, AudioTrack } from '../../types/database'
-import { extractVersionNames } from '../utils/VersionNaming'
+} from '@main/providers/base/MediaProvider'
+import type { MediaItem, MediaItemVersion, AudioTrack } from '@main/types/database'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 
 export interface LocalFolderConfig {
   folderPath: string

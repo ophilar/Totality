@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Bot, X, Sparkles, BarChart3, ArrowUpCircle, Library, Star, Loader2, AlertCircle, Clock } from 'lucide-react'
-import { SimpleMarkdown } from '../ui/SimpleMarkdown'
+import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
 
 type ReportType = 'quality' | 'upgrades' | 'completeness' | 'wishlist'
 

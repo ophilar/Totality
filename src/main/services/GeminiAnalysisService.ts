@@ -1,4 +1,4 @@
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { getGeminiService } from './GeminiService'
 import {

@@ -1,12 +1,12 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
-import { getSeriesCompletenessService } from '../services/SeriesCompletenessService'
-import { getDatabase } from '../database/getDatabase'
-import { getTMDBService } from '../services/TMDBService'
+import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getTMDBService } from '@main/services/TMDBService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
-import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
+import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * Register all series completeness IPC handlers
@@ -302,7 +302,7 @@ export function registerSeriesHandlers() {
       )
 
       // Check for duplicates in the same source
-      const { getDeduplicationService } = require('../services/DeduplicationService')
+      const { getDeduplicationService } = require('@main/services/DeduplicationService')
       await getDeduplicationService().scanForDuplicates(validSourceId)
 
       // Re-analyze the series with the new title

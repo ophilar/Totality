@@ -10,8 +10,8 @@ import {
   Zap,
   Info
 } from 'lucide-react'
-import { useToast } from '../../contexts/ToastContext'
-import type { MediaItem } from '../../../../main/types/database'
+import { useToast } from '@/contexts/ToastContext'
+import type { MediaItem } from '@main/types/database'
 
 interface TranscodingParams {
   summary: string

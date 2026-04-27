@@ -1,10 +1,10 @@
 import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
-import { QualityBadges } from '../QualityBadges'
-import { EpisodePlaceholder } from '../../ui/MediaPlaceholders'
-import { ConversionRecommendation } from '../ConversionRecommendation'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import type { MediaItem } from '../types'
+import { QualityBadges } from '@/components/library/QualityBadges'
+import { EpisodePlaceholder } from '@/components/ui/MediaPlaceholders'
+import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import type { MediaItem } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {

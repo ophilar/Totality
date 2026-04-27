@@ -1,5 +1,5 @@
 import type { GeminiToolDefinition } from './GeminiService'
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { getTMDBService } from './TMDBService'
 

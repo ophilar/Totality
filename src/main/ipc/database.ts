@@ -1,16 +1,16 @@
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import * as path from 'path'
 import { z } from 'zod'
-import { getDatabase } from '../database/getDatabase'
-import { getQualityAnalyzer } from '../services/QualityAnalyzer'
-import { getGeminiService } from '../services/GeminiService'
-import { getTMDBService } from '../services/TMDBService'
-import { invalidateNfsMappingsCache } from '../providers/kodi/KodiDatabaseSchema'
+import { getDatabase } from '@main/database/getDatabase'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getGeminiService } from '@main/services/GeminiService'
+import { getTMDBService } from '@main/services/TMDBService'
+import { invalidateNfsMappingsCache } from '@main/providers/kodi/KodiDatabaseSchema'
 import { getErrorMessage, isNodeError } from './utils'
 import fs from 'fs/promises'
-import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
-import { getLoggingService } from '../services/LoggingService'
-import { getSourceManager } from '../services/SourceManager'
+import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getSourceManager } from '@main/services/SourceManager'
 
 import { registerListHandlers } from './utils/genericHandlers'
 
@@ -181,7 +181,7 @@ export function registerDatabaseHandlers() {
         getGeminiService().refreshApiKey()
         // Trigger AI background analysis if newly enabled and key exists
         if (validKey === 'gemini_api_key' && validValue && validValue !== '') {
-          const { getGeminiAnalysisService } = await import('../services/GeminiAnalysisService')
+          const { getGeminiAnalysisService } = await import('@main/services/GeminiAnalysisService')
           getGeminiAnalysisService().generateCompletenessInsights(() => {}).catch(() => {})
         }
       }
@@ -405,7 +405,7 @@ export function registerDatabaseHandlers() {
       // Check for duplicates in the same source
       const item = db.media.getItem(validMediaItemId)
       if (item && item.source_id) {
-        const { getDeduplicationService } = require('../services/DeduplicationService')
+        const { getDeduplicationService } = require('@main/services/DeduplicationService')
         await getDeduplicationService().scanForDuplicates(item.source_id)
       }
 

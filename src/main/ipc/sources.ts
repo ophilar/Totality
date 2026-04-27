@@ -7,16 +7,16 @@
 import { ipcMain, dialog, shell } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
-import { getSourceManager } from '../services/SourceManager'
-import { getLoggingService } from '../services/LoggingService'
-import { getDatabase } from '../database/getDatabase'
-import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
-import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '../services/KodiMySQLConnectionService'
-import { getMediaFileAnalyzer } from '../services/MediaFileAnalyzer'
-import { LibraryType } from '../types/database'
-import type { ProviderType } from '../providers/base/MediaProvider'
-import type { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
-import { KodiMySQLProvider } from '../providers/kodi/KodiMySQLProvider'
+import { getSourceManager } from '@main/services/SourceManager'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getKodiLocalDiscoveryService } from '@main/services/KodiLocalDiscoveryService'
+import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '@main/services/KodiMySQLConnectionService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { LibraryType } from '@main/types/database'
+import type { ProviderType } from '@main/providers/base/MediaProvider'
+import type { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
+import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
 import { safeSend, getWindowFromEvent } from './utils/safeSend'
 import { getErrorMessage } from './utils'
 import { createProgressUpdater } from './utils/progressUpdater'
@@ -33,7 +33,7 @@ import {
   OptionalProviderTypeSchema,
   LocalFolderConfigSchema,
   LocalFolderWithLibrariesSchema,
-} from '../validation/schemas'
+} from '@main/validation/schemas'
 
 /**
  * Register all source-related IPC handlers
@@ -1136,7 +1136,7 @@ export function registerSourceHandlers(): void {
   ipcMain.handle('mediamonkey:testConnection', async (_event, config: unknown) => {
     const validated = config as { databasePath: string }
     try {
-      const { MediaMonkeyProvider } = await import('../providers/mediamonkey/MediaMonkeyProvider')
+      const { MediaMonkeyProvider } = await import('@main/providers/mediamonkey/MediaMonkeyProvider')
       const provider = new MediaMonkeyProvider({
         sourceType: 'mediamonkey',
         displayName: 'Test',

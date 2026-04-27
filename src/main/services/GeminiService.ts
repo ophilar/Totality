@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from '../services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * Google Gemini AI Service with rate limit tracking

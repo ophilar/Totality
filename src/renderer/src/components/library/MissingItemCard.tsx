@@ -1,7 +1,7 @@
 import { memo, useRef } from 'react'
 import { Tv, EyeOff } from 'lucide-react'
-import { AddToWishlistButton } from '../wishlist/AddToWishlistButton'
-import type { WishlistMediaType } from '../../contexts/WishlistContext'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { WishlistMediaType } from '@/contexts/WishlistContext'
 
 interface MissingItemCardProps {
   type: 'episode' | 'season' | 'movie'

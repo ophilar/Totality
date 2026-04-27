@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { WishlistItem, WishlistFilters } from '../../types/database'
+import type { WishlistItem, WishlistFilters } from '@main/types/database'
 import { BaseRepository } from './BaseRepository'
 
 export class WishlistRepository extends BaseRepository<WishlistItem> {

@@ -1,5 +1,5 @@
 import { CircleFadingArrowUp, Film, Tv, Music } from 'lucide-react'
-import { DashboardRowSkeleton } from '../ui/Skeleton'
+import { DashboardRowSkeleton } from '@/components/ui/Skeleton'
 
 export function DashboardSkeleton({ hasMovies, hasTV, hasMusic }: { hasMovies: boolean, hasTV: boolean, hasMusic: boolean }) {
   const renderSkeletons = (count = 6) => (

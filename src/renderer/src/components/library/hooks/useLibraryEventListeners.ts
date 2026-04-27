@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
-import type { AnalysisProgress } from '../types'
+import type { AnalysisProgress } from '@/components/library/types'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null

@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { CircleFadingArrowUp, Trash2, HardDrive } from 'lucide-react'
-import { AddToWishlistButton } from '../../wishlist/AddToWishlistButton'
-import type { MusicTrack } from '../types'
+import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
+import type { MusicTrack } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {

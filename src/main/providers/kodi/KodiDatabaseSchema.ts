@@ -15,8 +15,8 @@
  * - art: Artwork URLs (posters, fanart, etc.)
  */
 
-import { getDatabase } from '../../database/getDatabase'
-import { getLoggingService } from '../../services/LoggingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { getLoggingService } from '@main/services/LoggingService'
 
 // ============================================================================
 // NFS MOUNT MAPPINGS

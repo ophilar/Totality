@@ -1,8 +1,8 @@
 import { useState, useCallback, memo, useRef } from 'react'
 import { RefreshCw, MoreVertical, Pencil, Trash2, HardDrive, Tv as TvPlaceholder } from 'lucide-react'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import { providerColors } from '../mediaUtils'
-import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '../types'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import { providerColors } from '@/components/library/mediaUtils'
+import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {

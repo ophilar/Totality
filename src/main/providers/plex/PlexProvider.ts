@@ -1,7 +1,7 @@
-import { getErrorMessage } from '../../services/utils/errorUtils'
-import { getLoggingService } from '../../services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
 import axios, { AxiosInstance } from 'axios'
-import { getDatabase } from '../../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import {
   normalizeVideoCodec,
   normalizeAudioCodec,
@@ -13,11 +13,11 @@ import {
   normalizeSampleRate,
   normalizeContainer,
   hasObjectAudio,
-} from '../../services/MediaNormalizer'
-import { selectBestAudioTrack } from '../utils/ProviderUtils'
-import { getFileNameParser } from '../../services/FileNameParser'
-import { extractVersionNames } from '../utils/VersionNaming'
-import { getQualityAnalyzer } from '../../services/QualityAnalyzer'
+} from '@main/services/MediaNormalizer'
+import { selectBestAudioTrack } from '@main/providers/utils/ProviderUtils'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import {
   BaseMediaProvider,
   ProviderCredentials,
@@ -32,7 +32,7 @@ import {
   ProviderType,
   LibraryType,
   ServerInstance,
-} from '../base/MediaProvider'
+} from '@main/providers/base/MediaProvider'
 
 import type {
   PlexAuthPin,
@@ -43,8 +43,8 @@ import type {
   PlexMusicAlbum,
   PlexMusicTrack,
   PlexResource,
-} from '../../types/plex'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
+} from '@main/types/plex'
+import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
 
 export interface PlexCollection {
   key: string

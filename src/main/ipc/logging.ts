@@ -5,15 +5,15 @@
  */
 
 import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
-import { getLoggingService } from '../services/LoggingService'
-import type { SourceInfo, DiagnosticInfo } from '../services/LoggingService'
-import { getSourceManager } from '../services/SourceManager'
-import { getMediaFileAnalyzer } from '../services/MediaFileAnalyzer'
-import { getLiveMonitoringService } from '../services/LiveMonitoringService'
-import { getDatabase } from '../database/getDatabase'
+import { getLoggingService } from '@main/services/LoggingService'
+import type { SourceInfo, DiagnosticInfo } from '@main/services/LoggingService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getDatabase } from '@main/database/getDatabase'
 import { getErrorMessage } from './utils'
-import { validateInput, BooleanSchema } from '../validation/schemas'
-import type { LogLevel } from '../services/LoggingService'
+import { validateInput, BooleanSchema } from '@main/validation/schemas'
+import type { LogLevel } from '@main/services/LoggingService'
 import { z } from 'zod'
 
 const FileLoggingSettingsSchema = z.object({

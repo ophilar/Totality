@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { getDatabase } from '../database/getDatabase'
+import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from './LoggingService'
 
 export interface RetentionPolicy {

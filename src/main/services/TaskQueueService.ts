@@ -2,15 +2,16 @@
  * TaskQueueService - Manages background task queue for scans and analysis
  */
 
-import { getDatabase } from '../database/getDatabase'
-import { getLoggingService } from './LoggingService'
+import { getDatabase, BetterSQLiteService } from '@main/database/getDatabase'
+import { getLoggingService, LoggingService } from './LoggingService'
 import { getErrorMessage } from './utils/errorUtils'
-import { getSourceManager } from './SourceManager'
-import { getSeriesCompletenessService } from './SeriesCompletenessService'
-import { getMovieCollectionService } from './MovieCollectionService'
-import { getMusicBrainzService } from './MusicBrainzService'
-import { getTranscodingService } from './TranscodingService'
-import { safeSend } from '../ipc/utils/safeSend'
+import { getSourceManager, SourceManager } from './SourceManager'
+import { getSeriesCompletenessService, SeriesCompletenessService } from './SeriesCompletenessService'
+import { getMovieCollectionService, MovieCollectionService } from './MovieCollectionService'
+import { getMusicBrainzService, MusicBrainzService } from './MusicBrainzService'
+import { getTranscodingService, TranscodingService } from './TranscodingService'
+import { safeSend } from '@main/ipc/utils/safeSend'
+import { BrowserWindow } from 'electron'
 
 export interface TaskProgress {
   current: number
@@ -47,13 +48,13 @@ export interface QueuedTask {
 }
 
 export interface TaskQueueDependencies {
-  db?: any
-  logging?: any
-  sourceManager?: any
-  seriesCompleteness?: any
-  movieCollection?: any
-  musicBrainz?: any
-  transcoding?: any
+  db?: BetterSQLiteService
+  logging?: LoggingService
+  sourceManager?: SourceManager
+  seriesCompleteness?: SeriesCompletenessService
+  movieCollection?: MovieCollectionService
+  musicBrainz?: MusicBrainzService
+  transcoding?: TranscodingService
 }
 
 export class TaskQueueService {
@@ -64,14 +65,14 @@ export class TaskQueueService {
   private cancelRequested = false
   private historyLimit = 100
 
-  private db: any
-  private logging: any
-  private sourceManager: any
-  private seriesCompleteness: any
-  private movieCollection: any
-  private musicBrainz: any
-  private transcoding: any
-  private mainWindow: any = null
+  private db: BetterSQLiteService
+  private logging: LoggingService
+  private sourceManager: SourceManager | null
+  private seriesCompleteness: SeriesCompletenessService | null
+  private movieCollection: MovieCollectionService | null
+  private musicBrainz: MusicBrainzService | null
+  private transcoding: TranscodingService | null
+  private mainWindow: BrowserWindow | null = null
 
   constructor(deps: TaskQueueDependencies = {}) {
     this.db = deps.db || getDatabase()
@@ -85,34 +86,34 @@ export class TaskQueueService {
     this.loadState()
   }
 
-  private getSourceManager(): any {
+  private getSourceManager(): SourceManager {
     if (!this.sourceManager) this.sourceManager = getSourceManager()
     return this.sourceManager
   }
 
-  private getSeriesCompleteness(): any {
+  private getSeriesCompleteness(): SeriesCompletenessService {
     if (!this.seriesCompleteness) this.seriesCompleteness = getSeriesCompletenessService()
     return this.seriesCompleteness
   }
 
-  private getMovieCollection(): any {
+  private getMovieCollection(): MovieCollectionService {
     if (!this.movieCollection) this.movieCollection = getMovieCollectionService()
     return this.movieCollection
   }
 
-  private getMusicBrainz(): any {
+  private getMusicBrainz(): MusicBrainzService {
     if (!this.musicBrainz) this.musicBrainz = getMusicBrainzService()
     return this.musicBrainz
   }
 
-  private getTranscoding(): any {
+  private getTranscoding(): TranscodingService {
     if (!this.transcoding) {
       this.transcoding = getTranscodingService()
     }
     return this.transcoding
   }
 
-  setMainWindow(win: any): void {
+  setMainWindow(win: BrowserWindow): void {
     this.mainWindow = win
   }
 
@@ -330,8 +331,7 @@ export class TaskQueueService {
           type: 'error',
           title: 'Task failed',
           message: `${task.label}: ${errorMsg}`,
-          sourceId: task.sourceId,
-          sourceName: task.label,
+          reference_id: task.sourceId,
         })
       } catch (e) {
         getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)

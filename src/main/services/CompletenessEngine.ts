@@ -4,7 +4,7 @@
  * Shared by TV series and Movie collections.
  */
 
-import { MissingMovie, MissingEpisode } from '../types/database'
+import { MissingMovie, MissingEpisode } from '@main/types/database'
 
 export interface SetItem {
   key: string // e.g. "S1E1" or TMDB ID

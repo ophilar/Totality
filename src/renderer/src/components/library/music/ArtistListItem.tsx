@@ -1,8 +1,8 @@
 import { useState, useCallback, memo } from 'react'
 import { MoreVertical, RefreshCw, Pencil, User } from 'lucide-react'
-import { useMenuClose } from '../../../hooks/useMenuClose'
-import { providerColors } from '../mediaUtils'
-import type { MusicArtist, ArtistCompletenessData } from '../types'
+import { useMenuClose } from '@/hooks/useMenuClose'
+import { providerColors } from '@/components/library/mediaUtils'
+import type { MusicArtist, ArtistCompletenessData } from '@/components/library/types'
 
 export const ArtistListItem = memo(({ artist, completeness, onClick, showSourceBadge, onFixMatch, onAnalyzeCompleteness }: {
   artist: MusicArtist

@@ -6,11 +6,11 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { useTheme } from '../../contexts/ThemeContext'
-import logoAnimation from '../../assets/totality_anim.webm'
-import logoAnimationBlack from '../../assets/totality_anim_black.webm'
-import logoImage from '../../assets/logo.png'
-import logoBlackImage from '../../assets/logo_black.png'
+import { useTheme } from '@/contexts/ThemeContext'
+import logoAnimation from '@/assets/totality_anim.webm'
+import logoAnimationBlack from '@/assets/totality_anim_black.webm'
+import logoImage from '@/assets/logo.png'
+import logoBlackImage from '@/assets/logo_black.png'
 
 interface SplashScreenProps {
   onComplete: () => void

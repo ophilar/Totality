@@ -1,6 +1,6 @@
 import { useState, useEffect, memo } from 'react'
-import { MissingItemCard } from '../MissingItemCard'
-import { formatSeasonLabel } from '../mediaUtils'
+import { MissingItemCard } from '@/components/library/MissingItemCard'
+import { formatSeasonLabel } from '@/components/library/mediaUtils'
 
 export const MissingSeasonCardWithArtwork = memo(({
   seasonNumber,

@@ -1,7 +1,7 @@
 
 import { ipcMain } from 'electron'
-import { validateInput } from '../../validation/schemas'
-import { getLoggingService } from '../../services/LoggingService'
+import { validateInput } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
 
 /**

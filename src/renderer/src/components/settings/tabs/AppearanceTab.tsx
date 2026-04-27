@@ -8,7 +8,7 @@
  */
 
 import { Sun, Moon, Monitor } from 'lucide-react'
-import { useTheme, type BaseTheme, type ThemeMode } from '../../../contexts/ThemeContext'
+import { useTheme, type BaseTheme, type ThemeMode } from '@/contexts/ThemeContext'
 
 interface ThemeColors {
   background: string

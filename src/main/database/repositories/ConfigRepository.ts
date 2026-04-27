@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { getCredentialEncryptionService } from '../../services/CredentialEncryptionService'
+import { getCredentialEncryptionService } from '@main/services/CredentialEncryptionService'
 
 export class ConfigRepository {
   constructor(private db: DatabaseSync) {}

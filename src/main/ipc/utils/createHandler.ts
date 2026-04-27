@@ -8,8 +8,8 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getErrorMessage, isNodeError } from '../../services/utils/errorUtils'
-import { getLoggingService } from '../../services/LoggingService'
+import { getErrorMessage, isNodeError } from '@main/services/utils/errorUtils'
+import { getLoggingService } from '@main/services/LoggingService'
 
 /**
  * Options for creating an IPC handler

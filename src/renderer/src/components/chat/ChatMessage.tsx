@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Bot, User, Database, Loader2, Star } from 'lucide-react'
-import type { ChatMessage as ChatMessageType, ActionableItem } from '../../hooks/useChat'
-import { useWishlist } from '../../contexts/WishlistContext'
-import { SimpleMarkdown } from '../ui/SimpleMarkdown'
+import type { ChatMessage as ChatMessageType, ActionableItem } from '@/hooks/useChat'
+import { useWishlist } from '@/contexts/WishlistContext'
+import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
 
 /** Human-readable labels for tool names */
 const TOOL_LABELS: Record<string, string> = {

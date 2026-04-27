@@ -1,7 +1,7 @@
 import { memo, useRef } from 'react'
 import { Folder } from 'lucide-react'
-import { formatSeasonLabel } from '../mediaUtils'
-import type { SeasonInfo } from '../types'
+import { formatSeasonLabel } from '@/components/library/mediaUtils'
+import type { SeasonInfo } from '@/components/library/types'
 
 export const SeasonCard = memo(({ season, showTitle, onClick }: { season: SeasonInfo; showTitle: string; onClick: () => void }) => {
   const cardRef = useRef<HTMLDivElement>(null)
