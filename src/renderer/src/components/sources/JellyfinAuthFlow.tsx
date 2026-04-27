@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
+import { LibraryType } from '@preload/index'
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void
@@ -25,7 +26,7 @@ type Step = 'discover' | 'server-select' | 'auth-method' | 'libraries'
 interface MediaLibrary {
   id: string
   name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
+  type: LibraryType
   itemCount?: number
 }
 

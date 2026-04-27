@@ -31,6 +31,7 @@ import {
   SourceConfig,
   ProviderType,
   LibraryType,
+  ServerInstance,
 } from '../base/MediaProvider'
 
 import type {
@@ -84,7 +85,6 @@ export class PlexProvider extends BaseMediaProvider {
 
   private scanCancelled = false
   private musicScanCancelled = false
-  private warnedSkippedItems = new Set<string>()
 
   constructor(config: SourceConfig) {
     super(config)
@@ -817,7 +817,7 @@ export class PlexProvider extends BaseMediaProvider {
     this.config.connectionConfig = { ...this.config.connectionConfig, serverId: server.machineIdentifier, token: this.authToken || '' }
   }
 
-  private calculateVersionScore(v: VersionData): number {
+  protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
     let score = 0
     if (v.resolution === '4K') score += 1000
     else if (v.resolution === '1080p') score += 500

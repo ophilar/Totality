@@ -1,4 +1,5 @@
 import { LibraryType } from '../types/database'
+import { BetterSQLiteService } from '../database/BetterSQLiteService'
 import { getLiveMonitoringService } from './LiveMonitoringService'
 import { getTaskQueueService } from './TaskQueueService'
 import { LoggingService, getLoggingService } from './LoggingService'

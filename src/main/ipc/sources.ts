@@ -13,6 +13,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
 import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '../services/KodiMySQLConnectionService'
 import { getMediaFileAnalyzer } from '../services/MediaFileAnalyzer'
+import { LibraryType } from '../types/database'
 import type { ProviderType } from '../providers/base/MediaProvider'
 import type { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '../providers/kodi/KodiMySQLProvider'
@@ -495,21 +496,20 @@ export function registerSourceHandlers(): void {
     const win = getWindowFromEvent(event)
     getLoggingService().info('[IPC sources:scanItem]', `Starting single item scan for ${path.basename(validFilePath)}`)
 
-    // If libraryId not provided, determine the appropriate default based on provider type
+    // determine the appropriate default based on provider type
     let resolvedLibraryId = validLibraryId
     if (!resolvedLibraryId) {
-      // Get the provider to determine its type
-      const provider = manager.getProvider(validSourceId)
-      if (provider?.providerType === 'kodi-local' || provider?.providerType === 'kodi-mysql') {
-        // Kodi uses 'movies' and 'tvshows' as library IDs
-        resolvedLibraryId = 'movies'
-      } else {
-        // LocalFolderProvider uses 'movie' and 'tvshows'
-        resolvedLibraryId = 'movie'
-      }
-      getLoggingService().info('[IPC sources:scanItem]', `No libraryId provided, using default for ${provider?.providerType || 'unknown'}: ${resolvedLibraryId}`)
+    // Get the provider to determine its type
+    const provider = manager.getProvider(validSourceId)
+    if (provider?.providerType === 'kodi-local' || provider?.providerType === 'kodi-mysql') {
+      // Kodi uses 'movies' and 'tvshows' as library IDs
+      resolvedLibraryId = 'movies'
+    } else {
+      // LocalFolderProvider uses 'movie' and 'tvshows'
+      resolvedLibraryId = 'movie'
     }
-
+    getLoggingService().info('[IPC sources:scanItem]', `No libraryId provided, using default for ${provider?.providerType || 'unknown'}: ${resolvedLibraryId}`)
+    }
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
 
     try {
@@ -1161,7 +1161,7 @@ export function registerSourceHandlers(): void {
       const subfolders: Array<{
         name: string
         path: string
-        suggestedType: 'movies' | 'tvshows' | 'music' | 'unknown'
+        suggestedType: LibraryType
       }> = []
 
       // Known folder name patterns
@@ -1181,14 +1181,14 @@ export function registerSourceHandlers(): void {
         if (skipFolders.includes(folderName) || folderName.startsWith('.')) continue
 
         // Detect media type from folder name
-        let suggestedType: 'movies' | 'tvshows' | 'music' | 'unknown' = 'unknown'
+        let suggestedType: LibraryType = LibraryType.Unknown
 
         if (moviePatterns.includes(folderName)) {
-          suggestedType = 'movies'
+          suggestedType = LibraryType.Movie
         } else if (tvPatterns.includes(folderName)) {
-          suggestedType = 'tvshows'
+          suggestedType = LibraryType.Show
         } else if (musicPatterns.includes(folderName)) {
-          suggestedType = 'music'
+          suggestedType = LibraryType.Music
         }
 
         subfolders.push({
@@ -1200,8 +1200,8 @@ export function registerSourceHandlers(): void {
 
       // Sort: known types first, then alphabetically
       subfolders.sort((a, b) => {
-        if (a.suggestedType !== 'unknown' && b.suggestedType === 'unknown') return -1
-        if (a.suggestedType === 'unknown' && b.suggestedType !== 'unknown') return 1
+        if (a.suggestedType !== LibraryType.Unknown && b.suggestedType === LibraryType.Unknown) return -1
+        if (a.suggestedType === LibraryType.Unknown && b.suggestedType !== LibraryType.Unknown) return 1
         return a.name.localeCompare(b.name)
       })
 
@@ -1224,10 +1224,10 @@ export function registerSourceHandlers(): void {
         displayName: validated.displayName,
         connectionConfig: {
           folderPath: validated.folderPath,
-          mediaType: 'mixed',
+          mediaType: LibraryType.Mixed,
           name: validated.displayName,
           // Store the custom library config
-          customLibraries: validated.libraries,
+          customLibraries: validated.libraries as any,
         },
         isEnabled: true,
       })
@@ -1250,7 +1250,7 @@ export function registerSourceHandlers(): void {
         displayName: validated.displayName,
         connectionConfig: {
           folderPath: validated.folderPath,
-          mediaType: validated.mediaType,
+          mediaType: validated.mediaType as LibraryType,
           name: validated.displayName,
         },
         isEnabled: true,

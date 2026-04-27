@@ -14,10 +14,10 @@ import { PlexProvider } from '../providers/plex/PlexProvider'
 import { SourceScannerService, type AggregateProgressCallback } from './SourceScannerService'
 import { SourceCrudService } from './SourceCrudService'
 import { PlexAuthService } from './PlexAuthService'
+import { LibraryType } from '../providers/base/MediaProvider'
 import type {
   MediaProvider,
   ProviderType,
-  LibraryType,
   SourceConfig,
   ConnectionTestResult,
   ScanResult,
