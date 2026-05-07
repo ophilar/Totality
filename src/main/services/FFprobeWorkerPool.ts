@@ -9,10 +9,10 @@ import { Worker } from 'worker_threads'
 import * as os from 'os'
 import * as path from 'path'
 import { app } from 'electron'
-import type { FileAnalysisResult } from './MediaFileAnalyzer'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getErrorMessage } from './utils/errorUtils'
-
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { APP_CONFIG } from '@main/config'
 
 interface WorkerTask {
   taskId: string
@@ -48,7 +48,7 @@ export function getFFprobeWorkerPool(): FFprobeWorkerPool {
 }
 
 export class FFprobeWorkerPool {
-  private static readonly MAX_QUEUE_DEPTH = 10000
+  private static readonly MAX_QUEUE_DEPTH = APP_CONFIG.workers.ffprobe.maxQueueDepth
   private workers: WorkerInfo[] = []
   private taskQueue: QueuedTask[] = []
   private taskIdCounter = 0
@@ -59,8 +59,8 @@ export class FFprobeWorkerPool {
   private isShuttingDown = false
 
   constructor() {
-    // Default to CPU cores - 1, minimum 1, maximum 8
-    this.maxWorkers = Math.min(4, Math.max(1, os.cpus().length - 1))
+    // Default to CPU cores - 1, minimum 1, maximum configured limit
+    this.maxWorkers = Math.min(APP_CONFIG.workers.ffprobe.defaultWorkersLimit, Math.max(1, os.cpus().length - 1))
 
     // Determine worker script path based on environment
     if (app.isPackaged) {

@@ -1,14 +1,14 @@
 import { useState, useMemo, useCallback, memo, useRef } from 'react'
 import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film } from 'lucide-react'
-import { MediaGridView } from './MediaGridView'
-import { QualityBadges } from './QualityBadges'
-import { SlimDownBanner } from './SlimDownBanner'
-import { ConversionRecommendation } from './ConversionRecommendation'
+import { MediaGridView } from '@/components/library/MediaGridView'
+import { QualityBadges } from '@/components/library/QualityBadges'
+import { SlimDownBanner } from '@/components/library/SlimDownBanner'
+import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { MoviePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { useSources } from '@/contexts/SourceContext'
-import { providerColors } from './mediaUtils'
-import type { MediaItem, MovieCollectionData } from './types'
+import { providerColors } from '@/components/library/mediaUtils'
+import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {
@@ -42,8 +42,7 @@ export function MoviesView({
   totalMovieCount,
   moviesLoading,
   onLoadMoreMovies,
-  collectionsOnly = false,
-  scrollElement
+  collectionsOnly = false
 }: {
   movies: MediaItem[]
   sortBy: 'title' | 'efficiency' | 'waste' | 'size'
@@ -63,7 +62,6 @@ export function MoviesView({
   moviesLoading: boolean
   onLoadMoreMovies: () => void
   collectionsOnly?: boolean
-  scrollElement?: HTMLElement | null
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
 
@@ -215,18 +213,19 @@ export function MoviesView({
   const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'
 
   return (
-    <MediaGridView
-      items={displayItems}
-      totalCount={totalMovieCount}
-      loading={moviesLoading}
-      onLoadMore={onLoadMoreMovies}
-      viewType={viewType}
-      posterMinWidth={posterMinWidth}
-      statsBar={statsBar}
-      listHeader={listHeader}
-      emptyState={emptyState}
-      banner={isSlimDownActive ? <SlimDownBanner className="mb-4" /> : undefined}
-      scrollElement={scrollElement}
+    <div className="h-full flex flex-col overflow-hidden">
+      <MediaGridView
+        items={displayItems}
+        totalCount={totalMovieCount}
+        loading={moviesLoading}
+        onLoadMore={onLoadMoreMovies}
+        viewType={viewType}
+        posterMinWidth={posterMinWidth}
+        statsBar={statsBar}
+        listHeader={listHeader}
+        emptyState={emptyState}
+        scrollKey="movies"
+        banner={isSlimDownActive ? <SlimDownBanner className="mb-4" /> : undefined}
       renderGridItem={(item) => (
         item.type === 'collection' ? (
           <div key={`col-${item.collection.tmdb_collection_id}`}>
@@ -276,9 +275,9 @@ export function MoviesView({
         )
       )}
     />
-  )
-}
-
+    </div>
+    )
+    }
 // Collection card for grid view
 const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollectionData; onClick: () => void }) => {
   const cardRef = useRef<HTMLDivElement>(null)

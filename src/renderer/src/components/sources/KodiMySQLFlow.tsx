@@ -8,7 +8,8 @@
 import { useState } from 'react'
 import { Film, Tv, Music, Folder, Database, Server, AlertCircle, CheckCircle } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
-import { LibraryType } from '@preload/index'
+import { LibraryType } from '@main/types/database'
+
 
 interface KodiMySQLFlowProps {
   onSuccess: () => void

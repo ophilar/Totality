@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { SourceManager } from '../../src/main/services/SourceManager'
-import { LocalFolderProvider } from '../../src/main/providers/local/LocalFolderProvider'
-import { setupTestDb, cleanupTestDb } from '../TestUtils'
+import { SourceManager } from '@main/services/SourceManager'
+import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('Music Scan Routing', () => {
   let manager: SourceManager
@@ -29,7 +29,7 @@ describe('Music Scan Routing', () => {
     })
     
     // Enable a music library
-    db.sources.setLibrariesEnabled(source.source_id, [{ id: 'music', name: 'Music', type: 'music', enabled: true }])
+    await db.sources.setLibrariesEnabled(source.source_id, [{ id: 'music', name: 'Music', type: 'music', enabled: true }])
 
     // Mock the provider's scanLibrary method
     const provider = (manager as any).providers.get(source.source_id)
@@ -48,3 +48,6 @@ describe('Music Scan Routing', () => {
     expect(scanSpy).toHaveBeenCalledWith('music', expect.anything())
   })
 })
+
+
+

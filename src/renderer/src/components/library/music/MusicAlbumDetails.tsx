@@ -2,23 +2,25 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Disc3, RefreshCw, Copy, Check, CircleFadingArrowUp, MoreVertical, X, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
-import type { MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '@/components/library/types'
+import type { MusicArtist, MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '@/components/library/types'
 
 export function MusicAlbumDetails({
   selectedAlbum,
   selectedArtist,
   albumCompleteness,
   tracks,
+  tracksLoading,
   onBack,
   onAnalyzeAlbum,
-  onRescanTrack
+  onRescanTrack,
 }: {
   selectedAlbum: MusicAlbum
-  selectedArtist: any
+  selectedArtist: MusicArtist | null
   albumCompleteness: AlbumCompletenessData | null
   tracks: MusicTrack[]
+  tracksLoading: boolean
   onBack: () => void
-  onAnalyzeAlbum: (albumId: number) => Promise<void>
+  onAnalyzeAlbum: (id: number) => Promise<void>
   onRescanTrack?: (track: MusicTrack) => Promise<void>
 }) {
   const [isAnalyzingAlbum, setIsAnalyzingAlbum] = useState(false)
@@ -248,7 +250,13 @@ export function MusicAlbumDetails({
       </div>
 
       <div className="divide-y divide-border/50">
-        {unifiedTracks.map((track) => {
+        {tracksLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Loading tracks...</p>
+          </div>
+        ) : (
+          unifiedTracks.map((track) => {
           const qualityTier = getQualityTier(track)
           const tierConfig = qualityTier ? qualityTierConfig[qualityTier] : null
           return (
@@ -317,8 +325,8 @@ export function MusicAlbumDetails({
               )}
             </div>
           )
-        })}
-        {unifiedTracks.length === 0 && <div className="py-8 text-center text-muted-foreground">No tracks found</div>}
+        }))}
+        {!tracksLoading && unifiedTracks.length === 0 && <div className="py-8 text-center text-muted-foreground">No tracks found</div>}
       </div>
 
       {selectedTrackForQuality && (() => {

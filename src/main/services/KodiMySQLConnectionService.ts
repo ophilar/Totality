@@ -1,4 +1,3 @@
-import { getErrorMessage } from './utils/errorUtils'
 /**
  * KodiMySQLConnectionService
  *
@@ -9,17 +8,21 @@ import { getErrorMessage } from './utils/errorUtils'
  * features will be unavailable but the app will still function normally.
  */
 
-// Dynamic import for optional mysql2 dependency
 import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+
+// Dynamic import for optional mysql2 dependency
 let mysql: typeof import('mysql2/promise') | null = null
 let mysqlAvailable = false
 
 // Try to load mysql2 - it's optional
 try {
-   
+  // @ts-ignore
   mysql = require('mysql2/promise')
   mysqlAvailable = true
-} catch (error) { throw error }
+} catch (error) {
+  // mysql2 not available
+}
 
 // Type definitions (used even when mysql2 is not available)
 type Pool = import('mysql2/promise').Pool

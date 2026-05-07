@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { FileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '../../src/main/services/FileNameParser'
+import { FileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '@main/services/FileNameParser'
 
 describe('FileNameParser', () => {
   let parser: FileNameParser
@@ -543,3 +543,6 @@ describe('FileNameParser', () => {
     })
   })
 })
+
+
+

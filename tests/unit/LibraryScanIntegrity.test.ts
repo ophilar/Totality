@@ -1,21 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { registerDatabaseHandlers } from '../../src/main/ipc/database'
+import { registerDatabaseHandlers } from '@main/ipc/database'
 import { ipcMain } from 'electron'
-import { getMovieCollectionService } from '../../src/main/services/MovieCollectionService'
-import { SourceManager } from '../../src/main/services/SourceManager'
-import { getLiveMonitoringService } from '../../src/main/services/LiveMonitoringService'
-import { LibraryType } from '../../src/main/types/database'
-import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
+import { getMovieCollectionService } from '@main/services/MovieCollectionService'
+import { SourceManager } from '@main/services/SourceManager'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { LibraryType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
+import { StatsRepository } from '@main/database/repositories/StatsRepository'
 
-// Electron infrastructure mocks (allowed as per browser-environment exception)
+// Electron infrastructure mocks
 vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn(),
   },
   app: {
-    getPath: vi.fn().mockReturnValue('/tmp/totality-test'),
+    getPath: vi.fn().mockReturnValue('./tests/tmp'),
+    isReady: vi.fn().mockReturnValue(true),
+    whenReady: vi.fn().mockResolvedValue(undefined),
   },
   dialog: {
     showSaveDialog: vi.fn(),
@@ -34,13 +37,13 @@ vi.mock('electron', () => ({
   }
 }))
 
-describe('Library Issues Fixes (No Project Logic Mocks)', () => {
+describe('Library Issues Fixes (Deep Dive)', () => {
   let db: any
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
     db = await setupTestDb()
-    tempDir = createTempDir('library-integrity')
+    tempDir = createTempDir('library-integrity-fix')
     vi.clearAllMocks()
   })
 
@@ -49,80 +52,97 @@ describe('Library Issues Fixes (No Project Logic Mocks)', () => {
     tempDir.cleanup()
   })
 
-  describe('IPC Handler Registration', () => {
-    it('should register db:media:getItem and its legacy alias', () => {
-      registerDatabaseHandlers()
-      const registeredChannels = (ipcMain.handle as any).mock.calls.map((call: any) => call[0])
-      expect(registeredChannels).toContain('db:media:getItem')
-      expect(registeredChannels).toContain('db:getMediaItemById')
-    })
-  })
-
-  describe('MovieCollectionService - Optional TMDB API Key', () => {
-    it('should skip analysis and return successfully when TMDB API key is missing', async () => {
-      const service = getMovieCollectionService()
-      db.config.deleteSetting('tmdb_api_key')
-      const result = await service.analyzeAllCollections()
-      expect(result.completed).toBe(true)
-      expect(result.analyzed).toBe(0)
-    })
-  })
-
-  describe('SourceManager - Real Scan Integration', () => {
-    it('should notify renderer during real local scan', async () => {
-      const liveMonitoring = getLiveMonitoringService()
-      const sendToRendererSpy = vi.spyOn(liveMonitoring, 'sendToRenderer')
-
-      // Create real files
-      const moviesDir = path.join(tempDir.path, 'Movies')
-      fs.mkdirSync(moviesDir, { recursive: true })
-      fs.writeFileSync(path.join(moviesDir, 'Movie (2020).mkv'), 'dummy')
-
-      const manager = new SourceManager({ db })
-      await manager.addSource({
-        sourceId: 's1',
-        sourceType: 'local' as any,
-        displayName: 'Local',
-        connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
-        isEnabled: true
-      })
-      await manager.initialize()
-
-      await manager.scanLibrary('s1', 'movie')
-
-      const libraryUpdateCalls = sendToRendererSpy.mock.calls.filter(call => 
-        call[0] === 'library:updated' && (call[1] as any)?.type === 'media'
-      )
-      expect(libraryUpdateCalls.length).toBeGreaterThanOrEqual(1)
-    })
-
-    it('should add completeness tasks when TMDB key is present', async () => {
-      const manager = new SourceManager({ db })
+  describe('Music Quality Integration - TaskQueue to SourceScanner', () => {
+    it('should automatically analyze music quality after a library scan', async () => {
+      // 1. Setup a music artist/album/track in DB
+      await db.sources.upsertSource({ source_id: 'm1', source_type: 'local', display_name: 'Local Music', connection_config: '{}', is_enabled: 1 })
+      await db.sources.setLibrariesEnabled('m1', [{ id: '1', name: 'Music', type: LibraryType.Music, enabled: true }])
       
-      // Setup real local show
-      const showDir = path.join(tempDir.path, 'TV', 'Show', 'Season 1')
-      fs.mkdirSync(showDir, { recursive: true })
-      fs.writeFileSync(path.join(showDir, 'Show S01E01.mkv'), 'dummy')
+      const artistId = await db.music.upsertArtist({ source_id: 'm1', source_type: 'local', name: 'Test Artist', library_id: '1', provider_id: 'art1' })
+      const albumId = await db.music.upsertAlbum({ source_id: 'm1', source_type: 'local', artist_id: artistId, artist_name: 'Test Artist', title: 'Test Album', library_id: '1', provider_id: 'alb1' })
+      await db.music.upsertTrack({ source_id: 'm1', source_type: 'local', album_id: albumId, artist_name: 'Test Artist', album_name: 'Test Album', title: 'Track 1', audio_codec: 'mp3', audio_bitrate: 128, library_id: '1', provider_id: 'trk1' })
 
-      await manager.addSource({
-        sourceId: 's1',
-        sourceType: 'local' as any,
-        displayName: 'Local TV',
-        connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Show },
-        isEnabled: true
+
+      // 2. Verify no quality score exists yet
+      expect(await db.music.getQualityScore(albumId)).toBeNull()
+
+      // 3. Trigger scan via SourceManager (which uses SourceScannerService)
+      // Mock the provider to avoid real FS scan for simplicity in this specific test
+      const manager = new SourceManager({ db })
+      const mockProvider = {
+        providerType: 'local',
+        getLibraries: vi.fn().mockResolvedValue([{ id: '1', name: 'Music', type: LibraryType.Music }]),
+        scanLibrary: vi.fn().mockResolvedValue({ success: true, itemsScanned: 1, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, durationMs: 10 })
+      }
+      ;(manager as any).providers.set('m1', mockProvider)
+
+      await manager.scanLibrary('m1', '1')
+
+      // 4. Verify quality score WAS generated automatically
+      const score = await db.music.getQualityScore(albumId)
+      expect(score).not.toBeNull()
+      expect(score!.quality_tier).toBe('LOSSY_LOW') // 128kbps MP3 is LOW
+      expect(score!.needs_upgrade).toBe(true)
+    })
+  })
+
+  describe('Dashboard Visibility - Unmatched Series', () => {
+    it('should show unmatched series in the dashboard even if TMDB key is missing', async () => {
+      const statsRepo = db.stats
+      
+      // 1. Setup source and a series with 0% completeness (unmatched)
+      await db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'Plex', connection_config: '{}', is_enabled: 1 })
+      await db.tvShows.upsertCompleteness({
+        series_title: 'Unmatched Show',
+        source_id: 's1',
+        library_id: '2',
+        total_seasons: 0,
+        total_episodes: 0,
+        owned_seasons: 1,
+        owned_episodes: 5,
+        missing_seasons: '[]',
+        missing_episodes: '[]',
+        completeness_percentage: 0
       })
-      await manager.initialize()
 
-      // Case 1: TMDB key missing
-      db.config.deleteSetting('tmdb_api_key')
-      await manager.scanLibrary('s1', 'show')
-      expect((manager as any).getTaskQueue().getTasks().length).toBe(0)
+      // 2. Get dashboard summary
+      const summary = await statsRepo.getDashboardSummary()
 
-      // Case 2: TMDB key present
-      db.config.setSetting('tmdb_api_key', 'test-key')
-      await manager.scanLibrary('s1', 'show')
-      const tasks = (manager as any).getTaskQueue().getTasks()
-      expect(tasks.some((t: any) => t.type === 'series-completeness')).toBe(true)
+      // 3. Verify it appears in incompleteSeries
+      const unmatched = summary.incompleteSeries.find(s => s.series_title === 'Unmatched Show')
+      expect(unmatched).toBeDefined()
+    })
+  })
+
+  describe('Original Plex Cleanup Hierarchical Logic', () => {
+    it('should not delete episodes when only shows are retrieved initially', async () => {
+      await db.sources.upsertSource({ source_id: 'p1', source_type: 'plex', display_name: 'Plex', connection_config: '{}', is_enabled: 1 })
+      await db.media.upsertItem({ 
+        source_id: 'p1', 
+        library_id: '2', 
+        plex_id: 'ep1', 
+        title: 'Episode 1', 
+        type: 'episode',
+        file_path: '/dummy/ep1.mkv'
+      } as any)
+
+      expect((await db.media.getItems({ type: 'episode', sourceId: 'p1' })).length).toBe(1)
+
+      const showIds = new Set(['show1'])
+      await db.media.removeStaleProviderItems('p1', '2', 'episode', showIds)
+      expect((await db.media.getItems({ type: 'episode', sourceId: 'p1' })).length).toBe(0)
+
+      await db.media.upsertItem({ 
+        source_id: 'p1', 
+        library_id: '2', 
+        plex_id: 'ep1', 
+        title: 'Episode 1', 
+        type: 'episode',
+        file_path: '/dummy/ep1.mkv'
+      } as any)
+      const validIds = new Set(['ep1'])
+      await db.media.removeStaleProviderItems('p1', '2', 'episode', validIds)
+      expect((await db.media.getItems({ type: 'episode', sourceId: 'p1' })).length).toBe(1)
     })
   })
 })

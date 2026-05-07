@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { JellyfinItemMapper } from '../../src/main/providers/jellyfin-emby/JellyfinItemMapper'
-import { JellyfinApiClient } from '../../src/main/providers/jellyfin-emby/JellyfinApiClient'
-import { LibraryType } from '../../src/main/types/database'
+import { JellyfinItemMapper } from '@main/providers/jellyfin-emby/JellyfinItemMapper'
+import { JellyfinApiClient } from '@main/providers/jellyfin-emby/JellyfinApiClient'
+import { LibraryType } from '@main/types/database'
 
 describe('JellyfinItemMapper', () => {
   const client = new JellyfinApiClient({
@@ -67,3 +67,6 @@ describe('JellyfinItemMapper', () => {
     expect(mapper.mapLibraryType('unknown')).toBe(LibraryType.Unknown)
   })
 })
+
+
+

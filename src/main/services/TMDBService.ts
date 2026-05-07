@@ -12,11 +12,13 @@ import {
   TMDBGenre,
   TMDBGenreListResponse,
 } from '@main/types/tmdb'
-import { getDatabase } from '@main/database/getDatabase'
-import { getLoggingService } from './LoggingService'
-import { getGeminiService } from './GeminiService'
-import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
-import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getGeminiService } from '@main/services/GeminiService'
+import { RateLimiters, SlidingWindowRateLimiter } from '@main/services/utils/RateLimiter'
+import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
+
+import { APP_CONFIG } from '@main/config'
 
 /**
  * TMDB API v3 Service with rate limiting and caching
@@ -24,15 +26,12 @@ import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBacko
  * API Documentation: https://developer.themoviedb.org/reference/intro/getting-started
  */
 export class TMDBService {
-  private static get BASE_URL(): string {
-    const db = getDatabase()
-    return db.config.getSetting('tmdb_base_url') || 'https://api.themoviedb.org/3'
-  }
-  private static readonly IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
-  private static readonly CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-  private static readonly MAX_CONCURRENT = 10 // Max concurrent requests
-  private static readonly REQUEST_TIMEOUT = 30000 // 30 second timeout for API requests
-  private static readonly MAX_CACHE_SIZE = 1000 // Max cache entries to prevent unbounded memory growth
+  private baseURL: string = APP_CONFIG.tmdb.baseUrl
+  private static readonly IMAGE_BASE_URL = APP_CONFIG.tmdb.imageBaseUrl
+  private static readonly CACHE_DURATION = APP_CONFIG.tmdb.cacheDuration
+  private static readonly MAX_CONCURRENT = APP_CONFIG.tmdb.maxConcurrent
+  private static readonly REQUEST_TIMEOUT = APP_CONFIG.tmdb.requestTimeout
+  private static readonly MAX_CACHE_SIZE = APP_CONFIG.tmdb.maxCacheSize
 
   private apiKey: string | null = null
   private movieGenres: TMDBGenre[] | null = null
@@ -47,8 +46,8 @@ export class TMDBService {
    */
   async initialize(): Promise<void> {
     const db = getDatabase()
-    const setting = db.config.getSetting('tmdb_api_key')
-    this.apiKey = setting || null
+    this.apiKey = (await db.config.getSetting('tmdb_api_key')) || null
+    this.baseURL = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
 
     if (!this.apiKey || this.apiKey === '') {
       getLoggingService().warn('[TMDBService]', 'TMDB API key not configured. Collection detection will be unavailable.')
@@ -58,10 +57,22 @@ export class TMDBService {
   /**
    * Refresh API key from database (called when settings change)
    */
-  refreshApiKey(): void {
-    const db = getDatabase()
-    const setting = db.config.getSetting('tmdb_api_key')
-    this.apiKey = setting || null
+  async refreshApiKey(): Promise<void> {
+    await this.initialize()
+  }
+
+  /**
+   * Check if TMDB is configured with an API key
+   */
+  isConfigured(): boolean {
+    return !!this.apiKey && this.apiKey !== ''
+  }
+
+  /**
+   * Builds the full URL for an API request
+   */
+  private buildUrl(endpoint: string): string {
+    return `${this.baseURL}${endpoint}`
   }
 
   /**
@@ -197,7 +208,7 @@ export class TMDBService {
     await this.waitForRateLimit()
 
     // Build URL
-    const url = new URL(`${TMDBService.BASE_URL}${endpoint}`)
+    const url = new URL(this.buildUrl(endpoint))
     url.searchParams.append('api_key', apiKey)
     Object.entries(params).forEach(([key, value]) => {
       url.searchParams.append(key, value)

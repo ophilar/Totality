@@ -1,34 +1,22 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
-import { QualityAnalyzer } from '../../src/main/services/QualityAnalyzer'
-import { SeriesCompletenessService } from '../../src/main/services/SeriesCompletenessService'
-import { MediaRepository } from '../../src/main/database/repositories/MediaRepository'
-import { MusicRepository } from '../../src/main/database/repositories/MusicRepository'
-import * as fs from 'fs'
-import * as path from 'path'
+import { QualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('Service Deep Dive (No Mocks)', () => {
-  let db: DatabaseSync
-  const dbPath = path.join(__dirname, 'service-deep-dive.db')
+  let dbService: any
   let qualityAnalyzer: QualityAnalyzer
   let seriesService: SeriesCompletenessService
-  let mediaRepo: MediaRepository
 
-  beforeEach(() => {
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
-    db = new DatabaseSync(dbPath)
-    runMigrations(db as any)
-    
-    mediaRepo = new MediaRepository(db)
+  beforeEach(async () => {
+    dbService = await setupTestDb()
     qualityAnalyzer = new QualityAnalyzer()
     seriesService = new SeriesCompletenessService()
   })
 
   afterEach(() => {
-    db.close()
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
+    cleanupTestDb()
   })
 
   describe('QualityAnalyzer Logic', () => {
@@ -112,13 +100,17 @@ describe('Service Deep Dive (No Mocks)', () => {
   })
 
   describe('SeriesCompletenessService Logic', () => {
-    it('should calculate completeness for a simple show', () => {
-      db.prepare(`
-        INSERT INTO series_completeness (series_title, total_seasons, total_episodes, owned_seasons, owned_episodes, completeness_percentage, source_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run('Test Show', 2, 20, 1, 10, 50, 's1')
+    it('should calculate completeness for a simple show', async () => {
+      await dbService.db.execute({
+        sql: `INSERT INTO series_completeness (series_title, total_seasons, total_episodes, owned_seasons, owned_episodes, completeness_percentage, source_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        args: ['Test Show', 2, 20, 1, 10, 50, 's1']
+      })
       
-      const row = db.prepare("SELECT * FROM series_completeness WHERE series_title = 'Test Show'").get() as any
+      const row = (await dbService.db.execute({
+        sql: "SELECT * FROM series_completeness WHERE series_title = ?",
+        args: ['Test Show']
+      })).rows[0] as any
       expect(row.completeness_percentage).toBe(50)
     })
   })

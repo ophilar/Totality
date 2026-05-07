@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { ProviderType, MediaItemType, WishlistMediaType, WishlistReason, WishlistStatus, TaskType } from '@main/types/database'
 
 // ============================================================================
 // COMMON SCHEMAS
@@ -14,21 +15,12 @@ import { z } from 'zod'
 /**
  * Provider types supported by the application
  */
-export const ProviderTypeSchema = z.enum([
-  'plex',
-  'jellyfin',
-  'emby',
-  'kodi',
-  'kodi-local',
-  'kodi-mysql',
-  'local',
-  'mediamonkey'
-])
+export const ProviderTypeSchema = z.nativeEnum(ProviderType)
 
 /**
  * Media types
  */
-export const MediaTypeSchema = z.enum(['movie', 'episode'])
+export const MediaTypeSchema = z.nativeEnum(MediaItemType)
 
 /**
  * Quality tier
@@ -140,7 +132,7 @@ export const MusicFiltersSchema = z.object({
 /**
  * Wishlist item media types
  */
-export const WishlistMediaTypeSchema = z.enum(['movie', 'episode', 'season', 'album', 'track'])
+export const WishlistMediaTypeSchema = z.nativeEnum(WishlistMediaType)
 
 /**
  * Wishlist filter options
@@ -148,8 +140,8 @@ export const WishlistMediaTypeSchema = z.enum(['movie', 'episode', 'season', 'al
 export const WishlistFiltersSchema = z.object({
   media_type: WishlistMediaTypeSchema.optional(),
   priority: z.number().int().min(1).max(5).optional(),
-  reason: z.enum(['missing', 'upgrade']).optional(),
-  status: z.enum(['active', 'completed']).optional(),
+  reason: z.nativeEnum(WishlistReason).optional(),
+  status: z.nativeEnum(WishlistStatus).optional(),
   searchQuery: z.string().max(500).optional(),
   series_title: z.string().max(500).optional(),
   artist_name: z.string().max(500).optional(),
@@ -178,7 +170,7 @@ export const MonitoringConfigSchema = z.object({
  * Task definition for queue
  */
 export const TaskDefinitionSchema = z.object({
-  type: z.enum(['library-scan', 'source-scan', 'series-completeness', 'collection-completeness', 'music-completeness', 'music-scan']),
+  type: z.nativeEnum(TaskType),
   label: z.string().min(1).max(200),
   sourceId: z.string().optional(),
   libraryId: z.string().optional(),
@@ -428,7 +420,7 @@ export const WishlistItemSchema = z.object({
   title: z.string().min(1, 'Title is required').max(500).trim(),
   media_type: WishlistMediaTypeSchema,
   priority: z.number().int().min(1).max(5).optional().default(3),
-  reason: z.enum(['missing', 'upgrade']).optional(),
+  reason: z.nativeEnum(WishlistReason).optional(),
   notes: z.string().max(1000).trim().optional().nullable(),
   year: z.number().int().min(1800).max(2100).optional().nullable(),
   series_title: z.string().max(500).optional().nullable(),

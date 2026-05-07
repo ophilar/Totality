@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
-import { LibraryProvider, useLibrary } from '../../src/renderer/src/contexts/LibraryContext'
+import { LibraryProvider, useLibrary } from '@/contexts/LibraryContext'
 import React from 'react'
 
 function LibraryTabController() {
@@ -58,3 +58,6 @@ describe('Library UI Routing Integrity', () => {
     expect(screen.getByText('Current View: movies')).toBeTruthy()
   })
 })
+
+
+

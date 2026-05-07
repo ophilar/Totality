@@ -21,8 +21,8 @@ vi.mock('../../src/main/services/MediaNormalizer', () => ({
   normalizeContainer: vi.fn((c: string) => c),
 }))
 
-import { MediaConverter } from '../../src/main/services/MediaConverter'
-import type { MediaMetadata } from '../../src/main/providers/base/MediaProvider'
+import { MediaConverter } from '@main/services/MediaConverter'
+import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 
 function createMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
   return {
@@ -311,3 +311,6 @@ describe('MediaConverter.mergeUpdates', () => {
     expect(typeof merged.updated_at).toBe('string')
   })
 })
+
+
+

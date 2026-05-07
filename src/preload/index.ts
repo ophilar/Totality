@@ -1,52 +1,17 @@
 import { contextBridge } from 'electron'
 
 // Import modules
-import { appApi, AppAPI } from './api/app'
-import { sourcesApi, SourcesAPI } from './api/sources'
-import { mediaApi, MediaAPI } from './api/media'
-import { musicApi, MusicAPI } from './api/music'
-import { duplicatesApi, DuplicatesAPI } from './api/duplicates'
-import { wishlistApi, WishlistAPI } from './api/wishlist'
-import { monitoringApi, MonitoringAPI } from './api/monitoring'
-import { aiApi, AiAPI } from './api/ai'
-import { loggingApi, LoggingAPI } from './api/logging'
-import { notificationsApi, NotificationsAPI } from './api/notifications'
-import { transcodingAPI } from './api/transcoding'
-
-// Import types
-import {
-  LibraryType,
-  ConnectionTestResult,
-  MediaSourceResponse,
-  ServerInstanceResponse,
-  MediaLibraryResponse,
-  ScanResultResponse,
-  DiscoveredServerResponse
-} from './api/types'
-
-// Re-export for consumers of this module
-export { LibraryType }
-export type {
-  ConnectionTestResult,
-  MediaSourceResponse,
-  ServerInstanceResponse,
-  MediaLibraryResponse,
-  ScanResultResponse,
-  DiscoveredServerResponse
-}
-
-// Re-export specific APIs types
-export type {
-  AppAPI,
-  SourcesAPI,
-  MediaAPI,
-  MusicAPI,
-  WishlistAPI,
-  MonitoringAPI,
-  AiAPI,
-  LoggingAPI,
-  NotificationsAPI
-}
+import { appApi, AppAPI } from '@preload/api/app'
+import { sourcesApi, SourcesAPI } from '@preload/api/sources'
+import { mediaApi, MediaAPI } from '@preload/api/media'
+import { musicApi, MusicAPI } from '@preload/api/music'
+import { duplicatesApi, DuplicatesAPI } from '@preload/api/duplicates'
+import { wishlistApi, WishlistAPI } from '@preload/api/wishlist'
+import { monitoringApi, MonitoringAPI } from '@preload/api/monitoring'
+import { aiApi, AiAPI } from '@preload/api/ai'
+import { loggingApi, LoggingAPI } from '@preload/api/logging'
+import { notificationsApi, NotificationsAPI } from '@preload/api/notifications'
+import { transcodingAPI } from '@preload/api/transcoding'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object

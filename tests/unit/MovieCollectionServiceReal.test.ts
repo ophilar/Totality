@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { MovieCollectionService } from '../../src/main/services/MovieCollectionService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
-import { getTMDBService, resetTMDBServiceForTesting } from '../../src/main/services/TMDBService'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { MovieCollectionService } from '@main/services/MovieCollectionService'
+import { getTMDBService, resetTMDBServiceForTesting } from '@main/services/TMDBService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
+import path from 'node:path'
 
 describe('MovieCollectionService (No Mocks)', () => {
   let db: any
@@ -25,6 +26,7 @@ describe('MovieCollectionService (No Mocks)', () => {
       audio_codec: 'ac3',
       audio_channels: 6,
       audio_bitrate: 640,
+      plex_id: overrides.plex_id || `plex-${Math.random()}`,
       ...overrides
     }
   }
@@ -53,6 +55,10 @@ describe('MovieCollectionService (No Mocks)', () => {
          res.end(JSON.stringify({
            results: [{ id: 550, title: 'Fight Club', release_date: '1999-10-15' }]
          }))
+      } else if (req.url?.includes('/search/collection')) {
+         res.end(JSON.stringify({
+           results: [{ id: 10, name: 'Fight Club Collection' }]
+         }))
       } else {
         res.end(JSON.stringify({ results: [] }))
       }
@@ -74,18 +80,11 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   beforeEach(async () => {
-    resetBetterSQLiteServiceForTesting()
     resetTMDBServiceForTesting()
-
-    // Ensure we use in-memory DB for tests
-    process.env.TOTALITY_DB_PATH = ':memory:'
-    process.env.NODE_ENV = 'test'
-
-    db = getBetterSQLiteService()
-    await db.initialize()
+    db = await setupTestDb()
     
-    db.config.setSetting('tmdb_api_key', 'test-key')
-    db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
+    await db.config.setSetting('tmdb_api_key', 'test-key')
+    await db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
 
     tmdb = getTMDBService()
     await tmdb.initialize()
@@ -93,12 +92,16 @@ describe('MovieCollectionService (No Mocks)', () => {
     service = new MovieCollectionService()
   })
 
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
   it('should deduplicate movies by TMDB ID', async () => {
     // Insert duplicate movies from different sources
-    db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
-    db.sources.upsertSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
+    await db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+    await db.sources.upsertSource({ source_id: 's2', source_type: 'jellyfin', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
 
-    db.media.upsertItem(createMovie({
+    await db.media.upsertItem(createMovie({
       source_id: 's1',
       plex_id: 'p1',
       title: 'Fight Club',
@@ -106,27 +109,24 @@ describe('MovieCollectionService (No Mocks)', () => {
       video_bitrate: 5000
     }))
 
-    db.media.upsertItem(createMovie({
+    await db.media.upsertItem(createMovie({
       source_id: 's2',
       plex_id: 'p2',
       title: 'Fight Club',
       tmdb_id: '550',
-      video_bitrate: 8000,
-      audio_codec: 'dts',
-      audio_bitrate: 1500
+      video_bitrate: 8000 // Better version
     }))
 
-    // @ts-ignore - accessing private method for testing
     const deduplicated = await service.getMoviesDeduplicatedByTmdbId()
-    
+
     expect(deduplicated).toHaveLength(1)
     expect(deduplicated[0].video_bitrate).toBe(8000)
     expect(deduplicated[0].source_id).toBe('s2')
   })
 
   it('should analyze collections and find missing movies', async () => {
-     db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
-     db.media.upsertItem(createMovie({
+     await db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+     await db.media.upsertItem(createMovie({
       source_id: 's1',
       plex_id: 'p1',
       title: 'Fight Club',
@@ -135,7 +135,7 @@ describe('MovieCollectionService (No Mocks)', () => {
 
     await service.analyzeAllCollections()
 
-    const collections = service.getCollections()
+    const collections = await service.getCollections()
     expect(collections).toHaveLength(1)
     expect(collections[0].collection_name).toBe('Fight Club Collection')
     expect(collections[0].owned_movies).toBe(1)
@@ -147,19 +147,21 @@ describe('MovieCollectionService (No Mocks)', () => {
   })
 
   it('should lookup missing TMDB IDs for local sources', async () => {
-    db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
-    db.media.upsertItem(createMovie({
+    await db.sources.upsertSource({ source_id: 'local1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
+    await db.media.upsertItem(createMovie({
       source_id: 'local1',
       plex_id: 'local-file-1',
       title: 'Fight Club',
       year: 1999,
-      tmdb_id: null // Ensure it's null for lookup test
+      tmdb_id: null
     }))
 
-    // @ts-ignore
-    await service.getMoviesDeduplicatedByTmdbId()
+    await service.analyzeAllCollections('local1')
 
-    const item = db.media.getItemByProviderId('local-file-1', 'local1')
+    const item = await db.media.getItemByProviderId('local-file-1', 'local1')
     expect(item.tmdb_id).toBe('550')
   })
 })
+
+
+

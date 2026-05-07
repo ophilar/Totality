@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { KodiItemMapper } from '../../src/main/providers/kodi/KodiItemMapper'
-import { KodiRpcClient } from '../../src/main/providers/kodi/KodiRpcClient'
+import { KodiItemMapper } from '@main/providers/kodi/KodiItemMapper'
+import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
 
 describe('KodiItemMapper', () => {
   const client = new KodiRpcClient({
@@ -48,3 +48,6 @@ describe('KodiItemMapper', () => {
     expect(versions[0].video_codec).toBe('h264')
   })
 })
+
+
+

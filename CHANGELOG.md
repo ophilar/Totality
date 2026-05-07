@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.4.4](https://github.com/bbidwell85/totality/compare/v0.4.3...v0.4.4) (2026-05-07)
+
+### LibSQL & Drizzle Hardening
+
+* **Modernized Persistence:** Successfully migrated from raw SQLite to LibSQL with Drizzle ORM across all 15+ repositories.
+* **100% Test Stability:** Achieved a clean pass for 741/741 tests, resolving intermittent integration test timeouts and re-render loops in `usePaginatedData`.
+* **Sentinel Completeness:** Implemented the `-1` sentinel value for unmatched media items to clearly distinguish between "Incomplete" and "Not Evaluated" in the UI.
+* **Build Integrity:** Resolved all TypeScript and build configuration errors, ensuring reliable production artifact generation.
+
 ## [0.4.3](https://github.com/bbidwell85/totality/compare/v0.4.0...v0.4.3) (2026-04-11)
 
 ### Phase 5: Reliability & Optimization

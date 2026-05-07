@@ -1,232 +1,201 @@
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { DashboardSummary, MediaItem, MusicAlbum, MovieCollection, SeriesCompleteness, ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
+import { eq, and, sql, asc, desc, lt, countDistinct, exists, count, avg, sum } from 'drizzle-orm'
+import type { DashboardSummary, MovieCollection, SeriesCompleteness as _SeriesCompleteness, ArtistCompleteness as _ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
+
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
 
 export class StatsRepository {
-  constructor(private db: DatabaseSync) {}
+  constructor(
+    private drizzle: LibSQLDatabase<typeof schema>
+  ) {}
 
-  public getDashboardSummary(sourceId?: string): DashboardSummary {
-    const params: SQLInputValue[] = []
-    const sourceFilter = sourceId ? 'AND m.source_id = ?' : ''
-    if (sourceId) params.push(sourceId)
-
+  public async getDashboardSummary(sourceId?: string): Promise<DashboardSummary> {
     // 1. Settings
-    const settings = this.db.prepare("SELECT key, value FROM settings WHERE key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort')").all() as unknown as Array<{ key: string; value: string }>
-    const settingsMap = settings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>)
+    const settingsList = await this.drizzle.select({ key: schema.settings.key, value: schema.settings.value })
+      .from(schema.settings)
+      .where(sql`key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort')`)
+      .all()
+    
+    const settingsMap = settingsList.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>)
 
     const uSort = settingsMap['dashboard_upgrade_sort'] || 'quality'
-    
-    let upgradeOrderBy = 'q.tier_score ASC'
-    if (uSort === 'efficiency') {
-      upgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
-    } else if (uSort === 'recent') {
-      upgradeOrderBy = 'm.created_at DESC'
-    } else if (uSort === 'title') {
-      upgradeOrderBy = 'm.title ASC'
+    const cSort = settingsMap['dashboard_collection_sort'] || 'completeness'
+    const sSort = settingsMap['dashboard_series_sort'] || 'completeness'
+    const aSort = settingsMap['dashboard_artist_sort'] || 'completeness'
+
+    // Sort order helpers
+    const getUpgradeOrder = (item: any, q: any) => {
+      if (uSort === 'efficiency') return [asc(q.efficiencyScore), desc(q.storageDebtBytes)]
+      if (uSort === 'recent') return [desc(item.createdAt)]
+      if (uSort === 'title') return [asc(item.title)]
+      return [asc(q.tierScore)]
     }
 
-    const cSort = settingsMap['dashboard_collection_sort'] || 'completeness'
-    let collOrderBy = 'completeness_percentage DESC'
-    if (cSort === 'name') collOrderBy = 'collection_name ASC'
-    else if (cSort === 'recent') collOrderBy = 'created_at DESC'
+    const getCollectionOrder = () => {
+      if (cSort === 'name') return [asc(schema.movieCollections.collectionName)]
+      if (cSort === 'recent') return [desc(schema.movieCollections.createdAt)]
+      return [desc(schema.movieCollections.completenessPercentage)]
+    }
 
-    const sSort = settingsMap['dashboard_series_sort'] || 'completeness'
-    let seriesOrderBy = 'completeness_percentage DESC'
-    if (sSort === 'name') seriesOrderBy = 'series_title ASC'
-    else if (sSort === 'recent') seriesOrderBy = 'created_at DESC'
+    const getSeriesOrder = () => {
+      if (sSort === 'name') return [asc(schema.seriesCompleteness.seriesTitle)]
+      if (sSort === 'recent') return [desc(schema.seriesCompleteness.createdAt)]
+      return [desc(schema.seriesCompleteness.completenessPercentage)]
+    }
 
-    const aSort = settingsMap['dashboard_artist_sort'] || 'completeness'
-    let artistOrderBy = 'completeness_percentage DESC'
-    if (aSort === 'name') artistOrderBy = 'artist_name ASC'
+    const getArtistOrder = () => {
+      if (aSort === 'name') return [asc(schema.artistCompleteness.artistName)]
+      return [desc(schema.artistCompleteness.completenessPercentage)]
+    }
+
+    // Common conditions for library visibility
+    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
 
     // 2. Movie Upgrades
-    const movieUpgradesSql = `
-      SELECT m.*, q.tier_score, q.efficiency_score, q.storage_debt_bytes
-      FROM media_items m
-      JOIN quality_scores q ON m.id = q.media_item_id
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.type = 'movie' AND q.needs_upgrade = 1 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-      AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)
-      ORDER BY ${upgradeOrderBy}
-      LIMIT 100
-    `
-    const movieUpgrades = this.db.prepare(movieUpgradesSql).all(...params) as unknown as MediaItem[]
+    const movieUpgradesQuery = this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        eq(schema.mediaItems.type, 'movie'),
+        eq(schema.qualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...getUpgradeOrder(schema.mediaItems, schema.qualityScores))
+      .limit(100)
 
     // 3. TV Upgrades
-    const tvUpgradesSql = `
-      SELECT m.*, q.tier_score, q.efficiency_score, q.storage_debt_bytes
-      FROM media_items m
-      JOIN quality_scores q ON m.id = q.media_item_id
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.type = 'episode' AND q.needs_upgrade = 1
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-      AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)
-      ORDER BY ${upgradeOrderBy}
-      LIMIT 100
-    `
-    const tvUpgrades = this.db.prepare(tvUpgradesSql).all(...params) as unknown as MediaItem[]
+    const tvUpgradesQuery = this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        eq(schema.mediaItems.type, 'episode'),
+        eq(schema.qualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...getUpgradeOrder(schema.mediaItems, schema.qualityScores))
+      .limit(100)
 
     // 4. Music Upgrades
-    let musicUpgradeOrderBy = 'q.tier_score ASC'
-    
-    if (uSort === 'efficiency') {
-      musicUpgradeOrderBy = 'q.efficiency_score ASC, q.storage_debt_bytes DESC'
-    } else if (uSort === 'recent') {
-      musicUpgradeOrderBy = 'a.created_at DESC'
-    } else if (uSort === 'title') {
-      musicUpgradeOrderBy = 'a.title ASC'
-    }
+    const musicUpgradeOrderBy = uSort === 'efficiency' ? [asc(schema.musicQualityScores.efficiencyScore), desc(schema.musicQualityScores.storageDebtBytes)] :
+                          uSort === 'recent' ? [desc(schema.musicAlbums.createdAt)] :
+                          uSort === 'title' ? [asc(schema.musicAlbums.title)] : [asc(schema.musicQualityScores.tierScore)]
 
-    const musicUpgradesSql = `
-      SELECT a.*, q.tier_score, q.efficiency_score, q.storage_debt_bytes
-      FROM music_albums a
-      JOIN music_quality_scores q ON a.id = q.album_id
-      JOIN media_sources s ON a.source_id = s.source_id
-      LEFT JOIN library_scans ls ON a.source_id = ls.source_id AND a.library_id = ls.library_id
-      WHERE q.needs_upgrade = 1 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceId ? 'AND a.source_id = ?' : ''}
-      AND a.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)
-      ORDER BY ${musicUpgradeOrderBy}
-      LIMIT 100
-    `
-    const musicUpgrades = this.db.prepare(musicUpgradesSql).all(...(sourceId ? [sourceId] : [])) as unknown as MusicAlbum[]
+    const musicUpgradesQuery = this.drizzle.select({ album: schema.musicAlbums, q: schema.musicQualityScores })
+      .from(schema.musicAlbums)
+      .innerJoin(schema.musicQualityScores, eq(schema.musicAlbums.id, schema.musicQualityScores.albumId))
+      .where(and(
+        eq(schema.musicQualityScores.needsUpgrade, 1),
+        sourceEnabledSubquery(schema.musicAlbums.sourceId),
+        visibilitySubquery(schema.musicAlbums.sourceId, schema.musicAlbums.libraryId),
+        sourceId ? eq(schema.musicAlbums.sourceId, sourceId) : undefined,
+        sql`music_albums.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'media_upgrade' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(...musicUpgradeOrderBy)
+      .limit(100)
 
     // 5. Incomplete Collections
-    const collectionsSql = `
-      SELECT c.* FROM movie_collections c
-      JOIN media_sources s ON c.source_id = s.source_id
-      LEFT JOIN library_scans ls ON c.source_id = ls.source_id AND c.library_id = ls.library_id
-      WHERE c.completeness_percentage < 100 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceId ? 'AND c.source_id = ?' : ''}
-      ORDER BY ${collOrderBy}
-    `
-    const incompleteCollectionsRaw = this.db.prepare(collectionsSql).all(...(sourceId ? [sourceId] : [])) as unknown as MovieCollection[]
+    const collectionsQuery = this.drizzle.select().from(schema.movieCollections)
+      .where(and(
+        lt(schema.movieCollections.completenessPercentage, 100),
+        sourceEnabledSubquery(schema.movieCollections.sourceId),
+        visibilitySubquery(schema.movieCollections.sourceId, schema.movieCollections.libraryId),
+        sourceId ? eq(schema.movieCollections.sourceId, sourceId) : undefined
+      ))
+      .orderBy(...getCollectionOrder())
 
     // 6. Incomplete Series
-    const seriesSql = `
-      SELECT sc.* FROM series_completeness sc
-      JOIN media_sources s ON sc.source_id = s.source_id
-      LEFT JOIN library_scans ls ON sc.source_id = ls.source_id AND sc.library_id = ls.library_id
-      WHERE sc.completeness_percentage < 100 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceId ? 'AND sc.source_id = ?' : ''}
-      ORDER BY ${seriesOrderBy}
-    `
-    const incompleteSeriesRaw = this.db.prepare(seriesSql).all(...(sourceId ? [sourceId] : [])) as unknown as SeriesCompleteness[]
+    const seriesQuery = this.drizzle.select().from(schema.seriesCompleteness)
+      .where(and(
+        lt(schema.seriesCompleteness.completenessPercentage, 100),
+        sourceEnabledSubquery(schema.seriesCompleteness.sourceId),
+        visibilitySubquery(schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId),
+        sourceId ? eq(schema.seriesCompleteness.sourceId, sourceId) : undefined
+      ))
+      .orderBy(...getSeriesOrder())
 
     // 7. Incomplete Artists
-    const artistsSql = `
-      SELECT ac.* FROM artist_completeness ac
-      WHERE ac.completeness_percentage < 100
-      AND EXISTS (
-        SELECT 1 FROM music_artists ma
-        JOIN media_sources ms ON ma.source_id = ms.source_id
-        LEFT JOIN library_scans ls ON ma.source_id = ls.source_id AND ma.library_id = ls.library_id
-        WHERE ma.name = ac.artist_name 
-        AND ms.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      )
-      ORDER BY ${artistOrderBy}
-    `
-    const incompleteArtistsRaw = this.db.prepare(artistsSql).all() as unknown as ArtistCompleteness[]
+    const artistsQuery = this.drizzle.select().from(schema.artistCompleteness)
+      .where(and(
+        lt(schema.artistCompleteness.completenessPercentage, 100),
+        exists(
+          this.drizzle.select().from(schema.musicArtists)
+            .where(and(
+              eq(schema.musicArtists.name, schema.artistCompleteness.artistName),
+              sourceEnabledSubquery(schema.musicArtists.sourceId),
+              visibilitySubquery(schema.musicArtists.sourceId, schema.musicArtists.libraryId)
+            ))
+        )
+      ))
+      .orderBy(...getArtistOrder())
 
-    // Fetch Exclusions for filtering JSON arrays
-    const collEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'collection_movie'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
-    const serEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'series_episode'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
-    const artEx = this.db.prepare("SELECT reference_key, parent_key FROM exclusions WHERE exclusion_type = 'artist_album'").all() as unknown as Array<{ reference_key: string; parent_key: string }>
+    // Parallel execution
+    const [
+      movieUpgradesRows, tvUpgradesRows, musicUpgradesRows,
+      collectionsRows, seriesRows, artistsRows,
+      collEx, serEx, artEx
+    ] = await Promise.all([
+      movieUpgradesQuery.all(),
+      tvUpgradesQuery.all(),
+      musicUpgradesQuery.all(),
+      collectionsQuery.all(),
+      seriesQuery.all(),
+      artistsQuery.all(),
+      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'collection_movie')).all(),
+      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'series_episode')).all(),
+      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'artist_album')).all()
+    ])
+
+    // Mapper helper
+    const mapItem = (r: any) => ({ ...r.item, quality_tier: r.q.qualityTier, tier_quality: r.q.tierQuality, tier_score: r.q.tierScore, efficiency_score: r.q.efficiencyScore, storage_debt_bytes: r.q.storageDebtBytes })
 
     // Process Collections exclusions
     const incompleteCollections: MovieCollection[] = []
-    for (const c of incompleteCollectionsRaw) {
-      const missing = JSON.parse(c.missing_movies || '[]')
-      const filtered = missing.filter((m: any) => !collEx.some(ex => ex.reference_key === String(m.tmdb_id) && ex.parent_key === String(c.tmdb_collection_id)))
-      const owned = c.owned_movies || 0
+    for (const c of collectionsRows) {
+      const missing = JSON.parse(c.missingMovies || '[]')
+      const filtered = missing.filter((m: any) => !collEx.some(ex => ex.reference_key === String(m.tmdb_id) && ex.parent_key === String(c.tmdbCollectionId)))
+      const owned = c.ownedMovies || 0
       const total = owned + filtered.length
       const completeness = total > 0 ? (owned / total) * 100 : 100
       if (completeness < 100 && total > 1) {
-        incompleteCollections.push({
-          ...c,
-          missing_movies: JSON.stringify(filtered),
-          total_movies: total,
-          completeness_percentage: completeness
-        })
-      }
-    }
-
-    // Process Series exclusions
-    const incompleteSeries: SeriesCompleteness[] = []
-    for (const s of incompleteSeriesRaw) {
-      const missing = JSON.parse(s.missing_episodes || '[]')
-      const filtered = missing.filter((e: any) => {
-        const key = `S${e.season_number}E${e.episode_number}`
-        return !serEx.some(ex => ex.reference_key === key && ex.parent_key === (s.tmdb_id || s.series_title))
-      })
-      if (filtered.length > 0) {
-        incompleteSeries.push({
-          ...s,
-          missing_episodes: JSON.stringify(filtered)
-        })
-      }
-    }
-
-    // Process Artists exclusions
-    const includeEps = settingsMap['completeness_include_eps'] !== 'false'
-    const includeSingles = settingsMap['completeness_include_singles'] !== 'false'
-    const incompleteArtists: ArtistCompleteness[] = []
-
-    for (const a of incompleteArtistsRaw) {
-      const filterJson = (json: string) => {
-        const items = JSON.parse(json || '[]')
-        return items.filter((item: any) => !artEx.some(ex => ex.reference_key === item.musicbrainz_id && ex.parent_key === (a.musicbrainz_id || a.artist_name)))
-      }
-
-      const filteredAlbums = filterJson(a.missing_albums)
-      const filteredEps = filterJson(a.missing_eps)
-      const filteredSingles = filterJson(a.missing_singles)
-
-      const hasAlbums = filteredAlbums.length > 0
-      const hasEps = includeEps && filteredEps.length > 0
-      const hasSingles = includeSingles && filteredSingles.length > 0
-
-      if (hasAlbums || hasEps || hasSingles) {
-        incompleteArtists.push({
-          ...a,
-          missing_albums: JSON.stringify(filteredAlbums),
-          missing_eps: JSON.stringify(filteredEps),
-          missing_singles: JSON.stringify(filteredSingles)
-        })
+        incompleteCollections.push({ 
+          ...c, 
+          tmdb_collection_id: c.tmdbCollectionId, collection_name: c.collectionName, source_id: c.sourceId, library_id: c.libraryId,
+          total_movies: total, owned_movies: owned, missing_movies: JSON.stringify(filtered), 
+          completeness_percentage: completeness, poster_url: c.posterUrl || undefined, backdrop_url: c.backdropUrl || undefined
+        } as any)
       }
     }
 
     // 8. Storage Waste
-    const wasteSql = `
-      SELECT m.*, q.storage_debt_bytes
-      FROM media_items m
-      JOIN quality_scores q ON m.id = q.media_item_id
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE q.storage_debt_bytes > 1073741824
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-      AND m.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'cleanup_radar' AND reference_id IS NOT NULL)
-      ORDER BY q.storage_debt_bytes DESC
-      LIMIT 50
-    `
-    const storageWaste = this.db.prepare(wasteSql).all(...params) as unknown as MediaItem[]
+    const storageWasteRows = await this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+      .from(schema.mediaItems)
+      .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        sql`quality_scores.storage_debt_bytes > 1073741824`,
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined,
+        sql`media_items.id NOT IN (SELECT reference_id FROM exclusions WHERE exclusion_type = 'cleanup_radar' AND reference_id IS NOT NULL)`
+      ))
+      .orderBy(desc(schema.qualityScores.storageDebtBytes))
+      .limit(50)
+      .all()
 
     return {
-      movieUpgrades,
-      tvUpgrades,
-      musicUpgrades,
+      movieUpgrades: movieUpgradesRows.map(mapItem) as any,
+      tvUpgrades: tvUpgradesRows.map(mapItem) as any,
+      musicUpgrades: musicUpgradesRows.map(r => ({ ...r.album, quality_tier: r.q.qualityTier, tier_quality: r.q.tierQuality, tier_score: r.q.tierScore, efficiency_score: r.q.efficiencyScore, storage_debt_bytes: r.q.storageDebtBytes })) as any,
       incompleteCollections,
-      incompleteSeries,
-      incompleteArtists,
-      storageWaste,
+      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => ({ ...s, series_title: s.seriesTitle, source_id: s.sourceId, library_id: s.libraryId, total_seasons: s.totalSeasons, total_episodes: s.totalEpisodes, owned_seasons: s.ownedSeasons, owned_episodes: s.ownedEpisodes, missing_seasons: s.missingSeasons, missing_episodes: s.missingEpisodes, completeness_percentage: s.completenessPercentage, tmdb_id: s.tmdbId || undefined, poster_url: s.posterUrl || undefined })) as any,
+      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => ({ ...a, artist_name: a.artistName, musicbrainz_id: a.musicbrainzId || undefined, completeness_percentage: a.completenessPercentage })) as any,
+      storageWaste: storageWasteRows.map(mapItem) as any,
       settings: {
         includeEps: settingsMap['completeness_include_eps'] !== 'false',
         includeSingles: settingsMap['completeness_include_singles'] !== 'false',
@@ -238,207 +207,154 @@ export class StatsRepository {
     }
   }
 
-  public getAggregatedSourceStats(): {
-    totalSources: number
-    enabledSources: number
-    totalItems: number
-    bySource: Array<{
-      sourceId: string
-      displayName: string
-      sourceType: string
-      itemCount: number
-      lastScanAt?: string
-    }>
-  } {
-    const sources = this.getSourceStats()
-    const allSources = this.db.prepare('SELECT is_enabled FROM media_sources').all() as unknown as Array<{ is_enabled: number }>
-
-    return {
-      totalSources: allSources.length,
-      enabledSources: allSources.filter((s) => s.is_enabled === 1).length,
-      totalItems: sources.reduce((acc, s) => acc + s.itemCount, 0),
-      bySource: sources
-    }
-  }
-
-  public getLibraryStats(sourceId?: string): {
-    totalItems: number
-    totalMovies: number
-    totalEpisodes: number
-    totalShows: number
-    lowQualityCount: number
-    needsUpgradeCount: number
-    averageQualityScore: number
-    movieNeedsUpgradeCount: number
-    movieAverageQualityScore: number
-    tvNeedsUpgradeCount: number
-    tvAverageQualityScore: number
-  } {
-    const params: SQLInputValue[] = []
-    const sourceFilter = sourceId ? 'AND m.source_id = ?' : ''
-    if (sourceId) params.push(sourceId)
-
-    const totalItemsRow = this.db.prepare(`
-      SELECT COUNT(*) as count FROM media_items m
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-    `).get(...params) as unknown as { count: number } | undefined
-    
-    const totalMoviesRow = this.db.prepare(`
-      SELECT COUNT(*) as count FROM media_items m
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.type = 'movie' 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-    `).get(...params) as unknown as { count: number } | undefined
-    
-    const totalEpisodesRow = this.db.prepare(`
-      SELECT COUNT(*) as count FROM media_items m
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.type = 'episode' 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-    `).get(...params) as unknown as { count: number } | undefined
-    
-    const totalShowsRow = this.db.prepare(`
-      SELECT COUNT(DISTINCT series_title) as count FROM media_items m
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.type = 'episode' 
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-    `).get(...params) as unknown as { count: number } | undefined
-
-    const qualityStatsRow = this.db.prepare(`
-      SELECT 
-        COUNT(CASE WHEN q.is_low_quality = 1 THEN 1 END) as lowQualityCount,
-        COUNT(CASE WHEN q.needs_upgrade = 1 THEN 1 END) as needsUpgradeCount,
-        AVG(q.overall_score) as averageQualityScore,
-        COUNT(CASE WHEN m.type = 'movie' AND q.needs_upgrade = 1 THEN 1 END) as movieNeedsUpgradeCount,
-        AVG(CASE WHEN m.type = 'movie' THEN q.overall_score END) as movieAverageQualityScore,
-        COUNT(CASE WHEN m.type = 'episode' AND q.needs_upgrade = 1 THEN 1 END) as tvNeedsUpgradeCount,
-        AVG(CASE WHEN m.type = 'episode' THEN q.overall_score END) as tvAverageQualityScore
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      ${sourceFilter}
-    `).get(...params) as unknown as {
-      lowQualityCount: number
-      needsUpgradeCount: number
-      averageQualityScore: number
-      movieNeedsUpgradeCount: number
-      movieAverageQualityScore: number
-      tvNeedsUpgradeCount: number
-      tvAverageQualityScore: number
-    } | undefined
-
-    return {
-      totalItems: totalItemsRow?.count || 0,
-      totalMovies: totalMoviesRow?.count || 0,
-      totalEpisodes: totalEpisodesRow?.count || 0,
-      totalShows: totalShowsRow?.count || 0,
-      lowQualityCount: qualityStatsRow?.lowQualityCount || 0,
-      needsUpgradeCount: qualityStatsRow?.needsUpgradeCount || 0,
-      averageQualityScore: Math.round(qualityStatsRow?.averageQualityScore || 0),
-      movieNeedsUpgradeCount: qualityStatsRow?.movieNeedsUpgradeCount || 0,
-      movieAverageQualityScore: Math.round(qualityStatsRow?.movieAverageQualityScore || 0),
-      tvNeedsUpgradeCount: qualityStatsRow?.tvNeedsUpgradeCount || 0,
-      tvAverageQualityScore: Math.round(qualityStatsRow?.tvAverageQualityScore || 0),
-    }
-  }
-
-  getItemsCountBySource(sourceId: string): number {
-    const row = this.db.prepare(`
-      SELECT COUNT(*) as count FROM media_items m
-      JOIN media_sources s ON m.source_id = s.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE m.source_id = ?
-      AND s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-    `).get(sourceId) as unknown as { count: number } | undefined
-    return row?.count || 0
-  }
-
-  getSourceStats(): Array<{
-    sourceId: string
-    displayName: string
-    sourceType: string
-    itemCount: number
-    lastScanAt?: string
+  public async getLibraryStats(sourceId?: string): Promise<{
+    totalItems: number; totalMovies: number; totalEpisodes: number; totalShows: number;
+    lowQualityCount: number; needsUpgradeCount: number; averageQualityScore: number;
+    movieNeedsUpgradeCount: number; movieAverageQualityScore: number;
+    tvNeedsUpgradeCount: number; tvAverageQualityScore: number;
   }> {
-    const rows = this.db.prepare(`
-      SELECT s.source_id, s.display_name, s.source_type, s.last_scan_at, COUNT(m.id) as item_count
-      FROM media_sources s
-      LEFT JOIN media_items m ON s.source_id = m.source_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE s.is_enabled = 1 AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-      GROUP BY s.source_id
-    `).all() as unknown as any[]
+    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
 
-    return rows.map(row => ({
-      sourceId: row.source_id,
-      displayName: row.display_name,
-      sourceType: row.source_type,
-      itemCount: row.item_count || 0,
-      lastScanAt: row.last_scan_at || undefined,
+    const baseQuery = this.drizzle.select()
+      .from(schema.mediaItems)
+      .where(and(
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined
+      ))
+
+    const [totalItems, totalMovies, totalEpisodes, totalShows, qualityStats] = await Promise.all([
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).get(),
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).where(eq(sql`type`, 'movie')).get(),
+      this.drizzle.select({ count: count() }).from(baseQuery.as('b')).where(eq(sql`type`, 'episode')).get(),
+      this.drizzle.select({ count: countDistinct(schema.mediaItems.seriesTitle) }).from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'episode'), sourceEnabledSubquery(schema.mediaItems.sourceId), visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId), sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined)).get(),
+      this.drizzle.select({
+        lowQualityCount: sql<number>`count(CASE WHEN ${schema.qualityScores.isLowQuality} = 1 THEN 1 END)`,
+        needsUpgradeCount: sql<number>`count(CASE WHEN ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        averageQualityScore: avg(schema.qualityScores.overallScore),
+        movieNeedsUpgradeCount: sql<number>`count(CASE WHEN ${schema.mediaItems.type} = 'movie' AND ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        movieAverageQualityScore: sql<number>`avg(CASE WHEN ${schema.mediaItems.type} = 'movie' THEN ${schema.qualityScores.overallScore} END)`,
+        tvNeedsUpgradeCount: sql<number>`count(CASE WHEN ${schema.mediaItems.type} = 'episode' AND ${schema.qualityScores.needsUpgrade} = 1 THEN 1 END)`,
+        tvAverageQualityScore: sql<number>`avg(CASE WHEN ${schema.mediaItems.type} = 'episode' THEN ${schema.qualityScores.overallScore} END)`
+      })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(and(
+        sourceEnabledSubquery(schema.mediaItems.sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sourceId ? eq(schema.mediaItems.sourceId, sourceId) : undefined
+      ))
+      .get()
+    ])
+
+    return {
+      totalItems: totalItems?.count || 0,
+      totalMovies: totalMovies?.count || 0,
+      totalEpisodes: totalEpisodes?.count || 0,
+      totalShows: totalShows?.count || 0,
+      lowQualityCount: qualityStats?.lowQualityCount || 0,
+      needsUpgradeCount: qualityStats?.needsUpgradeCount || 0,
+      averageQualityScore: Math.round(Number(qualityStats?.averageQualityScore || 0)),
+      movieNeedsUpgradeCount: qualityStats?.movieNeedsUpgradeCount || 0,
+      movieAverageQualityScore: Math.round(Number(qualityStats?.movieAverageQualityScore || 0)),
+      tvNeedsUpgradeCount: qualityStats?.tvNeedsUpgradeCount || 0,
+      tvAverageQualityScore: Math.round(Number(qualityStats?.tvAverageQualityScore || 0)),
+    }
+  }
+
+  public async getItemsCountBySource(sourceId: string): Promise<number> {
+    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    
+    const res = await this.drizzle.select({ count: count() })
+      .from(schema.mediaItems)
+      .where(and(
+        eq(schema.mediaItems.sourceId, sourceId),
+        visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId),
+        sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = media_items.source_id) = 1`
+      ))
+      .get()
+    return res?.count || 0
+  }
+
+  public async getSourceStats(): Promise<Array<{ sourceId: string, displayName: string, sourceType: string, itemCount: number, lastScanAt?: string }>> {
+    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+
+    const rows = await this.drizzle.select({
+      sourceId: schema.mediaSources.sourceId,
+      displayName: schema.mediaSources.displayName,
+      sourceType: schema.mediaSources.sourceType,
+      lastScanAt: schema.mediaSources.lastScanAt,
+      itemCount: count(schema.mediaItems.id)
+    })
+    .from(schema.mediaSources)
+    .leftJoin(schema.mediaItems, and(
+      eq(schema.mediaSources.sourceId, schema.mediaItems.sourceId),
+      visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+    ))
+    .where(eq(schema.mediaSources.isEnabled, 1))
+    .groupBy(schema.mediaSources.sourceId)
+    .all()
+
+    return rows.map(r => ({
+      ...r,
+      itemCount: r.itemCount || 0,
+      lastScanAt: r.lastScanAt || undefined
     }))
   }
 
-  public getMusicCompletenessStats(sourceId?: string): MusicCompletenessStats {
-    let sqlTotal = 'SELECT COUNT(*) as count FROM artist_completeness'
-    let sqlAnalyzed = 'SELECT COUNT(*) as count FROM artist_completeness WHERE last_sync_at IS NOT NULL'
-    let sqlComplete = 'SELECT COUNT(*) as count FROM artist_completeness WHERE completeness_percentage >= 100'
-    let sqlIncomplete = 'SELECT COUNT(*) as count FROM artist_completeness WHERE completeness_percentage < 100'
-    let sqlMissing = 'SELECT SUM(total_missing) as total FROM (SELECT (JSON_ARRAY_LENGTH(COALESCE(missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_singles, "[]"))) as total_missing FROM artist_completeness)'
-    let sqlAvg = 'SELECT AVG(completeness_percentage) as avg FROM artist_completeness'
-
+  public async getMusicCompletenessStats(sourceId?: string): Promise<MusicCompletenessStats> {
+    const conditions = []
     if (sourceId) {
-      const join = ' INNER JOIN music_artists ma ON artist_completeness.artist_name = ma.name AND ma.source_id = ?'
-      sqlTotal += join
-      sqlAnalyzed += join
-      sqlComplete += join
-      sqlIncomplete += join
-      sqlMissing = `
-        SELECT SUM(JSON_ARRAY_LENGTH(COALESCE(ac.missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(ac.missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(ac.missing_singles, "[]"))) as total
-        FROM artist_completeness ac
-        INNER JOIN music_artists ma ON ac.artist_name = ma.name AND ma.source_id = ?
-      `
-      sqlAvg += join
+      conditions.push(exists(
+        this.drizzle.select().from(schema.musicArtists)
+          .where(and(
+            eq(schema.musicArtists.name, schema.artistCompleteness.artistName),
+            eq(schema.musicArtists.sourceId, sourceId)
+          ))
+      ))
     }
 
-    const params = sourceId ? [sourceId] : []
-    const total = (this.db.prepare(sqlTotal).get(...params) as unknown as { count: number } | undefined)?.count || 0
-    const analyzed = (this.db.prepare(sqlAnalyzed).get(...params) as unknown as { count: number } | undefined)?.count || 0
-    const complete = (this.db.prepare(sqlComplete).get(...params) as unknown as { count: number } | undefined)?.count || 0
-    const incomplete = (this.db.prepare(sqlIncomplete).get(...params) as unknown as { count: number } | undefined)?.count || 0
-    const missing = (this.db.prepare(sqlMissing).get(...params) as unknown as { total: number } | undefined)?.total || 0
-    const avg = (this.db.prepare(sqlAvg).get(...params) as unknown as { avg: number } | undefined)?.avg || 0
+    const [stats, missingRes] = await Promise.all([
+      this.drizzle.select({
+        total: count(),
+        analyzed: sql<number>`count(CASE WHEN last_sync_at IS NOT NULL THEN 1 END)`,
+        complete: sql<number>`count(CASE WHEN completeness_percentage >= 100 THEN 1 END)`,
+        incomplete: sql<number>`count(CASE WHEN completeness_percentage < 100 THEN 1 END)`,
+        average: avg(schema.artistCompleteness.completenessPercentage)
+      })
+      .from(schema.artistCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .get(),
+      this.drizzle.select({
+        total: sum(sql`JSON_ARRAY_LENGTH(COALESCE(missing_albums, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_eps, "[]")) + JSON_ARRAY_LENGTH(COALESCE(missing_singles, "[]"))`)
+      })
+      .from(schema.artistCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .get()
+    ])
 
     return {
-      totalArtists: total,
-      analyzedArtists: analyzed,
-      completeArtists: complete,
-      incompleteArtists: incomplete,
-      totalMissingAlbums: missing,
-      averageCompleteness: Math.round(avg)
+      totalArtists: stats?.total || 0,
+      analyzedArtists: stats?.analyzed || 0,
+      completeArtists: stats?.complete || 0,
+      incompleteArtists: stats?.incomplete || 0,
+      totalMissingAlbums: Number(missingRes?.total || 0),
+      averageCompleteness: Math.round(Number(stats?.average || 0))
     }
   }
 
-  public getMusicQualityDistribution(): Record<string, number> {
-    const rows = this.db.prepare('SELECT quality_tier, COUNT(*) as count FROM music_quality_scores GROUP BY quality_tier').all() as unknown as Array<{ quality_tier: string; count: number }>
-    const distribution: Record<string, number> = {
-      HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0
-    }
-    for (const row of rows) {
-      if (row.quality_tier in distribution) {
-        distribution[row.quality_tier] = row.count
-      }
-    }
+  public async getMusicQualityDistribution(): Promise<Record<string, number>> {
+    const rows = await this.drizzle.select({
+      qualityTier: schema.musicQualityScores.qualityTier,
+      count: count()
+    })
+    .from(schema.musicQualityScores)
+    .groupBy(schema.musicQualityScores.qualityTier)
+    .all()
+
+    const distribution: Record<string, number> = { HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0 }
+    rows.forEach(r => { if (r.qualityTier in distribution) distribution[r.qualityTier] = r.count })
     return distribution
   }
 }

@@ -1,13 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ipcMain } from 'electron'
-import { registerTranscodingHandlers } from '../../src/main/ipc/transcoding'
-import { getTranscodingService } from '../../src/main/services/TranscodingService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { getTranscodingService } from '@main/services/TranscodingService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 // Mock electron
 vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn(),
+  },
+  app: {
+    getPath: vi.fn().mockReturnValue('./tests/tmp'),
+    isReady: vi.fn().mockReturnValue(true),
+    whenReady: vi.fn().mockResolvedValue(undefined),
   },
 }))
 
@@ -38,10 +43,7 @@ describe('Transcoding IPC Handlers', () => {
     vi.resetAllMocks()
     handlers.clear()
     
-    resetBetterSQLiteServiceForTesting()
-    process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
+    db = await setupTestDb()
 
     // Capture registered handlers
     vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
@@ -50,6 +52,10 @@ describe('Transcoding IPC Handlers', () => {
     })
 
     registerTranscodingHandlers()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   it('registers all expected transcoding handlers', () => {
@@ -102,3 +108,6 @@ describe('Transcoding IPC Handlers', () => {
     })
   })
 })
+
+
+

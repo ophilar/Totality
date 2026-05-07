@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { QualityBadges } from '../../src/renderer/src/components/library/QualityBadges'
+import { QualityBadges } from '@/components/library/QualityBadges'
 import React from 'react'
 
 describe('QualityBadges Component', () => {
@@ -57,3 +57,6 @@ describe('QualityBadges Component', () => {
     expect(container.firstChild).toBeNull()
   })
 })
+
+
+

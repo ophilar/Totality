@@ -27,7 +27,7 @@ import {
 import type {
   MediaMetadata,
 } from '@main/providers/base/MediaProvider'
-import { LibraryType } from '@main/types/database'
+import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
 import type {
   MediaItem,
   MediaItemVersion,
@@ -42,13 +42,13 @@ import type {
   JellyfinMusicArtist,
   JellyfinMusicAlbum,
   JellyfinMusicTrack,
-} from './JellyfinEmbyBase'
-import { JellyfinApiClient } from './JellyfinApiClient'
+} from '@main/providers/jellyfin-emby/JellyfinEmbyBase'
+import { JellyfinApiClient } from '@main/providers/jellyfin-emby/JellyfinApiClient'
 
 export class JellyfinItemMapper {
   constructor(
     private sourceId: string,
-    private providerType: 'jellyfin' | 'emby',
+    private providerType: ProviderType,
     private client: JellyfinApiClient
   ) {}
 
@@ -111,7 +111,7 @@ export class JellyfinItemMapper {
       itemId: item.Id,
       title: item.Name,
       sortTitle: item.SortName,
-      type: isEpisode ? 'episode' : 'movie',
+      type: isEpisode ? MediaItemType.Episode : MediaItemType.Movie,
       year: item.ProductionYear,
       seriesTitle: item.SeriesName,
       seasonNumber: item.ParentIndexNumber,
@@ -387,7 +387,7 @@ export class JellyfinItemMapper {
         title: item.Name,
         sort_title: isEpisode ? (item._seriesSortName || undefined) : (item.SortName || undefined),
         year: item.ProductionYear,
-        type: isEpisode ? 'episode' : 'movie',
+        type: isEpisode ? MediaItemType.Episode : MediaItemType.Movie,
         series_title: item.SeriesName,
         season_number: item.ParentIndexNumber,
         episode_number: item.IndexNumber,

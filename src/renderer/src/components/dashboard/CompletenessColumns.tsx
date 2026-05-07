@@ -1,34 +1,25 @@
-import React from 'react'
 import { Film, Tv, Music } from 'lucide-react'
 import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
 import { CollectionRow, SeriesRow, ArtistRow } from '@/components/dashboard/CompletenessRows'
-import * as ReactWindow from 'react-window'
+import { Virtuoso } from 'react-virtuoso'
 import type { MissingMovie, MissingEpisode, MissingAlbumItem } from '@/components/dashboard/types'
 import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
-// @ts-expect-error react-window types
-import type { VariableSizeList } from 'react-window'
-
-const List = (ReactWindow as any).VariableSizeList
 
 interface CollectionColumnProps {
   collections: MovieCollectionData[]
   sortBy: string
   setSortBy: (sort: string) => void
-  listHeight: number
-  itemSize: (index: number) => number
-  listRef: React.RefObject<VariableSizeList | null>
   expandedCollections: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, movie: MissingMovie) => void
 }
 
 export function CollectionsColumn({
-  collections, sortBy, setSortBy, listHeight, itemSize, listRef, expandedCollections, toggleExpand, onDismiss
+  collections, sortBy, setSortBy, expandedCollections, toggleExpand, onDismiss
 }: CollectionColumnProps) {
-  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const row = (index: number) => (
     <CollectionRow
       index={index}
-      style={style}
       collection={collections[index]}
       isExpanded={expandedCollections.has(index)}
       onToggleExpand={toggleExpand}
@@ -45,7 +36,7 @@ export function CollectionsColumn({
   return (
     <DashboardColumn icon={<Film className="w-4 h-4" />} title="Collections" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {collections.length > 0 && <List ref={listRef} height={listHeight} itemCount={collections.length} itemSize={itemSize} width="100%">{row}</List>}
+        {collections.length > 0 && <Virtuoso className="h-full" totalCount={collections.length} itemContent={row} />}
       </div>
     </DashboardColumn>
   )
@@ -55,21 +46,17 @@ interface SeriesColumnProps {
   series: SeriesCompletenessData[]
   sortBy: string
   setSortBy: (sort: string) => void
-  listHeight: number
-  itemSize: (index: number) => number
-  listRef: React.RefObject<VariableSizeList | null>
   expandedSeries: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, episode: MissingEpisode) => void
 }
 
 export function SeriesColumn({
-  series, sortBy, setSortBy, listHeight, itemSize, listRef, expandedSeries, toggleExpand, onDismiss
+  series, sortBy, setSortBy, expandedSeries, toggleExpand, onDismiss
 }: SeriesColumnProps) {
-  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const row = (index: number) => (
     <SeriesRow
       index={index}
-      style={style}
       s={series[index]}
       isExpanded={expandedSeries.has(index)}
       onToggleExpand={toggleExpand}
@@ -86,7 +73,7 @@ export function SeriesColumn({
   return (
     <DashboardColumn icon={<Tv className="w-4 h-4" />} title="TV Series" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {series.length > 0 && <List ref={listRef} height={listHeight} itemCount={series.length} itemSize={itemSize} width="100%">{row}</List>}
+        {series.length > 0 && <Virtuoso className="h-full" totalCount={series.length} itemContent={row} />}
       </div>
     </DashboardColumn>
   )
@@ -96,9 +83,6 @@ interface ArtistColumnProps {
   artists: ArtistCompletenessData[]
   sortBy: string
   setSortBy: (sort: string) => void
-  listHeight: number
-  itemSize: (index: number) => number
-  listRef: React.RefObject<VariableSizeList | null>
   expandedArtists: Set<number>
   toggleExpand: (index: number) => void
   onDismiss: (index: number, album: MissingAlbumItem) => void
@@ -107,12 +91,11 @@ interface ArtistColumnProps {
 }
 
 export function ArtistColumn({
-  artists, sortBy, setSortBy, listHeight, itemSize, listRef, expandedArtists, toggleExpand, onDismiss, includeEps, includeSingles
+  artists, sortBy, setSortBy, expandedArtists, toggleExpand, onDismiss, includeEps, includeSingles
 }: ArtistColumnProps) {
-  const row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const row = (index: number) => (
     <ArtistRow
       index={index}
-      style={style}
       artist={artists[index]}
       isExpanded={expandedArtists.has(index)}
       includeEps={includeEps}
@@ -131,7 +114,7 @@ export function ArtistColumn({
   return (
     <DashboardColumn icon={<Music className="w-4 h-4" />} title="Music" headerExtra={headerExtra}>
       <div className="absolute inset-0">
-        {artists.length > 0 && <List ref={listRef} height={listHeight} itemCount={artists.length} itemSize={itemSize} width="100%">{row}</List>}
+        {artists.length > 0 && <Virtuoso className="h-full" totalCount={artists.length} itemContent={row} />}
       </div>
     </DashboardColumn>
   )

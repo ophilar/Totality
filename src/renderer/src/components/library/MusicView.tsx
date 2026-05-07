@@ -1,14 +1,14 @@
 import { useMemo, useCallback } from 'react'
-import { MediaGridView } from './MediaGridView'
+import { MediaGridView } from '@/components/library/MediaGridView'
 import { Music, Disc3, User, RefreshCw } from 'lucide-react'
-import { SlimDownBanner } from './SlimDownBanner'
-import { ArtistCard } from './music/ArtistCard'
-import { AlbumCard } from './music/AlbumCard'
-import { TrackListItem } from './music/TrackListItem'
-import { ArtistListItem } from './music/ArtistListItem'
-import { AlbumListItem } from './music/AlbumListItem'
-import { MusicAlbumDetails } from './music/MusicAlbumDetails'
-import { MusicArtistDetails } from './music/MusicArtistDetails'
+import { SlimDownBanner } from '@/components/library/SlimDownBanner'
+import { ArtistCard } from '@/components/library/music/ArtistCard'
+import { AlbumCard } from '@/components/library/music/AlbumCard'
+import { TrackListItem } from '@/components/library/music/TrackListItem'
+import { ArtistListItem } from '@/components/library/music/ArtistListItem'
+import { AlbumListItem } from '@/components/library/music/AlbumListItem'
+import { MusicAlbumDetails } from '@/components/library/music/MusicAlbumDetails'
+import { MusicArtistDetails } from '@/components/library/music/MusicArtistDetails'
 import { useSources } from '@/contexts/SourceContext'
 import type {
   MusicArtist,
@@ -18,7 +18,7 @@ import type {
   MissingAlbum,
   ArtistCompletenessData,
   AlbumCompletenessData
-} from './types'
+} from '@/components/library/types'
 
 export function MusicView({
   artists,
@@ -49,7 +49,6 @@ export function MusicView({
   onRescanTrack,
   includeEps,
   includeSingles,
-  scrollElement,
   onDismissMissingAlbum,
   sortBy,
   onSortChange,
@@ -57,6 +56,7 @@ export function MusicView({
   tracks,
   allTracks,
   tracksLoading,
+  albumTracksLoading,
   onLoadMoreTracks,
   onArtistCompletenessUpdated,
   searchQuery,
@@ -71,6 +71,7 @@ export function MusicView({
   allTracks: MusicTrack[]
   totalTrackCount: number
   tracksLoading: boolean
+  albumTracksLoading?: boolean
   onLoadMoreTracks: () => void
   totalAlbumCount: number
   albumsLoading: boolean
@@ -104,7 +105,6 @@ export function MusicView({
   onRescanTrack?: (track: MusicTrack) => Promise<void>
   includeEps: boolean
   includeSingles: boolean
-  scrollElement?: HTMLElement | null
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
   sortBy: 'title' | 'efficiency' | 'waste' | 'size'
   onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
@@ -156,8 +156,16 @@ export function MusicView({
     })
   }, [allTracks, qualityFilter])
 
-  if (selectedAlbum) return <MusicAlbumDetails selectedAlbum={selectedAlbum} selectedArtist={selectedArtist} albumCompleteness={albumCompleteness} tracks={tracks} onBack={onBack} onAnalyzeAlbum={handleAnalyzeAlbum} onRescanTrack={onRescanTrack} />
-  if (selectedArtist) return <MusicArtistDetails selectedArtist={selectedArtist} filteredAlbums={filteredAlbums} viewType={viewType} showSourceBadge={showSourceBadge} allAlbumCompleteness={allAlbumCompleteness} onSelectAlbum={onSelectAlbum} onAnalyzeAlbum={handleAnalyzeAlbum} onFixAlbumMatch={onFixAlbumMatch} artistCompleteness={artistCompleteness} onAnalyzeArtist={handleAnalyzeArtist} onFixArtistMatch={onFixArtistMatch} onBack={onBack} posterMinWidth={posterMinWidth} scrollElement={scrollElement} includeEps={includeEps} includeSingles={includeSingles} onDismissMissingAlbum={onDismissMissingAlbum} />
+  if (selectedAlbum) return (
+    <div className="h-full overflow-y-auto">
+      <MusicAlbumDetails selectedAlbum={selectedAlbum} selectedArtist={selectedArtist} albumCompleteness={albumCompleteness} tracks={tracks} tracksLoading={!!albumTracksLoading} onBack={onBack} onAnalyzeAlbum={handleAnalyzeAlbum} onRescanTrack={onRescanTrack} />
+    </div>
+  )
+  if (selectedArtist) return (
+    <div className="h-full overflow-y-auto">
+      <MusicArtistDetails selectedArtist={selectedArtist} filteredAlbums={filteredAlbums} viewType={viewType} showSourceBadge={showSourceBadge} allAlbumCompleteness={allAlbumCompleteness} onSelectAlbum={onSelectAlbum} onAnalyzeAlbum={handleAnalyzeAlbum} onFixAlbumMatch={onFixAlbumMatch} artistCompleteness={artistCompleteness} onAnalyzeArtist={handleAnalyzeArtist} onFixArtistMatch={onFixArtistMatch} onBack={onBack} posterMinWidth={posterMinWidth} includeEps={includeEps} includeSingles={includeSingles} onDismissMissingAlbum={onDismissMissingAlbum} />
+    </div>
+  )
 
   const header = (
     <div className="flex items-center justify-between mb-4">
@@ -182,11 +190,12 @@ export function MusicView({
   )
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {slimDown && <SlimDownBanner className="mb-4" />}
       {musicViewMode === 'artists' && (
         <MediaGridView
           items={sortedArtists} totalCount={totalArtistCount} viewType={viewType} loading={artistsLoading} onLoadMore={onLoadMoreArtists} posterMinWidth={posterMinWidth} banner={header}
+          scrollKey="music-artists"
           emptyState={<div className="py-20 text-center opacity-40"><User className="w-20 h-20 mx-auto mb-4" /><p>No artists found</p></div>}
           renderGridItem={(artist) => <ArtistCard artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} artistCompleteness={artistCompleteness} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
           renderListItem={(artist) => <ArtistListItem artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} completeness={artistCompleteness.get(artist.name)} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
@@ -195,6 +204,7 @@ export function MusicView({
       {musicViewMode === 'albums' && (
         <MediaGridView
           items={allFilteredAlbums} totalCount={totalAlbumCount} viewType={viewType} loading={albumsLoading} onLoadMore={onLoadMoreAlbums} posterMinWidth={posterMinWidth} banner={header}
+          scrollKey="music-albums"
           emptyState={<div className="py-20 text-center opacity-40"><Disc3 className="w-20 h-20 mx-auto mb-4" /><p>No albums found</p></div>}
           renderGridItem={(album) => <AlbumCard album={album} onClick={() => onSelectAlbum(album)} showSourceBadge={showSourceBadge} completeness={allAlbumCompleteness.get(album.id!)} onAnalyze={handleAnalyzeAlbum} onFixMatch={onFixAlbumMatch ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name!) : undefined} />}
           renderListItem={(album) => <AlbumListItem album={album} onClick={() => onSelectAlbum(album)} showSourceBadge={showSourceBadge} completeness={allAlbumCompleteness.get(album.id!)} />}
@@ -203,6 +213,7 @@ export function MusicView({
       {musicViewMode === 'tracks' && (
         <MediaGridView
           items={filteredTracks} totalCount={totalTrackCount} viewType="list" loading={tracksLoading} onLoadMore={onLoadMoreTracks} banner={header}
+          scrollKey="music-tracks"
           emptyState={<div className="py-20 text-center opacity-40"><Music className="w-20 h-20 mx-auto mb-4" /><p>No tracks found</p></div>}
           renderListItem={(track, index) => <TrackListItem track={track} index={index + 1} artistName={track.artist_name} albumTitle={track.album_name} onClickQuality={() => {}} />}
           renderGridItem={() => <div />}

@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { MoviesView } from '../../src/renderer/src/components/library/MoviesView'
-import { useSources } from '../../src/renderer/src/contexts/SourceContext'
+import { MoviesView } from '@/components/library/MoviesView'
+import { useSources } from '@/contexts/SourceContext'
 import React from 'react'
 
 // Mock useSources
@@ -124,3 +124,6 @@ describe('MoviesView Rendering', () => {
     expect(screen.queryByText('Analyzing')).toBeNull()
   })
 })
+
+
+

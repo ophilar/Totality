@@ -3,10 +3,10 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import { QualityBadges } from '../../src/renderer/src/components/library/QualityBadges'
-import { ToastContainer } from '../../src/renderer/src/components/ui/Toast'
-import { ToastProvider, useToast } from '../../src/renderer/src/contexts/ToastContext'
-import { SimpleMarkdown } from '../../src/renderer/src/components/ui/SimpleMarkdown'
+import { QualityBadges } from '@/components/library/QualityBadges'
+import { ToastContainer } from '@/components/ui/Toast'
+import { ToastProvider, useToast } from '@/contexts/ToastContext'
+import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
 import React from 'react'
 
 // Helper component to trigger toasts
@@ -69,3 +69,6 @@ describe('Renderer UI Components', () => {
     })
   })
 })
+
+
+

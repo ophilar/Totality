@@ -3,9 +3,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { AddSourceModal } from '../../src/renderer/src/components/sources/AddSourceModal'
-import { useSources } from '../../src/renderer/src/contexts/SourceContext'
-import { useToast } from '../../src/renderer/src/contexts/ToastContext'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import { useSources } from '@/contexts/SourceContext'
+import { useToast } from '@/contexts/ToastContext'
 import React from 'react'
 
 // Mock context hooks
@@ -63,3 +63,6 @@ describe('AddSourceModal Rendering', () => {
     expect(screen.getByText('Browse')).toBeTruthy()
   })
 })
+
+
+

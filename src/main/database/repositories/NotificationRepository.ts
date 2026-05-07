@@ -1,5 +1,7 @@
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import { BaseRepository } from './BaseRepository'
+import { eq, desc, sql, inArray } from 'drizzle-orm'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
 export interface Notification {
   id?: number
@@ -12,114 +14,106 @@ export interface Notification {
 }
 
 export class NotificationRepository extends BaseRepository<Notification> {
-  constructor(db: DatabaseSync) {
-    super(db, 'notifications')
+  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'notifications', drizzle)
   }
 
-  addNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO notifications (type, title, message, reference_id, is_read, created_at)
-      VALUES (?, ?, ?, ?, 0, datetime('now'))
-    `)
-    const result = stmt.run(
-      notification.type,
-      notification.title,
-      notification.message,
-      notification.reference_id || null
-    ) as unknown as { lastInsertRowid: number | bigint }
-    return Number(result.lastInsertRowid)
+  async addNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): Promise<number> {
+    const result = await this.drizzle.insert(schema.notifications)
+      .values({
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        referenceId: notification.reference_id || null,
+        isRead: 0,
+        createdAt: sql`(datetime('now'))`
+      })
+      .returning({ id: schema.notifications.id })
+    
+    return result[0]?.id || 0
   }
 
-  getUnreadCount(): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM notifications WHERE is_read = 0')
-    const result = stmt.get() as unknown as { count: number } | undefined
+  async getUnreadCount(): Promise<number> {
+    const result = await this.drizzle.select({ count: sql<number>`count(*)` })
+      .from(schema.notifications)
+      .where(eq(schema.notifications.isRead, 0))
+      .get()
     return result?.count || 0
   }
 
-  createNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): number {
+  async createNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): Promise<number> {
     return this.addNotification(notification)
   }
 
-  get(filters?: { unreadOnly?: boolean; limit?: number; offset?: number }): Notification[] {
+  async get(filters?: { unreadOnly?: boolean; limit?: number; offset?: number }): Promise<Notification[]> {
     return this.getNotifications(filters)
   }
 
-  markAsRead(id: number | number[]): void {
-    if (Array.isArray(id)) {
-      if (id.length === 0) return
-      const placeholders = id.map(() => '?').join(',')
-      this.db.prepare(`UPDATE notifications SET is_read = 1 WHERE id IN (${placeholders})`).run(...id)
-    } else {
-      this.db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id)
-    }
+  async markAsRead(id: number | number[]): Promise<void> {
+    const ids = Array.isArray(id) ? id : [id]
+    if (ids.length === 0) return
+
+    await this.drizzle.update(schema.notifications)
+      .set({ 
+        isRead: 1,
+        readAt: sql`(datetime('now'))`
+      })
+      .where(inArray(schema.notifications.id, ids))
   }
 
-  deleteNotifications(ids: number | number[]): void {
-    if (Array.isArray(ids)) {
-      if (ids.length === 0) return
-      const placeholders = ids.map(() => '?').join(',')
-      this.db.prepare(`DELETE FROM notifications WHERE id IN (${placeholders})`).run(...ids)
-    } else {
-      this.db.prepare('DELETE FROM notifications WHERE id = ?').run(ids)
-    }
+  async deleteNotifications(ids: number | number[]): Promise<void> {
+    const idList = Array.isArray(ids) ? ids : [ids]
+    if (idList.length === 0) return
+
+    await this.drizzle.delete(schema.notifications)
+      .where(inArray(schema.notifications.id, idList))
   }
 
-  clearAllNotifications(): void {
-    this.clearAll()
+  async clearAllNotifications(): Promise<void> {
+    await this.clearAll()
   }
 
-  markAllAsRead(): void {
-    this.db.prepare('UPDATE notifications SET is_read = 1').run()
+  async markAllAsRead(): Promise<void> {
+    await this.drizzle.update(schema.notifications)
+      .set({ 
+        isRead: 1,
+        readAt: sql`(datetime('now'))`
+      })
   }
 
-  clearAll(): void {
-    this.db.prepare('DELETE FROM notifications').run()
+  async clearAll(): Promise<void> {
+    await this.drizzle.delete(schema.notifications)
   }
 
-  getRecent(limit = 50, offset = 0): Notification[] {
-    const sql = 'SELECT * FROM notifications ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    const params: SQLInputValue[] = [limit, offset]
-    const rows = this.db.prepare(sql).all(...params) as unknown as Notification[]
-    return rows
+  async getRecent(limit = 50, offset = 0): Promise<Notification[]> {
+    return this.getNotifications({ limit, offset })
   }
 
-  getNotifications(filters?: { unreadOnly?: boolean; limit?: number; offset?: number }): Notification[] {
-    let sql = 'SELECT * FROM notifications'
-    const params: SQLInputValue[] = []
-
+  async getNotifications(filters?: { unreadOnly?: boolean; limit?: number; offset?: number }): Promise<Notification[]> {
+    const query = this.drizzle.select().from(schema.notifications)
+    
     if (filters?.unreadOnly) {
-      sql += ' WHERE is_read = 0'
+      query.where(eq(schema.notifications.isRead, 0))
     }
 
-    sql += ' ORDER BY created_at DESC'
+    query.orderBy(desc(schema.notifications.createdAt))
 
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
+    if (filters?.limit) query.limit(filters.limit)
+    if (filters?.offset) query.offset(filters.offset)
 
-    const rows = this.db.prepare(sql).all(...params) as unknown as Array<{
-      id: number
-      type: string
-      title: string
-      message: string
-      reference_id: string | null
-      is_read: number
-      created_at: string
-    }>
+    const rows = await query.all()
+    return this.mapDrizzleToNotifications(rows)
+  }
 
+  private mapDrizzleToNotifications(rows: any[]): Notification[] {
     return rows.map((r) => ({
       id: r.id,
       type: r.type as any,
       title: r.title,
       message: r.message,
-      reference_id: r.reference_id || undefined,
-      is_read: r.is_read === 1,
-      created_at: r.created_at,
+      reference_id: r.referenceId || undefined,
+      is_read: r.isRead === 1,
+      created_at: r.createdAt,
     }))
   }
 }

@@ -2,11 +2,11 @@ import { spawn } from 'child_process'
 import * as fs from 'fs/promises'
 import { existsSync } from 'fs'
 import * as path from 'path'
-import { getDatabase } from '@main/database/getDatabase'
-import { getLoggingService } from './LoggingService'
-import { getGeminiService } from './GeminiService'
-import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
-import { COMPRESSION_ADVICE_SYSTEM_PROMPT } from './ai-system-prompts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getGeminiService } from '@main/services/GeminiService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { APP_CONFIG } from '@main/config'
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
@@ -157,7 +157,7 @@ export class TranscodingService {
     Important: The handbrakeArgs must be an array of strings suitable for child_process.spawn.
     Do NOT include the input/output paths in handbrakeArgs, they will be added automatically.`
 
-    const systemPrompt = COMPRESSION_ADVICE_SYSTEM_PROMPT + `
+    const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
     Additional Requirement: 
     - Output must be valid JSON only. 
     - Use "gemini-3.1-flash-lite" level logic for parameters.
@@ -192,7 +192,7 @@ export class TranscodingService {
     onProgress?: (progress: TranscodeProgress) => void
   ): Promise<boolean> {
     const db = getDatabase()
-    const item = db.media.getItem(mediaItemId)
+    const item = await db.media.getItem(mediaItemId)
     if (!item || !item.file_path) throw new Error('Media item or file path not found')
 
     const availability = await this.checkAvailability()
@@ -267,7 +267,7 @@ export class TranscodingService {
           // Re-analyze the new file
           const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
           if (newAnalysis.success) {
-             db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
+             await db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
           }
         } catch (err) {
           if (existsSync(backupPath)) await fs.rename(backupPath, inputPath)

@@ -11,7 +11,7 @@ import {
   KodiEpisodeWithDetails,
   buildFilePath,
   convertKodiImageUrl as schemaConvertKodiImageUrl,
-} from './KodiDatabaseSchema'
+} from '@main/providers/kodi/KodiDatabaseSchema'
 import {
   KodiMusicArtistResult,
   KodiMusicAlbumResult,
@@ -19,7 +19,7 @@ import {
   parseTrackNumber,
   buildMusicFilePath,
   guessCodecFromExtension,
-} from './KodiMusicDatabaseSchema'
+} from '@main/providers/kodi/KodiMusicDatabaseSchema'
 import { isLosslessCodec } from '@main/providers/base/MusicScannerUtils'
 
 /**

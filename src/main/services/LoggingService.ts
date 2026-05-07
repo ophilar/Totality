@@ -1,11 +1,5 @@
 /**
  * LoggingService - Centralized logging with buffer and export
- *
- * Features:
- * - Intercepts console.log/warn/error/info
- * - Stores logs in circular buffer (max 2000 entries)
- * - Emits new logs to renderer via IPC
- * - Exports logs to file
  */
 
 import { BrowserWindow, app } from 'electron'
@@ -14,6 +8,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 import * as crypto from 'crypto'
+import { APP_CONFIG } from '@main/config'
 
 export type LogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error'
 
@@ -34,21 +29,19 @@ export interface LogEntry {
   id: string
   timestamp: string
   level: LogLevel
-  source: string // e.g., "[SourceManager]", "[Database]"
+  source: string
   message: string
-  details?: string // Stringified additional args
+  details?: string
 }
 
-const MAX_INFO_ENTRIES = 500
-const MAX_IMPORTANT_ENTRIES = 500
+const MAX_INFO_ENTRIES = APP_CONFIG.logging.maxInfoEntries
+const MAX_IMPORTANT_ENTRIES = APP_CONFIG.logging.maxImportantEntries
 
-/** Function type for lazy database access — injected to avoid circular dependency */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DatabaseGetter = () => any
 
 export class LoggingService {
-  private infoLogs: LogEntry[] = [] // Circular buffer for info/debug/verbose
-  private importantLogs: LogEntry[] = [] // Protected buffer for warn/error
+  private infoLogs: LogEntry[] = []
+  private importantLogs: LogEntry[] = []
   private mainWindow: BrowserWindow | null = null
   private sessionId = `${Date.now()}-${crypto.randomBytes(9).toString('base64url').slice(0, 9)}`
   private startedAt = new Date()
@@ -63,8 +56,7 @@ export class LoggingService {
     debug: typeof console.debug
   }
 
-  // File logging
-  private fileLoggingEnabled = false // Starts false until initializeFileLogging()
+  private fileLoggingEnabled = false
   private fileLoggingMinLevel: LogLevel = 'info'
   private logRetentionDays = 7
   private logDir = ''
@@ -76,11 +68,10 @@ export class LoggingService {
   private static readonly LEVEL_PRIORITY: Record<LogLevel, number> = {
     verbose: 0, debug: 1, info: 2, warn: 3, error: 4,
   }
-  private static readonly FLUSH_INTERVAL_MS = 5000
-  private static readonly FLUSH_BUFFER_SIZE = 50
+  private static readonly FLUSH_INTERVAL_MS = APP_CONFIG.logging.flushIntervalMs
+  private static readonly FLUSH_BUFFER_SIZE = APP_CONFIG.logging.flushBufferSize
 
   constructor() {
-    // Store original console methods
     this.originalConsole = {
       log: console.log.bind(console),
       warn: console.warn.bind(console),
@@ -90,27 +81,17 @@ export class LoggingService {
     }
   }
 
-  /** Sanitize sensitive data from log output */
   private sanitize(text: any): string {
     if (typeof text !== "string") return String(text)
     let result = text
-
-    // Replace home directory with ~ to avoid leaking OS username
     if (this.homeDir) {
       const escaped = this.homeDir.replace(/[\\]/g, '\\\\')
       result = result.replace(new RegExp(escaped, 'gi'), '~').replace(new RegExp(this.homeDir.replace(/\\/g, '/'), 'gi'), '~')
     }
-
-    // Redact Plex tokens (X-Plex-Token=xxx or token query params)
     result = result.replace(/X-Plex-Token=[^&\s"']+/gi, 'X-Plex-Token=***')
     result = result.replace(/([?&]token=)[^&\s"']+/gi, '$1***')
-
-    // Redact encrypted values (ENC:base64...)
     result = result.replace(/ENC:[A-Za-z0-9+/=]{8,}/g, 'ENC:***')
-
-    // Redact API key patterns (long alphanumeric strings following key/token/api identifiers)
     result = result.replace(/(api[_-]?key|apikey|api_token|access_token|secret)[=:]\s*['"]?[A-Za-z0-9_-]{20,}/gi, '$1=***')
-
     return result
   }
 
@@ -119,10 +100,6 @@ export class LoggingService {
     this.addEntry('info', '[LoggingService]', 'Logging service initialized')
   }
 
-  /**
-   * Inject database getter to avoid circular dependency with dynamic require.
-   * Must be called after database is initialized.
-   */
   setDatabaseGetter(getter: DatabaseGetter): void {
     this.dbGetter = getter
   }
@@ -132,119 +109,58 @@ export class LoggingService {
   }
 
   private interceptConsole(): void {
-    console.log = (...args: unknown[]) => {
-      this.originalConsole.log(...args)
-      this.captureLog('info', args)
-    }
-    console.warn = (...args: unknown[]) => {
-      this.originalConsole.warn(...args)
-      this.captureLog('warn', args)
-    }
-    console.error = (...args: unknown[]) => {
-      this.originalConsole.error(...args)
-      this.captureLog('error', args)
-    }
-    console.info = (...args: unknown[]) => {
-      this.originalConsole.info(...args)
-      this.captureLog('info', args)
-    }
-    console.debug = (...args: unknown[]) => {
-      this.originalConsole.debug(...args)
-      this.captureLog('debug', args)
-    }
+    console.log = (...args: unknown[]) => { this.originalConsole.log(...args); this.captureLog('info', args) }
+    console.warn = (...args: unknown[]) => { this.originalConsole.warn(...args); this.captureLog('warn', args) }
+    console.error = (...args: unknown[]) => { this.originalConsole.error(...args); this.captureLog('error', args) }
+    console.info = (...args: unknown[]) => { this.originalConsole.info(...args); this.captureLog('info', args) }
+    console.debug = (...args: unknown[]) => { this.originalConsole.debug(...args); this.captureLog('debug', args) }
   }
 
   private captureLog(level: LogLevel, args: unknown[]): void {
     const message = String(args[0] || '')
-
-    // Extract source from bracketed prefix like "[SourceManager]"
     const sourceMatch = message.match(/^\[([^\]]+)\]/)
     const source = sourceMatch ? sourceMatch[0] : '[App]'
     const cleanMessage = sourceMatch ? message.slice(sourceMatch[0].length).trim() : message
-
-    // Format additional args, with special handling for Error objects
-    const details =
-      args.length > 1
-        ? args
-            .slice(1)
-            .map((arg) => {
-              // Handle Error objects specially to capture stack trace
-              if (arg instanceof Error) {
-                return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
-              }
-              try {
-                return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-              } catch (error) { throw error }
-            })
-            .join('\n\n')
-        : undefined
-
+    const details = args.length > 1 ? this.formatDetails(args.slice(1)) : undefined
     this.addEntry(level, source, cleanMessage, details)
   }
 
   private formatDetails(args: unknown[]): string | undefined {
     if (args.length === 0) return undefined
-    return args
-      .map((arg) => {
-        if (arg instanceof Error) {
-          return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
-        }
-        try {
-          return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-        } catch (error) { throw error }
-      })
-      .join('\n\n')
+    return args.map((arg) => {
+      if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
+      try { return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg) } catch { return String(arg) }
+    }).join('\n\n')
   }
 
-  private addEntry(level: LogLevel, source: string, message: unknown, ...details: unknown[]): void {
+  private addEntry(level: LogLevel, source: string, message: unknown, details?: string): void {
     const formattedMessage = typeof message === 'string' ? message : String(message)
-    const formattedDetails = this.formatDetails(details)
-
     const entry: LogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString(),
-      level,
-      source,
+      level, source,
       message: this.sanitize(formattedMessage),
-      details: formattedDetails ? this.sanitize(formattedDetails) : undefined,
+      details: details ? this.sanitize(details) : undefined,
     }
 
-    // Route to appropriate buffer based on level
     if (level === 'warn' || level === 'error') {
       this.importantLogs.push(entry)
-      // Cap important logs to prevent unbounded growth
-      if (this.importantLogs.length > MAX_IMPORTANT_ENTRIES) {
-        this.importantLogs = this.importantLogs.slice(-MAX_IMPORTANT_ENTRIES)
-      }
+      if (this.importantLogs.length > MAX_IMPORTANT_ENTRIES) this.importantLogs = this.importantLogs.slice(-MAX_IMPORTANT_ENTRIES)
     } else {
       this.infoLogs.push(entry)
-      // Circular buffer for info logs
-      if (this.infoLogs.length > MAX_INFO_ENTRIES) {
-        this.infoLogs = this.infoLogs.slice(-MAX_INFO_ENTRIES)
-      }
+      if (this.infoLogs.length > MAX_INFO_ENTRIES) this.infoLogs = this.infoLogs.slice(-MAX_INFO_ENTRIES)
     }
 
-    // Emit to renderer
-    if (this.mainWindow) {
-      safeSend(this.mainWindow, 'logs:new', entry)
-    }
-
-    // Append to file buffer
+    if (this.mainWindow) safeSend(this.mainWindow, 'logs:new', entry)
     this.appendToFileBuffer(entry)
   }
 
-  // Getter to merge both buffers sorted by timestamp
   private get logs(): LogEntry[] {
-    return [...this.infoLogs, ...this.importantLogs].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp)
-    )
+    return [...this.infoLogs, ...this.importantLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   }
 
   getLogs(limit?: number): LogEntry[] {
-    if (limit) {
-      return this.logs.slice(-limit)
-    }
-    return [...this.logs]
+    return limit ? this.logs.slice(-limit) : [...this.logs]
   }
 
   clearLogs(): void {
@@ -253,287 +169,122 @@ export class LoggingService {
     this.addEntry('info', '[LoggingService]', 'Logs cleared')
   }
 
-  setVerboseLogging(enabled: boolean): void {
+  async setVerboseLogging(enabled: boolean): Promise<void> {
     this.verboseEnabled = enabled
     this.addEntry('info', '[LoggingService]', `Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
-    // Persist to database
-    try {
-      if (this.dbGetter) {
-        const db = this.dbGetter()
-        db.config.setSetting(
-'verbose_logging_enabled', String(enabled))
-      }
-    } catch (e) { throw e; }
-  }
-
-  isVerboseEnabled(): boolean {
-    return this.verboseEnabled
-  }
-
-  debug(source: string, message: unknown, ...details: unknown[]): void {
-    this.addEntry('debug', source, message, ...details)
-  }
-
-  verbose(source: string, message: unknown, ...details: unknown[]): void {
-    if (this.verboseEnabled) {
-      this.addEntry('verbose', source, message, ...details)
+    if (this.dbGetter) {
+      await this.dbGetter().config.setSetting('verbose_logging_enabled', String(enabled))
     }
   }
 
-  info(source: string, message: unknown, ...details: unknown[]): void {
-    this.addEntry('info', source, message, ...details)
-  }
+  isVerboseEnabled(): boolean { return this.verboseEnabled }
 
-  warn(source: string, message: unknown, ...details: unknown[]): void {
-    this.addEntry('warn', source, message, ...details)
-  }
+  debug(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('debug', s, m, this.formatDetails(d)) }
+  verbose(s: string, m: unknown, ...d: unknown[]): void { if (this.verboseEnabled) this.addEntry('verbose', s, m, this.formatDetails(d)) }
+  info(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('info', s, m, this.formatDetails(d)) }
+  warn(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('warn', s, m, this.formatDetails(d)) }
+  error(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('error', s, m, this.formatDetails(d)) }
 
-  error(source: string, message: unknown, ...details: unknown[]): void {
-    this.addEntry('error', source, message, ...details)
-  }
-
-  getSessionInfo(): { sessionId: string; startedAt: string; uptimeMs: number } {
-    return {
-      sessionId: this.sessionId,
-      startedAt: this.startedAt.toISOString(),
-      uptimeMs: Date.now() - this.startedAt.getTime(),
-    }
-  }
+  getSessionInfo() { return { sessionId: this.sessionId, startedAt: this.startedAt.toISOString(), uptimeMs: Date.now() - this.startedAt.getTime() } }
 
   async exportLogs(filePath: string, sourceInfo?: SourceInfo[], diagnostics?: DiagnosticInfo): Promise<void> {
-    const sessionInfo = this.getSessionInfo()
-
     const exportData = {
       exportedAt: new Date().toISOString(),
-      sessionId: sessionInfo.sessionId,
-      appStartedAt: sessionInfo.startedAt,
-      sessionDurationMs: sessionInfo.uptimeMs,
+      ...this.getSessionInfo(),
       appVersion: app.getVersion(),
       platform: process.platform,
-      osRelease: os.release(),
-      arch: os.arch(),
-      electronVersion: process.versions.electron,
-      nodeVersion: process.versions.node,
-      totalMemoryMB: Math.round(os.totalmem() / 1024 / 1024),
-      freeMemoryMB: Math.round(os.freemem() / 1024 / 1024),
       connectedSources: sourceInfo || [],
       diagnostics: diagnostics || null,
-      statistics: {
-        totalEntries: this.logs.length,
-        infoCount: this.infoLogs.length,
-        warnCount: this.importantLogs.filter((l) => l.level === 'warn').length,
-        errorCount: this.importantLogs.filter((l) => l.level === 'error').length,
-      },
       logs: this.logs,
     }
-
     await fs.writeFile(filePath, JSON.stringify(exportData, null, 2), 'utf-8')
   }
 
-  // ============================================================================
-  // File Logging
-  // ============================================================================
-
-  /**
-   * Initialize file-based logging. Call after database is ready.
-   */
   async initializeFileLogging(): Promise<void> {
     try {
       this.logDir = path.join(app.getPath('userData'), 'logs')
-      this.loadFileLoggingSettings()
-
-      if (!this.fileLoggingEnabled) {
-        this.originalConsole.log('[LoggingService] File logging disabled')
-        return
-      }
-
+      await this.loadFileLoggingSettings()
+      if (!this.fileLoggingEnabled) return
       await fs.mkdir(this.logDir, { recursive: true })
       this.rotateLogFiles().catch(() => {})
       this.flushTimer = setInterval(() => this.flushBuffer(), LoggingService.FLUSH_INTERVAL_MS)
-
-      this.originalConsole.log(`[LoggingService] File logging initialized: ${this.logDir}`)
     } catch (err) {
       this.originalConsole.error('[LoggingService] Failed to initialize file logging:', err)
       this.fileLoggingEnabled = false
     }
   }
 
-  private loadFileLoggingSettings(): void {
-    try {
-      if (!this.dbGetter) return
-      const db = this.dbGetter()
-      const enabled = db.config.getSetting('file_logging_enabled')
-      const minLevel = db.config.getSetting('file_logging_min_level')
-      const retention = db.config.getSetting('log_retention_days')
+  private async loadFileLoggingSettings(): Promise<void> {
+    if (!this.dbGetter) return
+    const db = this.dbGetter()
+    const enabled = await db.config.getSetting('file_logging_enabled')
+    const minLevel = await db.config.getSetting('file_logging_min_level')
+    const retention = await db.config.getSetting('log_retention_days')
+    const verbose = await db.config.getSetting('verbose_logging_enabled')
 
-      if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
-      if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) {
-        this.fileLoggingMinLevel = minLevel as LogLevel
-      }
-      if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
-
-      // Restore verbose setting
-      const verbose = db.config.getSetting('verbose_logging_enabled')
-      if (verbose === 'true') this.verboseEnabled = true
-    } catch (error) { throw error }
+    if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
+    if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) this.fileLoggingMinLevel = minLevel as LogLevel
+    if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
+    if (verbose === 'true') this.verboseEnabled = true
   }
 
   private appendToFileBuffer(entry: LogEntry): void {
     if (!this.fileLoggingEnabled || !this.logDir) return
-
-    if (LoggingService.LEVEL_PRIORITY[entry.level] < LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]) {
-      return
-    }
-
-    const level = entry.level.toUpperCase().padEnd(7)
-    let line = `${entry.timestamp} [${level}] ${entry.source} ${entry.message}`
-    if (entry.details) {
-      line += `\n  ${entry.details.replace(/\n/g, '\n  ')}`
-    }
+    if (LoggingService.LEVEL_PRIORITY[entry.level] < LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]) return
+    let line = `${entry.timestamp} [${entry.level.toUpperCase().padEnd(7)}] ${entry.source} ${entry.message}`
+    if (entry.details) line += `\n  ${entry.details.replace(/\n/g, '\n  ')}`
     this.writeBuffer.push(line + '\n')
-
-    if (this.writeBuffer.length >= LoggingService.FLUSH_BUFFER_SIZE) {
-      this.flushBuffer()
-    }
+    if (this.writeBuffer.length >= LoggingService.FLUSH_BUFFER_SIZE) this.flushBuffer()
   }
 
   private async flushBuffer(): Promise<void> {
     if (this.writeBuffer.length === 0 || this.isWriting) return
-
     this.isWriting = true
     const lines = this.writeBuffer.splice(0)
-
     try {
       const today = new Date().toISOString().split('T')[0]
       const logFile = path.join(this.logDir, `totality-${today}.log`)
-
-      if (today !== this.currentLogDate) {
-        this.currentLogDate = today
-        this.rotateLogFiles().catch(() => {})
-      }
-
+      if (today !== this.currentLogDate) { this.currentLogDate = today; this.rotateLogFiles().catch(() => {}) }
       await fs.appendFile(logFile, lines.join(''), 'utf-8')
     } catch (err) {
       this.originalConsole.error('[LoggingService] Failed to write log file:', err)
-    } finally {
-      this.isWriting = false
-    }
+    } finally { this.isWriting = false }
   }
 
   private async rotateLogFiles(): Promise<void> {
     try {
       const files = await fs.readdir(this.logDir)
-      const cutoff = new Date()
-      cutoff.setDate(cutoff.getDate() - this.logRetentionDays)
-
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - this.logRetentionDays)
       for (const file of files) {
         if (!file.startsWith('totality-') || !file.endsWith('.log')) continue
-        const dateStr = file.replace('totality-', '').replace('.log', '')
-        const fileDate = new Date(dateStr + 'T00:00:00Z')
-        if (isNaN(fileDate.getTime())) continue
-        if (fileDate < cutoff) {
-          await fs.unlink(path.join(this.logDir, file))
-          this.originalConsole.log(`[LoggingService] Deleted old log file: ${file}`)
-        }
+        const fileDate = new Date(file.replace('totality-', '').replace('.log', '') + 'T00:00:00Z')
+        if (!isNaN(fileDate.getTime()) && fileDate < cutoff) await fs.unlink(path.join(this.logDir, file))
       }
-    } catch (err) {
-      this.originalConsole.error('[LoggingService] Failed to rotate log files:', err)
-    }
+    } catch (err) { this.originalConsole.error('[LoggingService] Failed to rotate log files:', err) }
   }
 
-  /**
-   * Flush buffer and stop file logging (for shutdown)
-   */
   async shutdown(): Promise<void> {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer)
-      this.flushTimer = null
-    }
+    if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null }
     await this.flushBuffer()
   }
 
-  /**
-   * Update file logging settings at runtime
-   */
-  updateFileLoggingSettings(settings: {
-    enabled?: boolean
-    minLevel?: LogLevel
-    retentionDays?: number
-  }): void {
+  async updateFileLoggingSettings(settings: { enabled?: boolean, minLevel?: LogLevel, retentionDays?: number }): Promise<void> {
     if (settings.enabled !== undefined) this.fileLoggingEnabled = settings.enabled
     if (settings.minLevel !== undefined) this.fileLoggingMinLevel = settings.minLevel
     if (settings.retentionDays !== undefined) this.logRetentionDays = settings.retentionDays
+    if (this.dbGetter) {
+      const db = this.dbGetter()
+      if (settings.enabled !== undefined) await db.config.setSetting('file_logging_enabled', String(settings.enabled))
+      if (settings.minLevel !== undefined) await db.config.setSetting('file_logging_min_level', settings.minLevel)
+      if (settings.retentionDays !== undefined) await db.config.setSetting('log_retention_days', String(settings.retentionDays))
+    }
   }
 
-  // For plain text export (more readable)
-  async exportLogsAsText(filePath: string, sourceInfo?: SourceInfo[], diagnostics?: DiagnosticInfo): Promise<void> {
-    const sessionInfo = this.getSessionInfo()
-    const uptimeMinutes = Math.round(sessionInfo.uptimeMs / 60000)
-
-    const sourceLines: string[] = []
-    if (sourceInfo && sourceInfo.length > 0) {
-      sourceLines.push('Connected Sources:')
-      for (const s of sourceInfo) {
-        const version = s.serverVersion ? ` v${s.serverVersion}` : ''
-        sourceLines.push(`  - ${s.displayName} (${s.sourceType}${version})`)
-      }
-    } else {
-      sourceLines.push('Connected Sources: none')
-    }
-
-    const diagnosticLines: string[] = []
-    if (diagnostics) {
-      const ff = diagnostics.ffprobe
-      const ffStatus = ff.available
-        ? `available (${ff.version ? `v${ff.version}` : 'unknown version'}, ${ff.bundled ? 'bundled' : 'system'})`
-        : 'not available'
-      diagnosticLines.push(`FFprobe: ${ffStatus}`)
-      const dbFileName = diagnostics.database.path !== 'unknown' ? diagnostics.database.path.split(/[/\\]/).pop() : 'unknown'
-      diagnosticLines.push(`Database: ${dbFileName} (${diagnostics.database.sizeMB} MB)`)
-      if (diagnostics.libraries.length > 0) {
-        const libSummary = diagnostics.libraries.map(l => `${l.sourceName}/${l.sourceType} (${l.itemCount} items)`).join(', ')
-        diagnosticLines.push(`Libraries: ${libSummary}`)
-      } else {
-        diagnosticLines.push('Libraries: none')
-      }
-      diagnosticLines.push(`Monitoring: ${diagnostics.monitoring.enabled ? 'enabled' : 'disabled'}`)
-    }
-
-    const header = [
-      `Totality Log Export`,
-      `Exported: ${new Date().toISOString()}`,
-      `Session ID: ${sessionInfo.sessionId}`,
-      `App Started: ${sessionInfo.startedAt}`,
-      `Session Duration: ${uptimeMinutes} minutes`,
-      `App Version: ${app.getVersion()}`,
-      `Platform: ${process.platform} ${os.release()} (${os.arch()})`,
-      `Memory: ${Math.round(os.freemem() / 1024 / 1024)} MB free / ${Math.round(os.totalmem() / 1024 / 1024)} MB total`,
-      `Entries: ${this.logs.length} (${this.importantLogs.filter((l) => l.level === 'error').length} errors, ${this.importantLogs.filter((l) => l.level === 'warn').length} warnings)`,
-      ...sourceLines,
-      ...diagnosticLines,
-      '─'.repeat(80),
-      '',
-    ].join('\n')
-
-    const logLines = this.logs
-      .map((entry) => {
-        const time = entry.timestamp.replace('T', ' ').replace('Z', '')
-        const level = entry.level.toUpperCase().padEnd(5)
-        const line = `${time} ${level} ${entry.source} ${entry.message}`
-        return entry.details ? `${line}\n         ${entry.details}` : line
-      })
-      .join('\n')
-
-    await fs.writeFile(filePath, header + logLines, 'utf-8')
-  }
+  getFileLoggingSettings() { return { enabled: this.fileLoggingEnabled, minLevel: this.fileLoggingMinLevel, retentionDays: this.logRetentionDays } }
 }
 
-// Singleton
 let loggingService: LoggingService | null = null
-
 export function getLoggingService(): LoggingService {
-  if (!loggingService) {
-    loggingService = new LoggingService()
-  }
+  if (!loggingService) loggingService = new LoggingService()
   return loggingService
 }

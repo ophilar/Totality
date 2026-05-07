@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * IPC Handlers for Live Monitoring System
  */
@@ -13,9 +14,9 @@ export function registerMonitoringHandlers(): void {
   /**
    * Get monitoring configuration
    */
-  ipcMain.handle('monitoring:getConfig', async () => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.GET_CONFIG, async () => {
     try {
-      return service.getConfig()
+      return await service.getConfig()
     } catch (error) {
       getLoggingService().error('[monitoring]', '[IPC monitoring:getConfig] Error:', error)
       throw error
@@ -25,7 +26,7 @@ export function registerMonitoringHandlers(): void {
   /**
    * Update monitoring configuration
    */
-  ipcMain.handle('monitoring:setConfig', async (_event, config: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.SET_CONFIG, async (_event, config: unknown) => {
     try {
       const validConfig = validateInput(MonitoringConfigSchema, config, 'monitoring:setConfig')
       await service.setConfig(validConfig)
@@ -39,10 +40,10 @@ export function registerMonitoringHandlers(): void {
   /**
    * Start live monitoring
    */
-  ipcMain.handle('monitoring:start', async () => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.START, async () => {
     try {
       getLoggingService().info('[monitoring]', '[IPC monitoring:start] Live monitoring started')
-      service.start()
+      await service.start()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[monitoring]', '[IPC monitoring:start] Error:', error)
@@ -53,10 +54,10 @@ export function registerMonitoringHandlers(): void {
   /**
    * Stop live monitoring
    */
-  ipcMain.handle('monitoring:stop', async () => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.STOP, async () => {
     try {
       getLoggingService().info('[monitoring]', '[IPC monitoring:stop] Live monitoring stopped')
-      service.stop()
+      await service.stop()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[monitoring]', '[IPC monitoring:stop] Error:', error)
@@ -67,9 +68,9 @@ export function registerMonitoringHandlers(): void {
   /**
    * Check if monitoring is currently active
    */
-  ipcMain.handle('monitoring:isActive', async () => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.IS_ACTIVE, async () => {
     try {
-      return service.isMonitoringActive()
+      return await service.isMonitoringActive()
     } catch (error) {
       getLoggingService().error('[monitoring]', '[IPC monitoring:isActive] Error:', error)
       throw error
@@ -79,9 +80,9 @@ export function registerMonitoringHandlers(): void {
   /**
    * Get monitoring status (for debug panel)
    */
-  ipcMain.handle('monitoring:getStatus', async () => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.GET_STATUS, async () => {
     try {
-      return service.getStatus()
+      return await service.getStatus()
     } catch (error) {
       getLoggingService().error('[monitoring]', '[IPC monitoring:getStatus] Error:', error)
       throw error
@@ -91,7 +92,7 @@ export function registerMonitoringHandlers(): void {
   /**
    * Force check a specific source immediately
    */
-  ipcMain.handle('monitoring:forceCheck', async (_event, sourceId: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.MONITORING.FORCE_CHECK, async (_event, sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'monitoring:forceCheck')
       getLoggingService().info('[monitoring]', '[IPC monitoring:forceCheck] Manual check for source:', validSourceId)
@@ -105,3 +106,4 @@ export function registerMonitoringHandlers(): void {
 
   getLoggingService().info('[monitoring]', '[IPC] Monitoring handlers registered')
 }
+

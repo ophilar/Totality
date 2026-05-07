@@ -1,6 +1,6 @@
 import { formatSeasonLabel } from '@/components/library/mediaUtils'
-import { EpisodeRow } from './EpisodeRow'
-import { MissingEpisodeRowWithArtwork } from './MissingEpisodeRowWithArtwork'
+import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
+import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
 import type { MediaItem, TVShow, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVSeasonDetails({

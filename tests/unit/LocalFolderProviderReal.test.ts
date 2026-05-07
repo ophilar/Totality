@@ -1,9 +1,65 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { LocalFolderProvider } from '../../src/main/providers/local/LocalFolderProvider'
-import { LibraryType } from '../../src/main/types/database'
-import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
+import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import { LibraryType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+
+// Mock TMDB so we don't hit real API
+vi.mock('../../src/main/services/TMDBService', () => ({
+  getTMDBService: () => ({
+    searchMovie: vi.fn().mockImplementation(async (title) => {
+      const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
+      return { results: [{ id, title, release_date: '2020-01-01' }] }
+    }),
+    searchMovieWithFallbacks: vi.fn().mockImplementation(async (title) => {
+      const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
+      return { tmdbId: id, title, year: 2020 }
+    }),
+    getMovieDetails: vi.fn().mockResolvedValue({ id: 123, title: 'Test Movie' }),
+    buildImageUrl: vi.fn().mockReturnValue('http://image.url'),
+  }),
+}))
+
+// Mock MediaFileAnalyzer because it requires ffprobe binary
+vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
+  getMediaFileAnalyzer: () => ({
+    isAvailable: vi.fn().mockResolvedValue(true),
+    analyzeFile: vi.fn().mockResolvedValue({
+      success: true,
+      duration: 7200,
+      video: { width: 1920, height: 1080, codec: 'h264' },
+      audioTracks: [{ codec: 'aac', channels: 2 }],
+    }),
+    analyzeFilesParallel: vi.fn().mockImplementation(async (files) => {
+      const map = new Map()
+      for (const f of files) {
+        map.set(f, {
+          success: true,
+          duration: 7200,
+          video: { width: 1920, height: 1080, codec: 'h264' },
+          audioTracks: [{ codec: 'aac', channels: 2 }],
+        })
+      }
+      return map
+    }),
+    enhanceMetadata: vi.fn().mockImplementation((m, a) => ({
+      ...m,
+      duration: a.duration,
+      resolution: '1080p',
+      videoCodec: a.video?.codec,
+      audioCodec: a.audioTracks?.[0]?.codec
+    })),
+  }),
+}))
+
+// Mock MusicBrainzService
+vi.mock('../../src/main/services/MusicBrainzService', () => ({
+  getMusicBrainzService: () => ({
+    searchArtist: vi.fn().mockResolvedValue([{ name: 'Test Artist', id: 'artist-id' }]),
+    getArtistDetails: vi.fn().mockResolvedValue({ name: 'Test Artist' }),
+  }),
+}))
 
 describe('LocalFolderProvider Integration (Real FS)', () => {
   let db: any
@@ -24,7 +80,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     })
 
     // Setup source in DB
-    db.sources.upsertSource({
+    await db.sources.upsertSource({
       source_id: sourceId,
       source_type: 'local',
       display_name: 'Local Movies',
@@ -33,72 +89,16 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     })
     
     // Enable library
-    db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true }])
+    await db.sources.setLibrariesEnabled(sourceId, [{ id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true }])
     
     // Set TMDB key so lookup logic proceeds
-    db.config.setSetting('tmdb_api_key', 'fake-key')
+    await db.config.setSetting('tmdb_api_key', 'fake-key')
   })
 
   afterEach(() => {
     tempDir.cleanup()
     cleanupTestDb()
   })
-
-  // Mock TMDB so we don't hit real API
-  vi.mock('../../src/main/services/TMDBService', () => ({
-    getTMDBService: () => ({
-      searchMovie: vi.fn().mockImplementation(async (title) => {
-        const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
-        return { results: [{ id, title, release_date: '2020-01-01' }] }
-      }),
-      searchMovieWithFallbacks: vi.fn().mockImplementation(async (title) => {
-        const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
-        return { tmdbId: id, title, year: 2020 }
-      }),
-      getMovieDetails: vi.fn().mockResolvedValue({ id: 123, title: 'Test Movie' }),
-      buildImageUrl: vi.fn().mockReturnValue('http://image.url'),
-    }),
-  }))
-
-  // Mock MediaFileAnalyzer because it requires ffprobe binary
-  vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
-    getMediaFileAnalyzer: () => ({
-      isAvailable: vi.fn().mockResolvedValue(true),
-      analyzeFile: vi.fn().mockResolvedValue({
-        success: true,
-        duration: 7200,
-        video: { width: 1920, height: 1080, codec: 'h264' },
-        audioTracks: [{ codec: 'aac', channels: 2 }],
-      }),
-      analyzeFilesParallel: vi.fn().mockImplementation(async (files) => {
-        const map = new Map()
-        for (const f of files) {
-          map.set(f, {
-            success: true,
-            duration: 7200,
-            video: { width: 1920, height: 1080, codec: 'h264' },
-            audioTracks: [{ codec: 'aac', channels: 2 }],
-          })
-        }
-        return map
-      }),
-      enhanceMetadata: vi.fn().mockImplementation((m, a) => ({
-        ...m,
-        duration: a.duration,
-        resolution: '1080p',
-        videoCodec: a.video?.codec,
-        audioCodec: a.audioTracks?.[0]?.codec
-      })),
-    }),
-  }))
-
-  // Mock MusicBrainzService
-  vi.mock('../../src/main/services/MusicBrainzService', () => ({
-    getMusicBrainzService: () => ({
-      searchArtist: vi.fn().mockResolvedValue([{ name: 'Test Artist', id: 'artist-id' }]),
-      getArtistDetails: vi.fn().mockResolvedValue({ name: 'Test Artist' }),
-    }),
-  }))
 
   it('should detect and save a movie from a real file', async () => {
     const movieFile = path.join(tempDir.path, 'Movie (2020).mkv')
@@ -112,9 +112,10 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     
     expect(result.success).toBe(true)
     expect(result.itemsAdded + result.itemsUpdated).toBe(1)
-    
-    const items = db.media.getItems({ sourceId })
+
+    const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
+
     expect(items[0].year).toBe(2020)
     expect(items[0].file_path).toBe(movieFile)
   })
@@ -125,7 +126,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     // 1. Initial scan
     await provider.scanLibrary('movie')
-    const items1 = db.media.getItems({ sourceId })
+    const items1 = await db.media.getItems({ sourceId })
     expect(items1).toHaveLength(1)
     expect(items1[0].version_count).toBe(1)
 
@@ -142,11 +143,11 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     expect(result.itemsUpdated).toBe(1)
     
-    const items2 = db.media.getItems({ sourceId })
+    const items2 = await db.media.getItems({ sourceId })
     expect(items2).toHaveLength(1)
     expect(items2[0].version_count).toBe(2)
     
-    const versions = db.media.getItemVersions(items2[0].id)
+    const versions = await db.media.getItemVersions(items2[0].id)
     expect(versions).toHaveLength(2)
   })
 
@@ -159,7 +160,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     // Initial scan
     const res1 = await provider.scanLibrary('movie')
     expect(res1.itemsAdded + res1.itemsUpdated).toBe(2)
-    expect(db.media.getItems({ sourceId })).toHaveLength(2)
+    expect(await db.media.getItems({ sourceId })).toHaveLength(2)
 
     // Delete file2 and rescan
     fs.unlinkSync(file2)
@@ -167,7 +168,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const result = await provider.scanLibrary('movie')
     expect(result.itemsRemoved).toBe(1)
     
-    const items = db.media.getItems({ sourceId })
+    const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
     expect(items[0].file_path).toBe(file1)
   })
@@ -182,7 +183,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(trackFile, 'mp3 content')
 
     // Update source config to support music library
-    db.sources.setLibrariesEnabled(sourceId, [
+    await db.sources.setLibrariesEnabled(sourceId, [
       { id: 'movie', name: 'Movies', type: LibraryType.Movie, enabled: true },
       { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
     ])
@@ -190,7 +191,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const result = await provider.scanLibrary('music')
     expect(result.success).toBe(true)
     
-    const tracks = db.music.getMusicTracks({ sourceId })
+    const tracks = await db.music.getMusicTracks({ sourceId })
     expect(tracks).toHaveLength(1)
     expect(tracks[0].title).toBe('Test Track')
     expect(tracks[0].artist_name).toBe('Test Artist')
@@ -207,14 +208,14 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     fs.writeFileSync(epFile, 'video content')
 
     // Update source config
-    db.sources.setLibrariesEnabled(sourceId, [
+    await db.sources.setLibrariesEnabled(sourceId, [
       { id: 'show', name: 'TV Shows', type: LibraryType.Show, enabled: true }
     ])
 
     const result = await provider.scanLibrary('show')
     expect(result.success).toBe(true)
     
-    const items = db.media.getItems({ sourceId, type: 'episode' })
+    const items = await db.media.getItems({ sourceId, type: 'episode' })
     expect(items).toHaveLength(1)
     expect(items[0].series_title).toBe('Test Show')
     expect(items[0].season_number).toBe(1)
@@ -230,7 +231,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const result = await provider.scanLibrary('movie')
     expect(result.itemsAdded + result.itemsUpdated).toBe(1)
     
-    const items = db.media.getItems({ sourceId })
+    const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
     expect(items[0].file_path).toBe(movieFile)
   })
@@ -251,8 +252,11 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const result = await provider.scanLibrary('movie')
     expect(result.itemsAdded + result.itemsUpdated).toBe(1)
     
-    const items = db.media.getItems({ sourceId })
+    const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
     expect(items[0].file_path).toContain('Long.mkv')
   })
 })
+
+
+

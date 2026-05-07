@@ -1,14 +1,9 @@
-import React from 'react'
 import { CircleFadingArrowUp } from 'lucide-react'
 import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from '@/components/dashboard/UpgradeRows'
-import * as ReactWindow from 'react-window'
+import { Virtuoso } from 'react-virtuoso'
 import type { UpgradeTab, MusicAlbumUpgrade } from '@/components/dashboard/types'
 import type { MediaItem } from '@main/types/database'
-// @ts-expect-error react-window types
-import type { VariableSizeList } from 'react-window'
-
-const List = (ReactWindow as any).VariableSizeList
 
 interface UpgradesColumnProps {
   upgradeTab: UpgradeTab
@@ -21,9 +16,6 @@ interface UpgradesColumnProps {
   hasMovies: boolean
   hasTV: boolean
   hasMusic: boolean
-  listHeight: number
-  itemSize: (index: number) => number
-  listRef: React.RefObject<VariableSizeList | null>
   onSelect: (id: number) => void
   onDismissMovie: (index: number) => void
   onDismissTv: (index: number) => void
@@ -37,14 +29,12 @@ export function UpgradesColumn({
   movieUpgrades, tvUpgrades, musicUpgrades,
   upgradeSortBy, setUpgradeSortBy,
   hasMovies, hasTV, hasMusic,
-  listHeight, itemSize, listRef,
   onSelect, onDismissMovie, onDismissTv, onDismissMusic,
   expandedRecommendations, toggleRecommendation
 }: UpgradesColumnProps) {
-  const movieRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const movieRow = (index: number) => (
     <MovieUpgradeRow
       index={index}
-      style={style}
       item={movieUpgrades[index]}
       isExpanded={expandedRecommendations.has(movieUpgrades[index].id!)}
       onToggleExpand={toggleRecommendation}
@@ -53,10 +43,9 @@ export function UpgradesColumn({
     />
   )
 
-  const tvRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const tvRow = (index: number) => (
     <TvUpgradeRow
       index={index}
-      style={style}
       item={tvUpgrades[index]}
       isExpanded={expandedRecommendations.has(tvUpgrades[index].id!)}
       onToggleExpand={toggleRecommendation}
@@ -65,10 +54,9 @@ export function UpgradesColumn({
     />
   )
 
-  const musicRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+  const musicRow = (index: number) => (
     <MusicUpgradeRow
       index={index}
-      style={style}
       album={musicUpgrades[index]}
       onSelect={onSelect}
       onDismiss={onDismissMusic}
@@ -111,13 +99,13 @@ export function UpgradesColumn({
         <div className="flex-1 min-h-0 relative">
           <div className="absolute inset-0">
             {upgradeTab === 'movies' && movieUpgrades.length > 0 && (
-              <List ref={listRef} height={listHeight} itemCount={movieUpgrades.length} itemSize={itemSize} width="100%">{movieRow}</List>
+              <Virtuoso className="h-full" totalCount={movieUpgrades.length} itemContent={movieRow} />
             )}
             {upgradeTab === 'tv' && tvUpgrades.length > 0 && (
-              <List ref={listRef} height={listHeight} itemCount={tvUpgrades.length} itemSize={itemSize} width="100%">{tvRow}</List>
+              <Virtuoso className="h-full" totalCount={tvUpgrades.length} itemContent={tvRow} />
             )}
             {upgradeTab === 'music' && musicUpgrades.length > 0 && (
-              <List ref={listRef} height={listHeight} itemCount={musicUpgrades.length} itemSize={itemSize} width="100%">{musicRow}</List>
+              <Virtuoso className="h-full" totalCount={musicUpgrades.length} itemContent={musicRow} />
             )}
           </div>
         </div>

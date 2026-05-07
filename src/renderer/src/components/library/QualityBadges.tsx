@@ -5,7 +5,7 @@
  */
 
 import { Trash2, HardDrive } from 'lucide-react'
-import type { MediaItem } from './types'
+import type { MediaItem } from '@/components/library/types'
 
 interface QualityBadgesProps {
   item: MediaItem

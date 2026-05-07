@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '@/hooks/useChat'
-import { ChatMessage } from './ChatMessage'
+import { ChatMessage } from '@/components/chat/ChatMessage'
 
 interface ChatPanelProps {
   isOpen: boolean

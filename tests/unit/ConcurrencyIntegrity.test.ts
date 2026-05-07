@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
-import { SourceManager } from '../../src/main/services/SourceManager'
-import { getLiveMonitoringService } from '../../src/main/services/LiveMonitoringService'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import { SourceManager } from '@main/services/SourceManager'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 
 describe('Concurrency and Scan State Integrity', () => {
   let db: any
@@ -18,26 +18,26 @@ describe('Concurrency and Scan State Integrity', () => {
   })
 
   describe('SQLite Concurrency Config', () => {
-    it('should have busy_timeout configured in the DB', () => {
-       const result = db.db.prepare('PRAGMA busy_timeout').get() as { timeout: number }
-       expect(result.timeout).toBe(5000)
+    it('should have busy_timeout configured in the DB', async () => {
+       const result = await db.db.execute('PRAGMA busy_timeout')
+       expect(result.rows[0].timeout).toBe(5000)
     })
 
-    it('should have WAL mode enabled', () => {
-       const result = db.db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
-       expect(result.journal_mode.toLowerCase()).toBe('wal')
+    it('should have WAL mode enabled', async () => {
+       const result = await db.db.execute('PRAGMA journal_mode')
+       expect(String(result.rows[0].journal_mode).toLowerCase()).toBe('wal')
     })
 
-    it('should have synchronous mode set to NORMAL', () => {
-       const result = db.db.prepare('PRAGMA synchronous').get() as { synchronous: number }
-       expect(result.synchronous).toBe(1)
+    it('should have synchronous mode set to NORMAL', async () => {
+       const result = await db.db.execute('PRAGMA synchronous')
+       expect(result.rows[0].synchronous).toBe(1)
     })
   })
 
   describe('SourceManager activeScans Counter', () => {
     it('should correctly track multiple concurrent scans', async () => {
       const manager = new SourceManager({ db })
-      db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
+      await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
       await manager.initialize()
       
       const provider = (manager as any).providers.get('s1')
@@ -61,7 +61,7 @@ describe('Concurrency and Scan State Integrity', () => {
     it('should correctly track activeScans during scanAllSources', async () => {
       const manager = new SourceManager({ db })
       await manager.initialize()
-      db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
+      await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
 
       const promise = manager.scanAllSources()
       expect(manager.isScanInProgress()).toBe(true)
@@ -74,7 +74,7 @@ describe('Concurrency and Scan State Integrity', () => {
 
     it('should send throttled library:updated events during scan', async () => {
       const manager = new SourceManager({ db })
-      db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
+      await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
       await manager.initialize()
 
       const monitoring = (manager as any).getLiveMonitoring()
@@ -131,3 +131,6 @@ describe('Concurrency and Scan State Integrity', () => {
     })
   })
 })
+
+
+

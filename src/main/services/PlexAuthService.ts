@@ -1,7 +1,7 @@
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
-import { BetterSQLiteService } from '@main/database/getDatabase'
+import { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import type { MediaProvider, SourceConfig, ServerInstance, MediaLibrary } from '@main/providers/base/MediaProvider'
-import type { MediaSource } from '@main/types/database'
+import { ProviderType, MediaSource } from '@main/types/database'
 
 export class PlexAuthService {
   constructor(
@@ -10,18 +10,18 @@ export class PlexAuthService {
   ) {}
 
   async startAuth(): Promise<{ pinId: number; code: string; authUrl: string }> {
-    const tempProvider = new PlexProvider({ sourceId: 'temp-auth', sourceType: 'plex', displayName: 'Temp Auth', connectionConfig: {} })
+    const tempProvider = new PlexProvider({ sourceId: 'temp-auth', sourceType: ProviderType.Plex, displayName: 'Temp Auth', connectionConfig: {} })
     const pin = await tempProvider.requestAuthPin()
     return { pinId: pin.id, code: pin.code, authUrl: tempProvider.getAuthUrl(pin.id, pin.code) }
   }
 
   async completeAuth(pinId: number): Promise<string | null> {
-    const tempProvider = new PlexProvider({ sourceId: 'temp-auth', sourceType: 'plex', displayName: 'Temp Auth', connectionConfig: {} })
+    const tempProvider = new PlexProvider({ sourceId: 'temp-auth', sourceType: ProviderType.Plex, displayName: 'Temp Auth', connectionConfig: {} })
     return tempProvider.checkAuthPin(pinId)
   }
 
   async authenticateAndDiscover(token: string, displayName: string): Promise<{ source: MediaSource; servers: ServerInstance[] }> {
-    const config: SourceConfig = { sourceType: 'plex', displayName, connectionConfig: { token } }
+    const config: SourceConfig = { sourceType: ProviderType.Plex, displayName, connectionConfig: { token } }
     const provider = new PlexProvider(config) as PlexProvider
     const authResult = await provider.authenticate({ token })
     if (!authResult.success) throw new Error(authResult.error || 'Authentication failed')
@@ -31,7 +31,7 @@ export class PlexAuthService {
     
     const sourceRecord: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'> = {
       source_id: sourceId,
-      source_type: 'plex',
+      source_type: ProviderType.Plex,
       display_name: displayName,
       connection_config: JSON.stringify({ token }),
       is_enabled: true,
@@ -46,7 +46,7 @@ export class PlexAuthService {
 
   async selectServer(sourceId: string, serverId: string): Promise<{ success: boolean; libraries?: MediaLibrary[] }> {
     const provider = this.providers.get(sourceId)
-    if (!provider || provider.providerType !== 'plex') throw new Error(`Plex source not found: ${sourceId}`)
+    if (!provider || provider.providerType !== ProviderType.Plex) throw new Error(`Plex source not found: ${sourceId}`)
 
     const plexProvider = provider as PlexProvider
     const success = await plexProvider.selectServer(serverId)

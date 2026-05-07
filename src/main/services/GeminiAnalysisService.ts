@@ -1,13 +1,8 @@
-import { getDatabase } from '@main/database/getDatabase'
-import { getQualityAnalyzer } from './QualityAnalyzer'
-import { getGeminiService } from './GeminiService'
-import {
-  QUALITY_REPORT_SYSTEM_PROMPT,
-  UPGRADE_PRIORITIES_SYSTEM_PROMPT,
-  COMPLETENESS_INSIGHTS_SYSTEM_PROMPT,
-  WISHLIST_ADVICE_SYSTEM_PROMPT,
-  COMPRESSION_ADVICE_SYSTEM_PROMPT,
-} from './ai-system-prompts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getGeminiService } from '@main/services/GeminiService'
+import { WishlistStatus } from '@main/types/database'
+import { APP_CONFIG } from '@main/config'
 
 /** Strip null/undefined/empty fields to reduce token usage */
 function compact(obj: any): any {
@@ -39,7 +34,7 @@ export class GeminiAnalysisService {
     }
 
     const db = getDatabase()
-    const item = db.media.getItem(mediaId)
+    const item = await db.media.getItem(mediaId)
 
     if (!item) {
       throw new Error(`Media item with ID ${mediaId} not found`)
@@ -85,7 +80,7 @@ export class GeminiAnalysisService {
           content: `Analyze this media file and provide optimal compression parameters:\n\n${JSON.stringify(metadata, null, 2)}`,
         },
       ],
-      system: COMPRESSION_ADVICE_SYSTEM_PROMPT,
+      system: APP_CONFIG.ai.compressionAdvice,
       maxTokens: 2048,
     })
 
@@ -104,10 +99,10 @@ export class GeminiAnalysisService {
     }
 
     const db = getDatabase()
-    const stats = db.stats.getLibraryStats()
-    const distribution = getQualityAnalyzer().getQualityDistribution()
+    const stats = await db.stats.getLibraryStats()
+    const distribution = await getQualityAnalyzer().getQualityDistribution()
 
-    const lowQualityItems = db.media.getItems({
+    const lowQualityItems = await db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
@@ -144,7 +139,7 @@ export class GeminiAnalysisService {
             content: `Here is my media library data. Please generate a quality health report.\n\n${dataContext}`,
           },
         ],
-        system: QUALITY_REPORT_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.qualityReport,
         maxTokens: 4096,
       },
       onDelta,
@@ -166,20 +161,20 @@ export class GeminiAnalysisService {
 
     const db = getDatabase()
 
-    const lowItems = db.media.getItems({
+    const lowItems = await db.media.getItems({
       tierQuality: 'LOW',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 30,
     })
-    const mediumItems = db.media.getItems({
+    const mediumItems = await db.media.getItems({
       tierQuality: 'MEDIUM',
       sortBy: 'title',
       sortOrder: 'asc',
       limit: 20,
     })
 
-    const stats = db.stats.getLibraryStats()
+    const stats = await db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',
@@ -224,7 +219,7 @@ export class GeminiAnalysisService {
             content: `Here are the items in my library that may need quality upgrades. Please prioritize them.\n\n${dataContext}`,
           },
         ],
-        system: UPGRADE_PRIORITIES_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.upgradePriorities,
         maxTokens: 4096,
       },
       onDelta,
@@ -246,9 +241,9 @@ export class GeminiAnalysisService {
 
     const db = getDatabase()
 
-    const incompleteSeries = db.tvShows.getIncomplete()
-    const incompleteCollections = db.movieCollections.getIncompleteCollections()
-    const stats = db.stats.getLibraryStats()
+    const incompleteSeries = await db.tvShows.getIncomplete()
+    const incompleteCollections = await db.movieCollections.getIncompleteCollections()
+    const stats = await db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',
@@ -310,7 +305,7 @@ export class GeminiAnalysisService {
             content: `Here is my collection and series completeness data. Please analyze it and provide insights.\n\n${dataContext}`,
           },
         ],
-        system: COMPLETENESS_INSIGHTS_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.completenessInsights,
         maxTokens: 4096,
       },
       onDelta,
@@ -332,8 +327,8 @@ export class GeminiAnalysisService {
 
     const db = getDatabase()
 
-    const wishlistItems = db.wishlist.getItems({ status: 'active', limit: 50 })
-    const stats = db.stats.getLibraryStats()
+    const wishlistItems = await db.wishlist.getItems({ status: WishlistStatus.Active, limit: 50 })
+    const stats = await db.stats.getLibraryStats()
 
     const dataContext = [
       '## Library Overview',
@@ -364,7 +359,7 @@ export class GeminiAnalysisService {
             content: `Here is my wishlist. Please analyze it and provide shopping advice.\n\n${dataContext}`,
           },
         ],
-        system: WISHLIST_ADVICE_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.wishlistAdvice,
         maxTokens: 4096,
       },
       onDelta,

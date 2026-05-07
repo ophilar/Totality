@@ -15,7 +15,7 @@ import {
 import type {
   MediaMetadata,
 } from '@main/providers/base/MediaProvider'
-import type {
+import {
   MediaItem,
   MediaItemVersion,
   AudioTrack,
@@ -23,6 +23,8 @@ import type {
   MusicArtist,
   MusicAlbum,
   MusicTrack,
+  ProviderType,
+  MediaItemType,
 } from '@main/types/database'
 import type {
   KodiMovie,
@@ -30,8 +32,8 @@ import type {
   KodiMusicArtist,
   KodiMusicAlbum,
   KodiMusicSong,
-} from './KodiProvider'
-import { KodiRpcClient } from './KodiRpcClient'
+} from '@main/providers/kodi/KodiProvider'
+import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
 
 export class KodiItemMapper {
   constructor(
@@ -39,7 +41,7 @@ export class KodiItemMapper {
     private client: KodiRpcClient
   ) {}
 
-  convertToMediaMetadata(item: KodiMovie | KodiEpisode, type: 'movie' | 'episode'): MediaMetadata {
+  convertToMediaMetadata(item: KodiMovie | KodiEpisode, type: MediaItemType): MediaMetadata {
     const videoStream = item.streamdetails?.video?.[0]
     const audioStream = item.streamdetails?.audio?.[0]
     const width = videoStream?.width || 0
@@ -49,7 +51,7 @@ export class KodiItemMapper {
 
     let posterUrl: string | undefined
     const art = item.art as any
-    if (type === 'episode') {
+    if (type === MediaItemType.Episode) {
       posterUrl = this.client.buildImageUrl(art?.['tvshow.poster'] || art?.['season.poster'])
     } else {
       posterUrl = this.client.buildImageUrl(art?.poster)
@@ -57,14 +59,14 @@ export class KodiItemMapper {
 
     const audioBitrate = estimateAudioBitrate(audioStream?.codec, audioStream?.channels)
 
-    const isEpisode = type === 'episode'
+    const isEpisode = type === MediaItemType.Episode
     const movieItem = item as KodiMovie
     const episodeItem = item as KodiEpisode
 
     return {
       providerId: this.sourceId,
-      providerType: 'kodi',
-      itemId: type === 'movie' ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
+      providerType: ProviderType.Kodi,
+      itemId: type === MediaItemType.Movie ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
       title: item.title,
       type: type,
       year: isEpisode ? undefined : movieItem.year,
@@ -88,7 +90,7 @@ export class KodiItemMapper {
     }
   }
 
-  async convertToMediaItem(item: KodiMovie | KodiEpisode, type: 'movie' | 'episode'): Promise<{ mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null> {
+  async convertToMediaItem(item: KodiMovie | KodiEpisode, type: MediaItemType): Promise<{ mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null> {
     const videoStream = item.streamdetails?.video?.[0]
     if (!videoStream) return null
 
@@ -125,12 +127,12 @@ export class KodiItemMapper {
     if (sourceType) labelParts.push(sourceType)
     if (edition) labelParts.push(edition)
 
-    const isEpisode = type === 'episode'
+    const isEpisode = type === MediaItemType.Episode
     const movieItem = item as KodiMovie
     const episodeItem = item as KodiEpisode
 
     const version: Omit<MediaItemVersion, 'id' | 'media_item_id'> = {
-      version_source: `kodi_${type}_${type === 'movie' ? movieItem.movieid : episodeItem.episodeid}`,
+      version_source: `kodi_${type}_${type === MediaItemType.Movie ? movieItem.movieid : episodeItem.episodeid}`,
       edition,
       source_type: sourceType,
       label: labelParts.join(' '),
@@ -152,7 +154,7 @@ export class KodiItemMapper {
     }
 
     const mediaItem: MediaItem = {
-      plex_id: type === 'movie' ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
+      plex_id: type === MediaItemType.Movie ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
       title: item.title,
       year: isEpisode ? undefined : movieItem.year,
       type: type,
@@ -190,7 +192,7 @@ export class KodiItemMapper {
   convertToMusicArtist(item: KodiMusicArtist, libraryId?: string): MusicArtist {
     return {
       source_id: this.sourceId,
-      source_type: 'kodi',
+      source_type: ProviderType.Kodi,
       library_id: libraryId,
       provider_id: `artist-${item.artistid}`,
       name: item.artist,
@@ -206,7 +208,7 @@ export class KodiItemMapper {
   convertToMusicAlbum(item: KodiMusicAlbum, artistId?: number, libraryId?: string): MusicAlbum {
     return {
       source_id: this.sourceId,
-      source_type: 'kodi',
+      source_type: ProviderType.Kodi,
       library_id: libraryId,
       provider_id: `album-${item.albumid}`,
       artist_id: artistId,
@@ -227,7 +229,7 @@ export class KodiItemMapper {
 
     return {
       source_id: this.sourceId,
-      source_type: 'kodi',
+      source_type: ProviderType.Kodi,
       library_id: libraryId,
       provider_id: `song-${item.songid}`,
       album_id: albumId,

@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const mediaApi = {
@@ -15,42 +16,43 @@ export const mediaApi = {
   // Database - Media Items
   getMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItems', filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
-  mediaList: (filters?: unknown) => ipcRenderer.invoke('db:media:list', filters),
-  mediaCount: (filters?: unknown) => ipcRenderer.invoke('db:media:count', filters),
+  mediaList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
+  mediaCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
   getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
-  tvShowList: (filters?: unknown) => ipcRenderer.invoke('db:tvshows:list', filters),
-  tvShowCount: (filters?: unknown) => ipcRenderer.invoke('db:tvshows:count', filters),
-  countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke('db:countTVEpisodes', filters),
+  getLibraryOverview: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sourceId),
+  tvShowList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
+  tvShowCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, filters),
+  countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, filters),
   getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
-    ipcRenderer.invoke('db:getLetterOffset', params),
-  getMediaItem: (id: number) => ipcRenderer.invoke('db:media:getItem', id),
-  upsertMediaItem: (item: unknown) => ipcRenderer.invoke('db:upsertMediaItem', item),
-  deleteMediaItem: (id: number) => ipcRenderer.invoke('db:deleteMediaItem', id),
-  getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke('db:getMediaItemVersions', mediaItemId),
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LETTER_OFFSET, params),
+  getMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_ITEM, id),
+  upsertMediaItem: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_UPSERT, item),
+  deleteMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_DELETE, id),
+  getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, mediaItemId),
 
   // Database - Quality Scores
-  getQualityScores: () => ipcRenderer.invoke('db:getQualityScores'),
+  getQualityScores: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORES),
   getQualityScoreByMediaId: (mediaItemId: number) =>
-    ipcRenderer.invoke('db:getQualityScoreByMediaId', mediaItemId),
-  upsertQualityScore: (score: unknown) => ipcRenderer.invoke('db:upsertQualityScore', score),
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_QUALITY_SCORE_BY_MEDIA_ID, mediaItemId),
+  upsertQualityScore: (score: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.UPSERT_QUALITY_SCORE, score),
 
   // Database - Settings
-  getSetting: (key: string) => ipcRenderer.invoke('db:getSetting', key),
-  setSetting: (key: string, value: string) => ipcRenderer.invoke('db:setSetting', key, value),
-  getAllSettings: () => ipcRenderer.invoke('db:getAllSettings'),
+  getSetting: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_SETTING, key),
+  setSetting: (key: string, value: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_SETTING, key, value),
+  getAllSettings: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
 
   // Library Protection
   dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => 
-    ipcRenderer.invoke('db:setLibraryProtected', sourceId, libraryId, isProtected),
-  dbVerifyPin: (pin: string) => ipcRenderer.invoke('db:verifyPin', pin),
-  dbSetPin: (pin: string) => ipcRenderer.invoke('db:setPin', pin),
-  dbHasPin: () => ipcRenderer.invoke('db:hasPin'),
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, sourceId, libraryId, isProtected),
+  dbVerifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.VERIFY_PIN, pin),
+  dbSetPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_PIN, pin),
+  dbHasPin: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.HAS_PIN),
 
   // NFS Mount Mappings (for Kodi)
-  getNfsMappings: () => ipcRenderer.invoke('settings:getNfsMappings'),
-  setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke('settings:setNfsMappings', mappings),
-  testNfsMapping: (nfsPath: string, localPath: string) => ipcRenderer.invoke('settings:testNfsMapping', nfsPath, localPath),
+  getNfsMappings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.GET_NFS_MAPPINGS),
+  setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SET_NFS_MAPPINGS, mappings),
+  testNfsMapping: (nfsPath: string, localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.TEST_NFS_MAPPING, nfsPath, localPath),
 
   // Settings Change Events
   onSettingsChanged: (callback: (data: { key: string; hasValue: boolean }) => void) => {
@@ -60,17 +62,17 @@ export const mediaApi = {
   },
 
   // Database - Data Management
-  dbGetPath: () => ipcRenderer.invoke('db:getPath'),
-  dbExport: () => ipcRenderer.invoke('db:export'),
+  dbGetPath: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_PATH),
+  dbExport: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT),
   dbExportCSV: (options: {
     includeUpgrades: boolean
     includeMissingMovies: boolean
     includeMissingEpisodes: boolean
     includeMissingAlbums: boolean
-  }) => ipcRenderer.invoke('db:exportCSV', options),
-  dbImport: () => ipcRenderer.invoke('db:import'),
-  dbReset: () => ipcRenderer.invoke('db:reset'),
-  dbOpenFolder: () => ipcRenderer.invoke('db:openFolder'),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT_CSV, options),
+  dbImport: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.IMPORT),
+  dbReset: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.RESET),
+  dbOpenFolder: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.OPEN_FOLDER),
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
@@ -99,21 +101,21 @@ export const mediaApi = {
     ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, tmdbId),
 
   // Movie Match Fixing
-  movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke('movie:searchTMDB', query, year),
+  movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year),
   movieFixMatch: (mediaItemId: number, tmdbId: number) =>
-    ipcRenderer.invoke('movie:fixMatch', mediaItemId, tmdbId),
+    ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, tmdbId),
 
   // TMDB Metadata
   tmdbGetTVShowDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getTVShowDetails', tmdbId),
   tmdbGetMovieDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getMovieDetails', tmdbId),
 
   // Movie Collections
-  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('collections:analyzeAll', sourceId, libraryId),
-  collectionsGetAll: (sourceId?: string) => ipcRenderer.invoke('collections:getAll', sourceId),
-  collectionsGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('collections:getIncomplete', sourceId),
-  collectionsGetStats: () => ipcRenderer.invoke('collections:getStats'),
-  collectionsDelete: (id: number) => ipcRenderer.invoke('collections:delete', id),
-  collectionsCancelAnalysis: () => ipcRenderer.invoke('collections:cancelAnalysis'),
+  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.ANALYZE_ALL, sourceId, libraryId),
+  collectionsGetAll: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_ALL, sourceId),
+  collectionsGetIncomplete: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_INCOMPLETE, sourceId),
+  collectionsGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.GET_STATS),
+  collectionsDelete: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.DELETE, id),
+  collectionsCancelAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS.CANCEL_ANALYSIS),
   onCollectionsProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
     ipcRenderer.on('collections:progress', handler)
@@ -121,18 +123,18 @@ export const mediaApi = {
   },
 
   // Database - Statistics
-  getLibraryStats: (sourceId?: string) => ipcRenderer.invoke('db:getLibraryStats', sourceId),
-  getDashboardSummary: (sourceId?: string) => ipcRenderer.invoke('db:getDashboardSummary', sourceId),
+  getLibraryStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sourceId),
+  getDashboardSummary: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, sourceId),
 
   // Database - Global Search
-  mediaSearch: (query: string) => ipcRenderer.invoke('media:search', query),
+  mediaSearch: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH, query),
 
   // Database - Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
-    ipcRenderer.invoke('db:addExclusion', exclusionType, referenceId, referenceKey, parentKey, title),
-  removeExclusion: (id: number) => ipcRenderer.invoke('db:removeExclusion', id),
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, exclusionType, referenceId, referenceKey, parentKey, title),
+  removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
-    ipcRenderer.invoke('db:getExclusions', exclusionType, parentKey),
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
 }
 
 export interface MediaAPI {
@@ -158,6 +160,16 @@ export interface MediaAPI {
   mediaCount: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: unknown) => Promise<unknown[]>
   countTVShows: (filters?: unknown) => Promise<number>
+  getLibraryOverview: (sourceId?: string) => Promise<{
+    movies: { items: any[], total: number }
+    tvShows: { items: any[], total: number }
+    music: { 
+      artists: { items: any[], total: number },
+      albums: { items: any[], total: number },
+      tracks: { items: any[], total: number }
+    }
+    stats: any
+  }>
   tvShowList: (filters?: unknown) => Promise<unknown[]>
   tvShowCount: (filters?: unknown) => Promise<number>
   countTVEpisodes: (filters?: unknown) => Promise<number>

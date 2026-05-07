@@ -1,4 +1,7 @@
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
+import type { Client, Value } from '@libsql/client'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 
 /**
  * BaseRepository
@@ -7,69 +10,66 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
  * Provides generic CRUD operations and common SQL patterns.
  */
 export abstract class BaseRepository<T extends { id?: number }> {
-  constructor(protected db: DatabaseSync, protected tableName: string) {}
+  constructor(
+    protected db: Client, 
+    protected tableName: string,
+    protected drizzle: LibSQLDatabase<typeof schema>
+  ) {}
 
-  protected beginBatch(): void {
-    const service = (this.db as any).__service
-    if (service) {
-      service.beginBatch()
-    } else {
-      this.db.exec('BEGIN IMMEDIATE')
-    }
+  protected async beginBatch(): Promise<void> {
+    await getDatabase().beginBatch()
   }
 
-  protected endBatch(): void {
-    const service = (this.db as any).__service
-    if (service) {
-      service.endBatch()
-    } else {
-      this.db.exec('COMMIT')
-    }
+  protected async endBatch(): Promise<void> {
+    await getDatabase().endBatch()
   }
 
-  protected rollback(): void {
-    const service = (this.db as any).__service
-    if (service && typeof service.rollbackBatch === 'function') {
-      service.rollbackBatch()
-    } else {
-      this.db.exec('ROLLBACK')
-    }
+  protected async rollbackBatch(): Promise<void> {
+    await getDatabase().rollbackBatch()
   }
-
 
   /**
-   * Get a single record by ID
+   * Get a single record by ID.
+   * Uses raw SQL to avoid Drizzle query builder issues with dynamic table names.
    */
-  getById(id: number): T | null {
-    const stmt = this.db.prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`)
-    return (stmt.get(id) as unknown as T) || null
+  async getById(id: number): Promise<T | null> {
+    const result = await this.db.execute({
+      sql: `SELECT * FROM ${this.tableName} WHERE id = ?`,
+      args: [id]
+    })
+    return (result.rows[0] as unknown as T) || null
   }
 
   /**
    * Delete a record by ID
    */
-  delete(id: number): boolean {
-    const stmt = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`)
-    const info = stmt.run(id) as unknown as { changes: number | bigint }
-    return Number(info.changes) > 0
+  async delete(id: number): Promise<boolean> {
+    await this.db.execute({
+      sql: `DELETE FROM ${this.tableName} WHERE id = ?`,
+      args: [id]
+    })
+    return true
   }
 
   /**
    * Generic count method
    */
-  protected countInternal(whereSql: string = '1=1', params: SQLInputValue[] = []): number {
-    const sql = `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${whereSql}`
-    const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as unknown as { count: number } | undefined
-    return result ? result.count : 0
+  protected async countInternal(whereSql: string = '1=1', params: Value[] = []): Promise<number> {
+    const result = await this.db.execute({ 
+      sql: `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${whereSql}`, 
+      args: params 
+    })
+    return (result.rows[0]?.count as number) || 0
   }
 
   /**
    * Update timestamps for a record
    */
-  protected updateTimestamps(id: number): void {
-    const stmt = this.db.prepare(`UPDATE ${this.tableName} SET updated_at = ? WHERE id = ?`)
-    stmt.run(new Date().toISOString(), id)
+  protected async updateTimestamps(id: number): Promise<void> {
+    await this.db.execute({
+      sql: `UPDATE ${this.tableName} SET updated_at = ? WHERE id = ?`,
+      args: [new Date().toISOString(), id]
+    })
   }
 
   /**
@@ -89,16 +89,16 @@ export abstract class BaseRepository<T extends { id?: number }> {
   /**
    * Execute a raw query and return results
    */
-  protected queryAll<R = T>(sql: string, params: SQLInputValue[] = []): R[] {
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as unknown as R[]
+  protected async queryAll<R = T>(sql: string, params: Value[] = []): Promise<R[]> {
+    const result = await this.db.execute({ sql, args: params })
+    return result.rows as unknown as R[]
   }
 
   /**
    * Execute a raw query and return a single result
    */
-  protected queryOne<R = T>(sql: string, params: SQLInputValue[] = []): R | null {
-    const stmt = this.db.prepare(sql)
-    return (stmt.get(...params) as unknown as R) || null
+  protected async queryOne<R = T>(sql: string, params: Value[] = []): Promise<R | null> {
+    const result = await this.db.execute({ sql, args: params })
+    return (result.rows[0] as unknown as R) || null
   }
 }

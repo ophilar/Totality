@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { TranscodingService, resetTranscodingServiceForTesting } from '../../src/main/services/TranscodingService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
-import { getGeminiService } from '../../src/main/services/GeminiService'
-import { getMediaFileAnalyzer } from '../../src/main/services/MediaFileAnalyzer'
-import { getLoggingService } from '../../src/main/services/LoggingService'
+import { TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
+import { resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { getGeminiService } from '@main/services/GeminiService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { getLoggingService } from '@main/services/LoggingService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
@@ -23,19 +24,27 @@ vi.mock('../../src/main/services/LoggingService', () => ({
   getLoggingService: vi.fn(() => mockLog)
 }))
 
-// Mock fs and fs/promises correctly at top level
-vi.mock('fs', () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  statSync: vi.fn().mockReturnValue({ size: 1000 }),
-  renameSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}))
+// Mock fs and fs/promises correctly using importOriginal
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    existsSync: vi.fn().mockReturnValue(true),
+    statSync: vi.fn().mockReturnValue({ size: 1000 }),
+    renameSync: vi.fn(),
+    unlinkSync: vi.fn(),
+  }
+})
 
-vi.mock('fs/promises', () => ({
-  stat: vi.fn().mockResolvedValue({ size: 1000 }),
-  rename: vi.fn().mockResolvedValue(undefined),
-  unlink: vi.fn().mockResolvedValue(Promise.resolve()),
-}))
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>()
+  return {
+    ...actual,
+    stat: vi.fn().mockResolvedValue({ size: 1000 }),
+    rename: vi.fn().mockResolvedValue(undefined),
+    unlink: vi.fn().mockResolvedValue(Promise.resolve()),
+  }
+})
 
 vi.mock('child_process')
 
@@ -48,11 +57,8 @@ describe('TranscodingService', () => {
   beforeEach(async () => {
     vi.resetAllMocks()
     resetTranscodingServiceForTesting()
-    resetBetterSQLiteServiceForTesting()
     
-    process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
+    db = await setupTestDb()
 
     mockGemini = {
       isConfigured: vi.fn().mockReturnValue(true),
@@ -67,14 +73,18 @@ describe('TranscodingService', () => {
     vi.mocked(getMediaFileAnalyzer).mockReturnValue(mockAnalyzer)
 
     // Ensure existsSync returns true for expected paths by default
-    const fs = await import('fs')
-    vi.mocked(fs.existsSync).mockReturnValue(true)
+    const fsMod = await import('fs')
+    vi.mocked(fsMod.existsSync).mockReturnValue(true)
     
     const fsAsync = await import('fs/promises')
     vi.mocked(fsAsync.unlink).mockResolvedValue(undefined)
     vi.mocked(fsAsync.stat).mockResolvedValue({ size: 1000 } as any)
 
     service = new TranscodingService()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   describe('checkAvailability', () => {
@@ -155,9 +165,9 @@ describe('TranscodingService', () => {
   })
 
   describe('transcode', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: true, ffmpeg: true })
-      db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: 'C:/media/movie.mkv', file_size: 1000 })
+      await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: 'C:/media/movie.mkv', file_size: 1000 } as any)
     })
 
     it('executes transcode and updates database on success', async () => {
@@ -189,7 +199,7 @@ describe('TranscodingService', () => {
       expect(result).toBe(true)
       expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'complete' }))
       
-      const item = db.media.getItem(1)
+      const item = await db.media.getItem(1)
       expect(item.file_path).toContain('movie.mkv')
     })
 
@@ -216,3 +226,6 @@ describe('TranscodingService', () => {
     })
   })
 })
+
+
+

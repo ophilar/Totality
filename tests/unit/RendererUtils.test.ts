@@ -3,8 +3,8 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect } from 'vitest'
-import { parseMissingMovies, parseMissingEpisodes, groupEpisodesBySeason } from '../../src/renderer/src/components/dashboard/dashboardUtils'
-import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getTrackQualityTier } from '../../src/renderer/src/components/library/mediaUtils'
+import { parseMissingMovies, parseMissingEpisodes, groupEpisodesBySeason } from '@/components/dashboard/dashboardUtils'
+import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getTrackQualityTier } from '@/components/library/mediaUtils'
 
 describe('DashboardUtils (Renderer)', () => {
   describe('parseMissingMovies', () => {
@@ -95,3 +95,6 @@ describe('MediaUtils (Renderer)', () => {
     })
   })
 })
+
+
+

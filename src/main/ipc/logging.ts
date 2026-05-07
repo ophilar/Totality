@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * Logging IPC Handlers
  *
@@ -6,229 +7,122 @@
 
 import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import { getLoggingService } from '@main/services/LoggingService'
-import type { SourceInfo, DiagnosticInfo } from '@main/services/LoggingService'
-import { getSourceManager } from '@main/services/SourceManager'
-import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
-import { getDatabase } from '@main/database/getDatabase'
-import { getErrorMessage } from './utils'
-import { validateInput, BooleanSchema } from '@main/validation/schemas'
-import type { LogLevel } from '@main/services/LoggingService'
-import { z } from 'zod'
+import path from 'path'
+import fs from 'fs'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
-const FileLoggingSettingsSchema = z.object({
-  enabled: z.boolean().optional(),
-  minLevel: z.enum(['verbose', 'debug', 'info', 'warn', 'error']).optional(),
-  retentionDays: z.number().int().min(1).max(365).optional(),
-})
-import * as fs from 'fs'
-import * as path from 'path'
-
-async function getSourceInfo(): Promise<SourceInfo[]> {
-  try {
-    const manager = getSourceManager()
-    const sources = await manager.getSources()
-
-    const results = await Promise.all(
-      sources.map(async (source: any) => {
-        let serverVersion: string | null = null
-        const provider = manager.getProvider(source.source_id)
-        if (provider) {
-          try {
-            const test = await Promise.race([
-              provider.testConnection(),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-            ])
-            if (test && test.success) {
-              serverVersion = test.serverVersion || null
-            }
-          } catch (error) { throw error }
-        }
-        return {
-          displayName: source.display_name,
-          sourceType: source.source_type,
-          serverVersion,
-        }
-      })
-    )
-
-    return results
-  } catch (error) { throw error }
-}
-
-async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
-  try {
-    const analyzer = getMediaFileAnalyzer()
-    const db = getDatabase()
-    const monitoring = getLiveMonitoringService()
-    const manager = getSourceManager()
-
-    const [ffAvailable, ffVersion, ffBundled] = await Promise.all([
-      analyzer.isAvailable(),
-      analyzer.getVersion().catch(() => null),
-      analyzer.isBundledVersion().catch(() => false),
-    ])
-
-    const dbPath = db.getDbPath()
-    let dbSizeMB = 0
-    try {
-      const stats = fs.statSync(dbPath)
-      dbSizeMB = Math.round((stats.size / 1024 / 1024) * 10) / 10
-    } catch (error) { throw error }
-
-    const sources = await manager.getSources()
-    const libraries = (sources as any[]).map((s: any) => ({
-      sourceName: s.display_name,
-      sourceType: s.source_type,
-      itemCount: db.stats.getItemsCountBySource(s.source_id),
-    }))
-
-    return {
-      ffprobe: { available: ffAvailable, version: ffVersion, bundled: ffBundled },
-      database: { path: path.basename(dbPath), sizeMB: dbSizeMB },
-      libraries,
-      monitoring: { enabled: monitoring.isMonitoringActive() },
-    }
-  } catch {
-    return {
-      ffprobe: { available: false, version: null, bundled: false },
-      database: { path: 'unknown', sizeMB: 0 },
-      libraries: [],
-      monitoring: { enabled: false },
-    }
-  }
-}
-
+/**
+ * Register all logging-related IPC handlers
+ */
 export function registerLoggingHandlers(): void {
-  // Renderer logging bridge
-  ipcMain.on('logs:info', (_event, source: string, message: unknown, ...details: unknown[]) => {
-    getLoggingService().info(source, message, ...details)
-  })
-
-  ipcMain.on('logs:warn', (_event, source: string, message: unknown, ...details: unknown[]) => {
-    getLoggingService().warn(source, message, ...details)
-  })
-
-  ipcMain.on('logs:error', (_event, source: string, message: unknown, ...details: unknown[]) => {
-    getLoggingService().error(source, message, ...details)
-  })
-
-  ipcMain.on('logs:debug', (_event, source: string, message: unknown, ...details: unknown[]) => {
-    getLoggingService().debug(source, message, ...details)
-  })
-
-  ipcMain.handle('logs:getAll', async (_event, limit?: unknown) => {
+  /**
+   * Get all log entries from the circular buffer
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.GET_ALL, async (_event, limit?: number) => {
     try {
-      const validLimit = limit !== undefined ? validateInput(z.number().int().positive().max(100000), limit, 'logs:getAll') : undefined
-      return getLoggingService().getLogs(validLimit)
+      const logs = getLoggingService().getLogs(limit)
+      return logs.map((log: any) => ({
+        ...log,
+        message: Array.isArray(log.message) ? log.message.join(' ') : String(log.message)
+      }))
     } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:getAll] Error:', error)
-      throw error
+      getLoggingService().error('[logging]', 'Error getting logs:', error)
+      return []
     }
   })
 
-  ipcMain.handle('logs:clear', async () => {
+  /**
+   * Clear all current logs
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.CLEAR, async () => {
     try {
       getLoggingService().clearLogs()
-    } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:clear] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:setVerbose', async (_event, enabled: unknown) => {
-    try {
-      const validEnabled = validateInput(BooleanSchema, enabled, 'logs:setVerbose')
-      getLoggingService().setVerboseLogging(validEnabled)
       return { success: true }
     } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:setVerbose] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:isVerbose', async () => {
-    try {
-      return getLoggingService().isVerboseEnabled()
-    } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:isVerbose] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:getFileLoggingSettings', async () => {
-    try {
-      const db = getDatabase()
-      return {
-        enabled: db.config.getSetting('file_logging_enabled') !== 'false',
-        minLevel: (db.config.getSetting('file_logging_min_level') || 'info') as LogLevel,
-        retentionDays: parseInt(db.config.getSetting('log_retention_days') || '7', 10),
-      }
-    } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:getFileLoggingSettings] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:setFileLoggingSettings', async (_event, settings: unknown) => {
-    try {
-      const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
-      const db = getDatabase()
-      if (valid.enabled !== undefined) db.config.setSetting('file_logging_enabled', String(valid.enabled))
-      if (valid.minLevel !== undefined) db.config.setSetting('file_logging_min_level', valid.minLevel)
-      if (valid.retentionDays !== undefined) db.config.setSetting('log_retention_days', String(valid.retentionDays))
-      getLoggingService().updateFileLoggingSettings(valid)
-      return { success: true }
-    } catch (error) {
-      getLoggingService().error('[logging]', '[IPC logs:setFileLoggingSettings] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:export', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (!win) return { success: false, error: 'No window' }
-
-    const result = await dialog.showSaveDialog(win, {
-      title: 'Export Logs',
-      defaultPath: `totality-logs-${new Date().toISOString().split('T')[0]}.txt`,
-      filters: [
-        { name: 'Text Files', extensions: ['txt'] },
-        { name: 'JSON Files', extensions: ['json'] },
-      ],
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, canceled: true }
-    }
-
-    try {
-      // Gather connected source info and diagnostics
-      const [sourceInfo, diagnostics] = await Promise.all([
-        getSourceInfo(),
-        getDiagnosticInfo(),
-      ])
-
-      const isJson = result.filePath.endsWith('.json')
-      if (isJson) {
-        await getLoggingService().exportLogs(result.filePath, sourceInfo, diagnostics)
-      } else {
-        await getLoggingService().exportLogsAsText(result.filePath, sourceInfo, diagnostics)
-      }
-      return { success: true, filePath: result.filePath }
-    } catch (error: unknown) {
+      getLoggingService().error('[logging]', 'Error clearing logs:', error)
       return { success: false, error: getErrorMessage(error) }
     }
   })
 
-  ipcMain.handle('logs:openLogFolder', async () => {
+  /**
+   * Export all current logs to a text file
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.EXPORT, async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win) throw new Error('No window found')
+
+      const result = await dialog.showSaveDialog(win, {
+        title: 'Export Logs',
+        defaultPath: `totality-logs-${new Date().toISOString().split('T')[0]}.txt`,
+        filters: [
+          { name: 'Text Files', extensions: ['txt'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, cancelled: true }
+      }
+
+      await getLoggingService().exportLogs(result.filePath)
+      return { success: true, path: result.filePath }
+    } catch (error: unknown) {
+      getLoggingService().error('[logging]', 'Error exporting logs:', error)
+      return { success: false, error: getErrorMessage(error) }
+    }
+  })
+
+  /**
+   * Toggle verbose logging
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.SET_VERBOSE, async (_event, enabled: boolean) => {
+    getLoggingService().setVerboseLogging(enabled)
+    return { success: true }
+  })
+
+  /**
+   * Check if verbose logging is enabled
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.IS_VERBOSE, async () => {
+    return getLoggingService().isVerboseEnabled()
+  })
+
+  /**
+   * Get file logging settings
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS, async () => {
+    return getLoggingService().getFileLoggingSettings()
+  })
+
+  /**
+   * Update file logging settings
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, async (_event, settings) => {
+    getLoggingService().updateFileLoggingSettings(settings)
+    return { success: true }
+  })
+
+  /**
+   * Open the local log directory in the OS file explorer
+   */
+  ipcMain.handle(IPC_CHANNELS.LOGGING.OPEN_LOG_FOLDER, async () => {
     const logDir = path.join(app.getPath('userData'), 'logs')
     try {
-      await fs.promises.mkdir(logDir, { recursive: true })
+      if (!fs.existsSync(logDir)) {
+        await fs.promises.mkdir(logDir, { recursive: true })
+      }
       await shell.openPath(logDir)
       return { success: true }
     } catch (error: unknown) {
       return { success: false, error: getErrorMessage(error) }
     }
   })
+
+  // Register logger methods for one-way messages from renderer
+  ipcMain.on('logs:info', (_event, source, message, ...details) => getLoggingService().info(source, message, ...details))
+  ipcMain.on('logs:warn', (_event, source, message, ...details) => getLoggingService().warn(source, message, ...details))
+  ipcMain.on('logs:error', (_event, source, message, ...details) => getLoggingService().error(source, message, ...details))
+  ipcMain.on('logs:debug', (_event, source, message, ...details) => getLoggingService().debug(source, message, ...details))
 }
+

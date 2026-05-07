@@ -1,8 +1,6 @@
-import type { ConnectionTestResult } from '@main/types/ipc'
 import { LibraryType } from '@main/types/database'
-
-export type { ConnectionTestResult }
 export { LibraryType }
+export type { ConnectionTestResult } from '@main/types/ipc'
 
 // Type definitions for multi-source support
 export interface MediaSourceResponse {

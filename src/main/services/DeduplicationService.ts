@@ -1,6 +1,7 @@
 import * as fs from 'fs'
-import { getDatabase } from '@main/database/getDatabase'
-import { getLoggingService } from './LoggingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { MediaItemType, type MediaItem } from '@main/types/database'
 
 export interface RetentionPolicy {
   preferHighestResolution: boolean
@@ -23,8 +24,8 @@ export class DeduplicationService {
    */
   async scanForDuplicates(sourceId?: string): Promise<number> {
     const db = getDatabase()
-    const allMovies = db.media.getItems({ type: 'movie', sourceId })
-    const allEpisodes = db.media.getItems({ type: 'episode', sourceId })
+    const allMovies = await db.media.getItems({ type: MediaItemType.Movie, sourceId })
+    const allEpisodes = await db.media.getItems({ type: MediaItemType.Episode, sourceId })
     
     let count = 0
     
@@ -49,12 +50,12 @@ export class DeduplicationService {
     }
     
     // Save detected duplicates
-    db.beginBatch()
+    await db.beginBatch()
     try {
       for (const [key, ids] of movieGroups.entries()) {
         if (ids.length > 1) {
           const [sId, tmdbId] = key.split(':')
-          db.duplicates.upsertDuplicate({
+          await db.duplicates.upsertDuplicate({
             source_id: sId,
             external_id: tmdbId,
             external_type: 'tmdb_movie',
@@ -70,7 +71,7 @@ export class DeduplicationService {
           const parts = key.split(':')
           const sId = parts[0]
           // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
-          db.duplicates.upsertDuplicate({
+          await db.duplicates.upsertDuplicate({
             source_id: sId,
             external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
             external_type: 'tmdb_series',
@@ -80,8 +81,10 @@ export class DeduplicationService {
           count++
         }
       }
-    } finally {
-      db.endBatch()
+      await db.endBatch()
+    } catch (err) {
+      await db.rollbackBatch()
+      throw err
     }
     
     getLoggingService().info('[DeduplicationService]', `Duplicate scan complete. Found ${count} duplicate groups.`)
@@ -91,30 +94,30 @@ export class DeduplicationService {
   /**
    * Get the current retention policy from settings
    */
-  getRetentionPolicy(): RetentionPolicy {
+  async getRetentionPolicy(): Promise<RetentionPolicy> {
     const db = getDatabase()
     return {
-      preferHighestResolution: db.config.getSetting('dup_policy_highest_res') !== 'false',
-      preferOriginalLanguage: db.config.getSetting('dup_policy_orig_lang') !== 'false',
-      subtitleLanguagesWhitelist: JSON.parse(db.config.getSetting('dup_policy_sub_whitelist') || '[]'),
-      preserveCommentary: db.config.getSetting('dup_policy_commentary') !== 'false',
-      autoDelete: db.config.getSetting('dup_policy_auto_delete') === 'true'
+      preferHighestResolution: (await db.config.getSetting('dup_policy_highest_res')) !== 'false',
+      preferOriginalLanguage: (await db.config.getSetting('dup_policy_orig_lang')) !== 'false',
+      subtitleLanguagesWhitelist: JSON.parse((await db.config.getSetting('dup_policy_sub_whitelist')) || '[]'),
+      preserveCommentary: (await db.config.getSetting('dup_policy_commentary')) !== 'false',
+      autoDelete: (await db.config.getSetting('dup_policy_auto_delete')) === 'true'
     }
   }
 
   /**
    * Recommend which file to keep based on policies
    */
-  recommendRetention(mediaItemIds: number[]): { keep: number; discard: number[]; reason: string } {
+  async recommendRetention(mediaItemIds: number[]): Promise<{ keep: number; discard: number[]; reason: string }> {
     const db = getDatabase()
-    const items = db.media.getItemsByIds(mediaItemIds)
+    const items = await db.media.getItemsByIds(mediaItemIds)
     
     if (items.length <= 1) return { keep: items[0]?.id || 0, discard: [], reason: 'Only one item' }
 
-    const policy = this.getRetentionPolicy()
+    const policy = await this.getRetentionPolicy()
     
     // Simple scoring system for recommendations
-    const scores = items.map(item => {
+    const scores = items.map((item: MediaItem) => {
       let score = 0
       
       // 1. Resolution
@@ -138,10 +141,10 @@ export class DeduplicationService {
       return { id: item.id!, score }
     })
 
-    scores.sort((a, b) => b.score - a.score)
+    scores.sort((a: any, b: any) => b.score - a.score)
     
     const keepId = scores[0].id
-    const discardIds = scores.slice(1).map(s => s.id)
+    const discardIds = scores.slice(1).map((s: any) => s.id)
     
     return {
       keep: keepId!,
@@ -155,17 +158,17 @@ export class DeduplicationService {
    */
   async resolveDuplicate(duplicateId: number, keepItemId: number, deleteOthers: boolean = false): Promise<boolean> {
     const db = getDatabase()
-    const duplicate = db.duplicates.getById(duplicateId)
+    const duplicate = await db.duplicates.getById(duplicateId)
     if (!duplicate) throw new Error('Duplicate group not found')
     
     const allIds = JSON.parse(duplicate.media_item_ids) as number[]
     const discardIds = allIds.filter(id => id !== keepItemId)
     
-    const policy = this.getRetentionPolicy()
+    const policy = await this.getRetentionPolicy()
     const actualDelete = deleteOthers && (policy.autoDelete || true) // If manual resolve, we respect the deleteOthers flag
 
     if (actualDelete) {
-      const items = db.media.getItemsByIds(discardIds)
+      const items = await db.media.getItemsByIds(discardIds)
       for (const item of items) {
         if (item.file_path) {
           try {
@@ -174,20 +177,20 @@ export class DeduplicationService {
               fs.unlinkSync(item.file_path)
             }
             // Only delete from DB if file unlinked successfully (or didn't exist)
-            db.media.deleteItem(item.id!)
+            await db.media.deleteItem(item.id!)
           } catch (err) {
             getLoggingService().error('[DeduplicationService]', `Failed to delete file ${item.file_path}:`, err)
           }
         } else {
           // No path, just delete record
-          db.media.deleteItem(item.id!)
+          await db.media.deleteItem(item.id!)
         }
       }
     } else {
       // Just mark them as resolved but don't delete files
     }
     
-    db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
+    await db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
     return true
   }
 }

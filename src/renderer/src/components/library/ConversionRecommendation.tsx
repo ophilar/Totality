@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Sparkles, Loader2, AlertCircle, Copy, Check, Info, Zap } from 'lucide-react'
-import type { MediaItem } from './types'
+import type { MediaItem } from '@/components/library/types'
 
 interface CompressionAdvice {
   summary: string

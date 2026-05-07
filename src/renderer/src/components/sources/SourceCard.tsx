@@ -6,26 +6,16 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources, type ProviderType } from '@/contexts/SourceContext'
-import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/index'
+import { useSources } from '@/contexts/SourceContext'
+import { LibraryType, ProviderType } from '@main/types/database'
+import { PROVIDERS } from '@main/constants/providers'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
 
 // Extended library type with enabled status
 interface LibraryWithStatus extends MediaLibraryResponse {
   isEnabled: boolean
   lastScanAt: string | null
   itemsScanned: number
-}
-
-// Provider colors
-const providerColors: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  local: 'bg-slate-600',
-  mediamonkey: 'bg-orange-600',
 }
 
 // Helper to parse connection config and get server URL
@@ -135,11 +125,15 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
   const [ffprobeCanInstall, setFfprobeCanInstall] = useState(false)
   const [ffprobeInstalling, setFfprobeInstalling] = useState(false)
   const [ffprobeInstallProgress, setFfprobeInstallProgress] = useState<{ stage: string; percent: number } | null>(null)
-  const isKodiLocal = source.source_type === 'kodi-local'
-
   const providerType = source.source_type as ProviderType
-  const color = providerColors[providerType] || 'bg-gray-500'
+  const providerMetadata = PROVIDERS[providerType]
+  const color = providerMetadata?.color || 'bg-gray-500'
   const progress = scanProgress.get(source.source_id)
+
+  const isKodiLocal = providerType === ProviderType.KodiLocal
+
+  // Format provider name
+  const formattedProviderName = providerMetadata?.name || (source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1))
 
   // Load libraries when expanded
   const handleExpand = async () => {
@@ -216,10 +210,10 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       // Find the library to get its name and type
       const library = libraries.find(l => l.id === libraryId)
       const libraryName = library?.name || libraryId
-      const libraryType = library?.type || 'unknown'
+      const libraryType = library?.type || LibraryType.Unknown
 
       // Add to task queue
-      const taskType = libraryType === 'music' ? 'music-scan' : 'library-scan'
+      const taskType = libraryType === LibraryType.Music ? 'music-scan' : 'library-scan'
       await window.electronAPI.taskQueueAddTask({
         type: taskType,
         label: `Scan ${libraryName} (${source.display_name})`,
@@ -231,6 +225,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       window.electronAPI.log.error('[SourceCard]', 'Failed to queue library scan:', err)
     }
   }
+
 
   // Load FFprobe status function
   const loadFFprobeStatus = useCallback(async () => {
@@ -340,8 +335,10 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       >
         {/* Provider icon */}
         <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center text-white`}>
-          {source.source_type === 'local' ? (
+          {providerMetadata?.icon === 'folder' ? (
             <HardDrive className="w-4 h-4" />
+          ) : providerMetadata?.icon === 'music' ? (
+            <Music className="w-4 h-4" />
           ) : (
             <Server className="w-4 h-4" />
           )}
@@ -359,7 +356,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {source.source_type.charAt(0).toUpperCase() + source.source_type.slice(1)} •{' '}
+            {formattedProviderName} •{' '}
             Last scan: {formatLastScan(source.last_scan_at)}
           </div>
         </div>

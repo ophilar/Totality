@@ -1,7 +1,8 @@
 import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
+import { APP_CONFIG } from '@main/config'
 
 /**
  * Google Gemini AI Service with rate limit tracking
@@ -50,25 +51,30 @@ export class RateLimitError extends Error {
 }
 
 export class GeminiService {
-  private static readonly DEFAULT_MODEL = 'gemini-2.5-flash'
-  private static readonly FAST_MODEL = 'gemini-2.5-flash'
+  private static readonly DEFAULT_MODEL = APP_CONFIG.gemini.defaultModel
+  private static readonly FAST_MODEL = APP_CONFIG.gemini.fastModel
 
   private client: GoogleGenAI | null = null
   private apiKey: string | null = null
   private model: string = GeminiService.DEFAULT_MODEL
   private enabled: boolean = true
   private rateLimitedUntil: number | null = null
-  private static readonly MAX_EXPLANATION_CACHE = 20
+  private static readonly MAX_EXPLANATION_CACHE = APP_CONFIG.gemini.maxExplanationCache
   private explanationCache = new Map<string, { text: string; timestamp: number }>()
 
-  constructor() {
+  constructor() {}
+
+  /**
+   * Initialize the service by loading settings from the database
+   */
+  async initialize(): Promise<void> {
     const db = getDatabase()
-    this.apiKey = db.config.getSetting('gemini_api_key') || null
-    this.model = db.config.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
-    this.enabled = db.config.getSetting('ai_enabled') !== 'false'
+    this.apiKey = (await db.config.getSetting('gemini_api_key')) || null
+    this.model = (await db.config.getSetting('gemini_model')) || GeminiService.DEFAULT_MODEL
+    this.enabled = (await db.config.getSetting('ai_enabled')) !== 'false'
 
     if (this.apiKey && this.enabled) {
-      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.config.getSetting('gemini_base_url')
+      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || (await db.config.getSetting('gemini_base_url'))
       this.client = new GoogleGenAI({ 
         apiKey: this.apiKey,
         httpOptions: baseUrl ? { baseUrl } : undefined
@@ -79,21 +85,8 @@ export class GeminiService {
   /**
    * Refresh API key, model, and enabled state from database (called when settings change)
    */
-  refreshApiKey(): void {
-    const db = getDatabase()
-    this.apiKey = db.config.getSetting('gemini_api_key') || null
-    this.model = db.config.getSetting('gemini_model') || GeminiService.DEFAULT_MODEL
-    this.enabled = db.config.getSetting('ai_enabled') !== 'false'
-
-    if (this.apiKey && this.enabled) {
-      const baseUrl = process.env.GOOGLE_GENAI_BASE_URL || db.config.getSetting('gemini_base_url')
-      this.client = new GoogleGenAI({ 
-        apiKey: this.apiKey,
-        httpOptions: baseUrl ? { baseUrl } : undefined
-      })
-    } else {
-      this.client = null
-    }
+  async refreshApiKey(): Promise<void> {
+    await this.initialize()
   }
 
   /**

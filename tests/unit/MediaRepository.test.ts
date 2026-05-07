@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { MediaRepository } from '../../src/main/database/repositories/MediaRepository'
-import { SourceRepository } from '../../src/main/database/repositories/SourceRepository'
-import { setupTestDb, cleanupTestDb } from '../TestUtils'
-import { MediaItem } from '../../src/main/types/database'
+import { MediaRepository } from '@main/database/repositories/MediaRepository'
+import { SourceRepository } from '@main/database/repositories/SourceRepository'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { MediaItem } from '@main/types/database'
 
 describe('MediaRepository (Real DB)', () => {
   let repo: MediaRepository
@@ -15,7 +15,7 @@ describe('MediaRepository (Real DB)', () => {
     sourceRepo = db.sources
 
     // Setup a source
-    sourceRepo.upsertSource({
+    await sourceRepo.upsertSource({
       source_id: 'src-1',
       source_type: 'plex',
       display_name: 'Test Source',
@@ -38,39 +38,42 @@ describe('MediaRepository (Real DB)', () => {
     resolution: '1080p',
   } as any)
 
-  it('should upsert and retrieve a media item', () => {
+  it('should upsert and retrieve a media item', async () => {
     const item = mockItem()
-    const id = repo.upsertItem(item)
+    const id = await repo.upsertItem(item)
     expect(id).toBeGreaterThan(0)
 
-    const retrieved = repo.getItem(id)
+    const retrieved = await repo.getItem(id)
     expect(retrieved).toBeDefined()
     expect(retrieved?.title).toBe(item.title)
   })
 
-  it('should filter items by type', () => {
-    repo.upsertItem(mockItem('Movie 1'))
+  it('should filter items by type', async () => {
+    await repo.upsertItem(mockItem('Movie 1'))
     const ep = mockItem('Episode 1')
     ep.type = 'episode'
-    repo.upsertItem(ep)
+    await repo.upsertItem(ep)
 
-    const movies = repo.getItems({ type: 'movie' })
+    const movies = await repo.getItems({ type: 'movie' })
     expect(movies).toHaveLength(1)
     expect(movies[0].type).toBe('movie')
   })
 
-  it('should search items by title', () => {
-    repo.upsertItem(mockItem('The Matrix'))
-    repo.upsertItem(mockItem('Inception'))
+  it('should search items by title', async () => {
+    await repo.upsertItem(mockItem('The Matrix'))
+    await repo.upsertItem(mockItem('Inception'))
 
-    const results = repo.getItems({ searchQuery: 'Matrix' })
+    const results = await repo.getItems({ searchQuery: 'Matrix' })
     expect(results).toHaveLength(1)
     expect(results[0].title).toBe('The Matrix')
   })
 
-  it('should delete a media item and its cascade data', () => {
-    const id = repo.upsertItem(mockItem())
-    repo.deleteItem(id)
-    expect(repo.getItem(id)).toBeNull()
+  it('should delete a media item and its cascade data', async () => {
+    const id = await repo.upsertItem(mockItem())
+    await repo.deleteItem(id)
+    expect(await repo.getItem(id)).toBeNull()
   })
 })
+
+
+

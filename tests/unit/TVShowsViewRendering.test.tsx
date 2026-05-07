@@ -2,11 +2,12 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { TVShowsView } from '../../src/renderer/src/components/library/TVShowsView'
-import { SourceProvider } from '../../src/renderer/src/contexts/SourceContext'
-import { LibraryProvider } from '../../src/renderer/src/contexts/LibraryContext'
-import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
+import { render, screen, act } from '@testing-library/react'
+import { TVShowsView } from '@/components/library/TVShowsView'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 
 import React from 'react'
 
@@ -84,41 +85,49 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
     slimDown: false
   }
 
-  it('should render the TV Shows view header', () => {
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <TVShowsView {...defaultProps} totalShowCount={0} />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+  it('should render the TV Shows view header', async () => {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <TVShowsView {...defaultProps} totalShowCount={0} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
 
     expect(screen.getByText(/TV Shows/)).toBeTruthy()
     expect(screen.getByText(/No TV shows found/)).toBeTruthy()
   })
 
-  it('should render show cards when data is present', () => {
+  it('should render show cards when data is present', async () => {
     const shows = [
       { series_title: 'Test Show', season_count: 1, episode_count: 10, source_id: 's1', source_type: 'local' }
     ]
 
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <TVShowsView {...defaultProps} shows={shows as any} totalShowCount={1} />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <TVShowsView {...defaultProps} shows={shows as any} totalShowCount={1} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
 
     expect(screen.getByText('Test Show')).toBeTruthy()
     expect(screen.getByText(/1 Season • 10 Episodes/)).toBeTruthy()
   })
 
-  it('should show "Analyzing" overlay on shows without efficiency score', () => {
+  it('should show "Analyzing" overlay on shows without efficiency score', async () => {
     const shows = [
       { series_title: 'Unanalyzed Show', season_count: 1, episode_count: 5, source_id: 's1', source_type: 'local' }
     ]
@@ -127,22 +136,29 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
       ['Unanalyzed Show', { efficiency_score: null, completeness_percentage: 50, owned_episodes: 5, total_episodes: 10 }]
     ])
 
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <TVShowsView 
-              {...defaultProps} 
-              shows={shows as any} 
-              totalShowCount={1} 
-              seriesCompleteness={seriesCompleteness as any} 
-            />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <TVShowsView 
+                  {...defaultProps} 
+                  shows={shows as any} 
+                  totalShowCount={1} 
+                  seriesCompleteness={seriesCompleteness as any} 
+                />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
 
     expect(screen.getByText('Unanalyzed Show')).toBeTruthy()
     expect(screen.getByText('Analyzing')).toBeTruthy()
   })
 })
+
+
+

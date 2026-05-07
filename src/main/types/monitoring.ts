@@ -2,8 +2,7 @@
  * Types for Live Monitoring and Notification System
  */
 
-import type { ProviderType } from './database'
-export type { ProviderType }
+import { ProviderType } from '@main/types/database'
 
 // =============================================================================
 // Monitoring Configuration
@@ -16,25 +15,30 @@ export interface MonitoringConfig {
   pollingIntervals: Record<ProviderType, number>
 }
 
+import { APP_CONFIG } from '@main/config'
+
 export const DEFAULT_MONITORING_CONFIG: MonitoringConfig = {
   enabled: false,
   startOnLaunch: true,
   pauseDuringManualScan: true,
   pollingIntervals: {
-    plex: 300000,      // 5 minutes - remote server
-    jellyfin: 300000,  // 5 minutes - remote server
-    emby: 300000,      // 5 minutes - remote server
-    kodi: 300000,      // 5 minutes - remote server
-    'kodi-local': 60000, // 1 minute - local database
-    'kodi-mysql': 60000, // 1 minute - remote database
-    local: 60000,      // 1 minute - local folder
-    mediamonkey: 60000, // 1 minute - local database
+    [ProviderType.Plex]: APP_CONFIG.monitoring.pollingIntervals.plex,
+    [ProviderType.Jellyfin]: APP_CONFIG.monitoring.pollingIntervals.jellyfin,
+    [ProviderType.Emby]: APP_CONFIG.monitoring.pollingIntervals.emby,
+    [ProviderType.Kodi]: APP_CONFIG.monitoring.pollingIntervals.kodi,
+    [ProviderType.KodiLocal]: APP_CONFIG.monitoring.pollingIntervals['kodi-local'],
+    [ProviderType.KodiMySQL]: APP_CONFIG.monitoring.pollingIntervals['kodi-mysql'],
+    [ProviderType.Local]: APP_CONFIG.monitoring.pollingIntervals.local,
+    [ProviderType.MediaMonkey]: APP_CONFIG.monitoring.pollingIntervals.mediamonkey,
   },
 }
 
-// =============================================================================
-// Source Change Events
-// =============================================================================
+export enum ChangeType {
+  Added = 'added',
+  Updated = 'updated',
+  Removed = 'removed',
+  Mixed = 'mixed'
+}
 
 export interface ChangedItem {
   id: string
@@ -52,7 +56,7 @@ export interface SourceChangeEvent {
   sourceType: ProviderType
   libraryId: string
   libraryName: string
-  changeType: 'added' | 'updated' | 'removed' | 'mixed'
+  changeType: ChangeType
   itemCount: number
   items: ChangedItem[]
   detectedAt: string
@@ -62,11 +66,12 @@ export interface SourceChangeEvent {
 // Notifications
 // =============================================================================
 
-export type NotificationType =
-  | 'source_change'
-  | 'scan_complete'
-  | 'error'
-  | 'info'
+export enum NotificationType {
+  SourceChange = 'source_change',
+  ScanComplete = 'scan_complete',
+  Error = 'error',
+  Info = 'info'
+}
 
 export interface Notification {
   id?: number
@@ -96,9 +101,9 @@ export interface NotificationConfig {
 }
 
 export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
-  batchWindowMs: 45000,           // 45 seconds
-  maxIndividualNotifications: 10, // Summarize if more than 10
-  maxStoredNotifications: 100,    // Max notifications in database
+  batchWindowMs: APP_CONFIG.monitoring.batchWindowMs,
+  maxIndividualNotifications: APP_CONFIG.monitoring.maxIndividualNotifications,
+  maxStoredNotifications: APP_CONFIG.monitoring.maxStoredNotifications,
 }
 
 // =============================================================================

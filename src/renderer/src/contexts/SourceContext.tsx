@@ -8,20 +8,14 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { useToast } from '@/contexts/ToastContext'
-import {
-  LibraryType,
-} from '@preload/index'
+import { LibraryType, ProviderType } from '@main/types/database'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
   ServerInstanceResponse,
   ScanResultResponse,
   ConnectionTestResult,
-} from '@preload/index'
-
-
-// Types for source context
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+} from '@preload/api/types'
 
 export interface ScanProgress {
   sourceId: string
@@ -132,7 +126,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
   const [scanProgress, setScanProgress] = useState<Map<string, ScanProgress>>(new Map())
   const [isScanning, setIsScanning] = useState(false)
   const [stats, setStats] = useState<SourceStats | null>(null)
-  const [supportedProviders, setSupportedProviders] = useState<ProviderType[]>(['plex'])
+  const [supportedProviders, setSupportedProviders] = useState<ProviderType[]>([ProviderType.Plex])
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<Map<string, boolean>>(new Map())
   const [newItemCounts, setNewItemCounts] = useState<Map<string, number>>(new Map())
@@ -188,7 +182,18 @@ export function SourceProvider({ children }: SourceProviderProps) {
       })
     )
 
-    setConnectionStatus(newStatus)
+    // Only update if something actually changed to prevent infinite re-renders
+    setConnectionStatus(prev => {
+      if (prev.size !== newStatus.size) return newStatus
+      let changed = false
+      for (const [id, status] of newStatus) {
+        if (prev.get(id) !== status) {
+          changed = true
+          break
+        }
+      }
+      return changed ? newStatus : prev
+    })
   }, [])
 
   // Load sources on mount

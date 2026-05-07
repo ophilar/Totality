@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 
 // Mock dependencies before importing
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
@@ -23,6 +23,8 @@ vi.mock('../../src/main/services/TMDBService', () => ({
   })),
 }))
 
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+
 // Import after mocks
 const { executeTool } = await import('../../src/main/services/GeminiTools')
 
@@ -31,10 +33,12 @@ describe('GeminiTools', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    resetBetterSQLiteServiceForTesting()
+    db = await setupTestDb()
     process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   describe('input validation', () => {
@@ -66,3 +70,6 @@ describe('GeminiTools', () => {
     })
   })
 })
+
+
+

@@ -17,7 +17,7 @@ import * as fs from 'fs'
 import * as fsPromises from 'fs/promises'
 import * as path from 'path'
 import { app } from 'electron'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getMediaFileAnalyzer, type FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '@main/services/FileNameParser'
@@ -29,17 +29,16 @@ import {
   BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   ProgressCallback,
   SourceConfig,
-  ProviderType,
   AudioStreamInfo,
-  LibraryType,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType, MediaItemType, AlbumType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '@main/types/database'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 
@@ -93,7 +92,7 @@ function isExtrasContent(filename: string): boolean {
 }
 
 export class LocalFolderProvider extends BaseMediaProvider {
-  readonly providerType: ProviderType = 'local' as ProviderType
+  readonly providerType: ProviderType = ProviderType.Local
 
   private folderPath: string = ''
   private mediaType: LibraryType = LibraryType.Mixed
@@ -261,14 +260,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdb = getTMDBService()
 
       await analyzer.loadThresholdsFromDatabase()
-      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
-      const ffprobeParallelEnabled = db.config.getSetting('ffprobe_parallel_enabled') !== 'false'
-      const ffprobeBatchSize = parseInt(db.config.getSetting('ffprobe_batch_size') || '25', 10)
+      const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false'
+      const ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '25', 10)
 
       const scannedFilePaths = new Set<string>()
-      const scanType = libraryType === 'movie' ? 'movie' : 'episode'
+      const scanType = libraryType === 'movie' ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
 
@@ -285,6 +284,22 @@ export class LocalFolderProvider extends BaseMediaProvider {
       // Phase 2: Process each file
       const processedItems: ProcessedItem[] = []
       const useParallelFFprobe = ffprobeAvailable && ffprobeParallelEnabled && ffprobeBatchSize > 1
+      const knownSeries = new Set<string>()
+
+      // Pre-calculate show stats from discovered files
+      const showStats = new Map<string, { episodes: number; seasons: Set<number>; tmdbId?: string; posterUrl?: string }>()
+      if (scanType === MediaItemType.Episode) {
+        for (const file of mediaFiles) {
+          const parsed = parser.parse(path.basename(file.filePath), path.dirname(file.relativePath))
+          if (parsed?.type === 'episode') {
+            const seriesTitle = parsed.seriesTitle || 'Unknown Series'
+            if (!showStats.has(seriesTitle)) showStats.set(seriesTitle, { episodes: 0, seasons: new Set() })
+            const stats = showStats.get(seriesTitle)!
+            stats.episodes++
+            if (parsed.seasonNumber !== undefined) stats.seasons.add(parsed.seasonNumber)
+          }
+        }
+      }
 
       for (let batchStart = 0; batchStart < mediaFiles.length; batchStart += ffprobeBatchSize) {
         if (this.scanCancelled) break
@@ -303,7 +318,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           try {
             const stat = await fsPromises.stat(filePath)
             const fileMtime = stat.mtime.getTime()
-            const existingItem = db.media.getItemByPath(filePath)
+            const existingItem = await db.media.getItemByPath(filePath)
 
             if (existingItem?.file_mtime === fileMtime && !forceFullScan) {
               scannedFilePaths.add(filePath)
@@ -319,7 +334,30 @@ export class LocalFolderProvider extends BaseMediaProvider {
             if (parsed.type === 'movie') {
               metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache)
             } else {
-              metadata = await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
+              const epParsed = parsed as ParsedEpisodeInfo
+              metadata = await this.createEpisodeMetadata(filePath, epParsed, tmdbConfigured, tmdb, seriesTmdbCache)
+              
+              // BOLT: Upsert show stub for local series
+              const seriesTitle = epParsed.seriesTitle || 'Unknown Series'
+              if (!knownSeries.has(seriesTitle)) {
+                const stats = showStats.get(seriesTitle)
+                await db.tvShows.upsertCompleteness({
+                  series_title: seriesTitle,
+                  source_id: this.sourceId,
+                  library_id: libraryId,
+                  total_seasons: stats?.seasons.size || 0,
+                  total_episodes: stats?.episodes || 0,
+                  owned_seasons: stats?.seasons.size || 0,
+                  owned_episodes: stats?.episodes || 0,
+                  missing_seasons: '[]',
+                  missing_episodes: '[]',
+                  completeness_percentage: 100,
+                  tmdb_id: metadata.seriesTmdbId?.toString(),
+                  poster_url: metadata.posterUrl,
+                  status: 'Continuing',
+                })
+                knownSeries.add(seriesTitle)
+              }
             }
 
             filesToProcess.push({ filePath, relativePath, fileMtime, parsed: parsed as any, metadata })
@@ -361,7 +399,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       result.errors.push(...saveResult.errors)
 
       onProgress?.({ current: totalFiles, total: totalFiles, phase: 'saving', currentItem: 'Reconciling deletions...', percentage: 100 })
-      const existingItems = db.media.getItems({ type: scanType, sourceId: this.sourceId, libraryId })
+      const existingItems = await db.media.getItems({ type: scanType, sourceId: this.sourceId, libraryId })
       for (const item of existingItems) {
         const stillExists = isIncremental ? (item.file_path && fs.existsSync(item.file_path)) : (item.file_path && scannedFilePaths.has(item.file_path))
         if (!stillExists && item.id) {
@@ -395,10 +433,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdb = getTMDBService()
 
       await analyzer.loadThresholdsFromDatabase()
-      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
-      const scanType = libraryType === 'movies' ? 'movie' : 'episode'
+      const scanType = libraryType === 'movies' ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
 
@@ -406,7 +444,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const deletedFiles = filePaths.filter(fp => !fs.existsSync(fp))
 
       for (const filePath of deletedFiles) {
-        const existingItem = db.media.getItemByPath(filePath)
+        const existingItem = await db.media.getItemByPath(filePath)
         if (existingItem?.id) {
           await db.media.deleteItem(existingItem.id)
           result.itemsRemoved++
@@ -469,13 +507,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
     const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
     try {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
-      const ffprobeEnabled = db.config.getSetting('ffprobe_enabled') !== 'false'
+      const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const validFiles = filePaths.filter(fp => fs.existsSync(fp) && parser.isAudioFile(path.basename(fp)))
       const deletedFiles = filePaths.filter(fp => !fs.existsSync(fp))
 
       for (const filePath of deletedFiles) {
-        const existingTrack = db.music.getTrackByPath(filePath)
+        const existingTrack = await db.music.getTrackByPath(filePath)
         if (existingTrack?.id) { await db.music.deleteMusicTrack(existingTrack.id); result.itemsRemoved++ }
       }
 
@@ -487,7 +525,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           const filePath = validFiles[i]; const relativePath = path.relative(this.folderPath, filePath)
           onProgress?.({ current: i + 1, total: validFiles.length, phase: 'processing', currentItem: path.basename(filePath), percentage: ((i + 1) / validFiles.length) * 100 })
           try {
-            const existingTrack = db.music.getTrackByPath(filePath); const isNew = !existingTrack
+            const existingTrack = await db.music.getTrackByPath(filePath); const isNew = !existingTrack
             const folderContext = path.dirname(relativePath)
             const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
             const artistName = parsed.artist || 'Unknown Artist'; const albumName = parsed.album || 'Unknown Album'; const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
@@ -504,20 +542,20 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let artistId = artistMap.get(artistName.toLowerCase())
             if (!artistId) {
-              const existingArtist = db.music.getMusicArtistByName(artistName, this.sourceId)
-              artistId = existingArtist?.id || await db.music.upsertArtist({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(`artist_${artistName}`), name: artistName, sort_name: artistName, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+              const existingArtist = await db.music.getMusicArtistByName(artistName, this.sourceId)
+              artistId = existingArtist?.id || await db.music.upsertArtist({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(`artist_${artistName}`), name: artistName, sort_name: artistName, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
               artistMap.set(artistName.toLowerCase(), artistId!)
             }
 
             const albumKey = `${artistName.toLowerCase()}|${albumName.toLowerCase()}`
             let albumId = albumMap.get(albumKey)
             if (!albumId) {
-              const existingAlbum = db.music.getAlbumByName(albumName, artistId!)
-              albumId = existingAlbum?.id || await db.music.upsertAlbum({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(`album_${artistName}_${albumName}`), artist_id: artistId!, artist_name: artistName, title: albumName, sort_title: albumName, year: parsed.year, album_type: 'album', best_audio_codec: audioInfo.codec, best_audio_bitrate: audioInfo.bitrate, best_sample_rate: audioInfo.sampleRate, best_bit_depth: audioInfo.bitDepth, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+              const existingAlbum = await db.music.getAlbumByName(albumName, artistId!)
+              albumId = existingAlbum?.id || await db.music.upsertAlbum({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(`album_${artistName}_${albumName}`), artist_id: artistId!, artist_name: artistName, title: albumName, sort_title: albumName, year: parsed.year, album_type: 'album' as AlbumType, best_audio_codec: audioInfo.codec, best_audio_bitrate: audioInfo.bitrate, best_sample_rate: audioInfo.sampleRate, best_bit_depth: audioInfo.bitDepth, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
               albumMap.set(albumKey, albumId!)
             }
 
-            await db.music.upsertTrack({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: parsed.trackNumber, disc_number: parsed.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: stats.size, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            await db.music.upsertTrack({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: parsed.trackNumber, disc_number: parsed.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: stats.size, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
             result.itemsScanned++; if (isNew) result.itemsAdded++; else result.itemsUpdated++
           } catch (error: unknown) { result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`) }
         }
@@ -526,14 +564,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
       }
 
       for (const [, aId] of artistMap) {
-        const albums = db.music.getMusicAlbums({ artistId: aId }); const tracks = db.music.getMusicTracks({ artistId: aId })
+        const albums = await db.music.getMusicAlbums({ artistId: aId }); const tracks = await db.music.getMusicTracks({ artistId: aId })
         await db.music.updateMusicArtistCounts(aId, albums.length, tracks.length)
       }
       result.success = true; result.durationMs = Date.now() - startTime; return result
     } catch (error: unknown) { result.errors.push(getErrorMessage(error)); result.durationMs = Date.now() - startTime; return result }
   }
 
-  private async discoverMediaFiles(rootDir: string, _type: 'movie' | 'episode', _onProgress?: ProgressCallback, sinceTimestamp?: Date): Promise<Array<{ filePath: string; relativePath: string }>> {
+  private async discoverMediaFiles(rootDir: string, _type: MediaItemType, _onProgress?: ProgressCallback, sinceTimestamp?: Date): Promise<Array<{ filePath: string; relativePath: string }>> {
     const parser = getFileNameParser(); const files: Array<{ filePath: string; relativePath: string }> = []
     let directoriesProcessed = 0; let skippedUnchanged = 0
 
@@ -596,7 +634,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, any>): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
-    const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.title || path.basename(filePath), type: 'movie', year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
+    const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.title || path.basename(filePath), type: MediaItemType.Movie, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 
     if (fetchFromTMDB && parsed.title) {
       try {
@@ -616,7 +654,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private async createEpisodeMetadata(filePath: string, parsed: ParsedEpisodeInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, seriesTmdbCache?: Map<string, any>): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
-    const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.episodeTitle || `Episode ${parsed.episodeNumber}`, type: 'episode', seriesTitle: parsed.seriesTitle || 'Unknown Series', seasonNumber: parsed.seasonNumber, episodeNumber: parsed.episodeNumber, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
+    const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.episodeTitle || `Episode ${parsed.episodeNumber}`, type: MediaItemType.Episode, seriesTitle: parsed.seriesTitle || 'Unknown Series', seasonNumber: parsed.seasonNumber, episodeNumber: parsed.episodeNumber, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 
     if (fetchFromTMDB && parsed.seriesTitle && parsed.seasonNumber && parsed.episodeNumber) {
       try {
@@ -681,34 +719,46 @@ export class LocalFolderProvider extends BaseMediaProvider {
       groups.push(...groupMap.values())
     } else { processedItems.forEach(item => groups.push([item])) }
 
-    for (const group of groups) {
+    const BATCH_SIZE = 50
+    for (let i = 0; i < groups.length; i += BATCH_SIZE) {
+      const batch = groups.slice(i, i + BATCH_SIZE)
+      
+      await db.startBatch()
       try {
-        const canonicalMetadata = group[0].metadata; const plexId = this.generateCanonicalPlexId(canonicalMetadata)
-        let existingMediaItem = db.media.getItemByProviderId(plexId, this.sourceId)
-        if (!existingMediaItem) existingMediaItem = db.media.getItemByPath(canonicalMetadata.filePath || '')
+        for (const group of batch) {
+          try {
+            const canonicalMetadata = group[0].metadata; const plexId = this.generateCanonicalPlexId(canonicalMetadata)
+            let existingMediaItem = await db.media.getItemByProviderId(plexId, this.sourceId)
+            if (!existingMediaItem) existingMediaItem = await db.media.getItemByPath(canonicalMetadata.filePath || '')
 
-        let mergedVersions: any[] = []; const currentBatchVersions = group.map(item => this.convertMetadataToVersion(item.metadata, item.parsed, item.fileMtime))
-        if (existingMediaItem) {
-          const existingVersions = db.media.getItemVersions(existingMediaItem.id!)
-          const currentBatchPaths = new Set(currentBatchVersions.map(v => v.file_path))
-          mergedVersions = [...currentBatchVersions]
-          if (isIncremental) { existingVersions.forEach((ev: any) => { if (!currentBatchPaths.has(ev.file_path)) mergedVersions.push(ev) }) }
-        } else { mergedVersions = currentBatchVersions }
+            let mergedVersions: any[] = []; const currentBatchVersions = group.map(item => this.convertMetadataToVersion(item.metadata, item.parsed, item.fileMtime))
+            if (existingMediaItem) {
+              const existingVersions = await db.media.getItemVersions(existingMediaItem.id!)
+              const currentBatchPaths = new Set(currentBatchVersions.map(v => v.file_path))
+              mergedVersions = [...currentBatchVersions]
+              if (isIncremental) { existingVersions.forEach((ev: any) => { if (!currentBatchPaths.has(ev.file_path)) mergedVersions.push(ev) }) }
+            } else { mergedVersions = currentBatchVersions }
 
-        if (mergedVersions.length > 1) extractVersionNames(mergedVersions)
-        const scoredVersions = mergedVersions.map(v => ({ ...v, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
-        const bestIdx = scoredVersions.reduce((bi, v, i) => this.calculateVersionScore(v) > this.calculateVersionScore(scoredVersions[bi]) ? i : bi, 0)
-        const bestVersion = scoredVersions[bestIdx]; const mediaItem = this.convertMetadataToMediaItem(canonicalMetadata)
-        if (!mediaItem) continue
+            if (mergedVersions.length > 1) extractVersionNames(mergedVersions)
+            const scoredVersions = mergedVersions.map(v => ({ ...v, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
+            const bestIdx = scoredVersions.reduce((bi, v, i) => this.calculateVersionScore(v) > this.calculateVersionScore(scoredVersions[bi]) ? i : bi, 0)
+            const bestVersion = scoredVersions[bestIdx]; const mediaItem = this.convertMetadataToMediaItem(canonicalMetadata)
+            if (!mediaItem) continue
 
-        mediaItem.file_path = bestVersion.file_path; mediaItem.file_size = bestVersion.file_size; mediaItem.duration = bestVersion.duration; mediaItem.resolution = bestVersion.resolution; mediaItem.video_codec = bestVersion.video_codec; mediaItem.audio_codec = bestVersion.audio_codec; mediaItem.source_id = this.sourceId; mediaItem.source_type = 'local'; mediaItem.library_id = libraryId; mediaItem.file_mtime = bestVersion.file_mtime; mediaItem.version_count = scoredVersions.length; mediaItem.plex_id = plexId
+            mediaItem.file_path = bestVersion.file_path; mediaItem.file_size = bestVersion.file_size; mediaItem.duration = bestVersion.duration; mediaItem.resolution = bestVersion.resolution; mediaItem.video_codec = bestVersion.video_codec; mediaItem.audio_codec = bestVersion.audio_codec; mediaItem.source_id = this.sourceId; mediaItem.source_type = ProviderType.Local; mediaItem.library_id = libraryId; mediaItem.file_mtime = bestVersion.file_mtime; mediaItem.version_count = scoredVersions.length; mediaItem.plex_id = plexId
 
-        const id = await db.media.upsertItem(mediaItem)
-        db.media.syncItemVersions(id, scoredVersions.map(v => ({ ...v, media_item_id: id })))
-        mediaItem.id = id; await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(mediaItem))
-        result.itemsScanned++; if (existingMediaItem) result.itemsUpdated++; else result.itemsAdded++
-        if (result.itemsScanned % 50 === 0) await db.forceSave()
-      } catch (error: unknown) { result.errors.push(`Failed to save group ${group.map(g => path.basename(g.metadata.filePath || '')).join(', ')}: ${getErrorMessage(error)}`) }
+            const id = await db.media.upsertItem(mediaItem)
+            await db.media.syncItemVersions(id, scoredVersions.map(v => ({ ...v, media_item_id: id })))
+            mediaItem.id = id; await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(mediaItem))
+            result.itemsScanned++; if (existingMediaItem) result.itemsUpdated++; else result.itemsAdded++
+          } catch (error: unknown) { result.errors.push(`Failed to save group ${group.map(g => path.basename(g.metadata.filePath || '')).join(', ')}: ${getErrorMessage(error)}`) }
+        }
+      } finally {
+        await db.endBatch()
+      }
+      
+      // Yield to keep UI responsive
+      await new Promise(r => setTimeout(r, 0))
     }
     return result
   }
@@ -740,7 +790,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
   private convertMediaItemToMetadata(item: MediaItem): MediaMetadata {
     let audioTracks: AudioStreamInfo[] = []
     if (item.audio_tracks) { try { audioTracks = (JSON.parse(item.audio_tracks) as AudioTrack[]).map(t => ({ codec: t.codec, channels: t.channels, bitrate: t.bitrate, language: t.language, title: t.title, isDefault: t.isDefault, hasObjectAudio: t.hasObjectAudio, index: t.index })) } catch (e) { throw e } }
-    return { providerId: this.sourceId, providerType: 'local' as ProviderType, itemId: item.plex_id || '', title: item.title, type: item.type, year: item.year, seriesTitle: item.series_title, seasonNumber: item.season_number, episodeNumber: item.episode_number, imdbId: item.imdb_id, tmdbId: item.tmdb_id ? parseInt(item.tmdb_id, 10) : undefined, seriesTmdbId: item.series_tmdb_id ? parseInt(item.series_tmdb_id, 10) : undefined, filePath: item.file_path, fileSize: item.file_size, duration: item.duration, container: item.container, resolution: item.resolution, width: item.width, height: item.height, videoCodec: item.video_codec, videoBitrate: item.video_bitrate, videoFrameRate: item.video_frame_rate, colorBitDepth: item.color_bit_depth, hdrFormat: item.hdr_format, colorSpace: item.color_space, videoProfile: item.video_profile, audioCodec: item.audio_codec, audioChannels: item.audio_channels, audioBitrate: item.audio_bitrate, audioSampleRate: item.audio_sample_rate, hasObjectAudio: item.has_object_audio, audioTracks, posterUrl: item.poster_url, episodeThumbUrl: item.episode_thumb_url, seasonPosterUrl: item.season_poster_url }
+    return { providerId: this.sourceId, providerType: ProviderType.Local, itemId: item.plex_id || '', title: item.title, type: item.type, year: item.year, seriesTitle: item.series_title, seasonNumber: item.season_number, episodeNumber: item.episode_number, imdbId: item.imdb_id, tmdbId: item.tmdb_id ? parseInt(item.tmdb_id, 10) : undefined, seriesTmdbId: item.series_tmdb_id ? parseInt(item.series_tmdb_id, 10) : undefined, filePath: item.file_path, fileSize: item.file_size, duration: item.duration, container: item.container, resolution: item.resolution, width: item.width, height: item.height, videoCodec: item.video_codec, videoBitrate: item.video_bitrate, videoFrameRate: item.video_frame_rate, colorBitDepth: item.color_bit_depth, hdrFormat: item.hdr_format, colorSpace: item.color_space, videoProfile: item.video_profile, audioCodec: item.audio_codec, audioChannels: item.audio_channels, audioBitrate: item.audio_bitrate, audioSampleRate: item.audio_sample_rate, hasObjectAudio: item.has_object_audio, audioTracks, posterUrl: item.poster_url, episodeThumbUrl: item.episode_thumb_url, seasonPosterUrl: item.season_poster_url }
   }
 
   private async scanMusicLibrary(onProgress?: ProgressCallback, scanPath?: string): Promise<ScanResult> {
@@ -750,9 +800,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
     try {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
-      const ffprobeAvailable = db.config.getSetting('ffprobe_enabled') !== 'false' && await fileAnalyzer.isAvailable()
+      const ffprobeAvailable = (await db.config.getSetting('ffprobe_enabled')) !== 'false' && await fileAnalyzer.isAvailable()
       const mbNameCorrectionEnabled = await this.isMusicBrainzNameCorrectionEnabled(), scannedFilePaths = new Set<string>(), mbArtistNameCache = new Map<string, string>()
-      const ffprobeParallelEnabled = db.config.getSetting('ffprobe_parallel_enabled') !== 'false', ffprobeBatchSize = parseInt(db.config.getSetting('ffprobe_batch_size') || '50', 10)
+      const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false', ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '50', 10)
 
       onProgress?.({ current: 0, total: 100, phase: 'fetching', currentItem: 'Scanning for music files...', percentage: 0 })
       const audioFiles = await this.discoverAudioFiles(musicPath); const totalFiles = audioFiles.length
@@ -772,7 +822,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               let artistName = parsed.artist || 'Unknown Artist'
               if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
               const stats = await fsPromises.stat(filePath), fileMtime = stats.mtime.getTime()
-              const existingTrack = db.music.getTrackByPath(filePath)
+              const existingTrack = await db.music.getTrackByPath(filePath)
               if (existingTrack?.file_mtime === fileMtime) { scannedFilePaths.add(filePath); result.itemsScanned++; continue }
               filesToProcess.push({ filePath, relativePath, fileMtime, fileSize: stats.size, artistName, albumName: parsed.album || 'Unknown Album', trackTitle: parsed.title || path.basename(filePath, path.extname(filePath)), trackNumber: parsed.trackNumber, discNumber: parsed.discNumber, year: parsed.year })
               if (ffprobeAvailable) filesToAnalyze.push(filePath)
@@ -797,14 +847,16 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
               let artistId = artistMap.get(artistName.toLowerCase())
               if (!artistId) {
-                artistId = (db.music.getMusicArtistByName(artistName, this.sourceId))?.id || await db.music.upsertArtist({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(`artist_${artistName}`), name: artistName, sort_name: artistName, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                const existingArtist = await db.music.getMusicArtistByName(artistName, this.sourceId)
+                artistId = existingArtist?.id || await db.music.upsertArtist({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(`artist_${artistName}`), name: artistName, sort_name: artistName, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
                 artistMap.set(artistName.toLowerCase(), artistId!)
               }
 
               const albumKey = `${artistName.toLowerCase()}|${albumName.toLowerCase()}`
               let albumId = albumMap.get(albumKey)
               if (!albumId) {
-                albumId = (db.music.getAlbumByName(albumName, artistId!))?.id || await db.music.upsertAlbum({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(`album_${artistName}_${albumName}`), artist_id: artistId!, artist_name: artistName, title: albumName, sort_title: albumName, year: fileInfo.year, album_type: 'album', best_audio_codec: audioInfo.codec, best_audio_bitrate: audioInfo.bitrate, best_sample_rate: audioInfo.sampleRate, best_bit_depth: audioInfo.bitDepth, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                const existingAlbum = await db.music.getAlbumByName(albumName, artistId!)
+                albumId = existingAlbum?.id || await db.music.upsertAlbum({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(`album_${artistName}_${albumName}`), artist_id: artistId!, artist_name: artistName, title: albumName, sort_title: albumName, year: fileInfo.year, album_type: 'album' as AlbumType, best_audio_codec: audioInfo.codec, best_audio_bitrate: audioInfo.bitrate, best_sample_rate: audioInfo.sampleRate, best_bit_depth: audioInfo.bitDepth, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
                 albumMap.set(albumKey, albumId!)
               }
 
@@ -814,11 +866,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
                 albumArtworkMap.set(albumKey, artworkPath); if (artworkPath) await db.music.updateMusicAlbumArtwork(albumId, artworkPath)
               }
 
-              await db.music.upsertTrack({ source_id: this.sourceId, source_type: 'local', library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: fileInfo.trackNumber, disc_number: fileInfo.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: fileInfo.fileSize, file_mtime: fileMtime, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+              await db.music.upsertTrack({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: fileInfo.trackNumber, disc_number: fileInfo.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: fileInfo.fileSize, file_mtime: fileMtime, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
               scannedFilePaths.add(filePath); result.itemsScanned++
             } catch (e: any) { result.errors.push(`Failed to save ${path.basename(filePath)}: ${getErrorMessage(e)}`) }
           }
-          if (result.itemsScanned > 0) await db.forceSave()
         }
       } finally {
         // No endBatch needed
@@ -826,7 +877,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
       await this.updateAlbumStats(db, albumMap)
       onProgress?.({ current: totalFiles, total: totalFiles, phase: 'saving', currentItem: 'Reconciling deletions...', percentage: 100 })
-      const existingTracks = db.music.getTracks({ sourceId: this.sourceId })
+      const existingTracks = await db.music.getTracks({ sourceId: this.sourceId })
       for (const track of existingTracks) {
         if (track.file_path && !scannedFilePaths.has(track.file_path)) {
           if (!fs.existsSync(track.file_path)) {
@@ -836,7 +887,8 @@ export class LocalFolderProvider extends BaseMediaProvider {
       }
       await this.updateArtistStats(db, artistMap); await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true; result.durationMs = Date.now() - startTime; return result
-    } catch (e: any) { result.errors.push(getErrorMessage(e)); result.durationMs = Date.now() - startTime; return result }
+    } catch (e: any) {
+ result.errors.push(getErrorMessage(e)); result.durationMs = Date.now() - startTime; return result }
   }
 
   private async discoverAudioFiles(rootDir: string): Promise<Array<{ filePath: string; relativePath: string }>> {
@@ -894,7 +946,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private async updateArtistStats(db: any, artistMap: Map<string, number>): Promise<void> {
     for (const [, aId] of artistMap) {
-      await db.music.updateMusicArtistCounts(aId, (db.music.getMusicAlbums({ artistId: aId })).length, (db.music.getMusicTracks({ artistId: aId })).length)
+      await db.music.updateMusicArtistCounts(aId, (await db.music.getMusicAlbums({ artistId: aId })).length, (await db.music.getMusicTracks({ artistId: aId })).length)
     }
   }
 }

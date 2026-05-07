@@ -1,22 +1,22 @@
-import { KodiRpcClient } from './KodiRpcClient'
-import { KodiItemMapper } from './KodiItemMapper'
+import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
+import { KodiItemMapper } from '@main/providers/kodi/KodiItemMapper'
 import {
   BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   SourceConfig,
-  LibraryType,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MusicTrack } from '@main/types/database'
 import {
   calculateAlbumStats,
 } from '@main/providers/base/MusicScannerUtils'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
@@ -95,7 +95,7 @@ export interface KodiMusicSong {
 }
 
 export class KodiProvider extends BaseMediaProvider {
-  readonly providerType = 'kodi' as const
+  readonly providerType = ProviderType.Kodi
   private rpc: KodiRpcClient
   private mapper: KodiItemMapper
 
@@ -166,11 +166,11 @@ export class KodiProvider extends BaseMediaProvider {
     if (itemId.startsWith('movie-')) {
       const id = parseInt(itemId.replace('movie-', ''), 10)
       const res = await this.rpc.call<{ movieid: number; title: string; file: string; streamdetails: any; art: any }>('VideoLibrary.GetMovieDetails', { movieid: id, properties: ['file', 'streamdetails', 'art'] })
-      return this.mapper.convertToMediaMetadata(res as any, 'movie')
+      return this.mapper.convertToMediaMetadata(res as any, MediaItemType.Movie)
     } else {
       const id = parseInt(itemId.replace('episode-', ''), 10)
       const res = await this.rpc.call<{ episodeid: number; title: string; file: string; streamdetails: any; art: any }>('VideoLibrary.GetEpisodeDetails', { episodeid: id, properties: ['file', 'streamdetails', 'art'] })
-      return this.mapper.convertToMediaMetadata(res as any, 'episode')
+      return this.mapper.convertToMediaMetadata(res as any, MediaItemType.Episode)
     }
   }
 
@@ -191,17 +191,56 @@ export class KodiProvider extends BaseMediaProvider {
 
       if (!items) return { ...result, success: true }
 
+      if (libraryId === 'shows') {
+        const episodesByShow = new Map<string, KodiEpisode[]>()
+        ;(items as KodiEpisode[]).forEach(ep => {
+          if (ep.showtitle) {
+            if (!episodesByShow.has(ep.showtitle)) episodesByShow.set(ep.showtitle, [])
+            episodesByShow.get(ep.showtitle)!.push(ep)
+          }
+        })
+
+        try {
+          const shows = (await this.rpc.call<{ tvshows: any[] }>('VideoLibrary.GetTVShows', { properties: ['art', 'imdbnumber', 'year', 'plot'] })).tvshows || []
+          for (const show of shows) {
+            const showEpisodes = episodesByShow.get(show.label || show.title) || []
+            const ownedEpisodes = showEpisodes.length
+            const ownedSeasons = new Set(showEpisodes.map(e => e.season).filter(s => s !== undefined)).size
+
+            let tmdbId: string | undefined
+            if (show.imdbnumber && show.imdbnumber.startsWith('tt')) { /* imdb */ } 
+            else if (show.imdbnumber && !isNaN(parseInt(show.imdbnumber))) { tmdbId = show.imdbnumber }
+
+            db.tvShows.upsertCompleteness({
+              series_title: show.label || show.title,
+              source_id: this.sourceId,
+              library_id: libraryId,
+              total_seasons: ownedSeasons,
+              total_episodes: ownedEpisodes,
+              owned_seasons: ownedSeasons,
+              owned_episodes: ownedEpisodes,
+              missing_seasons: '[]',
+              missing_episodes: '[]',
+              completeness_percentage: 100, // Default to 100% until TMDB analysis
+              tmdb_id: tmdbId,
+              poster_url: show.art?.poster ? this.rpc.buildImageUrl(show.art.poster) : undefined,
+              status: 'Continuing',
+            })
+          }
+        } catch { /* ignore show pre-scan errors */ }
+      }
+
       await db.startBatch()
       try {
         for (let i = 0; i < items.length; i++) {
           const item = items[i]
           if (options?.onProgress) options.onProgress({ current: i + 1, total: items.length, phase: 'processing', currentItem: item.title, percentage: ((i + 1) / items.length) * 100 })
           
-          const converted = await this.mapper.convertToMediaItem(item, libraryId === 'movies' ? 'movie' : 'episode')
+          const converted = await this.mapper.convertToMediaItem(item, libraryId === 'movies' ? MediaItemType.Movie : MediaItemType.Episode)
           if (converted) {
             const { mediaItem, versions } = converted
             mediaItem.source_id = this.sourceId
-            mediaItem.source_type = 'kodi'
+            mediaItem.source_type = ProviderType.Kodi
             mediaItem.library_id = libraryId
             
             const id = await db.media.upsertItem(mediaItem)
@@ -211,6 +250,13 @@ export class KodiProvider extends BaseMediaProvider {
             mediaItem.id = id
             await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(mediaItem))
             result.itemsScanned++
+          }
+
+          // Yield every 50 items to keep UI responsive
+          if (i % 50 === 0 && i > 0) {
+            await db.endBatch()
+            await new Promise(r => setTimeout(r, 0))
+            await db.startBatch()
           }
         }
       } finally { await db.endBatch() }

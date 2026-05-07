@@ -12,7 +12,7 @@ import {
   calculatePercentage,
   createProgress,
   DEFAULT_ANALYSIS_OPTIONS,
-} from '../../src/main/services/utils/ProgressTracker'
+} from '@main/services/utils/ProgressTracker'
 
 // ============================================================================
 // CancellableOperation
@@ -154,3 +154,6 @@ describe('DEFAULT_ANALYSIS_OPTIONS', () => {
     expect(DEFAULT_ANALYSIS_OPTIONS.reanalyzeAfterDays).toBe(7)
   })
 })
+
+
+

@@ -1,9 +1,10 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const appApi = {
   // App lifecycle
   appReady: () => ipcRenderer.send('app:ready'),
-  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_VERSION),
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
   // General
@@ -23,10 +24,10 @@ export const appApi = {
   // ============================================================================
   // AUTO UPDATE
   // ============================================================================
-  autoUpdateGetState: () => ipcRenderer.invoke('autoUpdate:getState'),
-  autoUpdateCheckForUpdates: () => ipcRenderer.invoke('autoUpdate:checkForUpdates'),
-  autoUpdateDownloadUpdate: () => ipcRenderer.invoke('autoUpdate:downloadUpdate'),
-  autoUpdateInstallUpdate: () => ipcRenderer.invoke('autoUpdate:installUpdate'),
+  autoUpdateGetState: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.GET_STATE),
+  autoUpdateCheckForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES),
+  autoUpdateDownloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE),
+  autoUpdateInstallUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE),
   onAutoUpdateStateChanged: (callback: (state: {
     status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
     version?: string

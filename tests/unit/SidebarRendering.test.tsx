@@ -2,10 +2,10 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { Sidebar } from '../../src/renderer/src/components/layout/Sidebar'
-import { useSources } from '../../src/renderer/src/contexts/SourceContext'
-import { LibraryType } from '../../src/main/types/database'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { useSources } from '@/contexts/SourceContext'
+import { LibraryType } from '@main/types/database'
 import React from 'react'
 
 // Mock useSources
@@ -55,28 +55,32 @@ describe('Sidebar Rendering', () => {
     })
   })
 
-  it('should render source list when expanded', () => {
-    render(
-      <Sidebar
-        onOpenAbout={mockOnOpenAbout}
-        isCollapsed={false}
-        onToggleCollapse={mockOnToggleCollapse}
-      />
-    )
+  it('should render source list when expanded', async () => {
+    await act(async () => {
+      render(
+        <Sidebar
+          onOpenAbout={mockOnOpenAbout}
+          isCollapsed={false}
+          onToggleCollapse={mockOnToggleCollapse}
+        />
+      )
+    })
 
     expect(screen.getByText('Local Movies')).toBeTruthy()
     expect(screen.getByText('Plex Server')).toBeTruthy()
     expect(screen.getByText('Media Sources')).toBeTruthy()
   })
 
-  it('should render icons only when collapsed', () => {
-    render(
-      <Sidebar
-        onOpenAbout={mockOnOpenAbout}
-        isCollapsed={true}
-        onToggleCollapse={mockOnToggleCollapse}
-      />
-    )
+  it('should render icons only when collapsed', async () => {
+    await act(async () => {
+      render(
+        <Sidebar
+          onOpenAbout={mockOnOpenAbout}
+          isCollapsed={true}
+          onToggleCollapse={mockOnToggleCollapse}
+        />
+      )
+    })
 
     expect(screen.queryByText('Local Movies')).toBeNull()
     expect(screen.queryByText('Media Sources')).toBeNull()
@@ -86,21 +90,25 @@ describe('Sidebar Rendering', () => {
     expect(toggleButton).toBeTruthy()
   })
 
-  it('should call onToggleCollapse when toggle button clicked', () => {
-    render(
-      <Sidebar
-        onOpenAbout={mockOnOpenAbout}
-        isCollapsed={false}
-        onToggleCollapse={mockOnToggleCollapse}
-      />
-    )
+  it('should call onToggleCollapse when toggle button clicked', async () => {
+    await act(async () => {
+      render(
+        <Sidebar
+          onOpenAbout={mockOnOpenAbout}
+          isCollapsed={false}
+          onToggleCollapse={mockOnToggleCollapse}
+        />
+      )
+    })
 
     const toggleButton = screen.getByLabelText('Collapse sidebar')
-    fireEvent.click(toggleButton)
+    await act(async () => {
+      fireEvent.click(toggleButton)
+    })
     expect(mockOnToggleCollapse).toHaveBeenCalled()
   })
 
-  it('should show loading state', () => {
+  it('should show loading state', async () => {
     ;(useSources as any).mockReturnValue({
       sources: [],
       isLoading: true,
@@ -109,16 +117,21 @@ describe('Sidebar Rendering', () => {
       newItemCounts: new Map(),
     })
 
-    render(
-      <Sidebar
-        onOpenAbout={mockOnOpenAbout}
-        isCollapsed={false}
-        onToggleCollapse={mockOnToggleCollapse}
-      />
-    )
+    await act(async () => {
+      render(
+        <Sidebar
+          onOpenAbout={mockOnOpenAbout}
+          isCollapsed={false}
+          onToggleCollapse={mockOnToggleCollapse}
+        />
+      )
+    })
 
     // Check for loader (Loader2 has animate-spin)
     const loader = document.querySelector('.animate-spin')
     expect(loader).toBeTruthy()
   })
 })
+
+
+

@@ -4,65 +4,22 @@
  * Modal for adding a new media source with provider-specific auth flows.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Server, HardDrive } from 'lucide-react'
-import { useSources, type ProviderType } from '@/contexts/SourceContext'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { Server, HardDrive, Music } from 'lucide-react'
+import { useSources } from '@/contexts/SourceContext'
+import { ProviderType } from '@main/types/database'
+import { PROVIDERS, SUPPORTED_PROVIDERS } from '@main/constants/providers'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
-import { PlexAuthFlow } from './PlexAuthFlow'
-import { JellyfinAuthFlow } from './JellyfinAuthFlow'
-import { KodiConnectionFlow } from './KodiConnectionFlow'
-import { LocalFolderFlow } from './LocalFolderFlow'
-import { MediaMonkeyFlow } from './MediaMonkeyFlow'
+import { PlexAuthFlow } from '@/components/sources/PlexAuthFlow'
+import { JellyfinAuthFlow } from '@/components/sources/JellyfinAuthFlow'
+import { KodiConnectionFlow } from '@/components/sources/KodiConnectionFlow'
+import { LocalFolderFlow } from '@/components/sources/LocalFolderFlow'
+import { MediaMonkeyFlow } from '@/components/sources/MediaMonkeyFlow'
 
 interface AddSourceModalProps {
   onClose: () => void
   onSuccess: () => void
 }
-
-// Provider info for selection
-const providers: Array<{
-  type: ProviderType
-  name: string
-  description: string
-  color: string
-}> = [
-  {
-    type: 'plex',
-    name: 'Plex',
-    description: 'Connect to your Plex Media Server',
-    color: 'bg-[#e5a00d]',
-  },
-  {
-    type: 'jellyfin',
-    name: 'Jellyfin',
-    description: 'Connect to a Jellyfin server',
-    color: 'bg-purple-500',
-  },
-  {
-    type: 'emby',
-    name: 'Emby',
-    description: 'Connect to an Emby server',
-    color: 'bg-green-500',
-  },
-  {
-    type: 'kodi',
-    name: 'Kodi',
-    description: 'Connect to Kodi via JSON-RPC',
-    color: 'bg-blue-500',
-  },
-  {
-    type: 'local',
-    name: 'Local Folder',
-    description: 'Scan a local folder for media files',
-    color: 'bg-slate-600',
-  },
-  {
-    type: 'mediamonkey',
-    name: 'MediaMonkey 5',
-    description: 'Connect to MediaMonkey SQLite database',
-    color: 'bg-orange-600',
-  },
-]
 
 export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
   const { supportedProviders } = useSources()
@@ -73,21 +30,26 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
   const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap and modal registration
-  useFocusTrap(true, modalRef as React.RefObject<HTMLElement>, false) // Don't auto-focus, we handle it manually
+  useFocusTrap(true, modalRef as React.RefObject<HTMLElement>, false)
 
-  // Filter to only show supported providers
-  const availableProviders = providers.filter(p => supportedProviders.includes(p.type))
+  // Use SSOT for available providers
+  const availableProviders = useMemo(() => {
+    return SUPPORTED_PROVIDERS.filter(p => 
+      supportedProviders.includes(p.type) && 
+      [ProviderType.Plex, ProviderType.Jellyfin, ProviderType.Emby, ProviderType.Kodi, ProviderType.Local, ProviderType.MediaMonkey].includes(p.type)
+    )
+  }, [supportedProviders])
 
   // Auto-focus first button when modal opens
   useEffect(() => {
     if (!selectedProvider && buttonRefs.current[0]) {
       buttonRefs.current[0]?.focus()
     }
-  }, [selectedProvider])
+  }, [selectedProvider, availableProviders])
 
   // Handle keyboard navigation in provider list
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (selectedProvider) return // Let sub-flow handle its own navigation
+    if (selectedProvider) return
 
     switch (e.key) {
       case 'ArrowDown':
@@ -113,32 +75,25 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
     }
   }, [selectedProvider, availableProviders.length, onClose])
 
-  // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose()
-    }
+    if (e.target === e.currentTarget) onClose()
   }
 
-  // Handle successful connection
-  const handleSuccess = () => {
-    onSuccess()
-  }
+  const handleSuccess = () => onSuccess()
 
-  // Render provider-specific auth flow
   const renderAuthFlow = () => {
     switch (selectedProvider) {
-      case 'plex':
+      case ProviderType.Plex:
         return <PlexAuthFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
-      case 'jellyfin':
+      case ProviderType.Jellyfin:
         return <JellyfinAuthFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
-      case 'emby':
+      case ProviderType.Emby:
         return <JellyfinAuthFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} isEmby />
-      case 'kodi':
+      case ProviderType.Kodi:
         return <KodiConnectionFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
-      case 'local':
+      case ProviderType.Local:
         return <LocalFolderFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
-      case 'mediamonkey':
+      case ProviderType.MediaMonkey:
         return <MediaMonkeyFlow onSuccess={handleSuccess} onBack={() => setSelectedProvider(null)} />
       default:
         return null
@@ -159,13 +114,13 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
         <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <h2 id="add-source-modal-title" className="text-sm font-semibold">
             {selectedProvider
-              ? `Add ${providers.find(p => p.type === selectedProvider)?.name}`
+              ? `Add ${PROVIDERS[selectedProvider]?.name}`
               : 'Add Source'}
           </h2>
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            className="w-6 h-6 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+            className="w-6 h-6 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground outline-hidden"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -188,8 +143,10 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${focusedIndex === index ? 'bg-muted' : ''}`}
                 >
                   <div className={`w-6 h-6 ${provider.color} rounded flex items-center justify-center text-white`}>
-                    {provider.type === 'local' ? (
+                    {provider.type === ProviderType.Local ? (
                       <HardDrive className="w-3.5 h-3.5" />
+                    ) : provider.type === ProviderType.MediaMonkey ? (
+                      <Music className="w-3.5 h-3.5" />
                     ) : (
                       <Server className="w-3.5 h-3.5" />
                     )}

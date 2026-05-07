@@ -6,7 +6,8 @@
  * and AudioCodecRanker for best audio track selection.
  */
 
-import type { MediaMetadata, AudioStreamInfo, SubtitleStreamInfo, ProviderType } from '@main/providers/base/MediaProvider'
+import type { MediaMetadata, AudioStreamInfo, SubtitleStreamInfo } from '@main/providers/base/MediaProvider'
+import { ProviderType, MediaItemType } from '@main/types/database'
 import type { MediaItem, AudioTrack, SubtitleTrack } from '@main/types/database'
 import {
   normalizeVideoCodec,
@@ -18,8 +19,8 @@ import {
   normalizeAudioChannels,
   normalizeSampleRate,
   normalizeContainer,
-} from './MediaNormalizer'
-import { AudioCodecRanker, AudioTrackInfo } from './AudioCodecRanker'
+} from '@main/services/MediaNormalizer'
+import { AudioCodecRanker, AudioTrackInfo } from '@main/services/AudioCodecRanker'
 
 export interface ConversionOptions {
   sourceId: string
@@ -204,7 +205,7 @@ export class MediaConverter {
   static createPlaceholder(
     itemId: string,
     title: string,
-    type: 'movie' | 'episode',
+    type: MediaItemType,
     options: ConversionOptions
   ): MediaItem {
     return {

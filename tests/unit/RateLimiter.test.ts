@@ -10,7 +10,7 @@ import {
   SlidingWindowRateLimiter,
   SimpleDelayRateLimiter,
   RateLimiters,
-} from '../../src/main/services/utils/RateLimiter'
+} from '@main/services/utils/RateLimiter'
 
 // ============================================================================
 // SlidingWindowRateLimiter
@@ -129,3 +129,6 @@ describe('RateLimiters factory', () => {
     expect(limiter).toBeInstanceOf(SimpleDelayRateLimiter)
   })
 })
+
+
+

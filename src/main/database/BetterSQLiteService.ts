@@ -1,291 +1,204 @@
-import { getLoggingService } from '@main/services/LoggingService'
-import { DatabaseSync } from 'node:sqlite'
+import { createClient, Client } from '@libsql/client'
+import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
 import * as path from 'path'
 import * as fs from 'fs'
-import { app } from 'electron'
-import { runMigrations } from './DatabaseMigration'
-import {
-  ConfigRepository,
-  MediaRepository,
-  MusicRepository,
-  StatsRepository,
-  NotificationRepository,
-  TVShowRepository,
-  SourceRepository,
-  WishlistRepository,
-  ExclusionRepository,
-  TaskRepository,
-  DuplicateRepository,
-  MovieCollectionRepository
-} from './repositories'
-import type { MusicTrack } from '@main/types/database'
+import { runMigrations } from '@main/database/DatabaseMigration'
+import { ConfigRepository } from '@main/database/repositories/ConfigRepository'
+import { MediaRepository } from '@main/database/repositories/MediaRepository'
+import { MusicRepository } from '@main/database/repositories/MusicRepository'
+import { StatsRepository } from '@main/database/repositories/StatsRepository'
+import { NotificationRepository } from '@main/database/repositories/NotificationRepository'
+import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
+import { SourceRepository } from '@main/database/repositories/SourceRepository'
+import { WishlistRepository } from '@main/database/repositories/WishlistRepository'
+import { ExclusionRepository } from '@main/database/repositories/ExclusionRepository'
+import { TaskRepository } from '@main/database/repositories/TaskRepository'
+import { DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
+import { MovieCollectionRepository } from '@main/database/repositories/MovieCollectionRepository'
 
-// Singleton instance
 let serviceInstance: BetterSQLiteService | null = null
 
-export function getBetterSQLiteService(): BetterSQLiteService {
-  if (!serviceInstance) {
-    serviceInstance = new BetterSQLiteService()
-  }
-  return serviceInstance
-}
-
-export function resetBetterSQLiteServiceForTesting(): void {
-  if (serviceInstance) {
-    serviceInstance.close()
-    serviceInstance = null
-  }
+/**
+ * Get the database service instance (singleton)
+ */
+export function getDatabase(): BetterSQLiteService {
+  return serviceInstance ??= new BetterSQLiteService()
 }
 
 /**
- * BetterSQLiteService - High-performance database service container
- * Provides access to repositories and manages database lifecycle.
+ * Returns the current database backend type.
+ */
+export function getDatabaseBackend(): 'libsql' {
+  return 'libsql'
+}
+
+export function resetBetterSQLiteServiceForTesting(): void {
+  serviceInstance?.close()
+  serviceInstance = null
+}
+
+/**
+ * BetterSQLiteService - Container for the LibSQL client.
  */
 export class BetterSQLiteService {
-  private db: DatabaseSync | null = null
-  private dbPath: string
-  private _isInitialized = false
+  private _client: Client | null = null
+  private _drizzle: LibSQLDatabase<typeof schema> | null = null
+  private dbPath: string = ''
+  private _transactionDepth = 0
+  private repos: Record<string, any> = {}
+  private _lock: Promise<void> = Promise.resolve()
 
-  // Repositories
-  private _configRepo: ConfigRepository | null = null
-  private _mediaRepo: MediaRepository | null = null
-  private _musicRepo: MusicRepository | null = null
-  private _statsRepo: StatsRepository | null = null
-  private _notificationRepo: NotificationRepository | null = null
-  private _tvShowRepo: TVShowRepository | null = null
-  private _sourceRepo: SourceRepository | null = null
-  private _wishlistRepo: WishlistRepository | null = null
-  private _exclusionRepo: ExclusionRepository | null = null
-  private _taskRepo: TaskRepository | null = null
-  private _duplicateRepo: DuplicateRepository | null = null
-  private _movieCollectionRepo: MovieCollectionRepository | null = null
-
-  constructor() {
-    try {
-      if (process.env.NODE_ENV === 'test') {
-        const tempDir = path.join(process.cwd(), 'tests', 'tmp')
-        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
-        this.dbPath = path.join(tempDir, `test-${Math.random().toString(36).substring(7)}.db`)
-      } else {
-        const userDataPath = app.getPath('userData')
-        this.dbPath = path.join(userDataPath, 'totality.db')
-      }
-    } catch (e) {
-      // Fallback for testing environments where app.getPath might fail
-      this.dbPath = path.join(process.cwd(), `totality-test-${Math.random().toString(36).substring(7)}.db`)
-    }
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const nextLock = this._lock.then(fn)
+    this._lock = nextLock.then(() => {}, () => {})
+    return nextLock
   }
 
-  public async initialize(): Promise<void> {
-    if (this._isInitialized) return
+  public async initialize(dbPath: string): Promise<void> {
+    if (this._client) return
+    this.dbPath = dbPath
 
-    try {
-      this.db = new DatabaseSync(this.dbPath)
-      
-      // Attach service to DB instance to avoid circular dependencies in repositories
-      // @ts-ignore
-      this.db.__service = this
-      
-      // Optimization: WAL mode for better concurrency
-      this.db.exec('PRAGMA journal_mode = WAL')
-      this.db.exec('PRAGMA synchronous = NORMAL')
-      this.db.exec('PRAGMA foreign_keys = ON')
-      this.db.exec('PRAGMA busy_timeout = 5000')
-      
-      // Run migrations
-      await runMigrations(this.db)
-      
-      this._isInitialized = true
-      getLoggingService().info('Database', `Initialized at ${this.dbPath}`)
-    } catch (error) {
-      getLoggingService().error('Database', `Initialization failed: ${error}`)
-      throw error
-    }
+    const dir = path.dirname(dbPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const client = createClient({
+      url: `file:${dbPath}`,
+    })
+
+    await client.execute('PRAGMA journal_mode = WAL')
+    await client.execute('PRAGMA synchronous = NORMAL')
+    await client.execute('PRAGMA foreign_keys = ON')
+    await client.execute('PRAGMA busy_timeout = 5000')
+    
+    this._client = client
+    this._drizzle = drizzle(client, { schema })
+
+    // Run migrations
+    await runMigrations(client)
   }
 
   public close(): void {
-    if (this.db) {
-      this.db.close()
-      this.db = null
-      this._isInitialized = false
-      getLoggingService().info('Database', 'Closed')
-    }
+    this._client?.close()
+    this._client = null
+    this.repos = {}
   }
 
-  get isInitialized(): boolean { return this._isInitialized }
-
-  // Lazy-loaded repository getters
-  public get config(): ConfigRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._configRepo) this._configRepo = new ConfigRepository(this.db)
-    return this._configRepo
-  }
-
-  public get media(): MediaRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._mediaRepo) this._mediaRepo = new MediaRepository(this.db)
-    return this._mediaRepo
-  }
-
-  public get music(): MusicRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._musicRepo) this._musicRepo = new MusicRepository(this.db)
-    return this._musicRepo
-  }
-
-  public get stats(): StatsRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._statsRepo) this._statsRepo = new StatsRepository(this.db)
-    return this._statsRepo
-  }
-
-  public get notifications(): NotificationRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._notificationRepo) this._notificationRepo = new NotificationRepository(this.db)
-    return this._notificationRepo
-  }
-
-  public get tvShows(): TVShowRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._tvShowRepo) this._tvShowRepo = new TVShowRepository(this.db)
-    return this._tvShowRepo
-  }
-
-  public get sources(): SourceRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._sourceRepo) this._sourceRepo = new SourceRepository(this.db)
-    return this._sourceRepo
-  }
-
-  public get wishlist(): WishlistRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._wishlistRepo) this._wishlistRepo = new WishlistRepository(this.db)
-    return this._wishlistRepo
-  }
-
-  public get exclusions(): ExclusionRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._exclusionRepo) this._exclusionRepo = new ExclusionRepository(this.db)
-    return this._exclusionRepo
-  }
-
-  public get tasks(): TaskRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._taskRepo) this._taskRepo = new TaskRepository(this.db)
-    return this._taskRepo
-  }
-
-  public get duplicates(): DuplicateRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._duplicateRepo) this._duplicateRepo = new DuplicateRepository(this.db)
-    return this._duplicateRepo
-  }
-
-  public get movieCollections(): MovieCollectionRepository {
-    if (!this.db) throw new Error('Database not initialized')
-    if (!this._movieCollectionRepo) this._movieCollectionRepo = new MovieCollectionRepository(this.db)
-    return this._movieCollectionRepo
-  }
-
-  // Bolt ⚡ Optimization Methods
-  public getMusicTracksByAlbumIds(albumIds: number[]): Map<number, MusicTrack[]> {
-    return this.music.getMusicTracksByAlbumIds(albumIds)
-  }
-
-  // --- Core Database Methods ---
+  get isInitialized(): boolean { return !!this._client }
   public getDbPath(): string { return this.dbPath }
 
-  public beginBatch(): void { 
-    if (this.transactionDepth === 0) {
-      this.db?.exec('BEGIN IMMEDIATE')
-    }
-    this.transactionDepth++
+  public get db(): Client {
+    if (!this._client) throw new Error('Database not initialized. Call initialize(path) during app startup.')
+    return this._client
   }
 
-  public startBatch(): void { this.beginBatch() }
-
-  public endBatch(): void { 
-    if (this.transactionDepth === 1) {
-      this.db?.exec('COMMIT')
-    }
-    if (this.transactionDepth > 0) {
-      this.transactionDepth--
-    }
+  public get drizzle(): LibSQLDatabase<typeof schema> {
+    if (!this._drizzle) throw new Error('Database not initialized. Call initialize(path) during app startup.')
+    return this._drizzle
   }
 
-  public rollbackBatch(): void {
-    if (this.transactionDepth > 0) {
-      this.db?.exec('ROLLBACK')
-      this.transactionDepth = 0
-    }
+  // Repository Getters
+  public get config() { return this.repos.config ??= new ConfigRepository(this.drizzle) }
+  public get media() { return this.repos.media ??= new MediaRepository(this.db as any, this.drizzle) }
+  public get music() { return this.repos.music ??= new MusicRepository(this.db as any, this.drizzle) }
+  public get stats() { return this.repos.stats ??= new StatsRepository(this.drizzle) }
+  public get notifications() { return this.repos.notifications ??= new NotificationRepository(this.db as any, this.drizzle) }
+  public get tvShows() { return this.repos.tvShows ??= new TVShowRepository(this.db as any, this.drizzle) }
+  public get sources() { return this.repos.sources ??= new SourceRepository(this.db as any, this.drizzle) }
+  public get wishlist() { return this.repos.wishlist ??= new WishlistRepository(this.db as any, this.drizzle) }
+  public get exclusions() { return this.repos.exclusions ??= new ExclusionRepository(this.db as any, this.drizzle) }
+  public get tasks() { return this.repos.tasks ??= new TaskRepository(this.db as any, this.drizzle) }
+  public get duplicates() { return this.repos.duplicates ??= new DuplicateRepository(this.db as any, this.drizzle) }
+  public get movieCollections() { return this.repos.movieCollections ??= new MovieCollectionRepository(this.db as any, this.drizzle) }
+
+  // Transaction API
+  public async beginBatch(): Promise<void> {
+    await this.withLock(async () => {
+      const isFirst = this._transactionDepth === 0
+      this._transactionDepth++
+      if (isFirst) {
+        await this.db.execute('BEGIN IMMEDIATE')
+      }
+    })
   }
 
-  private transactionDepth = 0
-
-  public isInTransaction(): boolean {
-    return this.transactionDepth > 0
+  public async startBatch(): Promise<void> {
+    await this.beginBatch()
   }
 
-  public forceSave(): void { this.db?.exec('PRAGMA wal_checkpoint(PASSIVE)') }
+  public async endBatch(): Promise<void> {
+    await this.withLock(async () => {
+      if (this._transactionDepth <= 0) return
+      
+      const isLast = this._transactionDepth === 1
+      if (isLast) {
+        await this._client?.execute('COMMIT')
+      }
+      this._transactionDepth--
+    })
+  }
 
-  public exportData(): Record<string, any[]> {
-    if (!this.db) throw new Error('Database not initialized')
+  public async rollbackBatch(): Promise<void> {
+    await this.withLock(async () => {
+      if (this._transactionDepth > 0) {
+        await this._client?.execute('ROLLBACK')
+        this._transactionDepth = 0
+      }
+    })
+  }
+
+  public isInTransaction(): boolean { return this._transactionDepth > 0 }
+  public forceSave(): void { this._client?.execute('PRAGMA wal_checkpoint(PASSIVE)') }
+
+  public async exportData(): Promise<Record<string, any[]>> {
     const data: Record<string, any[]> = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
-    
-    for (const table of tables) {
-      try {
-        data[table] = this.db.prepare(`SELECT * FROM ${table}`).all() as any[]
-      } catch (e) {
-        getLoggingService().warn('Database', `Could not export table ${table}: ${e}`)
-      }
+    for (const t of tables) {
+      try { 
+        const result = await this.db.execute(`SELECT * FROM ${t}`)
+        data[t] = result.rows as any[]
+      } catch {}
     }
     return data
   }
 
-  public async importData(data: Record<string, any[]>): Promise<{ imported: number, errors: number }> {
-    if (!this.db) throw new Error('Database not initialized')
-    let imported = 0
-    let errors = 0
+  public async resetDatabase(): Promise<void> {
+    const result = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    const tables = result.rows.map(row => row.name as string)
+    
+    await this.beginBatch()
+    try {
+      for (const t of tables) await this._client?.execute(`DELETE FROM ${t}`)
+      await this.endBatch()
+    } catch (e) {
+      await this.rollbackBatch()
+      throw e
+    }
+  }
 
-    this.db.exec('BEGIN IMMEDIATE')
+  public async importData(data: Record<string, any[]>): Promise<{ imported: number, errors: number }> {
+    let imported = 0, errors = 0
+    await this.beginBatch()
     try {
       for (const [table, rows] of Object.entries(data)) {
         if (table === '_meta' || !Array.isArray(rows)) continue
-        
         for (const row of rows) {
           try {
             const keys = Object.keys(row)
-            const placeholders = keys.map(() => '?').join(',')
-            const columns = keys.join(',')
-            this.db.prepare(`INSERT OR REPLACE INTO ${table} (${columns}) VALUES (${placeholders})`).run(...(Object.values(row) as any[]))
+            const cols = keys.join(','), vals = keys.map(() => '?').join(',')
+            await this.db.execute({
+              sql: `INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${vals})`,
+              args: Object.values(row) as any[]
+            })
             imported++
-          } catch (e) {
-            errors++
-          }
+          } catch { errors++ }
         }
       }
-      this.db.exec('COMMIT')
+      await this.endBatch()
     } catch (e) {
-      this.db.exec('ROLLBACK')
+      await this.rollbackBatch()
       throw e
     }
     return { imported, errors }
-  }
-
-  public async resetDatabase(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-    const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions', 'media_item_versions', 'media_item_collections']
-
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      for (const table of tables) {
-        this.db.exec(`DELETE FROM ${table}`)
-      }
-      this.db.exec('COMMIT')
-    } catch (e) {
-      this.db.exec('ROLLBACK')
-      throw e
-    }
   }
 }

@@ -6,12 +6,12 @@ import * as https from 'https'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync } from 'fs'
 import { pipeline } from 'stream/promises'
-import { getErrorMessage } from './utils/errorUtils'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import {
   normalizeVideoCodec,
   normalizeResolution,
   normalizeAudioCodec,
-} from './MediaNormalizer'
+} from '@main/services/MediaNormalizer'
 import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '@main/workers/ffprobe-worker'
 import { getLoggingService } from '@main/services/LoggingService'

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
-import { SourceManager } from '../../src/main/services/SourceManager'
-import { getLiveMonitoringService } from '../../src/main/services/LiveMonitoringService'
-import { getTaskQueueService } from '../../src/main/services/TaskQueueService'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import { SourceManager } from '@main/services/SourceManager'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -80,7 +80,7 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
      tq.setMainWindow(rendererInterface as any)
      
      // Manually add a simple task to the queue and wait for it
-     const taskId = tq.addTask({
+     const taskId = await tq.addTask({
        type: 'collection-completeness',
        label: 'Integrity Analysis',
        sourceId: 's1'
@@ -101,3 +101,6 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
      expect(completionEvent?.data.id).toBe(taskId)
   })
 })
+
+
+

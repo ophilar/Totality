@@ -101,12 +101,14 @@ const FEATURE_PAGES = [
   },
 ]
 
-const PROVIDERS = [
-  { name: 'Plex', color: 'bg-[#e5a00d]', isLocal: false },
-  { name: 'Jellyfin', color: 'bg-purple-500', isLocal: false },
-  { name: 'Emby', color: 'bg-green-500', isLocal: false },
-  { name: 'Kodi', color: 'bg-blue-500', isLocal: false },
-  { name: 'Local Folder', color: 'bg-slate-600', isLocal: true },
+import { PROVIDERS } from '@main/constants/providers'
+
+const ONBOARDING_PROVIDERS = [
+  PROVIDERS.plex,
+  PROVIDERS.jellyfin,
+  PROVIDERS.emby,
+  PROVIDERS.kodi,
+  PROVIDERS.local,
 ]
 
 const TRANSITION_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)'
@@ -321,7 +323,7 @@ export function OnboardingWizard({ onComplete, onAddSource }: OnboardingWizardPr
           Supported Sources
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {PROVIDERS.map((provider) => (
+          {ONBOARDING_PROVIDERS.map((provider) => (
             <div
               key={provider.name}
               className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-card border border-border hover:border-muted-foreground/30 transition-colors"

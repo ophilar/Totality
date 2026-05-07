@@ -7,7 +7,8 @@
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
-import { LibraryType } from '@preload/index'
+import { LibraryType } from '@main/types/database'
+
 
 interface JellyfinAuthFlowProps {
   onSuccess: () => void

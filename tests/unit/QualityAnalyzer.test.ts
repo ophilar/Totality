@@ -1,18 +1,19 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { QualityAnalyzer } from '../../src/main/services/QualityAnalyzer'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
-import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityScore } from '../../src/main/types/database'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { QualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityScore } from '@main/types/database'
 
 describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
   let db: any
 
   beforeEach(async () => {
-    resetBetterSQLiteServiceForTesting()
-    process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
+    db = await setupTestDb()
     analyzer = new QualityAnalyzer()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   // ============================================================================
@@ -1168,3 +1169,6 @@ function createMusicTrack(overrides: Partial<MusicTrack> = {}): MusicTrack {
     ...overrides,
   }
 }
+
+
+

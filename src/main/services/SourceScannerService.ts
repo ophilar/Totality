@@ -1,5 +1,5 @@
-import { LibraryType } from '@main/types/database'
-import { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { LibraryType, TaskType, ProviderType } from '@main/types/database'
+import { type BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { LoggingService, getLoggingService } from '@main/services/LoggingService'
@@ -79,6 +79,37 @@ export class SourceScannerService {
       if (wasCancelled) return this.getCancellerResult(result)
 
       if (result.success && library) {
+        // BOLT: Analyze music quality if it was a music scan
+        if (library.type === LibraryType.Music) {
+          try {
+            const { getQualityAnalyzer } = await import('./QualityAnalyzer')
+            const analyzer = getQualityAnalyzer()
+            const albums = await this.db.music.getMusicAlbums({ sourceId })
+            const albumIds = albums.map((a: any) => a.id).filter((id: any) => id != null)
+            const tracksByAlbum = await this.db.music.getMusicTracksByAlbumIds(albumIds)
+
+            const BATCH_SIZE = 50
+            for (let i = 0; i < albums.length; i += BATCH_SIZE) {
+              const batch = albums.slice(i, i + BATCH_SIZE)
+              await this.db.beginBatch()
+              try {
+                for (const album of batch) {
+                  const tracks = tracksByAlbum.get(album.id!) || []
+                  const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
+                  await this.db.music.upsertQualityScore(qualityScore)
+                }
+              } finally {
+                await this.db.endBatch()
+              }
+              // Yield to allow other IPCs
+              await new Promise(r => setTimeout(r, 0))
+            }
+            this.logging.info('[SourceScannerService]', `Analyzed quality for ${albums.length} music albums`)
+          } catch (err) {
+            this.logging.error('[SourceScannerService]', 'Failed to analyze music quality after scan:', err)
+          }
+        }
+
         await this.db.sources.updateLibraryScanTime(sourceId, libraryId, result.itemsScanned)
         await this.startPostScanTasks(sourceId, libraryId, library)
       }
@@ -89,7 +120,7 @@ export class SourceScannerService {
       if (this.activeScans === 0) {
         this.scanCancelled = false
       }
-      getLiveMonitoringService().notifyLibraryUpdated()
+      getLiveMonitoringService().notifyLibraryUpdated(sourceId)
     }
   }
 
@@ -97,21 +128,21 @@ export class SourceScannerService {
     this.activeScans++
     try {
       const results = new Map<string, ScanResult>()
-      const enabledSources = this.db.sources.getEnabledSources()
+      const enabledSources = await this.db.sources.getEnabledSources()
 
       for (const source of enabledSources) {
         if (this.scanCancelled) break
         const provider = this.providers.get(source.source_id)
         if (!provider) continue
 
-        if (provider.providerType === 'plex' && !(provider as PlexProvider).hasSelectedServer()) continue
+        if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) continue
 
         try {
           const libraries = await provider.getLibraries()
           for (const library of libraries) {
             if (this.scanCancelled) break
             if (library.type === LibraryType.Music) continue
-            if (!this.db.sources.isLibraryEnabled(source.source_id, library.id)) continue
+            if (!(await this.db.sources.isLibraryEnabled(source.source_id, library.id))) continue
 
             const result = await provider.scanLibrary(library.id, {
               onProgress: (progress) => {
@@ -154,13 +185,15 @@ export class SourceScannerService {
     try {
       const { getWishlistCompletionService } = await import('./WishlistCompletionService')
       const tq = getTaskQueueService()
-      const hasTmdbKey = this.db.config.getSetting('tmdb_api_key')
+      const hasTmdbKey = await this.db.config.getSetting('tmdb_api_key')
+      
+      if (library.type === LibraryType.Show || library.type === LibraryType.Mixed) {
+        tq.addTask({ type: TaskType.SeriesCompleteness, label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
+      }
+      
       if (hasTmdbKey) {
-        if (library.type === LibraryType.Show || library.type === LibraryType.Mixed) {
-          tq.addTask({ type: 'series-completeness', label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
-        }
         if (library.type === LibraryType.Movie || library.type === LibraryType.Mixed) {
-          tq.addTask({ type: 'collection-completeness', label: `Post-scan Collection Analysis: ${library.name}`, sourceId, libraryId })
+          tq.addTask({ type: TaskType.CollectionCompleteness, label: `Post-scan Collection Analysis: ${library.name}`, sourceId, libraryId })
         }
       }
       getWishlistCompletionService().checkAndComplete().catch(err => {

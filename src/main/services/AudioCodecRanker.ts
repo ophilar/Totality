@@ -12,6 +12,8 @@
  * - Tier 1 (STANDARD): AC3, AAC, MP3 - standard lossy compression
  */
 
+import { APP_CONFIG } from '@main/config'
+
 export interface AudioTrackInfo {
   index: number
   codec: string
@@ -32,20 +34,10 @@ export class AudioCodecRanker {
   static readonly TIER_HIGH_LOSSY = 2    // EAC3, DTS
   static readonly TIER_STANDARD = 1      // AC3, AAC, MP3
 
-  // Codec patterns for each tier
-  private static readonly LOSSLESS_CODECS = [
-    'truehd', 'dts-hd ma', 'dtshd_ma', 'dtsma', 'dts-hd.ma',
-    'flac', 'alac', 'pcm', 'lpcm', 'wav', 'aiff'
-  ]
-
-  private static readonly NEAR_LOSSLESS_CODECS = [
-    'dts-hd hra', 'dtshd_hra', 'dts-hd.hra', 'dtshra'
-  ]
-
-  private static readonly HIGH_LOSSY_CODECS = [
-    'dts', 'eac3', 'ec-3', 'dd+', 'ddp', 'dolby digital plus',
-    'e-ac-3', 'atsc a/52b'
-  ]
+  // Codec patterns for each tier loaded from config
+  private static readonly LOSSLESS_CODECS = APP_CONFIG.audioCodecs.lossless
+  private static readonly NEAR_LOSSLESS_CODECS = APP_CONFIG.audioCodecs.nearLossless
+  private static readonly HIGH_LOSSY_CODECS = APP_CONFIG.audioCodecs.highLossy
 
   /**
    * Get the quality tier for an audio codec

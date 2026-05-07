@@ -11,9 +11,9 @@ import {
   ExternalLink,
   EyeOff
 } from 'lucide-react'
-import { QualityBadges } from './QualityBadges'
-import { ConversionRecommendation } from './ConversionRecommendation'
-import { TranscodeModal } from './TranscodeModal'
+import { QualityBadges } from '@/components/library/QualityBadges'
+import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
+import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
 import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { Zap } from 'lucide-react'

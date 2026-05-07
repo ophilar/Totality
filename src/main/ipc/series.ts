@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getTMDBService } from '@main/services/TMDBService'
-import { getWindowFromEvent } from './utils/safeSend'
-import { createProgressUpdater } from './utils/progressUpdater'
+import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
+import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 
@@ -81,7 +81,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getAll.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.tvShows.getAllCompleteness(validSourceId)
+      return await db.tvShows.getAllCompleteness(validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting series completeness:', error)
       throw error
@@ -96,7 +96,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'series:getIncomplete.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.tvShows.getIncomplete(validSourceId)
+      return await db.tvShows.getIncomplete(validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting incomplete series:', error)
       throw error
@@ -109,7 +109,7 @@ export function registerSeriesHandlers() {
   ipcMain.handle('series:getStats', async () => {
     try {
       const db = getDatabase()
-      return db.stats.getLibraryStats()
+      return await db.stats.getLibraryStats()
     } catch (error) {
       getLoggingService().error('[series]', 'Error getting series stats:', error)
       throw error
@@ -124,7 +124,7 @@ export function registerSeriesHandlers() {
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodes.sourceId') : undefined
     try {
       const db = getDatabase()
-      return db.tvShows.getEpisodes(validSeriesTitle, validSourceId)
+      return await db.tvShows.getEpisodes(validSeriesTitle, validSourceId)
     } catch (error) {
       getLoggingService().error('[series]', `Error getting episodes for "${validSeriesTitle}":`, error)
       throw error
@@ -138,7 +138,7 @@ export function registerSeriesHandlers() {
     const validId = validateInput(PositiveIntSchema, id, 'series:delete.id')
     try {
       const db = getDatabase()
-      db.tvShows.deleteCompleteness(validId)
+      await db.tvShows.deleteCompleteness(validId)
       return true
     } catch (error) {
       getLoggingService().error('[series]', `Error deleting series completeness ${validId}:`, error)
@@ -322,3 +322,4 @@ export function registerSeriesHandlers() {
 
   getLoggingService().info('[series]', 'Series completeness IPC handlers registered')
 }
+

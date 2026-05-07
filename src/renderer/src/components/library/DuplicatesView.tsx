@@ -7,7 +7,7 @@ import {
 import { useSources } from '@/contexts/SourceContext'
 import { useToast } from '@/contexts/ToastContext'
 import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
-import type { MediaItem } from './types'
+import type { MediaItem } from '@/components/library/types'
 
 interface DuplicateGroup {
   id: number

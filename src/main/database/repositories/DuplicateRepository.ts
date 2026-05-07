@@ -1,5 +1,7 @@
-import type { DatabaseSync } from 'node:sqlite'
-import { BaseRepository } from './BaseRepository'
+import { eq, and, sql } from 'drizzle-orm'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
 export interface MediaDuplicate {
   id?: number
@@ -15,43 +17,66 @@ export interface MediaDuplicate {
 }
 
 export class DuplicateRepository extends BaseRepository<MediaDuplicate> {
-  constructor(db: DatabaseSync) {
-    super(db, 'media_item_duplicates')
+  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'media_item_duplicates', drizzle)
   }
 
-  getPendingDuplicates(sourceId?: string): MediaDuplicate[] {
-    let sql = "SELECT * FROM media_item_duplicates WHERE status = 'pending'"
-    const params = []
-    if (sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(sourceId)
-    }
-    return this.queryAll(sql, params)
+  async getPendingDuplicates(sourceId?: string): Promise<MediaDuplicate[]> {
+    const conditions = [eq(schema.mediaItemDuplicates.status, 'pending')]
+    if (sourceId) conditions.push(eq(schema.mediaItemDuplicates.sourceId, sourceId))
+
+    const rows = await this.drizzle.select()
+      .from(schema.mediaItemDuplicates)
+      .where(and(...conditions))
+      .all()
+    
+    return this.mapDrizzleToDuplicate(rows)
   }
 
-  upsertDuplicate(dup: MediaDuplicate): void {
-    this.db.prepare(`
-      INSERT INTO media_item_duplicates (
-        source_id, external_id, external_type, media_item_ids, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(source_id, external_id, external_type) DO UPDATE SET
-        media_item_ids = excluded.media_item_ids,
-        status = CASE WHEN media_item_duplicates.status = 'resolved' THEN 'pending' ELSE media_item_duplicates.status END,
-        updated_at = datetime('now')
-    `).run(
-      dup.source_id,
-      dup.external_id,
-      dup.external_type,
-      dup.media_item_ids,
-      dup.status || 'pending'
-    )
+  async upsertDuplicate(dup: MediaDuplicate): Promise<void> {
+    await this.drizzle.insert(schema.mediaItemDuplicates)
+      .values({
+        sourceId: dup.source_id,
+        externalId: dup.external_id,
+        externalType: dup.external_type,
+        mediaItemIds: dup.media_item_ids,
+        status: dup.status || 'pending',
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .onConflictDoUpdate({
+        target: [schema.mediaItemDuplicates.sourceId, schema.mediaItemDuplicates.externalId, schema.mediaItemDuplicates.externalType],
+        set: {
+          mediaItemIds: dup.media_item_ids,
+          status: sql`CASE WHEN status = 'resolved' THEN 'pending' ELSE status END`,
+          updatedAt: sql`(datetime('now'))`
+        }
+      })
   }
 
-  resolveDuplicate(id: number, strategy: string): void {
-    this.db.prepare(`
-      UPDATE media_item_duplicates 
-      SET status = 'resolved', resolution_strategy = ?, resolved_at = datetime('now'), updated_at = datetime('now')
-      WHERE id = ?
-    `).run(strategy, id)
+  async resolveDuplicate(id: number, strategy: string): Promise<void> {
+    await this.drizzle.update(schema.mediaItemDuplicates)
+      .set({
+        status: 'resolved',
+        resolutionStrategy: strategy,
+        resolvedAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .where(eq(schema.mediaItemDuplicates.id, id))
+  }
+
+  private mapDrizzleToDuplicate(rows: any[]): MediaDuplicate[] {
+    return rows.map(r => ({
+      id: r.id,
+      source_id: r.sourceId,
+      external_id: r.externalId,
+      external_type: r.externalType,
+      media_item_ids: r.mediaItemIds,
+      status: r.status,
+      resolution_strategy: r.resolutionStrategy || undefined,
+      resolved_at: r.resolvedAt || undefined,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt
+    }))
   }
 }

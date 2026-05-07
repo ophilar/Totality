@@ -15,7 +15,7 @@
  * - art: Artwork URLs (posters, fanart, etc.)
  */
 
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 
 // ============================================================================

@@ -1,6 +1,11 @@
-// @ts-nocheck
+import { APP_CONFIG } from '@main/config'
+
 // Database schema as a TypeScript constant
 // This ensures it's bundled correctly by Vite
+
+const INITIAL_SETTINGS_SQL = APP_CONFIG.initialSettings
+  .map(([key, value]) => `  ('${key}', '${value}')`)
+  .join(',\n')
 
 export const DATABASE_SCHEMA = `
 -- Totality Database Schema
@@ -10,19 +15,19 @@ export const DATABASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS media_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_id TEXT NOT NULL UNIQUE,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   display_name TEXT NOT NULL,
 
   -- Connection details (JSON for flexibility)
   connection_config TEXT NOT NULL DEFAULT '{}',
 
   -- Status
-  is_enabled INTEGER NOT NULL DEFAULT 1,
+  is_enabled INTEGER NOT NULL,
   last_connected_at TEXT,
   last_scan_at TEXT,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -74,7 +79,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   -- Enhanced audio quality metadata
   audio_profile TEXT,
   audio_sample_rate INTEGER,
-  has_object_audio INTEGER DEFAULT 0,
+  has_object_audio INTEGER,
 
   -- All audio tracks (JSON array)
   audio_tracks TEXT,
@@ -86,7 +91,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   container TEXT,
 
   -- Version count (for multi-version items)
-  version_count INTEGER DEFAULT 1,
+  version_count INTEGER,
 
   -- File modification tracking (for skip-unchanged optimization)
   file_mtime INTEGER,
@@ -103,15 +108,19 @@ CREATE TABLE IF NOT EXISTS media_items (
   summary TEXT,
 
   -- User selection tracking
-  user_fixed_match INTEGER DEFAULT 0,
+  user_fixed_match INTEGER,
 
   -- Quality scores (denormalized for fast access)
   quality_tier TEXT,
   tier_quality TEXT,
-  tier_score INTEGER DEFAULT 0,
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -153,7 +162,7 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
   -- Enhanced audio quality metadata
   audio_profile TEXT,
   audio_sample_rate INTEGER,
-  has_object_audio INTEGER DEFAULT 0,
+  has_object_audio INTEGER,
 
   -- All tracks (JSON arrays)
   audio_tracks TEXT,
@@ -166,14 +175,22 @@ CREATE TABLE IF NOT EXISTS media_item_versions (
   -- Quality scores (denormalized for fast access)
   quality_tier TEXT,
   tier_quality TEXT,
-  tier_score INTEGER DEFAULT 0,
+  original_language TEXT,
+  audio_language TEXT,
 
   -- Best version flag (only one per media_item should be 1)
-  is_best INTEGER NOT NULL DEFAULT 0,
+  is_best INTEGER NOT NULL,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
 );
@@ -186,9 +203,9 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   -- Tier-based scoring
   quality_tier TEXT NOT NULL DEFAULT 'SD',
   tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
-  tier_score INTEGER NOT NULL DEFAULT 0,
-  bitrate_tier_score INTEGER NOT NULL DEFAULT 0,
-  audio_tier_score INTEGER NOT NULL DEFAULT 0,
+  tier_score INTEGER NOT NULL,
+  bitrate_tier_score INTEGER NOT NULL,
+  audio_tier_score INTEGER NOT NULL,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
   overall_score INTEGER NOT NULL,
@@ -197,18 +214,18 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   audio_score INTEGER NOT NULL,
 
   -- Efficiency metrics
-  efficiency_score INTEGER DEFAULT 0,
-  storage_debt_bytes INTEGER DEFAULT 0,
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
 
   -- Quality flags
-  is_low_quality INTEGER NOT NULL DEFAULT 0,
-  needs_upgrade INTEGER NOT NULL DEFAULT 0,
+  is_low_quality INTEGER NOT NULL,
+  needs_upgrade INTEGER NOT NULL,
 
   -- Analysis details (JSON)
   issues TEXT NOT NULL DEFAULT '[]',
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
 );
@@ -248,7 +265,12 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   backdrop_url TEXT,
   status TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  total_size INTEGER,
+
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -274,7 +296,7 @@ CREATE TABLE IF NOT EXISTS movie_collections (
   poster_url TEXT,
   backdrop_url TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -284,7 +306,7 @@ CREATE TABLE IF NOT EXISTS media_item_collections (
   media_item_id INTEGER NOT NULL,
   collection_id INTEGER NOT NULL,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
 
   FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE,
   FOREIGN KEY (collection_id) REFERENCES movie_collections(id) ON DELETE CASCADE,
@@ -301,7 +323,7 @@ CREATE TABLE IF NOT EXISTS music_artists (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -321,12 +343,15 @@ CREATE TABLE IF NOT EXISTS music_artists (
   thumb_url TEXT,
   art_url TEXT,
 
+  -- User tracking
+  user_fixed_match INTEGER,
+
   -- Stats (cached)
-  album_count INTEGER DEFAULT 0,
-  track_count INTEGER DEFAULT 0,
+  album_count INTEGER,
+  track_count INTEGER,
 
   -- Timestamps
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -336,7 +361,7 @@ CREATE TABLE IF NOT EXISTS music_albums (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -361,7 +386,7 @@ CREATE TABLE IF NOT EXISTS music_albums (
   album_type TEXT, -- 'album', 'ep', 'single', 'compilation', 'live', 'soundtrack'
 
   -- Quality info (aggregate of tracks)
-  track_count INTEGER DEFAULT 0,
+  track_count INTEGER,
   total_duration INTEGER DEFAULT 0, -- Total duration in ms
   total_size INTEGER DEFAULT 0, -- Total file size in bytes
 
@@ -378,11 +403,14 @@ CREATE TABLE IF NOT EXISTS music_albums (
   thumb_url TEXT,
   art_url TEXT,
 
+  -- User tracking
+  user_fixed_match INTEGER,
+
   -- Timestamps
   release_date TEXT,
   added_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (artist_id) REFERENCES music_artists(id) ON DELETE SET NULL
 );
@@ -393,7 +421,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -409,7 +437,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Track info
   track_number INTEGER,
-  disc_number INTEGER DEFAULT 1,
+  disc_number INTEGER,
   duration INTEGER, -- Duration in ms
 
   -- File information
@@ -426,7 +454,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   channels INTEGER DEFAULT 2,
 
   -- Quality flags
-  is_lossless INTEGER DEFAULT 0,
+  is_lossless INTEGER,
   is_hi_res INTEGER DEFAULT 0, -- > 44.1kHz or > 16-bit
 
   -- Metadata
@@ -436,8 +464,8 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Timestamps
   added_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE SET NULL,
   FOREIGN KEY (artist_id) REFERENCES music_artists(id) ON DELETE SET NULL
@@ -454,21 +482,21 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
   tier_score INTEGER NOT NULL DEFAULT 0, -- 0-100 score within tier
 
   -- Component scores
-  codec_score INTEGER NOT NULL DEFAULT 0,
-  bitrate_score INTEGER NOT NULL DEFAULT 0,
+  codec_score INTEGER NOT NULL,
+  bitrate_score INTEGER NOT NULL,
 
   -- Efficiency metrics
-  efficiency_score INTEGER DEFAULT 0,
-  storage_debt_bytes INTEGER DEFAULT 0,
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
 
   -- Quality flags
-  needs_upgrade INTEGER NOT NULL DEFAULT 0,
+  needs_upgrade INTEGER NOT NULL,
 
   -- Analysis details (JSON)
   issues TEXT NOT NULL DEFAULT '[]',
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE CASCADE
 );
@@ -483,19 +511,19 @@ CREATE TABLE IF NOT EXISTS artist_completeness (
   library_id TEXT NOT NULL DEFAULT '',
 
   -- Completeness stats
-  total_albums INTEGER NOT NULL DEFAULT 0,
-  owned_albums INTEGER NOT NULL DEFAULT 0,
-  total_singles INTEGER NOT NULL DEFAULT 0,
-  owned_singles INTEGER NOT NULL DEFAULT 0,
-  total_eps INTEGER NOT NULL DEFAULT 0,
-  owned_eps INTEGER NOT NULL DEFAULT 0,
+  total_albums INTEGER NOT NULL,
+  owned_albums INTEGER NOT NULL,
+  total_singles INTEGER NOT NULL,
+  owned_singles INTEGER NOT NULL,
+  total_eps INTEGER NOT NULL,
+  owned_eps INTEGER NOT NULL,
 
   -- Missing items (JSON arrays)
   missing_albums TEXT NOT NULL DEFAULT '[]',
   missing_singles TEXT NOT NULL DEFAULT '[]',
   missing_eps TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL DEFAULT 0,
+  completeness_percentage REAL NOT NULL,
 
   -- Metadata from MusicBrainz
   country TEXT,
@@ -505,10 +533,15 @@ CREATE TABLE IF NOT EXISTS artist_completeness (
   -- Artwork
   thumb_url TEXT,
 
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  total_size INTEGER,
+
   -- Last sync
   last_sync_at TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -524,19 +557,24 @@ CREATE TABLE IF NOT EXISTS album_completeness (
   musicbrainz_release_group_id TEXT,
 
   -- Track counts
-  total_tracks INTEGER NOT NULL DEFAULT 0,
-  owned_tracks INTEGER NOT NULL DEFAULT 0,
+  total_tracks INTEGER NOT NULL,
+  owned_tracks INTEGER NOT NULL,
 
   -- Missing tracks (JSON array)
   missing_tracks TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL DEFAULT 0,
+  completeness_percentage REAL NOT NULL,
+
+  -- Efficiency metrics
+  efficiency_score INTEGER,
+  storage_debt_bytes INTEGER,
+  total_size INTEGER,
 
   -- Last sync
   last_sync_at TEXT,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE CASCADE
 );
@@ -593,7 +631,7 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
   media_item_id INTEGER,      -- Reference to owned media_items.id
 
   -- Timestamps
-  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  added_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -605,12 +643,12 @@ CREATE TABLE IF NOT EXISTS library_scans (
   library_name TEXT NOT NULL,
   library_type TEXT NOT NULL,
   last_scan_at TEXT,
-  items_scanned INTEGER DEFAULT 0,
-  is_enabled INTEGER NOT NULL DEFAULT 1,
-  is_protected INTEGER NOT NULL DEFAULT 0,
+  items_scanned INTEGER,
+  is_enabled INTEGER NOT NULL,
+  is_protected INTEGER NOT NULL,
 
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
 
   UNIQUE(source_id, library_id)
 );
@@ -629,8 +667,8 @@ CREATE TABLE IF NOT EXISTS media_item_duplicates (
   resolution_strategy TEXT,
   resolved_at TEXT,
   
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
   
   UNIQUE(source_id, external_id, external_type)
 );
@@ -641,12 +679,13 @@ CREATE TABLE IF NOT EXISTS notifications (
   type TEXT NOT NULL CHECK(type IN ('source_change', 'scan_complete', 'error', 'info')),
   title TEXT NOT NULL,
   message TEXT NOT NULL,
+  reference_id TEXT,
   source_id TEXT,
   source_name TEXT,
-  item_count INTEGER DEFAULT 0,
+  item_count INTEGER,
   metadata TEXT DEFAULT '{}',
-  is_read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  is_read INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
   read_at TEXT
 );
 
@@ -887,76 +926,5 @@ END;
 
 -- Insert default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES
-  ('plex_token', ''),
-  ('plex_server_url', ''),
-  ('last_scan_time', ''),
-  ('quality_threshold_resolution', '720'),
-  ('quality_threshold_bitrate_sd', '2000'),
-  ('quality_threshold_bitrate_720p', '5000'),
-  ('quality_threshold_bitrate_1080p', '10000'),
-  ('quality_threshold_audio', '192'),
-  ('theme', 'dark'),
-  ('theme_mode', 'dark'),
-  ('tmdb_api_key', ''),
-
-  -- Video bitrate thresholds (kbps) - MEDIUM and HIGH thresholds per tier
-  -- Below MEDIUM = LOW quality, MEDIUM to HIGH = MEDIUM quality, above HIGH = HIGH quality
-  ('quality_video_sd_medium', '1500'),
-  ('quality_video_sd_high', '3500'),
-  ('quality_video_720p_medium', '3000'),
-  ('quality_video_720p_high', '8000'),
-  ('quality_video_1080p_medium', '6000'),
-  ('quality_video_1080p_high', '15000'),
-  ('quality_video_4k_medium', '15000'),
-  ('quality_video_4k_high', '40000'),
-
-  -- Audio bitrate thresholds (kbps) - MEDIUM and HIGH thresholds per tier
-  ('quality_audio_sd_medium', '128'),
-  ('quality_audio_sd_high', '192'),
-  ('quality_audio_720p_medium', '192'),
-  ('quality_audio_720p_high', '320'),
-  ('quality_audio_1080p_medium', '256'),
-  ('quality_audio_1080p_high', '640'),
-  ('quality_audio_4k_medium', '320'),
-  ('quality_audio_4k_high', '1000'),
-
-  -- Codec efficiency multipliers (effective bitrate = actual * multiplier)
-  ('quality_codec_h264', '1.0'),
-  ('quality_codec_h265', '2.0'),
-  ('quality_codec_av1', '2.5'),
-  ('quality_codec_vp9', '1.8'),
-
-  -- Music quality thresholds
-  ('quality_music_low_bitrate', '192'),
-  ('quality_music_high_bitrate', '256'),
-  ('quality_music_hires_samplerate', '44100'),
-  ('quality_music_hires_bitdepth', '16'),
-
-  -- Efficiency target thresholds (kbps) for HEVC
-  ('quality_efficiency_sd_target', '1200'),
-  ('quality_efficiency_720p_target', '2500'),
-  ('quality_efficiency_1080p_target', '5000'),
-  ('quality_efficiency_4k_target', '15000'),
-
-  -- Bloat start thresholds (kbps) for HEVC
-  ('quality_efficiency_sd_bloat', '2500'),
-  ('quality_efficiency_720p_bloat', '5000'),
-  ('quality_efficiency_1080p_bloat', '10000'),
-  ('quality_efficiency_4k_bloat', '30000'),
-
-  -- Efficiency UI thresholds
-  ('quality_efficiency_trash_threshold', '60'),
-
-  -- Efficiency Allowances
-  ('quality_efficiency_lossless_allowance', '4000'),
-  ('quality_efficiency_hdr_overhead', '1.10'),
-
-  -- Window behavior
-  ('minimize_to_tray', 'false'),
-  ('start_minimized_to_tray', 'false'),
-
-  -- File logging
-  ('file_logging_enabled', 'true'),
-  ('file_logging_min_level', 'info'),
-  ('log_retention_days', '7');
+${INITIAL_SETTINGS_SQL};
 `

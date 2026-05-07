@@ -1,23 +1,24 @@
-import { JellyfinApiClient } from './JellyfinApiClient'
-import { JellyfinItemMapper } from './JellyfinItemMapper'
+import { JellyfinApiClient } from '@main/providers/jellyfin-emby/JellyfinApiClient'
+import { JellyfinItemMapper } from '@main/providers/jellyfin-emby/JellyfinItemMapper'
 import {
   BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   SourceConfig,
-  LibraryType,
+  ProgressCallback,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import {
   calculateAlbumStats,
 } from '@main/providers/base/MusicScannerUtils'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getTMDBService } from '@main/services/TMDBService'
 import { getMovieCollectionService } from '@main/services/MovieCollectionService'
@@ -149,7 +150,7 @@ export interface JellyfinMusicTrack {
 }
 
 export abstract class JellyfinEmbyBase extends BaseMediaProvider {
-  abstract readonly providerType: 'jellyfin' | 'emby'
+  abstract override readonly providerType: ProviderType.Jellyfin | ProviderType.Emby
   private _client: JellyfinApiClient | null = null
   private _mapper: JellyfinItemMapper | null = null
 
@@ -306,6 +307,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
       const libraryType = library?.type || LibraryType.Movie
+
+      if (libraryType === LibraryType.Music) {
+        return this.scanMusicLibrary(libraryId, onProgress)
+      }
+
       const isBoxsets = library?.collectionType === 'boxsets'
       const allItems: JellyfinMediaItem[] = []
       const batchSize = 100
@@ -360,19 +366,52 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       }
 
       if (libraryType === LibraryType.Show) {
-        const seriesIds = Array.from(new Set(allItems.map(i => i.SeriesId).filter(Boolean))) as string[]
+        const episodesBySeries = new Map<string, JellyfinMediaItem[]>()
+        allItems.forEach(item => {
+          if (item.SeriesId) {
+            if (!episodesBySeries.has(item.SeriesId)) episodesBySeries.set(item.SeriesId, [])
+            episodesBySeries.get(item.SeriesId)!.push(item)
+          }
+        })
+
+        const seriesIds = Array.from(episodesBySeries.keys())
         for (let i = 0; i < seriesIds.length; i += 50) {
           const batchIds = seriesIds.slice(i, i + 50)
           try {
             const seriesResponse = await this.client.get<{ Items: JellyfinMediaItem[] }>('/Items', { Ids: batchIds.join(','), Fields: 'ProviderIds,ImageTags,SortName' })
             for (const series of seriesResponse.Items) {
-              allItems.filter(item => item.SeriesId === series.Id).forEach(item => {
+              const seriesEpisodes = episodesBySeries.get(series.Id) || []
+              const ownedEpisodes = seriesEpisodes.length
+              const ownedSeasons = new Set(seriesEpisodes.map(e => e.ParentIndexNumber).filter(n => n !== undefined)).size
+
+              const seriesTmdbId = series.ProviderIds?.Tmdb
+              const seriesPoster = series.ImageTags?.Primary ? this.client.buildImageUrl(series.Id, 'Primary', series.ImageTags.Primary) : undefined
+
+              await getDatabase().tvShows.upsertCompleteness({
+                series_title: series.Name,
+                source_id: this.sourceId,
+                library_id: libraryId,
+                total_seasons: ownedSeasons,
+                total_episodes: ownedEpisodes,
+                owned_seasons: ownedSeasons,
+                owned_episodes: ownedEpisodes,
+                missing_seasons: '[]',
+                missing_episodes: '[]',
+                completeness_percentage: 100, // Default to 100% until TMDB analysis
+                tmdb_id: seriesTmdbId,
+                poster_url: seriesPoster,
+                status: 'Continuing',
+              })
+
+              seriesEpisodes.forEach(item => {
                 item.SeriesProviderIds = series.ProviderIds
                 if (!item.SeriesPrimaryImageTag && series.ImageTags?.Primary) item.SeriesPrimaryImageTag = series.ImageTags.Primary
                 if (series.SortName) item._seriesSortName = series.SortName
               })
             }
           } catch { /* ignore */ }
+          // Yield between batches
+          await new Promise(r => setTimeout(r, 0))
         }
       }
 
@@ -380,54 +419,87 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       const analyzer = getQualityAnalyzer()
       await analyzer.loadThresholdsFromDatabase()
       const scannedProviderIds = new Set<string>()
-      await db.startBatch()
+      
       const groups = this.mapper.groupMovieVersions(allItems, libraryType)
       const totalItems = allItems.length
+      const BATCH_SIZE = 50
+      
       try {
         let itemIndex = 0
-        for (const group of groups) {
-          for (const item of group) {
-            itemIndex++
-            if (onProgress) onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: item.Name, percentage: (itemIndex / totalItems) * 100 })
-          }
-          try {
-            const allVersions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
-            let canonicalItem: MediaItem | null = null
-            for (const item of group) {
-              const converted = await this.mapper.convertToMediaItem(item)
-              if (!converted) continue
-              if (!canonicalItem) canonicalItem = converted.mediaItem
-              allVersions.push(...converted.versions)
-            }
-            if (canonicalItem && allVersions.length > 0) {
-              if (allVersions.length > 1) {
-                extractVersionNames(allVersions)
-                const best = allVersions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
-                Object.assign(canonicalItem, best)
+        for (let i = 0; i < groups.length; i += BATCH_SIZE) {
+          if (this.scanCancelled) break
+          const batch = groups.slice(i, i + BATCH_SIZE)
+          
+          // STEP 1: Prepare data outside transaction
+          const preparedBatch = await Promise.all(batch.map(async (group) => {
+            try {
+              const allVersions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
+              let canonicalItem: MediaItem | null = null
+              for (const item of group) {
+                const converted = await this.mapper.convertToMediaItem(item)
+                if (!converted) continue
+                if (!canonicalItem) canonicalItem = converted.mediaItem
+                allVersions.push(...converted.versions)
               }
-              canonicalItem.version_count = allVersions.length
-              canonicalItem.source_id = this.sourceId
-              canonicalItem.source_type = this.providerType
-              canonicalItem.library_id = libraryId
-              const id = await db.media.upsertItem(canonicalItem)
-              scannedProviderIds.add(canonicalItem.plex_id)
-              const scoredVersions = allVersions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
-              db.media.syncItemVersions(id, scoredVersions)
-              canonicalItem.id = id
-              await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(canonicalItem))
-              result.itemsScanned++
-            }
-          } catch (e: unknown) { result.errors.push(`Failed to process ${group[0]?.Name}: ${getErrorMessage(e)}`) }
-          if (result.itemsScanned % 50 === 0) await db.forceSave()
-        }
-      } finally { await db.endBatch() }
 
-      if (!isIncremental && scannedProviderIds.size > 0) {
-        const itemType = libraryType === 'show' ? 'episode' : 'movie'
-        const items = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
-        for (const item of items) if (!scannedProviderIds.has(item.plex_id) && item.id) { await db.media.deleteItem(item.id); result.itemsRemoved++ }
+              if (canonicalItem && allVersions.length > 0) {
+                if (allVersions.length > 1) {
+                  extractVersionNames(allVersions)
+                  const best = allVersions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
+                  Object.assign(canonicalItem, best)
+                }
+                canonicalItem.version_count = allVersions.length
+                canonicalItem.source_id = this.sourceId
+                canonicalItem.source_type = this.providerType
+                canonicalItem.library_id = libraryId
+                
+                const qualityScore = await analyzer.analyzeMediaItem(canonicalItem)
+                const scoredVersions = allVersions.map(v => ({ ...v, ...analyzer.analyzeVersion(v as MediaItemVersion) }))
+                
+                return { canonicalItem, qualityScore, scoredVersions, name: group[0].Name, groupSize: group.length }
+              }
+            } catch (e) {
+              result.errors.push(`Failed to prepare ${group[0]?.Name}: ${getErrorMessage(e)}`)
+            }
+            return null
+          }))
+
+          // STEP 2: Write to DB synchronously
+          await db.startBatch()
+          try {
+            for (const data of preparedBatch) {
+              if (!data) continue
+              
+              itemIndex += data.groupSize
+              const id = await db.media.upsertItem(data.canonicalItem)
+              scannedProviderIds.add(data.canonicalItem.plex_id)
+              
+              await db.media.syncItemVersions(id, data.scoredVersions.map(v => ({ ...v, media_item_id: id })))
+              
+              data.qualityScore.media_item_id = id
+              await db.media.upsertQualityScore(data.qualityScore)
+              
+              result.itemsScanned++
+              if (onProgress && itemIndex % 10 === 0) {
+                onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: data.name, percentage: (itemIndex / totalItems) * 100 })
+              }
+            }
+          } finally {
+            await db.endBatch()
+          }
+          
+          // Yield to keep UI responsive
+          await new Promise(r => setTimeout(r, 0))
+        }
+      } catch (e: unknown) {
+        result.errors.push(`Scan failed during processing: ${getErrorMessage(e)}`)
       }
-      await db.sources.updateSourceScanTime(this.sourceId)
+
+      if (!isIncremental) {
+        const itemType = libraryType === LibraryType.Show ? MediaItemType.Episode : MediaItemType.Movie
+        const removed = await db.media.removeStaleProviderItems(this.sourceId, libraryId, itemType, scannedProviderIds)
+        result.itemsRemoved = removed
+      }      await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true
     } catch (error: unknown) { result.errors.push(getErrorMessage(error)); }
     result.durationMs = Date.now() - startTime
@@ -477,7 +549,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     } catch { throw new Error('Failed to fetch music tracks') }
   }
 
-  async scanMusicLibrary(libraryId: string, onProgress?: (p: { current: number; total: number; phase: string; currentItem: string; percentage: number }) => void): Promise<ScanResult> {
+  async scanMusicLibrary(libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
     this.musicScanCancelled = false
     const startTime = Date.now()
     const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0, cancelled: false }
@@ -517,7 +589,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           if (this.musicScanCancelled) { result.cancelled = true; break }
           try {
             await processAlbum(album, undefined, album.AlbumArtist || album.AlbumArtists?.[0]?.Name || 'Various Artists')
-            if (onProgress) onProgress({ current: idx + 1, total: unprocessed.length, phase: 'processing compilations', currentItem: album.Name, percentage: 50 + ((idx + 1) / unprocessed.length) * 50 })
+            if (onProgress) onProgress({ current: idx + 1, total: unprocessed.length, phase: 'processing', currentItem: album.Name, percentage: 50 + ((idx + 1) / unprocessed.length) * 50 })
           } catch (e: unknown) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
         }
       }

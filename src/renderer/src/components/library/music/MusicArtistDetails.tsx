@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { VirtuosoGrid } from 'react-virtuoso'
+import { useState, useEffect, useRef } from 'react'
 import { Disc3, User, RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
-import { AlbumCard } from './AlbumCard'
-import { AlbumListItem } from './AlbumListItem'
-import { MissingAlbumCard } from './MissingAlbumCard'
-import { MissingAlbumListItem } from './MissingAlbumListItem'
+import { AlbumCard } from '@/components/library/music/AlbumCard'
+import { AlbumListItem } from '@/components/library/music/AlbumListItem'
+import { MissingAlbumCard } from '@/components/library/music/MissingAlbumCard'
+import { MissingAlbumListItem } from '@/components/library/music/MissingAlbumListItem'
 import type { MusicArtist, MusicAlbum, ArtistCompletenessData, MissingAlbum, AlbumCompletenessData } from '@/components/library/types'
 
+/**
+ * Renders details for a specific music artist including their albums and missing releases.
+ * Simplified to use standard grid layout for better reliability within the main scroll container.
+ */
 export function MusicArtistDetails({
   selectedArtist,
   filteredAlbums,
@@ -21,7 +24,6 @@ export function MusicArtistDetails({
   onFixArtistMatch,
   onBack,
   posterMinWidth,
-  scrollElement,
   includeEps,
   includeSingles,
   onDismissMissingAlbum
@@ -39,7 +41,6 @@ export function MusicArtistDetails({
   onFixArtistMatch?: (artistId: number, artistName: string) => void
   onBack: () => void
   posterMinWidth: number
-  scrollElement?: HTMLElement | null
   includeEps: boolean
   includeSingles: boolean
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
@@ -64,7 +65,7 @@ export function MusicArtistDetails({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <button
         onClick={onBack}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
@@ -174,26 +175,11 @@ export function MusicArtistDetails({
             ))}
           </div>
         ) : (
-          <VirtuosoGrid
-            style={{ height: '100%' }}
-            data={filteredAlbums}
-            useWindowScroll={!scrollElement}
-            customScrollParent={scrollElement || undefined}
-            listClassName="grid gap-6"
-            itemClassName="focus-poster-only"
-            components={{
-              List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
-                <div
-                  ref={ref}
-                  className={className}
-                  style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
-                >
-                  {children}
-                </div>
-              )),
-              Item: ({ children, ...props }) => <div {...props}>{children}</div>
-            }}
-            itemContent={(_index, album) => (
+          <div 
+            className="grid gap-6"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+          >
+            {filteredAlbums.map(album => (
               <AlbumCard
                 key={album.id}
                 album={album}
@@ -204,8 +190,8 @@ export function MusicArtistDetails({
                 onFixMatch={onFixAlbumMatch && album.id ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name || '') : undefined}
                 completeness={album.id ? allAlbumCompleteness.get(album.id) : undefined}
               />
-            )}
-          />
+            ))}
+          </div>
         )}
       </div>
 
@@ -242,34 +228,19 @@ export function MusicArtistDetails({
                 ))}
               </div>
             ) : (
-              <VirtuosoGrid
-                style={{ height: '100%' }}
-                data={allMissing}
-                useWindowScroll={!scrollElement}
-                customScrollParent={scrollElement || undefined}
-                listClassName="grid gap-6"
-                itemClassName="focus-poster-only"
-                components={{
-                  List: React.forwardRef<HTMLDivElement, any>(({ style, children, className }, ref) => (
-                    <div
-                      ref={ref}
-                      className={className}
-                      style={{ ...style, gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
-                    >
-                      {children}
-                    </div>
-                  )),
-                  Item: ({ children, ...props }) => <div {...props}>{children}</div>
-                }}
-                itemContent={(index, album) => (
+              <div 
+                className="grid gap-6"
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))` }}
+              >
+                {allMissing.map((album, index) => (
                   <MissingAlbumCard
                     key={album.musicbrainz_id || index}
                     album={album}
                     artistName={selectedArtist.name}
                     onDismiss={onDismissMissingAlbum ? () => onDismissMissingAlbum(album, selectedArtist.name, selectedArtist.musicbrainz_id) : undefined}
                   />
-                )}
-              />
+                ))}
+              </div>
             )}
           </div>
         )

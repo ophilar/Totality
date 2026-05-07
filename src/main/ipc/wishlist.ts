@@ -1,7 +1,8 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { getLoggingService } from '@main/services/LoggingService'
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getStoreSearchService } from '@main/services/StoreSearchService'
 import { getTMDBService } from '@main/services/TMDBService'
 import type { WishlistItem } from '@main/types/database'
@@ -9,7 +10,7 @@ import type { StoreRegion } from '@main/services/StoreSearchService'
 import { validateInput, PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '@main/validation/schemas'
 import { z } from 'zod'
 
-import { registerListHandlers } from './utils/genericHandlers'
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
 /**
  * Register all wishlist-related IPC handlers
@@ -31,7 +32,7 @@ export function registerWishlistHandlers() {
   /**
    * Add an item to the wishlist
    */
-  ipcMain.handle('wishlist:add', async (_event, item: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.ADD, async (_event, item: unknown) => {
     try {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:add')
       getLoggingService().info('[IPC wishlist:add]', validItem.media_type, `"${validItem.title}"`)
@@ -50,7 +51,7 @@ export function registerWishlistHandlers() {
         } catch (e) { /* ignore TMDB errors */ }
       }
 
-      return db.wishlist.add(validItem as any)
+      return await db.wishlist.add(validItem as any)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error adding wishlist item:', error)
       throw error
@@ -60,12 +61,12 @@ export function registerWishlistHandlers() {
   /**
    * Update a wishlist item
    */
-  ipcMain.handle('wishlist:update', async (_event, id: unknown, updates: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.UPDATE, async (_event, id: unknown, updates: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:update')
       const validUpdates = validateInput(WishlistItemSchema.partial(), updates, 'wishlist:update')
       getLoggingService().info('[wishlist]', '[IPC wishlist:update] id:', validId)
-      db.wishlist.update(validId, validUpdates as any)
+      await db.wishlist.update(validId, validUpdates as any)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error updating wishlist item:', error)
@@ -76,11 +77,11 @@ export function registerWishlistHandlers() {
   /**
    * Remove an item from the wishlist
    */
-  ipcMain.handle('wishlist:remove', async (_event, id: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.REMOVE, async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:remove')
       getLoggingService().info('[wishlist]', '[IPC wishlist:remove] id:', validId)
-      db.wishlist.delete(validId)
+      await db.wishlist.delete(validId)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error removing wishlist item:', error)
@@ -94,7 +95,7 @@ export function registerWishlistHandlers() {
   ipcMain.handle('wishlist:getById', async (_event, id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'wishlist:getById')
-      return db.wishlist.getWishlistItemById(validId)
+      return await db.wishlist.getWishlistItemById(validId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist item:', error)
       throw error
@@ -104,12 +105,12 @@ export function registerWishlistHandlers() {
   /**
    * Check if an item already exists in the wishlist
    */
-  ipcMain.handle('wishlist:checkExists', async (_event, tmdbId?: unknown, musicbrainzId?: unknown, mediaItemId?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.CHECK_EXISTS, async (_event, tmdbId?: unknown, musicbrainzId?: unknown, mediaItemId?: unknown) => {
     try {
       const validTmdbId = tmdbId !== undefined ? validateInput(z.string().max(20), tmdbId, 'wishlist:checkExists') : undefined
       const validMusicbrainzId = musicbrainzId !== undefined ? validateInput(z.string().max(100), musicbrainzId, 'wishlist:checkExists') : undefined
       const validMediaItemId = mediaItemId !== undefined ? validateInput(PositiveIntSchema, mediaItemId, 'wishlist:checkExists') : undefined
-      return db.wishlist.exists(validTmdbId, validMusicbrainzId, validMediaItemId)
+      return await db.wishlist.exists(validTmdbId, validMusicbrainzId, validMediaItemId)
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error checking wishlist existence:', error)
       throw error
@@ -119,9 +120,9 @@ export function registerWishlistHandlers() {
   /**
    * Get wishlist counts by reason (missing vs upgrade)
    */
-  ipcMain.handle('wishlist:getCountsByReason', async () => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON, async () => {
     try {
-      return db.wishlist.getCountsByReason()
+      return await db.wishlist.getCountsByReason()
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error getting wishlist counts by reason:', error)
       throw error
@@ -131,7 +132,7 @@ export function registerWishlistHandlers() {
   /**
    * Add multiple items to the wishlist (bulk operation)
    */
-  ipcMain.handle('wishlist:addBulk', async (_event, items: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.ADD_BULK, async (_event, items: unknown) => {
     try {
       const validItems = validateInput(z.array(WishlistItemSchema), items, 'wishlist:addBulk')
       getLoggingService().info('[IPC wishlist:addBulk]', validItems.length, 'items')
@@ -148,11 +149,11 @@ export function registerWishlistHandlers() {
               const details = await tmdb.getTVShowDetails(item.tmdb_id)
               item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
             }
-          } catch (e) { throw e; }
+          } catch (e) { /* ignore individual TMDB error */ }
         }
       }
 
-      const added = db.wishlist.addMany(validItems as any)
+      const added = await db.wishlist.addMany(validItems as any)
       return { success: true, added }
     } catch (error) {
       getLoggingService().error('[wishlist]', 'Error bulk adding wishlist items:', error)
@@ -167,7 +168,7 @@ export function registerWishlistHandlers() {
   /**
    * Get store search links for a wishlist item
    */
-  ipcMain.handle('wishlist:getStoreLinks', async (_event, item: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.GET_STORE_LINKS, async (_event, item: unknown) => {
     try {
       const validItem = validateInput(WishlistItemSchema, item, 'wishlist:getStoreLinks')
       return storeService.getStoreLinks(validItem as WishlistItem)
@@ -181,7 +182,7 @@ export function registerWishlistHandlers() {
    * Open a store link in the default browser
    * SECURITY: Only allows https:// and http:// URLs to prevent malicious schemes
    */
-  ipcMain.handle('wishlist:openStoreLink', async (_event, url: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.OPEN_STORE_LINK, async (_event, url: unknown) => {
     try {
       const validUrl = validateInput(SafeUrlSchema, url, 'wishlist:openStoreLink')
 
@@ -196,7 +197,7 @@ export function registerWishlistHandlers() {
   /**
    * Set the store region preference
    */
-  ipcMain.handle('wishlist:setRegion', async (_event, region: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.SET_REGION, async (_event, region: unknown) => {
     try {
       const validRegion = validateInput(StoreRegionSchema, region, 'wishlist:setRegion')
       storeService.setRegion(validRegion as StoreRegion)
@@ -212,7 +213,7 @@ export function registerWishlistHandlers() {
   /**
    * Get the current store region
    */
-  ipcMain.handle('wishlist:getRegion', async () => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.GET_REGION, async () => {
     try {
       const region = db.config.getSetting('store_region')
       return region || 'us'
@@ -229,7 +230,7 @@ export function registerWishlistHandlers() {
   /**
    * Export wishlist to CSV file
    */
-  ipcMain.handle('wishlist:exportCsv', async (event) => {
+  ipcMain.handle(IPC_CHANNELS.WISHLIST.EXPORT_CSV, async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) throw new Error('No window found')
@@ -249,7 +250,7 @@ export function registerWishlistHandlers() {
       }
 
       // Get all items sorted for export
-      const items = db.wishlist.getItems({
+      const items = await db.wishlist.getItems({
         sortBy: 'priority',
         sortOrder: 'desc'
       })
@@ -471,3 +472,4 @@ function generateWishlistCsv(items: WishlistItem[]): string {
 
   return BOM + rows.join('\r\n')
 }
+

@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const monitoringApi = {
@@ -6,17 +7,17 @@ export const monitoringApi = {
   // ============================================================================
 
   // Monitoring Control
-  monitoringGetConfig: () => ipcRenderer.invoke('monitoring:getConfig'),
+  monitoringGetConfig: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
   monitoringSetConfig: (config: {
     enabled?: boolean
     startOnLaunch?: boolean
     pauseDuringManualScan?: boolean
     pollingIntervals?: Record<string, number>
-  }) => ipcRenderer.invoke('monitoring:setConfig', config),
-  monitoringStart: () => ipcRenderer.invoke('monitoring:start'),
-  monitoringStop: () => ipcRenderer.invoke('monitoring:stop'),
-  monitoringIsActive: () => ipcRenderer.invoke('monitoring:isActive'),
-  monitoringForceCheck: (sourceId: string) => ipcRenderer.invoke('monitoring:forceCheck', sourceId),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, config),
+  monitoringStart: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.START),
+  monitoringStop: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.STOP),
+  monitoringIsActive: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.IS_ACTIVE),
+  monitoringForceCheck: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.FORCE_CHECK, sourceId),
 
   // Monitoring Events
   onMonitoringStatusChanged: (callback: (status: { isActive: boolean; lastCheck?: string }) => void) => {
@@ -39,14 +40,14 @@ export const monitoringApi = {
     ipcRenderer.on('monitoring:event', handler)
     return () => ipcRenderer.removeListener('monitoring:event', handler)
   },
-  getMonitoringStatus: () => ipcRenderer.invoke('monitoring:getStatus'),
+  getMonitoringStatus: () => ipcRenderer.invoke(IPC_CHANNELS.MONITORING.GET_STATUS),
 
   // ============================================================================
   // TASK QUEUE
   // ============================================================================
 
   // Queue State
-  taskQueueGetState: () => ipcRenderer.invoke('taskQueue:getState'),
+  taskQueueGetState: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE),
 
   // Task Management
   taskQueueAddTask: (definition: {
@@ -61,8 +62,8 @@ export const monitoringApi = {
   taskQueueClearQueue: () => ipcRenderer.invoke('taskQueue:clearQueue'),
 
   // Queue Control
-  taskQueuePause: () => ipcRenderer.invoke('taskQueue:pause'),
-  taskQueueResume: () => ipcRenderer.invoke('taskQueue:resume'),
+  taskQueuePause: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.PAUSE),
+  taskQueueResume: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.RESUME),
   taskQueueCancelCurrent: () => ipcRenderer.invoke('taskQueue:cancelCurrent'),
 
   // History
@@ -113,8 +114,8 @@ export const monitoringApi = {
     ipcRenderer.on('wishlist:autoCompleted', handler)
     return () => ipcRenderer.removeListener('wishlist:autoCompleted', handler)
   },
-  onLibraryUpdated: (callback: () => void) => {
-    const handler = () => callback()
+  onLibraryUpdated: (callback: (event: any) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
     ipcRenderer.on('library:updated', handler)
     return () => ipcRenderer.removeListener('library:updated', handler)
   },

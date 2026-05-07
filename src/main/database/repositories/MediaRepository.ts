@@ -1,683 +1,647 @@
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore } from '@main/types/database'
-import { BaseRepository } from './BaseRepository'
+import { eq, and, or, like, desc, asc, sql, inArray, lt, gte } from 'drizzle-orm'
+import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType } from '@main/types/database'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
+
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
 
 export class MediaRepository extends BaseRepository<MediaItem> {
-  constructor(db: DatabaseSync) {
-    super(db, 'media_items')
+  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'media_items', drizzle)
   }
 
-  getItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): MediaItem[] {
-    let sql = `
-      SELECT m.*,
-             q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: SQLInputValue[] = []
-
+  async getItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Promise<MediaItem[]> {
+    const conditions = []
+    
     if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
+      // Logic for disabled libraries join handled via subquery or raw SQL snippet in Drizzle
+      conditions.push(sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id) IS NOT 0`)
     }
 
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
+    if (filters?.type) conditions.push(eq(schema.mediaItems.type, filters.type))
+    if (filters?.sourceId) conditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+    if (filters?.sourceType) conditions.push(eq(schema.mediaItems.sourceType, filters.sourceType))
+    if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
+    
     if (filters?.searchQuery) {
-      sql += ' AND (m.title LIKE ? OR m.series_title LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search)
+      const q = `%${filters.searchQuery}%`
+      conditions.push(or(
+        like(schema.mediaItems.title, q),
+        like(schema.mediaItems.seriesTitle, q)
+      ))
     }
+
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
+        conditions.push(sql`media_items.title NOT GLOB '[A-Za-z]*'`)
       } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
+        conditions.push(eq(sql`UPPER(SUBSTR(media_items.title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
       }
     }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
+
+    // Joining quality_scores
+    const query = this.drizzle.select({
+      item: schema.mediaItems,
+      quality: schema.qualityScores
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+
+    if (filters?.qualityTier) conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
+    if (filters?.tierQuality) conditions.push(eq(schema.qualityScores.tierQuality, filters.tierQuality))
+    
     if (filters?.efficiencyFilter) {
-      if (filters.efficiencyFilter === 'low') sql += ' AND q.efficiency_score < 60'
-      else if (filters.efficiencyFilter === 'medium') sql += ' AND q.efficiency_score >= 60 AND q.efficiency_score < 85'
-      else if (filters.efficiencyFilter === 'high') sql += ' AND q.efficiency_score >= 85'
+      if (filters.efficiencyFilter === 'low') conditions.push(lt(schema.qualityScores.efficiencyScore, 60))
+      else if (filters.efficiencyFilter === 'medium') conditions.push(and(gte(schema.qualityScores.efficiencyScore, 60), lt(schema.qualityScores.efficiencyScore, 85)))
+      else if (filters.efficiencyFilter === 'high') conditions.push(gte(schema.qualityScores.efficiencyScore, 85))
     }
+
     if (filters?.slimDown) {
-      sql += ' AND (q.efficiency_score < 60 OR q.storage_debt_bytes > 5368709120)'
+      conditions.push(or(
+        lt(schema.qualityScores.efficiencyScore, 60),
+        sql`quality_scores.storage_debt_bytes > 5368709120`
+      ))
     }
+
     if (filters?.needsUpgrade !== undefined) {
-      sql += ' AND q.needs_upgrade = ?'
-      params.push(filters.needsUpgrade ? 1 : 0)
+      conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
     }
 
-    const sortMap: Record<string, string> = {
-      'title': 'm.title',
-      'year': 'm.year',
-      'updated_at': 'm.updated_at',
-      'created_at': 'm.created_at',
-      'tier_score': 'q.tier_score',
-      'overall_score': 'q.overall_score',
-      'size': 'm.file_size',
-      'storage_debt': 'q.storage_debt_bytes',
-      'efficiency': 'q.efficiency_score'
+    if (conditions.length > 0) query.where(and(...conditions))
+
+    const sortMap: any = {
+      'title': schema.mediaItems.title,
+      'year': schema.mediaItems.year,
+      'updated_at': schema.mediaItems.updatedAt,
+      'created_at': schema.mediaItems.createdAt,
+      'tier_score': schema.qualityScores.tierScore,
+      'overall_score': schema.qualityScores.overallScore,
+      'size': schema.mediaItems.fileSize,
+      'storage_debt': schema.qualityScores.storageDebtBytes,
+      'efficiency': schema.qualityScores.efficiencyScore
     }
 
-    const sortCol = sortMap[filters?.sortBy || 'title'] || 'm.title'
-    const sortDir = filters?.sortOrder === 'desc' ? 'DESC' : 'ASC'
-    sql += ` ORDER BY ${sortCol} ${sortDir}`
+    const sortCol = sortMap[filters?.sortBy || 'title'] || schema.mediaItems.title
+    const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
+    query.orderBy(sortOrder)
 
-    if (filters?.limit) {
-      sql += ' LIMIT ?'
-      params.push(filters.limit)
-    }
-    if (filters?.offset) {
-      sql += ' OFFSET ?'
-      params.push(filters.offset)
-    }
+    if (filters?.limit) query.limit(filters.limit)
+    if (filters?.offset) query.offset(filters.offset)
 
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as unknown as MediaItem[]
+    const rows = await query.all()
+    return this.mapDrizzleToMediaItems(rows)
   }
 
-  count(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): number {
-    let sql = `
-      SELECT COUNT(*) as count
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-      WHERE 1=1
-    `
-    const params: SQLInputValue[] = []
-
+  async count(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Promise<number> {
+    const conditions = []
+    
     if (!filters?.includeDisabledLibraries) {
-      sql += ' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)'
+      conditions.push(sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id) IS NOT 0`)
     }
 
-    if (filters?.type) {
-      sql += ' AND m.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(filters.sourceId)
-    }
-    if (filters?.sourceType) {
-      sql += ' AND m.source_type = ?'
-      params.push(filters.sourceType)
-    }
-    if (filters?.libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(filters.libraryId)
-    }
+    if (filters?.type) conditions.push(eq(schema.mediaItems.type, filters.type))
+    if (filters?.sourceId) conditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+    if (filters?.sourceType) conditions.push(eq(schema.mediaItems.sourceType, filters.sourceType))
+    if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
+    
     if (filters?.searchQuery) {
-      sql += ' AND (m.title LIKE ? OR m.series_title LIKE ?)'
-      const search = `%${filters.searchQuery}%`
-      params.push(search, search)
+      const q = `%${filters.searchQuery}%`
+      conditions.push(or(
+        like(schema.mediaItems.title, q),
+        like(schema.mediaItems.seriesTitle, q)
+      ))
     }
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        sql += " AND m.title NOT GLOB '[A-Za-z]*'"
-      } else {
-        sql += ' AND UPPER(SUBSTR(m.title, 1, 1)) = ?'
-        params.push(filters.alphabetFilter.toUpperCase())
+
+    const query = this.drizzle.select({ count: sql<number>`count(*)` })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+
+    if (filters?.qualityTier) conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
+    if (filters?.needsUpgrade !== undefined) conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
+
+    if (conditions.length > 0) query.where(and(...conditions))
+
+    const res = await query.get()
+    return res?.count || 0
+  }
+
+  async getItem(id: number): Promise<MediaItem | null> {
+    const row = await this.drizzle.select({
+      item: schema.mediaItems,
+      quality: schema.qualityScores
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    .where(eq(schema.mediaItems.id, id))
+    .get()
+
+    return row ? this.mapDrizzleToMediaItems([row])[0] : null
+  }
+
+  private mapDrizzleToMediaItems(rows: any[]): MediaItem[] {
+    return rows.map(r => {
+      const item = r.item || r; // Handle both joined and direct select
+      const quality = r.quality || {};
+      return {
+        ...item,
+        source_id: item.sourceId,
+        source_type: item.sourceType,
+        library_id: item.libraryId,
+        plex_id: item.plexId,
+        sort_title: item.sortTitle,
+        series_title: item.seriesTitle,
+        season_number: item.seasonNumber,
+        episode_number: item.episodeNumber,
+        file_path: item.filePath,
+        file_size: item.fileSize,
+        video_codec: item.videoCodec,
+        video_bitrate: item.videoBitrate,
+        audio_codec: item.audioCodec,
+        audio_channels: item.audioChannels,
+        audio_bitrate: item.audioBitrate,
+        video_frame_rate: item.videoFrameRate,
+        color_bit_depth: item.colorBitDepth,
+        hdr_format: item.hdrFormat,
+        color_space: item.colorSpace,
+        video_profile: item.videoProfile,
+        video_level: item.videoLevel,
+        audio_profile: item.audioProfile,
+        audio_sample_rate: item.audioSampleRate,
+        has_object_audio: item.hasObjectAudio === 1,
+        audio_tracks: item.audioTracks,
+        subtitle_tracks: item.subtitleTracks,
+        version_count: item.versionCount,
+        file_mtime: item.fileMtime,
+        imdb_id: item.imdbId,
+        tmdb_id: item.tmdbId,
+        series_tmdb_id: item.seriesTmdbId,
+        original_language: item.originalLanguage,
+        audio_language: item.audioLanguage,
+        poster_url: item.posterUrl,
+        episode_thumb_url: item.episodeThumbUrl,
+        season_poster_url: item.seasonPosterUrl,
+        user_fixed_match: item.userFixedMatch === 1,
+        quality_tier: quality.qualityTier || item.qualityTier,
+        tier_quality: quality.tierQuality || item.tierQuality,
+        tier_score: quality.tierScore || item.tierScore,
+        overall_score: quality.overallScore,
+        needs_upgrade: quality.needsUpgrade === 1,
+        efficiency_score: quality.efficiencyScore || item.efficiencyScore,
+        storage_debt_bytes: quality.storageDebtBytes || item.storageDebtBytes,
+        issues: quality.issues,
+        created_at: item.createdAt,
+        updated_at: item.updatedAt
       }
-    }
-    if (filters?.qualityTier) {
-      sql += ' AND q.quality_tier = ?'
-      params.push(filters.qualityTier)
-    }
-    if (filters?.tierQuality) {
-      sql += ' AND q.tier_quality = ?'
-      params.push(filters.tierQuality)
-    }
-    if (filters?.efficiencyFilter) {
-      if (filters.efficiencyFilter === 'low') sql += ' AND q.efficiency_score < 60'
-      else if (filters.efficiencyFilter === 'medium') sql += ' AND q.efficiency_score >= 60 AND q.efficiency_score < 85'
-      else if (filters.efficiencyFilter === 'high') sql += ' AND q.efficiency_score >= 85'
-    }
-    if (filters?.slimDown) {
-      sql += ' AND (q.efficiency_score < 60 OR q.storage_debt_bytes > 5368709120)'
-    }
-    if (filters?.needsUpgrade !== undefined) {
-      sql += ' AND q.needs_upgrade = ?'
-      params.push(filters.needsUpgrade ? 1 : 0)
-    }
-
-    const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as unknown as { count: number } | undefined
-    return result?.count || 0
+    })
   }
 
-  getItem(id: number): MediaItem | null {
-    const sql = `
-      SELECT m.*,
-             q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      WHERE m.id = ?
-    `
-    return this.queryOne<MediaItem>(sql, [id])
+  async updatePathAndStats(mediaItemId: number, newPath: string, analysis: any): Promise<void> {
+    await this.drizzle.update(schema.mediaItems)
+      .set({
+        filePath: newPath,
+        fileSize: analysis.fileSize || 0,
+        duration: analysis.duration || 0,
+        resolution: analysis.video?.resolution || 'unknown',
+        width: analysis.video?.width || 0,
+        height: analysis.video?.height || 0,
+        videoCodec: analysis.video?.codec || 'unknown',
+        videoBitrate: analysis.video?.bitrate || 0,
+        audioCodec: analysis.audioTracks?.[0]?.codec || 'unknown',
+        audioChannels: analysis.audioTracks?.[0]?.channels || 0,
+        audioBitrate: analysis.audioTracks?.[0]?.bitrate || 0,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .where(eq(schema.mediaItems.id, mediaItemId))
   }
 
-  updatePathAndStats(mediaItemId: number, newPath: string, analysis: any): void {
-    this.db.prepare(`
-      UPDATE media_items 
-      SET file_path = ?, 
-          file_size = ?, 
-          duration = ?, 
-          resolution = ?, 
-          width = ?, 
-          height = ?, 
-          video_codec = ?, 
-          video_bitrate = ?, 
-          audio_codec = ?, 
-          audio_channels = ?, 
-          audio_bitrate = ?,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `).run(
-      newPath,
-      analysis.fileSize || 0,
-      analysis.duration || 0,
-      analysis.video?.resolution || 'unknown',
-      analysis.video?.width || 0,
-      analysis.video?.height || 0,
-      analysis.video?.codec || 'unknown',
-      analysis.video?.bitrate || 0,
-      analysis.audioTracks?.[0]?.codec || 'unknown',
-      analysis.audioTracks?.[0]?.channels || 0,
-      analysis.audioTracks?.[0]?.bitrate || 0,
-      mediaItemId
-    )
+  async getItemByPath(filePath: string): Promise<MediaItem | null> {
+    const row = await this.drizzle.select({
+      item: schema.mediaItems,
+      quality: schema.qualityScores
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    .where(eq(schema.mediaItems.filePath, filePath))
+    .get()
+
+    return row ? this.mapDrizzleToMediaItems([row])[0] : null
   }
 
-  getItemByPath(filePath: string): MediaItem | null {
-    const sql = `
-      SELECT m.*,
-             q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score,
-             q.efficiency_score, q.storage_debt_bytes, q.issues
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      WHERE m.file_path = ?
-    `
-    return this.queryOne<MediaItem>(sql, [filePath])
+  async getItemByProviderId(providerId: string, sourceId?: string): Promise<MediaItem | null> {
+    const conditions = [eq(schema.mediaItems.plexId, providerId)]
+    if (sourceId) conditions.push(eq(schema.mediaItems.sourceId, sourceId))
+
+    const row = await this.drizzle.select()
+      .from(schema.mediaItems)
+      .where(and(...conditions))
+      .get()
+    
+    return row ? this.mapDrizzleToMediaItems([row])[0] : null
   }
 
-  getItemByProviderId(providerId: string, sourceId?: string): MediaItem | null {
-    let sql = 'SELECT * FROM media_items WHERE plex_id = ?'
-    const params: SQLInputValue[] = [providerId]
+  async upsertItem(item: MediaItem): Promise<number> {
+    const result = await this.drizzle.insert(schema.mediaItems)
+      .values({
+        sourceId: item.source_id || 'legacy',
+        sourceType: item.source_type || 'plex',
+        libraryId: item.library_id ?? null,
+        plexId: item.plex_id || '',
+        title: item.title,
+        sortTitle: item.sort_title ?? null,
+        year: item.year ?? null,
+        type: item.type,
+        seriesTitle: item.series_title ?? null,
+        seasonNumber: item.season_number ?? null,
+        episodeNumber: item.episode_number ?? null,
+        filePath: item.file_path || '',
+        fileSize: item.file_size || 0,
+        duration: item.duration || 0,
+        resolution: item.resolution || 'unknown',
+        width: item.width || 0,
+        height: item.height || 0,
+        videoCodec: item.video_codec || 'unknown',
+        videoBitrate: item.video_bitrate || 0,
+        audioCodec: item.audio_codec || 'unknown',
+        audioChannels: item.audio_channels || 0,
+        audioBitrate: item.audio_bitrate || 0,
+        videoFrameRate: item.video_frame_rate ?? null,
+        colorBitDepth: item.color_bit_depth ?? null,
+        hdrFormat: item.hdr_format ?? null,
+        colorSpace: item.color_space ?? null,
+        videoProfile: item.video_profile ?? null,
+        videoLevel: item.video_level ?? null,
+        audioProfile: item.audio_profile ?? null,
+        audioSampleRate: item.audio_sample_rate ?? null,
+        hasObjectAudio: item.has_object_audio ? 1 : 0,
+        audioTracks: item.audio_tracks ?? null,
+        subtitleTracks: item.subtitle_tracks ?? null,
+        originalLanguage: item.original_language ?? null,
+        audioLanguage: item.audio_language ?? null,
+        container: item.container ?? null,
+        versionCount: item.version_count || 1,
+        fileMtime: item.file_mtime ?? null,
+        imdbId: item.imdb_id ?? null,
+        tmdbId: item.tmdb_id ?? null,
+        seriesTmdbId: item.series_tmdb_id ?? null,
+        posterUrl: item.poster_url ?? null,
+        episodeThumbUrl: item.episode_thumb_url ?? null,
+        seasonPosterUrl: item.season_poster_url ?? null,
+        summary: item.summary ?? null,
+        userFixedMatch: item.user_fixed_match ? 1 : 0,
+        qualityTier: item.quality_tier ?? null,
+        tierQuality: item.tier_quality ?? null,
+        tierScore: item.tier_score || 0,
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .onConflictDoUpdate({
+        target: [schema.mediaItems.sourceId, schema.mediaItems.plexId],
+        set: {
+          libraryId: item.library_id ?? null,
+          title: sql`CASE WHEN user_fixed_match = 1 THEN title ELSE excluded.title END`,
+          sortTitle: sql`CASE WHEN user_fixed_match = 1 THEN sort_title ELSE excluded.sort_title END`,
+          year: sql`CASE WHEN user_fixed_match = 1 THEN year ELSE excluded.year END`,
+          type: item.type,
+          seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
+          seasonNumber: item.season_number ?? null,
+          episodeNumber: item.episode_number ?? null,
+          filePath: item.file_path || '',
+          fileSize: item.file_size || 0,
+          duration: item.duration || 0,
+          resolution: item.resolution || 'unknown',
+          width: item.width || 0,
+          height: item.height || 0,
+          videoCodec: item.video_codec || 'unknown',
+          videoBitrate: item.video_bitrate || 0,
+          audioCodec: item.audio_codec || 'unknown',
+          audioChannels: item.audio_channels || 0,
+          audioBitrate: item.audio_bitrate || 0,
+          videoFrameRate: item.video_frame_rate ?? null,
+          colorBitDepth: item.color_bit_depth ?? null,
+          hdrFormat: item.hdr_format ?? null,
+          colorSpace: item.color_space ?? null,
+          videoProfile: item.video_profile ?? null,
+          videoLevel: item.video_level ?? null,
+          audioProfile: item.audio_profile ?? null,
+          audioSampleRate: item.audio_sample_rate ?? null,
+          hasObjectAudio: item.has_object_audio ? 1 : 0,
+          audioTracks: item.audio_tracks ?? null,
+          subtitleTracks: item.subtitle_tracks ?? null,
+          container: item.container ?? null,
+          versionCount: item.version_count || 1,
+          fileMtime: item.file_mtime ?? null,
+          originalLanguage: sql`CASE WHEN user_fixed_match = 1 THEN original_language ELSE COALESCE(excluded.original_language, original_language) END`,
+          audioLanguage: sql`COALESCE(excluded.audio_language, audio_language)`,
+          imdbId: sql`CASE WHEN user_fixed_match = 1 THEN imdb_id ELSE COALESCE(excluded.imdb_id, imdb_id) END`,
+          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, tmdb_id) END`,
+          seriesTmdbId: sql`CASE WHEN user_fixed_match = 1 THEN series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, series_tmdb_id) END`,
+          posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, poster_url) END`,
+          episodeThumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, episode_thumb_url) END`,
+          seasonPosterUrl: sql`CASE WHEN user_fixed_match = 1 THEN season_poster_url ELSE COALESCE(excluded.season_poster_url, season_poster_url) END`,
+          summary: sql`CASE WHEN user_fixed_match = 1 THEN summary ELSE COALESCE(excluded.summary, summary) END`,
+          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+          qualityTier: sql`COALESCE(excluded.quality_tier, quality_tier)`,
+          tierQuality: sql`COALESCE(excluded.tier_quality, tier_quality)`,
+          tierScore: sql`COALESCE(excluded.tier_score, tier_score)`,
+          updatedAt: sql`(datetime('now'))`
+        }
+      })
+      .returning({ id: schema.mediaItems.id })
 
-    if (sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(sourceId)
-    }
-
-    const stmt = this.db.prepare(sql)
-    return (stmt.get(...params) as unknown as MediaItem) || null
+    return result[0]?.id || 0
   }
 
-  upsertItem(item: MediaItem): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO media_items (
-        source_id, source_type, library_id, plex_id, title, sort_title, year, type,
-        series_title, season_number, episode_number, file_path, file_size,
-        duration, resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate, video_frame_rate,
-        color_bit_depth, hdr_format, color_space, video_profile, video_level,
-        audio_profile, audio_sample_rate, has_object_audio, audio_tracks,
-        subtitle_tracks, original_language, audio_language,
-        container, version_count, file_mtime, imdb_id, tmdb_id, series_tmdb_id, poster_url,
-        episode_thumb_url, season_poster_url, summary, user_fixed_match,
-        quality_tier, tier_quality, tier_score,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?,
-        datetime('now'), datetime('now')
-      )
-      ON CONFLICT(source_id, plex_id) DO UPDATE SET
-        library_id = excluded.library_id,
-        title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.title ELSE excluded.title END,
-        sort_title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.sort_title ELSE excluded.sort_title END,
-        year = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.year ELSE excluded.year END,
-        type = excluded.type,
-        series_title = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_title ELSE excluded.series_title END,
-        season_number = excluded.season_number,
-        episode_number = excluded.episode_number,
-        file_path = excluded.file_path,
-        file_size = excluded.file_size,
-        duration = excluded.duration,
-        resolution = excluded.resolution,
-        width = excluded.width,
-        height = excluded.height,
-        video_codec = excluded.video_codec,
-        video_bitrate = excluded.video_bitrate,
-        audio_codec = excluded.audio_codec,
-        audio_channels = excluded.audio_channels,
-        audio_bitrate = excluded.audio_bitrate,
-        video_frame_rate = excluded.video_frame_rate,
-        color_bit_depth = excluded.color_bit_depth,
-        hdr_format = excluded.hdr_format,
-        color_space = excluded.color_space,
-        video_profile = excluded.video_profile,
-        video_level = excluded.video_level,
-        audio_profile = excluded.audio_profile,
-        audio_sample_rate = excluded.audio_sample_rate,
-        has_object_audio = excluded.has_object_audio,
-        audio_tracks = excluded.audio_tracks,
-        subtitle_tracks = excluded.subtitle_tracks,
-        container = excluded.container,
-        version_count = excluded.version_count,
-        file_mtime = excluded.file_mtime,
-        original_language = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.original_language ELSE COALESCE(excluded.original_language, media_items.original_language) END,
-        audio_language = COALESCE(excluded.audio_language, media_items.audio_language),
-        imdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.imdb_id ELSE COALESCE(excluded.imdb_id, media_items.imdb_id) END,
-        tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.tmdb_id ELSE COALESCE(excluded.tmdb_id, media_items.tmdb_id) END,
-        series_tmdb_id = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, media_items.series_tmdb_id) END,
-        poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.poster_url ELSE COALESCE(excluded.poster_url, media_items.poster_url) END,
-        episode_thumb_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, media_items.episode_thumb_url) END,
-        season_poster_url = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.season_poster_url ELSE COALESCE(excluded.season_poster_url, media_items.season_poster_url) END,
-        summary = CASE WHEN media_items.user_fixed_match = 1 THEN media_items.summary ELSE COALESCE(excluded.summary, media_items.summary) END,
-        user_fixed_match = CASE WHEN media_items.user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END,
-        quality_tier = COALESCE(excluded.quality_tier, media_items.quality_tier),
-        tier_quality = COALESCE(excluded.tier_quality, media_items.tier_quality),
-        tier_score = COALESCE(excluded.tier_score, media_items.tier_score),
-        updated_at = datetime('now')
-      RETURNING id
-    `)
-
-    const row = stmt.get(
-      item.source_id || 'legacy',
-      item.source_type || 'plex',
-      item.library_id ?? null,
-      item.plex_id,
-      item.title,
-      item.sort_title ?? null,
-      item.year ?? null,
-      item.type,
-      item.series_title ?? null,
-      item.season_number ?? null,
-      item.episode_number ?? null,
-      item.file_path ?? null,
-      item.file_size || 0,
-      item.duration || 0,
-      item.resolution || 'unknown',
-      item.width || 0,
-      item.height || 0,
-      item.video_codec || 'unknown',
-      item.video_bitrate || 0,
-      item.audio_codec || 'unknown',
-      item.audio_channels || 0,
-      item.audio_bitrate || 0,
-      item.video_frame_rate ?? null,
-      item.color_bit_depth ?? null,
-      item.hdr_format ?? null,
-      item.color_space ?? null,
-      item.video_profile ?? null,
-      item.video_level ?? null,
-      item.audio_profile ?? null,
-      item.audio_sample_rate ?? null,
-      item.has_object_audio ? 1 : 0,
-      item.audio_tracks ?? null,
-      item.subtitle_tracks ?? null,
-      item.original_language ?? null,
-      item.audio_language ?? null,
-      item.container ?? null,
-      item.version_count || 1,
-      item.file_mtime ?? null,
-      item.imdb_id ?? null,
-      item.tmdb_id ?? null,
-      item.series_tmdb_id ?? null,
-      item.poster_url ?? null,
-      item.episode_thumb_url ?? null,
-      item.season_poster_url ?? null,
-      item.summary ?? null,
-      item.user_fixed_match ? 1 : 0,
-      item.quality_tier ?? null,
-      item.tier_quality ?? null,
-      item.tier_score || 0
-    ) as unknown as { id: number } | undefined
-
-    return row?.id || 0
-  }
-
-  deleteItem(id: number): void {
-    this.beginBatch()
+  async deleteItem(id: number): Promise<void> {
+    await this.beginBatch()
     try {
-      const db = this.db
-      const item = db.prepare(
-        'SELECT tmdb_id, source_id, library_id, type, series_title, season_number, episode_number FROM media_items WHERE id = ?'
-      ).get(id) as { tmdb_id?: string; source_id: string; library_id?: string; type: string; series_title?: string; season_number?: number; episode_number?: number } | undefined
+      const item = await this.drizzle.select()
+        .from(schema.mediaItems)
+        .where(eq(schema.mediaItems.id, id))
+        .get()
 
       if (item) {
-        const collections = db.prepare('SELECT collection_id FROM media_item_collections WHERE media_item_id = ?').all(id) as Array<{ collection_id: number }>
-        db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
-        db.prepare('DELETE FROM quality_scores WHERE media_item_id = ?').run(id)
-        db.prepare('DELETE FROM media_item_collections WHERE media_item_id = ?').run(id)
-        db.prepare('DELETE FROM media_items WHERE id = ?').run(id)
+        await this.drizzle.delete(schema.mediaItemVersions).where(eq(schema.mediaItemVersions.mediaItemId, id))
+        await this.drizzle.delete(schema.qualityScores).where(eq(schema.qualityScores.mediaItemId, id))
+        await this.drizzle.delete(schema.mediaItemCollections).where(eq(schema.mediaItemCollections.mediaItemId, id))
+        await this.drizzle.delete(schema.mediaItems).where(eq(schema.mediaItems.id, id))
 
-        const sourceId = item.source_id
-        const libraryId = item.library_id || ''
+        if (item.type === 'episode' && item.seriesTitle) {
+          const sourceId = item.sourceId
+          const libraryId = item.libraryId || ''
 
-        if (item.type === 'episode' && item.series_title) {
-          db.prepare(`
-            UPDATE series_completeness SET
-              owned_episodes = (SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
-              owned_seasons = (SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
-              completeness_percentage = CASE WHEN total_episodes > 0
-                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode') AS REAL) * 100.0 / total_episodes)
-                ELSE 0 END,
-              updated_at = datetime('now')
-            WHERE series_title = ? AND source_id = ? AND library_id = ?
-          `).run(
-            item.series_title, sourceId, libraryId,
-            item.series_title, sourceId, libraryId,
-            item.series_title, sourceId, libraryId,
-            item.series_title, sourceId, libraryId
-          )
+          // Update completeness using Drizzle sql tagged template for complexity
+          await this.drizzle.update(schema.seriesCompleteness)
+            .set({
+              ownedEpisodes: sql`(SELECT COUNT(*) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode')`,
+              ownedSeasons: sql`(SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode')`,
+              completenessPercentage: sql`CASE WHEN total_episodes > 0
+                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode') AS REAL) * 100.0 / total_episodes)
+                ELSE 0 END`,
+              updatedAt: sql`(datetime('now'))`
+            })
+            .where(and(
+              eq(schema.seriesCompleteness.seriesTitle, item.seriesTitle),
+              eq(schema.seriesCompleteness.sourceId, sourceId),
+              eq(schema.seriesCompleteness.libraryId, libraryId)
+            ))
 
-          db.prepare(
-            'DELETE FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ? AND owned_episodes <= 0'
-          ).run(item.series_title, sourceId, libraryId)
-        }
-
-        if (item.type === 'movie' && collections.length > 0) {
-          const updateStmt = db.prepare(`
-            UPDATE movie_collections SET
-              owned_movies = (
-                SELECT COUNT(DISTINCT media_item_id) FROM media_item_collections
-                WHERE collection_id = movie_collections.id
-              ),
-              completeness_percentage = CASE WHEN total_movies > 0
-                THEN ROUND(CAST((SELECT COUNTINCT media_item_id) FROM media_item_collections WHERE collection_id = movie_collections.id) AS REAL) * 100.0 / total_movies)
-                ELSE 0 END,
-              updated_at = datetime('now')
-            WHERE id = ?
-          `)
-
-          for (const coll of collections) {
-            updateStmt.run(coll.collection_id)
-          }
+          await this.drizzle.delete(schema.seriesCompleteness)
+            .where(and(
+              eq(schema.seriesCompleteness.seriesTitle, item.seriesTitle),
+              eq(schema.seriesCompleteness.sourceId, sourceId),
+              eq(schema.seriesCompleteness.libraryId, libraryId),
+              sql`owned_episodes <= 0`
+            ))
         }
       }
-      this.endBatch()
+      await this.endBatch()
     } catch (err) {
-      this.rollback()
+      await this.rollbackBatch()
       throw err
     }
   }
 
-  deleteItemsForSource(sourceId: string): void {
-    this.beginBatch()
+  async deleteItemsForSource(sourceId: string): Promise<void> {
+    await this.beginBatch()
     try {
-      const db = this.db
-      // 1. Get all media item IDs for this source
-      const itemIds = db.prepare('SELECT id FROM media_items WHERE source_id = ?').all(sourceId).map((row: any) => row.id)
+      const items = await this.drizzle.select({ id: schema.mediaItems.id })
+        .from(schema.mediaItems)
+        .where(eq(schema.mediaItems.sourceId, sourceId))
+        .all()
+      
+      const itemIds = items.map(i => i.id)
       
       if (itemIds.length > 0) {
-        const placeholders = itemIds.map(() => '?').join(',')
-        
-        // 2. Delete related data using retrieved IDs
-        db.prepare(`DELETE FROM media_item_versions WHERE media_item_id IN (${placeholders})`).run(...(itemIds as any[]))
-        db.prepare(`DELETE FROM quality_scores WHERE media_item_id IN (${placeholders})`).run(...(itemIds as any[]))
-        db.prepare(`DELETE FROM media_item_collections WHERE media_item_id IN (${placeholders})`).run(...(itemIds as any[]))
-        db.prepare(`DELETE FROM media_items WHERE id IN (${placeholders})`).run(...(itemIds as any[]))
+        await this.drizzle.delete(schema.mediaItemVersions).where(inArray(schema.mediaItemVersions.mediaItemId, itemIds))
+        await this.drizzle.delete(schema.qualityScores).where(inArray(schema.qualityScores.mediaItemId, itemIds))
+        await this.drizzle.delete(schema.mediaItemCollections).where(inArray(schema.mediaItemCollections.mediaItemId, itemIds))
+        await this.drizzle.delete(schema.mediaItems).where(inArray(schema.mediaItems.id, itemIds))
       }
       
-      // 3. Cleanup completeness and collection summaries associated with this source
-      db.prepare('DELETE FROM series_completeness WHERE source_id = ?').run(sourceId)
-      db.prepare('DELETE FROM movie_collections WHERE source_id = ?').run(sourceId)
-      
-      this.endBatch()
+      await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.sourceId, sourceId))
+      await this.drizzle.delete(schema.movieCollections).where(eq(schema.movieCollections.sourceId, sourceId))
+      await this.endBatch()
     } catch (err) {
-      this.rollback()
+      await this.rollbackBatch()
       throw err
     }
   }
 
-  updateSeriesMatch(
+  async updateSeriesMatch(
     seriesTitle: string,
     sourceId: string,
     tmdbId: string,
     posterUrl?: string,
     newSeriesTitle?: string
-  ): number {
-    const params: SQLInputValue[] = [tmdbId, 1]
-    let sql = 'UPDATE media_items SET series_tmdb_id = ?, user_fixed_match = ?'
-
-    if (posterUrl) {
-      sql += ', poster_url = ?'
-      params.push(posterUrl)
+  ): Promise<number> {
+    const data: any = {
+      seriesTmdbId: tmdbId,
+      userFixedMatch: 1,
+      updatedAt: sql`(datetime('now'))`
     }
-    if (newSeriesTitle) {
-      sql += ', series_title = ?'
-      params.push(newSeriesTitle)
-    }
+    if (posterUrl) data.posterUrl = posterUrl
+    if (newSeriesTitle) data.seriesTitle = newSeriesTitle
 
-    sql += " WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    params.push(seriesTitle, sourceId)
-
-    this.db.prepare(sql).run(...params)
+    await this.drizzle.update(schema.mediaItems)
+      .set(data)
+      .where(and(
+        eq(schema.mediaItems.seriesTitle, seriesTitle),
+        eq(schema.mediaItems.sourceId, sourceId),
+        eq(schema.mediaItems.type, 'episode')
+      ))
 
     if (newSeriesTitle && newSeriesTitle !== seriesTitle) {
-      this.db.prepare(
-        'UPDATE series_completeness SET series_title = ? WHERE series_title = ? AND source_id = ?'
-      ).run(newSeriesTitle, seriesTitle, sourceId)
+      await this.drizzle.update(schema.seriesCompleteness)
+        .set({ seriesTitle: newSeriesTitle, updatedAt: sql`(datetime('now'))` })
+        .where(and(
+          eq(schema.seriesCompleteness.seriesTitle, seriesTitle),
+          eq(schema.seriesCompleteness.sourceId, sourceId)
+        ))
     }
 
     const titleToQuery = newSeriesTitle || seriesTitle
-    const countStmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    )
-    const result = countStmt.get(titleToQuery, sourceId) as unknown as { count: number } | undefined
-    return result?.count || 0
+    const res = await this.drizzle.select({ count: sql<number>`count(*)` })
+      .from(schema.mediaItems)
+      .where(and(
+        eq(schema.mediaItems.seriesTitle, titleToQuery),
+        eq(schema.mediaItems.sourceId, sourceId),
+        eq(schema.mediaItems.type, 'episode')
+      ))
+      .get()
+    
+    return res?.count || 0
   }
 
-  updateMovieMatch(
+  async updateMovieMatch(
     mediaItemId: number,
     tmdbId: string,
     posterUrl?: string,
     title?: string,
     year?: number
-  ): void {
-    const params: SQLInputValue[] = [tmdbId, 1]
-    let sql = 'UPDATE media_items SET tmdb_id = ?, user_fixed_match = ?'
-
-    if (posterUrl) {
-      sql += ', poster_url = ?'
-      params.push(posterUrl)
+  ): Promise<void> {
+    const data: any = {
+      tmdbId: tmdbId,
+      userFixedMatch: 1,
+      updatedAt: sql`(datetime('now'))`
     }
-    if (title) {
-      sql += ', title = ?'
-      params.push(title)
-    }
-    if (year !== undefined) {
-      sql += ', year = ?'
-      params.push(year)
-    }
+    if (posterUrl) data.posterUrl = posterUrl
+    if (title) data.title = title
+    if (year !== undefined) data.year = year
 
-    sql += " WHERE id = ? AND type = 'movie'"
-    params.push(mediaItemId)
-
-    this.db.prepare(sql).run(...params)
+    await this.drizzle.update(schema.mediaItems)
+      .set(data)
+      .where(and(
+        eq(schema.mediaItems.id, mediaItemId),
+        eq(schema.mediaItems.type, 'movie')
+      ))
   }
 
-  updateMovieWithTMDBId(mediaItemId: number, tmdbId: string): void {
-    this.db.prepare(
-      "UPDATE media_items SET tmdb_id = ? WHERE id = ? AND type = 'movie'"
-    ).run(tmdbId, mediaItemId)
+  async updateMovieWithTMDBId(mediaItemId: number, tmdbId: string): Promise<void> {
+    await this.drizzle.update(schema.mediaItems)
+      .set({ tmdbId: tmdbId, updatedAt: sql`(datetime('now'))` })
+      .where(and(
+        eq(schema.mediaItems.id, mediaItemId),
+        eq(schema.mediaItems.type, 'movie')
+      ))
   }
 
-  removeStaleMediaItems(validPlexIds: Set<string>, type: 'movie' | 'episode'): number {
-    const db = this.db
-    
-    this.beginBatch()
+  async removeStaleProviderItems(
+    sourceId: string,
+    libraryId: string,
+    itemType: MediaItemType,
+    validProviderIds: Set<string>
+  ): Promise<number> {
+    await this.beginBatch()
     try {
-      if (validPlexIds.size === 0) {
-        const result = db.prepare('DELETE FROM media_items WHERE type = ?').run(type) as unknown as { changes: number | bigint }
-        this.endBatch()
-        return Number(result.changes)
+      if (validProviderIds.size === 0) {
+        await this.drizzle.delete(schema.mediaItems)
+          .where(and(
+            eq(schema.mediaItems.sourceId, sourceId),
+            eq(schema.mediaItems.libraryId, libraryId),
+            eq(schema.mediaItems.type, itemType)
+          ))
+        await this.endBatch()
+        return 0 // LibSQL doesn't easily return rowsAffected here
       }
 
-      db.exec('CREATE TEMPORARY TABLE IF NOT EXISTS valid_plex_ids (plex_id TEXT)')
-      db.exec('DELETE FROM valid_plex_ids')
-      
-      const insertStmt = db.prepare('INSERT INTO valid_plex_ids (plex_id) VALUES (?)')
-      for (const id of validPlexIds) {
-        insertStmt.run(id)
+      const currentItems = await this.drizzle.select({ plexId: schema.mediaItems.plexId })
+        .from(schema.mediaItems)
+        .where(and(
+          eq(schema.mediaItems.sourceId, sourceId),
+          eq(schema.mediaItems.libraryId, libraryId),
+          eq(schema.mediaItems.type, itemType)
+        ))
+        .all()
+
+      const toDelete = currentItems
+        .map(r => r.plexId)
+        .filter(id => !validProviderIds.has(id))
+
+      if (toDelete.length > 0) {
+        const batchSize = 100
+        for (let i = 0; i < toDelete.length; i += batchSize) {
+          const chunk = toDelete.slice(i, i + batchSize)
+          await this.drizzle.delete(schema.mediaItems)
+            .where(and(
+              eq(schema.mediaItems.sourceId, sourceId),
+              eq(schema.mediaItems.libraryId, libraryId),
+              eq(schema.mediaItems.type, itemType),
+              inArray(schema.mediaItems.plexId, chunk)
+            ))
+        }
       }
 
-      const result = db.prepare(`
-        DELETE FROM media_items 
-        WHERE type = ? AND plex_id NOT IN (SELECT plex_id FROM valid_plex_ids)
-      `).run(type) as unknown as { changes: number | bigint }
-
-      this.endBatch()
-      return Number(result.changes)
+      await this.endBatch()
+      return toDelete.length
     } catch (err) {
-      this.rollback()
+      await this.rollbackBatch()
       throw err
     }
   }
 
-  updateItemArtwork(
+  async updateItemArtwork(
     id: number,
     artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
-  ): void {
-    const updates: string[] = []
-    const params: SQLInputValue[] = []
+  ): Promise<void> {
+    const data: any = { updatedAt: sql`(datetime('now'))` }
+    if (artwork.posterUrl !== undefined) data.posterUrl = artwork.posterUrl
+    if (artwork.episodeThumbUrl !== undefined) data.episodeThumbUrl = artwork.episodeThumbUrl
+    if (artwork.seasonPosterUrl !== undefined) data.seasonPosterUrl = artwork.seasonPosterUrl
 
-    if (artwork.posterUrl !== undefined) {
-      updates.push('poster_url = ?')
-      params.push(artwork.posterUrl)
-    }
-    if (artwork.episodeThumbUrl !== undefined) {
-      updates.push('episode_thumb_url = ?')
-      params.push(artwork.episodeThumbUrl)
-    }
-    if (artwork.seasonPosterUrl !== undefined) {
-      updates.push('season_poster_url = ?')
-      params.push(artwork.seasonPosterUrl)
-    }
-
-    if (updates.length === 0) return
-
-    updates.push("updated_at = datetime('now')")
-    params.push(id)
-
-    const sql = `UPDATE media_items SET ${updates.join(', ')} WHERE id = ?`
-    this.db.prepare(sql).run(...params)
+    await this.drizzle.update(schema.mediaItems)
+      .set(data)
+      .where(eq(schema.mediaItems.id, id))
   }
 
-  updateBatchItemArtwork(
+  async updateBatchItemArtwork(
     ids: number[],
     artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
-  ): void {
+  ): Promise<void> {
     if (ids.length === 0) return
-    const updates: string[] = []
-    const params: SQLInputValue[] = []
+    const data: any = { updatedAt: sql`(datetime('now'))` }
+    if (artwork.posterUrl !== undefined) data.posterUrl = artwork.posterUrl
+    if (artwork.episodeThumbUrl !== undefined) data.episodeThumbUrl = artwork.episodeThumbUrl
+    if (artwork.seasonPosterUrl !== undefined) data.seasonPosterUrl = artwork.seasonPosterUrl
 
-    if (artwork.posterUrl !== undefined) {
-      updates.push('poster_url = ?')
-      params.push(artwork.posterUrl)
-    }
-    if (artwork.episodeThumbUrl !== undefined) {
-      updates.push('episode_thumb_url = ?')
-      params.push(artwork.episodeThumbUrl)
-    }
-    if (artwork.seasonPosterUrl !== undefined) {
-      updates.push('season_poster_url = ?')
-      params.push(artwork.seasonPosterUrl)
-    }
-
-    if (updates.length === 0) return
-
-    updates.push("updated_at = datetime('now')")
-    
-    // Process in batches
     const batchSize = 500
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const sql = `UPDATE media_items SET ${updates.join(', ')} WHERE id IN (${placeholders})`
-      this.db.prepare(sql).run(...params, ...batch)
+      await this.drizzle.update(schema.mediaItems)
+        .set(data)
+        .where(inArray(schema.mediaItems.id, batch))
     }
   }
 
-  getItemsByIds(ids: number[]): MediaItem[] {
+  async getItemsByIds(ids: number[]): Promise<MediaItem[]> {
     if (ids.length === 0) return []
     const result: MediaItem[] = []
     const batchSize = 500
     
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const sql = `
-        SELECT m.*,
-               q.overall_score, q.needs_upgrade,
-               q.quality_tier, q.tier_quality, q.tier_score,
-               q.efficiency_score, q.storage_debt_bytes, q.issues
-        FROM media_items m
-        LEFT JOIN quality_scores q ON m.id = q.media_item_id
-        WHERE m.id IN (${placeholders})
-      `
-      const rows = this.db.prepare(sql).all(...batch) as unknown as MediaItem[]
-      result.push(...rows)
+      const rows = await this.drizzle.select({
+        item: schema.mediaItems,
+        quality: schema.qualityScores
+      })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(inArray(schema.mediaItems.id, batch))
+      .all()
+
+      result.push(...this.mapDrizzleToMediaItems(rows))
     }
     return result
   }
 
-  exportWorkingCSV(options: any): string {
-    let sql = `
-      SELECT m.title, m.year, m.type, m.series_title, m.season_number, m.episode_number,
-             q.quality_tier, q.tier_quality, q.overall_score, q.efficiency_score, q.storage_debt_bytes,
-             m.file_path, m.file_size, m.resolution, m.video_codec, m.audio_codec
-      FROM media_items m
-      LEFT JOIN quality_scores q ON m.id = q.media_item_id
-      WHERE 1=1
-    `
-    const params: SQLInputValue[] = []
-    if (options.sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(options.sourceId)
-    }
-    if (options.type) {
-      sql += ' AND m.type = ?'
-      params.push(options.type)
-    }
-    if (options.needsUpgrade) {
-      sql += ' AND q.needs_upgrade = 1'
-    }
+  async exportWorkingCSV(options: any): Promise<string> {
+    const conditions = []
+    if (options.sourceId) conditions.push(eq(schema.mediaItems.sourceId, options.sourceId))
+    if (options.type) conditions.push(eq(schema.mediaItems.type, options.type))
+    if (options.needsUpgrade) conditions.push(eq(schema.qualityScores.needsUpgrade, 1))
 
-    const rows = this.db.prepare(sql).all(...params) as unknown as any[]
+    const rows = await this.drizzle.select({
+      title: schema.mediaItems.title,
+      year: schema.mediaItems.year,
+      type: schema.mediaItems.type,
+      series_title: schema.mediaItems.seriesTitle,
+      season_number: schema.mediaItems.seasonNumber,
+      episode_number: schema.mediaItems.episodeNumber,
+      quality_tier: schema.qualityScores.qualityTier,
+      tier_quality: schema.qualityScores.tierQuality,
+      overall_score: schema.qualityScores.overallScore,
+      efficiency_score: schema.qualityScores.efficiencyScore,
+      storage_debt_bytes: schema.qualityScores.storageDebtBytes,
+      file_path: schema.mediaItems.filePath,
+      file_size: schema.mediaItems.fileSize,
+      resolution: schema.mediaItems.resolution,
+      video_codec: schema.mediaItems.videoCodec,
+      audio_codec: schema.mediaItems.audioCodec
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    .where(and(...conditions))
+    .all()
+
     if (rows.length === 0) return 'No data'
 
     const headers = Object.keys(rows[0]).join(',')
@@ -690,286 +654,397 @@ export class MediaRepository extends BaseRepository<MediaItem> {
     return [headers, ...csvRows].join('\n')
   }
 
-  getItemsByTmdbIds(tmdbIds: string[]): Map<string, MediaItem> {
+  async getItemsByTmdbIds(tmdbIds: string[]): Promise<Map<string, MediaItem>> {
     const result = new Map<string, MediaItem>()
     if (tmdbIds.length === 0) return result
 
     const batchSize = 500
     for (let i = 0; i < tmdbIds.length; i += batchSize) {
       const batch = tmdbIds.slice(i, i + batchSize)
-      const placeholders = batch.map(() => '?').join(',')
-      const stmt = this.db.prepare(`SELECT * FROM media_items WHERE tmdb_id IN (${placeholders})`)
-      const rows = stmt.all(...batch) as unknown as MediaItem[]
-      for (const row of rows) {
-        if (row.tmdb_id) result.set(row.tmdb_id, row)
+      const rows = await this.drizzle.select()
+        .from(schema.mediaItems)
+        .where(inArray(schema.mediaItems.tmdbId, batch))
+        .all()
+      
+      const items = this.mapDrizzleToMediaItems(rows)
+      for (const item of items) {
+        if (item.tmdb_id) result.set(item.tmdb_id, item)
       }
     }
     return result
   }
 
-  getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): number {
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?"
-    )
-    const result = stmt.get(seriesTmdbId) as unknown as { count: number } | undefined
-    return result?.count || 0
+  async getEpisodeCountBySeriesTmdbId(seriesTmdbId: string): Promise<number> {
+    const res = await this.db.execute({
+      sql: "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_tmdb_id = ?",
+      args: [seriesTmdbId]
+    })
+    const row = res.rows[0] as unknown as { count: number } | undefined
+    return row?.count || 0
   }
 
-  getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): number {
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ?"
-    )
-    const result = stmt.get(seriesTitle, seasonNumber) as unknown as { count: number } | undefined
-    return result?.count || 0
+  async getEpisodeCountForSeason(seriesTitle: string, seasonNumber: number): Promise<number> {
+    const res = await this.db.execute({
+      sql: "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ?",
+      args: [seriesTitle, seasonNumber]
+    })
+    const row = res.rows[0] as unknown as { count: number } | undefined
+    return row?.count || 0
   }
 
-  getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): number {
-    const stmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ? AND episode_number = ?"
-    )
-    const result = stmt.get(seriesTitle, seasonNumber, episodeNumber) as unknown as { count: number } | undefined
-    return result?.count || 0
+  async getEpisodeCountForSeasonEpisode(seriesTitle: string, seasonNumber: number, episodeNumber: number): Promise<number> {
+    const res = await this.db.execute({
+      sql: "SELECT COUNT(*) as count FROM media_items WHERE type = 'episode' AND series_title = ? AND season_number = ? AND episode_number = ?",
+      args: [seriesTitle, seasonNumber, episodeNumber]
+    })
+    const row = res.rows[0] as unknown as { count: number } | undefined
+    return row?.count || 0
   }
 
-  getLetterOffset(
+  async getLetterOffset(
     table: 'movies' | 'tvshows' | 'artists' | 'albums',
     letter: string,
     filters?: { sourceId?: string; libraryId?: string }
-  ): number {
-    const allowedTables = ['movies', 'tvshows', 'artists', 'albums', 'media_items', 'music_artists', 'music_albums', 'movie_collections']
-    if (!allowedTables.includes(table)) {
-      throw new Error(`Invalid table identifier: ${table}`)
-    }
-
+  ): Promise<number> {
     if (letter === '#') return 0
-
     const upperLetter = letter.toUpperCase()
-    let sql: string
-    const params: SQLInputValue[] = []
 
     if (table === 'movies') {
-      sql = `
-        SELECT COUNT(*) as count FROM media_items m
-        LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
-        WHERE m.type = 'movie' AND (ls.is_enabled = 1 OR ls.is_enabled IS NULL)
-          AND UPPER(SUBSTR(COALESCE(m.sort_title, m.title), 1, 1)) < ?
-      `
-      params.push(upperLetter)
-      if (filters?.sourceId) { sql += ' AND m.source_id = ?'; params.push(filters.sourceId) }
-      if (filters?.libraryId) { sql += ' AND m.library_id = ?'; params.push(filters.libraryId) }
-    } else if (table === 'tvshows') {
-      sql = `
-        SELECT COUNT(DISTINCT COALESCE(m.series_title, 'Unknown Series')) as count FROM media_items m
-        WHERE m.type = 'episode'
-          AND UPPER(SUBSTR(COALESCE(m.series_title, 'Unknown Series'), 1, 1)) < ?
-      `
-      params.push(upperLetter)
-      if (filters?.sourceId) { sql += ' AND m.source_id = ?'; params.push(filters.sourceId) }
-      if (filters?.libraryId) { sql += ' AND m.library_id = ?'; params.push(filters.libraryId) }
-    } else if (table === 'artists') {
-      sql = `
-        SELECT COUNT(*) as count FROM music_artists
-        WHERE UPPER(SUBSTR(COALESCE(sort_name, name), 1, 1)) < ?
-      `
-      params.push(upperLetter)
-      if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-      if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
-    } else {
-      sql = `
-        SELECT COUNT(*) as count FROM music_albums
-        WHERE UPPER(SUBSTR(title, 1, 1)) < ?
-      `
-      params.push(upperLetter)
-      if (filters?.sourceId) { sql += ' AND source_id = ?'; params.push(filters.sourceId) }
-      if (filters?.libraryId) { sql += ' AND library_id = ?'; params.push(filters.libraryId) }
-    }
+      const conditions = [
+        eq(schema.mediaItems.type, 'movie'),
+        sql`UPPER(SUBSTR(COALESCE(media_items.sort_title, media_items.title), 1, 1)) < ${upperLetter}`,
+        sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id) IS NOT 0`
+      ]
+      if (filters?.sourceId) conditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+      if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
 
-    const stmt = this.db.prepare(sql)
-    const result = stmt.get(...params) as unknown as { count: number } | undefined
-    return result?.count || 0
+      const res = await this.drizzle.select({ count: sql<number>`count(*)` })
+        .from(schema.mediaItems)
+        .where(and(...conditions))
+        .get()
+      return res?.count || 0
+    } else if (table === 'tvshows') {
+      const conditions = [
+        eq(schema.seriesCompleteness.completenessPercentage, sql`completeness_percentage`), // Dummy to start and(...)
+        sql`UPPER(SUBSTR(series_title, 1, 1)) < ${upperLetter}`
+      ]
+      if (filters?.sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, filters.sourceId))
+      if (filters?.libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, filters.libraryId))
+
+      const res = await this.drizzle.select({ count: sql<number>`count(*)` })
+        .from(schema.seriesCompleteness)
+        .where(and(...conditions))
+        .get()
+      return res?.count || 0
+    } else if (table === 'artists') {
+      const conditions = [sql`UPPER(SUBSTR(name, 1, 1)) < ${upperLetter}`]
+      if (filters?.sourceId) conditions.push(eq(schema.musicArtists.sourceId, filters.sourceId))
+      
+      const res = await this.drizzle.select({ count: sql<number>`count(*)` })
+        .from(schema.musicArtists)
+        .where(and(...conditions))
+        .get()
+      return res?.count || 0
+    } else {
+      const conditions = [sql`UPPER(SUBSTR(title, 1, 1)) < ${upperLetter}`]
+      if (filters?.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
+
+      const res = await this.drizzle.select({ count: sql<number>`count(*)` })
+        .from(schema.musicAlbums)
+        .where(and(...conditions))
+        .get()
+      return res?.count || 0
+    }
   }
 
-  getEpisodesForSeries(
+  async getEpisodesForSeries(
     seriesTitle: string,
     sourceId?: string,
     libraryId?: string
-  ): MediaItem[] {
-    let sql = `SELECT m.*,
-                      q.overall_score, q.needs_upgrade,
-                      q.quality_tier, q.tier_quality, q.tier_score,
-                      q.efficiency_score, q.storage_debt_bytes, q.issues
-FROM media_items m
-LEFT JOIN quality_scores q ON m.id = q.media_item_id
-WHERE m.type = 'episode' AND m.series_title = ?`
-    const params: SQLInputValue[] = [seriesTitle]
+  ): Promise<MediaItem[]> {
+    const conditions = [
+      eq(schema.mediaItems.type, 'episode'),
+      eq(schema.mediaItems.seriesTitle, seriesTitle)
+    ]
+    if (sourceId) conditions.push(eq(schema.mediaItems.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.mediaItems.libraryId, libraryId))
 
-    if (sourceId) {
-      sql += ' AND m.source_id = ?'
-      params.push(sourceId)
-    }
-    if (libraryId) {
-      sql += ' AND m.library_id = ?'
-      params.push(libraryId)
-    }
+    const rows = await this.drizzle.select({
+      item: schema.mediaItems,
+      quality: schema.qualityScores
+    })
+    .from(schema.mediaItems)
+    .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    .where(and(...conditions))
+    .orderBy(asc(schema.mediaItems.seasonNumber), asc(schema.mediaItems.episodeNumber))
+    .all()
 
-    sql += ' ORDER BY m.season_number ASC, m.episode_number ASC'
-
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as unknown as MediaItem[]
+    return this.mapDrizzleToMediaItems(rows)
   }
 
-  getItemVersions(mediaItemId: number): MediaItemVersion[] {
-    return this.db.prepare('SELECT * FROM media_item_versions WHERE media_item_id = ?').all(mediaItemId) as unknown as MediaItemVersion[] || []
+  async getItemVersions(mediaItemId: number): Promise<MediaItemVersion[]> {
+    const rows = await this.drizzle.select()
+      .from(schema.mediaItemVersions)
+      .where(eq(schema.mediaItemVersions.mediaItemId, mediaItemId))
+      .all()
+    
+    return rows.map(r => ({
+      id: r.id,
+      media_item_id: r.mediaItemId,
+      version_source: r.versionSource,
+      edition: r.edition || undefined,
+      label: r.label || undefined,
+      file_path: r.filePath,
+      file_size: r.fileSize,
+      duration: r.duration,
+      resolution: r.resolution,
+      width: r.width,
+      height: r.height,
+      video_codec: r.videoCodec,
+      video_bitrate: r.videoBitrate,
+      audio_codec: r.audioCodec,
+      audio_channels: r.audioChannels,
+      audio_bitrate: r.audioBitrate,
+      video_frame_rate: r.videoFrameRate || undefined,
+      color_bit_depth: r.colorBitDepth || undefined,
+      hdr_format: r.hdrFormat || undefined,
+      original_language: r.originalLanguage || undefined,
+      audio_language: r.audioLanguage || undefined,
+      is_best: r.isBest === 1,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt
+    }))
   }
 
-  syncItemVersions(mediaItemId: number, versions: any[]): void {
-    this.beginBatch()
+  async syncItemVersions(mediaItemId: number, versions: any[]): Promise<void> {
+    await this.beginBatch()
     try {
-      this.db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(mediaItemId)
+      await this.drizzle.delete(schema.mediaItemVersions).where(eq(schema.mediaItemVersions.mediaItemId, mediaItemId))
       for (const v of versions) {
-        this.db.prepare(`
-          INSERT INTO media_item_versions (
-            media_item_id, version_source, file_path, file_size, duration,
-            resolution, width, height, video_codec, video_bitrate,
-            audio_codec, audio_channels, audio_bitrate, is_best,
-            hdr_format, color_bit_depth, original_language, audio_language
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          mediaItemId, 
-          v.version_source || 'primary', 
-          v.file_path || '', 
-          v.file_size || 0, 
-          v.duration || 0, 
-          v.resolution || 'unknown', 
-          v.width || 0, 
-          v.height || 0, 
-          v.video_codec || 'unknown', 
-          v.video_bitrate || 0, 
-          v.audio_codec || 'unknown', 
-          v.audio_channels || 0, 
-          v.audio_bitrate || 0, 
-          v.is_best ? 1 : 0,
-          v.hdr_format ?? null,
-          v.color_bit_depth ?? null,
-          v.original_language ?? null,
-          v.audio_language ?? null
-        )
+        await this.drizzle.insert(schema.mediaItemVersions)
+          .values({
+            mediaItemId,
+            versionSource: v.version_source || 'primary',
+            filePath: v.file_path || '',
+            fileSize: v.file_size || 0,
+            duration: v.duration || 0,
+            resolution: v.resolution || 'unknown',
+            width: v.width || 0,
+            height: v.height || 0,
+            videoCodec: v.video_codec || 'unknown',
+            videoBitrate: v.video_bitrate || 0,
+            audioCodec: v.audio_codec || 'unknown',
+            audioChannels: v.audio_channels || 0,
+            audioBitrate: v.audio_bitrate || 0,
+            isBest: v.is_best ? 1 : 0,
+            hdrFormat: v.hdr_format ?? null,
+            colorBitDepth: v.color_bit_depth ?? null,
+            originalLanguage: v.original_language ?? null,
+            audioLanguage: v.audio_language ?? null,
+            createdAt: sql`(datetime('now'))`,
+            updatedAt: sql`(datetime('now'))`
+          })
       }
-      this.endBatch()
-    } catch(err) { this.rollback(); throw err; }
+      await this.endBatch()
+    } catch(err) { await this.rollbackBatch(); throw err; }
   }
 
-  updateMediaItemVersionQuality(id: number, score: any): void {
-    this.db.prepare('UPDATE media_item_versions SET efficiency_score = ?, storage_debt_bytes = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(score.efficiency_score, score.storage_debt_bytes, id)
+  async updateMediaItemVersionQuality(id: number, score: any): Promise<void> {
+    await this.drizzle.update(schema.mediaItemVersions)
+      .set({
+        efficiencyScore: score.efficiency_score,
+        storageDebtBytes: score.storage_debt_bytes,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .where(eq(schema.mediaItemVersions.id, id))
   }
 
-  updateBestVersion(mediaItemId: number): void {
-    this.beginBatch()
+  async updateBestVersion(mediaItemId: number): Promise<void> {
+    await this.beginBatch()
     try {
-      this.db.prepare('UPDATE media_item_versions SET is_best = 0 WHERE media_item_id = ?').run(mediaItemId)
-      this.db.prepare(`
-        UPDATE media_item_versions SET is_best = 1 WHERE id = (
-          SELECT id FROM media_item_versions WHERE media_item_id = ? ORDER BY efficiency_score DESC, file_size DESC LIMIT 1
-        )
-      `).run(mediaItemId)
-      this.endBatch()
-    } catch(err) { this.rollback(); throw err; }
+      await this.drizzle.update(schema.mediaItemVersions)
+        .set({ isBest: 0 })
+        .where(eq(schema.mediaItemVersions.mediaItemId, mediaItemId))
+
+      // Complex subquery update in Drizzle
+      await this.drizzle.update(schema.mediaItemVersions)
+        .set({ isBest: 1 })
+        .where(eq(schema.mediaItemVersions.id, 
+          this.drizzle.select({ id: schema.mediaItemVersions.id })
+            .from(schema.mediaItemVersions)
+            .where(eq(schema.mediaItemVersions.mediaItemId, mediaItemId))
+            .orderBy(desc(schema.mediaItemVersions.efficiencyScore), desc(schema.mediaItemVersions.fileSize))
+            .limit(1)
+        ))
+      await this.endBatch()
+    } catch(err) { await this.rollbackBatch(); throw err; }
   }
 
-  updateVersionQuality(id: number, score: any): void {
-    this.db.prepare(`
-      UPDATE media_item_versions 
-      SET quality_tier = ?, tier_quality = ?, tier_score = ?,
-          bitrate_tier_score = ?, audio_tier_score = ?,
-          efficiency_score = ?, storage_debt_bytes = ?,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `).run(
-      score.quality_tier, score.tier_quality, score.tier_score,
-      score.bitrate_tier_score || 0, score.audio_tier_score || 0,
-      score.efficiency_score || 0, score.storage_debt_bytes || 0,
-      id
-    )
+  async updateVersionQuality(id: number, score: any): Promise<void> {
+    await this.drizzle.update(schema.mediaItemVersions)
+      .set({
+        qualityTier: score.quality_tier,
+        tierQuality: score.tier_quality,
+        tierScore: score.tier_score,
+        bitrateTierScore: score.bitrate_tier_score || 0,
+        audioTierScore: score.audio_tier_score || 0,
+        efficiencyScore: score.efficiency_score || 0,
+        storageDebtBytes: score.storage_debt_bytes || 0,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .where(eq(schema.mediaItemVersions.id, id))
   }
 
-  addMediaItemToCollection(mediaId: number, tmdbCollectionId: string | void): void {
+  async addMediaItemToCollection(mediaId: number, tmdbCollectionId: string | void): Promise<void> {
     if (!tmdbCollectionId) return
-    this.db.prepare(`
-      INSERT OR IGNORE INTO media_item_collections (media_item_id, tmdb_collection_id, created_at)
-      VALUES (?, ?, datetime('now'))
-    `).run(mediaId, tmdbCollectionId)
-  }
-
-  globalSearch(query: string, limit = 5): { movies: MediaItem[], tvShows: Array<{ title: string }>, artists: any[], albums: any[] } {
-    const q = `%${query}%`
-    return {
-      movies: this.db.prepare("SELECT * FROM media_items WHERE type = 'movie' AND title LIKE ? LIMIT ?").all(q, limit) as unknown as MediaItem[] || [],
-      tvShows: this.db.prepare("SELECT DISTINCT series_title as title FROM media_items WHERE type = 'episode' AND series_title LIKE ? LIMIT ?").all(q, limit) as unknown as Array<{ title: string }> || [],
-      artists: this.db.prepare("SELECT * FROM music_artists WHERE name LIKE ? LIMIT ?").all(q, limit) as unknown as any[] || [],
-      albums: this.db.prepare("SELECT * FROM music_albums WHERE title LIKE ? LIMIT ?").all(q, limit) as unknown as any[] || []
+    
+    // First ensure the collection exists in movie_collections if not already
+    // (This repo doesn't own movie_collections, but we need the numeric ID)
+    const collection = await this.drizzle.select({ id: schema.movieCollections.id })
+      .from(schema.movieCollections)
+      .where(eq(schema.movieCollections.tmdbCollectionId, tmdbCollectionId))
+      .get()
+    
+    if (collection) {
+      await this.drizzle.insert(schema.mediaItemCollections)
+        .values({
+          mediaItemId: mediaId,
+          collectionId: collection.id,
+          createdAt: sql`(datetime('now'))`
+        })
+        .onConflictDoNothing()
     }
   }
 
-  getQualityScores(): QualityScore[] {
-    return this.db.prepare('SELECT * FROM quality_scores').all() as unknown as QualityScore[] || []
+  async getUniqueSeriesTitles(filters?: { sourceId?: string; libraryId?: string }): Promise<string[]> {
+    const conditions = [
+      eq(schema.mediaItems.type, 'episode'),
+      sql`media_items.series_title IS NOT NULL`
+    ]
+    if (filters?.sourceId) conditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+    if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
+
+    const rows = await this.drizzle.selectDistinct({ seriesTitle: schema.mediaItems.seriesTitle })
+      .from(schema.mediaItems)
+      .where(and(...conditions))
+      .orderBy(asc(schema.mediaItems.seriesTitle))
+      .all()
+    
+    return rows.map(r => r.seriesTitle as string)
   }
 
-  getQualityScoreByMediaId(id: number): QualityScore | null {
-    return this.db.prepare('SELECT * FROM quality_scores WHERE media_item_id = ?').get(id) as unknown as QualityScore | null || null
+  async globalSearch(query: string, limit = 5): Promise<{ movies: MediaItem[], tvShows: Array<{ title: string }>, artists: any[], albums: any[] }> {
+    const q = `%${query}%`
+    
+    // We execute these in parallel using Drizzle
+    const [movies, tvShows, artists, albums] = await Promise.all([
+      this.drizzle.select().from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'movie'), like(schema.mediaItems.title, q))).limit(limit).all(),
+      this.drizzle.selectDistinct({ title: schema.mediaItems.seriesTitle }).from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'episode'), like(schema.mediaItems.seriesTitle, q))).limit(limit).all(),
+      this.drizzle.select().from(schema.musicArtists).where(like(schema.musicArtists.name, q)).limit(limit).all(),
+      this.drizzle.select().from(schema.musicAlbums).where(like(schema.musicAlbums.title, q)).limit(limit).all()
+    ])
+
+    return {
+      movies: this.mapDrizzleToMediaItems(movies),
+      tvShows: tvShows as Array<{ title: string }>,
+      artists: artists, // Type mapping for music might be needed later
+      albums: albums
+    }
   }
 
-  getQualityScoresByMediaItemIds(ids: number[]): Map<number, QualityScore> {
+  async getQualityScores(): Promise<QualityScore[]> {
+    const rows = await this.drizzle.select().from(schema.qualityScores).all()
+    return this.mapDrizzleToQualityScores(rows)
+  }
+
+  async getQualityScoreByMediaId(id: number): Promise<QualityScore | null> {
+    const row = await this.drizzle.select()
+      .from(schema.qualityScores)
+      .where(eq(schema.qualityScores.mediaItemId, id))
+      .get()
+    return row ? this.mapDrizzleToQualityScores([row])[0] : null
+  }
+
+  async getQualityScoresByMediaItemIds(ids: number[]): Promise<Map<number, QualityScore>> {
     const result = new Map<number, QualityScore>()
     if (ids.length === 0) return result
-    const placeholders = ids.map(() => '?').join(',')
-    const rows = this.db.prepare(`SELECT * FROM quality_scores WHERE media_item_id IN (${placeholders})`).all(...ids) as unknown as QualityScore[]
-    if (rows) rows.forEach(r => result.set(r.media_item_id, r))
+    
+    const rows = await this.drizzle.select()
+      .from(schema.qualityScores)
+      .where(inArray(schema.qualityScores.mediaItemId, ids))
+      .all()
+    
+    const scores = this.mapDrizzleToQualityScores(rows)
+    scores.forEach(s => result.set(s.media_item_id, s))
     return result
   }
 
-  upsertQualityScore(score: Partial<QualityScore>): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO quality_scores (
-        media_item_id, quality_tier, tier_quality, tier_score,
-        bitrate_tier_score, audio_tier_score,
-        overall_score, resolution_score, bitrate_score, audio_score, 
-        efficiency_score, storage_debt_bytes,
-        needs_upgrade, issues, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(media_item_id) DO UPDATE SET
-        quality_tier = excluded.quality_tier,
-        tier_quality = excluded.tier_quality,
-        tier_score = excluded.tier_score,
-        bitrate_tier_score = excluded.bitrate_tier_score,
-        audio_tier_score = excluded.audio_tier_score,
-        overall_score = excluded.overall_score,
-        resolution_score = excluded.resolution_score,
-        bitrate_score = excluded.bitrate_score,
-        audio_score = excluded.audio_score,
-        efficiency_score = excluded.efficiency_score,
-        storage_debt_bytes = excluded.storage_debt_bytes,
-        needs_upgrade = excluded.needs_upgrade,
-        issues = excluded.issues,
-        updated_at = datetime('now')
-    `)
-    const result = stmt.run(
-      score.media_item_id ?? 0,
-      score.quality_tier || 'SD',
-      score.tier_quality || 'MEDIUM',
-      score.tier_score || 0,
-      score.bitrate_tier_score || 0,
-      score.audio_tier_score || 0,
-      score.overall_score || 0,
-      score.resolution_score || 0,
-      score.bitrate_score || 0,
-      score.audio_score || 0,
-      score.efficiency_score || 0,
-      score.storage_debt_bytes || 0,
-      score.needs_upgrade ? 1 : 0,
-      score.issues || '[]'
-    ) as unknown as { lastInsertRowid: number | bigint }
-    return Number(result.lastInsertRowid)
+  async upsertQualityScore(score: Partial<QualityScore>): Promise<number> {
+    const result = await this.drizzle.insert(schema.qualityScores)
+      .values({
+        mediaItemId: score.media_item_id!,
+        qualityTier: score.quality_tier || 'SD',
+        tierQuality: score.tier_quality || 'MEDIUM',
+        tierScore: score.tier_score || 0,
+        bitrateTierScore: score.bitrate_tier_score || 0,
+        audioTierScore: score.audio_tier_score || 0,
+        overallScore: score.overall_score || 0,
+        resolutionScore: score.resolution_score || 0,
+        bitrateScore: score.bitrate_score || 0,
+        audioScore: score.audio_score || 0,
+        efficiencyScore: score.efficiency_score || 0,
+        storageDebtBytes: score.storage_debt_bytes || 0,
+        isLowQuality: score.is_low_quality ? 1 : 0,
+        needsUpgrade: score.needs_upgrade ? 1 : 0,
+        issues: Array.isArray(score.issues) ? JSON.stringify(score.issues) : (score.issues || '[]'),
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`
+      })
+      .onConflictDoUpdate({
+        target: schema.qualityScores.mediaItemId,
+        set: {
+          qualityTier: score.quality_tier,
+          tierQuality: score.tier_quality,
+          tierScore: score.tier_score,
+          bitrateTierScore: score.bitrate_tier_score || 0,
+          audioTierScore: score.audio_tier_score || 0,
+          overallScore: score.overall_score,
+          resolutionScore: score.resolution_score,
+          bitrateScore: score.bitrate_score,
+          audioScore: score.audio_score,
+          efficiencyScore: score.efficiency_score,
+          storageDebtBytes: score.storage_debt_bytes,
+          isLowQuality: score.is_low_quality ? 1 : 0,
+          needsUpgrade: score.needs_upgrade ? 1 : 0,
+          issues: Array.isArray(score.issues) ? JSON.stringify(score.issues) : (score.issues || '[]'),
+          updatedAt: sql`(datetime('now'))`
+        }
+      })
+      .returning({ id: schema.qualityScores.id })
+
+    return result[0]?.id || 0
+  }
+
+  private mapDrizzleToQualityScores(rows: any[]): QualityScore[] {
+    return rows.map(r => ({
+      id: r.id,
+      media_item_id: r.mediaItemId,
+      quality_tier: r.qualityTier,
+      tier_quality: r.tierQuality,
+      tier_score: r.tierScore,
+      bitrate_tier_score: r.bitrateTierScore,
+      audio_tier_score: r.audioTierScore,
+      overall_score: r.overallScore,
+      resolution_score: r.resolutionScore,
+      bitrate_score: r.bitrateScore,
+      audio_score: r.audioScore,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      is_low_quality: r.isLowQuality === 1,
+      needs_upgrade: r.needsUpgrade === 1,
+      issues: r.issues,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt
+    }))
   }
 }

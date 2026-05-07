@@ -4,7 +4,7 @@
  * Three column layout with scrollable lists for upgrades, collections, and series.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { MediaDetails } from '@/components/library/MediaDetails'
 import { useSources } from '@/contexts/SourceContext'
 import {
@@ -16,23 +16,6 @@ import { UpgradesColumn } from '@/components/dashboard/UpgradesColumn'
 import { CollectionsColumn, SeriesColumn, ArtistColumn } from '@/components/dashboard/CompletenessColumns'
 import { EmptyDashboard } from '@/components/dashboard/EmptyDashboard'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
-import {
-  MOVIE_ITEM_HEIGHT,
-  MUSIC_ITEM_HEIGHT,
-  COLLAPSED_HEIGHT,
-  COLLAPSED_HEIGHT_ARTIST,
-  EXPANDED_MARGIN,
-  EXPANDED_ITEM_HEIGHT,
-  ITEM_GAP
-} from '@/components/dashboard/constants'
-// @ts-expect-error react-window types
-import type { VariableSizeList } from 'react-window'
-import {
-  parseMissingMovies,
-  groupEpisodesBySeason,
-  parseMissingAlbums,
-  parseMissingEpisodes
-} from '@/components/dashboard/dashboardUtils'
 import type { DashboardProps, UpgradeTab, MissingMovie, MissingEpisode, MissingAlbumItem, MusicAlbumUpgrade } from '@/components/dashboard/types'
 
 export function Dashboard({
@@ -63,15 +46,6 @@ export function Dashboard({
   const [upgradeTab, setUpgradeTab] = useState<UpgradeTab>(() =>
     hasMovies ? 'movies' : hasTV ? 'tv' : hasMusic ? 'music' : 'movies'
   )
-  const [upgradeListHeight, setUpgradeListHeight] = useState(400)
-  const [collectionsListHeight, setCollectionsListHeight] = useState(400)
-  const [seriesListHeight, setSeriesListHeight] = useState(400)
-  const [artistsListHeight, setArtistsListHeight] = useState(400)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const upgradeListRef = useRef<HTMLDivElement>(null)
-  const collectionsListRef = useRef<HTMLDivElement>(null)
-  const seriesListRef = useRef<HTMLDivElement>(null)
-  const artistsListRef = useRef<HTMLDivElement>(null)
 
   // Detail modal state
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null)
@@ -91,93 +65,6 @@ export function Dashboard({
   const [expandedSeries, setExpandedSeries] = useState<Set<number>>(new Set())
   const [expandedArtists, setExpandedArtists] = useState<Set<number>>(new Set())
 
-  // VariableSizeList refs for resetting cached sizes on expand/collapse
-  const upgradeListInstanceRef = useRef<VariableSizeList>(null)
-  const collectionsListInstanceRef = useRef<VariableSizeList>(null)
-  const seriesListInstanceRef = useRef<VariableSizeList>(null)
-  const artistsListInstanceRef = useRef<VariableSizeList>(null)
-
-  // Reset virtual list caches when data changes or tabs switch
-  useEffect(() => {
-    upgradeListInstanceRef.current?.resetAfterIndex(0)
-  }, [movieUpgrades, tvUpgrades, musicUpgrades, upgradeTab, isLoading])
-
-  useEffect(() => {
-    collectionsListInstanceRef.current?.resetAfterIndex(0)
-  }, [collections, isLoading])
-
-  useEffect(() => {
-    seriesListInstanceRef.current?.resetAfterIndex(0)
-  }, [series, isLoading])
-
-  useEffect(() => {
-    artistsListInstanceRef.current?.resetAfterIndex(0)
-  }, [artists, isLoading])
-
-  // Measure list container heights
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const height = entry.contentRect.height
-        if (entry.target === upgradeListRef.current) setUpgradeListHeight(height)
-        else if (entry.target === collectionsListRef.current) setCollectionsListHeight(height)
-        else if (entry.target === seriesListRef.current) setSeriesListHeight(height)
-        else if (entry.target === artistsListRef.current) setArtistsListHeight(height)
-      }
-    })
-
-    if (upgradeListRef.current) resizeObserver.observe(upgradeListRef.current)
-    if (collectionsListRef.current) resizeObserver.observe(collectionsListRef.current)
-    if (seriesListRef.current) resizeObserver.observe(seriesListRef.current)
-    if (artistsListRef.current) resizeObserver.observe(artistsListRef.current)
-
-    return () => resizeObserver.disconnect()
-  }, [hasMovies, hasTV, hasMusic, isLoading])
-
-  // Height calculation functions
-  const getCollectionRowHeight = useCallback((index: number) => {
-    const collection = collections[index]
-    if (!collection || !expandedCollections.has(index)) return COLLAPSED_HEIGHT
-    const missing = parseMissingMovies(collection)
-    if (missing.length === 0) return COLLAPSED_HEIGHT
-    let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
-    height += missing.length * EXPANDED_ITEM_HEIGHT
-    if (missing.length > 1) height += (missing.length - 1) * ITEM_GAP
-    return height
-  }, [collections, expandedCollections])
-
-  const getSeriesRowHeight = useCallback((index: number) => {
-    const s = series[index]
-    if (!s || !expandedSeries.has(index)) return COLLAPSED_HEIGHT
-    const episodes = parseMissingEpisodes(s)
-    if (episodes.length === 0) return COLLAPSED_HEIGHT
-    const seasons = groupEpisodesBySeason(s)
-    let height = COLLAPSED_HEIGHT + EXPANDED_MARGIN
-    height += seasons.length * 28
-    height += episodes.length * EXPANDED_ITEM_HEIGHT
-    if (episodes.length + seasons.length > 1) height += (episodes.length + seasons.length - 1) * ITEM_GAP
-    return height
-  }, [series, expandedSeries])
-
-  const getArtistRowHeight = useCallback((index: number) => {
-    const artist = artists[index]
-    if (!artist || !expandedArtists.has(index)) return COLLAPSED_HEIGHT_ARTIST
-    const missing = parseMissingAlbums(artist, includeEps, includeSingles)
-    if (missing.length === 0) return COLLAPSED_HEIGHT_ARTIST
-    let height = COLLAPSED_HEIGHT_ARTIST + EXPANDED_MARGIN
-    height += missing.length * EXPANDED_ITEM_HEIGHT
-    if (missing.length > 1) height += (missing.length - 1) * ITEM_GAP
-    return height
-  }, [artists, expandedArtists, includeEps, includeSingles])
-
-  const getUpgradeRowHeight = useCallback((index: number) => {
-    if (upgradeTab === 'music') return MUSIC_ITEM_HEIGHT
-    const list = upgradeTab === 'movies' ? movieUpgrades : tvUpgrades
-    const item = list[index]
-    if (!item) return MOVIE_ITEM_HEIGHT
-    return expandedRecommendations.has(item.id!) ? 280 : MOVIE_ITEM_HEIGHT
-  }, [upgradeTab, movieUpgrades, tvUpgrades, expandedRecommendations])
-
   // Handlers
   const toggleCollectionExpand = useCallback((index: number) => {
     setExpandedCollections(prev => {
@@ -185,7 +72,6 @@ export function Dashboard({
       next.has(index) ? next.delete(index) : next.add(index)
       return next
     })
-    collectionsListInstanceRef.current?.resetAfterIndex(index)
   }, [])
 
   const toggleSeriesExpand = useCallback((index: number) => {
@@ -194,7 +80,6 @@ export function Dashboard({
       next.has(index) ? next.delete(index) : next.add(index)
       return next
     })
-    seriesListInstanceRef.current?.resetAfterIndex(index)
   }, [])
 
   const toggleArtistExpand = useCallback((index: number) => {
@@ -203,7 +88,6 @@ export function Dashboard({
       next.has(index) ? next.delete(index) : next.add(index)
       return next
     })
-    artistsListInstanceRef.current?.resetAfterIndex(index)
   }, [])
 
   const dismissMovieUpgrade = useCallback((index: number) => {
@@ -267,7 +151,6 @@ export function Dashboard({
   if (error) {
     return (
       <div
-        ref={containerRef}
         className="fixed top-[88px] bottom-4 flex flex-col items-center justify-center transition-[left,right] duration-300 ease-out"
         style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}
       >
@@ -278,11 +161,7 @@ export function Dashboard({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed top-[88px] bottom-4 flex flex-col overflow-hidden transition-[left,right] duration-300 ease-out"
-      style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}
-    >
+    <div className="flex-1 h-full flex flex-col overflow-hidden">
       {isLoading ? (
         <DashboardSkeleton hasMovies={hasMovies} hasTV={hasTV} hasMusic={hasMusic} />
       ) : hasNothing ? (
@@ -294,7 +173,6 @@ export function Dashboard({
             movieUpgrades={movieUpgrades} tvUpgrades={tvUpgrades} musicUpgrades={musicUpgrades as MusicAlbumUpgrade[]}
             upgradeSortBy={upgradeSortBy} setUpgradeSortBy={setUpgradeSortBy}
             hasMovies={hasMovies} hasTV={hasTV} hasMusic={hasMusic}
-            listHeight={upgradeListHeight} itemSize={getUpgradeRowHeight} listRef={upgradeListInstanceRef}
             onSelect={setSelectedMediaId}
             onDismissMovie={dismissMovieUpgrade} onDismissTv={dismissTvUpgrade} onDismissMusic={dismissMusicUpgrade}
             expandedRecommendations={expandedRecommendations} toggleRecommendation={toggleRecommendation}
@@ -303,7 +181,6 @@ export function Dashboard({
           {hasMovies && (
             <CollectionsColumn
               collections={collections} sortBy={collectionSortBy} setSortBy={setCollectionSortBy}
-              listHeight={collectionsListHeight} itemSize={getCollectionRowHeight} listRef={collectionsListInstanceRef}
               expandedCollections={expandedCollections} toggleExpand={toggleCollectionExpand} onDismiss={handleDismissCollectionMovie}
             />
           )}
@@ -311,7 +188,6 @@ export function Dashboard({
           {hasTV && (
             <SeriesColumn
               series={series} sortBy={seriesSortBy} setSortBy={setSeriesSortBy}
-              listHeight={seriesListHeight} itemSize={getSeriesRowHeight} listRef={seriesListInstanceRef}
               expandedSeries={expandedSeries} toggleExpand={toggleSeriesExpand} onDismiss={dismissSeriesEpisode}
             />
           )}
@@ -319,7 +195,6 @@ export function Dashboard({
           {hasMusic && (
             <ArtistColumn
               artists={artists} sortBy={artistSortBy} setSortBy={setArtistSortBy}
-              listHeight={artistsListHeight} itemSize={getArtistRowHeight} listRef={artistsListInstanceRef}
               expandedArtists={expandedArtists} toggleExpand={toggleArtistExpand} onDismiss={dismissArtistAlbum}
               includeEps={includeEps} includeSingles={includeSingles}
             />

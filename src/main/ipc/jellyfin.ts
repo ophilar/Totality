@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { getLoggingService } from '@main/services/LoggingService'
 /**
  * IPC Handlers for Jellyfin and Emby operations
@@ -9,12 +10,13 @@ import { ipcMain } from 'electron'
 import { getUdpDiscoveryService } from '@main/services/UdpDiscoveryService'
 import { getSourceManager } from '@main/services/SourceManager'
 import { JellyfinProvider } from '@main/providers/jellyfin-emby/JellyfinProvider'
-import { getErrorMessage } from './utils'
+import { getErrorMessage } from '@main/ipc/utils/createHandler'
 import {
   validateInput,
   JellyfinApiKeyAuthSchema,
   SafeUrlSchema,
 } from '@main/validation/schemas'
+import { ProviderType } from '@main/types/database'
 
 export function registerJellyfinHandlers(): void {
   const discovery = getUdpDiscoveryService()
@@ -27,7 +29,7 @@ export function registerJellyfinHandlers(): void {
   /**
    * Discover Jellyfin/Emby servers on the local network via UDP broadcast
    */
-  const registerDiscovery = (type: 'jellyfin' | 'emby') => {
+  const registerDiscovery = (type: ProviderType.Jellyfin | ProviderType.Emby) => {
     ipcMain.handle(`${type}:discoverServers`, async () => {
       try {
         getLoggingService().info('[IPC]', `Starting ${type} server discovery...`)
@@ -49,14 +51,14 @@ export function registerJellyfinHandlers(): void {
     })
   }
 
-  registerDiscovery('jellyfin')
-  registerDiscovery('emby')
+  registerDiscovery(ProviderType.Jellyfin)
+  registerDiscovery(ProviderType.Emby)
 
   // ============================================================================
   // API KEY AUTHENTICATION
   // ============================================================================
 
-  const registerApiKeyAuth = (type: 'jellyfin' | 'emby') => {
+  const registerApiKeyAuth = (type: ProviderType.Jellyfin | ProviderType.Emby) => {
     ipcMain.handle(`${type}:authenticateApiKey`, async (
       _event,
       serverUrl: unknown,
@@ -71,7 +73,7 @@ export function registerJellyfinHandlers(): void {
         }, `${type}:authenticateApiKey`)
 
         const { EmbyProvider } = await import('@main/providers/jellyfin-emby/EmbyProvider')
-        const ProviderClass = type === 'emby' ? EmbyProvider : JellyfinProvider
+        const ProviderClass = type === ProviderType.Emby ? EmbyProvider : JellyfinProvider
 
         const provider = new ProviderClass({
           sourceId: undefined,
@@ -112,18 +114,18 @@ export function registerJellyfinHandlers(): void {
     })
   }
 
-  registerApiKeyAuth('jellyfin')
-  registerApiKeyAuth('emby')
+  registerApiKeyAuth(ProviderType.Jellyfin)
+  registerApiKeyAuth(ProviderType.Emby)
 
   // ============================================================================
   // QUICK CONNECT (Jellyfin only)
   // ============================================================================
 
-  ipcMain.handle('jellyfin:isQuickConnectEnabled', async (_event, serverUrl: string) => {
+  ipcMain.handle(IPC_CHANNELS.JELLYFIN.IS_QUICK_CONNECT_ENABLED, async (_event, serverUrl: string) => {
     try {
       const tempProvider = new JellyfinProvider({
         sourceId: 'temp-qc-check',
-        sourceType: 'jellyfin',
+        sourceType: ProviderType.Jellyfin,
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
@@ -134,11 +136,11 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  ipcMain.handle('jellyfin:initiateQuickConnect', async (_event, serverUrl: string) => {
+  ipcMain.handle(IPC_CHANNELS.JELLYFIN.INITIATE_QUICK_CONNECT, async (_event, serverUrl: string) => {
     try {
       const tempProvider = new JellyfinProvider({
         sourceId: 'temp-qc-init',
-        sourceType: 'jellyfin',
+        sourceType: ProviderType.Jellyfin,
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
@@ -149,11 +151,11 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  ipcMain.handle('jellyfin:checkQuickConnectStatus', async (_event, serverUrl: string, secret: string) => {
+  ipcMain.handle(IPC_CHANNELS.JELLYFIN.CHECK_QUICK_CONNECT_STATUS, async (_event, serverUrl: string, secret: string) => {
     try {
       const tempProvider = new JellyfinProvider({
         sourceId: 'temp-qc-check',
-        sourceType: 'jellyfin',
+        sourceType: ProviderType.Jellyfin,
         displayName: 'Temp',
         connectionConfig: { serverUrl },
       })
@@ -164,7 +166,7 @@ export function registerJellyfinHandlers(): void {
     }
   })
 
-  ipcMain.handle('jellyfin:completeQuickConnect', async (
+  ipcMain.handle(IPC_CHANNELS.JELLYFIN.COMPLETE_QUICK_CONNECT, async (
     _event,
     serverUrl: string,
     secret: string,
@@ -173,7 +175,7 @@ export function registerJellyfinHandlers(): void {
     try {
       const provider = new JellyfinProvider({
         sourceId: undefined,
-        sourceType: 'jellyfin',
+        sourceType: ProviderType.Jellyfin,
         displayName,
         connectionConfig: { serverUrl },
       })
@@ -184,7 +186,7 @@ export function registerJellyfinHandlers(): void {
       }
 
       const source = await manager.addSource({
-        sourceType: 'jellyfin',
+        sourceType: ProviderType.Jellyfin,
         displayName,
         connectionConfig: {
           serverUrl,
@@ -208,7 +210,7 @@ export function registerJellyfinHandlers(): void {
   // CREDENTIALS AUTHENTICATION (Unified)
   // ============================================================================
 
-  ipcMain.handle('jellyfin:authenticateCredentials', async (
+  ipcMain.handle(IPC_CHANNELS.JELLYFIN.AUTHENTICATE_CREDENTIALS, async (
     _event,
     serverUrl: string,
     username: string,
@@ -217,7 +219,7 @@ export function registerJellyfinHandlers(): void {
     isEmby: boolean = false
   ) => {
     try {
-      const providerType = isEmby ? 'emby' : 'jellyfin'
+      const providerType = isEmby ? ProviderType.Emby : ProviderType.Jellyfin
       const { EmbyProvider } = await import('@main/providers/jellyfin-emby/EmbyProvider')
 
       const ProviderClass = isEmby ? EmbyProvider : JellyfinProvider
@@ -264,3 +266,4 @@ export function registerJellyfinHandlers(): void {
 
   getLoggingService().info('[jellyfin]', '[IPC] Unified Jellyfin/Emby handlers registered')
 }
+

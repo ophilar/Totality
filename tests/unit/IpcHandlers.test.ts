@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ipcMain } from 'electron'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { registerDatabaseHandlers } from '@main/ipc/database'
+import { getLoggingService } from '@main/services/LoggingService'
 
 // Track registered handlers
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
@@ -11,53 +13,19 @@ vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => 
   return undefined as never
 })
 
-// Mock other services (keep these as they are separate domains)
-vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({
-    invalidateThresholdsCache: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/services/TMDBService', () => ({
-  getTMDBService: vi.fn(() => ({
-    refreshApiKey: vi.fn(),
-    initialize: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/services/GeminiService', () => ({
-  getGeminiService: vi.fn(() => ({
-    refreshApiKey: vi.fn(),
-  })),
-}))
-
-vi.mock('../../src/main/providers/kodi/KodiDatabaseSchema', () => ({
-  invalidateNfsMappingsCache: vi.fn(),
-}))
-
-vi.mock('fs/promises', () => ({
-  default: {
-    stat: vi.fn(() => Promise.resolve({ isDirectory: () => true })),
-    readdir: vi.fn(() => Promise.resolve([])),
-  },
-}))
-
-// Import handlers after mocks
-import { registerDatabaseHandlers } from '../../src/main/ipc/database'
-
 describe('IPC Handler Registration', () => {
   let db: any
 
   beforeEach(async () => {
+    vi.clearAllMocks()
     handlers.clear()
-    vi.mocked(ipcMain.handle).mockClear()
-    
-    resetBetterSQLiteServiceForTesting()
-    process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
-    
+    db = await setupTestDb()
+    getLoggingService().setDatabaseGetter(() => db)
     registerDatabaseHandlers()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   it('registers expected database handlers', () => {
@@ -71,18 +39,31 @@ describe('IPC Handler Registration', () => {
       'db:setSetting',
     ]
     for (const channel of expected) {
-      expect(handlers.has(channel)).toBe(true)
+      expect(handlers.has(channel), `Missing channel: ${channel}`).toBe(true)
     }
   })
 
   it('db:media:getItem validates input', async () => {
     const handler = handlers.get('db:media:getItem')!
-    // Real validation via Zod should throw
+    // @ts-ignore
     await expect(handler({} as any, -1)).rejects.toThrow()
   })
 
   it('db:getSetting validates input', async () => {
     const handler = handlers.get('db:getSetting')!
+    // @ts-ignore
     await expect(handler({} as any, '')).rejects.toThrow()
   })
+
+  it('db:setSetting persists value to real database', async () => {
+    const handler = handlers.get('db:setSetting')!
+    // @ts-ignore
+    await handler({} as any, 'test_setting', 'test_value')
+
+    expect(await db.config.getSetting('test_setting')).toBe('test_value')
+
+  })
 })
+
+
+
