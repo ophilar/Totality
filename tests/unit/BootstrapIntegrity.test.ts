@@ -57,7 +57,7 @@ describe('Bootstrap Integrity', () => {
 
   it('should resolve the preload path correctly', async () => {
     // Regression check for the @preload path bug
-    const mockDirname = 'H:\\Totality\\src\\main'
+    const mockDirname = 'C:\\Projects\\Totality\\src\\main'
     const preloadPath = path.join(mockDirname, '../preload/index.cjs')
     
     expect(preloadPath).not.toContain('@preload')
