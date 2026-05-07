@@ -1,5 +1,5 @@
-import { getErrorMessage, isNodeError } from './utils/errorUtils'
-import { retryWithBackoff } from './utils/retryWithBackoff'
+import { getErrorMessage, isNodeError } from '@main/services/utils/errorUtils'
+import { retryWithBackoff } from '@main/services/utils/retryWithBackoff'
 /**
  * MusicBrainzService
  *
@@ -16,15 +16,22 @@ import { retryWithBackoff } from './utils/retryWithBackoff'
  */
 
 import axios, { AxiosInstance } from 'axios'
-import { getDatabase } from '@main/database/getDatabase'
-import { getLoggingService } from './LoggingService'
-import { RateLimiters, SimpleDelayRateLimiter } from './utils/RateLimiter'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { RateLimiters, SimpleDelayRateLimiter } from '@main/services/utils/RateLimiter'
 import {
   CancellableOperation,
   wasRecentlyAnalyzed,
   type AnalysisOptions,
-} from './utils/ProgressTracker'
-import type { ArtistCompleteness, AlbumCompleteness, MissingAlbum, MissingTrack, MusicAlbum } from '@main/types/database'
+} from '@main/services/utils/ProgressTracker'
+import {
+  ArtistCompleteness,
+  AlbumCompleteness,
+  MissingAlbum,
+  MissingTrack,
+  MusicAlbum,
+  AlbumType,
+} from '@main/types/database'
 
 // MusicBrainz API response types
 interface MBReleaseGroup {
@@ -106,12 +113,13 @@ export class MusicBrainzService extends CancellableOperation {
   private readonly MAX_RETRIES = 3
   private readonly RETRY_DELAY_MS = 5000
 
-  private getBaseUrl(): string {
+  private baseURL: string = 'https://musicbrainz.org/ws/2'
+
+  private async getBaseUrl(): Promise<string> {
     const db = getDatabase()
-    return db.config.getSetting('musicbrainz_base_url') || 'https://musicbrainz.org/ws/2'
+    return (await db.config.getSetting('musicbrainz_base_url')) || 'https://musicbrainz.org/ws/2'
   }
 
-  // User-Agent per MusicBrainz guidelines
   private readonly USER_AGENT = 'Totality/0.1.0 (https://github.com/totality-app/totality)'
 
   // Cover Art Archive base URL
@@ -120,13 +128,20 @@ export class MusicBrainzService extends CancellableOperation {
   constructor() {
     super()
     this.api = axios.create({
-      baseURL: this.getBaseUrl(),
       headers: {
         'User-Agent': this.USER_AGENT,
         'Accept': 'application/json',
       },
       timeout: 60000, // Increased from 30s to 60s
     })
+  }
+
+  /**
+   * Initialize service by loading settings
+   */
+  async initialize(): Promise<void> {
+    this.baseURL = await this.getBaseUrl()
+    this.api.defaults.baseURL = this.baseURL
   }
 
   /**
@@ -692,7 +707,7 @@ export class MusicBrainzService extends CancellableOperation {
           musicbrainz_id: album.id,
           title: album.title,
           year: album['first-release-date'] ? parseInt(album['first-release-date'].substring(0, 4)) : undefined,
-          album_type: 'album',
+          album_type: AlbumType.Album,
         })
       }
     }
@@ -708,7 +723,7 @@ export class MusicBrainzService extends CancellableOperation {
           musicbrainz_id: ep.id,
           title: ep.title,
           year: ep['first-release-date'] ? parseInt(ep['first-release-date'].substring(0, 4)) : undefined,
-          album_type: 'ep',
+          album_type: AlbumType.EP,
         })
       }
     }
@@ -724,7 +739,7 @@ export class MusicBrainzService extends CancellableOperation {
           musicbrainz_id: single.id,
           title: single.title,
           year: single['first-release-date'] ? parseInt(single['first-release-date'].substring(0, 4)) : undefined,
-          album_type: 'single',
+          album_type: AlbumType.Single,
         })
       }
     }
@@ -913,9 +928,9 @@ export class MusicBrainzService extends CancellableOperation {
     const artistFilters = sourceId ? { sourceId } : undefined
     const albumFilters = sourceId ? { sourceId } : undefined
 
-    const artists = db.music.getArtists(artistFilters)
-    const allSourceAlbums = db.music.getAlbums(albumFilters) as MusicAlbum[]
-    const allSourceTracks = db.music.getTracks(albumFilters) as any[]
+    const artists = await db.music.getArtists(artistFilters)
+    const allSourceAlbums = (await db.music.getAlbums(albumFilters)) as MusicAlbum[]
+    const allSourceTracks = (await db.music.getTracks(albumFilters)) as any[]
 
     // Group albums by artist_id for fast lookup
     const albumsByArtist = new Map<number, MusicAlbum[]>()
@@ -940,13 +955,13 @@ export class MusicBrainzService extends CancellableOperation {
     const existingAlbumCompleteness = new Map<number, string>()   // album_id -> last_sync_at
 
     if (skipRecentlyAnalyzed) {
-      const allArtistCompleteness = db.music.getAllArtistCompleteness()
+      const allArtistCompleteness = await db.music.getAllArtistCompleteness()
       for (const ac of allArtistCompleteness) {
         if (ac.last_sync_at) {
           existingArtistCompleteness.set(ac.artist_name, ac.last_sync_at)
         }
       }
-      const allAlbumCompleteness = db.music.getAllAlbumCompleteness()
+      const allAlbumCompleteness = await db.music.getAllAlbumCompleteness()
       for (const ac of allAlbumCompleteness) {
         if (ac.last_sync_at && ac.album_id) {
           existingAlbumCompleteness.set(ac.album_id, ac.last_sync_at)
@@ -974,7 +989,7 @@ export class MusicBrainzService extends CancellableOperation {
       skipped: 0,
     })
 
-    db.startBatch()
+    await db.startBatch()
     try {
       // Phase 1: Analyze artist completeness
       getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
@@ -1115,7 +1130,7 @@ export class MusicBrainzService extends CancellableOperation {
         currentItem++
       }
     } finally {
-      db.endBatch()
+      await db.endBatch()
     }
 
     onProgress?.({

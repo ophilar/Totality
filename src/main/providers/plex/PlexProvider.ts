@@ -1,7 +1,7 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import axios, { AxiosInstance } from 'axios'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import {
   normalizeVideoCodec,
   normalizeAudioCodec,
@@ -22,17 +22,17 @@ import {
   BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
-  MediaMetadata,
-  ScanResult,
   ScanOptions,
-  ProgressCallback,
+  ScanResult,
+  MediaMetadata,
   SourceConfig,
-  ProviderType,
-  LibraryType,
   ServerInstance,
+  ProgressCallback,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
+
 
 import type {
   PlexAuthPin,
@@ -77,7 +77,7 @@ function getReliableVideoBitrate(
 }
 
 export class PlexProvider extends BaseMediaProvider {
-  readonly providerType: ProviderType = 'plex' as ProviderType
+  readonly providerType: ProviderType = ProviderType.Plex
 
   private authToken: string | null = null
   private selectedServer: PlexServer | null = null
@@ -362,24 +362,20 @@ export class PlexProvider extends BaseMediaProvider {
       const params: Record<string, unknown> = {}
 
       getLoggingService().info('[PlexProvider]', `Fetching items for library ${libraryId}...`)
+      const libraryInfo = (await this.getLibraries()).find(l => l.id === libraryId)
+      
+      if (libraryInfo?.type === LibraryType.Music) {
+        return this.scanMusicLibrary(libraryId, options?.onProgress)
+      }
+
       const items = await this.paginatedPlexFetch<PlexMediaItem>(url, params)
       const totalItems = items.length
       getLoggingService().info('[PlexProvider]', `Retrieved ${totalItems} items from Plex`)
 
-      if (options?.forceFullScan || !options?.sinceTimestamp) {
-        getLoggingService().info('[PlexProvider]', `Reconciling library ${libraryId}...`)
-        const existingPlexIds = items.map((item: any) => item.ratingKey)
-        const libraryInfo = (await this.getLibraries()).find(l => l.id === libraryId)
-        const type = libraryInfo?.type === LibraryType.Show ? 'episode' : 'movie'
-        
-        const removed = db.media.removeStaleMediaItems(new Set(existingPlexIds), type as 'movie' | 'episode')
-        result.itemsRemoved = removed
-        getLoggingService().info('[PlexProvider]', `Reconciling ${type}s: ${totalItems} in Plex, removed ${removed} stale items from DB`)
-      }
+      const validPlexIds = new Set<string>()
 
       let scanned = 0
-      const BATCH_SIZE = 10
-      const COMMIT_INTERVAL = 25
+      const BATCH_SIZE = 15 // Number of items to fetch metadata for in parallel
 
       try {
         for (let i = 0; i < totalItems; i += BATCH_SIZE) {
@@ -389,21 +385,118 @@ export class PlexProvider extends BaseMediaProvider {
             break
           }
 
-          if (scanned % COMMIT_INTERVAL === 0 || i === 0) {
-            db.startBatch()
-          }
-
           const batch = items.slice(i, i + BATCH_SIZE)
-          for (const plexItem of batch) {
+          
+          // STEP 1: Fetch all metadata in parallel OUTSIDE the transaction
+          const batchResults = await Promise.all(batch.map(async (plexItem) => {
             try {
               if (plexItem.type === 'show') {
                 const episodes = await this.getShowEpisodes(plexItem.ratingKey)
-                for (const ep of episodes) {
-                  await this.processPlexItem(ep, db)
+                
+                // Fetch details for episodes in parallel too (limited)
+                const EP_CHUNK_SIZE = 5
+                const detailedEpisodes = []
+                for (let k = 0; k < episodes.length; k += EP_CHUNK_SIZE) {
+                  const chunk = episodes.slice(k, k + EP_CHUNK_SIZE)
+                  const chunkDetails = await Promise.all(chunk.map(ep => this.getItemMetadataDetailed(ep.ratingKey)))
+                  detailedEpisodes.push(...chunkDetails.filter(d => d !== null))
+                }
+
+                return { type: 'show', plexItem, detailedEpisodes }
+              } else {
+                const detail = await this.getItemMetadataDetailed(plexItem.ratingKey)
+                return { type: 'movie', plexItem, detail }
+              }
+            } catch (err) {
+              getLoggingService().error('[PlexProvider]', `Failed to fetch metadata for ${plexItem.title}:`, err)
+              return { type: 'error', plexItem, error: err }
+            }
+          }))
+
+          // STEP 2: Prepare all database-ready data and perform quality analysis
+          const preparedData: any[] = []
+          const analyzer = getQualityAnalyzer()
+          // Ensure thresholds are loaded once before the batch
+          await analyzer.loadThresholdsFromDatabase()
+
+          for (const res of batchResults) {
+            if (res.type === 'error') {
+              result.errors.push(`Metadata fetch failed for ${res.plexItem.title}: ${getErrorMessage(res.error)}`)
+              continue
+            }
+
+            if (res.type === 'show' && res.detailedEpisodes) {
+              const { plexItem, detailedEpisodes } = res
+              let showTmdbId: string | undefined
+              if (plexItem.Guid) {
+                for (const guid of plexItem.Guid) {
+                  if (guid.id.includes('tmdb://')) {
+                    showTmdbId = guid.id.replace('tmdb://', '').split('?')[0]
+                  }
+                }
+              }
+
+              const showPoster = plexItem.thumb ? `${this.selectedServer!.uri}${plexItem.thumb}?X-Plex-Token=${this.selectedServer!.accessToken}` : undefined
+              const ownedEpisodes = detailedEpisodes.length
+              const ownedSeasons = new Set(detailedEpisodes.map(e => e.parentIndex)).size
+
+              const episodesToSave = await Promise.all(detailedEpisodes.map(async (detail) => {
+                const mapped = this.convertToMediaItem(detail, showTmdbId, plexItem.titleSort)
+                if (!mapped) return null
+                
+                // Perform quality analysis sync/async safely before transaction
+                const qualityScore = await analyzer.analyzeMediaItem(mapped.mediaItem)
+                
+                return { mapped, qualityScore, ratingKey: detail.ratingKey }
+              }))
+
+              preparedData.push({
+                type: 'show',
+                title: plexItem.title,
+                tmdbId: showTmdbId,
+                posterUrl: showPoster,
+                ownedSeasons,
+                ownedEpisodes,
+                episodes: episodesToSave.filter(e => e !== null)
+              })
+            } else if (res.type === 'movie' && res.detail) {
+              const mapped = this.convertToMediaItem(res.detail)
+              if (mapped) {
+                const qualityScore = await analyzer.analyzeMediaItem(mapped.mediaItem)
+                preparedData.push({ type: 'movie', mapped, qualityScore, ratingKey: res.plexItem.ratingKey })
+              }
+            }
+          }
+
+          // STEP 3: Write to DB inside a fast, PURELY SYNCHRONOUS transaction
+          await db.startBatch()
+          try {
+            for (const data of preparedData) {
+              if (data.type === 'show') {
+                await db.tvShows.upsertCompleteness({
+                  series_title: data.title,
+                  source_id: this.sourceId,
+                  library_id: libraryId,
+                  total_seasons: data.ownedSeasons,
+                  total_episodes: data.ownedEpisodes,
+                  owned_seasons: data.ownedSeasons,
+                  owned_episodes: data.ownedEpisodes,
+                  missing_seasons: '[]',
+                  missing_episodes: '[]',
+                  completeness_percentage: 100,
+                  tmdb_id: data.tmdbId,
+                  poster_url: data.posterUrl,
+                  status: 'Continuing',
+                })
+
+                for (const ep of data.episodes) {
+                  validPlexIds.add(ep.ratingKey)
+                  await this.saveMediaItemSync(ep.mapped, ep.qualityScore, db, libraryId)
                   result.itemsScanned++
                 }
               } else {
-                await this.processPlexItem(plexItem, db)
+                validPlexIds.add(data.ratingKey)
+                await this.saveMediaItemSync(data.mapped, data.qualityScore, db, libraryId)
                 result.itemsScanned++
               }
 
@@ -414,24 +507,30 @@ export class PlexProvider extends BaseMediaProvider {
                   total: totalItems,
                   phase: 'processing',
                   percentage: Math.round((scanned / totalItems) * 100),
-                  currentItem: plexItem.title
+                  currentItem: data.title || (data.mapped?.mediaItem.title)
                 })
               }
-            } catch (err) {
-              result.errors.push(`Failed to process ${plexItem.title}: ${getErrorMessage(err)}`)
             }
-
-            if (scanned % COMMIT_INTERVAL === 0) {
-              db.endBatch()
-              await new Promise(r => setTimeout(r, 10))
-              if (scanned < totalItems) db.startBatch()
-            }
+          } finally {
+            await db.endBatch()
           }
+
+          // Small yield to keep event loop happy and allow other IPCs
+          await new Promise(r => setTimeout(r, 0))
         }
       } finally {
         if (db.isInTransaction()) {
           try { db.endBatch() } catch { /* ignore */ }
         }
+      }
+
+      if (!result.cancelled && (options?.forceFullScan || !options?.sinceTimestamp)) {
+        getLoggingService().info('[PlexProvider]', `Reconciling library ${libraryId}...`)
+        const type = libraryInfo?.type === LibraryType.Show ? MediaItemType.Episode : MediaItemType.Movie
+        
+        const removed = db.media.removeStaleProviderItems(this.sourceId, libraryId, type, validPlexIds)
+        result.itemsRemoved = removed
+        getLoggingService().info('[PlexProvider]', `Reconciling ${type}s: ${validPlexIds.size} in scan, removed ${removed} stale items from DB`)
       }
 
       result.success = true
@@ -445,23 +544,18 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
-  private async processPlexItem(plexItem: PlexMediaItem, db: any): Promise<void> {
-    const detail = await this.getItemMetadataDetailed(plexItem.ratingKey)
-    if (!detail) return
-
-    const mapped = this.convertToMediaItem(detail)
-    if (!mapped) return
-
-    const mediaId = db.media.upsertItem({
+  private async saveMediaItemSync(mapped: { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] }, qualityScore: any, db: any, libraryId: string): Promise<void> {
+    const mediaId = await db.media.upsertItem({
       ...mapped.mediaItem,
-      source_id: this.sourceId
+      source_id: this.sourceId,
+      library_id: libraryId
     })
 
-    db.media.syncItemVersions(mediaId, mapped.versions.map(v => ({ ...v, media_item_id: mediaId })))
-    db.media.updateBestVersion(mediaId)
+    await db.media.syncItemVersions(mediaId, mapped.versions.map(v => ({ ...v, media_item_id: mediaId })))
+    await db.media.updateBestVersion(mediaId)
 
-    const score = await getQualityAnalyzer().analyzeMediaItem(mapped.mediaItem)
-    db.media.upsertQualityScore(score)
+    qualityScore.media_item_id = mediaId
+    await db.media.upsertQualityScore(qualityScore)
   }
 
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
@@ -473,10 +567,10 @@ export class PlexProvider extends BaseMediaProvider {
 
     return {
       providerId: itemId,
-      providerType: 'plex',
+      providerType: ProviderType.Plex,
       itemId,
       title: detail.title,
-      type: detail.type === 'episode' ? 'episode' : 'movie',
+      type: detail.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
       year: detail.year,
       filePath: mapped.mediaItem.file_path,
     }
@@ -639,7 +733,7 @@ export class PlexProvider extends BaseMediaProvider {
         title: item.title,
         sort_title: item.type === 'episode' ? (showTitleSort || undefined) : (item.titleSort || undefined),
         year: item.year,
-        type: item.type as 'movie' | 'episode',
+        type: item.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
         series_title: item.grandparentTitle,
         season_number: item.parentIndex,
         episode_number: item.index,
@@ -750,7 +844,7 @@ export class PlexProvider extends BaseMediaProvider {
   private convertToMusicArtist(item: PlexMusicArtist, libraryId: string): MusicArtist {
     return {
       source_id: this.sourceId,
-      source_type: 'plex',
+      source_type: ProviderType.Plex,
       library_id: libraryId,
       provider_id: item.ratingKey,
       name: item.title,
@@ -764,7 +858,7 @@ export class PlexProvider extends BaseMediaProvider {
   private convertToMusicAlbum(item: PlexMusicAlbum, artistId: number, libraryId: string): MusicAlbum {
     return {
       source_id: this.sourceId,
-      source_type: 'plex',
+      source_type: ProviderType.Plex,
       library_id: libraryId,
       provider_id: item.ratingKey,
       artist_id: artistId,
@@ -783,7 +877,7 @@ export class PlexProvider extends BaseMediaProvider {
     if (!media || !part) return null
     return {
       source_id: this.sourceId,
-      source_type: 'plex',
+      source_type: ProviderType.Plex,
       library_id: libraryId,
       provider_id: item.ratingKey,
       album_id: albumId,

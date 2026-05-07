@@ -1,5 +1,7 @@
-import type { DatabaseSync } from 'node:sqlite'
-import { BaseRepository } from './BaseRepository'
+import { desc, sql } from 'drizzle-orm'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
 export interface TaskHistoryEntry {
   id?: number
@@ -28,42 +30,95 @@ export interface ActivityLogEntry {
 }
 
 export class TaskRepository extends BaseRepository<TaskHistoryEntry> {
-  constructor(db: DatabaseSync) {
-    super(db, 'task_history')
+  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'task_history', drizzle)
   }
 
-  addTaskHistory(entry: TaskHistoryEntry): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO task_history (
-        task_id, type, label, source_id, library_id, status, error, result,
-        created_at, started_at, completed_at, duration_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    const result = stmt.run(
-      entry.task_id, entry.type, entry.label, entry.source_id || null, entry.library_id || null,
-      entry.status, entry.error || null, entry.result || null,
-      entry.created_at, entry.started_at || null, entry.completed_at || null, entry.duration_ms || null
-    )
-    return Number(result.lastInsertRowid)
+  async addTaskHistory(entry: TaskHistoryEntry): Promise<number> {
+    const result = await this.drizzle.insert(schema.taskHistory)
+      .values({
+        taskId: entry.task_id,
+        type: entry.type,
+        label: entry.label,
+        sourceId: entry.source_id || null,
+        libraryId: entry.library_id || null,
+        status: entry.status,
+        error: entry.error || null,
+        result: entry.result || null,
+        createdAt: entry.created_at,
+        startedAt: entry.started_at || null,
+        completedAt: entry.completed_at || null,
+        durationMs: entry.duration_ms || null,
+        recordedAt: sql`(datetime('now'))`
+      })
+      .returning({ id: schema.taskHistory.id })
+    
+    return result[0]?.id || 0
   }
 
-  addActivityLog(entry: Omit<ActivityLogEntry, 'id' | 'created_at'>): void {
-    const stmt = this.db.prepare('INSERT INTO activity_log (entry_type, message, task_id, task_type) VALUES (?, ?, ?, ?)')
-    stmt.run(entry.entry_type, entry.message, entry.task_id || null, entry.task_type || null)
+  async addActivityLog(entry: Omit<ActivityLogEntry, 'id' | 'created_at'>): Promise<void> {
+    await this.drizzle.insert(schema.activityLog)
+      .values({
+        entryType: entry.entry_type,
+        message: entry.message,
+        taskId: entry.task_id || null,
+        taskType: entry.task_type || null,
+        createdAt: sql`(datetime('now'))`
+      })
   }
 
-  getTaskHistory(limit = 50): TaskHistoryEntry[] {
-    const stmt = this.db.prepare('SELECT * FROM task_history ORDER BY recorded_at DESC LIMIT ?')
-    return stmt.all(limit) as unknown as TaskHistoryEntry[]
+  async getTaskHistory(limit = 50): Promise<TaskHistoryEntry[]> {
+    const rows = await this.drizzle.select()
+      .from(schema.taskHistory)
+      .orderBy(desc(schema.taskHistory.recordedAt))
+      .limit(limit)
+      .all()
+    
+    return this.mapDrizzleToTaskHistory(rows)
   }
 
-  getActivityLogs(limit = 100): ActivityLogEntry[] {
-    const stmt = this.db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?')
-    return stmt.all(limit) as unknown as ActivityLogEntry[]
+  async getActivityLogs(limit = 100): Promise<ActivityLogEntry[]> {
+    const rows = await this.drizzle.select()
+      .from(schema.activityLog)
+      .orderBy(desc(schema.activityLog.createdAt))
+      .limit(limit)
+      .all()
+    
+    return this.mapDrizzleToActivityLog(rows)
   }
 
-  clearHistory(): void {
-    this.db.prepare('DELETE FROM task_history').run()
-    this.db.prepare('DELETE FROM activity_log').run()
+  async clearHistory(): Promise<void> {
+    await this.drizzle.delete(schema.taskHistory)
+    await this.drizzle.delete(schema.activityLog)
+  }
+
+  private mapDrizzleToTaskHistory(rows: any[]): TaskHistoryEntry[] {
+    return rows.map(r => ({
+      id: r.id,
+      task_id: r.taskId,
+      type: r.type,
+      label: r.label,
+      source_id: r.sourceId || undefined,
+      library_id: r.libraryId || undefined,
+      status: r.status,
+      error: r.error || undefined,
+      result: r.result || undefined,
+      created_at: r.createdAt,
+      started_at: r.startedAt || undefined,
+      completed_at: r.completedAt || undefined,
+      duration_ms: r.durationMs || undefined,
+      recorded_at: r.recordedAt
+    }))
+  }
+
+  private mapDrizzleToActivityLog(rows: any[]): ActivityLogEntry[] {
+    return rows.map(r => ({
+      id: r.id,
+      entry_type: r.entryType,
+      message: r.message,
+      task_id: r.taskId || undefined,
+      task_type: r.taskType || undefined,
+      created_at: r.createdAt
+    }))
   }
 }

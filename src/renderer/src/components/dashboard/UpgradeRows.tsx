@@ -3,23 +3,22 @@ import { Film, Tv, Disc3, Trash2, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import type { MediaItem } from '@/components/library/types'
-import type { MusicAlbumUpgrade } from './types'
+import type { MusicAlbumUpgrade } from '@/components/dashboard/types'
 
 interface UpgradeRowProps {
   item: MediaItem
   index: number
-  style: React.CSSProperties
   isExpanded: boolean
   onToggleExpand: (id: number) => void
   onSelect: (id: number) => void
   onDismiss: (index: number) => void
 }
 
-export const MovieUpgradeRow = React.memo(({ item, index, style, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
+export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
   const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
 
   return (
-    <div style={style} className="px-2 overflow-hidden">
+    <div className="px-2 overflow-hidden pb-1">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
         onClick={() => onSelect(item.id!)}
@@ -85,11 +84,11 @@ export const MovieUpgradeRow = React.memo(({ item, index, style, isExpanded, onT
   )
 })
 
-export const TvUpgradeRow = React.memo(({ item, index, style, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
+export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
   const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
 
   return (
-    <div style={style} className="px-2 overflow-hidden">
+    <div className="px-2 overflow-hidden pb-1">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
         onClick={() => onSelect(item.id!)}
@@ -163,14 +162,13 @@ export const TvUpgradeRow = React.memo(({ item, index, style, isExpanded, onTogg
 interface MusicUpgradeRowProps {
   album: MusicAlbumUpgrade
   index: number
-  style: React.CSSProperties
   onSelect: (id: number) => void
   onDismiss: (index: number) => void
 }
 
-export const MusicUpgradeRow = React.memo(({ album, index, style, onSelect, onDismiss }: MusicUpgradeRowProps) => {
+export const MusicUpgradeRow = React.memo(({ album, index, onSelect, onDismiss }: MusicUpgradeRowProps) => {
   return (
-    <div style={style} className="px-2">
+    <div className="px-2 pb-1">
       <div
         className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
         onClick={() => onSelect(album.id!)}

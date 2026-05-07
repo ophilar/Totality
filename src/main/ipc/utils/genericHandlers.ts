@@ -18,7 +18,7 @@ export function registerListHandlers<T, TFilters>(
   listFn: (filters: TFilters) => T[] | Promise<T[]>,
   countFn: (filters: TFilters) => number | Promise<number>,
   filtersSchema: z.ZodSchema<TFilters>,
-  options: { listAlias?: string; countAlias?: string } = {}
+  options: { listAlias?: string | string[]; countAlias?: string | string[] } = {}
 ): void {
   const log = getLoggingService()
 
@@ -47,8 +47,16 @@ export function registerListHandlers<T, TFilters>(
   ipcMain.handle(`${baseChannel}:count`, countHandler)
 
   // Register aliases if provided
-  if (options.listAlias) ipcMain.handle(options.listAlias, listHandler)
-  if (options.countAlias) ipcMain.handle(options.countAlias, countHandler)
+  const registerAliases = (aliases: string | string[] | undefined, handler: any) => {
+    if (!aliases) return
+    const list = Array.isArray(aliases) ? aliases : [aliases]
+    for (const alias of list) {
+      ipcMain.handle(alias, handler)
+    }
+  }
 
-  log.info('[IPC]', `Registered handlers for ${baseChannel}${options.listAlias ? ` (aliases: ${options.listAlias}, ${options.countAlias})` : ''}`)
+  registerAliases(options.listAlias, listHandler)
+  registerAliases(options.countAlias, countHandler)
+
+  log.info('[IPC]', `Registered handlers for ${baseChannel}`)
 }

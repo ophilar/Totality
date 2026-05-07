@@ -1,105 +1,64 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { app, BrowserWindow, ipcMain, protocol, net, dialog, Tray, Menu, nativeImage, session } from 'electron'
 import path from 'node:path'
 import * as fs from 'fs'
 
-// Disable Chromium SUID sandbox on Linux — the AppImage can't set root ownership
-// on chrome-sandbox. Electron's contextIsolation still provides process security.
+// Disable Chromium SUID sandbox on Linux
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox')
 }
 
-// Disable hardware acceleration to prevent GPU process crashes on some systems
-// This uses software rendering instead, which is fine for a media library app
+// Disable hardware acceleration to prevent GPU process crashes
 app.disableHardwareAcceleration()
 
 // Register custom protocol for serving local artwork files
-// Must be registered before app is ready
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-artwork',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-    },
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ])
-import { getDatabaseServiceAsync, getDatabaseServiceSync, getDatabaseBackend } from './database/DatabaseFactory'
-import { getDatabase } from './database/getDatabase'
-import { getSourceManager } from './services/SourceManager'
-import { registerDatabaseHandlers } from './ipc/database'
-import { registerQualityHandlers } from './ipc/quality'
-import { registerSeriesHandlers } from './ipc/series'
-import { registerCollectionHandlers } from './ipc/collections'
-import { registerSourceHandlers } from './ipc/sources'
-import { registerJellyfinHandlers } from './ipc/jellyfin'
-import { registerMusicHandlers } from './ipc/music'
-import { registerWishlistHandlers } from './ipc/wishlist'
-import { registerMonitoringHandlers } from './ipc/monitoring'
-import { registerNotificationHandlers } from './ipc/notifications'
-import { registerTaskQueueHandlers } from './ipc/taskQueue'
-import { registerLoggingHandlers } from './ipc/logging'
-import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
-import { registerGeminiHandlers } from './ipc/gemini'
-import { registerDuplicateHandlers } from './ipc/duplicates'
-import { registerTranscodingHandlers } from './ipc/transcoding'
-import { getLiveMonitoringService } from './services/LiveMonitoringService'
-import { getTaskQueueService } from './services/TaskQueueService'
-import { getLoggingService } from './services/LoggingService'
-import { getAutoUpdateService } from './services/AutoUpdateService'
-import { getWishlistCompletionService } from './services/WishlistCompletionService'
+
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getSourceManager } from '@main/services/SourceManager'
+import { registerDatabaseHandlers } from '@main/ipc/database'
+import { registerQualityHandlers } from '@main/ipc/quality'
+import { registerSeriesHandlers } from '@main/ipc/series'
+import { registerCollectionHandlers } from '@main/ipc/collections'
+import { registerSourceHandlers } from '@main/ipc/sources'
+import { registerJellyfinHandlers } from '@main/ipc/jellyfin'
+import { registerMusicHandlers } from '@main/ipc/music'
+import { registerWishlistHandlers } from '@main/ipc/wishlist'
+import { registerMonitoringHandlers } from '@main/ipc/monitoring'
+import { registerNotificationHandlers } from '@main/ipc/notifications'
+import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
+import { registerLoggingHandlers } from '@main/ipc/logging'
+import { registerAutoUpdateHandlers } from '@main/ipc/autoUpdate'
+import { registerGeminiHandlers } from '@main/ipc/gemini'
+import { registerDuplicateHandlers } from '@main/ipc/duplicates'
+import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getGeminiService } from '@main/services/GeminiService'
+import { getAutoUpdateService } from '@main/services/AutoUpdateService'
+import { getWishlistCompletionService } from '@main/services/WishlistCompletionService'
 
 // __dirname is provided by CommonJS/Node
 declare const __dirname: string
 
-// Crash handlers - ensure database integrity on unexpected errors
-// With better-sqlite3 (WAL mode): data is auto-persisted, forceSave() just checkpoints WAL
-// With SQL.js: forceSave() writes in-memory database to disk
+// Crash handlers
 process.on('uncaughtException', (error) => {
   getLoggingService().error('[index]', '[CRASH] Uncaught exception:', error)
-  try {
-    const db = getDatabaseServiceSync()
-    if (db.isInitialized) {
-      // End batch mode first to ensure pending writes are flushed
-      try { db.endBatch() } catch (e) { throw e; }
-      getLoggingService().info('[index]', '[CRASH] better-sqlite3 data already persisted (WAL mode)')
-    }
-  } catch (e) {
-    getLoggingService().error('[index]', '[CRASH] Failed to checkpoint database:', e)
-  }
   process.exit(1)
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   getLoggingService().error('[index]', '[CRASH] Unhandled rejection at:', promise, 'reason:', reason)
-  try {
-    const db = getDatabaseServiceSync()
-    if (db.isInitialized) {
-      // End batch mode first to ensure pending writes are flushed
-      try { db.endBatch() } catch (e) { throw e; }
-      // better-sqlite3: no action needed, WAL mode auto-persists
-    }
-  } catch (e) {
-    getLoggingService().error('[index]', '[CRASH] Failed to checkpoint database:', e)
-  }
-  // Don't exit on unhandled rejection - log and continue
 })
 
-// The built directory structure:
-// ├─┬ dist                    <- renderer build output
-// │ └── index.html
-// │
-// ├─┬ dist-electron
-// │ ├─┬ main
-// │ │ └── index.cjs           <- this file at runtime
-// │ └─┬ preload
-// │   └── index.cjs
-//
 const DIST = path.join(__dirname, '../../dist')
-const VITE_PUBLIC = app.isPackaged
-  ? DIST
-  : path.join(__dirname, '../../src/renderer/public')
+const VITE_PUBLIC = app.isPackaged ? DIST : path.join(__dirname, '../../src/renderer/public')
 
 process.env.DIST = DIST
 process.env.VITE_PUBLIC = VITE_PUBLIC
@@ -117,7 +76,7 @@ function createWindow() {
     minHeight: 600,
     icon: path.join(VITE_PUBLIC, 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, '@preload/index.cjs'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
@@ -125,14 +84,12 @@ function createWindow() {
     },
     titleBarStyle: 'default',
     frame: true,
-    backgroundColor: '#14151a', // Match app's dark background
-    show: false, // Don't show until ready
+    backgroundColor: '#14151a',
+    show: false,
   })
 
   win.on('focus', () => {
-    import('./services/LiveMonitoringService').then(({ getLiveMonitoringService }) => {
-      getLiveMonitoringService().forceCheckAllLazySources()
-    })
+    getLiveMonitoringService().forceCheckAllLazySources()
   })
 
   // Show window when React signals it's ready (via IPC)
@@ -142,45 +99,29 @@ function createWindow() {
     win?.show()
   })
 
-  // App version handler
-  ipcMain.handle('app:getVersion', () => app.getVersion())
-
-  // Disable default menu
   win.removeMenu()
 
-  // Minimize to tray: intercept close to hide instead of quit
-  win.on('close', (event) => {
+  win.on('close', async (event) => {
     if (isQuitting) return
-
-    const db = getDatabaseServiceSync()
-    const minimizeToTray = db.isInitialized ? db.config.getSetting('minimize_to_tray') : null
-
-    if (minimizeToTray === 'true') {
+    const db = getDatabase()
+    if (db.isInitialized && (await db.config.getSetting('minimize_to_tray')) === 'true') {
       event.preventDefault()
       win?.hide()
     }
   })
 
-  // Content Security Policy — defense-in-depth against XSS
+  // Content Security Policy
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const isDev = !!VITE_DEV_SERVER_URL
     const csp = [
       "default-src 'self'",
-      // unsafe-inline needed for Tailwind; unsafe-eval needed for Vite HMR in dev
       `style-src 'self' 'unsafe-inline'`,
       `script-src 'self'${isDev ? " 'unsafe-inline' 'unsafe-eval'" : ''}`,
-      // TMDB posters, provider artwork (http: for local-network servers), local-artwork protocol, data URIs
       "img-src 'self' https: http: local-artwork: data:",
-      // API calls to Plex, Jellyfin, Emby, TMDB, MusicBrainz; ws: for Vite HMR in dev
       `connect-src 'self' https: http:${isDev ? ' ws:' : ''}`,
       "font-src 'self' data:",
     ]
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [csp.join('; ')],
-      },
-    })
+    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp.join('; ')] } })
   })
 
   if (VITE_DEV_SERVER_URL) {
@@ -189,7 +130,6 @@ function createWindow() {
     win.loadFile(path.join(DIST, 'index.html'))
   }
 
-  // Only open DevTools in development mode (docked to prevent window close issues)
   if (!app.isPackaged) {
     win.webContents.openDevTools({ mode: 'bottom' })
   }
@@ -200,177 +140,93 @@ function createTray() {
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
   tray = new Tray(trayIcon)
   tray.setToolTip('Totality')
-
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show Totality', click: () => { win?.show(); win?.focus() } },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit() } },
   ])
   tray.setContextMenu(contextMenu)
-
   tray.on('click', () => {
-    if (win?.isVisible()) {
-      win.hide()
-    } else {
-      win?.show()
-      win?.focus()
-    }
+    if (win?.isVisible()) win.hide()
+    else { win?.show(); win?.focus() }
   })
 }
 
-// Guard against double database close from concurrent quit events
-let isClosing = false
-
-// Quit when all windows are closed, except on macOS
-app.on('window-all-closed', async () => {
-  if (process.platform !== 'darwin' && !isClosing) {
-    isClosing = true
-    const db = getDatabaseServiceSync()
-    await db.close()
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    getDatabase().close()
     app.quit()
-    win = null
   }
 })
 
-// Before quit, close database and cleanup services
 app.on('before-quit', async (event) => {
   isQuitting = true
-  if (isClosing) return
   event.preventDefault()
-  isClosing = true
-
-  // Stop live monitoring (close file watchers and polling timers)
+  
   getLiveMonitoringService().stop()
-
-  // Cleanup auto-update timers
   getAutoUpdateService().cleanup()
-
-  // Shutdown FFprobe worker pool (terminate workers before closing DB)
+  
   try {
     const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
     await getFFprobeWorkerPool().shutdown()
-  } catch (error) { throw error }
-
-  // Flush log buffer to disk
+  } catch {}
+  
   await getLoggingService().shutdown()
-
-  // Persist any in-flight tasks as interrupted
   getTaskQueueService().persistInterruptedTasks()
-
-  // Close database
-  const db = getDatabaseServiceSync()
-  await db.close()
-
+  getDatabase().close()
   app.exit()
 })
 
 app.on('activate', () => {
-  // On macOS, re-create window when dock icon is clicked and no other windows are open
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 
 app.whenReady().then(async () => {
   try {
-    // Initialize logging first (before other services so their logs are captured)
     getLoggingService().initialize()
+    
+    // Register essential app info early
+    const version = app.getVersion()
+    ipcMain.handle(IPC_CHANNELS.APP.GET_VERSION, () => version)
 
-    // Register local-artwork protocol handler for serving local album artwork
-    const userDataPath = app.getPath('userData')
-    const artworkBasePath = path.join(userDataPath, 'artwork')
+    // Explicit Database Initialization
+    const dbPath = path.join(app.getPath('userData'), 'totality.db')
+    await getDatabase().initialize(dbPath)
 
+    const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     protocol.handle('local-artwork', (request) => {
       const url = new URL(request.url)
-
-      // Check if this is a direct file path request
-      // URL format: local-artwork://file?path=C:\path\to\file.jpg
       if (url.hostname === 'file') {
         const filePath = url.searchParams.get('path')
         if (!filePath) return new Response('Not found', { status: 404 })
-
-        // SECURITY: Only allow image file extensions to prevent arbitrary file reads
         const ext = path.extname(filePath).toLowerCase()
-        const ALLOWED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'])
-        if (!ALLOWED_IMAGE_EXTS.has(ext)) {
-          getLoggingService().warn('[index]', '[Security] Blocked non-image file request:', filePath)
-          return new Response('Forbidden', { status: 403 })
-        }
-
+        if (!new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff']).has(ext)) return new Response('Forbidden', { status: 403 })
         if (filePath && fs.existsSync(filePath)) {
-          // Handle Windows UNC paths
-          if (filePath.startsWith('\\\\')) {
-            return net.fetch(`file:${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Windows drive letters
-          if (/^[A-Za-z]:/.test(filePath)) {
-            return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Unix paths
+          if (filePath.startsWith('\\\\')) return net.fetch(`file:${filePath.replace(/\\/g, '/')}`)
+          if (/^[A-Za-z]:/.test(filePath)) return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
           return net.fetch(`file://${filePath}`)
         }
         return new Response('Not found', { status: 404 })
       }
-
-      // Standard app-cached artwork
-      // URL format: local-artwork://albums/123.jpg
-      // SECURITY: Prevent path traversal attacks by validating the resolved path
-      const urlPath = url.pathname.replace(/^\/+/, '') // Remove leading slashes
+      const urlPath = url.pathname.replace(/^\/+/, '')
       const normalizedPath = path.normalize(urlPath)
-
-      // Block any path traversal attempts (../ sequences)
-      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
-        getLoggingService().warn('[index]', '[Security] Blocked path traversal attempt:', urlPath)
-        return new Response('Forbidden', { status: 403 })
-      }
-
+      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) return new Response('Forbidden', { status: 403 })
       const filePath = path.resolve(artworkBasePath, normalizedPath)
-
-      // Ensure resolved path is within the artwork directory
-      // Use realpathSync to resolve symlinks before comparison
-      let realFilePath: string
-      try {
-        realFilePath = fs.existsSync(filePath) ? fs.realpathSync(filePath) : filePath
-      } catch {
-        return new Response('Forbidden', { status: 403 })
-      }
-      const realBasePath = fs.existsSync(artworkBasePath) ? fs.realpathSync(artworkBasePath) : artworkBasePath
-      if (!realFilePath.startsWith(realBasePath + path.sep) && realFilePath !== realBasePath) {
-        getLoggingService().warn('[index]', '[Security] Blocked path escape attempt:', urlPath)
-        return new Response('Forbidden', { status: 403 })
-      }
-
-      // Check if file exists
       if (fs.existsSync(filePath)) {
-        // Handle Windows paths for file:// URL
-        if (process.platform === 'win32') {
-          return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-        }
+        if (process.platform === 'win32') return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
         return net.fetch(`file://${filePath}`)
       }
-
-      // Return a 404-like response
       return new Response('Not found', { status: 404 })
     })
-    getLoggingService().info('[index]', 'Local artwork protocol registered')
 
-    // Initialize database (auto-migrates from SQL.js to better-sqlite3 if needed)
-    const db = await getDatabaseServiceAsync()
-    await db.initialize()
-    getLoggingService().info('[index]', `Database initialized successfully (backend: ${getDatabaseBackend()})`)
-
-    // Inject database getter into logging service (replaces dynamic require)
     getLoggingService().setDatabaseGetter(() => getDatabase())
-
-    // Initialize file-based logging (requires database for settings)
     await getLoggingService().initializeFileLogging()
 
-    // Initialize source manager (loads providers from database)
-    const sourceManager = getSourceManager()
-    await sourceManager.initialize()
-    getLoggingService().info('[index]', 'Source manager initialized successfully')
+    await getSourceManager().initialize()
+    await getGeminiService().initialize()
+    await getTaskQueueService().loadPersistedHistory()
 
-    // Register IPC handlers
+    // Register all IPC handlers
     registerDatabaseHandlers()
     registerQualityHandlers()
     registerSeriesHandlers()
@@ -388,38 +244,25 @@ app.whenReady().then(async () => {
     registerDuplicateHandlers()
     registerTranscodingHandlers()
 
-    // Initialize live monitoring service
-    const liveMonitoringService = getLiveMonitoringService()
-    await liveMonitoringService.initialize()
+    await getLiveMonitoringService().initialize()
 
-    // Create main window and system tray
     createWindow()
     createTray()
 
-    // Handle "start minimized to tray" setting
-    const startMinimized = db.config.getSetting('start_minimized_to_tray')
-    if (startMinimized === 'true' && db.config.getSetting('minimize_to_tray') === 'true') {
+    const db = getDatabase()
+    if ((await db.config.getSetting('start_minimized_to_tray')) === 'true' && (await db.config.getSetting('minimize_to_tray')) === 'true') {
       win?.hide()
     }
 
-    // Initialize task queue service and load persisted history
-    const taskQueueService = getTaskQueueService()
-    taskQueueService.loadPersistedHistory()
-    getLoggingService().info('[index]', 'Task queue service initialized')
+    getAutoUpdateService().initialize()
 
-    // Initialize auto-update service
-    const autoUpdateService = getAutoUpdateService()
-    autoUpdateService.initialize()
-
-    // Set main window reference for services
     if (win) {
-      liveMonitoringService.setMainWindow(win)
-      taskQueueService.setMainWindow(win)
+      getLiveMonitoringService().setMainWindow(win)
+      getTaskQueueService().setMainWindow(win)
       getLoggingService().setMainWindow(win)
-      autoUpdateService.setMainWindow(win)
+      getAutoUpdateService().setMainWindow(win)
       getWishlistCompletionService().setMainWindow(win)
     }
-
   } catch (error) {
     getLoggingService().error('[index]', 'Failed to initialize app:', error)
     dialog.showErrorBox('Startup Error', `Totality failed to start:\n\n${error instanceof Error ? error.message : String(error)}`)

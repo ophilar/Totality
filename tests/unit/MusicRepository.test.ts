@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { MusicRepository } from '../../src/main/database/repositories/MusicRepository'
-import { setupTestDb, cleanupTestDb } from '../TestUtils'
+import { MusicRepository } from '@main/database/repositories/MusicRepository'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('MusicRepository (Real DB)', () => {
   let repo: MusicRepository
@@ -26,7 +26,7 @@ describe('MusicRepository (Real DB)', () => {
     const id = await repo.upsertArtist(artist)
     expect(id).toBeGreaterThan(0)
 
-    const retrieved = repo.getMusicArtistByName('Artist 1', 'src-1')
+    const retrieved = await repo.getMusicArtistByName('Artist 1', 'src-1')
     expect(retrieved).toBeDefined()
     expect(retrieved?.name).toBe('Artist 1')
   })
@@ -46,7 +46,7 @@ describe('MusicRepository (Real DB)', () => {
     const albumId = await repo.upsertAlbum(album)
     expect(albumId).toBeGreaterThan(0)
 
-    const retrieved = repo.getAlbumByName('Album 1', artistId!)
+    const retrieved = await repo.getAlbumByName('Album 1', artistId!)
     expect(retrieved).toBeDefined()
     expect(retrieved?.title).toBe('Album 1')
   })
@@ -64,8 +64,11 @@ describe('MusicRepository (Real DB)', () => {
 
     await repo.upsertTrack(track)
     
-    const retrieved = repo.getTrackByPath('/path/to/track.flac')
+    const retrieved = await repo.getTrackByPath('/path/to/track.flac')
     expect(retrieved).toBeDefined()
     expect(retrieved?.title).toBe('T1')
   })
 })
+
+
+

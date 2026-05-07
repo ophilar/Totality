@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
-import { useSources, type ProviderType } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/SourceContext'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
-import { LibraryType } from '@preload/index'
-import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/index'
+import { LibraryType, ProviderType } from '@main/types/database'
+import { PROVIDERS } from '@main/constants/providers'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
 
 // Task queue types
 interface QueuedTask {
@@ -28,16 +29,7 @@ interface TaskQueueState {
   isPaused: boolean
 }
 
-const PROVIDER_COLORS: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  local: 'bg-slate-600',
-  mediamonkey: 'bg-orange-600',
-}
+// ... remove old PROVIDER_COLORS ...
 
 const LIBRARY_ICONS: Record<string, typeof Film> = {
   [LibraryType.Movie]: Film,
@@ -402,7 +394,8 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
           )}
 
           {sources.map((source) => {
-            const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+            const providerMetadata = PROVIDERS[source.source_type as ProviderType]
+            const color = providerMetadata?.color || 'bg-gray-500'
             const isActive = activeSourceId === source.source_id
 
             return (
@@ -418,8 +411,10 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
                 aria-label={`Select ${source.display_name}`}
               >
                 <div className={`w-8 h-8 ${color} rounded-md flex items-center justify-center`}>
-                  {source.source_type === 'local' ? (
+                  {providerMetadata?.icon === 'folder' ? (
                     <HardDrive className="w-4 h-4 text-white" />
+                  ) : providerMetadata?.icon === 'music' ? (
+                    <Music className="w-4 h-4 text-white" />
                   ) : (
                     <Server className="w-4 h-4 text-white" />
                   )}
@@ -622,7 +617,8 @@ function SourceItem({
   newItemCounts,
   onClearNewItems,
 }: SourceItemProps) {
-  const color = PROVIDER_COLORS[source.source_type as ProviderType] || 'bg-gray-500'
+  const providerMetadata = PROVIDERS[source.source_type as ProviderType]
+  const color = providerMetadata?.color || 'bg-gray-500'
 
   // Helper to check if a library is being scanned via task queue
   const getTaskQueueStatus = (libraryId: string): { isScanning: boolean; isQueued: boolean; queuePosition?: number; progress?: QueuedTask['progress'] } => {
@@ -745,8 +741,10 @@ function SourceItem({
         }`}
       >
         <div className={`w-5 h-5 ${color} rounded flex items-center justify-center text-white shrink-0`} aria-hidden="true">
-          {source.source_type === 'local' ? (
+          {providerMetadata?.icon === 'folder' ? (
             <HardDrive className="w-3 h-3" />
+          ) : providerMetadata?.icon === 'music' ? (
+            <Music className="w-3 h-3" />
           ) : (
             <Server className="w-3 h-3" />
           )}

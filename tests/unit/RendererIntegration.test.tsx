@@ -1,63 +1,21 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
-import { SourceProvider, useSources } from '../../src/renderer/src/contexts/SourceContext'
-import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
-import { NavigationProvider, useNavigation } from '../../src/renderer/src/contexts/NavigationContext'
-import { ThemeProvider, useTheme } from '../../src/renderer/src/contexts/ThemeContext'
-import { WishlistProvider, useWishlist } from '../../src/renderer/src/contexts/WishlistContext'
-import { LibraryType } from '../../src/main/types/database'
-
+import { SourceProvider, useSources } from '@/contexts/SourceContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
+import { WishlistProvider, useWishlist } from '@/contexts/WishlistContext'
+import { LibraryType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { registerDatabaseHandlers } from '@main/ipc/database'
+import { registerWishlistHandlers } from '@main/ipc/wishlist'
+import { registerSourceHandlers } from '@main/ipc/sources'
+import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
 
 import React from 'react'
-import * as fs from 'fs'
-import * as path from 'path'
-
-// REAL BRIDGE: Connecting Renderer context to Main process service WITHOUT MOCKS
-
-let mockDb = {
-  sources: [] as any[],
-  settings: { theme: 'default', theme_mode: 'dark' } as Record<string, any>,
-  wishlist: [] as any[]
-}
-
-function setupMockBridge() {
-  (window as any).electronAPI = {
-    sourcesList: () => Promise.resolve(mockDb.sources),
-    sourcesGetStats: () => Promise.resolve({
-      totalSources: 1,
-      enabledSources: 1,
-      totalItems: 0,
-      bySource: []
-    }),
-    sourcesGetSupportedProviders: () => Promise.resolve(['plex', 'local']),
-    sourcesGetLibrariesWithStatus: () => Promise.resolve([]),
-    sourcesTestConnection: () => Promise.resolve({ success: true }),
-    getSetting: (key: string) => Promise.resolve(mockDb.settings[key]),
-    getAllSettings: () => Promise.resolve(mockDb.settings),
-    setSetting: (key: string, value: string) => {
-      mockDb.settings[key] = value
-      return Promise.resolve(true)
-    },
-    wishlistGetAll: () => Promise.resolve(mockDb.wishlist),
-    wishlistGetCount: () => Promise.resolve(mockDb.wishlist.length),
-    wishlistGetCountsByReason: () => Promise.resolve([]),
-    wishlistGetRegion: () => Promise.resolve('us'),
-    wishlistAdd: (item: any) => {
-      mockDb.wishlist.push({ id: mockDb.wishlist.length + 1, ...item })
-      return Promise.resolve(mockDb.wishlist.length)
-    },
-    log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
-    onSourcesScanProgress: () => () => {},
-    onScanCompleted: () => () => {},
-    onSettingsChanged: () => () => {},
-    onSourcesScanCompleted: () => () => {},
-    onWishlistAutoCompleted: () => () => {},
-  }
-}
-
 
 function SourceConsumer() {
   const { sources, isLoading } = useSources()
@@ -92,21 +50,28 @@ function WishlistConsumer() {
   )
 }
 
-describe('Renderer Integration (Mocked Bridge)', () => {
-  beforeEach(() => {
-    mockDb = {
-      sources: [],
-      settings: { theme: 'default', theme_mode: 'dark' },
-      wishlist: []
-    }
-    setupMockBridge()
+describe('Renderer Integration (Real Bridge & DB)', () => {
+  let db: any
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+    setupRealIntegratedBridge()
+    registerDatabaseHandlers()
+    registerWishlistHandlers()
+    registerSourceHandlers()
+    registerTaskQueueHandlers()
   })
 
-  it('should load sources from the mock bridge into the React context', async () => {
-    mockDb.sources.push({
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('should load sources from the real database into the React context', async () => {
+    // Add source directly to real DB
+    await db.sources.upsertSource({
       source_id: 's1', 
-      source_type: 'local', 
-      display_name: 'Test Source',
+      source_type: 'local' as any, 
+      display_name: 'Real Source',
       is_enabled: 1,
       connection_config: '{}'
     })
@@ -138,9 +103,9 @@ describe('Renderer Integration (Mocked Bridge)', () => {
     expect(screen.getByText('Back: true')).toBeTruthy()
   })
 
-  it('should sync theme with database settings', async () => {
-    mockDb.settings['theme'] = 'slate'
-    mockDb.settings['theme_mode'] = 'light'
+  it('should sync theme with real database settings', async () => {
+    await db.config.setSetting('theme', 'slate')
+    await db.config.setSetting('theme_mode', 'light')
 
     render(
       React.createElement(ThemeProvider, null,
@@ -155,12 +120,12 @@ describe('Renderer Integration (Mocked Bridge)', () => {
 
     fireEvent.click(screen.getByText('SetSlate'))
     
-    await waitFor(() => {
-      expect(mockDb.settings['theme']).toBe('slate')
+    await waitFor(async () => {
+      expect(await db.config.getSetting('theme')).toBe('slate')
     })
   })
 
-  it('should manage wishlist items using the mock bridge', async () => {
+  it('should manage wishlist items in the real database', async () => {
     render(
       React.createElement(ToastProvider, null,
         React.createElement(WishlistProvider, null,
@@ -175,13 +140,14 @@ describe('Renderer Integration (Mocked Bridge)', () => {
 
     await act(async () => {
       fireEvent.click(screen.getByText('Add'))
+      // Wait for async effect in addItem
+      await new Promise(resolve => setTimeout(resolve, 500))
     })
 
-    // Add logging to setupRealBridge if needed to see if wishlistGetAll is called
     await waitFor(() => {
       expect(screen.getByText('Items: 1')).toBeTruthy()
-    }, { timeout: 2000 })
+    }, { timeout: 5000 })
     
-    expect(mockDb.wishlist.length).toBe(1)
+    expect((await db.wishlist.getItems({})).length).toBe(1)
   })
 })

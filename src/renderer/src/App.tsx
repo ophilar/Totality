@@ -1,28 +1,28 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Sidebar } from './components/layout/Sidebar'
-import { TopBar } from './components/layout/TopBar'
-import { MediaBrowser } from './components/library/MediaBrowser'
-import { Dashboard } from './components/dashboard'
-import { WishlistPanel } from './components/wishlist/WishlistPanel'
-import { CompletenessPanel } from './components/library/CompletenessPanel'
-import { ChatPanel } from './components/chat/ChatPanel'
-import type { ViewContext } from './hooks/useChat'
-import { AIInsightsPanel } from './components/library/AIInsightsPanel'
-import { SourceProvider, useSources } from './contexts/SourceContext'
-import { WishlistProvider } from './contexts/WishlistContext'
-import { NavigationProvider, useNavigation } from './contexts/NavigationContext'
-import { ToastProvider } from './contexts/ToastContext'
-import { ThemeProvider } from './contexts/ThemeContext'
-import { LibraryProvider, useLibrary } from './contexts/LibraryContext'
-import { AddSourceModal } from './components/sources/AddSourceModal'
-import { AboutModal } from './components/ui/AboutModal'
-import { SettingsPanel } from './components/settings'
-import { OnboardingWizard } from './components/onboarding'
-import { SplashScreen } from './components/layout/SplashScreen'
-import { ToastContainer } from './components/ui/Toast'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
-import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from './components/library/types'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { TopBar } from '@/components/layout/TopBar'
+import { MediaBrowser } from '@/components/library/MediaBrowser'
+import { Dashboard } from '@/components/dashboard/Dashboard'
+import { WishlistPanel } from '@/components/wishlist/WishlistPanel'
+import { CompletenessPanel } from '@/components/library/CompletenessPanel'
+import { ChatPanel } from '@/components/chat/ChatPanel'
+import type { ViewContext } from '@/hooks/useChat'
+import { AIInsightsPanel } from '@/components/library/AIInsightsPanel'
+import { SourceProvider, useSources } from '@/contexts/SourceContext'
+import { WishlistProvider } from '@/contexts/WishlistContext'
+import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { LibraryProvider, useLibrary } from '@/contexts/LibraryContext'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
+import { AboutModal } from '@/components/ui/AboutModal'
+import { SettingsPanel } from '@/components/settings/SettingsPanel'
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
+import { SplashScreen } from '@/components/layout/SplashScreen'
+import { ToastContainer } from '@/components/ui/Toast'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { SectionErrorBoundary } from '@/components/ui/SectionErrorBoundary'
+import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from '@/components/library/types'
 
 type AppView = 'dashboard' | 'library'
 
@@ -450,25 +450,25 @@ function AppContent() {
           canGoForward={canGoForward}
         />
 
-        {currentView === 'dashboard' ? (
-          <SectionErrorBoundary section="Dashboard">
-            <Dashboard
-              onNavigateToLibrary={handleNavigateToLibrary}
-              onAddSource={() => setShowAddSourceModal(true)}
-              sidebarCollapsed={sidebarCollapsed}
-              hasMovies={hasMovies}
-              hasTV={hasTV}
-              hasMusic={hasMusic}
-            />
-          </SectionErrorBoundary>
-        ) : (
-          <main
-            className="fixed top-[88px] bottom-0 transition-[left,right] duration-300 ease-out"
-            style={{
-              left: sidebarCollapsed ? '96px' : '288px',
-              right: '16px'
-            }}
-          >
+        <main
+          className="fixed top-[88px] bottom-4 transition-[left,right] duration-300 ease-out"
+          style={{
+            left: sidebarCollapsed ? '96px' : '288px',
+            right: showCompletenessPanel || showWishlistPanel || showChatPanel ? '352px' : '16px'
+          }}
+        >
+          {currentView === 'dashboard' ? (
+            <SectionErrorBoundary section="Dashboard">
+              <Dashboard
+                onNavigateToLibrary={handleNavigateToLibrary}
+                onAddSource={() => setShowAddSourceModal(true)}
+                sidebarCollapsed={sidebarCollapsed}
+                hasMovies={hasMovies}
+                hasTV={hasTV}
+                hasMusic={hasMusic}
+              />
+            </SectionErrorBoundary>
+          ) : (
             <SectionErrorBoundary section="Media Library">
               <MediaBrowser
                 onAddSource={() => setShowAddSourceModal(true)}
@@ -486,8 +486,8 @@ function AppContent() {
                 onAutoRefreshChange={setIsAutoRefreshing}
               />
             </SectionErrorBoundary>
-          </main>
-        )}
+          )}
+        </main>
         {showAddSourceModal && (
           <AddSourceModal
             onClose={() => setShowAddSourceModal(false)}
@@ -565,6 +565,8 @@ function AppContent() {
   )
 }
 
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+
 function App() {
   return (
     <ErrorBoundary>
@@ -574,7 +576,9 @@ function App() {
             <WishlistProvider>
               <NavigationProvider>
                 <LibraryProvider>
-                  <AppContent />
+                  <ScrollMemoryProvider>
+                    <AppContent />
+                  </ScrollMemoryProvider>
                 </LibraryProvider>
               </NavigationProvider>
             </WishlistProvider>

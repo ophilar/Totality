@@ -1,23 +1,24 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const aiApi = {
   // ============================================================================
   // AI (GEMINI)
   // ============================================================================
-  aiIsConfigured: () => ipcRenderer.invoke('ai:isConfigured'),
-  aiGetRateLimitInfo: () => ipcRenderer.invoke('ai:getRateLimitInfo'),
-  aiTestApiKey: (apiKey: string) => ipcRenderer.invoke('ai:testApiKey', apiKey),
+  aiIsConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.AI.IS_CONFIGURED),
+  aiGetRateLimitInfo: () => ipcRenderer.invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO),
+  aiTestApiKey: (apiKey: string) => ipcRenderer.invoke(IPC_CHANNELS.AI.TEST_API_KEY, apiKey),
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     system?: string
     maxTokens?: number
-  }) => ipcRenderer.invoke('ai:sendMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.AI.SEND_MESSAGE, params),
   aiStreamMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     system?: string
     maxTokens?: number
     requestId: string
-  }) => ipcRenderer.invoke('ai:streamMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.AI.STREAM_MESSAGE, params),
   onAiStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
     ipcRenderer.on('ai:streamDelta', handler)
@@ -38,7 +39,7 @@ export const aiApi = {
       activeSourceId?: string
       activeFilters?: string
     }
-  }) => ipcRenderer.invoke('ai:chatMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.AI.CHAT_MESSAGE, params),
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; toolName: string; input: Record<string, unknown> }) => callback(data)
     ipcRenderer.on('ai:toolUse', handler)
@@ -57,11 +58,11 @@ export const aiApi = {
 
   // AI Analysis Reports
   aiQualityReport: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:qualityReport', params),
+    ipcRenderer.invoke(IPC_CHANNELS.AI.QUALITY_REPORT, params),
   aiUpgradePriorities: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:upgradePriorities', params),
+    ipcRenderer.invoke(IPC_CHANNELS.AI.UPGRADE_PRIORITIES, params),
   aiCompletenessInsights: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:completenessInsights', params),
+    ipcRenderer.invoke(IPC_CHANNELS.AI.COMPLETENESS_INSIGHTS, params),
   onAiAnalysisStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
     ipcRenderer.on('ai:analysisStreamDelta', handler)
@@ -73,9 +74,9 @@ export const aiApi = {
     return () => ipcRenderer.removeListener('ai:analysisStreamComplete', handler)
   },
   aiWishlistAdvice: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:wishlistAdvice', params),
+    ipcRenderer.invoke(IPC_CHANNELS.AI.WISHLIST_ADVICE, params),
   aiCompressionAdvice: (params: { mediaId: number; requestId: string }) =>
-    ipcRenderer.invoke('ai:compressionAdvice', params),
+    ipcRenderer.invoke(IPC_CHANNELS.AI.COMPRESSION_ADVICE, params),
   aiExplainQuality: (params: {
     title: string
     resolution?: string
@@ -87,7 +88,7 @@ export const aiApi = {
     qualityTier?: string
     tierQuality?: string
     tierScore?: number
-  }) => ipcRenderer.invoke('ai:explainQuality', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.AI.EXPLAIN_QUALITY, params),
 }
 
 export interface AiAPI {

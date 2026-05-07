@@ -1,11 +1,12 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcMain, BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { getGeminiService, RateLimitError } from '@main/services/GeminiService'
 import { LIBRARY_TOOLS, executeTool, type ActionableItem } from '@main/services/GeminiTools'
-import { LIBRARY_CHAT_SYSTEM_PROMPT } from '@main/services/ai-system-prompts'
 import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
 import { validateInput, AiSendMessageSchema, AiStreamMessageSchema, AiTestApiKeySchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
+import { APP_CONFIG } from '@main/config'
 
 const AiChatMessageSchema = z.object({
   messages: z.array(z.object({
@@ -44,15 +45,15 @@ function formatError(error: unknown): { error: string; rateLimited?: boolean; re
  * Register all Gemini AI IPC handlers
  */
 export function registerGeminiHandlers() {
-  ipcMain.handle('ai:isConfigured', async () => {
+  ipcMain.handle(IPC_CHANNELS.AI.IS_CONFIGURED, async () => {
     return getGeminiService().isConfigured()
   })
 
-  ipcMain.handle('ai:getRateLimitInfo', async () => {
+  ipcMain.handle(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO, async () => {
     return getGeminiService().getRateLimitInfo()
   })
 
-  ipcMain.handle('ai:testApiKey', async (_event, apiKey: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.TEST_API_KEY, async (_event, apiKey: unknown) => {
     try {
       const validKey = validateInput(AiTestApiKeySchema, apiKey, 'ai:testApiKey')
       return await getGeminiService().testApiKey(validKey)
@@ -62,7 +63,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:sendMessage', async (_event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.SEND_MESSAGE, async (_event, params: unknown) => {
     try {
       const validated = validateInput(AiSendMessageSchema, params, 'ai:sendMessage')
       return await getGeminiService().sendMessage(validated)
@@ -72,7 +73,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:streamMessage', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.STREAM_MESSAGE, async (event, params: unknown) => {
     try {
       const validated = validateInput(AiStreamMessageSchema, params, 'ai:streamMessage')
       const win = BrowserWindow.fromWebContents(event.sender)
@@ -106,7 +107,7 @@ export function registerGeminiHandlers() {
   /**
    * Chat message handler with tool use.
    */
-  ipcMain.handle('ai:chatMessage', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.CHAT_MESSAGE, async (event, params: unknown) => {
     try {
       const validated = validateInput(AiChatMessageSchema, params, 'ai:chatMessage')
       getLoggingService().info('[gemini]', '[IPC ai:chatMessage] Chat message received, history length:', validated.messages.length)
@@ -131,7 +132,7 @@ export function registerGeminiHandlers() {
 
       const result = await getGeminiService().sendMessageWithTools({
         messages,
-        system: LIBRARY_CHAT_SYSTEM_PROMPT,
+        system: APP_CONFIG.ai.libraryChat,
         tools: LIBRARY_TOOLS,
         maxTokens: 4096,
         executeTool: async (name, input) => {
@@ -140,7 +141,7 @@ export function registerGeminiHandlers() {
             toolName: name,
             input,
           })
-          return await executeTool(name, input, actionableItems)
+          return await executeTool(name, input)
         },
       })
 
@@ -185,7 +186,7 @@ export function registerGeminiHandlers() {
    * Analysis report handlers — stream AI-generated reports to the renderer.
    */
 
-  ipcMain.handle('ai:qualityReport', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.QUALITY_REPORT, async (event, params: unknown) => {
     try {
       const { requestId } = validateInput(
         z.object({ requestId: z.string().min(1).max(100) }),
@@ -209,7 +210,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:upgradePriorities', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.UPGRADE_PRIORITIES, async (event, params: unknown) => {
     try {
       const { requestId } = validateInput(
         z.object({ requestId: z.string().min(1).max(100) }),
@@ -233,7 +234,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:completenessInsights', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.COMPLETENESS_INSIGHTS, async (event, params: unknown) => {
     try {
       const { requestId } = validateInput(
         z.object({ requestId: z.string().min(1).max(100) }),
@@ -257,7 +258,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:wishlistAdvice', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.WISHLIST_ADVICE, async (event, params: unknown) => {
     try {
       const { requestId } = validateInput(
         z.object({ requestId: z.string().min(1).max(100) }),
@@ -281,7 +282,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:compressionAdvice', async (event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.COMPRESSION_ADVICE, async (event, params: unknown) => {
     try {
       const { mediaId, requestId } = validateInput(
         z.object({
@@ -304,7 +305,7 @@ export function registerGeminiHandlers() {
     }
   })
 
-  ipcMain.handle('ai:explainQuality', async (_event, params: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AI.EXPLAIN_QUALITY, async (_event, params: unknown) => {
     try {
       const validated = validateInput(
         z.object({
@@ -330,3 +331,4 @@ export function registerGeminiHandlers() {
     }
   })
 }
+

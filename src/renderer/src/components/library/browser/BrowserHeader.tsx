@@ -2,8 +2,8 @@
 
 import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
 import logoImage from '@/assets/totality_header_logo.png'
-import { SearchAutocomplete } from './SearchAutocomplete'
-import { ScanningStatus } from './ScanningStatus'
+import { SearchAutocomplete } from '@/components/library/browser/SearchAutocomplete'
+import { ScanningStatus } from '@/components/library/browser/ScanningStatus'
 import { ActivityPanel } from '@/components/ui/ActivityPanel'
 
 interface BrowserHeaderProps {

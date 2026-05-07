@@ -7,7 +7,7 @@
  */
 
 import { BrowserWindow } from 'electron'
-import { safeSend } from './safeSend'
+import { safeSend } from '@main/ipc/utils/safeSend'
 
 /** Default interval between library:updated events (milliseconds) */
 export const DEFAULT_UPDATE_INTERVAL = 2000

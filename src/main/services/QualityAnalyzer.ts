@@ -1,11 +1,7 @@
-import { getDatabase } from '@main/database/getDatabase'
-import { getLoggingService } from './LoggingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
 import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '@main/types/database'
-import {
-  VIDEO_BITRATE_THRESHOLDS,
-  AUDIO_BITRATE_THRESHOLDS,
-  MIN_EFFICIENCY_SCORE,
-} from '@main/constants/quality'
+import { APP_CONFIG } from '@main/config'
 
 /**
  * Shared input shape for quality scoring.
@@ -36,62 +32,31 @@ export interface VersionQualityResult {
   audio_tier_score: number
 }
 
-// Default video bitrate thresholds (MEDIUM and HIGH per tier)
-// Below MEDIUM = LOW, MEDIUM to HIGH = MEDIUM, above HIGH = HIGH
-const DEFAULT_VIDEO_THRESHOLDS = VIDEO_BITRATE_THRESHOLDS
-
-// Default audio bitrate thresholds (MEDIUM and HIGH per tier)
-const DEFAULT_AUDIO_THRESHOLDS = AUDIO_BITRATE_THRESHOLDS
+// Default thresholds and values loaded from configuration
+const DEFAULT_VIDEO_THRESHOLDS = APP_CONFIG.quality.videoBitrateThresholds
+const DEFAULT_AUDIO_THRESHOLDS = APP_CONFIG.quality.audioBitrateThresholds
+const DEFAULT_CODEC_EFFICIENCY = APP_CONFIG.quality.codecEfficiency
+const DEFAULT_MUSIC_THRESHOLDS = APP_CONFIG.quality.musicThresholds
+const DEFAULT_EFFICIENCY_TARGETS = APP_CONFIG.quality.efficiencyTargets
+const DEFAULT_BLOAT_THRESHOLDS = APP_CONFIG.quality.bloatThresholds
 
 type QualityTier = 'SD' | '720p' | '1080p' | '4K'
 type TierQuality = 'LOW' | 'MEDIUM' | 'HIGH'
 
-// Default codec efficiency multipliers (relative to H.264)
-const DEFAULT_CODEC_EFFICIENCY = {
-  'h264': 1.0, 'avc': 1.0, 'x264': 1.0,
-  'h265': 2.0, 'hevc': 2.0, 'x265': 2.0,
-  'av1': 2.5,
-  'vp9': 1.8
-}
-
-// Default music quality thresholds
-const DEFAULT_MUSIC_THRESHOLDS = {
-  lowBitrate: 192,
-  highBitrate: 256,
-  hiResSampleRate: 44100,
-  hiResBitDepth: 16,
-}
-
-// Default efficiency target thresholds (kbps) for HEVC
-const DEFAULT_EFFICIENCY_TARGETS = {
-  'SD': 1200,
-  '720p': 2500,
-  '1080p': 5000,
-  '4K': 15000
-}
-
-// Default bloat start thresholds (kbps) for HEVC
-const DEFAULT_BLOAT_THRESHOLDS = {
-  'SD': 2500,
-  '720p': 5000,
-  '1080p': 10000,
-  '4K': 30000
-}
-
 export class QualityAnalyzer {
   private thresholdsLoaded = false
 
-  // Configurable settings loaded from database
+  // Configurable settings loaded from database (with defaults from config)
   private videoThresholds = { ...DEFAULT_VIDEO_THRESHOLDS }
   private audioThresholds = { ...DEFAULT_AUDIO_THRESHOLDS }
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
   private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
-  private efficiencyTrashThreshold = MIN_EFFICIENCY_SCORE
-  private losslessAudioAllowance = 4000 // kbps (4 Mbps)
-  private hdrOverheadMultiplier = 1.10 // 10% more bitrate allowed for HDR
+  private efficiencyTrashThreshold = APP_CONFIG.quality.minEfficiencyScore
+  private losslessAudioAllowance = APP_CONFIG.quality.losslessAudioAllowance
+  private hdrOverheadMultiplier = APP_CONFIG.quality.hdrOverheadMultiplier
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
-  private videoWeight = 0.7 // 0-1, audio weight = 1 - videoWeight
+  private videoWeight = APP_CONFIG.quality.videoWeight
 
   constructor() {
     // Legacy constructor with custom thresholds removed
@@ -110,7 +75,7 @@ export class QualityAnalyzer {
       const db = getDatabase()
 
       // Batch load all quality settings in a single query
-      const qualitySettings = db.config.getSettingsByPrefix('quality_')
+      const qualitySettings = await db.config.getSettingsByPrefix('quality_')
 
       const getNum = (key: string, defaultVal: number): number => {
         const val = qualitySettings[key]
@@ -672,7 +637,7 @@ export class QualityAnalyzer {
     onProgress?: (current: number, total: number) => void
   ): Promise<number> {
     const db = getDatabase()
-    const mediaItems = db.media.getItems()
+    const mediaItems = await db.media.getItems()
 
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
@@ -680,7 +645,7 @@ export class QualityAnalyzer {
 
     getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
-    db.beginBatch()
+    await db.beginBatch()
     try {
       for (const item of mediaItems) {
         try {
@@ -695,14 +660,14 @@ export class QualityAnalyzer {
 
           // Score individual versions and update best version selection
           if (item.id && item.version_count && item.version_count > 1) {
-            const versions = db.media.getItemVersions(item.id)
+            const versions = await db.media.getItemVersions(item.id)
             for (const version of versions) {
               if (version.id) {
                 const vScore = this.analyzeVersion(version)
-                db.media.updateVersionQuality(version.id, vScore)
+                await db.media.updateVersionQuality(version.id, vScore)
               }
             }
-            db.media.updateBestVersion(item.id)
+            await db.media.updateBestVersion(item.id)
           }
 
           analyzed++
@@ -715,7 +680,7 @@ export class QualityAnalyzer {
         }
       }
     } finally {
-      db.endBatch()
+      await db.endBatch()
     }
 
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')
@@ -729,7 +694,7 @@ export class QualityAnalyzer {
   /**
    * Get quality summary statistics
    */
-  getQualityDistribution(): {
+  async getQualityDistribution(): Promise<{
     byTier: {
       [tier: string]: { low: number; medium: number; high: number }
     }
@@ -738,9 +703,9 @@ export class QualityAnalyzer {
       medium: number
       high: number
     }
-  } {
+  }> {
     const db = getDatabase()
-    const scores = db.media.getQualityScores()
+    const scores = await db.media.getQualityScores()
 const distribution = {
   byTier: {
     'SD': { low: 0, medium: 0, high: 0 },

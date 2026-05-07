@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { MusicBrainzService, resetMusicBrainzServiceForTesting } from '../../src/main/services/MusicBrainzService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { MusicBrainzService, resetMusicBrainzServiceForTesting } from '@main/services/MusicBrainzService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
 
 describe('MusicBrainzService (No Mocks)', () => {
@@ -57,18 +57,18 @@ describe('MusicBrainzService (No Mocks)', () => {
   })
 
   beforeEach(async () => {
-    resetBetterSQLiteServiceForTesting()
     resetMusicBrainzServiceForTesting()
 
-    process.env.TOTALITY_DB_PATH = ':memory:'
-    process.env.NODE_ENV = 'test'
-
-    db = getBetterSQLiteService()
-    await db.initialize()
+    db = await setupTestDb()
     
-    db.config.setSetting('musicbrainz_base_url', `http://127.0.0.1:${serverPort}`)
+    await db.config.setSetting('musicbrainz_base_url', `http://127.0.0.1:${serverPort}`)
 
     service = new MusicBrainzService()
+    await service.initialize()
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   it('should search for an artist', async () => {
@@ -95,3 +95,6 @@ describe('MusicBrainzService (No Mocks)', () => {
     expect(missing[0].title).toBe('Kid A')
   })
 })
+
+
+

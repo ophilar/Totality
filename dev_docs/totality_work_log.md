@@ -1,3 +1,15 @@
+# Totality Work Log - 2026-05-05
+
+## 2026-05-05
+- **Hardening & UI Stability Finalization (v0.4.6):**
+    - **Show-Aware Scanning:** Resolved the "Empty Library" UX by making all providers (Plex, Jellyfin, Emby, Kodi, Local) show-aware. Providers now extract series-level metadata (posters, TMDB IDs) during the primary scan, ensuring immediate UI population without waiting for background analysis tasks.
+    - **Robust Scroll Restoration:** Implemented a new `ScrollMemoryContext` to preserve scroll positions across navigation. Integrated `react-virtuoso`'s Snapshot API (`getState` for lists, `stateChanged` for grids) to ensure users return to their exact position when switching between Movies, TV, and Music library tabs.
+    - **UI Layout Hardening:** Fixed critical "G-cutoff" and layout collapse bugs by standardizing height propagation. Injected `flex-1 min-h-0` and `h-full` constraints across all primary media views and virtualized containers. Converted item margins to padding to ensure 1:1 pixel accuracy for the virtualization `ResizeObserver`.
+    - **Centralized Metadata Registry (SSOT):** Established `src/main/constants/providers.ts` as the Single Source of Truth for provider metadata. Unified names, icons, colors, and descriptions across the Sidebar, Source Cards, Onboarding Wizard, and Add Source dialogs, eliminating dozens of "magic strings."
+    - **Application Resilience:** Implemented a custom `SectionErrorBoundary` and wrapped all primary library views. This compartmentalizes failures, allowing users to "Try Again" on a specific view (e.g., if a provider times out) without crashing the entire application shell.
+    - **Deployment Readiness:** Verified the full build pipeline (`tsc && vite build && electron-builder`). Successfully packaged a signed installer and reached a project-high of **719 passing tests** with 100% stability.
+    - **Roadmap & Design Updates:** Updated `totality_roadmap.md` and `totality_design.md` to reflect the transition from "Happy Path" optimism to "Defensive Architecture" standards.
+
 ## 2026-04-20
 - **Database Concurrency & Stability (v0.4.4):**
     - **Transaction Standardization:** Implemented a global transition to `BEGIN IMMEDIATE` for all database write transactions across `BetterSQLiteService`, `MediaRepository`, `SourceRepository`, `WishlistRepository`, and `DatabaseMigration`. This ensures write locks are acquired immediately and properly queued, resolving recurring "database table is locked" errors.
@@ -77,4 +89,3 @@
     - **ESLint Stabilization:** Transitioned to ESLint 10 with a new flat configuration. Resolved 36 critical errors and stabilized the development environment by demoting noisy, low-impact rules to warnings and relaxing strict warning limits in `package.json`.
     - **Database Integrity Fixes:** Applied several fixes to `BetterSQLiteService.ts` and `DatabaseMigration.ts` to ensure strict NOT NULL constraints and reliable default values.
     - **Test Coverage Expansion:** Added comprehensive unit tests for all new repositories, reaching a total of 598 passing tests. Verified 100% stability across the refactored architecture.
-

@@ -51,6 +51,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src/renderer/src'),
       '@main': path.resolve(__dirname, 'src/main'),
       '@preload': path.resolve(__dirname, 'src/preload'),
+      '@tests': path.resolve(__dirname, 'tests'),
     },
   },
 })

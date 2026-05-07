@@ -1,0 +1,136 @@
+{
+  "initialSettings": [
+    ["plex_token", ""],
+    ["plex_server_url", ""],
+    ["last_scan_time", ""],
+    ["quality_threshold_resolution", "720"],
+    ["quality_threshold_bitrate_sd", "2000"],
+    ["quality_threshold_bitrate_720p", "5000"],
+    ["quality_threshold_bitrate_1080p", "10000"],
+    ["quality_threshold_audio", "192"],
+    ["theme", "dark"],
+    ["theme_mode", "dark"],
+    ["tmdb_api_key", ""],
+    ["quality_video_sd_medium", "1500"],
+    ["quality_video_sd_high", "3500"],
+    ["quality_video_720p_medium", "3000"],
+    ["quality_video_720p_high", "8000"],
+    ["quality_video_1080p_medium", "6000"],
+    ["quality_video_1080p_high", "15000"],
+    ["quality_video_4k_medium", "15000"],
+    ["quality_video_4k_high", "40000"],
+    ["quality_audio_sd_medium", "128"],
+    ["quality_audio_sd_high", "192"],
+    ["quality_audio_720p_medium", "192"],
+    ["quality_audio_720p_high", "320"],
+    ["quality_audio_1080p_medium", "256"],
+    ["quality_audio_1080p_high", "640"],
+    ["quality_audio_4k_medium", "320"],
+    ["quality_audio_4k_high", "1000"],
+    ["quality_codec_h264", "1.0"],
+    ["quality_codec_h265", "2.0"],
+    ["quality_codec_av1", "2.5"],
+    ["quality_codec_vp9", "1.8"],
+    ["quality_music_low_bitrate", "192"],
+    ["quality_music_high_bitrate", "256"],
+    ["quality_music_hires_samplerate", "44100"],
+    ["quality_music_hires_bitdepth", "16"],
+    ["quality_efficiency_sd_target", "1200"],
+    ["quality_efficiency_720p_target", "2500"],
+    ["quality_efficiency_1080p_target", "5000"],
+    ["quality_efficiency_4k_target", "15000"],
+    ["quality_efficiency_sd_bloat", "2500"],
+    ["quality_efficiency_720p_bloat", "5000"],
+    ["quality_efficiency_1080p_bloat", "10000"],
+    ["quality_efficiency_4k_bloat", "30000"],
+    ["quality_efficiency_trash_threshold", "60"],
+    ["quality_efficiency_lossless_allowance", "4000"],
+    ["quality_efficiency_hdr_overhead", "1.10"],
+    ["minimize_to_tray", "false"],
+    ["start_minimized_to_tray", "false"],
+    ["file_logging_enabled", "true"],
+    ["file_logging_min_level", "info"],
+    ["log_retention_days", "7"],
+    ["dup_policy_highest_res", "true"],
+    ["dup_policy_orig_lang", "true"],
+    ["dup_policy_sub_whitelist", "[]"],
+    ["dup_policy_commentary", "true"]
+  ],
+  "audioCodecs": {
+    "lossless": ["truehd", "dts-hd ma", "dtshd_ma", "dtsma", "dts-hd.ma", "flac", "alac", "pcm", "lpcm", "wav", "aiff"],
+    "nearLossless": ["dts-hd hra", "dtshd_hra", "dts-hd.hra", "dtshra"],
+    "highLossy": ["dts", "eac3", "ec-3", "dd+", "ddp", "dolby digital plus", "e-ac-3", "atsc a/52b"]
+  },
+  "tmdb": {
+    "baseUrl": "https://api.themoviedb.org/3",
+    "imageBaseUrl": "https://image.tmdb.org/t/p/",
+    "cacheDuration": 86400000,
+    "maxConcurrent": 10,
+    "requestTimeout": 30000,
+    "maxCacheSize": 1000
+  },
+  "logging": {
+    "maxInfoEntries": 500,
+    "maxImportantEntries": 500,
+    "flushIntervalMs": 5000,
+    "flushBufferSize": 50
+  },
+  "workers": {
+    "ffprobe": {
+      "maxQueueDepth": 10000,
+      "defaultWorkersLimit": 4
+    }
+  },
+  "monitoring": {
+    "batchWindowMs": 45000,
+    "maxIndividualNotifications": 10,
+    "maxStoredNotifications": 100
+  },
+  "gemini": {
+    "defaultModel": "gemini-2.5-flash",
+    "fastModel": "gemini-2.5-flash",
+    "maxExplanationCache": 20
+  },
+  "quality": {
+    "videoBitrateThresholds": {
+      "SD": { "medium": 1500, "high": 3500 },
+      "720p": { "medium": 3000, "high": 8000 },
+      "1080p": { "medium": 6000, "high": 15000 },
+      "4K": { "medium": 15000, "high": 40000 }
+    },
+    "audioBitrateThresholds": {
+      "SD": { "medium": 128, "high": 192 },
+      "720p": { "medium": 192, "high": 320 },
+      "1080p": { "medium": 256, "high": 640 },
+      "4K": { "medium": 320, "high": 1000 }
+    },
+    "codecEfficiency": {
+      "h264": 1.0, "avc": 1.0, "x264": 1.0,
+      "h265": 2.0, "hevc": 2.0, "x265": 2.0,
+      "av1": 2.5,
+      "vp9": 1.8
+    },
+    "musicThresholds": {
+      "lowBitrate": 192,
+      "highBitrate": 256,
+      "hiResSampleRate": 44100,
+      "hiResBitDepth": 16
+    },
+    "efficiencyTargets": {
+      "SD": 1200,
+      "720p": 2500,
+      "1080p": 5000,
+      "4K": 15000
+    },
+    "bloatThresholds": {
+      "SD": 2500,
+      "720p": 5000,
+      "1080p": 10000,
+      "4K": 30000
+    },
+    "minEfficiencyScore": 60,
+    "losslessAudioAllowance": 4000,
+    "hdrOverheadMultiplier": 1.10,
+    "videoWeight": 0.7
+  }
+}

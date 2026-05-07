@@ -1,8 +1,8 @@
-
-import { forwardRef, ReactNode } from 'react'
-import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
+import { forwardRef, ReactNode, useRef, useCallback, useLayoutEffect } from 'react'
+import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
 import { MediaCardSkeleton, Skeleton } from '@/components/ui/Skeleton'
+import { useScrollMemory } from '@/contexts/ScrollMemoryContext'
 
 interface MediaGridViewProps<T> {
   /** The data to display */
@@ -29,13 +29,14 @@ interface MediaGridViewProps<T> {
   emptyState: ReactNode
   /** Optional banner below the stats bar */
   banner?: ReactNode
-  /** Optional scroll parent element */
-  scrollElement?: HTMLElement | null
+  /** Unique key to persist scroll position */
+  scrollKey?: string
 }
 
 /**
  * Generic Grid/List view component with virtual scrolling and infinite loading.
  * Unifies the UI logic for Movies, TV Shows, and Music views.
+ * Handles its own scrolling via React Virtuoso for best performance.
  */
 export function MediaGridView<T>({
   items,
@@ -50,9 +51,30 @@ export function MediaGridView<T>({
   statsBar,
   emptyState,
   banner,
-  scrollElement,
+  scrollKey,
 }: MediaGridViewProps<T>) {
-  
+  const { getScrollState, saveScrollState } = useScrollMemory()
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const virtuosoGridRef = useRef<VirtuosoGridHandle>(null)
+
+  const restoredState = scrollKey ? getScrollState(scrollKey) : undefined
+
+  // Persist scroll position for list view on unmount (Virtuoso has getState)
+  useLayoutEffect(() => {
+    return () => {
+      if (scrollKey && viewType === 'list') {
+        virtuosoRef.current?.getState(state => saveScrollState(scrollKey, state))
+      }
+    }
+  }, [scrollKey, viewType, saveScrollState])
+
+  // VirtuosoGrid uses the stateChanged prop for state capture
+  const handleGridStateChanged = useCallback((state: any) => {
+    if (scrollKey && viewType === 'grid') {
+      saveScrollState(scrollKey, state)
+    }
+  }, [scrollKey, viewType, saveScrollState])
+
   if (items.length === 0) {
     if (loading) {
       return (
@@ -119,19 +141,21 @@ export function MediaGridView<T>({
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col">
       {statsBar}
       {banner}
       
       {viewType === 'list' ? (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col">
           {listHeader}
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 relative">
             <Virtuoso
-              customScrollParent={scrollElement || undefined}
+              ref={virtuosoRef}
+              restoreStateFrom={restoredState}
               data={items}
               endReached={handleEndReached}
-              overscan={800}
+              overscan={1200}
+              style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
               itemContent={(index, item) => (
                 <div className="pb-2">
                   {renderListItem(item, index)}
@@ -142,19 +166,24 @@ export function MediaGridView<T>({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 relative">
           <VirtuosoGrid
-            customScrollParent={scrollElement || undefined}
+            ref={virtuosoGridRef}
+            restoreStateFrom={restoredState as any}
+            stateChanged={handleGridStateChanged}
             data={items}
             endReached={handleEndReached}
-            overscan={800}
+            overscan={1500}
+            style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
             components={{
-              List: forwardRef((props, ref) => (
+              List: forwardRef<HTMLDivElement, any>((props, ref) => (
                 <div
                   {...props}
-                  ref={ref as any}
-                  className="grid gap-8"
+                  ref={ref}
+                  className="grid gap-8 pb-4"
                   style={{
+                    ...props.style,
+                    display: 'grid',
                     gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))`
                   }}
                 />

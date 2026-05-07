@@ -52,3 +52,19 @@
 - [x] **Integration Integrity**: Establish permanent suite-wide integration tests for library scanning and IPC registration. (v0.4.4)
 - [x] **Database Concurrency**: Resolve "database table is locked" errors via SQLite `busy_timeout` and counter-based scan state management. (v0.4.4)
 
+## Phase 7: Reliability & UX Refinement (Complete)
+- [x] **First-Run Stability**: Resolve "database not initialized" errors on fresh installations by deferring path resolution and adding initialization mutexes. (v0.4.5)
+- [x] **Configuration SSOT**: Migrate all hardcoded constants, quality thresholds, and AI prompts to centralized JSON files (`defaults.json`, `ai_prompts.json`). (v0.4.5)
+- [x] **Type SSOT**: Establish robust Enums for all core domain types (Provider, Media, Task) to eliminate magic strings. (v0.4.5)
+- [x] **Show-Aware Scanning**: Eliminate the "Empty Library" UX by capturing series-level metadata during the primary provider scan. (v0.4.6)
+- [x] **Robust Virtualization**: Harden `react-virtuoso` implementation with height propagation and 1:1 pixel accuracy for large libraries (10k+ items). (v0.4.6)
+- [x] **Scroll Restoration**: Implement "Scroll Memory" to preserve user position across library tab switching. (v0.4.6)
+- [x] **Global Error Boundaries**: Compartmentalize library view failures using Section Error Boundaries. (v0.4.6)
+- [x] **Onboarding Experience**: Implement a "First Run Wizard" for initial provider configuration and API key setup. (v0.4.6)
+
+## Phase 8: Scaling & Advanced Management (Planned)
+- [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode).
+- [ ] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection.
+- [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
+- [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
+

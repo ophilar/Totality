@@ -19,6 +19,7 @@ export default defineConfig({
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
             minify: 'esbuild',
+            emptyOutDir: true,
             lib: {
               entry: path.resolve(__dirname, 'src/main/index.ts'),
               formats: ['cjs'],
@@ -27,7 +28,7 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'electron', 'electron-updater', 'sql.js', 'mysql2',
-                'fsevents', '@google/genai',
+                'fsevents',
                 'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
                 'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
@@ -35,7 +36,8 @@ export default defineConfig({
               ],
               output: {
                 format: 'cjs',
-                entryFileNames: 'index.cjs'
+                entryFileNames: 'index.cjs',
+                manualChunks: undefined,
               }
             }
           }
@@ -48,6 +50,7 @@ export default defineConfig({
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
             minify: 'esbuild',
+            emptyOutDir: false, // Don't empty because index.cjs is already there
             lib: {
               entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
               formats: ['cjs'],
@@ -57,7 +60,8 @@ export default defineConfig({
               external: ['worker_threads', 'child_process', 'fs', 'path'],
               output: {
                 format: 'cjs',
-                entryFileNames: 'ffprobe-worker.cjs'
+                entryFileNames: 'ffprobe-worker.cjs',
+                manualChunks: undefined,
               }
             }
           }
@@ -73,6 +77,7 @@ export default defineConfig({
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/preload'),
             minify: 'esbuild',
+            emptyOutDir: true,
             lib: {
               entry: path.resolve(__dirname, 'src/preload/index.ts'),
               formats: ['cjs'],
@@ -82,7 +87,8 @@ export default defineConfig({
               external: ['electron'],
               output: {
                 format: 'cjs',
-                entryFileNames: 'index.cjs'
+                entryFileNames: 'index.cjs',
+                manualChunks: undefined,
               }
             }
           }
@@ -122,9 +128,6 @@ export default defineConfig({
       }
     }
   ],
-  optimizeDeps: {
-    include: ['react-window']
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src/renderer/src'),

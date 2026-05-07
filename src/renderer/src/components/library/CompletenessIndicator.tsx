@@ -1,3 +1,5 @@
+import { Link2Off } from 'lucide-react'
+
 interface CompletenessIndicatorProps {
   type: 'series' | 'collection'
   percentage: number
@@ -15,6 +17,20 @@ export function CompletenessIndicator({
 }: CompletenessIndicatorProps) {
   // Don't show badge for complete items
   if (percentage === 100) return null
+
+  // Handle unmatched/no-data state
+  if (percentage === -1) {
+    return (
+      <div className={`absolute top-2 right-2 ${className}`}>
+        <div
+          className="bg-muted text-muted-foreground p-1.5 rounded shadow-md border border-border flex items-center justify-center"
+          title="Unmatched: No completeness data available"
+        >
+          <Link2Off className="w-3.5 h-3.5" />
+        </div>
+      </div>
+    )
+  }
 
   // Display format differs by type
   const displayText = type === 'series'

@@ -1,12 +1,19 @@
-import type { DatabaseSync } from 'node:sqlite'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { eq, like, sql } from 'drizzle-orm'
 import { getCredentialEncryptionService } from '@main/services/CredentialEncryptionService'
 
 export class ConfigRepository {
-  constructor(private db: DatabaseSync) {}
+  constructor(
+    private drizzle: LibSQLDatabase<typeof schema>
+  ) {}
 
-  getSetting(key: string): string | null {
-    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?')
-    const row = stmt.get(key) as { value: string } | undefined
+  async getSetting(key: string): Promise<string | null> {
+    const row = await this.drizzle.select()
+      .from(schema.settings)
+      .where(eq(schema.settings.key, key))
+      .get()
+    
     if (!row) return null
 
     const encryption = getCredentialEncryptionService()
@@ -16,28 +23,28 @@ export class ConfigRepository {
     return row.value
   }
 
-  setSetting(key: string, value: string): void {
+  async setSetting(key: string, value: string): Promise<void> {
     const encryption = getCredentialEncryptionService()
     let storedValue = value
     if (encryption.isSensitiveSetting(key)) {
       storedValue = encryption.encryptSetting(key, value)
     }
 
-    const stmt = this.db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `)
-    stmt.run(key, storedValue)
+    await this.drizzle.insert(schema.settings)
+      .values({ key, value: storedValue, updatedAt: sql`(datetime('now'))` })
+      .onConflictDoUpdate({
+        target: schema.settings.key,
+        set: { value: storedValue, updatedAt: sql`(datetime('now'))` }
+      })
   }
 
-  deleteSetting(key: string): void {
-    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+  async deleteSetting(key: string): Promise<void> {
+    await this.drizzle.delete(schema.settings)
+      .where(eq(schema.settings.key, key))
   }
 
-  getAllSettings(): Record<string, string> {
-    const stmt = this.db.prepare('SELECT key, value FROM settings')
-    const rows = stmt.all() as Array<{ key: string; value: string }>
+  async getAllSettings(): Promise<Record<string, string>> {
+    const rows = await this.drizzle.select().from(schema.settings).all()
     const encryption = getCredentialEncryptionService()
     const settings: Record<string, string> = {}
     for (const row of rows) {
@@ -46,9 +53,12 @@ export class ConfigRepository {
     return settings
   }
 
-  getSettingsByPrefix(prefix: string): Record<string, string> {
-    const stmt = this.db.prepare('SELECT key, value FROM settings WHERE key LIKE ?')
-    const rows = stmt.all(prefix + '%') as Array<{ key: string; value: string }>
+  async getSettingsByPrefix(prefix: string): Promise<Record<string, string>> {
+    const rows = await this.drizzle.select()
+      .from(schema.settings)
+      .where(like(schema.settings.key, `${prefix}%`))
+      .all()
+    
     const encryption = getCredentialEncryptionService()
     const settings: Record<string, string> = {}
     for (const row of rows) {
@@ -60,18 +70,18 @@ export class ConfigRepository {
   async setPin(pin: string): Promise<void> {
     const { createHash } = await import('node:crypto')
     const hashed = createHash('sha256').update(pin).digest('hex')
-    this.setSetting('app_pin_hash', hashed)
+    await this.setSetting('app_pin_hash', hashed)
   }
 
   async verifyPin(pin: string): Promise<boolean> {
-    const stored = this.getSetting('app_pin_hash')
+    const stored = await this.getSetting('app_pin_hash')
     if (!stored) return true // No PIN set
     const { createHash } = await import('node:crypto')
     const hashed = createHash('sha256').update(pin).digest('hex')
     return hashed === stored
   }
 
-  hasPin(): boolean {
-    return !!this.getSetting('app_pin_hash')
+  async hasPin(): Promise<boolean> {
+    return !!(await this.getSetting('app_pin_hash'))
   }
 }

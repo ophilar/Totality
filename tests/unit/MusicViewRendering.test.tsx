@@ -2,11 +2,12 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { MusicView } from '../../src/renderer/src/components/library/MusicView'
-import { SourceProvider } from '../../src/renderer/src/contexts/SourceContext'
-import { LibraryProvider } from '../../src/renderer/src/contexts/LibraryContext'
-import { ToastProvider } from '../../src/renderer/src/contexts/ToastContext'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { MusicView } from '@/components/library/MusicView'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 
 import React from 'react'
 
@@ -116,48 +117,65 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
     slimDown: false
   }
 
-  it('renders artist grid by default', () => {
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <MusicView {...defaultProps} artists={mockArtists as any} totalArtistCount={2} />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+  it('renders artist grid by default', async () => {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} artists={mockArtists as any} totalArtistCount={2} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
     expect(screen.getByText('Artist One')).toBeTruthy()
     expect(screen.getByText('Artist Two')).toBeTruthy()
   })
 
-  it('renders album grid in albums mode', () => {
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <MusicView {...defaultProps} musicViewMode="albums" albums={mockAlbums as any} totalAlbumCount={2} />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+  it('renders album grid in albums mode', async () => {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} musicViewMode="albums" albums={mockAlbums as any} totalAlbumCount={2} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
     expect(screen.getByText('Album One')).toBeTruthy()
     expect(screen.getByText('Album Two')).toBeTruthy()
   })
 
-  it('calls onSelectArtist when an artist card is clicked', () => {
+  it('calls onSelectArtist when an artist card is clicked', async () => {
     const onSelectArtist = vi.fn()
-    render(
-      <ToastProvider>
-        <LibraryProvider>
-          <SourceProvider>
-            <MusicView {...defaultProps} artists={mockArtists as any} onSelectArtist={onSelectArtist} />
-          </SourceProvider>
-        </LibraryProvider>
-      </ToastProvider>
-    )
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <LibraryProvider>
+            <SourceProvider>
+              <ScrollMemoryProvider>
+                <MusicView {...defaultProps} artists={mockArtists as any} onSelectArtist={onSelectArtist} />
+              </ScrollMemoryProvider>
+            </SourceProvider>
+          </LibraryProvider>
+        </ToastProvider>
+      )
+    })
     
     const artistCard = screen.getByText('Artist One')
-    fireEvent.click(artistCard)
+    await act(async () => {
+      fireEvent.click(artistCard)
+    })
     expect(onSelectArtist).toHaveBeenCalledWith(expect.objectContaining({ name: 'Artist One' }))
   })
 })
+
+
+

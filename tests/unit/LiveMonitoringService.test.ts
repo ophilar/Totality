@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { LiveMonitoringService } from '../../src/main/services/LiveMonitoringService'
-import { setupTestDb, cleanupTestDb } from '../TestUtils'
+import { LiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
 
 // Mock child_process.exec
@@ -38,8 +38,8 @@ describe('LiveMonitoringService', () => {
     service = new LiveMonitoringService()
     
     // Set mock configuration
-    db.config.setSetting('monitoring_enabled', 'true')
-    db.config.setSetting('monitoring_start_on_launch', 'false')
+    await db.config.setSetting('monitoring_enabled', 'true')
+    await db.config.setSetting('monitoring_start_on_launch', 'false')
   })
 
   afterEach(() => {
@@ -55,7 +55,7 @@ describe('LiveMonitoringService', () => {
 
   it('should start monitoring enabled sources', async () => {
     const sourceId = 's1'
-    db.sources.upsertSource({
+    await db.sources.upsertSource({
       source_id: sourceId,
       source_type: 'local',
       display_name: 'Local Source',
@@ -64,7 +64,7 @@ describe('LiveMonitoringService', () => {
     })
 
     await service.initialize()
-    service.start()
+    await service.start()
     
     expect(service.isMonitoringActive()).toBe(true)
     expect(fs.watch).toHaveBeenCalled()
@@ -73,9 +73,12 @@ describe('LiveMonitoringService', () => {
 
   it('should stop monitoring', async () => {
     await service.initialize()
-    service.start()
+    await service.start()
     service.stop()
     
     expect(service.isMonitoringActive()).toBe(false)
   })
 })
+
+
+

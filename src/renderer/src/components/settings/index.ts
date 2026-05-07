@@ -1,7 +1,0 @@
-export { SettingsPanel } from './SettingsPanel'
-export { GeneralTab } from './tabs/GeneralTab'
-export { QualitySettingsTab } from './tabs/QualitySettingsTab'
-export { ServicesTab } from './tabs/ServicesTab'
-export { AppearanceTab } from './tabs/AppearanceTab'
-export { DataManagementTab } from './tabs/DataManagementTab'
-export { TroubleshootTab } from './tabs/TroubleshootTab'

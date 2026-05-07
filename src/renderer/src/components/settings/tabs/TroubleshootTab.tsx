@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { List, RowComponentProps, useListRef } from 'react-window'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   Loader2,
   Download,
@@ -35,8 +35,6 @@ interface LogEntry {
 
 type LogFilter = 'all' | 'verbose' | 'debug' | 'info' | 'warn' | 'error'
 
-const LOG_ROW_HEIGHT = 28
-
 function Toggle({
   checked,
   onChange,
@@ -66,67 +64,6 @@ function Toggle({
   )
 }
 
-interface MyRowProps {
-  filteredLogs: LogEntry[]
-  detailLogId: string | null
-  selectedIds: Set<string>
-  getLevelIcon: (level: string) => React.ReactNode
-  formatTime: (timestamp: string) => string
-  handleToggleSelect: (index: number, shiftKey: boolean) => void
-  setDetailLogId: (id: string | null) => void
-}
-
-// Row renderer for virtualized list
-function LogRow({
-  index,
-  style,
-  filteredLogs,
-  detailLogId,
-  selectedIds,
-  getLevelIcon,
-  formatTime,
-  handleToggleSelect,
-  setDetailLogId,
-}: RowComponentProps<MyRowProps>) {
-  const entry = filteredLogs[index]
-  if (!entry) return null
-
-  const isDetailTarget = entry.id === detailLogId
-  const isChecked = selectedIds.has(entry.id)
-
-  return (
-    <div style={style} className="px-2 py-0.5">
-      <div
-        className={`rounded h-full flex items-center gap-2 px-2 ${
-          entry.details ? 'cursor-pointer hover:bg-white/5' : ''
-        } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
-        onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            handleToggleSelect(index, e.shiftKey)
-          }}
-          className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
-            isChecked ? 'bg-primary border-primary' : 'border-muted-foreground hover:border-primary/50'
-          }`}
-        >
-          {isChecked && (
-            <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </button>
-        {getLevelIcon(entry.level)}
-        <span className="text-muted-foreground shrink-0 text-xs">{formatTime(entry.timestamp)}</span>
-        <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">{entry.source}</span>
-        <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
-        {entry.details && <span className="text-muted-foreground text-[10px] shrink-0">{isDetailTarget ? '▼' : '▶'}</span>}
-      </div>
-    </div>
-  )
-}
-
 export function TroubleshootTab() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -144,11 +81,10 @@ export function TroubleshootTab() {
     minLevel: string
     retentionDays: number
   }>({ enabled: true, minLevel: 'info', retentionDays: 7 })
+  
   const lastClickedIndex = useRef<number | null>(null)
-  const listRef = useListRef(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const logViewerRef = useRef<HTMLDivElement>(null)
-  const lastScrollOffset = useRef(0)
-  const isAutoScrolling = useRef(false)
 
   // Compute filtered logs early so effects can use it
   const filteredLogs = useMemo(() => {
@@ -180,48 +116,58 @@ export function TroubleshootTab() {
     return () => cleanup?.()
   }, [])
 
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (autoScroll && listRef.current && filteredLogs.length > 0) {
-      isAutoScrolling.current = true
-      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
-      // Reset flag after scroll completes
-      setTimeout(() => {
-        isAutoScrolling.current = false
-      }, 50)
-    }
-  }, [filteredLogs.length, autoScroll, listRef])
-
-  // Handle scroll events to detect manual scrolling
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const scrollOffset = e.currentTarget.scrollTop
-
-    // If this is a programmatic scroll, ignore it
-    if (isAutoScrolling.current) {
-      lastScrollOffset.current = scrollOffset
-      return
-    }
-
-    // If user scrolled up, disable auto-scroll
-    if (scrollOffset < lastScrollOffset.current) {
-      setAutoScroll(false)
-    }
-
-    lastScrollOffset.current = scrollOffset
-  }, [])
-
   // Jump to latest and re-enable auto-scroll
   const jumpToLatest = useCallback(() => {
     setAutoScroll(true)
-    if (listRef.current && filteredLogs.length > 0) {
-      listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' })
+    if (filteredLogs.length > 0) {
+      virtuosoRef.current?.scrollToIndex({ index: filteredLogs.length - 1, align: 'end', behavior: 'smooth' })
     }
-  }, [filteredLogs.length, listRef])
+  }, [filteredLogs.length])
+
+  // Row renderer
+  const renderRow = (index: number) => {
+    const entry = filteredLogs[index]
+    if (!entry) return null
+
+    const isDetailTarget = entry.id === detailLogId
+    const isChecked = selectedIds.has(entry.id)
+
+    return (
+      <div className="px-2 py-0.5 h-[28px]">
+        <div
+          className={`rounded h-full flex items-center gap-2 px-2 ${
+            entry.details ? 'cursor-pointer hover:bg-white/5' : ''
+          } ${isDetailTarget ? 'ring-1 ring-primary' : ''} ${isChecked ? 'bg-primary/10' : ''}`}
+          onClick={() => entry.details && setDetailLogId(isDetailTarget ? null : entry.id)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              handleToggleSelect(index, e.shiftKey)
+            }}
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+              isChecked ? 'bg-primary border-primary' : 'border-muted-foreground hover:border-primary/50'
+            }`}
+          >
+            {isChecked && (
+              <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+          {getLevelIcon(entry.level)}
+          <span className="text-muted-foreground shrink-0 text-xs">{formatTime(entry.timestamp)}</span>
+          <span className="text-primary/70 shrink-0 text-xs max-w-[100px] truncate">{entry.source}</span>
+          <span className="text-foreground flex-1 truncate text-xs">{entry.message}</span>
+          {entry.details && <span className="text-muted-foreground text-[10px] shrink-0">{isDetailTarget ? '▼' : '▶'}</span>}
+        </div>
+      </div>
+    )
+  }
 
   // Keyboard shortcuts for selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle when log viewer area is focused or contains focus
       if (!logViewerRef.current?.contains(document.activeElement) && document.activeElement !== logViewerRef.current) return
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -502,24 +448,14 @@ export function TroubleshootTab() {
           </div>
         ) : (
           <>
-            {/* Virtualized log list - fills parent via style */}
-            <List<MyRowProps>
-              listRef={listRef}
-              rowCount={filteredLogs.length}
-              rowHeight={LOG_ROW_HEIGHT}
-              rowComponent={LogRow}
-              rowProps={{
-                filteredLogs,
-                detailLogId,
-                selectedIds,
-                getLevelIcon,
-                formatTime,
-                handleToggleSelect,
-                setDetailLogId,
-              }}
-              className="scrollbar-visible"
-              style={{ height: '100%', width: '100%' }}
-              onScroll={handleScroll}
+            {/* Virtualized log list */}
+            <Virtuoso
+              ref={virtuosoRef}
+              data={filteredLogs}
+              itemContent={renderRow}
+              followOutput={autoScroll ? 'smooth' : false}
+              atBottomStateChange={(atBottom) => setAutoScroll(atBottom)}
+              className="scrollbar-visible h-full w-full"
             />
 
             {/* Jump to latest button - overlay */}

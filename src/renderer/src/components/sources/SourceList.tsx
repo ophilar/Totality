@@ -6,8 +6,8 @@
 
 import { useState } from 'react'
 import { useSources } from '@/contexts/SourceContext'
-import { SourceCard } from './SourceCard'
-import { AddSourceModal } from './AddSourceModal'
+import { SourceCard } from '@/components/sources/SourceCard'
+import { AddSourceModal } from '@/components/sources/AddSourceModal'
 
 interface SourceListProps {
   onSourcesChanged?: () => void

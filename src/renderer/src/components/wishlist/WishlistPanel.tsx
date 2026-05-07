@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '@/contexts/WishlistContext'
-import { WishlistItemCard } from './WishlistItemCard'
-import { WishlistEmptyState } from './WishlistEmptyState'
+import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard'
+import { WishlistEmptyState } from '@/components/wishlist/WishlistEmptyState'
 
 export interface WishlistPanelProps {
   isOpen: boolean

@@ -9,7 +9,8 @@
 import { useState, useEffect } from 'react'
 import { Database, HardDrive, Film, Music } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
-import { KodiMySQLFlow } from './KodiMySQLFlow'
+import { ProviderType } from '@main/types/database'
+import { KodiMySQLFlow } from '@/components/sources/KodiMySQLFlow'
 
 interface KodiConnectionFlowProps {
   onSuccess: () => void
@@ -100,7 +101,7 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     try {
       // Add the source as kodi-local
       const source = await addSource({
-        sourceType: 'kodi-local',
+        sourceType: ProviderType.KodiLocal,
         displayName: localDisplayName.trim() || 'Kodi (Local)',
         connectionConfig: {
           databasePath: includeVideoDb ? localInstallation.databasePath : '',

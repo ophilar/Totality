@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '../../src/main/services/TranscodingService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
-import { resetGeminiServiceForTesting } from '../../src/main/services/GeminiService'
-import { getMediaFileAnalyzer } from '../../src/main/services/MediaFileAnalyzer'
+import { getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
+import { getGeminiService, resetGeminiServiceForTesting } from '@main/services/GeminiService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
 
 describe('TranscodingService (No Mocks)', () => {
@@ -48,15 +48,10 @@ describe('TranscodingService (No Mocks)', () => {
   })
 
   beforeEach(async () => {
-    resetBetterSQLiteServiceForTesting()
     resetGeminiServiceForTesting()
     resetTranscodingServiceForTesting()
 
-    process.env.TOTALITY_DB_PATH = ':memory:'
-    process.env.NODE_ENV = 'test'
-
-    db = getBetterSQLiteService()
-    db.initialize()
+    db = await setupTestDb()
     
     // Redirect Gemini traffic to local mock server
     const originalFetch = globalThis.fetch
@@ -75,8 +70,11 @@ describe('TranscodingService (No Mocks)', () => {
       return originalFetch(url, init)
     })
 
-    db.config.setSetting('gemini_api_key', 'AIzaSyB-TEST-KEY-1234567890-ABCDEF')
-    db.config.setSetting('ai_enabled', 'true')
+    await db.config.setSetting('gemini_api_key', 'AIzaSyB-TEST-KEY-1234567890-ABCDEF')
+    await db.config.setSetting('ai_enabled', 'true')
+    
+    // Explicitly initialize GeminiService to load the settings we just set
+    await getGeminiService().initialize()
 
     service = getTranscodingService()
     service.setAvailabilityOverride({ handbrake: true, ffmpeg: true })
@@ -84,6 +82,7 @@ describe('TranscodingService (No Mocks)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    cleanupTestDb()
   })
 
   it('should check tool availability', async () => {
@@ -122,3 +121,6 @@ describe('TranscodingService (No Mocks)', () => {
     await expect(service.getTranscodeParameters(filePath)).rejects.toThrow('Gemini AI is not configured')
   })
 })
+
+
+

@@ -12,8 +12,8 @@ import {
   estimateAudioBitrate,
   calculateAudioBitrateFromFile,
   isEstimatedBitrate,
-} from '../../src/main/providers/utils/ProviderUtils'
-import type { AudioTrackInfo } from '../../src/main/providers/utils/ProviderUtils'
+} from '@main/providers/utils/ProviderUtils'
+import type { AudioTrackInfo } from '@main/providers/utils/ProviderUtils'
 
 // ============================================================================
 // selectBestAudioTrack
@@ -234,3 +234,6 @@ describe('isEstimatedBitrate', () => {
     expect(isEstimatedBitrate(7500)).toBe(false)
   })
 })
+
+
+

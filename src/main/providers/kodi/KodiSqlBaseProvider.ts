@@ -1,18 +1,19 @@
 // @ts-nocheck
-import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, ProviderType, AudioStreamInfo } from '@main/providers/base/MediaProvider'
-import { getDatabase } from '@main/database/getDatabase'
+import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, AudioStreamInfo } from '@main/providers/base/MediaProvider'
+import { ProviderType } from '@main/types/database'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
-import { KodiMappingUtils } from './KodiMappingUtils'
+import { KodiMappingUtils } from '@main/providers/kodi/KodiMappingUtils'
 import { 
   QUERY_MOVIES_WITH_DETAILS, 
   QUERY_EPISODES_WITH_DETAILS,
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT
-} from './KodiDatabaseSchema'
+} from '@main/providers/kodi/KodiDatabaseSchema'
 import { hasObjectAudio } from '@main/services/MediaNormalizer'
 import { estimateAudioBitrate } from '@main/providers/utils/ProviderUtils'
 

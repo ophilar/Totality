@@ -15,7 +15,7 @@
  * - song_artist: Many-to-many relationship between songs and artists
  */
 
-import { convertKodiPathToLocal } from './KodiDatabaseSchema'
+import { convertKodiPathToLocal } from '@main/providers/kodi/KodiDatabaseSchema'
 
 // ============================================================================
 // KODI MUSIC DATABASE TYPES

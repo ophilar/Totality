@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { SeriesCompletenessService } from '../../src/main/services/SeriesCompletenessService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { getDatabase, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
 import { getTMDBService, resetTMDBServiceForTesting } from '../../src/main/services/TMDBService'
 import http from 'node:http'
 
@@ -93,11 +93,11 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     process.env.TOTALITY_DB_PATH = ':memory:'
     process.env.NODE_ENV = 'test'
 
-    db = getBetterSQLiteService()
-    db.initialize()
+    db = getDatabase()
+    await db.initialize(':memory:')
     
-    db.config.setSetting('tmdb_api_key', 'test-key')
-    db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
+    await db.config.setSetting('tmdb_api_key', 'test-key')
+    await db.config.setSetting('tmdb_base_url', `http://127.0.0.1:${serverPort}`)
 
     tmdb = getTMDBService()
     await tmdb.initialize()
@@ -106,7 +106,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
   })
 
   it('should analyze a series and find missing episodes', async () => {
-    db.sources.upsertSource({ 
+    await db.sources.upsertSource({ 
       source_id: 's1', 
       source_type: 'plex', 
       display_name: 'S1', 
@@ -115,7 +115,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     })
     
     // Only own S1E1
-    db.media.upsertItem(createEpisode({
+    await db.media.upsertItem(createEpisode({
       source_id: 's1',
       library_id: 'tvshows',
       plex_id: 'p1',
@@ -141,7 +141,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
     })
 
     it('should update artwork for local sources during analysis', async () => {
-    db.sources.upsertSource({ 
+    await db.sources.upsertSource({ 
       source_id: 'local1', 
       source_type: 'local', 
       display_name: 'Local', 
@@ -149,7 +149,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       is_enabled: 1 
     })
 
-    db.media.upsertItem(createEpisode({
+    await db.media.upsertItem(createEpisode({
       source_id: 'local1',
       library_id: 'tvshows',
       plex_id: 'local-ep-1',
@@ -161,7 +161,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
 
     await service.analyzeSeries('Game of Thrones', 'local1', 'tvshows', '1399')
 
-    const item = db.media.getItemByProviderId('local-ep-1', 'local1')
+    const item = await db.media.getItemByProviderId('local-ep-1', 'local1')
     expect(item).not.toBeNull()
     expect(item!.poster_url).toBe(`https://image.tmdb.org/t/p/w500/poster.jpg`)
     expect(item!.episode_thumb_url).toBe(`https://image.tmdb.org/t/p/w500/still1.jpg`)

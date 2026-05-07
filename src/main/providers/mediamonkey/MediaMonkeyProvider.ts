@@ -11,18 +11,17 @@ import {
   BaseMediaProvider,
   ProviderCredentials,
   AuthResult,
-  ConnectionTestResult,
   MediaLibrary,
   MediaMetadata,
   ScanResult,
   ScanOptions,
   SourceConfig,
-  ProviderType,
-  LibraryType,
 } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import {
   isLosslessCodec,
   isHiRes,

@@ -1,7 +1,16 @@
 // Database type definitions
 
 // Provider types supported by the application
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+export enum ProviderType {
+  Plex = 'plex',
+  Jellyfin = 'jellyfin',
+  Emby = 'emby',
+  Kodi = 'kodi',
+  KodiLocal = 'kodi-local',
+  KodiMySQL = 'kodi-mysql',
+  Local = 'local',
+  MediaMonkey = 'mediamonkey'
+}
 
 // Media source configuration (Plex, Jellyfin, Emby, Kodi servers)
 export interface MediaSource {
@@ -115,6 +124,11 @@ export interface SubtitleTrack {
   isForced?: boolean
 }
 
+export enum MediaItemType {
+  Movie = 'movie',
+  Episode = 'episode'
+}
+
 export interface MediaItem {
   id?: number
 
@@ -128,7 +142,7 @@ export interface MediaItem {
   title: string
   sort_title?: string | null | undefined
   year?: number | null | undefined
-  type: 'movie' | 'episode'
+  type: MediaItemType
   series_title?: string | null | undefined
   season_number?: number | null | undefined
   episode_number?: number | null | undefined
@@ -443,7 +457,15 @@ export interface TVShowFilters {
 // ============================================================================
 
 export type MusicQualityTier = 'LOSSY_LOW' | 'LOSSY_MID' | 'LOSSY_HIGH' | 'LOSSLESS' | 'HI_RES'
-export type AlbumType = 'album' | 'ep' | 'single' | 'compilation' | 'live' | 'soundtrack' | 'unknown'
+export enum AlbumType {
+  Album = 'album',
+  EP = 'ep',
+  Single = 'single',
+  Compilation = 'compilation',
+  Live = 'live',
+  Soundtrack = 'soundtrack',
+  Unknown = 'unknown'
+}
 
 export interface MusicArtist {
   id?: number
@@ -715,10 +737,25 @@ export interface MusicFilters {
 // WISHLIST / SHOPPING LIST
 // ============================================================================
 
-export type WishlistMediaType = 'movie' | 'episode' | 'season' | 'album' | 'track'
+export enum WishlistMediaType {
+  Movie = 'movie',
+  Episode = 'episode',
+  Season = 'season',
+  Album = 'album',
+  Track = 'track'
+}
+
 export type WishlistPriority = 1 | 2 | 3 | 4 | 5
-export type WishlistReason = 'missing' | 'upgrade'
-export type WishlistStatus = 'active' | 'completed'
+
+export enum WishlistReason {
+  Missing = 'missing',
+  Upgrade = 'upgrade'
+}
+
+export enum WishlistStatus {
+  Active = 'active',
+  Completed = 'completed'
+}
 
 export interface WishlistItem {
   id?: number
@@ -783,6 +820,58 @@ export interface WishlistFilters {
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
+}
+
+export enum TaskType {
+  LibraryScan = 'library-scan',
+  SourceScan = 'source-scan',
+  SeriesCompleteness = 'series-completeness',
+  CollectionCompleteness = 'collection-completeness',
+  MusicCompleteness = 'music-completeness',
+  MusicScan = 'music-scan',
+  Transcode = 'transcode'
+}
+
+export enum TaskStatus {
+  Queued = 'queued',
+  Running = 'running',
+  Completed = 'completed',
+  Failed = 'failed',
+  Cancelled = 'cancelled'
+}
+
+export interface TaskProgress {
+  current: number
+  total: number
+  percentage: number
+  phase: string
+  currentItem?: string
+}
+
+export interface TaskResult {
+  itemsScanned?: number
+  itemsAdded?: number
+  itemsUpdated?: number
+  itemsRemoved?: number
+  [key: string]: any
+}
+
+export interface QueuedTask {
+  id: string
+  type: TaskType
+  label: string
+  sourceId?: string
+  libraryId?: string
+  mediaItemId?: number
+  artistId?: number
+  status: TaskStatus
+  progress?: TaskProgress
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  error?: string
+  result?: TaskResult
+  options?: any
 }
 
 // ============================================================================

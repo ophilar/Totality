@@ -5,8 +5,8 @@
  * Consolidates types with @main/types/database for Single Source of Truth.
  */
 
+export type { ProviderType } from '@main/types/database'
 import type { 
-  ProviderType, 
   MediaItem as BaseMediaItem,
   MediaItemVersion as BaseMediaItemVersion,
   MusicArtist as BaseMusicArtist,
@@ -27,9 +27,6 @@ import type {
   MissingTrack as BaseMissingTrack,
 } from '@main/types/database'
 import type { MediaSourceResponse } from '@preload/api/types'
-
-// Re-export for convenience
-export type { ProviderType }
 
 // Alias for MediaSourceResponse used in hooks
 export type MediaSource = MediaSourceResponse

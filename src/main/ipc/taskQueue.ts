@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * IPC Handlers for Task Queue System
  */
@@ -14,9 +15,9 @@ export function registerTaskQueueHandlers(): void {
   /**
    * Get current queue state
    */
-  ipcMain.handle('taskQueue:getState', async () => {
+  ipcMain.handle(IPC_CHANNELS.TASK_QUEUE.GET_STATE, async () => {
     try {
-      return service.getQueueState()
+      return await service.getQueueState()
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:getState] Error:', error)
       throw error
@@ -30,7 +31,7 @@ export function registerTaskQueueHandlers(): void {
     try {
       const validDefinition = validateInput(TaskDefinitionSchema, definition, 'taskQueue:addTask')
       getLoggingService().info('[taskQueue]', '[IPC] taskQueue:addTask called with:', validDefinition)
-      const taskId = service.addTask(validDefinition)
+      const taskId = await service.addTask(validDefinition)
       getLoggingService().info('[taskQueue]', '[IPC] taskQueue:addTask returning taskId:', taskId)
       return { success: true, taskId }
     } catch (error) {
@@ -46,7 +47,7 @@ export function registerTaskQueueHandlers(): void {
     try {
       const validTaskId = validateInput(NonEmptyStringSchema, taskId, 'taskQueue:removeTask')
       getLoggingService().info('[IPC taskQueue:removeTask]', validTaskId)
-      const removed = service.removeTask(validTaskId)
+      const removed = await service.removeTask(validTaskId)
       return { success: removed }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:removeTask] Error:', error)
@@ -60,7 +61,7 @@ export function registerTaskQueueHandlers(): void {
   ipcMain.handle('taskQueue:reorderQueue', async (_event, taskIds: unknown) => {
     try {
       const validTaskIds = validateInput(z.array(z.string().min(1)), taskIds, 'taskQueue:reorderQueue')
-      service.reorderQueue(validTaskIds)
+      await service.reorderQueue(validTaskIds)
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:reorderQueue] Error:', error)
@@ -73,7 +74,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:clearQueue', async () => {
     try {
-      service.clearQueue()
+      await service.clearQueue()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearQueue] Error:', error)
@@ -84,10 +85,10 @@ export function registerTaskQueueHandlers(): void {
   /**
    * Pause the queue
    */
-  ipcMain.handle('taskQueue:pause', async () => {
+  ipcMain.handle(IPC_CHANNELS.TASK_QUEUE.PAUSE, async () => {
     try {
       getLoggingService().info('[taskQueue]', '[IPC taskQueue:pause] Queue paused')
-      service.pauseQueue()
+      await service.pauseQueue()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:pause] Error:', error)
@@ -98,10 +99,10 @@ export function registerTaskQueueHandlers(): void {
   /**
    * Resume the queue
    */
-  ipcMain.handle('taskQueue:resume', async () => {
+  ipcMain.handle(IPC_CHANNELS.TASK_QUEUE.RESUME, async () => {
     try {
       getLoggingService().info('[taskQueue]', '[IPC taskQueue:resume] Queue resumed')
-      service.resumeQueue()
+      await service.resumeQueue()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:resume] Error:', error)
@@ -114,7 +115,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:cancelCurrent', async () => {
     try {
-      service.cancelCurrentTask()
+      await service.cancelCurrentTask()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:cancelCurrent] Error:', error)
@@ -127,7 +128,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:getTaskHistory', async () => {
     try {
-      return service.getTaskHistory()
+      return await service.getTaskHistory()
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:getTaskHistory] Error:', error)
       throw error
@@ -139,7 +140,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:getMonitoringHistory', async () => {
     try {
-      return service.getMonitoringHistory()
+      return await service.getMonitoringHistory()
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:getMonitoringHistory] Error:', error)
       throw error
@@ -151,7 +152,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:clearTaskHistory', async () => {
     try {
-      service.clearTaskHistory()
+      await service.clearTaskHistory()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearTaskHistory] Error:', error)
@@ -164,7 +165,7 @@ export function registerTaskQueueHandlers(): void {
    */
   ipcMain.handle('taskQueue:clearMonitoringHistory', async () => {
     try {
-      service.clearMonitoringHistory()
+      await service.clearMonitoringHistory()
       return { success: true }
     } catch (error) {
       getLoggingService().error('[taskQueue]', '[IPC taskQueue:clearMonitoringHistory] Error:', error)
@@ -174,3 +175,4 @@ export function registerTaskQueueHandlers(): void {
 
   getLoggingService().info('[taskQueue]', '[IPC] Task queue handlers registered')
 }
+

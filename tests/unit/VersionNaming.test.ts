@@ -1,4 +1,4 @@
-import { extractVersionNames } from '../../src/main/providers/utils/VersionNaming'
+import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 
 function makeVersion(file_path: string, resolution = '1080p', overrides: Record<string, unknown> = {}) {
   return {
@@ -182,3 +182,6 @@ describe('extractVersionNames', () => {
     })
   })
 })
+
+
+

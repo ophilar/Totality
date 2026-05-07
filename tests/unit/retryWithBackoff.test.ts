@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { retryWithBackoff, getRateLimitRetryAfter } from '../../src/main/services/utils/retryWithBackoff'
+import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
 
 describe('retryWithBackoff', () => {
   it('should succeed on first try without retry', async () => {
@@ -175,3 +175,6 @@ describe('getRateLimitRetryAfter', () => {
     expect(getRateLimitRetryAfter(response)).toBe(60000) // 60 seconds default
   })
 })
+
+
+

@@ -1,7 +1,7 @@
 import { useState, useEffect, memo } from 'react'
 import { Trash2, Film, Tv, Music, Disc, CircleFadingArrowUp, CheckCircle2, RotateCcw } from 'lucide-react'
-import { StarRating } from './StarRating'
-import { StoreLinksMenu } from './StoreLinksMenu'
+import { StarRating } from '@/components/wishlist/StarRating'
+import { StoreLinksMenu } from '@/components/wishlist/StoreLinksMenu'
 import type { WishlistItem, StoreLink, WishlistPriority } from '@/contexts/WishlistContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 

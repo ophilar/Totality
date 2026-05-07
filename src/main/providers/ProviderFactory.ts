@@ -4,43 +4,44 @@
  * Factory for creating MediaProvider instances based on provider type.
  */
 
-import { MediaProvider, ProviderType, SourceConfig } from './base/MediaProvider'
-import { PlexProvider } from './plex/PlexProvider'
-import { JellyfinProvider } from './jellyfin-emby/JellyfinProvider'
-import { EmbyProvider } from './jellyfin-emby/EmbyProvider'
-import { KodiProvider } from './kodi/KodiProvider'
-import { KodiLocalProvider } from './kodi/KodiLocalProvider'
-import { KodiMySQLProvider } from './kodi/KodiMySQLProvider'
-import { LocalFolderProvider } from './local/LocalFolderProvider'
-import { MediaMonkeyProvider } from './mediamonkey/MediaMonkeyProvider'
+import { MediaProvider, SourceConfig } from '@main/providers/base/MediaProvider'
+import { ProviderType } from '@main/types/database'
+import { PlexProvider } from '@main/providers/plex/PlexProvider'
+import { JellyfinProvider } from '@main/providers/jellyfin-emby/JellyfinProvider'
+import { EmbyProvider } from '@main/providers/jellyfin-emby/EmbyProvider'
+import { KodiProvider } from '@main/providers/kodi/KodiProvider'
+import { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
+import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
+import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
+import { MediaMonkeyProvider } from '@main/providers/mediamonkey/MediaMonkeyProvider'
 
 /**
  * Create a MediaProvider instance based on the provider type
  */
 export function createProvider(type: ProviderType, config: SourceConfig): MediaProvider {
   switch (type) {
-    case 'plex':
+    case ProviderType.Plex:
       return new PlexProvider(config)
 
-    case 'jellyfin':
+    case ProviderType.Jellyfin:
       return new JellyfinProvider(config)
 
-    case 'emby':
+    case ProviderType.Emby:
       return new EmbyProvider(config)
 
-    case 'kodi':
+    case ProviderType.Kodi:
       return new KodiProvider(config)
 
-    case 'kodi-local':
+    case ProviderType.KodiLocal:
       return new KodiLocalProvider(config)
 
-    case 'kodi-mysql':
+    case ProviderType.KodiMySQL:
       return new KodiMySQLProvider(config)
 
-    case 'local':
+    case ProviderType.Local:
       return new LocalFolderProvider(config)
 
-    case 'mediamonkey':
+    case ProviderType.MediaMonkey:
       return new MediaMonkeyProvider(config)
 
     default:
@@ -48,54 +49,32 @@ export function createProvider(type: ProviderType, config: SourceConfig): MediaP
   }
 }
 
-const SUPPORTED_PROVIDERS: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
+import { PROVIDERS, SUPPORTED_PROVIDERS } from '@main/constants/providers'
 
 /**
  * Check if a provider type is supported
  */
 export function isProviderSupported(type: ProviderType): boolean {
-  return SUPPORTED_PROVIDERS.includes(type)
+  return !!PROVIDERS[type]
 }
 
 /**
  * Get list of all supported provider types
  */
 export function getSupportedProviders(): ProviderType[] {
-  return [...SUPPORTED_PROVIDERS]
+  return SUPPORTED_PROVIDERS.map(p => p.type)
 }
 
 /**
  * Get display name for a provider type
  */
 export function getProviderDisplayName(type: ProviderType): string {
-  const names: Record<ProviderType, string> = {
-    plex: 'Plex',
-    jellyfin: 'Jellyfin',
-    emby: 'Emby',
-    kodi: 'Kodi',
-    'kodi-local': 'Kodi (Local)',
-    'kodi-mysql': 'Kodi (MySQL)',
-    local: 'Local Folder',
-    mediamonkey: 'MediaMonkey 5',
-  }
-  return names[type] || type
+  return PROVIDERS[type]?.name || (type as string)
 }
 
 /**
  * Get icon name for a provider type (for UI)
  */
 export function getProviderIcon(type: ProviderType): string {
-  const icons: Record<ProviderType, string> = {
-    plex: 'plex',
-    jellyfin: 'jellyfin',
-    emby: 'emby',
-    kodi: 'kodi',
-    'kodi-local': 'kodi',
-    'kodi-mysql': 'kodi',
-    local: 'folder',
-    mediamonkey: 'music',
-  }
-  return icons[type] || 'server'
+  return PROVIDERS[type]?.icon || 'server'
 }
-
-export { PlexProvider }

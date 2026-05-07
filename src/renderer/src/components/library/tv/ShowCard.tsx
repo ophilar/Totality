@@ -1,5 +1,5 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Trash2, HardDrive, Tv as TvPlaceholder } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Trash2, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
@@ -26,7 +26,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
-  const totalEpisodes = show.episode_count
   const sourceType = show.source_type as ProviderType | undefined
   const sourceId = show.source_id
   const folderPath: string | undefined = undefined
@@ -160,20 +159,38 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-sm truncate">{show.series_title}</h4>
           <p className="text-xs text-muted-foreground">
-            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
+            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
           </p>
         </div>
+
         {completenessData && (
           <div
             className="shrink-0"
-            title={`${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`}
+            title={
+              completenessData.completeness_percentage === -1
+                ? 'Unmatched: No completeness data available'
+                : `${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`
+            }
           >
             {completenessData.completeness_percentage === 100 ? (
               <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 100%
+              </div>
+            ) : completenessData.completeness_percentage === -1 ? (
+              <div
+                className="bg-muted text-muted-foreground px-1.5 py-1 rounded shadow-md border border-border flex items-center justify-center"
+                title="Unmatched"
+              >
+                <Link2Off className="w-3.5 h-3.5" />
               </div>
             ) : (
               <div className="bg-foreground text-background text-xs font-bold px-2 py-1 rounded shadow-md border border-border">

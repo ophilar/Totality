@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 import { 
   ConnectionTestResult, 
@@ -7,7 +8,7 @@ import {
   ScanResultResponse, 
   ServerInstanceResponse,
   LibraryType
-} from './types'
+} from '@preload/api/types'
 
 export const sourcesApi = {
   // ============================================================================
@@ -20,22 +21,22 @@ export const sourcesApi = {
     displayName: string
     connectionConfig: Record<string, unknown>
     isEnabled?: boolean
-  }) => ipcRenderer.invoke('sources:add', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.ADD, config),
   sourcesUpdate: (sourceId: string, updates: {
     displayName?: string
     connectionConfig?: Record<string, unknown>
     isEnabled?: boolean
   }) => ipcRenderer.invoke('sources:update', sourceId, updates),
-  sourcesRemove: (sourceId: string) => ipcRenderer.invoke('sources:remove', sourceId),
-  sourcesList: (type?: string) => ipcRenderer.invoke('sources:list', type),
+  sourcesRemove: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.REMOVE, sourceId),
+  sourcesList: (type?: string) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.LIST, type),
   sourcesGet: (sourceId: string) => ipcRenderer.invoke('sources:get', sourceId),
   sourcesGetEnabled: () => ipcRenderer.invoke('sources:getEnabled'),
   sourcesToggle: (sourceId: string, enabled: boolean) =>
-    ipcRenderer.invoke('sources:toggle', sourceId, enabled),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TOGGLE, sourceId, enabled),
 
   // Connection Testing
   sourcesTestConnection: (sourceId: string) =>
-    ipcRenderer.invoke('sources:testConnection', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId),
 
   // Plex-specific Auth (new flow for multi-source)
   plexStartAuth: () => ipcRenderer.invoke('plex:startAuth'),
@@ -51,7 +52,7 @@ export const sourcesApi = {
   sourcesGetLibraries: (sourceId: string) =>
     ipcRenderer.invoke('sources:getLibraries', sourceId),
   sourcesGetLibrariesWithStatus: (sourceId: string) =>
-    ipcRenderer.invoke('sources:getLibrariesWithStatus', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sourceId),
   sourcesToggleLibrary: (sourceId: string, libraryId: string, enabled: boolean) =>
     ipcRenderer.invoke('sources:toggleLibrary', sourceId, libraryId, enabled),
   sourcesSetLibrariesEnabled: (sourceId: string, libraries: Array<{
@@ -77,8 +78,8 @@ export const sourcesApi = {
     ipcRenderer.invoke('sources:scanItem', sourceId, libraryId, filePath),
 
   // Statistics
-  sourcesGetStats: () => ipcRenderer.invoke('sources:getStats'),
-  sourcesGetSupportedProviders: () => ipcRenderer.invoke('sources:getSupportedProviders'),
+  sourcesGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.GET_STATS),
+  sourcesGetSupportedProviders: () => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS),
 
   // Source Events
   onSourcesScanProgress: (callback: (progress: unknown) => void) => {
@@ -88,7 +89,7 @@ export const sourcesApi = {
   },
 
   // Library Update Events - fired when media items are updated during scans/analysis
-  onLibraryUpdated: (callback: (data: { type: 'media' | 'music'; count?: number }) => void) => {
+  onLibraryUpdated: (callback: (data: { type: 'media' | 'music'; count?: number; sourceId?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { type: 'media' | 'music'; count?: number }) => callback(data)
     ipcRenderer.on('library:updated', handler)
     return () => ipcRenderer.removeListener('library:updated', handler)
@@ -249,13 +250,13 @@ export const sourcesApi = {
 
   // Quick Connect
   jellyfinIsQuickConnectEnabled: (serverUrl: string) =>
-    ipcRenderer.invoke('jellyfin:isQuickConnectEnabled', serverUrl),
+    ipcRenderer.invoke(IPC_CHANNELS.JELLYFIN.IS_QUICK_CONNECT_ENABLED, serverUrl),
   jellyfinInitiateQuickConnect: (serverUrl: string) =>
-    ipcRenderer.invoke('jellyfin:initiateQuickConnect', serverUrl),
+    ipcRenderer.invoke(IPC_CHANNELS.JELLYFIN.INITIATE_QUICK_CONNECT, serverUrl),
   jellyfinCheckQuickConnectStatus: (serverUrl: string, secret: string) =>
-    ipcRenderer.invoke('jellyfin:checkQuickConnectStatus', serverUrl, secret),
+    ipcRenderer.invoke(IPC_CHANNELS.JELLYFIN.CHECK_QUICK_CONNECT_STATUS, serverUrl, secret),
   jellyfinCompleteQuickConnect: (serverUrl: string, secret: string, displayName: string) =>
-    ipcRenderer.invoke('jellyfin:completeQuickConnect', serverUrl, secret, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.JELLYFIN.COMPLETE_QUICK_CONNECT, serverUrl, secret, displayName),
   jellyfinAuthenticateCredentials: (
     serverUrl: string,
     username: string,
@@ -263,7 +264,7 @@ export const sourcesApi = {
     displayName: string,
     isEmby: boolean = false
   ) =>
-    ipcRenderer.invoke('jellyfin:authenticateCredentials', serverUrl, username, password, displayName, isEmby),
+    ipcRenderer.invoke(IPC_CHANNELS.JELLYFIN.AUTHENTICATE_CREDENTIALS, serverUrl, username, password, displayName, isEmby),
 
   // ============================================================================
   // EMBY (Discovery)
@@ -362,7 +363,7 @@ export interface SourcesAPI {
   onSourcesScanProgress: (callback: (progress: unknown) => void) => () => void
 
   // Library Update Events
-  onLibraryUpdated: (callback: (data: { type: 'media' | 'music'; count?: number }) => void) => () => void
+  onLibraryUpdated: (callback: (data: { type: 'media' | 'music'; count?: number; sourceId?: string }) => void) => () => void
 
   // Auto-refresh Events
   onAutoRefreshStarted: (callback: () => void) => () => void

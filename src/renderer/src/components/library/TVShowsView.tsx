@@ -1,14 +1,14 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { RefreshCw, Tv } from 'lucide-react'
-import { SlimDownBanner } from './SlimDownBanner'
-import { ShowCard } from './tv/ShowCard'
-import { ShowListItem } from './tv/ShowListItem'
-import { TVSeasonDetails } from './tv/TVSeasonDetails'
-import { TVShowDetails } from './tv/TVShowDetails'
+import { SlimDownBanner } from '@/components/library/SlimDownBanner'
+import { ShowCard } from '@/components/library/tv/ShowCard'
+import { ShowListItem } from '@/components/library/tv/ShowListItem'
+import { TVSeasonDetails } from '@/components/library/tv/TVSeasonDetails'
+import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { useSources } from '@/contexts/SourceContext'
-import { MediaGridView } from './MediaGridView'
+import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
-import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from './types'
+import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVShowsView({
   shows,
@@ -65,7 +65,6 @@ export function TVShowsView({
   totalEpisodeCount?: number
   showsLoading: boolean
   onLoadMoreShows: () => void
-  scrollElement?: HTMLElement | null
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
   const { scanProgress } = useSources()
@@ -86,16 +85,6 @@ export function TVShowsView({
       return next
     })
   }, [])
-
-  const showSentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!showSentinelRef.current || showsLoading || shows.length >= totalShowCount) return
-    const observer = new IntersectionObserver(entries => {
-      if (observer && entries[0].isIntersecting) onLoadMoreShows()
-    }, { rootMargin: '400px' })
-    observer.observe(showSentinelRef.current)
-    return () => observer.disconnect()
-  }, [shows.length, totalShowCount, showsLoading, onLoadMoreShows])
 
   if (!selectedShow) {
     const listHeader = (
@@ -120,10 +109,11 @@ export function TVShowsView({
     )
 
     return (
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className="h-full flex flex-col overflow-hidden">
         {slimDown && <SlimDownBanner className="mb-4" />}
         <MediaGridView
           items={shows} totalCount={totalShowCount} viewType={viewType} loading={showsLoading} onLoadMore={onLoadMoreShows} posterMinWidth={posterMinWidth} banner={listHeader}
+          scrollKey="shows"
           emptyState={<div className="flex flex-col items-center justify-center py-20 opacity-40"><TvPlaceholder className="w-24 h-24 mb-6" /><p className="text-lg font-medium">No TV shows found</p></div>}
           renderGridItem={(show) => (
             <ShowCard
@@ -142,18 +132,25 @@ export function TVShowsView({
             />
           )}
         />
-        <div ref={showSentinelRef} className="h-4 w-full" />
       </div>
     )
   }
 
   if (selectedShow && selectedSeason === null) {
-    return <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} onSelectSeason={onSelectSeason} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} posterMinWidth={posterMinWidth} />
+    return (
+      <div className="h-full overflow-y-auto">
+        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} onSelectSeason={onSelectSeason} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} posterMinWidth={posterMinWidth} />
+      </div>
+    )
   }
 
 
   if (selectedShow && selectedSeason !== null && selectedShowData) {
-    return <TVSeasonDetails selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData} seriesCompleteness={seriesCompleteness} filterItem={filterItem} onBack={handleBack} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingEpisode={onDismissMissingEpisode} />
+    return (
+      <div className="h-full overflow-y-auto">
+        <TVSeasonDetails selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData} seriesCompleteness={seriesCompleteness} filterItem={filterItem} onBack={handleBack} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingEpisode={onDismissMissingEpisode} />
+      </div>
+    )
   }
 
   return null

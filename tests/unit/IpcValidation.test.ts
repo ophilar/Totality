@@ -32,7 +32,7 @@ import {
   TaskDefinitionSchema,
   AddExclusionSchema,
   MonitoringConfigSchema,
-} from '../../src/main/validation/schemas'
+} from '@main/validation/schemas'
 
 describe('IPC Validation Schemas', () => {
   // ==========================================================================
@@ -545,3 +545,6 @@ describe('IPC Validation Schemas', () => {
     })
   })
 })
+
+
+

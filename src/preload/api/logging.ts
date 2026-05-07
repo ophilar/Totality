@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const loggingApi = {
@@ -11,15 +12,15 @@ export const loggingApi = {
   // ============================================================================
   // LOGGING
   // ============================================================================
-  getLogs: (limit?: number) => ipcRenderer.invoke('logs:getAll', limit),
-  clearLogs: () => ipcRenderer.invoke('logs:clear'),
-  exportLogs: () => ipcRenderer.invoke('logs:export'),
-  setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke('logs:setVerbose', enabled),
-  isVerboseLogging: () => ipcRenderer.invoke('logs:isVerbose'),
-  getFileLoggingSettings: () => ipcRenderer.invoke('logs:getFileLoggingSettings'),
+  getLogs: (limit?: number) => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.GET_ALL, limit),
+  clearLogs: () => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.CLEAR),
+  exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.EXPORT),
+  setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, enabled),
+  isVerboseLogging: () => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE),
+  getFileLoggingSettings: () => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS),
   setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) =>
-    ipcRenderer.invoke('logs:setFileLoggingSettings', settings),
-  openLogFolder: () => ipcRenderer.invoke('logs:openLogFolder'),
+    ipcRenderer.invoke(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, settings),
+  openLogFolder: () => ipcRenderer.invoke(IPC_CHANNELS.LOGGING.OPEN_LOG_FOLDER),
   onNewLog: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => callback(entry)
     ipcRenderer.on('logs:new', handler)

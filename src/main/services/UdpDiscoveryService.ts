@@ -1,4 +1,4 @@
-import { getErrorMessage } from './utils/errorUtils'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import * as dgram from 'dgram'
 import axios from 'axios'
 import { getLoggingService } from '@main/services/LoggingService'

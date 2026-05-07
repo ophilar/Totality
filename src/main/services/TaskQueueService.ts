@@ -2,50 +2,24 @@
  * TaskQueueService - Manages background task queue for scans and analysis
  */
 
-import { getDatabase, BetterSQLiteService } from '@main/database/getDatabase'
-import { getLoggingService, LoggingService } from './LoggingService'
-import { getErrorMessage } from './utils/errorUtils'
-import { getSourceManager, SourceManager } from './SourceManager'
-import { getSeriesCompletenessService, SeriesCompletenessService } from './SeriesCompletenessService'
-import { getMovieCollectionService, MovieCollectionService } from './MovieCollectionService'
-import { getMusicBrainzService, MusicBrainzService } from './MusicBrainzService'
-import { getTranscodingService, TranscodingService } from './TranscodingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getLoggingService, LoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { getSourceManager, SourceManager } from '@main/services/SourceManager'
+import { getSeriesCompletenessService, SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
+import { getMovieCollectionService, MovieCollectionService } from '@main/services/MovieCollectionService'
+import { getMusicBrainzService, MusicBrainzService } from '@main/services/MusicBrainzService'
+import { getTranscodingService, TranscodingService } from '@main/services/TranscodingService'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { BrowserWindow } from 'electron'
-
-export interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-}
-
-export interface TaskResult {
-  itemsScanned?: number
-  itemsAdded?: number
-  itemsUpdated?: number
-  itemsRemoved?: number
-  [key: string]: any
-}
-
-export interface QueuedTask {
-  id: string
-  type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
-  label: string
-  sourceId?: string
-  libraryId?: string
-  mediaItemId?: number
-  artistId?: number
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: TaskResult
-  options?: any
-}
+import { 
+  QueuedTask, 
+  TaskType, 
+  TaskStatus, 
+  TaskProgress 
+} from '@main/types/database'
+import { NotificationType } from '@main/types/monitoring'
 
 export interface TaskQueueDependencies {
   db?: BetterSQLiteService
@@ -82,8 +56,6 @@ export class TaskQueueService {
     this.movieCollection = deps.movieCollection || null
     this.musicBrainz = deps.musicBrainz || null
     this.transcoding = deps.transcoding || null
-
-    this.loadState()
   }
 
   private getSourceManager(): SourceManager {
@@ -117,25 +89,30 @@ export class TaskQueueService {
     this.mainWindow = win
   }
 
-  loadPersistedHistory(): void {
-    this.loadState()
+  async loadPersistedHistory(): Promise<void> {
+    await this.loadState()
+    if (this.queue.length > 0 && !this.isPaused && !this.currentTask) {
+      this.logging.info('[TaskQueue]', `Resuming queue with ${this.queue.length} persisted tasks`)
+      this.processQueue()
+    }
   }
 
   /**
    * Add a new task to the queue
    */
-  addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): string {
+  async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
     const task: QueuedTask = {
       ...definition,
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      status: 'queued',
+      status: TaskStatus.Queued,
       createdAt: new Date().toISOString(),
     }
 
     this.queue.push(task)
-    this.logging.info('[TaskQueue]', `Task added: ${task.label} (${task.id})`)
+    const msg = `Task added: ${task.label} (${task.id})`
+    this.logging.info('[TaskQueue]', msg)
     
-    this.saveState()
+    await this.saveState()
     this.processQueue()
     this.notifyListeners()
     
@@ -145,24 +122,24 @@ export class TaskQueueService {
   /**
    * Remove a task from the queue
    */
-  removeTask(taskId: string): boolean {
+  async removeTask(taskId: string): Promise<boolean> {
     const index = this.queue.findIndex(t => t.id === taskId)
     if (index !== -1) {
       const task = this.queue.splice(index, 1)[0]
       this.logging.info('[TaskQueue]', `Task removed: ${task.label} (${task.id})`)
-      this.saveState()
+      await this.saveState()
       this.notifyListeners()
       return true
     }
     return false
   }
 
-  removeTasksForSource(sourceId: string): void {
+  async removeTasksForSource(sourceId: string): Promise<void> {
     const originalCount = this.queue.length
     this.queue = this.queue.filter(t => t.sourceId !== sourceId)
     if (this.queue.length !== originalCount) {
       this.logging.info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
-      this.saveState()
+      await this.saveState()
       this.notifyListeners()
     }
   }
@@ -170,7 +147,7 @@ export class TaskQueueService {
   /**
    * Reorder tasks in the queue
    */
-  reorderQueue(taskIds: string[]): void {
+  async reorderQueue(taskIds: string[]): Promise<void> {
     const newQueue: QueuedTask[] = []
     for (const id of taskIds) {
       const task = this.queue.find(t => t.id === id)
@@ -181,18 +158,18 @@ export class TaskQueueService {
       if (!taskIds.includes(task.id)) newQueue.push(task)
     }
     this.queue = newQueue
-    this.saveState()
+    await this.saveState()
     this.notifyListeners()
   }
 
   /**
    * Clear the entire queue
    */
-  clearQueue(): void {
+  async clearQueue(): Promise<void> {
     const count = this.queue.length
     this.queue = []
     this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
-    this.saveState()
+    await this.saveState()
     this.notifyListeners()
   }
 
@@ -210,10 +187,10 @@ export class TaskQueueService {
   /**
    * Resume queue processing
    */
-  resume(): void {
+  async resume(): Promise<void> {
     this.isPaused = false
     this.logging.info('[TaskQueue]', 'Queue resumed')
-    this.processQueue()
+    await this.processQueue()
     this.notifyListeners()
   }
 
@@ -251,33 +228,41 @@ export class TaskQueueService {
 
   getTaskHistory(): any[] { return this.completedTasks }
   getMonitoringHistory(): any[] { return [] }
-  clearTaskHistory(): void { this.completedTasks = []; this.saveState(); this.notifyListeners() }
+  async clearTaskHistory(): Promise<void> { this.completedTasks = []; await this.saveState(); this.notifyListeners() }
   clearMonitoringHistory(): void { }
 
-  persistInterruptedTasks(): void {
-    if (this.currentTask && this.currentTask.status === 'running') {
-      this.currentTask.status = 'queued'
+  async persistInterruptedTasks(): Promise<void> {
+    if (this.currentTask && this.currentTask.status === TaskStatus.Running) {
+      this.currentTask.status = TaskStatus.Queued
       this.queue.unshift(this.currentTask)
       this.currentTask = null
-      this.saveState()
+      await this.saveState()
     }
   }
 
   // --- Internal Methods ---
 
   private async processQueue(): Promise<void> {
-    if (this.currentTask || this.isPaused || this.queue.length === 0) {
+    if (this.currentTask) {
+      this.logging.info('[TaskQueue]', 'processQueue: Task already running, skipping')
+      return
+    }
+    if (this.isPaused) {
+      this.logging.info('[TaskQueue]', 'processQueue: Queue is paused, skipping')
+      return
+    }
+    if (this.queue.length === 0) {
       return
     }
 
     this.currentTask = this.queue.shift() || null
     if (!this.currentTask) return
 
-    this.currentTask.status = 'running'
+    this.currentTask.status = TaskStatus.Running
     this.currentTask.startedAt = new Date().toISOString()
     this.cancelRequested = false
     
-    this.logging.info('[TaskQueue]', `Starting task: ${this.currentTask.label}`)
+    this.logging.info('[TaskQueue]', `Starting task: ${this.currentTask.label} (${this.currentTask.id})`)
     this.notifyListeners()
 
     const task = this.currentTask
@@ -288,25 +273,25 @@ export class TaskQueueService {
 
     try {
       switch (task.type) {
-        case 'library-scan':
+        case TaskType.LibraryScan:
           await this.executeLibraryScan(task, onProgress)
           break
-        case 'source-scan':
+        case TaskType.SourceScan:
           await this.executeSourceScan(task, onProgress)
           break
-        case 'series-completeness':
+        case TaskType.SeriesCompleteness:
           await this.executeSeriesCompleteness(task, onProgress)
           break
-        case 'collection-completeness':
+        case TaskType.CollectionCompleteness:
           await this.executeCollectionCompleteness(task, onProgress)
           break
-        case 'music-completeness':
+        case TaskType.MusicCompleteness:
           await this.executeMusicCompleteness(task, onProgress)
           break
-        case 'music-scan':
+        case TaskType.MusicScan:
           await this.executeMusicScan(task, onProgress)
           break
-        case 'transcode':
+        case TaskType.Transcode:
           await this.executeTranscode(task, onProgress)
           break
         default:
@@ -314,21 +299,21 @@ export class TaskQueueService {
       }
 
       if (this.cancelRequested) {
-        task.status = 'cancelled'
+        task.status = TaskStatus.Cancelled
         this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
       } else {
-        task.status = 'completed'
+        task.status = TaskStatus.Completed
         this.logging.info('[TaskQueue]', `Task completed: ${task.label}`)
       }
     } catch (error) {
       const errorMsg = getErrorMessage(error)
-      task.status = 'failed'
+      task.status = TaskStatus.Failed
       task.error = errorMsg
       this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
       
       try {
-        this.db.notifications.addNotification({
-          type: 'error',
+        await this.db.notifications.addNotification({
+          type: NotificationType.Error,
           title: 'Task failed',
           message: `${task.label}: ${errorMsg}`,
           reference_id: task.sourceId,
@@ -345,15 +330,15 @@ export class TaskQueueService {
       
       const prevTask = task
       this.currentTask = null
-      this.saveState()
+      await this.saveState()
       this.notifyListeners()
       
       // Emit completion event for UI sounds/effects
-      if (prevTask.status === 'completed' && this.mainWindow) {
+      if (prevTask.status === TaskStatus.Completed && this.mainWindow) {
         safeSend(this.mainWindow, 'taskQueue:taskComplete', prevTask)
 
         // Special case: Scan tasks should also emit scan:completed
-        if (prevTask.type === 'library-scan' || prevTask.type === 'source-scan' || prevTask.type === 'music-scan') {
+        if (prevTask.type === TaskType.LibraryScan || prevTask.type === TaskType.SourceScan || prevTask.type === TaskType.MusicScan) {
           const res = prevTask.result as any
           if (res) {
             safeSend(this.mainWindow, 'scan:completed', {
@@ -401,7 +386,7 @@ export class TaskQueueService {
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     const service = this.getMovieCollection()
-    const result = await service.analyzeAllCollections((prog: any) => {
+    const result = await service.analyzeAllCollections(task.sourceId, task.libraryId, (prog: any) => {
       onProgress({
         current: prog.current,
         total: prog.total,
@@ -409,8 +394,8 @@ export class TaskQueueService {
         phase: prog.phase,
         currentItem: prog.currentItem
       })
-    }, task.sourceId, task.libraryId)
-    
+    })
+
     task.result = {
       itemsScanned: result.analyzed,
     }
@@ -422,11 +407,11 @@ export class TaskQueueService {
     
     if (!task.artistId) throw new Error('Missing artistId for music completeness analysis')
     
-    const artist = db.music.getArtistById(task.artistId)
+    const artist = await db.music.getArtistById(task.artistId)
     if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
 
     // Get owned albums for this artist
-    const albums = db.music.getAlbums({ artistId: task.artistId })
+    const albums = await db.music.getAlbums({ artistId: task.artistId })
     const ownedAlbumTitles = albums.map((a: any) => a.title)
     const ownedAlbumMbIds = albums.map((a: any) => a.musicbrainz_id).filter((id: any): id is string => !!id)
     
@@ -484,9 +469,9 @@ export class TaskQueueService {
     }
   }
 
-  private saveState(): void {
+  private async saveState(): Promise<void> {
     try {
-      this.db.config.setSetting('task_queue_state', JSON.stringify({
+      await this.db.config.setSetting('task_queue_state', JSON.stringify({
         queue: this.queue,
         completedTasks: this.completedTasks,
         isPaused: this.isPaused
@@ -496,20 +481,24 @@ export class TaskQueueService {
     }
   }
 
-  private loadState(): void {
+  private async loadState(): Promise<void> {
     try {
-      const stateStr = this.db.config.getSetting('task_queue_state')
+      const stateStr = await this.db.config.getSetting('task_queue_state')
       if (stateStr) {
         const state = JSON.parse(stateStr)
         this.queue = state.queue || []
         this.completedTasks = state.completedTasks || []
-        this.isPaused = state.isPaused || false
+        this.isPaused = state.isPaused === true // Explicitly check for true
+        
+        this.logging.info('[TaskQueue]', `State loaded: ${this.queue.length} queued, ${this.completedTasks.length} completed, isPaused=${this.isPaused}`)
         
         // Reset any tasks that were running to queued
-        this.queue.forEach(t => { if (t.status === 'running') t.status = 'queued' })
+        this.queue.forEach(t => { if (t.status === TaskStatus.Running) t.status = TaskStatus.Queued })
+      } else {
+        this.logging.info('[TaskQueue]', 'No persisted state found')
       }
     } catch (e) {
-      getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', e)
+      this.logging.warn('[TaskQueue]', 'Failed to load state:', e)
     }
   }
 }

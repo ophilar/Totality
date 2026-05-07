@@ -4,23 +4,14 @@
  * Shared utilities used across media browser components.
  */
 
-import type { ProviderType } from '@/contexts/SourceContext'
+import { PROVIDERS } from '@main/constants/providers'
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 /** Provider colors for source badges */
-export const providerColors: Record<ProviderType, string> = {
-  plex: 'bg-[#e5a00d]',
-  jellyfin: 'bg-purple-500',
-  emby: 'bg-green-500',
-  kodi: 'bg-blue-500',
-  'kodi-local': 'bg-blue-500',
-  'kodi-mysql': 'bg-blue-500',
-  local: 'bg-slate-600',
-  mediamonkey: 'bg-orange-600',
-}
+export const providerColors: Record<string, string> = Object.values(PROVIDERS).reduce((acc, p) => ({ ...acc, [p.type]: p.color }), {})
 
 /** Lossless audio codecs */
 export const losslessCodecs = ['flac', 'alac', 'wav', 'aiff', 'dsd', 'pcm', 'ape', 'wv', 'wavpack']

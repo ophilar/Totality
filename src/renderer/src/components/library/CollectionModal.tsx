@@ -2,9 +2,9 @@ import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, CircleFadingArrowUp, EyeOff } from 'lucide-react'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
-import { MissingItemPopup } from './MissingItemPopup'
+import { MissingItemPopup } from '@/components/library/MissingItemPopup'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
-import type { MovieCollectionData, MediaItem } from './types'
+import type { MovieCollectionData, MediaItem } from '@/components/library/types'
 
 interface MissingMovie {
   tmdb_id: string

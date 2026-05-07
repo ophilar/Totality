@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
-import { SeasonCard } from './SeasonCard'
-import { MissingSeasonCardWithArtwork } from './MissingSeasonCardWithArtwork'
+import { SeasonCard } from '@/components/library/tv/SeasonCard'
+import { MissingSeasonCardWithArtwork } from '@/components/library/tv/MissingSeasonCardWithArtwork'
 import { getStatusBadge, formatSeasonLabel } from '@/components/library/mediaUtils'
 import type { TVShow, TVSeason, SeriesCompletenessData, SeasonInfo } from '@/components/library/types'
 

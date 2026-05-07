@@ -2,19 +2,18 @@ import React from 'react'
 import { Film, Tv, Music, ChevronDown, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
-import type { MissingMovie, MissingEpisode, MissingAlbumItem } from './types'
-import { parseMissingMovies, groupEpisodesBySeason, parseMissingAlbums } from './dashboardUtils'
+import type { MissingMovie, MissingEpisode, MissingAlbumItem } from '@/components/dashboard/types'
+import { parseMissingMovies, groupEpisodesBySeason, parseMissingAlbums } from '@/components/dashboard/dashboardUtils'
 
 interface CollectionRowProps {
   collection: MovieCollectionData
   index: number
-  style: React.CSSProperties
   isExpanded: boolean
   onToggleExpand: (index: number) => void
   onDismiss: (index: number, movie: MissingMovie) => void
 }
 
-export const CollectionRow = React.memo(({ collection, index, style, isExpanded, onToggleExpand, onDismiss }: CollectionRowProps) => {
+export const CollectionRow = React.memo(({ collection, index, isExpanded, onToggleExpand, onDismiss }: CollectionRowProps) => {
   const missingCount = collection.total_movies - collection.owned_movies
   const missingMovies = isExpanded ? parseMissingMovies(collection) : []
 
@@ -26,7 +25,7 @@ export const CollectionRow = React.memo(({ collection, index, style, isExpanded,
   }
 
   return (
-    <div style={style} className="px-2 overflow-hidden">
+    <div className="px-2 overflow-hidden pb-1">
       <div
         role="button"
         tabIndex={missingCount > 0 ? 0 : -1}
@@ -106,13 +105,12 @@ export const CollectionRow = React.memo(({ collection, index, style, isExpanded,
 interface SeriesRowProps {
   s: SeriesCompletenessData
   index: number
-  style: React.CSSProperties
   isExpanded: boolean
   onToggleExpand: (index: number) => void
   onDismiss: (index: number, episode: MissingEpisode) => void
 }
 
-export const SeriesRow = React.memo(({ s, index, style, isExpanded, onToggleExpand, onDismiss }: SeriesRowProps) => {
+export const SeriesRow = React.memo(({ s, index, isExpanded, onToggleExpand, onDismiss }: SeriesRowProps) => {
   const missingCount = s.total_episodes - s.owned_episodes
   const seasonGroups = isExpanded ? groupEpisodesBySeason(s) : []
 
@@ -124,7 +122,7 @@ export const SeriesRow = React.memo(({ s, index, style, isExpanded, onToggleExpa
   }
 
   return (
-    <div style={style} className="px-2 overflow-hidden">
+    <div className="px-2 overflow-hidden pb-1">
       <div
         role="button"
         tabIndex={missingCount > 0 ? 0 : -1}
@@ -219,7 +217,6 @@ export const SeriesRow = React.memo(({ s, index, style, isExpanded, onToggleExpa
 interface ArtistRowProps {
   artist: ArtistCompletenessData
   index: number
-  style: React.CSSProperties
   isExpanded: boolean
   includeEps: boolean
   includeSingles: boolean
@@ -227,7 +224,7 @@ interface ArtistRowProps {
   onDismiss: (index: number, album: MissingAlbumItem) => void
 }
 
-export const ArtistRow = React.memo(({ artist, index, style, isExpanded, includeEps, includeSingles, onToggleExpand, onDismiss }: ArtistRowProps) => {
+export const ArtistRow = React.memo(({ artist, index, isExpanded, includeEps, includeSingles, onToggleExpand, onDismiss }: ArtistRowProps) => {
   const totalReleases = artist.total_albums
     + (includeEps ? artist.total_eps : 0)
     + (includeSingles ? artist.total_singles : 0)
@@ -251,7 +248,7 @@ export const ArtistRow = React.memo(({ artist, index, style, isExpanded, include
   }
 
   return (
-    <div style={style} className="px-2 overflow-hidden">
+    <div className="px-2 overflow-hidden pb-1">
       <div
         role="button"
         tabIndex={totalMissing > 0 ? 0 : -1}

@@ -1,20 +1,22 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { DatabaseSync } from 'node:sqlite'
-import { TVShowRepository } from '../../src/main/database/repositories/TVShowRepository'
-import { MediaRepository } from '../../src/main/database/repositories/MediaRepository'
-import { runMigrations } from '../../src/main/database/DatabaseMigration'
-import type { MediaItem, SeriesCompleteness } from '../../src/main/types/database'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
+import { MediaRepository } from '@main/database/repositories/MediaRepository'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import type { MediaItem, SeriesCompleteness } from '@main/types/database'
 
-describe('TVShowRepository', () => {
-  let db: Database.Database
+describe('TVShowRepository (Real DB)', () => {
+  let db: any
   let repo: TVShowRepository
   let mediaRepo: MediaRepository
 
-  beforeEach(() => {
-    db = new DatabaseSync(':memory:')
-    runMigrations(db)
-    repo = new TVShowRepository(db)
-    mediaRepo = new MediaRepository(db)
+  beforeEach(async () => {
+    db = await setupTestDb()
+    repo = db.tvShows
+    mediaRepo = db.media
+  })
+
+  afterEach(() => {
+    cleanupTestDb()
   })
 
   const mockEpisode = (series: string, season: number, episode: number): MediaItem => ({
@@ -40,9 +42,8 @@ describe('TVShowRepository', () => {
     audio_bitrate: 192,
   } as MediaItem)
 
-  it('should return TV show summaries with episode counts', () => {
-    // Use repository method instead of raw SQL to ensure all NOT NULL columns are handled
-    repo.upsertCompleteness({
+  it('should return TV show summaries with episode counts', async () => {
+    await repo.upsertCompleteness({
       series_title: 'Breaking Bad',
       source_id: 'src-1',
       library_id: 'lib-1',
@@ -51,48 +52,60 @@ describe('TVShowRepository', () => {
       owned_seasons: 1,
       owned_episodes: 2,
       completeness_percentage: 50,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
     } as SeriesCompleteness)
 
-    // Insert actual episodes
-    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 2))
+    await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 2))
 
-    const summaries = repo.getSummaries()
+    const summaries = await repo.getSummaries()
     expect(summaries).toHaveLength(1)
     expect(summaries[0].series_title).toBe('Breaking Bad')
     expect(summaries[0].current_episodes).toBe(2)
   })
 
-  it('should filter TV shows by search query', () => {
-    repo.upsertCompleteness({
+  it('should filter TV shows by search query', async () => {
+    await repo.upsertCompleteness({
       series_title: 'The Wire',
+      source_id: 'src-1',
+      library_id: 'lib-1',
       total_seasons: 5,
       total_episodes: 60,
       owned_seasons: 5,
       owned_episodes: 60,
       completeness_percentage: 100,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
     } as SeriesCompleteness)
     
-    repo.upsertCompleteness({
+    await repo.upsertCompleteness({
       series_title: 'Breaking Bad',
+      source_id: 'src-1',
+      library_id: 'lib-1',
       total_seasons: 5,
       total_episodes: 62,
       owned_seasons: 5,
       owned_episodes: 62,
       completeness_percentage: 100,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
     } as SeriesCompleteness)
 
-    const results = repo.getSummaries({ searchQuery: 'Wire' })
+    const results = await repo.getSummaries({ searchQuery: 'Wire' })
     expect(results).toHaveLength(1)
     expect(results[0].series_title).toBe('The Wire')
   })
 
-  it('should retrieve episodes for a specific show', () => {
-    mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
-    mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
+  it('should retrieve episodes for a specific show', async () => {
+    await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
+    await mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
 
-    const episodes = repo.getEpisodes('Breaking Bad')
+    const episodes = await repo.getEpisodes('Breaking Bad')
     expect(episodes).toHaveLength(1)
     expect(episodes[0].series_title).toBe('Breaking Bad')
   })
 })
+
+
+

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { SourceManager } from '../../src/main/services/SourceManager'
-import { LibraryType } from '../../src/main/types/database'
-import { setupTestDb, cleanupTestDb, createTempDir } from '../TestUtils'
+import { SourceManager } from '@main/services/SourceManager'
+import { LibraryType } from '@main/types/database'
+import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -22,7 +22,7 @@ describe('SourceManager (No Mocks)', () => {
   })
 
   it('should initialize and load sources from DB', async () => {
-    db.sources.upsertSource({
+    await db.sources.upsertSource({
       source_id: 's1',
       source_type: 'local',
       display_name: 'S1',
@@ -44,20 +44,21 @@ describe('SourceManager (No Mocks)', () => {
 
     const source = await manager.addSource(config)
     expect(source.display_name).toBe('New Source')
-    expect(db.sources.getSourceById(source.source_id)).toBeDefined()
+    expect(await db.sources.getSourceById(source.source_id)).toBeDefined()
   })
 
   it('should remove a source and its data', async () => {
     const source = await manager.addSource({
-      sourceType: 'local' as any,
+      sourceType: 'local',
       displayName: 'To Remove',
-      connectionConfig: { folderPath: tempDir.path }
+      connectionConfig: { path: '/tmp/remove' }
     })
 
-    expect(db.sources.getSourceById(source.source_id)).toBeDefined()
+    expect(await db.sources.getSourceById(source.source_id)).toBeDefined()
     await manager.removeSource(source.source_id)
-    expect(db.sources.getSourceById(source.source_id)).toBeNull()
+    expect(await db.sources.getSourceById(source.source_id)).toBeNull()
   })
+
 
   it('should scan a real local library', async () => {
     // Create a dummy movie file
@@ -79,7 +80,7 @@ describe('SourceManager (No Mocks)', () => {
     expect(result.success).toBe(true)
     expect(result.itemsScanned).toBeGreaterThan(0)
     
-    const items = db.media.getItems({ sourceId: source.source_id })
+    const items = await db.media.getItems({ sourceId: source.source_id })
     expect(items.length).toBeGreaterThan(0)
     expect(items[0].title).toContain('Matrix')
   })
@@ -114,3 +115,6 @@ describe('SourceManager (No Mocks)', () => {
     }
   })
 })
+
+
+

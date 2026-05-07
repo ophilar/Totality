@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { validateInput, PositiveIntSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 
@@ -58,13 +58,13 @@ export function registerQualityHandlers() {
     try {
       const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'quality:getRecommendedFormat')
       const db = getDatabase()
-      const mediaItem = db.media.getItem(validMediaItemId)
+      const mediaItem = await db.media.getItem(validMediaItemId)
 
       if (!mediaItem) {
         throw new Error('Media item not found')
       }
 
-      const qualityScore = db.media.getQualityScoreByMediaId(validMediaItemId)
+      const qualityScore = await db.media.getQualityScoreByMediaId(validMediaItemId)
       const currentScore = qualityScore?.overall_score || 0
 
       return analyzer.getRecommendedFormat(mediaItem, currentScore)
@@ -76,3 +76,4 @@ export function registerQualityHandlers() {
 
   getLoggingService().info('[quality]', 'Quality analysis IPC handlers registered')
 }
+

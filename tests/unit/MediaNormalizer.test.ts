@@ -18,7 +18,7 @@ import {
   normalizeContainer,
   hasObjectAudio,
   normalizeMediaInfo,
-} from '../../src/main/services/MediaNormalizer'
+} from '@main/services/MediaNormalizer'
 
 // ============================================================================
 // normalizeVideoCodec
@@ -659,3 +659,6 @@ describe('normalizeMediaInfo', () => {
     expect(result.hasObjectAudio).toBe(false)
   })
 })
+
+
+

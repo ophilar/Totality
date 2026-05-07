@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { KodiSqlBaseProvider } from './KodiSqlBaseProvider'
+import { KodiSqlBaseProvider } from '@main/providers/kodi/KodiSqlBaseProvider'
 import {
   SourceConfig,
   MediaLibrary,
@@ -15,7 +15,7 @@ import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT,
   QUERY_MUSIC_SONG_COUNT
-} from './KodiDatabaseSchema'
+} from '@main/providers/kodi/KodiDatabaseSchema'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import type { Pool } from 'mysql2/promise'

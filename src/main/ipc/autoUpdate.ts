@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * IPC Handlers for Auto Update System
  */
@@ -12,7 +13,7 @@ export function registerAutoUpdateHandlers(): void {
   /**
    * Get current update state
    */
-  ipcMain.handle('autoUpdate:getState', () => {
+  ipcMain.handle(IPC_CHANNELS.AUTO_UPDATE.GET_STATE, () => {
     try {
       return service.getState()
     } catch (error) {
@@ -24,7 +25,7 @@ export function registerAutoUpdateHandlers(): void {
   /**
    * Manually check for updates
    */
-  ipcMain.handle('autoUpdate:checkForUpdates', async () => {
+  ipcMain.handle(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES, async () => {
     try {
       getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:checkForUpdates] Checking for updates')
       await service.checkForUpdates()
@@ -38,7 +39,7 @@ export function registerAutoUpdateHandlers(): void {
   /**
    * Download the available update
    */
-  ipcMain.handle('autoUpdate:downloadUpdate', async () => {
+  ipcMain.handle(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE, async () => {
     try {
       getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:downloadUpdate] Downloading update')
       await service.downloadUpdate()
@@ -52,7 +53,7 @@ export function registerAutoUpdateHandlers(): void {
   /**
    * Quit and install the downloaded update
    */
-  ipcMain.handle('autoUpdate:installUpdate', async () => {
+  ipcMain.handle(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE, async () => {
     try {
       getLoggingService().info('[autoUpdate]', '[IPC autoUpdate:installUpdate] Installing update and restarting')
       await service.installUpdate()
@@ -65,3 +66,4 @@ export function registerAutoUpdateHandlers(): void {
 
   getLoggingService().info('[autoUpdate]', '[IPC] Auto-update handlers registered')
 }
+

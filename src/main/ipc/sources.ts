@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 /**
  * IPC Handlers for Source Management
  *
@@ -9,17 +10,16 @@ import fs from 'fs/promises'
 import path from 'path'
 import { getSourceManager } from '@main/services/SourceManager'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getKodiLocalDiscoveryService } from '@main/services/KodiLocalDiscoveryService'
 import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '@main/services/KodiMySQLConnectionService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { LibraryType } from '@main/types/database'
-import type { ProviderType } from '@main/providers/base/MediaProvider'
+import { LibraryType, ProviderType } from '@main/types/database'
 import type { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
-import { safeSend, getWindowFromEvent } from './utils/safeSend'
-import { getErrorMessage } from './utils'
-import { createProgressUpdater } from './utils/progressUpdater'
+import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
+import { getErrorMessage } from '@main/ipc/utils/createHandler'
+import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import {
   validateInput,
   AddSourceSchema,
@@ -62,7 +62,7 @@ export function registerSourceHandlers(): void {
   /**
    * Add a new media source
    */
-  ipcMain.handle('sources:add', async (_event, config: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.ADD, async (_event, config: unknown) => {
     try {
       const validatedConfig = validateInput(AddSourceSchema, config, 'sources:add')
       getLoggingService().info('[sources]', '[IPC sources:add] Adding source:', validatedConfig.displayName, `(${validatedConfig.sourceType})`)
@@ -91,7 +91,7 @@ export function registerSourceHandlers(): void {
   /**
    * Remove a media source
    */
-  ipcMain.handle('sources:remove', async (_event, sourceId: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.REMOVE, async (_event, sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:remove')
       getLoggingService().info('[sources]', '[IPC sources:remove] Removing source:', validSourceId)
@@ -105,7 +105,7 @@ export function registerSourceHandlers(): void {
   /**
    * Get all sources (optionally filtered by type)
    */
-  ipcMain.handle('sources:list', async (_event, type?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.LIST, async (_event, type?: unknown) => {
     try {
       const validType = type !== undefined ? validateInput(OptionalProviderTypeSchema, type, 'sources:list') : undefined
       return await manager.getSources(validType)
@@ -143,7 +143,7 @@ export function registerSourceHandlers(): void {
   /**
    * Toggle source enabled status
    */
-  ipcMain.handle('sources:toggle', async (_event, sourceId: unknown, enabled: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.TOGGLE, async (_event, sourceId: unknown, enabled: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:toggle')
       const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggle')
@@ -161,7 +161,7 @@ export function registerSourceHandlers(): void {
   /**
    * Test connection for a source
    */
-  ipcMain.handle('sources:testConnection', async (_event, sourceId: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.TEST_CONNECTION, async (_event, sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:testConnection')
       return await manager.testConnection(validSourceId)
@@ -227,7 +227,7 @@ export function registerSourceHandlers(): void {
     const resolvedServerId = sourceIdOrServerId
 
     // Try to find first Plex source
-    const plexSources = await manager.getSources('plex')
+    const plexSources = await manager.getSources(ProviderType.Plex)
     if (plexSources.length > 0) {
       const resolvedSourceId = plexSources[0].source_id
       getLoggingService().info('[plex:selectServer]', `Using first Plex source: ${resolvedSourceId}`)
@@ -249,7 +249,7 @@ export function registerSourceHandlers(): void {
       }
 
       // Try to find first Plex source
-      const plexSources = await manager.getSources('plex')
+      const plexSources = await manager.getSources(ProviderType.Plex)
       if (plexSources.length > 0) {
         const resolvedSourceId = plexSources[0].source_id
         getLoggingService().info('[plex:getServers]', `Using first Plex source: ${resolvedSourceId}`)
@@ -284,7 +284,7 @@ export function registerSourceHandlers(): void {
   /**
    * Get libraries for a source with enabled status from database
    */
-  ipcMain.handle('sources:getLibrariesWithStatus', async (_event, sourceId: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, async (_event, sourceId: unknown) => {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getLibrariesWithStatus')
       const db = getDatabase()
@@ -294,7 +294,7 @@ export function registerSourceHandlers(): void {
       const libraries = await manager.getLibraries(validSourceId)
 
       // Get stored library settings from database
-      const storedLibraries = db.sources.getSourceLibraries(validSourceId) as Array<{
+      const storedLibraries = await db.sources.getSourceLibraries(validSourceId) as Array<{
         libraryId: string
         libraryName: string
         libraryType: string
@@ -373,7 +373,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getEnabledLibraryIds')
       const db = getDatabase()
-      return db.sources.getEnabledLibraryIds(validSourceId)
+      return await db.sources.getEnabledLibraryIds(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[sources]', 'Error getting enabled library IDs:', error)
       throw error
@@ -501,7 +501,7 @@ export function registerSourceHandlers(): void {
     if (!resolvedLibraryId) {
     // Get the provider to determine its type
     const provider = manager.getProvider(validSourceId)
-    if (provider?.providerType === 'kodi-local' || provider?.providerType === 'kodi-mysql') {
+    if (provider?.providerType === ProviderType.KodiLocal || provider?.providerType === ProviderType.KodiMySQL) {
       // Kodi uses 'movies' and 'tvshows' as library IDs
       resolvedLibraryId = 'movies'
     } else {
@@ -619,7 +619,7 @@ export function registerSourceHandlers(): void {
   /**
    * Get aggregated stats across all sources
    */
-  ipcMain.handle('sources:getStats', async () => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_STATS, async () => {
     try {
       return await manager.getAggregatedStats()
     } catch (error: unknown) {
@@ -631,7 +631,7 @@ export function registerSourceHandlers(): void {
   /**
    * Get supported provider types
    */
-  ipcMain.handle('sources:getSupportedProviders', async () => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS, async () => {
     try {
       return manager.getSupportedProviders()
     } catch (error: unknown) {
@@ -682,7 +682,7 @@ export function registerSourceHandlers(): void {
     }
 
     // Check if it's a Kodi local provider
-    if (provider.providerType !== 'kodi-local') {
+    if (provider.providerType !== ProviderType.KodiLocal) {
       throw new Error('Collection import is only supported for Kodi local sources')
     }
 
@@ -716,7 +716,7 @@ export function registerSourceHandlers(): void {
         throw new Error(`Source not found: ${sourceId}`)
       }
 
-      if (provider.providerType !== 'kodi-local') {
+      if (provider.providerType !== ProviderType.KodiLocal) {
         throw new Error('This operation is only supported for Kodi local sources')
       }
 
@@ -792,7 +792,7 @@ export function registerSourceHandlers(): void {
       const validatedConfig = validateInput(KodiMySQLConfigSchema, config, 'kodi:authenticateMySQL')
 
       const provider = new KodiMySQLProvider({
-        sourceType: 'kodi-mysql' as ProviderType,
+        sourceType: ProviderType.KodiMySQL,
         displayName: validatedConfig.displayName,
         connectionConfig: {},
       })
@@ -818,7 +818,7 @@ export function registerSourceHandlers(): void {
       // Add the source to the database
       const manager = getSourceManager()
       const source = await manager.addSource({
-        sourceType: 'kodi-mysql' as ProviderType,
+        sourceType: ProviderType.KodiMySQL,
         displayName: validatedConfig.displayName,
         connectionConfig: provider.getConnectionConfig(),
         isEnabled: true,
@@ -901,7 +901,7 @@ export function registerSourceHandlers(): void {
         throw new Error(`Source not found: ${sourceId}`)
       }
 
-      if (provider.providerType !== 'kodi-local') {
+      if (provider.providerType !== ProviderType.KodiLocal) {
         throw new Error('FFprobe analysis is only supported for Kodi local sources')
       }
 
@@ -925,7 +925,7 @@ export function registerSourceHandlers(): void {
         return false
       }
 
-      if (provider.providerType !== 'kodi-local') {
+      if (provider.providerType !== ProviderType.KodiLocal) {
         return false
       }
 
@@ -945,7 +945,7 @@ export function registerSourceHandlers(): void {
     try {
       const validSourceId = validateInput(SourceIdSchema, sourceId, 'ffprobe:isAvailableForSource')
       const provider = manager.getProvider(validSourceId)
-      if (!provider || provider.providerType !== 'kodi-local') {
+      if (!provider || provider.providerType !== ProviderType.KodiLocal) {
         return { available: false, reason: 'Source is not a Kodi local source' }
       }
 
@@ -1117,7 +1117,7 @@ export function registerSourceHandlers(): void {
     const validated = config as { databasePath: string; displayName: string; isEnabled: boolean }
     try {
       return await manager.addSource({
-        sourceType: 'mediamonkey',
+        sourceType: ProviderType.MediaMonkey,
         displayName: validated.displayName,
         connectionConfig: {
           databasePath: validated.databasePath,
@@ -1138,7 +1138,7 @@ export function registerSourceHandlers(): void {
     try {
       const { MediaMonkeyProvider } = await import('@main/providers/mediamonkey/MediaMonkeyProvider')
       const provider = new MediaMonkeyProvider({
-        sourceType: 'mediamonkey',
+        sourceType: ProviderType.MediaMonkey,
         displayName: 'Test',
         connectionConfig: {
           databasePath: validated.databasePath,
@@ -1220,7 +1220,7 @@ export function registerSourceHandlers(): void {
     try {
       // Create the source with 'mixed' type - we'll handle library creation manually
       const source = await manager.addSource({
-        sourceType: 'local',
+        sourceType: ProviderType.Local,
         displayName: validated.displayName,
         connectionConfig: {
           folderPath: validated.folderPath,
@@ -1246,7 +1246,7 @@ export function registerSourceHandlers(): void {
     const validated = validateInput(LocalFolderConfigSchema, config, 'local:addSource')
     try {
       return await manager.addSource({
-        sourceType: 'local',
+        sourceType: ProviderType.Local,
         displayName: validated.displayName,
         connectionConfig: {
           folderPath: validated.folderPath,
@@ -1263,3 +1263,4 @@ export function registerSourceHandlers(): void {
 
   getLoggingService().info('[sources]', '[IPC] Source handlers registered')
 }
+

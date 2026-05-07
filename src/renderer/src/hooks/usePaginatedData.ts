@@ -12,10 +12,12 @@ interface UsePaginatedDataOptions<T, TFilters> {
 interface UsePaginatedDataReturn<T, TFilters> {
   items: T[]
   totalCount: number
+  setTotalCount: (count: number) => void
   loading: boolean
   error: string | null
   loadMore: () => void
   refresh: (newFilters?: Partial<TFilters>) => void
+  setFilters: (newFilters: Partial<TFilters>) => void
   reset: () => void
   setItems: (items: T[] | ((prev: T[]) => T[])) => void
 }
@@ -39,11 +41,13 @@ export function usePaginatedData<T, TFilters>({
   const filtersRef = useRef<TFilters>(initialFilters)
   const offsetRef = useRef(0)
   const hasInitialLoadRef = useRef(false)
+  const loadingRef = useRef(false)
 
   const loadPage = useCallback(async (isReset = false) => {
     // Only allow concurrent loads if it's a reset (e.g. filter change)
-    if (loading && !isReset) return
+    if (loadingRef.current && !isReset) return
     
+    loadingRef.current = true
     setLoading(true)
     setError(null)
 
@@ -74,9 +78,10 @@ export function usePaginatedData<T, TFilters>({
       window.electronAPI.log.error('usePaginatedData', 'Error loading data:', err)
       setError('Failed to load data')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
-  }, [fetchFn, countFn, pageSize, activeSourceId, loading])
+  }, [fetchFn, countFn, pageSize, activeSourceId])
 
   const loadMore = useCallback(() => {
     if (items.length < totalCount && !loading) {
@@ -91,6 +96,11 @@ export function usePaginatedData<T, TFilters>({
     loadPage(true)
   }, [loadPage])
 
+  const setFilters = useCallback((newFilters: Partial<TFilters>) => {
+    filtersRef.current = { ...filtersRef.current, ...newFilters }
+    loadPage(true)
+  }, [loadPage])
+
   const reset = useCallback(() => {
     setItems([])
     setTotalCount(0)
@@ -99,19 +109,47 @@ export function usePaginatedData<T, TFilters>({
     loadPage(true)
   }, [loadPage])
 
+  const externalSetItems = useCallback((newItems: T[] | ((prev: T[]) => T[])) => {
+    setItems(prev => {
+      const result = typeof newItems === 'function' ? newItems(prev) : newItems
+      offsetRef.current = result.length
+      hasInitialLoadRef.current = true
+      return result
+    })
+  }, [])
+
   // Reload when active source changes
   useEffect(() => {
-    loadPage(true)
+    // BOLT: If items were pre-loaded via bootstrap, don't trigger initial load
+    if (hasInitialLoadRef.current) {
+      loadPage(true)
+    } else if (offsetRef.current === 0) {
+      loadPage(true)
+    }
   }, [activeSourceId])
+
+  // Subscribe to library update events
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onLibraryUpdated?.((event) => {
+      // If event has a sourceId, only refresh if it matches our active source
+      // If activeSourceId is null (All Sources), we always refresh
+      if (!event.sourceId || !activeSourceId || event.sourceId === activeSourceId) {
+        loadPage(true)
+      }
+    })
+    return () => unsubscribe?.()
+  }, [activeSourceId, loadPage])
 
   return {
     items,
     totalCount,
+    setTotalCount,
     loading,
     error,
     loadMore,
     refresh,
+    setFilters,
     reset,
-    setItems
+    setItems: externalSetItems
   }
 }

@@ -10,11 +10,12 @@
  * - Some API response format differences in newer versions
  */
 
-import { JellyfinEmbyBase } from './JellyfinEmbyBase'
+import { JellyfinEmbyBase } from '@main/providers/jellyfin-emby/JellyfinEmbyBase'
 import type { SourceConfig } from '@main/providers/base/MediaProvider'
+import { ProviderType } from '@main/types/database'
 
 export class EmbyProvider extends JellyfinEmbyBase {
-  readonly providerType = 'emby' as const
+  readonly providerType = ProviderType.Emby
   protected authHeaderName = 'X-Emby-Authorization'
   protected clientName = 'Totality'
   protected clientVersion = '1.0.0'

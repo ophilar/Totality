@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { TMDBService } from '../../src/main/services/TMDBService'
-import { getBetterSQLiteService, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
+import { TMDBService } from '@main/services/TMDBService'
+import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -23,6 +23,8 @@ vi.mock('../../src/main/services/utils/RateLimiter', () => ({
   SlidingWindowRateLimiter: vi.fn(),
 }))
 
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+
 describe('TMDBService', () => {
   let service: TMDBService
   let db: any
@@ -31,20 +33,18 @@ describe('TMDBService', () => {
     vi.clearAllMocks()
     mockFetch.mockReset()
     
-    resetBetterSQLiteServiceForTesting()
+    db = await setupTestDb()
     process.env.NODE_ENV = 'test'
-    db = getBetterSQLiteService()
-    await db.initialize()
     
     // Set default API key in real DB
-    db.config.setSetting('tmdb_api_key', 'test-api-key-12345')
+    await db.config.setSetting('tmdb_api_key', 'test-api-key-12345')
     
     service = new TMDBService()
     await service.initialize()
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    cleanupTestDb()
   })
 
   // ============================================================================
@@ -60,7 +60,7 @@ describe('TMDBService', () => {
 
     it('should throw error when API key is not configured', async () => {
       // Create a new service with no API key
-      db.config.deleteSetting('tmdb_api_key')
+      await db.config.deleteSetting('tmdb_api_key')
       
       const serviceWithoutKey = new TMDBService()
       await serviceWithoutKey.initialize()
@@ -402,3 +402,6 @@ describe('TMDBService', () => {
     })
   })
 })
+
+
+

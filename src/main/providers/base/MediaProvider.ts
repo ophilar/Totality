@@ -8,14 +8,8 @@
 import {
   normalizeResolution,
 } from '@main/services/MediaNormalizer'
-import { LibraryType } from '@main/types/database'
-import type { ProviderType, MediaItemVersion } from '@main/types/database'
-export { LibraryType }
-export type { ProviderType }
-
-// Import and re-export shared IPC types
+import { ProviderType, LibraryType, MediaItemVersion, MediaItemType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
-export type { ConnectionTestResult }
 
 // Credentials for different provider types
 export interface ProviderCredentials {
@@ -147,7 +141,7 @@ export interface MediaMetadata {
   itemId: string
   title: string
   sortTitle?: string | null
-  type: 'movie' | 'episode'
+  type: MediaItemType
   year?: number | null
 
   // Episode-specific
@@ -319,12 +313,12 @@ export abstract class BaseMediaProvider implements MediaProvider {
   protected isConnected: boolean = false
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
+    this.sourceId = config.sourceId || this.generateSourceId(config.sourceType)
     this.config = { ...config, sourceId: this.sourceId }
   }
 
-  protected generateSourceId(): string {
-    return `${this.providerType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  protected generateSourceId(type: ProviderType): string {
+    return `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   abstract authenticate(credentials: ProviderCredentials): Promise<AuthResult>

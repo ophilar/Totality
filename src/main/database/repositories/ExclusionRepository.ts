@@ -1,5 +1,7 @@
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
-import { BaseRepository } from './BaseRepository'
+import { eq, and, desc, sql } from 'drizzle-orm'
+import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import * as schema from '@main/database/drizzleSchema'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
 export interface Exclusion {
   id?: number
@@ -12,53 +14,70 @@ export interface Exclusion {
 }
 
 export class ExclusionRepository extends BaseRepository<Exclusion> {
-  constructor(db: DatabaseSync) {
-    super(db, 'exclusions')
+  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'exclusions', drizzle)
   }
 
-  isExcluded(type: string, referenceId?: number, referenceKey?: string): boolean {
-    if (referenceId != null) {
-      const stmt = this.db.prepare('SELECT 1 FROM exclusions WHERE exclusion_type = ? AND reference_id = ? LIMIT 1')
-      return !!stmt.get(type, referenceId)
-    }
-    if (referenceKey) {
-      const stmt = this.db.prepare('SELECT 1 FROM exclusions WHERE exclusion_type = ? AND reference_key = ? LIMIT 1')
-      return !!stmt.get(type, referenceKey)
-    }
-    return false
+  async isExcluded(type: string, referenceId?: number, referenceKey?: string): Promise<boolean> {
+    const conditions = [eq(schema.exclusions.exclusionType, type)]
+    if (referenceId != null) conditions.push(eq(schema.exclusions.referenceId, referenceId))
+    else if (referenceKey) conditions.push(eq(schema.exclusions.referenceKey, referenceKey))
+    else return false
+
+    const row = await this.drizzle.select({ id: schema.exclusions.id })
+      .from(schema.exclusions)
+      .where(and(...conditions))
+      .limit(1)
+      .get()
+    
+    return !!row
   }
 
-  addExclusion(exclusion: Omit<Exclusion, 'id' | 'created_at'>): void {
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO exclusions (exclusion_type, reference_id, reference_key, parent_key, title)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-    stmt.run(exclusion.exclusion_type, exclusion.reference_id ?? null, exclusion.reference_key ?? null, exclusion.parent_key ?? null, exclusion.title ?? null)
+  async addExclusion(exclusion: Omit<Exclusion, 'id' | 'created_at'>): Promise<void> {
+    await this.drizzle.insert(schema.exclusions)
+      .values({
+        exclusionType: exclusion.exclusion_type,
+        referenceId: exclusion.reference_id ?? null,
+        referenceKey: exclusion.reference_key ?? null,
+        parentKey: exclusion.parent_key ?? null,
+        title: exclusion.title ?? null,
+        createdAt: sql`(datetime('now'))`
+      })
+      .onConflictDoNothing()
   }
 
-  removeExclusion(type: string, referenceId?: number, referenceKey?: string): void {
-    if (referenceId != null) {
-      this.db.prepare('DELETE FROM exclusions WHERE exclusion_type = ? AND reference_id = ?').run(type, referenceId)
-    } else if (referenceKey) {
-      this.db.prepare('DELETE FROM exclusions WHERE exclusion_type = ? AND reference_key = ?').run(type, referenceKey)
-    }
+  async removeExclusion(type: string, referenceId?: number, referenceKey?: string): Promise<void> {
+    const conditions = [eq(schema.exclusions.exclusionType, type)]
+    if (referenceId != null) conditions.push(eq(schema.exclusions.referenceId, referenceId))
+    else if (referenceKey) conditions.push(eq(schema.exclusions.referenceKey, referenceKey))
+    else return
+
+    await this.drizzle.delete(schema.exclusions)
+      .where(and(...conditions))
   }
 
-  getExclusions(type?: string, parentKey?: string): Exclusion[] {
-    let sql = 'SELECT * FROM exclusions WHERE 1=1'
-    const params: SQLInputValue[] = []
+  async getExclusions(type?: string, parentKey?: string): Promise<Exclusion[]> {
+    const conditions = []
+    if (type) conditions.push(eq(schema.exclusions.exclusionType, type))
+    if (parentKey) conditions.push(eq(schema.exclusions.parentKey, parentKey))
 
-    if (type) {
-      sql += ' AND exclusion_type = ?'
-      params.push(type)
-    }
-    if (parentKey) {
-      sql += ' AND parent_key = ?'
-      params.push(parentKey)
-    }
+    const query = this.drizzle.select().from(schema.exclusions)
+    if (conditions.length > 0) query.where(and(...conditions))
+    query.orderBy(desc(schema.exclusions.createdAt))
 
-    sql += ' ORDER BY created_at DESC'
-    const stmt = this.db.prepare(sql)
-    return stmt.all(...params) as unknown as Exclusion[]
+    const rows = await query.all()
+    return this.mapDrizzleToExclusion(rows)
+  }
+
+  private mapDrizzleToExclusion(rows: any[]): Exclusion[] {
+    return rows.map(r => ({
+      id: r.id,
+      exclusion_type: r.exclusionType as any,
+      reference_id: r.referenceId || undefined,
+      reference_key: r.referenceKey || undefined,
+      parent_key: r.parentKey || undefined,
+      title: r.title || undefined,
+      created_at: r.createdAt
+    }))
   }
 }

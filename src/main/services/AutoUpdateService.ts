@@ -8,8 +8,9 @@
 import { app, BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-updater'
 import { safeSend } from '@main/ipc/utils/safeSend'
-import { getDatabaseServiceSync } from '@main/database/DatabaseFactory'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
+import { NotificationType } from '@main/types/monitoring'
 
 export type UpdateStatus =
   | 'idle'
@@ -71,7 +72,7 @@ export class AutoUpdateService {
           : undefined,
       })
       try {
-        getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update available', message: `Version ${info.version} is ready to download` })
+        getDatabase().notifications.addNotification({ type: NotificationType.Info, title: 'Update available', message: `Version ${info.version} is ready to download` })
       } catch (e) {
         getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
       }
@@ -103,7 +104,7 @@ export class AutoUpdateService {
         lastChecked: new Date().toISOString(),
       })
       try {
-        getDatabaseServiceSync().notifications.addNotification({ type: 'info', title: 'Update ready', message: `Version ${info.version} will install on restart` })
+        getDatabase().notifications.addNotification({ type: NotificationType.Info, title: 'Update ready', message: `Version ${info.version} will install on restart` })
       } catch (e) {
         getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
       }
@@ -174,7 +175,7 @@ export class AutoUpdateService {
 
     // Save database before quitting
     try {
-      const db = getDatabaseServiceSync()
+      const db = getDatabase()
       await db.close()
     } catch (err) {
       getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Failed to close database before update:', err)
@@ -194,7 +195,7 @@ export class AutoUpdateService {
   private async autoCheckIfEnabled(): Promise<void> {
     // Read setting from database
     try {
-      const db = getDatabaseServiceSync()
+      const db = getDatabase()
       const setting = db.config.getSetting('auto_update_enabled')
       // Default to enabled if setting not present
       if (setting === 'false') {

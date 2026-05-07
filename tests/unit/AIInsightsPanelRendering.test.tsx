@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { AIInsightsPanel } from '../../src/renderer/src/components/library/AIInsightsPanel'
+import { AIInsightsPanel } from '@/components/library/AIInsightsPanel'
 import React from 'react'
 
 // Mock SimpleMarkdown
@@ -35,7 +35,9 @@ describe('AIInsightsPanel Rendering', () => {
   })
 
   it('should render selection list when configured and open', async () => {
-    render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    await act(async () => {
+      render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    })
     
     expect(await screen.findByText('Quality Report')).toBeTruthy()
     expect(screen.getByText('Upgrade Priorities')).toBeTruthy()
@@ -44,16 +46,22 @@ describe('AIInsightsPanel Rendering', () => {
   it('should show "not configured" state', async () => {
     mockElectronAPI.aiIsConfigured.mockResolvedValueOnce(false)
     
-    render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    await act(async () => {
+      render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    })
     
     expect(await screen.findByText('Gemini AI not configured')).toBeTruthy()
   })
 
   it('should call generation API when report selected', async () => {
-    render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    await act(async () => {
+      render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    })
     
     const btn = await screen.findByText('Quality Report')
-    fireEvent.click(btn)
+    await act(async () => {
+      fireEvent.click(btn)
+    })
     
     expect(mockElectronAPI.aiQualityReport).toHaveBeenCalled()
     expect(screen.getByText('Analyzing your library...')).toBeTruthy()
@@ -72,12 +80,16 @@ describe('AIInsightsPanel Rendering', () => {
       return {}
     })
 
-    render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    await act(async () => {
+      render(<AIInsightsPanel isOpen={true} onClose={() => {}} />)
+    })
     
     const btn = await screen.findByText('Quality Report')
     
     // Select report to get active request ID
-    fireEvent.click(btn)
+    await act(async () => {
+      fireEvent.click(btn)
+    })
     
     // Simulate delta with the correct requestId
     await act(async () => {
@@ -87,3 +99,6 @@ describe('AIInsightsPanel Rendering', () => {
     expect(screen.getByText(/Hello World/)).toBeTruthy()
   })
 })
+
+
+

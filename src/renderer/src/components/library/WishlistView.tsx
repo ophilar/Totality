@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Virtuoso } from 'react-virtuoso'
-import { ArrowUpCircle, X, HardDrive, Zap, Info } from 'lucide-react'
+import { ArrowUpCircle, X, HardDrive, Zap, Info, Disc3 } from 'lucide-react'
 import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { emitDismissUpgrade } from '@/utils/dismissEvents'
-import type { MediaItem, SeriesCompletenessData, MovieCollectionData } from './types'
+import type { SeriesCompletenessData, MovieCollectionData } from '@/components/library/types'
 import { useToast } from '@/contexts/ToastContext'
 
 interface WishlistViewProps {
@@ -28,7 +28,7 @@ interface MissingItem {
 
 export function WishlistView(_props: WishlistViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('upgrades')
-  const [upgrades, setUpgrades] = useState<MediaItem[]>([])
+  const [upgrades, setUpgrades] = useState<any[]>([])
   const [missing, setMissing] = useState<MissingItem[]>([])
   const [loading, setLoading] = useState(true)
   const { addToast } = useToast()
@@ -38,12 +38,20 @@ export function WishlistView(_props: WishlistViewProps) {
     setLoading(true)
     try {
       // 1. Load Upgrades (items with needs_upgrade = true or high storage debt)
-      // We fetch all items with needsUpgrade filter. The storage debt items will also be returned.
-      const upgradeItems = await window.electronAPI.getMediaItems({
-        needsUpgrade: true,
-        limit: 10000, 
-      })
-      setUpgrades(upgradeItems as MediaItem[])
+      const [movieAndTvUpgrades, musicUpgrades] = await Promise.all([
+        window.electronAPI.getMediaItems({
+          needsUpgrade: true,
+          limit: 1000, 
+        }),
+        window.electronAPI.musicGetAlbumsNeedingUpgrade(1000)
+      ])
+      
+      const allUpgrades = [
+        ...(movieAndTvUpgrades as any[]).map(i => ({ ...i, category: 'media' })),
+        ...(musicUpgrades as any[]).map(i => ({ ...i, category: 'music', type: 'album' }))
+      ]
+      
+      setUpgrades(allUpgrades)
 
       // 2. Load Missing items from Collections and SeriesCompleteness
       const [seriesData, collectionsData] = await Promise.all([
@@ -110,11 +118,15 @@ export function WishlistView(_props: WishlistViewProps) {
   }, [])
 
   // Handle Dismiss for Upgrades
-  const handleDismissUpgrade = async (item: MediaItem) => {
+  const handleDismissUpgrade = async (item: any) => {
     try {
-      await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
-      setUpgrades(prev => prev.filter(u => u.id !== item.id))
-      emitDismissUpgrade({ mediaId: item.id! })
+      if (item.category === 'music') {
+        await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
+      } else {
+        await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
+        emitDismissUpgrade({ mediaId: item.id! })
+      }
+      setUpgrades(prev => prev.filter(u => u.id !== item.id || u.category !== item.category))
       addToast({ title: `Dismissed upgrade for ${item.title}`, type: 'success' })
     } catch (err) {
       window.electronAPI.log.error('[WishlistView]', 'Failed to dismiss upgrade:', err)
@@ -156,18 +168,23 @@ export function WishlistView(_props: WishlistViewProps) {
   }
 
   // Render individual upgrade row
-  const renderUpgradeRow = (_index: number, item: MediaItem) => {
-    const effScore = item.efficiency_score ?? 0
+  const renderUpgradeRow = (_index: number, item: any) => {
+    const isMusic = item.category === 'music'
+    const effScore = item.efficiency_score ?? (isMusic ? item.tier_score : 0)
     const debtBytes = item.storage_debt_bytes ?? 0
 
     return (
-      <div className="flex items-center gap-4 p-4 mb-2 bg-card border border-border/50 rounded-xl shadow-sm hover:border-border transition-colors group">
+      <div className="flex items-center gap-4 p-4 pb-2 bg-card border border-border/50 rounded-xl shadow-sm hover:border-border transition-colors group">
         <div className="flex-shrink-0 w-16 h-24 bg-muted rounded overflow-hidden">
-          {item.poster_url ? (
-            <img src={item.poster_url} alt={item.title} className="w-full h-full object-cover" />
+          {(item.poster_url || item.thumb_url) ? (
+            <img src={item.poster_url || item.thumb_url} alt={item.title} className="w-full h-full object-cover" />
           ) : item.type === 'movie' ? (
             <div className="w-full h-full flex items-center justify-center">
               <MoviePlaceholder className="w-8 h-8 text-muted-foreground" />
+            </div>
+          ) : isMusic ? (
+            <div className="w-full h-full flex items-center justify-center">
+              <Disc3 className="w-8 h-8 text-muted-foreground" />
             </div>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -179,26 +196,28 @@ export function WishlistView(_props: WishlistViewProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-semibold text-base truncate">{item.title}</h3>
-            {item.year && <span className="text-sm text-muted-foreground">({item.year})</span>}
-            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary rounded-md">
+            {(item.year || item.artist_name) && <span className="text-sm text-muted-foreground">({item.year || item.artist_name})</span>}
+            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md ${isMusic ? 'bg-purple-500/10 text-purple-500' : 'bg-primary/10 text-primary'}`}>
               {item.type}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mt-2">
-            <div className="flex items-center gap-1.5" title="Efficiency Score">
+            <div className="flex items-center gap-1.5" title="Quality Score">
               <Zap className="w-4 h-4 text-yellow-500" />
               <span>Score: <strong className="text-foreground">{effScore}%</strong></span>
             </div>
 
-            <div className="flex items-center gap-1.5" title="Storage Debt">
-              <HardDrive className="w-4 h-4 text-red-400" />
-              <span>Debt: <strong className="text-foreground">{formatBytesAsGB(debtBytes)}</strong></span>
-            </div>
+            {!isMusic && (
+              <div className="flex items-center gap-1.5" title="Storage Debt">
+                <HardDrive className="w-4 h-4 text-red-400" />
+                <span>Debt: <strong className="text-foreground">{formatBytesAsGB(debtBytes)}</strong></span>
+              </div>
+            )}
 
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="px-2 py-1 bg-muted rounded text-xs">
-                Current: {item.resolution} {item.video_bitrate ? `(${Math.round(item.video_bitrate / 1000)} Mbps)` : ''}
+                {isMusic ? (item.quality_tier || 'Lossy') : `Current: ${item.resolution} ${item.video_bitrate ? `(${Math.round(item.video_bitrate / 1000)} Mbps)` : ''}`}
               </span>
             </div>
           </div>
@@ -220,7 +239,7 @@ export function WishlistView(_props: WishlistViewProps) {
   // Render individual missing row
   const renderMissingRow = (_index: number, item: MissingItem) => {
     return (
-      <div className="flex items-center gap-4 p-4 mb-2 bg-card border border-border/50 rounded-xl shadow-sm hover:border-border transition-colors group">
+      <div className="flex items-center gap-4 p-4 pb-2 bg-card border border-border/50 rounded-xl shadow-sm hover:border-border transition-colors group">
         <div className="flex-shrink-0 w-16 h-24 bg-muted rounded overflow-hidden">
           {item.poster_url ? (
             <img src={item.poster_url} alt={item.title} className="w-full h-full object-cover" />

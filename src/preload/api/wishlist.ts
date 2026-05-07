@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 
 export const wishlistApi = {
@@ -6,25 +7,25 @@ export const wishlistApi = {
   // ============================================================================
 
   // Wishlist CRUD
-  wishlistAdd: (item: unknown) => ipcRenderer.invoke('wishlist:add', item),
-  wishlistUpdate: (id: number, updates: unknown) => ipcRenderer.invoke('wishlist:update', id, updates),
-  wishlistRemove: (id: number) => ipcRenderer.invoke('wishlist:remove', id),
-  wishlistGetAll: (filters?: unknown) => ipcRenderer.invoke('wishlist:getAll', filters),
+  wishlistAdd: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.ADD, item),
+  wishlistUpdate: (id: number, updates: unknown) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.UPDATE, id, updates),
+  wishlistRemove: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.REMOVE, id),
+  wishlistGetAll: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.GET_ALL, filters),
   wishlistList: (filters?: unknown) => ipcRenderer.invoke('wishlist:list', filters),
   wishlistCount: (filters?: unknown) => ipcRenderer.invoke('wishlist:count', filters),
   wishlistGetById: (id: number) => ipcRenderer.invoke('wishlist:getById', id),
-  wishlistGetCount: () => ipcRenderer.invoke('wishlist:getCount'),
+  wishlistGetCount: () => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.GET_COUNT),
   wishlistCheckExists: (tmdbId?: string, musicbrainzId?: string, mediaItemId?: number) =>
-    ipcRenderer.invoke('wishlist:checkExists', tmdbId, musicbrainzId, mediaItemId),
-  wishlistAddBulk: (items: unknown[]) => ipcRenderer.invoke('wishlist:addBulk', items),
-  wishlistGetCountsByReason: () => ipcRenderer.invoke('wishlist:getCountsByReason'),
+    ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.CHECK_EXISTS, tmdbId, musicbrainzId, mediaItemId),
+  wishlistAddBulk: (items: unknown[]) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.ADD_BULK, items),
+  wishlistGetCountsByReason: () => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON),
 
   // Store Search
-  wishlistGetStoreLinks: (item: unknown) => ipcRenderer.invoke('wishlist:getStoreLinks', item),
-  wishlistOpenStoreLink: (url: string) => ipcRenderer.invoke('wishlist:openStoreLink', url),
-  wishlistSetRegion: (region: string) => ipcRenderer.invoke('wishlist:setRegion', region),
-  wishlistGetRegion: () => ipcRenderer.invoke('wishlist:getRegion'),
-  wishlistExportCsv: () => ipcRenderer.invoke('wishlist:exportCsv'),
+  wishlistGetStoreLinks: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.GET_STORE_LINKS, item),
+  wishlistOpenStoreLink: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.OPEN_STORE_LINK, url),
+  wishlistSetRegion: (region: string) => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.SET_REGION, region),
+  wishlistGetRegion: () => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.GET_REGION),
+  wishlistExportCsv: () => ipcRenderer.invoke(IPC_CHANNELS.WISHLIST.EXPORT_CSV),
 }
 
 export interface WishlistAPI {

@@ -5,26 +5,25 @@
  * Handles source CRUD operations, provider lifecycle, and aggregated scanning.
  */
 
-import { getDatabase, type BetterSQLiteService } from '@main/database/getDatabase'
-import { getLiveMonitoringService, type LiveMonitoringService } from './LiveMonitoringService'
-import { getTaskQueueService, type TaskQueueService } from './TaskQueueService'
-import { getLoggingService, type LoggingService } from './LoggingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getLiveMonitoringService, type LiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getTaskQueueService, type TaskQueueService } from '@main/services/TaskQueueService'
+import { getLoggingService, type LoggingService } from '@main/services/LoggingService'
 import { createProvider, getSupportedProviders } from '@main/providers/ProviderFactory'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
-import { SourceScannerService, type AggregateProgressCallback } from './SourceScannerService'
-import { SourceCrudService } from './SourceCrudService'
-import { PlexAuthService } from './PlexAuthService'
-import { LibraryType } from '@main/providers/base/MediaProvider'
+import { SourceScannerService, type AggregateProgressCallback } from '@main/services/SourceScannerService'
+import { SourceCrudService } from '@main/services/SourceCrudService'
+import { PlexAuthService } from '@main/services/PlexAuthService'
+import { LibraryType, ProviderType, TaskType, type MediaSource } from '@main/types/database'
+import type { ConnectionTestResult } from '@main/types/ipc'
 import type {
   MediaProvider,
-  ProviderType,
   SourceConfig,
-  ConnectionTestResult,
   ScanResult,
   ProgressCallback,
   MediaLibrary,
 } from '@main/providers/base/MediaProvider'
-import type { MediaSource } from '@main/types/database'
 
 export interface SourceManagerDependencies {
   db?: BetterSQLiteService
@@ -88,11 +87,11 @@ export class SourceManager {
 
   private async loadSources(): Promise<void> {
     const db = this.db
-    const sources = db.sources.getSources()
+    const sources = await db.sources.getSources()
     const unavailableSources: Array<{ name: string; type: string }> = []
 
     await Promise.allSettled(
-      sources.map((source: MediaSource) => this.loadSingleSource(source, unavailableSources))
+      sources.map((source: any) => this.loadSingleSource(source, unavailableSources))
     )
 
     this.logging.info('[SourceManager]', `Initialized with ${this.providers.size} providers`)
@@ -128,7 +127,7 @@ export class SourceManager {
       const provider = createProvider(source.source_type as ProviderType, config)
       this.providers.set(source.source_id, provider)
 
-      if (source.source_type === 'plex' && connectionConfig.serverId && connectionConfig.token) {
+      if (source.source_type === ProviderType.Plex && connectionConfig.serverId && connectionConfig.token) {
         const plexProvider = provider as PlexProvider
         try {
           const success = await Promise.race([
@@ -152,16 +151,7 @@ export class SourceManager {
 
   async scanLibrary(sourceId: string, libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
     const scanner = this.getScanner()
-    scanner.activeScans++
-    try {
-      await this.initialize()
-      // Subtract the immediate increment since scanner.scanLibrary will also increment
-      scanner.activeScans-- 
-      return await scanner.scanLibrary(sourceId, libraryId, onProgress)
-    } catch (error) {
-      scanner.activeScans--
-      throw error
-    }
+    return await scanner.scanLibrary(sourceId, libraryId, onProgress)
   }
 
   async scanSource(sourceId: string, onProgress?: ProgressCallback): Promise<void> {
@@ -271,17 +261,17 @@ export class SourceManager {
   getProvider(sourceId: string) { return this.providers.get(sourceId) }
   getPlexProvider(sourceId: string) {
     const p = this.providers.get(sourceId)
-    return p?.providerType === 'plex' ? p as PlexProvider : undefined
+    return p?.providerType === ProviderType.Plex ? p as PlexProvider : undefined
   }
 
   async testConnection(sourceId: string): Promise<ConnectionTestResult> {
     await this.initialize()
     const provider = this.providers.get(sourceId)
     if (!provider) return { success: false, error: 'Not found' }
-    if (provider.providerType === 'plex' && !(provider as PlexProvider).hasSelectedServer()) return { success: false, error: 'No server selected' }
+    if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) return { success: false, error: 'No server selected' }
     
     // Auth check for JF/Emby
-    if (provider.providerType === 'jellyfin' || provider.providerType === 'emby') {
+    if (provider.providerType === ProviderType.Jellyfin || provider.providerType === ProviderType.Emby) {
       const source = this.db.sources.getSourceById(sourceId)
       if (source) {
         const config = JSON.parse(source.connection_config)
@@ -305,7 +295,7 @@ export class SourceManager {
     await this.initialize()
     const provider = this.providers.get(sourceId)
     if (!provider) throw new Error('Not found')
-    if (provider.providerType === 'plex' && !(provider as PlexProvider).hasSelectedServer()) return []
+    if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) return []
     
     const existing = this.getLibrariesPromises.get(sourceId)
     if (existing) return existing
@@ -329,9 +319,10 @@ export class SourceManager {
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
         if (this.db.config.getSetting('tmdb_api_key')) {
-          if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: 'series-completeness', label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-          if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: 'collection-completeness', label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+          if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.SeriesCompleteness, label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+          if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.CollectionCompleteness, label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
         }
+
       }
     }
     getWishlistCompletionService().checkAndComplete().catch(() => {})

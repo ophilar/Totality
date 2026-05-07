@@ -11,7 +11,7 @@ import {
   isAxiosError,
   getAxiosErrorDetails,
   getErrorCode,
-} from '../../src/main/services/utils/errorUtils'
+} from '@main/services/utils/errorUtils'
 
 // ============================================================================
 // getErrorMessage
@@ -148,3 +148,6 @@ describe('getErrorCode', () => {
     expect(getErrorCode('string')).toBeUndefined()
   })
 })
+
+
+

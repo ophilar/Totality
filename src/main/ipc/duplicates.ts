@@ -1,5 +1,6 @@
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcMain } from 'electron'
-import { getDatabase } from '@main/database/getDatabase'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 
@@ -8,10 +9,10 @@ export function registerDuplicateHandlers() {
   /**
    * Get all pending duplicates
    */
-  ipcMain.handle('duplicates:getPending', async (_event, sourceId?: string) => {
+  ipcMain.handle(IPC_CHANNELS.DUPLICATES.GET_PENDING, async (_event, sourceId?: string) => {
     try {
       const db = getDatabase()
-      return db.duplicates.getPendingDuplicates(sourceId)
+      return await db.duplicates.getPendingDuplicates(sourceId)
     } catch (error) {
       getLoggingService().error('[duplicates]', 'Error getting pending duplicates:', error)
       throw error
@@ -21,7 +22,7 @@ export function registerDuplicateHandlers() {
   /**
    * Scan for duplicates manually
    */
-  ipcMain.handle('duplicates:scan', async (_event, sourceId?: string) => {
+  ipcMain.handle(IPC_CHANNELS.DUPLICATES.SCAN, async (_event, sourceId?: string) => {
     try {
       const service = getDeduplicationService()
       return await service.scanForDuplicates(sourceId)
@@ -34,7 +35,7 @@ export function registerDuplicateHandlers() {
   /**
    * Get recommendation for a duplicate group
    */
-  ipcMain.handle('duplicates:getRecommendation', async (_event, mediaItemIds: number[]) => {
+  ipcMain.handle(IPC_CHANNELS.DUPLICATES.GET_RECOMMENDATION, async (_event, mediaItemIds: number[]) => {
     try {
       const service = getDeduplicationService()
       return service.recommendRetention(mediaItemIds)
@@ -47,7 +48,7 @@ export function registerDuplicateHandlers() {
   /**
    * Resolve a duplicate group
    */
-  ipcMain.handle('duplicates:resolve', async (_event, duplicateId: number, keepItemId: number, deleteOthers: boolean) => {
+  ipcMain.handle(IPC_CHANNELS.DUPLICATES.RESOLVE, async (_event, duplicateId: number, keepItemId: number, deleteOthers: boolean) => {
     try {
       const service = getDeduplicationService()
       return await service.resolveDuplicate(duplicateId, keepItemId, deleteOthers)
@@ -59,3 +60,4 @@ export function registerDuplicateHandlers() {
 
   getLoggingService().info('[duplicates]', 'Duplicate IPC handlers registered')
 }
+
