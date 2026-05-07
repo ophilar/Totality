@@ -30,7 +30,7 @@ started: Recently.
   implication: Most obvious suspects are already excluded, but some other file might be changing.
 - timestamp: 2026-04-13T20:32:00Z
   checked: fs-changes.txt (from monitor-fs.ps1)
-  found: `Changed: H:\Totality\node_modules\.vite\vitest\da39a3ee5e6b4b0d3255bfef95601890afd80709\results.json`
+  found: `Changed: [root]\node_modules\.vite\vitest\da39a3ee5e6b4b0d3255bfef95601890afd80709\results.json`
   implication: Vitest is watching its own result cache because `node_modules` is not in `watchExclude`.
 
 root_cause: 
