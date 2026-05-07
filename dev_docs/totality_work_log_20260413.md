@@ -15,4 +15,4 @@ Resolved an infinite test restart loop occurring in Vitest's watch mode by corre
 - **Issue:** Tests used `node:sqlite` which created temporary `.db` and `.db-journal` files. `BetterSQLiteService` sometimes created these in the project root if the environment was not fully mocked. These file system events triggered Vitest to restart the entire suite immediately after completion.
 - **Fix:** Used `watchExclude` in `vitest.config.ts` to properly silence the watcher for database artifacts.
 - **Files Modified:**
-    - `H:\Totality\vitest.config.ts`
+    - `[root]\vitest.config.ts`
