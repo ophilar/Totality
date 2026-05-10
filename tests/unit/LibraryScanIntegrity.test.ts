@@ -10,33 +10,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { StatsRepository } from '@main/database/repositories/StatsRepository'
 
-// Electron infrastructure mocks
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn(),
-  },
-  app: {
-    getPath: vi.fn().mockReturnValue('./tests/tmp'),
-    isReady: vi.fn().mockReturnValue(true),
-    whenReady: vi.fn().mockResolvedValue(undefined),
-  },
-  dialog: {
-    showSaveDialog: vi.fn(),
-    showOpenDialog: vi.fn(),
-  },
-  shell: {
-    openPath: vi.fn(),
-  },
-  BrowserWindow: {
-    fromWebContents: vi.fn(),
-  },
-  safeStorage: {
-    isEncryptionAvailable: vi.fn().mockReturnValue(true),
-    encryptString: vi.fn().mockReturnValue(Buffer.from('encrypted')),
-    decryptString: vi.fn().mockReturnValue('decrypted'),
-  }
-}))
-
 describe('Library Issues Fixes (Deep Dive)', () => {
   let db: any
   let tempDir: { path: string; cleanup: () => void }
@@ -55,31 +28,46 @@ describe('Library Issues Fixes (Deep Dive)', () => {
   describe('Music Quality Integration - TaskQueue to SourceScanner', () => {
     it('should automatically analyze music quality after a library scan', async () => {
       // 1. Setup a music artist/album/track in DB
-      await db.sources.upsertSource({ source_id: 'm1', source_type: 'local', display_name: 'Local Music', connection_config: '{}', is_enabled: 1 })
-      await db.sources.setLibrariesEnabled('m1', [{ id: '1', name: 'Music', type: LibraryType.Music, enabled: true }])
+      const sourceId = 'm1'
+      const libraryId = 'music'
+      const folderPath = path.join(tempDir.path, 'music')
+      fs.mkdirSync(folderPath, { recursive: true })
+
+      await db.sources.upsertSource({ 
+        source_id: sourceId, 
+        source_type: 'local', 
+        display_name: 'Local Music', 
+        connection_config: JSON.stringify({ folderPath, mediaType: LibraryType.Music }), 
+        is_enabled: 1 
+      })
+      await db.sources.setLibrariesEnabled(sourceId, [{ id: libraryId, name: 'Music', type: LibraryType.Music, enabled: true }])
       
-      const artistId = await db.music.upsertArtist({ source_id: 'm1', source_type: 'local', name: 'Test Artist', library_id: '1', provider_id: 'art1' })
-      const albumId = await db.music.upsertAlbum({ source_id: 'm1', source_type: 'local', artist_id: artistId, artist_name: 'Test Artist', title: 'Test Album', library_id: '1', provider_id: 'alb1' })
-      await db.music.upsertTrack({ source_id: 'm1', source_type: 'local', album_id: albumId, artist_name: 'Test Artist', album_name: 'Test Album', title: 'Track 1', audio_codec: 'mp3', audio_bitrate: 128, library_id: '1', provider_id: 'trk1' })
+      // Create a real file structure so LocalFolderProvider can find it
+      const albumPath = path.join(folderPath, 'Artist 1', 'Album 1')
+      fs.mkdirSync(albumPath, { recursive: true })
+      fs.writeFileSync(path.join(albumPath, '01 - Track 1.mp3'), 'dummy mp3')
 
+      // Mock ffprobe for the analyzer used by the provider
+      const analyzer = (await import('@main/services/MediaFileAnalyzer')).getMediaFileAnalyzer()
+      vi.spyOn(analyzer as any, 'runFFprobe').mockResolvedValue({
+        format: { format_name: 'mp3', size: '1000', duration: '180' },
+        streams: [
+          { codec_type: 'audio', codec_name: 'mp3', bit_rate: '128000', channels: 2, sample_rate: '44100' }
+        ]
+      })
 
-      // 2. Verify no quality score exists yet
-      expect(await db.music.getQualityScore(albumId)).toBeNull()
+      // 2. Trigger scan via real SourceManager
+      const manager = new SourceManager()
+      await manager.initialize()
+      
+      await manager.scanLibrary(sourceId, libraryId)
 
-      // 3. Trigger scan via SourceManager (which uses SourceScannerService)
-      // Mock the provider to avoid real FS scan for simplicity in this specific test
-      const manager = new SourceManager({ db })
-      const mockProvider = {
-        providerType: 'local',
-        getLibraries: vi.fn().mockResolvedValue([{ id: '1', name: 'Music', type: LibraryType.Music }]),
-        scanLibrary: vi.fn().mockResolvedValue({ success: true, itemsScanned: 1, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, durationMs: 10 })
-      }
-      ;(manager as any).providers.set('m1', mockProvider)
+      // 3. Verify quality score WAS generated automatically
+      const albums = await db.music.getMusicAlbums({ sourceId })
+      expect(albums.length).toBe(1)
+      const albumId = albums[0].id
 
-      await manager.scanLibrary('m1', '1')
-
-      // 4. Verify quality score WAS generated automatically
-      const score = await db.music.getQualityScore(albumId)
+      const score = await db.music.getQualityScore(albumId!)
       expect(score).not.toBeNull()
       expect(score!.quality_tier).toBe('LOSSY_LOW') // 128kbps MP3 is LOW
       expect(score!.needs_upgrade).toBe(true)

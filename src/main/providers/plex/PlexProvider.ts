@@ -90,11 +90,12 @@ export class PlexProvider extends BaseMediaProvider {
     super(config)
 
     this.api = axios.create({
+      timeout: 30000,
       headers: {
         'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
         'X-Plex-Product': PRODUCT_NAME,
         'X-Plex-Version': '1.0.0',
-        'X-Plex-Platform': 'Windows',
+        'X-Plex-Platform': process.platform === 'win32' ? 'Windows' : 'macOS',
         Accept: 'application/json',
       },
     })
@@ -111,13 +112,20 @@ export class PlexProvider extends BaseMediaProvider {
       })
       return response.data as PlexAuthPin
     } catch (error) {
-      getLoggingService().error('[PlexProvider]', 'Failed to request auth PIN:', error)
+      console.error('Failed to request auth PIN:', error)
       throw new Error('Failed to initiate Plex authentication')
     }
   }
 
   getAuthUrl(_pinId: number, code: string): string {
-    return `https://app.plex.tv/auth#?clientID=${CLIENT_IDENTIFIER}&code=${code}&context[device][product]=${PRODUCT_NAME}`
+    const params = new URLSearchParams({
+      clientID: CLIENT_IDENTIFIER,
+      code: code,
+      'context[device][product]': PRODUCT_NAME,
+      'context[device][platform]': process.platform === 'win32' ? 'Windows' : 'macOS',
+      'context[device][device]': PRODUCT_NAME
+    })
+    return `https://app.plex.tv/auth#?${params.toString()}`
   }
 
   async checkAuthPin(pinId: number): Promise<string | null> {

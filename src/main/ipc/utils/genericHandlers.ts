@@ -43,20 +43,26 @@ export function registerListHandlers<T, TFilters>(
   }
 
   // Register standard channels
+  ipcMain.removeHandler(`${baseChannel}:list`)
   ipcMain.handle(`${baseChannel}:list`, listHandler)
+  
+  ipcMain.removeHandler(`${baseChannel}:count`)
   ipcMain.handle(`${baseChannel}:count`, countHandler)
 
   // Register aliases if provided
-  const registerAliases = (aliases: string | string[] | undefined, handler: any) => {
+  const registerAliases = (aliases: string | string[] | undefined, handler: any, standardChannel: string) => {
     if (!aliases) return
     const list = Array.isArray(aliases) ? aliases : [aliases]
-    for (const alias of list) {
+    // Filter out standard channel and deduplicate
+    const uniqueAliases = [...new Set(list)].filter(alias => alias !== standardChannel)
+    for (const alias of uniqueAliases) {
+      ipcMain.removeHandler(alias)
       ipcMain.handle(alias, handler)
     }
   }
 
-  registerAliases(options.listAlias, listHandler)
-  registerAliases(options.countAlias, countHandler)
+  registerAliases(options.listAlias, listHandler, `${baseChannel}:list`)
+  registerAliases(options.countAlias, countHandler, `${baseChannel}:count`)
 
   log.info('[IPC]', `Registered handlers for ${baseChannel}`)
 }

@@ -12,7 +12,9 @@ export class PlexAuthService {
   async startAuth(): Promise<{ pinId: number; code: string; authUrl: string }> {
     const tempProvider = new PlexProvider({ sourceId: 'temp-auth', sourceType: ProviderType.Plex, displayName: 'Temp Auth', connectionConfig: {} })
     const pin = await tempProvider.requestAuthPin()
-    return { pinId: pin.id, code: pin.code, authUrl: tempProvider.getAuthUrl(pin.id, pin.code) }
+    // Explicitly pass pin.id and pin.code
+    const authUrl = tempProvider.getAuthUrl(pin.id, pin.code)
+    return { pinId: pin.id, code: pin.code, authUrl }
   }
 
   async completeAuth(pinId: number): Promise<string | null> {

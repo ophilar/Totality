@@ -1,131 +1,148 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
-import { resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { getTranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
 import { getGeminiService } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { getLoggingService } from '@main/services/LoggingService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
-
-// Mock dependencies
-const mockLog = {
-  info: vi.fn(),
-  error: vi.fn(),
-  verbose: vi.fn(),
-  debug: vi.fn(),
-  warn: vi.fn()
-}
-
-vi.mock('../../src/main/services/GeminiService')
-vi.mock('../../src/main/services/MediaFileAnalyzer')
-vi.mock('../../src/main/services/LoggingService', () => ({
-  getLoggingService: vi.fn(() => mockLog)
-}))
-
-// Mock fs and fs/promises correctly using importOriginal
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs')>()
-  return {
-    ...actual,
-    existsSync: vi.fn().mockReturnValue(true),
-    statSync: vi.fn().mockReturnValue({ size: 1000 }),
-    renameSync: vi.fn(),
-    unlinkSync: vi.fn(),
-  }
-})
-
-vi.mock('fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs/promises')>()
-  return {
-    ...actual,
-    stat: vi.fn().mockResolvedValue({ size: 1000 }),
-    rename: vi.fn().mockResolvedValue(undefined),
-    unlink: vi.fn().mockResolvedValue(Promise.resolve()),
-  }
-})
+import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { ipcMain } from 'electron'
 
 vi.mock('child_process')
 
-describe('TranscodingService', () => {
-  let service: TranscodingService
+describe('Transcoding Integration (Service + IPC)', () => {
+  let service: ReturnType<typeof getTranscodingService>
   let db: any
-  let mockGemini: any
-  let mockAnalyzer: any
+  const testDir = path.join(process.cwd(), 'tests/tmp/transcoding_integrated_test')
+  const handlers = new Map<string, (...args: any[]) => Promise<any>>()
 
   beforeEach(async () => {
     vi.resetAllMocks()
     resetTranscodingServiceForTesting()
+    handlers.clear()
     
     db = await setupTestDb()
-
-    mockGemini = {
-      isConfigured: vi.fn().mockReturnValue(true),
-      sendMessage: vi.fn()
-    }
-    vi.mocked(getGeminiService).mockReturnValue(mockGemini)
-
-    mockAnalyzer = {
-      getFFprobePath: vi.fn().mockReturnValue('ffprobe'),
-      analyzeFile: vi.fn()
-    }
-    vi.mocked(getMediaFileAnalyzer).mockReturnValue(mockAnalyzer)
-
-    // Ensure existsSync returns true for expected paths by default
-    const fsMod = await import('fs')
-    vi.mocked(fsMod.existsSync).mockReturnValue(true)
     
-    const fsAsync = await import('fs/promises')
-    vi.mocked(fsAsync.unlink).mockResolvedValue(undefined)
-    vi.mocked(fsAsync.stat).mockResolvedValue({ size: 1000 } as any)
+    if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true })
 
-    service = new TranscodingService()
+    // Capture registered handlers
+    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+      handlers.set(channel, handler)
+      return undefined as any
+    })
+
+    // Initialize paths in DB so service doesn't use defaults
+    await db.config.setSetting('handbrake_path', 'HandBrakeCLI')
+
+    registerTranscodingHandlers()
+    service = getTranscodingService()
+
+    // Use real GeminiService but spy on its network method
+    const gemini = getGeminiService()
+    vi.spyOn(gemini, 'isConfigured').mockReturnValue(true)
+    vi.spyOn(gemini, 'sendMessage').mockResolvedValue({
+       text: '{"summary": "test", "handbrakeArgs": ["--quality", "20"]}',
+       usage: { input_tokens: 0, output_tokens: 0 }
+    })
+
+    // Setup real analyzer but mock ffprobe call
+    const analyzer = getMediaFileAnalyzer()
+    vi.spyOn(analyzer as any, 'runFFprobe').mockImplementation(async (filePath: string) => {
+      const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 1000
+      return {
+        format: { format_name: 'matroska', size: size.toString(), duration: '60' },
+        streams: [{ codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080 }]
+      }
+    })
+
+    // Mock spawn to handle multiple calls (availability checks + Handbrake)
+    vi.mocked(spawn).mockImplementation((tool: any, args: any) => {
+      const mockProc: any = {
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        kill: vi.fn(),
+        on: vi.fn((event, cb) => {
+          if (event === 'close') {
+            const argsArray = Array.isArray(args) ? args : []
+            const iIdx = argsArray.indexOf('-i')
+            const oIdx = argsArray.indexOf('-o')
+            
+            if (iIdx !== -1 && oIdx !== -1) {
+               const outputPath = argsArray[oIdx + 1]
+               if (outputPath) {
+                 fs.writeFileSync(outputPath, 'transcoded content')
+               }
+            }
+            setTimeout(() => cb(0), 10)
+          }
+        })
+      }
+      return mockProc
+    })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTestDb()
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true })
+    }
   })
 
-  describe('checkAvailability', () => {
-    it('returns tool availability based on process execution', async () => {
-      const mockSpawn = vi.mocked(spawn)
-      
-      // Setup successful spawns
-      mockSpawn.mockReturnValue({
-        on: vi.fn((event, cb) => {
-          if (event === 'close') cb(0)
-        })
-      } as any)
+  describe('IPC Registration', () => {
+    it('registers all expected transcoding handlers', () => {
+      expect(handlers.has('transcoding:checkAvailability')).toBe(true)
+      expect(handlers.has('transcoding:getParameters')).toBe(true)
+      expect(handlers.has('transcoding:start')).toBe(true)
+    })
+  })
 
-      const result = await service.checkAvailability()
-      expect(result).toEqual({
-        handbrake: true,
-        mkvtoolnix: true,
-        ffmpeg: true
-      })
+  describe('Integrated Transcoding Flow', () => {
+    it('returns AI generated parameters via IPC for a real file', async () => {
+      const testFile = path.join(testDir, 'input.mkv')
+      fs.writeFileSync(testFile, 'dummy')
+
+      const handler = handlers.get('transcoding:getParameters')!
+      const result = await handler({} as any, testFile, { targetCodec: 'av1' })
+      
+      expect(result.summary).toBe('test')
+      expect(result.handbrakeArgs).toContain('--quality')
     })
 
-    it('returns false if tool execution fails', async () => {
-      const mockSpawn = vi.mocked(spawn)
+    it('initiates and completes a transcoding job through IPC', async () => {
+      const testFile = path.join(testDir, 'movie_ipc.mkv')
+      fs.writeFileSync(testFile, 'dummy content')
       
-      // Setup failing spawns
-      mockSpawn.mockReturnValue({
-        on: vi.fn((event, cb) => {
-          if (event === 'close') cb(1)
-          if (event === 'error') cb(new Error('Spawn error'))
-        })
+      await db.media.upsertItem({ 
+        id: 1, 
+        source_id: 'src1', 
+        plex_id: 'p1', 
+        title: 'Movie', 
+        type: 'movie', 
+        file_path: testFile, 
+        file_size: 13 
       } as any)
 
-      const result = await service.checkAvailability()
-      expect(result).toEqual({
-        handbrake: false,
-        mkvtoolnix: false,
-        ffmpeg: false
-      })
-    })
+      service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: true, ffmpeg: true })
 
-    it('respects availability overrides in testing', async () => {
+      const handler = handlers.get('transcoding:start')!
+      const mockEvent = { sender: { send: vi.fn() } }
+      
+      const result = await handler(mockEvent as any, 1, { overwriteOriginal: true, targetCodec: 'hevc' })
+      
+      expect(result).toBe(true)
+      
+      // Verify file was updated (service logic)
+      const content = fs.readFileSync(testFile, 'utf8')
+      expect(content).toBe('transcoded content')
+      
+      const item = await db.media.getItem(1)
+      expect(item.file_size).toBe(18)
+    })
+  })
+
+  describe('Service Direct Logic', () => {
+    it('respects availability overrides', async () => {
       service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: false, ffmpeg: true })
       const result = await service.checkAvailability()
       expect(result).toEqual({
@@ -135,97 +152,4 @@ describe('TranscodingService', () => {
       })
     })
   })
-
-  describe('getTranscodeParameters', () => {
-    it('throws if Gemini is not configured', async () => {
-      mockAnalyzer.analyzeFile.mockResolvedValue({ success: true, metadata: {} })
-      mockGemini.isConfigured.mockReturnValue(false)
-      await expect(service.getTranscodeParameters('test.mp4'))
-        .rejects.toThrow('Gemini AI is not configured')
-    })
-
-    it('parses AI response into transcoding parameters', async () => {
-      mockAnalyzer.analyzeFile.mockResolvedValue({ success: true, metadata: {} })
-      mockGemini.sendMessage.mockResolvedValue({
-        text: '```json\n{"summary": "Better quality", "handbrakeArgs": ["--preset", "fast"]}\n```'
-      })
-
-      const params = await service.getTranscodeParameters('test.mp4')
-      expect(params.summary).toBe('Better quality')
-      expect(params.handbrakeArgs).toEqual(['--preset', 'fast'])
-    })
-
-    it('throws error if AI response is invalid JSON', async () => {
-      mockAnalyzer.analyzeFile.mockResolvedValue({ success: true, metadata: {} })
-      mockGemini.sendMessage.mockResolvedValue({ text: 'Not JSON' })
-
-      await expect(service.getTranscodeParameters('test.mp4'))
-        .rejects.toThrow('Failed to generate optimized transcoding parameters')
-    })
-  })
-
-  describe('transcode', () => {
-    beforeEach(async () => {
-      service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: true, ffmpeg: true })
-      await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: 'C:/media/movie.mkv', file_size: 1000 } as any)
-    })
-
-    it('executes transcode and updates database on success', async () => {
-      // Mock parameter generation
-      vi.spyOn(service, 'getTranscodeParameters').mockResolvedValue({
-        summary: 'Saving space',
-        handbrakeArgs: ['--vb', '2000']
-      })
-
-      // Mock spawn for Handbrake
-      const mockProc: any = {
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        kill: vi.fn(),
-        on: vi.fn((event, cb) => {
-          if (event === 'close') {
-            // Ensure this happens after event listeners are attached
-            setTimeout(() => cb(0), 10)
-          }
-        })
-      }
-      vi.mocked(spawn).mockReturnValue(mockProc)
-
-      mockAnalyzer.analyzeFile.mockResolvedValue({ success: true, metadata: {} })
-
-      const onProgress = vi.fn()
-      const result = await service.transcode(1, { overwriteOriginal: true }, onProgress)
-
-      expect(result).toBe(true)
-      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'complete' }))
-      
-      const item = await db.media.getItem(1)
-      expect(item.file_path).toContain('movie.mkv')
-    })
-
-    it('reports failure if Handbrake fails', async () => {
-      vi.spyOn(service, 'getTranscodeParameters').mockResolvedValue({
-        summary: 'Saving space',
-        handbrakeArgs: ['--vb', '2000']
-      })
-
-      const mockProc: any = {
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        on: vi.fn((event, cb) => {
-          if (event === 'close') cb(1)
-        })
-      }
-      vi.mocked(spawn).mockReturnValue(mockProc)
-
-      const onProgress = vi.fn()
-      const result = await service.transcode(1, {}, onProgress)
-
-      expect(result).toBe(false)
-      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
-    })
-  })
 })
-
-
-

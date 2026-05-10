@@ -29,16 +29,16 @@ export function registerMusicHandlers(): void {
 
   // Register generic list/count handlers
   registerListHandlers('music:artists', (f) => db.music.getArtists(f), (f) => db.music.countMusicArtists(f), MusicFiltersSchema, {
-    listAlias: ['music:getArtists', 'music:artists:list'],
-    countAlias: ['music:countArtists', 'music:artists:count']
+    listAlias: 'music:getArtists',
+    countAlias: 'music:countArtists'
   })
   registerListHandlers('music:albums', (f) => db.music.getAlbums(f), (f) => db.music.countMusicAlbums(f), MusicFiltersSchema, {
-    listAlias: ['music:getAlbums', 'music:albums:list'],
-    countAlias: ['music:countAlbums', 'music:albums:count']
+    listAlias: 'music:getAlbums',
+    countAlias: 'music:countAlbums'
   })
   registerListHandlers('music:tracks', (f) => db.music.getTracks(f), (f) => db.music.countMusicTracks(f), MusicFiltersSchema, {
-    listAlias: ['music:getTracks', 'music:tracks:list'],
-    countAlias: ['music:countTracks', 'music:tracks:count']
+    listAlias: 'music:getTracks',
+    countAlias: 'music:countTracks'
   })
 
   // ============================================================================
@@ -215,7 +215,7 @@ export function registerMusicHandlers(): void {
     try {
       const validSourceId = sourceId !== undefined ? validateInput(OptionalSourceIdSchema, sourceId, 'music:getStats') : undefined
       const db = getDatabase()
-      return await db.music.getStats(validSourceId)
+      return await db.stats.getMusicLibraryStats(validSourceId)
     } catch (error: unknown) {
       getLoggingService().error('[music]', '[music:getStats] Error:', error)
       throw error

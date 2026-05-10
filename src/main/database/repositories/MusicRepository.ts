@@ -705,19 +705,6 @@ export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | M
     return row ? this.mapDrizzleToTrack(row) : null
   }
 
-  async getStats(sourceId?: string): Promise<{ totalArtists: number; totalAlbums: number; totalTracks: number; totalSize: number; avgAudioBitrate: number }> {
-    const conditions = [eq(schema.mediaSources.isEnabled, 1), or(eq(schema.libraryScans.isEnabled, 1), isNull(schema.libraryScans.isEnabled))]
-    if (sourceId) conditions.push(eq(schema.mediaSources.sourceId, sourceId))
-
-    const [artistRes, albumRes, trackRes] = await Promise.all([
-      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicArtists.id})` }).from(schema.musicArtists).innerJoin(schema.mediaSources, eq(schema.musicArtists.sourceId, schema.mediaSources.sourceId)).leftJoin(schema.libraryScans, and(eq(schema.musicArtists.sourceId, schema.libraryScans.sourceId), eq(schema.musicArtists.libraryId, schema.libraryScans.libraryId))).where(and(...conditions)).get(),
-      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicAlbums.id})`, totalSize: sql<number>`sum(${schema.musicAlbums.totalSize})`, avgBitrate: sql<number>`avg(${schema.musicAlbums.avgAudioBitrate})` }).from(schema.musicAlbums).innerJoin(schema.mediaSources, eq(schema.musicAlbums.sourceId, schema.mediaSources.sourceId)).leftJoin(schema.libraryScans, and(eq(schema.musicAlbums.sourceId, schema.libraryScans.sourceId), eq(schema.musicAlbums.libraryId, schema.libraryScans.libraryId))).where(and(...conditions)).get(),
-      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicTracks.id})` }).from(schema.musicTracks).innerJoin(schema.mediaSources, eq(schema.musicTracks.sourceId, schema.mediaSources.sourceId)).leftJoin(schema.libraryScans, and(eq(schema.musicTracks.sourceId, schema.libraryScans.sourceId), eq(schema.musicTracks.libraryId, schema.libraryScans.libraryId))).where(and(...conditions)).get()
-    ])
-
-    return { totalArtists: artistRes?.count || 0, totalAlbums: albumRes?.count || 0, totalTracks: trackRes?.count || 0, totalSize: albumRes?.totalSize || 0, avgAudioBitrate: albumRes?.avgBitrate || 0 }
-  }
-
   private mapDrizzleToTrack(r: any): MusicTrack {
     return { ...r, source_id: r.sourceId, source_type: r.sourceType, library_id: r.libraryId, provider_id: r.providerId, album_id: r.albumId, artist_id: r.artistId, album_name: r.albumName, artist_name: r.artistName, track_number: r.trackNumber, disc_number: r.discNumber, file_path: r.filePath, file_size: r.fileSize, file_mtime: r.fileMtime, audio_codec: r.audioCodec, audio_bitrate: r.audioBitrate, sample_rate: r.sampleRate, bit_depth: r.bitDepth, is_lossless: r.isLossless === 1, is_hi_res: r.isHiRes === 1, musicbrainz_id: r.musicbrainzId, added_at: r.addedAt, created_at: r.createdAt, updated_at: r.updatedAt }
   }
