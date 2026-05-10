@@ -530,3 +530,36 @@ export function safeValidateInput<T>(schema: z.ZodSchema<T>, input: unknown): T 
   const result = schema.safeParse(input)
   return result.success ? result.data : null
 }
+
+// ============================================================================
+// IPC TUPLE SCHEMAS (Multi-argument handlers)
+// ============================================================================
+
+export const UpdateSourceTupleSchema = z.tuple([SourceIdSchema, UpdateSourceSchema])
+export const ToggleSourceTupleSchema = z.tuple([SourceIdSchema, BooleanSchema])
+export const ToggleLibraryTupleSchema = z.tuple([SourceIdSchema, SourceIdSchema, BooleanSchema])
+export const ScanLibraryTupleSchema = z.tuple([SourceIdSchema, SourceIdSchema])
+export const ScanItemTupleSchema = z.tuple([SourceIdSchema, z.string().nullable(), FilePathSchema])
+export const PlexAuthTupleSchema = z.tuple([z.string(), z.string()])
+export const PlexSelectServerTupleSchema = z.tuple([SourceIdSchema, z.string()])
+export const SetSettingTupleSchema = z.tuple([SettingKeySchema, SettingValueSchema])
+export const TestNfsMappingTupleSchema = z.tuple([z.any(), FilePathSchema])
+export const FixMatchTupleSchema = z.tuple([PositiveIntSchema, PositiveIntSchema])
+export const AddExclusionTupleSchema = z.tuple([z.string(), PositiveIntSchema.optional(), z.string().optional(), z.string().optional(), z.string().optional()])
+export const FixArtistMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])
+export const SearchMbReleaseTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema])
+export const FixAlbumMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])
+export const MbSearchTupleSchema = z.tuple([z.string(), z.enum(['artist', 'release', 'recording', 'release-group'])])
+export const SeriesAnalyzeAllTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
+export const SeriesGetEpisodesTupleSchema = z.tuple([NonEmptyStringSchema, z.string().optional()])
+export const SeriesGetSeasonDetailsTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative()])
+export const SeriesGetEpisodeStillTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative(), z.number().int().nonnegative()])
+export const SeriesFixMatchTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema, PositiveIntSchema])
+export const JellyfinQcStatusTupleSchema = z.tuple([z.string().url(), z.string()])
+export const JellyfinQcCompleteTupleSchema = z.tuple([z.string().url(), z.string(), NonEmptyStringSchema])
+export const JellyfinAuthCredentialsTupleSchema = z.tuple([z.string().url(), z.string(), z.string(), NonEmptyStringSchema, z.boolean().optional()])
+
+
+
+
+

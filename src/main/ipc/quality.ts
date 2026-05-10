@@ -1,77 +1,36 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getDatabase } from '@main/database/BetterSQLiteService'
-import { validateInput, PositiveIntSchema } from '@main/validation/schemas'
+import { PositiveIntSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
-/**
- * Register all quality analysis IPC handlers
- */
 export function registerQualityHandlers() {
   const analyzer = getQualityAnalyzer()
 
-  // ============================================================================
-  // QUALITY ANALYSIS
-  // ============================================================================
-
-  ipcMain.handle('quality:analyzeAll', async (event) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender)
-
-      await analyzer.loadThresholdsFromDatabase()
-
-      let lastUpdateTime = 0
-      const UPDATE_INTERVAL = 2000 // Send library:updated every 2 seconds during analysis
-
-      const count = await analyzer.analyzeAllMediaItems((current, total) => {
-        // Send progress updates to renderer
-        win?.webContents.send('quality:analysisProgress', { current, total })
-
-        // Send periodic library:updated events for live refresh
-        const now = Date.now()
-        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-          win?.webContents.send('library:updated', { type: 'media' })
-          lastUpdateTime = now
-        }
-      })
-
-      // Send final update when analysis completes
-      win?.webContents.send('library:updated', { type: 'media' })
-
-      return count
-    } catch (error) {
-      getLoggingService().error('[quality]', 'Error analyzing all media items:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('quality:getDistribution', async () => {
-    try {
-      return analyzer.getQualityDistribution()
-    } catch (error) {
-      getLoggingService().error('[quality]', 'Error getting quality distribution:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('quality:getRecommendedFormat', async (_event, mediaItemId: unknown) => {
-    try {
-      const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'quality:getRecommendedFormat')
-      const db = getDatabase()
-      const mediaItem = await db.media.getItem(validMediaItemId)
-
-      if (!mediaItem) {
-        throw new Error('Media item not found')
+  createIpcHandlerWithEvent('quality:analyzeAll', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    await analyzer.loadThresholdsFromDatabase()
+    let lastUpdate = 0
+    return await analyzer.analyzeAllMediaItems((current, total) => {
+      win?.webContents.send('quality:analysisProgress', { current, total })
+      if (Date.now() - lastUpdate >= 2000) {
+        win?.webContents.send('library:updated', { type: 'media' })
+        lastUpdate = Date.now()
       }
+    })
+  })
 
-      const qualityScore = await db.media.getQualityScoreByMediaId(validMediaItemId)
-      const currentScore = qualityScore?.overall_score || 0
+  createIpcHandler('quality:getDistribution', async () => {
+    return analyzer.getQualityDistribution()
+  })
 
-      return analyzer.getRecommendedFormat(mediaItem, currentScore)
-    } catch (error) {
-      getLoggingService().error('[quality]', 'Error getting recommended format:', error)
-      throw error
-    }
+  createValidatedIpcHandler('quality:getRecommendedFormat', PositiveIntSchema, async (mediaItemId) => {
+    const db = getDatabase()
+    const mediaItem = await db.media.getItem(mediaItemId)
+    if (!mediaItem) throw new Error('Media item not found')
+    const score = await db.media.getQualityScoreByMediaId(mediaItemId)
+    return analyzer.getRecommendedFormat(mediaItem, score?.overall_score || 0)
   })
 
   getLoggingService().info('[quality]', 'Quality analysis IPC handlers registered')

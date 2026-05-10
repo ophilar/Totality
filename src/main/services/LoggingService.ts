@@ -82,16 +82,32 @@ export class LoggingService {
   }
 
   private sanitize(text: any): string {
-    if (typeof text !== "string") return String(text)
+    if (typeof text !== 'string') return String(text)
     let result = text
     if (this.homeDir) {
       const escaped = this.homeDir.replace(/[\\]/g, '\\\\')
-      result = result.replace(new RegExp(escaped, 'gi'), '~').replace(new RegExp(this.homeDir.replace(/\\/g, '/'), 'gi'), '~')
+      result = result
+        .replace(new RegExp(escaped, 'gi'), '~')
+        .replace(new RegExp(this.homeDir.replace(/\\/g, '/'), 'gi'), '~')
     }
+
+    // Redact common sensitive patterns
     result = result.replace(/X-Plex-Token=[^&\s"']+/gi, 'X-Plex-Token=***')
     result = result.replace(/([?&]token=)[^&\s"']+/gi, '$1***')
     result = result.replace(/ENC:[A-Za-z0-9+/=]{8,}/g, 'ENC:***')
-    result = result.replace(/(api[_-]?key|apikey|api_token|access_token|secret)[=:]\s*['"]?[A-Za-z0-9_-]{20,}/gi, '$1=***')
+
+    // Handle Authorization headers (Basic/Bearer)
+    result = result.replace(/(Authorization:\s*)(Basic|Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi, '$1$2 ***')
+
+    // Handle generic key-value secrets in URLs, JSON, or logs
+    // Catches: api_key=..., "password": "...", Pw: ..., etc.
+    const secretKeys = 'api[_-]?key|apikey|api[_-]?token|access[_-]?token|secret|password|pass|pw|X-Emby-Token'
+    const secretRegex = new RegExp(
+      `(${secretKeys})([\\s"']*[:=][\\s"']*)[^"&\\s'\\r\\n]{4,}`,
+      'gi'
+    )
+    result = result.replace(secretRegex, '$1$2***')
+
     return result
   }
 

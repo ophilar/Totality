@@ -7,6 +7,7 @@ import type { MediaSource } from '@main/types/database'
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs/promises'
+import { generateSourceId } from '@main/providers/utils/IdUtils'
 
 export class SourceCrudService {
   constructor(
@@ -16,7 +17,7 @@ export class SourceCrudService {
   ) {}
 
   async addSource(config: SourceConfig): Promise<MediaSource> {
-    const sourceId = config.sourceId || this.generateSourceId(config.sourceType)
+    const sourceId = config.sourceId || generateSourceId(config.sourceType)
     const provider = createProvider(config.sourceType, { ...config, sourceId })
 
     const sourceRecord: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'> = {
@@ -30,7 +31,7 @@ export class SourceCrudService {
     await this.db.sources.upsertSource(sourceRecord)
     this.providers.set(sourceId, provider)
 
-    const source = this.db.sources.getSourceById(sourceId)
+    const source = await this.db.sources.getSourceById(sourceId)
     if (!source) throw new Error('Failed to retrieve created source')
 
     this.logging.info('[SourceCrudService]', `Added source: ${config.displayName} (${sourceId})`)
@@ -38,7 +39,7 @@ export class SourceCrudService {
   }
 
   async updateSource(sourceId: string, updates: Partial<SourceConfig>): Promise<void> {
-    const existing = this.db.sources.getSourceById(sourceId)
+    const existing = await this.db.sources.getSourceById(sourceId)
     if (!existing) throw new Error(`Source not found: ${sourceId}`)
 
     const updatedSource: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'> = {
@@ -78,9 +79,5 @@ export class SourceCrudService {
     try {
       await fs.rm(artworkPath, { recursive: true, force: true })
     } catch { /* ignore */ }
-  }
-
-  private generateSourceId(type: ProviderType): string {
-    return `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 }

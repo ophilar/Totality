@@ -10,6 +10,8 @@ import {
 } from '@main/services/MediaNormalizer'
 import { ProviderType, LibraryType, MediaItemVersion, MediaItemType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
+import { generateSourceId } from '@main/providers/utils/IdUtils'
+import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
 
 // Credentials for different provider types
 export interface ProviderCredentials {
@@ -313,12 +315,8 @@ export abstract class BaseMediaProvider implements MediaProvider {
   protected isConnected: boolean = false
 
   constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId(config.sourceType)
+    this.sourceId = config.sourceId || generateSourceId(config.sourceType)
     this.config = { ...config, sourceId: this.sourceId }
-  }
-
-  protected generateSourceId(type: ProviderType): string {
-    return `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
   abstract authenticate(credentials: ProviderCredentials): Promise<AuthResult>
@@ -334,15 +332,7 @@ export abstract class BaseMediaProvider implements MediaProvider {
    * Higher score = better quality.
    */
   protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
-    const res = v.resolution || 'SD'
-    const tierRank = res.includes('2160') ? 4
-      : res.includes('1080') ? 3
-      : res.includes('720') ? 2 : 1
-
-    const hdrBonus = (v.hdr_format && v.hdr_format !== 'None') ? 1000 : 0
-    const bitrateScore = (v.video_bitrate || 0) / 1000 // kbps to numeric weight
-
-    return tierRank * 100000 + hdrBonus + bitrateScore
+    return calculateVersionScore(v as any)
   }
 
   /**
@@ -361,43 +351,5 @@ export abstract class BaseMediaProvider implements MediaProvider {
   // Helper to normalize resolution string using MediaNormalizer
   protected normalizeResolution(width: number, height: number): string {
     return normalizeResolution(width, height)
-  }
-
-  // Helper to detect HDR format (kept for backward compatibility, uses MediaNormalizer logic internally if possible)
-  protected detectHdrFormat(colorSpace?: string, bitDepth?: number, profile?: string): string | undefined {
-    if (!colorSpace && !profile) return undefined
-
-    const colorSpaceLower = (colorSpace || '').toLowerCase()
-    const profileLower = (profile || '').toLowerCase()
-
-    if (profileLower.includes('dolby vision') || colorSpaceLower.includes('dv')) {
-      return 'Dolby Vision'
-    }
-    if (colorSpaceLower.includes('bt2020') || colorSpaceLower.includes('rec2020')) {
-      if (profileLower.includes('hdr10+') || colorSpaceLower.includes('hdr10+')) {
-        return 'HDR10+'
-      }
-      if (bitDepth && bitDepth >= 10) {
-        return 'HDR10'
-      }
-    }
-    if (colorSpaceLower.includes('hlg')) {
-      return 'HLG'
-    }
-
-    return undefined
-  }
-
-  // Helper to detect object-based audio
-  protected hasObjectAudio(codec?: string, profile?: string, title?: string): boolean {
-    const codecLower = (codec || '').toLowerCase()
-    const profileLower = (profile || '').toLowerCase()
-    const titleLower = (title || '').toLowerCase()
-
-    return (
-      codecLower.includes('truehd') && (profileLower.includes('atmos') || titleLower.includes('atmos')) ||
-      codecLower.includes('eac3') && (profileLower.includes('atmos') || titleLower.includes('atmos')) ||
-      codecLower.includes('dts') && (profileLower.includes('x') || titleLower.includes('dts:x') || titleLower.includes('dts-x'))
-    )
   }
 }

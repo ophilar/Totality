@@ -1,45 +1,23 @@
-import { ipcMain } from 'electron'
-import { getTranscodingService, TranscodeOptions } from '@main/services/TranscodingService'
-import { validateInput, GetTranscodeParamsSchema } from '@main/validation/schemas'
+import { getTranscodingService } from '@main/services/TranscodingService'
+import { GetTranscodeParamsSchema, TranscodeMediaItemSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 
-/**
- * Transcoding IPC Handlers
- */
 export function registerTranscodingHandlers(): void {
-  // Check if transcoding tools (Handbrake, etc.) are available
-  ipcMain.handle('transcoding:checkAvailability', async () => {
-    try {
-      return await getTranscodingService().checkAvailability()
-    } catch (error) {
-      getLoggingService().error('[IPC]', 'Error in transcoding:checkAvailability:', error)
-      throw error
-    }
+  createIpcHandler('transcoding:checkAvailability', async () => {
+    return await getTranscodingService().checkAvailability()
   })
 
-  // Get AI-optimized transcoding parameters for a file
-  ipcMain.handle('transcoding:getParameters', async (_event, filePath: unknown, options?: unknown) => {
-    try {
-      const [validPath, validOptions] = validateInput(
-        GetTranscodeParamsSchema, 
-        [filePath, options], 
-        'transcoding:getParameters'
-      )
-      return await getTranscodingService().getTranscodeParameters(validPath, validOptions as TranscodeOptions)
-    } catch (error) {
-      getLoggingService().error('[IPC]', 'Error in transcoding:getParameters:', error)
-      throw error
-    }
+  createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsSchema, async (filePath, options) => {
+    return await getTranscodingService().getTranscodeParameters(filePath, options as any)
   })
 
-  // Start a transcoding job for a media item
-  ipcMain.handle('transcoding:start', async (event, mediaItemId: number, options?: TranscodeOptions) => {
-    const service = getTranscodingService()
-    
-    // We use a custom progress reporter that sends updates back via IPC
-    return await service.transcode(mediaItemId, options, (progress) => {
-      event.sender.send('transcoding:progress', { mediaItemId, ...progress })
+  createValidatedIpcHandlerWithEvent('transcoding:start', TranscodeMediaItemSchema, async (event, mediaItemId, options) => {
+    return await getTranscodingService().transcode(mediaItemId, options as any, (p) => {
+      event.sender.send('transcoding:progress', { mediaItemId, ...p })
     })
   })
+
+  getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }
 
