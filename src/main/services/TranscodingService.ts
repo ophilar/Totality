@@ -44,9 +44,37 @@ export class TranscodingService {
   private ffmpegPath: string | null = null
   private availabilityOverride: { handbrake?: boolean; mkvtoolnix?: boolean; ffmpeg?: boolean } | null = null
   private activeJobs = new Map<number, AbortController>()
+  private initializedPromise: Promise<void> | null = null
 
   constructor() {
-    this.initializePaths()
+    // Initialization is deferred until first use to allow DB to be ready
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initializedPromise) return this.initializedPromise
+    this.initializedPromise = this.initializePaths()
+    return this.initializedPromise
+  }
+
+  private async initializePaths() {
+    const db = getDatabase()
+    if (!db.isInitialized) {
+      throw new Error('Database not initialized. Cannot load transcoding tool paths.')
+    }
+
+    const [hb, mkv] = await Promise.all([
+      db.config.getSetting('handbrake_path'),
+      db.config.getSetting('mkvmerge_path')
+    ])
+
+    this.handbrakePath = hb || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
+    this.mkvmergePath = mkv || (process.platform === 'win32' ? 'mkvmerge.exe' : 'mkvmerge')
+    
+    // Fallback FFmpeg from MediaFileAnalyzer
+    const analyzer = getMediaFileAnalyzer()
+    this.ffmpegPath = analyzer.getFFprobePath()?.replace(/ffprobe/i, 'ffmpeg') || 'ffmpeg'
+    
+    getLoggingService().debug('[TranscodingService]', `Paths initialized - Handbrake: ${this.handbrakePath}, MKVMerge: ${this.mkvmergePath}`)
   }
 
   /**
@@ -54,16 +82,6 @@ export class TranscodingService {
    */
   setAvailabilityOverride(override: { handbrake?: boolean; mkvtoolnix?: boolean; ffmpeg?: boolean } | null): void {
     this.availabilityOverride = override
-  }
-
-  private initializePaths() {
-    const db = getDatabase()
-    this.handbrakePath = db.config.getSetting('handbrake_path') || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
-    this.mkvmergePath = db.config.getSetting('mkvmerge_path') || (process.platform === 'win32' ? 'mkvmerge.exe' : 'mkvmerge')
-    
-    // Fallback FFmpeg from MediaFileAnalyzer
-    const analyzer = getMediaFileAnalyzer()
-    this.ffmpegPath = analyzer.getFFprobePath()?.replace(/ffprobe/i, 'ffmpeg') || 'ffmpeg'
   }
 
   /**
@@ -74,6 +92,8 @@ export class TranscodingService {
     mkvtoolnix: boolean;
     ffmpeg: boolean;
   }> {
+    await this.ensureInitialized()
+
     if (this.availabilityOverride) {
       return {
         handbrake: this.availabilityOverride.handbrake ?? false,

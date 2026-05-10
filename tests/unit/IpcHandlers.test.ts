@@ -2,14 +2,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ipcMain } from 'electron'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { registerDatabaseHandlers } from '@main/ipc/database'
+import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 import { getLoggingService } from '@main/services/LoggingService'
+import { z } from 'zod'
 
 // Track registered handlers
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
 
-// Override ipcMain.handle to capture registrations
+// Override ipcMain.handle/removeHandler to capture registrations
 vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+  if (handlers.has(channel)) {
+    throw new Error(`Attempted to register a second handler for '${channel}'`)
+  }
   handlers.set(channel, handler)
+  return undefined as never
+})
+
+vi.mocked(ipcMain.removeHandler).mockImplementation((channel: string) => {
+  handlers.delete(channel)
   return undefined as never
 })
 
@@ -62,6 +72,29 @@ describe('IPC Handler Registration', () => {
 
     expect(await db.config.getSetting('test_setting')).toBe('test_value')
 
+  })
+
+  it('registerListHandlers deduplicates aliases to prevent crash', () => {
+    const base = 'test:resource'
+    const schema = z.any()
+    
+    // This should NOT throw even though 'test:resource:list' is duplicated in aliases
+    expect(() => {
+      registerListHandlers(
+        base,
+        () => [],
+        () => 0,
+        schema,
+        {
+          listAlias: ['test:resource:list', 'test:resource:alt'],
+          countAlias: ['test:resource:count', 'test:resource:count']
+        }
+      )
+    }).not.toThrow()
+
+    expect(handlers.has('test:resource:list')).toBe(true)
+    expect(handlers.has('test:resource:alt')).toBe(true)
+    expect(handlers.has('test:resource:count')).toBe(true)
   })
 })
 

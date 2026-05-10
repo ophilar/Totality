@@ -4,6 +4,7 @@ import * as path from 'path'
 import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 
 // Mock TMDB so we don't hit real API
 vi.mock('../../src/main/services/TMDBService', () => ({
@@ -18,38 +19,6 @@ vi.mock('../../src/main/services/TMDBService', () => ({
     }),
     getMovieDetails: vi.fn().mockResolvedValue({ id: 123, title: 'Test Movie' }),
     buildImageUrl: vi.fn().mockReturnValue('http://image.url'),
-  }),
-}))
-
-// Mock MediaFileAnalyzer because it requires ffprobe binary
-vi.mock('../../src/main/services/MediaFileAnalyzer', () => ({
-  getMediaFileAnalyzer: () => ({
-    isAvailable: vi.fn().mockResolvedValue(true),
-    analyzeFile: vi.fn().mockResolvedValue({
-      success: true,
-      duration: 7200,
-      video: { width: 1920, height: 1080, codec: 'h264' },
-      audioTracks: [{ codec: 'aac', channels: 2 }],
-    }),
-    analyzeFilesParallel: vi.fn().mockImplementation(async (files) => {
-      const map = new Map()
-      for (const f of files) {
-        map.set(f, {
-          success: true,
-          duration: 7200,
-          video: { width: 1920, height: 1080, codec: 'h264' },
-          audioTracks: [{ codec: 'aac', channels: 2 }],
-        })
-      }
-      return map
-    }),
-    enhanceMetadata: vi.fn().mockImplementation((m, a) => ({
-      ...m,
-      duration: a.duration,
-      resolution: '1080p',
-      videoCodec: a.video?.codec,
-      audioCodec: a.audioTracks?.[0]?.codec
-    })),
   }),
 }))
 
@@ -71,6 +40,19 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     db = await setupTestDb()
     tempDir = createTempDir('local-provider-test')
     
+    // Setup real analyzer but mock ffprobe call
+    const analyzer = getMediaFileAnalyzer()
+    vi.spyOn(analyzer as any, 'runFFprobe').mockImplementation(async (filePath: string) => {
+      return {
+        format: { format_name: 'matroska', size: '1000', duration: '7200' },
+        streams: [
+          { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, avg_frame_rate: '24/1' },
+          { codec_type: 'audio', codec_name: 'aac', channels: 2 }
+        ]
+      }
+    })
+    vi.spyOn(analyzer, 'isAvailable').mockResolvedValue(true)
+
     // Correctly initialize with SourceConfig object
     provider = new LocalFolderProvider({
       sourceId,
@@ -118,6 +100,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
 
     expect(items[0].year).toBe(2020)
     expect(items[0].file_path).toBe(movieFile)
+    expect(items[0].resolution).toBe('1080p') // From real MediaNormalizer
   })
 
   it('should merge new versions during incremental scan', async () => {

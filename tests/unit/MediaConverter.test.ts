@@ -7,20 +7,6 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-
-// Mock MediaNormalizer — normalize functions pass through for simplicity
-vi.mock('../../src/main/services/MediaNormalizer', () => ({
-  normalizeVideoCodec: vi.fn((c: string) => c),
-  normalizeAudioCodec: vi.fn((c: string) => c),
-  normalizeResolution: vi.fn((_w: number, h: number) => h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : 'SD'),
-  normalizeHdrFormat: vi.fn((f: string) => f),
-  normalizeBitrate: vi.fn((b: number) => b),
-  normalizeFrameRate: vi.fn((f: number) => f),
-  normalizeAudioChannels: vi.fn((c: number) => c),
-  normalizeSampleRate: vi.fn((s: number) => s),
-  normalizeContainer: vi.fn((c: string) => c),
-}))
-
 import { MediaConverter } from '@main/services/MediaConverter'
 import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 
@@ -60,7 +46,7 @@ describe('MediaConverter.toMediaItem', () => {
     expect(item.source_id).toBe('src-1')
     expect(item.source_type).toBe('plex')
     expect(item.library_id).toBe('lib-1')
-    expect(item.video_codec).toBe('h264')
+    expect(item.video_codec).toBe('H.264')
     expect(item.video_bitrate).toBe(10000)
     expect(item.resolution).toBe('1080p')
   })
@@ -115,7 +101,7 @@ describe('MediaConverter.toMediaItem', () => {
       }),
       defaultOptions,
     )
-    expect(item.audio_codec).toBe('truehd')
+    expect(item.audio_codec).toBe('TrueHD')
     expect(item.audio_channels).toBe(8)
     expect(item.has_object_audio).toBe(true)
     expect(item.audio_tracks).toBeDefined()
@@ -128,7 +114,7 @@ describe('MediaConverter.toMediaItem', () => {
       createMetadata({ audioCodec: 'ac3', audioChannels: 6, audioBitrate: 448 }),
       defaultOptions,
     )
-    expect(item.audio_codec).toBe('ac3')
+    expect(item.audio_codec).toBe('AC3')
     expect(item.audio_channels).toBe(6)
     expect(item.audio_bitrate).toBe(448)
   })
@@ -188,7 +174,7 @@ describe('MediaConverter.convertAudioTracks', () => {
       { index: 0, codec: 'truehd', channels: 8, bitrate: 5000, language: 'eng', title: 'English', hasObjectAudio: true, isDefault: true },
     ])
     expect(tracks).toHaveLength(1)
-    expect(tracks[0].codec).toBe('truehd')
+    expect(tracks[0].codec).toBe('TrueHD')
     expect(tracks[0].channels).toBe(8)
     expect(tracks[0].hasObjectAudio).toBe(true)
     expect(tracks[0].isDefault).toBe(true)
@@ -250,7 +236,7 @@ describe('MediaConverter.selectBestAudioTrack', () => {
       hasObjectAudio: true,
     }))
     expect(result).toBeDefined()
-    expect(result!.codec).toBe('truehd')
+    expect(result!.codec).toBe('TrueHD')
     expect(result!.channels).toBe(8)
     expect(result!.hasObjectAudio).toBe(true)
   })

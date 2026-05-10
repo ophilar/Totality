@@ -277,13 +277,14 @@ export class StatsRepository {
     return res?.count || 0
   }
 
-  public async getSourceStats(): Promise<Array<{ sourceId: string, displayName: string, sourceType: string, itemCount: number, lastScanAt?: string }>> {
+  public async getSourceStats(): Promise<Array<{ sourceId: string, displayName: string, sourceType: string, isEnabled: boolean, itemCount: number, lastScanAt?: string }>> {
     const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
 
     const rows = await this.drizzle.select({
       sourceId: schema.mediaSources.sourceId,
       displayName: schema.mediaSources.displayName,
       sourceType: schema.mediaSources.sourceType,
+      isEnabled: schema.mediaSources.isEnabled,
       lastScanAt: schema.mediaSources.lastScanAt,
       itemCount: count(schema.mediaItems.id)
     })
@@ -292,15 +293,34 @@ export class StatsRepository {
       eq(schema.mediaSources.sourceId, schema.mediaItems.sourceId),
       visibilitySubquery(schema.mediaItems.sourceId, schema.mediaItems.libraryId)
     ))
-    .where(eq(schema.mediaSources.isEnabled, 1))
     .groupBy(schema.mediaSources.sourceId)
     .all()
 
     return rows.map(r => ({
       ...r,
+      isEnabled: !!r.isEnabled,
       itemCount: r.itemCount || 0,
       lastScanAt: r.lastScanAt || undefined
     }))
+  }
+
+  public async getAggregatedSourceStats(): Promise<{
+    totalSources: number;
+    enabledSources: number;
+    totalItems: number;
+    bySource: Array<{ sourceId: string, displayName: string, sourceType: string, isEnabled: boolean, itemCount: number, lastScanAt?: string }>;
+  }> {
+    const bySource = await this.getSourceStats()
+    const totalSources = bySource.length
+    const enabledSources = bySource.filter(s => s.isEnabled).length
+    const totalItems = bySource.reduce((acc, curr) => acc + curr.itemCount, 0)
+
+    return {
+      totalSources,
+      enabledSources,
+      totalItems,
+      bySource
+    }
   }
 
   public async getMusicCompletenessStats(sourceId?: string): Promise<MusicCompletenessStats> {
@@ -356,5 +376,50 @@ export class StatsRepository {
     const distribution: Record<string, number> = { HI_RES: 0, LOSSLESS: 0, LOSSY_HIGH: 0, LOSSY_MID: 0, LOSSY_LOW: 0 }
     rows.forEach(r => { if (r.qualityTier in distribution) distribution[r.qualityTier] = r.count })
     return distribution
+  }
+
+  public async getMusicLibraryStats(sourceId?: string): Promise<{ 
+    totalArtists: number; totalAlbums: number; totalTracks: number; totalSize: number; avgAudioBitrate: number 
+  }> {
+    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+    
+    const conditions = [sourceEnabledSubquery(schema.musicArtists.sourceId), visibilitySubquery(schema.musicArtists.sourceId, schema.musicArtists.libraryId)]
+    if (sourceId) conditions.push(eq(schema.musicArtists.sourceId, sourceId))
+
+    const [artistRes, albumRes, trackRes] = await Promise.all([
+      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicArtists.id})` })
+        .from(schema.musicArtists)
+        .where(and(...conditions))
+        .get(),
+      this.drizzle.select({ 
+        count: sql<number>`count(distinct ${schema.musicAlbums.id})`, 
+        totalSize: sql<number>`sum(${schema.musicAlbums.totalSize})`, 
+        avgBitrate: sql<number>`avg(${schema.musicAlbums.avgAudioBitrate})` 
+      })
+        .from(schema.musicAlbums)
+        .where(and(
+          sourceEnabledSubquery(schema.musicAlbums.sourceId),
+          visibilitySubquery(schema.musicAlbums.sourceId, schema.musicAlbums.libraryId),
+          sourceId ? eq(schema.musicAlbums.sourceId, sourceId) : undefined
+        ))
+        .get(),
+      this.drizzle.select({ count: sql<number>`count(distinct ${schema.musicTracks.id})` })
+        .from(schema.musicTracks)
+        .where(and(
+          sourceEnabledSubquery(schema.musicTracks.sourceId),
+          visibilitySubquery(schema.musicTracks.sourceId, schema.musicTracks.libraryId),
+          sourceId ? eq(schema.musicTracks.sourceId, sourceId) : undefined
+        ))
+        .get()
+    ])
+
+    return { 
+      totalArtists: artistRes?.count || 0, 
+      totalAlbums: albumRes?.count || 0, 
+      totalTracks: trackRes?.count || 0, 
+      totalSize: albumRes?.totalSize || 0, 
+      avgAudioBitrate: albumRes?.avgBitrate || 0 
+    }
   }
 }

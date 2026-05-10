@@ -169,33 +169,15 @@ export class FFprobeWorkerPool {
    */
   async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
     if (!this.initialized || !this.ffprobePath) {
-      return {
-        success: false,
-        error: 'FFprobeWorkerPool not initialized',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('FFprobeWorkerPool not initialized')
     }
 
     if (this.isShuttingDown) {
-      return {
-        success: false,
-        error: 'Worker pool is shutting down',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('Worker pool is shutting down')
     }
 
     if (this.taskQueue.length >= FFprobeWorkerPool.MAX_QUEUE_DEPTH) {
-      return {
-        success: false,
-        error: 'Analysis queue is full — too many files queued',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
+      throw new Error('Analysis queue is full — too many files queued')
     }
 
     return new Promise((resolve, reject) => {
