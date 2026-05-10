@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import axios, { AxiosInstance } from 'axios'
+import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import {
   normalizeVideoCodec,
@@ -86,6 +87,10 @@ export class PlexProvider extends BaseMediaProvider {
   private scanCancelled = false
   private musicScanCancelled = false
 
+  private get plexApiUrl(): string {
+    return (this.config.connectionConfig as any)?.plexApiUrl || 'https://plex.tv/api/v2'
+  }
+
   constructor(config: SourceConfig) {
     super(config)
 
@@ -94,7 +99,7 @@ export class PlexProvider extends BaseMediaProvider {
       headers: {
         'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
         'X-Plex-Product': PRODUCT_NAME,
-        'X-Plex-Version': '1.0.0',
+        'X-Plex-Version': app.getVersion(),
         'X-Plex-Platform': process.platform === 'win32' ? 'Windows' : 'macOS',
         Accept: 'application/json',
       },
@@ -107,17 +112,18 @@ export class PlexProvider extends BaseMediaProvider {
 
   async requestAuthPin(): Promise<PlexAuthPin> {
     try {
-      const response = await this.api.post(`${PLEX_API_URL}/pins`, {
+      const response = await this.api.post(`${this.plexApiUrl}/pins`, {
         strong: true,
       })
       return response.data as PlexAuthPin
     } catch (error) {
-      console.error('Failed to request auth PIN:', error)
+      getLoggingService().error('[PlexProvider]', 'Failed to request auth PIN:', error)
       throw new Error('Failed to initiate Plex authentication')
     }
   }
 
   getAuthUrl(_pinId: number, code: string): string {
+    const authBase = (this.config.connectionConfig as any)?.plexTvUrl || 'https://app.plex.tv/auth'
     const params = new URLSearchParams({
       clientID: CLIENT_IDENTIFIER,
       code: code,
@@ -125,12 +131,12 @@ export class PlexProvider extends BaseMediaProvider {
       'context[device][platform]': process.platform === 'win32' ? 'Windows' : 'macOS',
       'context[device][device]': PRODUCT_NAME
     })
-    return `https://app.plex.tv/auth#?${params.toString()}`
+    return `${authBase}/#!?${params.toString()}`
   }
 
   async checkAuthPin(pinId: number): Promise<string | null> {
     try {
-      const response = await this.api.get(`${PLEX_API_URL}/pins/${pinId}`)
+      const response = await this.api.get(`${this.plexApiUrl}/pins/${pinId}`)
       const pin = response.data as PlexAuthPin
 
       if (pin.authToken) {
@@ -917,14 +923,5 @@ export class PlexProvider extends BaseMediaProvider {
     this.selectedServer = server
     // @ts-ignore
     this.config.connectionConfig = { ...this.config.connectionConfig, serverId: server.machineIdentifier, token: this.authToken || '' }
-  }
-
-  protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
-    let score = 0
-    if (v.resolution === '4K') score += 1000
-    else if (v.resolution === '1080p') score += 500
-    if (v.hdr_format && v.hdr_format !== 'None') score += 200
-    score += (v.video_bitrate || 0) / 1000
-    return score
   }
 }

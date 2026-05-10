@@ -16,6 +16,7 @@ import { retryWithBackoff } from '@main/services/utils/retryWithBackoff'
  */
 
 import axios, { AxiosInstance } from 'axios'
+import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { RateLimiters, SimpleDelayRateLimiter } from '@main/services/utils/RateLimiter'
@@ -120,7 +121,9 @@ export class MusicBrainzService extends CancellableOperation {
     return (await db.config.getSetting('musicbrainz_base_url')) || 'https://musicbrainz.org/ws/2'
   }
 
-  private readonly USER_AGENT = 'Totality/0.1.0 (https://github.com/totality-app/totality)'
+  private get userAgent(): string {
+    return `Totality/${app.getVersion()} (https://github.com/totality-app/totality)`
+  }
 
   // Cover Art Archive base URL
   private static readonly COVER_ART_BASE_URL = 'https://coverartarchive.org'
@@ -129,7 +132,7 @@ export class MusicBrainzService extends CancellableOperation {
     super()
     this.api = axios.create({
       headers: {
-        'User-Agent': this.USER_AGENT,
+        'User-Agent': this.userAgent,
         'Accept': 'application/json',
       },
       timeout: 60000, // Increased from 30s to 60s

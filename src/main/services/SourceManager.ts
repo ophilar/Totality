@@ -343,3 +343,7 @@ export function getSourceManager(): SourceManager {
   if (!sourceManagerInstance) sourceManagerInstance = new SourceManager()
   return sourceManagerInstance
 }
+
+export function resetSourceManagerForTesting(): void {
+  sourceManagerInstance = null
+}

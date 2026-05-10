@@ -18,22 +18,27 @@ import { LibraryType, ProviderType } from '@main/types/database'
 import type { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
 import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
-import { getErrorMessage } from '@main/ipc/utils/createHandler'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
+import { createValidatedIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandler } from '@main/ipc/utils/createHandler'
 import {
-  validateInput,
   AddSourceSchema,
-  UpdateSourceSchema,
-  KodiMySQLConfigSchema,
-  KodiMySQLTestConfigSchema,
-  SafeUrlSchema,
+  UpdateSourceTupleSchema,
+  ToggleSourceTupleSchema,
+  ToggleLibraryTupleSchema,
+  ScanLibraryTupleSchema,
+  ScanItemTupleSchema,
+  PlexAuthTupleSchema,
+  PlexSelectServerTupleSchema,
   SourceIdSchema,
+  SafeUrlSchema,
   BooleanSchema,
   FilePathSchema,
-  OptionalProviderTypeSchema,
+  KodiMySQLConfigSchema,
+  KodiMySQLTestConfigSchema,
   LocalFolderConfigSchema,
   LocalFolderWithLibrariesSchema,
 } from '@main/validation/schemas'
+import { z } from 'zod'
 
 /**
  * Register all source-related IPC handlers
@@ -59,1206 +64,358 @@ export function registerSourceHandlers(): void {
   // SOURCE CRUD
   // ============================================================================
 
-  /**
-   * Add a new media source
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.ADD, async (_event, config: unknown) => {
-    try {
-      const validatedConfig = validateInput(AddSourceSchema, config, 'sources:add')
-      getLoggingService().info('[sources]', '[IPC sources:add] Adding source:', validatedConfig.displayName, `(${validatedConfig.sourceType})`)
-      return await manager.addSource(validatedConfig)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error adding source:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.ADD, AddSourceSchema, async (config) => {
+    return await manager.addSource(config)
   })
 
-  /**
-   * Update an existing media source
-   */
-  ipcMain.handle('sources:update', async (_event, sourceId: unknown, updates: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:update')
-      const validatedUpdates = validateInput(UpdateSourceSchema, updates, 'sources:update')
-      getLoggingService().info('[sources]', '[IPC sources:update] Updating source:', validSourceId)
-      await manager.updateSource(validSourceId, validatedUpdates)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error updating source:', error)
-      throw error
-    }
+  createValidatedIpcHandler('sources:update', UpdateSourceTupleSchema, async (sourceId, updates) => {
+    await manager.updateSource(sourceId, updates)
   })
 
-  /**
-   * Remove a media source
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.REMOVE, async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:remove')
-      getLoggingService().info('[sources]', '[IPC sources:remove] Removing source:', validSourceId)
-      await manager.removeSource(validSourceId)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error removing source:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.REMOVE, SourceIdSchema, async (sourceId) => {
+    await manager.removeSource(sourceId)
   })
 
-  /**
-   * Get all sources (optionally filtered by type)
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.LIST, async (_event, type?: unknown) => {
-    try {
-      const validType = type !== undefined ? validateInput(OptionalProviderTypeSchema, type, 'sources:list') : undefined
-      return await manager.getSources(validType)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error listing sources:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.SOURCES.LIST, async (type?: ProviderType) => {
+    return await manager.getSources(type)
   })
 
-  /**
-   * Get a single source by ID
-   */
-  ipcMain.handle('sources:get', async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:get')
-      return await manager.getSource(validSourceId)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting source:', error)
-      throw error
-    }
+  createValidatedIpcHandler('sources:get', SourceIdSchema, async (sourceId) => {
+    return await manager.getSource(sourceId)
   })
 
-  /**
-   * Get enabled sources only
-   */
-  ipcMain.handle('sources:getEnabled', async () => {
-    try {
-      return await manager.getEnabledSources()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting enabled sources:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.SOURCES.GET_ACTIVE, async () => {
+    return await manager.getEnabledSources()
   })
 
-  /**
-   * Toggle source enabled status
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.TOGGLE, async (_event, sourceId: unknown, enabled: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:toggle')
-      const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggle')
-      await manager.toggleSource(validSourceId, validEnabled)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error toggling source:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TOGGLE, ToggleSourceTupleSchema, async (sourceId, enabled) => {
+    await manager.toggleSource(sourceId, enabled)
   })
 
   // ============================================================================
   // CONNECTION TESTING
   // ============================================================================
 
-  /**
-   * Test connection for a source
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.TEST_CONNECTION, async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:testConnection')
-      return await manager.testConnection(validSourceId)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error testing connection:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TEST_CONNECTION, SourceIdSchema, async (sourceId) => {
+    return await manager.testConnection(sourceId)
   })
 
   // ============================================================================
-  // PLEX-SPECIFIC AUTH
+  // PLEX AUTH
   // ============================================================================
 
-  /**
-   * Start Plex OAuth flow
-   */
-  ipcMain.handle('plex:startAuth', async () => {
-    try {
-      return await manager.plexStartAuth()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error starting Plex auth:', error)
-      throw error
-    }
+  createIpcHandler('plex:startAuth', async () => {
+    return await manager.plexStartAuth()
   })
 
-  /**
-   * Check Plex auth PIN (poll for completion)
-   */
-  ipcMain.handle('plex:checkAuth', async (_event, pinId: number) => {
-    try {
-      return await manager.plexCompleteAuth(pinId)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking Plex auth:', error)
-      throw error
-    }
+  createValidatedIpcHandler('plex:completeAuth', z.number(), async (pinId) => {
+    return await manager.plexCompleteAuth(pinId)
   })
 
-  /**
-   * Authenticate with token and discover servers
-   */
-  ipcMain.handle('plex:authenticateAndDiscover', async (_event, token: string, displayName: string) => {
-    try {
-      return await manager.plexAuthenticateAndDiscover(token, displayName)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error authenticating Plex:', error)
-      throw error
-    }
+  createValidatedIpcHandler('plex:authenticateAndDiscover', PlexAuthTupleSchema, async (token, displayName) => {
+    return await manager.plexAuthenticateAndDiscover(token, displayName)
   })
 
-  /**
-   * Select a Plex server for a source
-   * Supports both:
-   *   - Legacy: (serverId) - uses first Plex source
-   *   - New: (sourceId, serverId) - uses specified source
-   */
   ipcMain.handle('plex:selectServer', async (_event, sourceIdOrServerId: string, serverId?: string) => {
-    // New API: both sourceId and serverId provided
-    if (serverId) {
-      return await manager.plexSelectServer(sourceIdOrServerId, serverId)
-    }
-
-    // Legacy API: only serverId provided
-    const resolvedServerId = sourceIdOrServerId
-
-    // Try to find first Plex source
+    if (serverId) return await manager.plexSelectServer(sourceIdOrServerId, serverId)
     const plexSources = await manager.getSources(ProviderType.Plex)
-    if (plexSources.length > 0) {
-      const resolvedSourceId = plexSources[0].source_id
-      getLoggingService().info('[plex:selectServer]', `Using first Plex source: ${resolvedSourceId}`)
-      return await manager.plexSelectServer(resolvedSourceId, resolvedServerId)
-    }
-
-    throw new Error('No Plex source found to select server')
+    if (plexSources.length > 0) return await manager.plexSelectServer(plexSources[0].source_id, sourceIdOrServerId)
+    throw new Error('No Plex source found')
   })
 
-  /**
-   * Get Plex servers for a source
-   * If no sourceId is provided, falls back to the first Plex source in SourceManager
-   */
-  ipcMain.handle('plex:getServers', async (_event, sourceId?: string) => {
-    try {
-      // If sourceId provided, use SourceManager
-      if (sourceId) {
-        return await manager.plexGetServers(sourceId)
-      }
-
-      // Try to find first Plex source
-      const plexSources = await manager.getSources(ProviderType.Plex)
-      if (plexSources.length > 0) {
-        const resolvedSourceId = plexSources[0].source_id
-        getLoggingService().info('[plex:getServers]', `Using first Plex source: ${resolvedSourceId}`)
-        return await manager.plexGetServers(resolvedSourceId)
-      }
-
-      throw new Error('No Plex source found to get servers')
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting Plex servers:', error)
-      throw error
-    }
+  createIpcHandler('plex:getServers', async (sourceId?: string) => {
+    if (sourceId) return await manager.plexGetServers(sourceId)
+    const plexSources = await manager.getSources(ProviderType.Plex)
+    if (plexSources.length > 0) return await manager.plexGetServers(plexSources[0].source_id)
+    throw new Error('No Plex source found')
   })
 
   // ============================================================================
   // LIBRARY OPERATIONS
   // ============================================================================
 
-  /**
-   * Get libraries for a source
-   */
-  ipcMain.handle('sources:getLibraries', async (_event, sourceId: unknown) => {
+  createValidatedIpcHandler('sources:getLibraries', SourceIdSchema, async (sourceId) => {
     try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getLibraries')
-      return await manager.getLibraries(validSourceId)
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
-      getLoggingService().warn('[IPC]', `sources:getLibraries failed for ${sourceId}: ${msg}`)
-      return []
-    }
+      return await manager.getLibraries(sourceId)
+    } catch { return [] }
   })
 
-  /**
-   * Get libraries for a source with enabled status from database
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, async (_event, sourceId: unknown) => {
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, SourceIdSchema, async (sourceId) => {
     try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getLibrariesWithStatus')
       const db = getDatabase()
-      const manager = getSourceManager()
-
-      // Get libraries from the provider
-      const libraries = await manager.getLibraries(validSourceId)
-
-      // Get stored library settings from database
-      const storedLibraries = await db.sources.getSourceLibraries(validSourceId) as Array<{
-        libraryId: string
-        libraryName: string
-        libraryType: string
-        isEnabled: boolean
-        isProtected: boolean
-        lastScanAt: string | null
-        itemsScanned: number
-      }>
+      const libraries = await manager.getLibraries(sourceId)
+      const storedLibraries = await db.sources.getSourceLibraries(sourceId) as any[]
       const storedMap = new Map(storedLibraries.map(l => [l.libraryId, l]))
 
-      // Merge: libraries from provider + enabled status from DB
       return libraries.map(lib => {
         const stored = storedMap.get(lib.id)
         return {
           ...lib,
-          isEnabled: stored ? !!stored.isEnabled : true, // Default to enabled
-          isProtected: stored ? !!stored.isProtected : false, // Default to not protected
+          isEnabled: stored ? !!stored.isEnabled : true,
+          isProtected: stored ? !!stored.isProtected : false,
           lastScanAt: stored?.lastScanAt || null,
           itemsScanned: stored?.itemsScanned || 0,
         }
       })
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error)
-      getLoggingService().warn('[IPC]', `sources:getLibrariesWithStatus failed for ${sourceId}: ${msg}`)
-      return []
-    }
+    } catch { return [] }
   })
 
-  /**
-   * Toggle a library's enabled status
-   */
-  ipcMain.handle('sources:toggleLibrary', async (event, sourceId: unknown, libraryId: unknown, enabled: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:toggleLibrary')
-      const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:toggleLibrary')
-      const validEnabled = validateInput(BooleanSchema, enabled, 'sources:toggleLibrary')
-      getLoggingService().info('[IPC sources:toggleLibrary]', validSourceId, validLibraryId, validEnabled ? 'enabled' : 'disabled')
-      const db = getDatabase()
-      await db.sources.toggleLibrary(validSourceId, validLibraryId, validEnabled)
-
-      // Notify renderer that library settings changed
-      const win = getWindowFromEvent(event)
-      safeSend(win, 'library:updated', { type: 'libraryToggle', sourceId: validSourceId, libraryId: validLibraryId, enabled: validEnabled })
-
-      return { success: true }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error toggling library:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Set multiple libraries' enabled status at once (used during source setup)
-   */
-  ipcMain.handle('sources:setLibrariesEnabled', async (_event, sourceId: unknown, libraries: Array<{
-    id: string
-    name: string
-    type: string
-    enabled: boolean
-  }>) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:setLibrariesEnabled')
-      const db = getDatabase()
-      await db.sources.setLibrariesEnabled(validSourceId, libraries)
-      return { success: true }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error setting libraries enabled:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Get only enabled library IDs for a source
-   */
-  ipcMain.handle('sources:getEnabledLibraryIds', async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:getEnabledLibraryIds')
-      const db = getDatabase()
-      return await db.sources.getEnabledLibraryIds(validSourceId)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting enabled library IDs:', error)
-      throw error
-    }
-  })
-
-  /**
-   * Stop current scan
-   */
-  ipcMain.handle('sources:stopScan', async () => {
-    try {
-      getLoggingService().info('[sources]', '[IPC] Stopping scan...')
-      manager.stopScan()
-      return { success: true }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error stopping scan:', error)
-      return { success: false, error: getErrorMessage(error) }
-    }
-  })
-
-  /**
-   * Scan a library
-   */
-  ipcMain.handle('sources:scanLibrary', async (event, sourceId: unknown, libraryId: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:scanLibrary')
-    const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:scanLibrary')
+  createValidatedIpcHandlerWithEvent('sources:toggleLibrary', ToggleLibraryTupleSchema, async (event, sourceId, libraryId, enabled) => {
+    const db = getDatabase()
+    await db.sources.toggleLibrary(sourceId, libraryId, enabled)
     const win = getWindowFromEvent(event)
-    getLoggingService().info('[IPC sources:scanLibrary]', `Starting scan for ${validSourceId}/${validLibraryId}, win exists: ${!!win}`)
+    safeSend(win, 'library:updated', { type: 'libraryToggle', sourceId, libraryId, enabled })
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('sources:setLibrariesEnabled', z.tuple([SourceIdSchema, z.array(z.any())]), async (sourceId, libraries) => {
+    const db = getDatabase()
+    await db.sources.setLibrariesEnabled(sourceId, libraries)
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('sources:getEnabledLibraryIds', SourceIdSchema, async (sourceId) => {
+    const db = getDatabase()
+    return await db.sources.getEnabledLibraryIds(sourceId)
+  })
+
+  createIpcHandler('sources:stopScan', async () => {
+    manager.stopScan()
+    return { success: true }
+  })
+
+  createValidatedIpcHandlerWithEvent('sources:scanLibrary', ScanLibraryTupleSchema, async (event, sourceId, libraryId) => {
+    const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
-    let progressCount = 0
-
     try {
-      const result = await manager.scanLibrary(validSourceId, validLibraryId, (progress) => {
-        progressCount++
-        if (progressCount <= 3 || progressCount % 50 === 0) {
-          getLoggingService().info('[IPC sources:scanLibrary]', `Progress #${progressCount}: ${progress.percentage?.toFixed(1)}% - ${progress.currentItem}`)
-        }
-        onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
-      })
-
-      getLoggingService().info('[IPC sources:scanLibrary]', `Scan complete, sent ${progressCount} progress events`)
-
-      // Emit scan:completed for toast and refresh
+      const result = await manager.scanLibrary(sourceId, libraryId, onProgress)
       if (result.success && !result.cancelled) {
-        const source = await manager.getSource(validSourceId)
-        safeSend(win, 'scan:completed', {
-          sourceId: validSourceId,
-          libraryId: validLibraryId,
-          libraryName: source?.display_name || 'Library',
-          itemsScanned: result.itemsScanned,
-          itemsAdded: result.itemsAdded,
-          itemsUpdated: result.itemsUpdated,
-          isFirstScan: false // Manual scans aren't necessarily first
-        })
+        const source = await manager.getSource(sourceId)
+        safeSend(win, 'scan:completed', { sourceId, libraryId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: false })
       }
-
       return result
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error scanning library:', error)
-      throw error
-    } finally {
-      flush()
-    }
+    } finally { flush() }
   })
 
-  /**
-   * Scan all enabled sources
-   */
-  ipcMain.handle('sources:scanAll', async (event) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAll', z.any().optional(), async (event) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
-
     try {
-      const results = await manager.scanAllSources((sourceId, sourceName, progress) => {
-        onProgress(progress, { sourceId, sourceName })
-      })
-
-      // Emit scan:completed for each library that was successful
+      const results = await manager.scanAllSources((sId, sName, p) => onProgress(p, { sourceId: sId, sourceName: sName }))
       for (const [key, result] of results.entries()) {
         if (result.success && !result.cancelled) {
-          const [sourceId, libraryId] = key.split(':')
-          const source = await manager.getSource(sourceId)
-          safeSend(win, 'scan:completed', {
-            sourceId,
-            libraryId,
-            libraryName: source?.display_name || 'Library',
-            itemsScanned: result.itemsScanned,
-            itemsAdded: result.itemsAdded,
-            itemsUpdated: result.itemsUpdated,
-            isFirstScan: (result as any).isFirstScan || false
-          })
+          const [sId, lId] = key.split(':')
+          const source = await manager.getSource(sId)
+          safeSend(win, 'scan:completed', { sourceId: sId, libraryId: lId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: (result as any).isFirstScan || false })
         }
       }
-
-      // Convert Map to array for IPC
-      return Array.from(results.entries()).map(([key, value]) => ({
-        key,
-        ...value,
-      }))
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error scanning all sources:', error)
-      throw error
-    } finally {
-      flush()
-    }
+      return Array.from(results.entries()).map(([key, value]) => ({ key, ...value }))
+    } finally { flush() }
   })
 
   // ============================================================================
   // INCREMENTAL SCANNING
   // ============================================================================
 
-  /**
-   * Scan a single media item by file path
-   * If libraryId is not provided, attempts to auto-detect from file path
-   */
-  ipcMain.handle('sources:scanItem', async (event, sourceId: unknown, libraryId: unknown, filePath: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:scanItem')
-    const validLibraryId = libraryId != null ? validateInput(SourceIdSchema, libraryId, 'sources:scanItem') : null
-    const validFilePath = validateInput(FilePathSchema, filePath, 'sources:scanItem')
+  createValidatedIpcHandlerWithEvent('sources:scanItem', ScanItemTupleSchema, async (event, sourceId, libraryId, filePath) => {
     const win = getWindowFromEvent(event)
-    getLoggingService().info('[IPC sources:scanItem]', `Starting single item scan for ${path.basename(validFilePath)}`)
-
-    // determine the appropriate default based on provider type
-    let resolvedLibraryId = validLibraryId
+    let resolvedLibraryId = libraryId
     if (!resolvedLibraryId) {
-    // Get the provider to determine its type
-    const provider = manager.getProvider(validSourceId)
-    if (provider?.providerType === ProviderType.KodiLocal || provider?.providerType === ProviderType.KodiMySQL) {
-      // Kodi uses 'movies' and 'tvshows' as library IDs
-      resolvedLibraryId = 'movies'
-    } else {
-      // LocalFolderProvider uses 'movie' and 'tvshows'
-      resolvedLibraryId = 'movie'
-    }
-    getLoggingService().info('[IPC sources:scanItem]', `No libraryId provided, using default for ${provider?.providerType || 'unknown'}: ${resolvedLibraryId}`)
+      const provider = manager.getProvider(sourceId)
+      resolvedLibraryId = (provider?.providerType === ProviderType.KodiLocal || provider?.providerType === ProviderType.KodiMySQL) ? 'movies' : 'movie'
     }
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
-
     try {
-      const result = await manager.scanTargetedFiles(validSourceId, resolvedLibraryId, [validFilePath], (progress) => {
-        onProgress(progress, { sourceId: validSourceId, libraryId: resolvedLibraryId })
-      })
-
-      getLoggingService().info('[IPC sources:scanItem]', `Scan complete: ${result.itemsScanned} items`)
-      return result
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error scanning single item:', error)
-      throw error
-    } finally {
-      flush()
-    }
+      return await manager.scanTargetedFiles(sourceId, resolvedLibraryId, [filePath], (p) => onProgress(p, { sourceId, libraryId: resolvedLibraryId }))
+    } finally { flush() }
   })
 
-  /**
-   * Incremental scan of a single library (only new/changed items since last scan)
-   */
-  ipcMain.handle('sources:scanLibraryIncremental', async (event, sourceId: unknown, libraryId: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'sources:scanLibraryIncremental')
-    const validLibraryId = validateInput(SourceIdSchema, libraryId, 'sources:scanLibraryIncremental')
+  createValidatedIpcHandlerWithEvent('sources:scanLibraryIncremental', ScanLibraryTupleSchema, async (event, sourceId, libraryId) => {
     const win = getWindowFromEvent(event)
-    getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Starting incremental scan for ${validSourceId}/${validLibraryId}`)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
-
     try {
-      const result = await manager.scanLibraryIncremental(validSourceId, validLibraryId, (progress) => {
-        onProgress(progress, { sourceId: validSourceId, libraryId: validLibraryId })
-      })
-
-      getLoggingService().info('[IPC sources:scanLibraryIncremental]', `Scan complete: ${result.itemsScanned} items`)
-
-      // Emit scan:completed for toast and refresh
+      const result = await manager.scanLibraryIncremental(sourceId, libraryId, onProgress)
       if (result.success && !result.cancelled) {
-        const source = await manager.getSource(validSourceId)
-        safeSend(win, 'scan:completed', {
-          sourceId: validSourceId,
-          libraryId: validLibraryId,
-          libraryName: source?.display_name || 'Library',
-          itemsScanned: result.itemsScanned,
-          itemsAdded: result.itemsAdded,
-          itemsUpdated: result.itemsUpdated,
-          isFirstScan: false
-        })
+        const source = await manager.getSource(sourceId)
+        safeSend(win, 'scan:completed', { sourceId, libraryId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: false })
       }
-
       return result
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error in incremental library scan:', error)
-      throw error
-    } finally {
-      flush()
-    }
+    } finally { flush() }
   })
 
-  /**
-   * Incremental scan of all enabled sources (only new/changed items since last scan)
-   */
-  ipcMain.handle('sources:scanAllIncremental', async (event) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAllIncremental', z.any().optional(), async (event) => {
     const win = getWindowFromEvent(event)
-    getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Starting incremental scan of all sources')
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
-
     try {
-      const results = await manager.scanAllIncremental((sourceId, sourceName, progress) => {
-        onProgress(progress, { sourceId, sourceName })
-      })
-
-      getLoggingService().info('[sources]', '[IPC sources:scanAllIncremental] Incremental scan complete')
-
-      // Emit scan:completed for each library that was successful
+      const results = await manager.scanAllIncremental((sId, sName, p) => onProgress(p, { sourceId: sId, sourceName: sName }))
       for (const [key, result] of results.entries()) {
         if (result.success && !result.cancelled) {
-          const [sourceId, libraryId] = key.split(':')
-          const source = await manager.getSource(sourceId)
-          safeSend(win, 'scan:completed', {
-            sourceId,
-            libraryId,
-            libraryName: source?.display_name || 'Library',
-            itemsScanned: result.itemsScanned,
-            itemsAdded: result.itemsAdded,
-            itemsUpdated: result.itemsUpdated,
-            isFirstScan: false
-          })
+          const [sId, lId] = key.split(':')
+          const source = await manager.getSource(sId)
+          safeSend(win, 'scan:completed', { sourceId: sId, libraryId: lId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: false })
         }
       }
-
-      // Convert Map to array for IPC
-      return Array.from(results.entries()).map(([key, value]) => ({
-        key,
-        ...value,
-      }))
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error in incremental scan all:', error)
-      throw error
-    } finally {
-      flush()
-    }
+      return Array.from(results.entries()).map(([key, value]) => ({ key, ...value }))
+    } finally { flush() }
   })
 
   // ============================================================================
   // STATISTICS
   // ============================================================================
 
-  /**
-   * Get aggregated stats across all sources
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_STATS, async () => {
-    try {
-      return await manager.getAggregatedStats()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting stats:', error)
-      throw error
+  createIpcHandler(IPC_CHANNELS.SOURCES.GET_STATS, async (sourceId?: string) => {
+    if (sourceId) {
+      const db = getDatabase()
+      return await db.stats.getSourceStats(sourceId)
     }
-  })
-
-  /**
-   * Get supported provider types
-   */
-  ipcMain.handle(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS, async () => {
-    try {
-      return manager.getSupportedProviders()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting supported providers:', error)
-      throw error
-    }
+    return await manager.getAggregatedStats()
   })
 
   // ============================================================================
   // KODI LOCAL DETECTION
   // ============================================================================
 
-  /**
-   * Detect local Kodi installation
-   * Returns installation info or null if not found
-   */
-  ipcMain.handle('kodi:detectLocal', async () => {
-    try {
-      const discovery = getKodiLocalDiscoveryService()
-      return await discovery.detectLocalInstallation()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error detecting local Kodi:', error)
-      return null
-    }
+  createIpcHandler('kodi:detectLocal', async () => {
+    const discovery = getKodiLocalDiscoveryService()
+    return await discovery.detectLocalInstallation()
   })
 
-  /**
-   * Check if Kodi process is currently running
-   */
-  ipcMain.handle('kodi:isRunning', async () => {
-    try {
-      const discovery = getKodiLocalDiscoveryService()
-      return await discovery.isKodiRunning()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking if Kodi is running:', error)
-      return false
-    }
+  createIpcHandler('kodi:isRunning', async () => {
+    const discovery = getKodiLocalDiscoveryService()
+    return await discovery.isKodiRunning()
   })
 
-  /**
-   * Import collections from Kodi local database
-   */
-  ipcMain.handle('kodi:importCollections', async (event, sourceId: unknown) => {
-    const validSourceId = validateInput(SourceIdSchema, sourceId, 'kodi:importCollections')
-    const provider = manager.getProvider(validSourceId)
-    if (!provider) {
-      throw new Error(`Source not found: ${sourceId}`)
-    }
-
-    // Check if it's a Kodi local provider
-    if (provider.providerType !== ProviderType.KodiLocal) {
-      throw new Error('Collection import is only supported for Kodi local sources')
-    }
-
+  createValidatedIpcHandlerWithEvent('kodi:importCollections', SourceIdSchema, async (event, sourceId) => {
+    const provider = manager.getProvider(sourceId)
+    if (provider?.providerType !== ProviderType.KodiLocal) throw new Error('Not a Kodi local source')
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'kodi:collectionProgress', 'media')
-
     try {
-      // Import collections
-      const kodiProvider = provider as KodiLocalProvider
-      const result = await kodiProvider.importCollections((progress: { current: number; total: number; currentItem: string }) => {
-        onProgress(progress)
-      })
-
-      return result
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error importing Kodi collections:', error)
-      throw error
-    } finally {
-      flush()
-    }
-  })
-
-  /**
-   * Get collections from Kodi local database (without importing)
-   */
-  ipcMain.handle('kodi:getCollections', async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'kodi:getCollections')
-      const provider = manager.getProvider(validSourceId)
-      if (!provider) {
-        throw new Error(`Source not found: ${sourceId}`)
-      }
-
-      if (provider.providerType !== ProviderType.KodiLocal) {
-        throw new Error('This operation is only supported for Kodi local sources')
-      }
-
-      const kodiProvider = provider as KodiLocalProvider
-      return await kodiProvider.getCollections()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting Kodi collections:', error)
-      throw error
-    }
+      return await (provider as any).importCollections(onProgress)
+    } finally { flush() }
   })
 
   // ============================================================================
-  // KODI MYSQL/MARIADB CONNECTION
+  // KODI MYSQL
   // ============================================================================
 
-  /**
-   * Test MySQL/MariaDB connection and detect Kodi databases
-   */
-  ipcMain.handle('kodi:testMySQLConnection', async (_event, config: unknown) => {
-    try {
-      const validConfig = validateInput(KodiMySQLTestConfigSchema, config, 'kodi:testMySQLConnection')
-      const connectionService = getKodiMySQLConnectionService()
-      const mysqlConfig: KodiMySQLConfig = {
-        host: validConfig.host,
-        port: validConfig.port || 3306,
-        username: validConfig.username,
-        password: validConfig.password,
-        databasePrefix: validConfig.databasePrefix || 'kodi_',
-        ssl: validConfig.ssl,
-        connectionTimeout: validConfig.connectionTimeout || 10000,
-      }
-      return await connectionService.testConnection(mysqlConfig)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error testing MySQL connection:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Connection test failed',
-      }
-    }
+  createValidatedIpcHandler('kodi:testMySQLConnection', KodiMySQLTestConfigSchema, async (config) => {
+    const service = getKodiMySQLConnectionService()
+    return await service.testConnection({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_', connectionTimeout: config.connectionTimeout || 10000 } as any)
   })
 
-  /**
-   * Detect Kodi databases on MySQL server
-   */
-  ipcMain.handle('kodi:detectMySQLDatabases', async (_event, config: unknown) => {
-    try {
-      const validConfig = validateInput(KodiMySQLTestConfigSchema, config, 'kodi:detectMySQLDatabases')
-      const connectionService = getKodiMySQLConnectionService()
-      const mysqlConfig: KodiMySQLConfig = {
-        host: validConfig.host,
-        port: validConfig.port || 3306,
-        username: validConfig.username,
-        password: validConfig.password,
-        databasePrefix: validConfig.databasePrefix || 'kodi_',
-      }
-      return await connectionService.detectDatabases(mysqlConfig)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error detecting MySQL databases:', error)
-      return {
-        videoDatabase: null,
-        videoVersion: null,
-        musicDatabase: null,
-        musicVersion: null,
-      }
-    }
-  })
-
-  /**
-   * Add a Kodi MySQL source with authentication
-   */
-  ipcMain.handle('kodi:authenticateMySQL', async (_event, config: unknown) => {
-    try {
-      const validatedConfig = validateInput(KodiMySQLConfigSchema, config, 'kodi:authenticateMySQL')
-
-      const provider = new KodiMySQLProvider({
-        sourceType: ProviderType.KodiMySQL,
-        displayName: validatedConfig.displayName,
-        connectionConfig: {},
-      })
-
-      const authResult = await provider.authenticate({
-        host: validatedConfig.host,
-        port: validatedConfig.port || 3306,
-        username: validatedConfig.username,
-        password: validatedConfig.password,
-        videoDatabaseName: validatedConfig.videoDatabaseName,
-        musicDatabaseName: validatedConfig.musicDatabaseName,
-        databasePrefix: validatedConfig.databasePrefix || 'kodi_',
-        ssl: validatedConfig.ssl,
-      })
-
-      if (!authResult.success) {
-        return {
-          success: false,
-          error: authResult.error,
-        }
-      }
-
-      // Add the source to the database
-      const manager = getSourceManager()
-      const source = await manager.addSource({
-        sourceType: ProviderType.KodiMySQL,
-        displayName: validatedConfig.displayName,
-        connectionConfig: provider.getConnectionConfig(),
-        isEnabled: true,
-      })
-
-      return {
-        success: true,
-        source,
-        serverName: authResult.serverName,
-        serverVersion: authResult.serverVersion,
-      }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error authenticating Kodi MySQL:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Authentication failed',
-      }
-    }
+  createValidatedIpcHandler('kodi:authenticateMySQL', KodiMySQLConfigSchema, async (config) => {
+    const provider = new KodiMySQLProvider({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: {} })
+    const res = await provider.authenticate({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_' } as any)
+    if (!res.success) return { success: false, error: res.error }
+    const source = await manager.addSource({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: provider.getConnectionConfig(), isEnabled: true })
+    return { success: true, source, serverName: res.serverName, serverVersion: res.serverVersion }
   })
 
   // ============================================================================
-  // FFPROBE FILE ANALYSIS
+  // FFPROBE
   // ============================================================================
 
-  /**
-   * Check if FFprobe is available on the system
-   */
-  ipcMain.handle('ffprobe:isAvailable', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.isAvailable()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking FFprobe availability:', error)
-      return false
-    }
+  createIpcHandler('ffprobe:isAvailable', async () => {
+    return await getMediaFileAnalyzer().isAvailable()
   })
 
-  /**
-   * Get FFprobe version
-   */
-  ipcMain.handle('ffprobe:getVersion', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.getVersion()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error getting FFprobe version:', error)
-      return null
-    }
+  createIpcHandler('ffprobe:getVersion', async () => {
+    return await getMediaFileAnalyzer().getVersion()
   })
 
-  /**
-   * Analyze a media file with FFprobe
-   */
-  ipcMain.handle('ffprobe:analyzeFile', async (_event, filePath: unknown) => {
-    try {
-      const validFilePath = validateInput(FilePathSchema, filePath, 'ffprobe:analyzeFile')
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.analyzeFile(validFilePath)
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error analyzing file:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Failed to analyze file',
-        filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      }
-    }
+  createValidatedIpcHandler('ffprobe:analyzeFile', z.string(), async (filePath) => {
+    return await getMediaFileAnalyzer().analyzeFile(filePath)
   })
 
-  /**
-   * Enable/disable FFprobe analysis for a Kodi source
-   */
-  ipcMain.handle('ffprobe:setEnabled', async (_event, sourceId: unknown, enabled: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'ffprobe:setEnabled')
-      const validEnabled = validateInput(BooleanSchema, enabled, 'ffprobe:setEnabled')
-      const provider = manager.getProvider(validSourceId)
-      if (!provider) {
-        throw new Error(`Source not found: ${sourceId}`)
-      }
-
-      if (provider.providerType !== ProviderType.KodiLocal) {
-        throw new Error('FFprobe analysis is only supported for Kodi local sources')
-      }
-
-      const kodiProvider = provider as KodiLocalProvider
-      kodiProvider.setFFprobeAnalysis(validEnabled)
-      return { success: true, enabled: validEnabled }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error setting FFprobe analysis:', error)
-      throw error
-    }
+  createValidatedIpcHandler('ffprobe:setEnabled', z.tuple([SourceIdSchema, z.boolean()]), async (sourceId, enabled) => {
+    const provider = manager.getProvider(sourceId)
+    if (provider?.providerType !== ProviderType.KodiLocal) throw new Error('Not a Kodi local source')
+    ;(provider as any).setFFprobeAnalysis(enabled)
+    return { success: true, enabled }
   })
 
-  /**
-   * Check if FFprobe analysis is enabled for a source
-   */
-  ipcMain.handle('ffprobe:isEnabled', async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'ffprobe:isEnabled')
-      const provider = manager.getProvider(validSourceId)
-      if (!provider) {
-        return false
-      }
-
-      if (provider.providerType !== ProviderType.KodiLocal) {
-        return false
-      }
-
-      const kodiProvider = provider as KodiLocalProvider
-      return kodiProvider.isFFprobeAnalysisEnabled()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking FFprobe status:', error)
-      return false
-    }
+  createValidatedIpcHandler('ffprobe:isEnabled', SourceIdSchema, async (sourceId) => {
+    const provider = manager.getProvider(sourceId)
+    return provider?.providerType === ProviderType.KodiLocal ? (provider as any).isFFprobeAnalysisEnabled() : false
   })
 
-  /**
-   * Check if FFprobe is available for a specific Kodi source
-   * (combines system check with provider support)
-   */
-  ipcMain.handle('ffprobe:isAvailableForSource', async (_event, sourceId: unknown) => {
-    try {
-      const validSourceId = validateInput(SourceIdSchema, sourceId, 'ffprobe:isAvailableForSource')
-      const provider = manager.getProvider(validSourceId)
-      if (!provider || provider.providerType !== ProviderType.KodiLocal) {
-        return { available: false, reason: 'Source is not a Kodi local source' }
-      }
-
-      const kodiProvider = provider as KodiLocalProvider
-      const isAvailable = await kodiProvider.isFFprobeAvailable()
-      const version = isAvailable ? await kodiProvider.getFFprobeVersion() : null
-
-      return {
-        available: isAvailable,
-        version,
-        reason: isAvailable ? null : 'FFprobe not found on system. Install FFmpeg to enable file analysis.',
-      }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking FFprobe for source:', error)
-      return { available: false, reason: getErrorMessage(error) }
-    }
+  createValidatedIpcHandler('ffprobe:isAvailableForSource', SourceIdSchema, async (sourceId) => {
+    const provider = manager.getProvider(sourceId)
+    if (provider?.providerType !== ProviderType.KodiLocal) return { available: false, reason: 'Not a Kodi local source' }
+    const available = await (provider as any).isFFprobeAvailable()
+    const version = available ? await (provider as any).getFFprobeVersion() : null
+    return { available, version, reason: available ? null : 'FFprobe not found' }
   })
 
-  /**
-   * Check if FFprobe can be auto-installed on this platform
-   */
-  ipcMain.handle('ffprobe:canInstall', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      return analyzer.canInstall()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking FFprobe install capability:', error)
-      return false
-    }
+  createIpcHandler('ffprobe:canInstall', async () => {
+    return getMediaFileAnalyzer().canInstall()
   })
 
-  /**
-   * Install FFprobe automatically
-   */
-  ipcMain.handle('ffprobe:install', async (event) => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      const win = getWindowFromEvent(event)
-
-      const result = await analyzer.installFFprobe((progress) => {
-        // Send progress updates to renderer
-        safeSend(win, 'ffprobe:installProgress', progress)
-      })
-
-      return result
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error installing FFprobe:', error)
-      return {
-        success: false,
-        error: getErrorMessage(error) || 'Installation failed',
-      }
-    }
+  createValidatedIpcHandlerWithEvent('ffprobe:install', z.any().optional(), async (event) => {
+    const win = getWindowFromEvent(event)
+    return await getMediaFileAnalyzer().installFFprobe((p) => safeSend(win, 'ffprobe:installProgress', p))
   })
 
-  /**
-   * Uninstall bundled FFprobe
-   */
-  ipcMain.handle('ffprobe:uninstall', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      const success = await analyzer.uninstallFFprobe()
-      return { success }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error uninstalling FFprobe:', error)
-      return { success: false, error: getErrorMessage(error) }
-    }
+  createIpcHandler('ffprobe:uninstall', async () => {
+    return { success: await getMediaFileAnalyzer().uninstallFFprobe() }
   })
 
-  /**
-   * Check for FFprobe updates
-   */
-  ipcMain.handle('ffprobe:checkForUpdate', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.checkForUpdate()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking for FFprobe update:', error)
-      return {
-        currentVersion: null,
-        latestVersion: null,
-        updateAvailable: false,
-        error: getErrorMessage(error),
-      }
-    }
+  createIpcHandler('ffprobe:checkForUpdate', async () => {
+    return await getMediaFileAnalyzer().checkForUpdate()
   })
 
-  /**
-   * Check if current FFprobe is the bundled version
-   */
-  ipcMain.handle('ffprobe:isBundled', async () => {
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      return await analyzer.isBundledVersion()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error checking FFprobe bundle status:', error)
-      return false
-    }
+  createIpcHandler('ffprobe:isBundled', async () => {
+    return await getMediaFileAnalyzer().isBundledVersion()
   })
 
   // ============================================================================
-  // LOCAL FOLDER & SQLITE FILE SOURCES
+  // LOCAL FOLDER
   // ============================================================================
 
-  /**
-   * Open folder picker dialog for selecting a local media folder
-   */
-  ipcMain.handle('local:selectFolder', async (event) => {
-    try {
-      const win = getWindowFromEvent(event)
-      if (!win) {
-        return { cancelled: true }
-      }
-
-      const result = await dialog.showOpenDialog(win, {
-        title: 'Select Media Folder',
-        properties: ['openDirectory'],
-        buttonLabel: 'Select Folder',
-      })
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { cancelled: true }
-      }
-
-      return {
-        cancelled: false,
-        folderPath: result.filePaths[0],
-      }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error opening folder dialog:', error)
-      return { cancelled: true, error: getErrorMessage(error) }
-    }
+  createIpcHandler('local:selectFolder', async (event: any) => {
+    const win = getWindowFromEvent(event)
+    if (!win) return { cancelled: true }
+    const result = await dialog.showOpenDialog(win, { title: 'Select Media Folder', properties: ['openDirectory'], buttonLabel: 'Select Folder' })
+    return result.canceled || result.filePaths.length === 0 ? { cancelled: true } : { cancelled: false, folderPath: result.filePaths[0] }
   })
 
-  /**
-   * Open file picker dialog for selecting a local file (e.g., SQLite DB)
-   */
-  ipcMain.handle('local:selectFile', async (event, options?: unknown) => {
-    try {
-      const win = getWindowFromEvent(event)
-      if (!win) {
-        return { cancelled: true }
-      }
-
-      const validOptions = options as Electron.OpenDialogOptions || {
-        title: 'Select File',
-        properties: ['openFile'],
-      }
-
-      const result = await dialog.showOpenDialog(win, validOptions)
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { cancelled: true }
-      }
-
-      return {
-        cancelled: false,
-        filePath: result.filePaths[0],
-      }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error opening file dialog:', error)
-      return { cancelled: true, error: getErrorMessage(error) }
-    }
+  createIpcHandler('local:selectFile', async (event: any, options?: any) => {
+    const win = getWindowFromEvent(event)
+    if (!win) return { cancelled: true }
+    const result = await dialog.showOpenDialog(win, options || { title: 'Select File', properties: ['openFile'] })
+    return result.canceled || result.filePaths.length === 0 ? { cancelled: true } : { cancelled: false, filePath: result.filePaths[0] }
   })
 
-  /**
-   * Add a MediaMonkey 5 database as a source
-   */
-  ipcMain.handle('mediamonkey:addSource', async (_event, config: unknown) => {
-    const validated = config as { databasePath: string; displayName: string; isEnabled: boolean }
-    try {
-      return await manager.addSource({
-        sourceType: ProviderType.MediaMonkey,
-        displayName: validated.displayName,
-        connectionConfig: {
-          databasePath: validated.databasePath,
-        },
-        isEnabled: validated.isEnabled,
-      })
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error adding MediaMonkey source:', error)
-      throw error
-    }
+  createValidatedIpcHandler('local:detectSubfolders', FilePathSchema, async (folderPath) => {
+    const entries = await fs.readdir(folderPath, { withFileTypes: true })
+    const subfolders = entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => {
+      const name = e.name.toLowerCase()
+      let suggestedType = LibraryType.Unknown
+      if (['movies', 'films', 'movie'].some(p => name.includes(p))) suggestedType = LibraryType.Movie
+      else if (['tv shows', 'tv', 'shows', 'series'].some(p => name.includes(p))) suggestedType = LibraryType.Show
+      else if (['music', 'audio', 'songs'].some(p => name.includes(p))) suggestedType = LibraryType.Music
+      return { name: e.name, path: path.join(folderPath, e.name), suggestedType }
+    })
+    return { subfolders: subfolders.sort((a, b) => a.name.localeCompare(b.name)) }
   })
 
-  /**
-   * Test connection to MediaMonkey 5 database
-   */
-  ipcMain.handle('mediamonkey:testConnection', async (_event, config: unknown) => {
-    const validated = config as { databasePath: string }
-    try {
-      const { MediaMonkeyProvider } = await import('@main/providers/mediamonkey/MediaMonkeyProvider')
-      const provider = new MediaMonkeyProvider({
-        sourceType: ProviderType.MediaMonkey,
-        displayName: 'Test',
-        connectionConfig: {
-          databasePath: validated.databasePath,
-        },
-      })
-      return await provider.testConnection()
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error testing MediaMonkey connection:', error)
-      return { success: false, error: getErrorMessage(error) }
-    }
+  createValidatedIpcHandler('mediamonkey:addSource', z.object({ databasePath: z.string(), displayName: z.string(), isEnabled: z.boolean() }), async (config) => {
+    return await manager.addSource({ sourceType: ProviderType.MediaMonkey, displayName: config.displayName, connectionConfig: { databasePath: config.databasePath }, isEnabled: config.isEnabled })
   })
 
-  /**
-   * Detect subfolders in a local folder and guess their media type
-   */
-  ipcMain.handle('local:detectSubfolders', async (_event, folderPath: unknown) => {
-    try {
-      const validFolderPath = validateInput(FilePathSchema, folderPath, 'local:detectSubfolders')
-      const entries = await fs.readdir(validFolderPath, { withFileTypes: true })
-      const subfolders: Array<{
-        name: string
-        path: string
-        suggestedType: LibraryType
-      }> = []
-
-      // Known folder name patterns
-      const moviePatterns = ['movies', 'films', 'movie', 'film']
-      const tvPatterns = ['tv shows', 'tv', 'shows', 'series', 'television', 'tvshows']
-      const musicPatterns = ['music', 'audio', 'songs', 'albums', 'artists']
-
-      // System folders to skip
-      const skipFolders = ['@eadir', '.ds_store', 'thumbs', 'metadata', '$recycle.bin', 'system volume information']
-
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue
-
-        const folderName = entry.name.toLowerCase()
-
-        // Skip system/hidden folders
-        if (skipFolders.includes(folderName) || folderName.startsWith('.')) continue
-
-        // Detect media type from folder name
-        let suggestedType: LibraryType = LibraryType.Unknown
-
-        if (moviePatterns.includes(folderName)) {
-          suggestedType = LibraryType.Movie
-        } else if (tvPatterns.includes(folderName)) {
-          suggestedType = LibraryType.Show
-        } else if (musicPatterns.includes(folderName)) {
-          suggestedType = LibraryType.Music
-        }
-
-        subfolders.push({
-          name: entry.name,
-          path: path.join(validFolderPath, entry.name),
-          suggestedType,
-        })
-      }
-
-      // Sort: known types first, then alphabetically
-      subfolders.sort((a, b) => {
-        if (a.suggestedType !== LibraryType.Unknown && b.suggestedType === LibraryType.Unknown) return -1
-        if (a.suggestedType === LibraryType.Unknown && b.suggestedType !== LibraryType.Unknown) return 1
-        return a.name.localeCompare(b.name)
-      })
-
-      return { subfolders }
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error detecting subfolders:', error)
-      return { subfolders: [], error: getErrorMessage(error) }
-    }
+  createValidatedIpcHandler('mediamonkey:testConnection', z.object({ databasePath: z.string() }), async (config) => {
+    const { MediaMonkeyProvider } = await import('@main/providers/mediamonkey/MediaMonkeyProvider')
+    const provider = new MediaMonkeyProvider({ sourceType: ProviderType.MediaMonkey, displayName: 'Test', connectionConfig: { databasePath: config.databasePath } })
+    return await provider.testConnection()
   })
 
-  /**
-   * Add a local folder as a media source with specific library configurations
-   */
-  ipcMain.handle('local:addSourceWithLibraries', async (_event, config: unknown) => {
-    const validated = validateInput(LocalFolderWithLibrariesSchema, config, 'local:addSourceWithLibraries')
-    try {
-      // Create the source with 'mixed' type - we'll handle library creation manually
-      const source = await manager.addSource({
-        sourceType: ProviderType.Local,
-        displayName: validated.displayName,
-        connectionConfig: {
-          folderPath: validated.folderPath,
-          mediaType: LibraryType.Mixed,
-          name: validated.displayName,
-          // Store the custom library config
-          customLibraries: validated.libraries as any,
-        },
-        isEnabled: true,
-      })
-
-      return source
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error adding local folder source with libraries:', error)
-      throw error
-    }
+  createValidatedIpcHandler('local:addSource', LocalFolderConfigSchema, async (config) => {
+    return await manager.addSource({ sourceType: ProviderType.Local, displayName: config.displayName, connectionConfig: { folderPath: config.folderPath, mediaType: config.mediaType as LibraryType, name: config.displayName }, isEnabled: true })
   })
 
-  /**
-   * Add a local folder as a media source
-   */
-  ipcMain.handle('local:addSource', async (_event, config: unknown) => {
-    const validated = validateInput(LocalFolderConfigSchema, config, 'local:addSource')
-    try {
-      return await manager.addSource({
-        sourceType: ProviderType.Local,
-        displayName: validated.displayName,
-        connectionConfig: {
-          folderPath: validated.folderPath,
-          mediaType: validated.mediaType as LibraryType,
-          name: validated.displayName,
-        },
-        isEnabled: true,
-      })
-    } catch (error: unknown) {
-      getLoggingService().error('[sources]', 'Error adding local folder source:', error)
-      throw error
-    }
+  createValidatedIpcHandler('local:addSourceWithLibraries', LocalFolderWithLibrariesSchema, async (config) => {
+    return await manager.addSource({ sourceType: ProviderType.Local, displayName: config.displayName, connectionConfig: { folderPath: config.folderPath, mediaType: LibraryType.Mixed, name: config.displayName, customLibraries: config.libraries as any }, isEnabled: true })
   })
 
   getLoggingService().info('[sources]', '[IPC] Source handlers registered')

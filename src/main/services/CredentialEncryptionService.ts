@@ -20,6 +20,7 @@ const SENSITIVE_CONFIG_FIELDS = [
   'accessToken',
   'apiKey',
   'password',
+  'Pw',
   'secret',
 ]
 

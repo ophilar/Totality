@@ -1,73 +1,36 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
-/**
- * IPC Handlers for Notifications
- */
-
-import { ipcMain } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
-
-import { GetNotificationsOptions } from '@main/types/monitoring'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { z } from 'zod'
 
 export function registerNotificationHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATIONS.GET_ALL, async (_event, options?: any) => {
-    try {
-      const db = getDatabase()
-      return await db.notifications.get(options as GetNotificationsOptions || {})
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in getAll:', error)
-      throw error
-    }
+  const db = getDatabase()
+
+  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.GET_ALL, async (options?: any) => {
+    return await db.notifications.get(options || {})
   })
 
-  ipcMain.handle('notifications:getCount', async () => {
-    try {
-      const db = getDatabase()
-      return await db.notifications.getUnreadCount()
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in getCount:', error)
-      throw error
-    }
+  createIpcHandler('notifications:getCount', async () => {
+    return await db.notifications.getUnreadCount()
   })
 
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATIONS.MARK_READ, async (_event, ids: number[]) => {
-    try {
-      const db = getDatabase()
-      await db.notifications.markAsRead(ids)
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in markRead:', error)
-      throw error
-    }
+  createValidatedIpcHandler(IPC_CHANNELS.NOTIFICATIONS.MARK_READ, z.array(z.number()), async (ids) => {
+    await db.notifications.markAsRead(ids)
   })
 
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATIONS.MARK_ALL_READ, async () => {
-    try {
-      const db = getDatabase()
-      await db.notifications.markAllAsRead()
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in markAllRead:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.MARK_ALL_READ, async () => {
+    await db.notifications.markAllAsRead()
   })
 
-  ipcMain.handle('notifications:delete', async (_event, ids: number[]) => {
-    try {
-      const db = getDatabase()
-      await db.notifications.deleteNotifications(ids)
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in delete:', error)
-      throw error
-    }
+  createValidatedIpcHandler('notifications:delete', z.array(z.number()), async (ids) => {
+    await db.notifications.deleteNotifications(ids)
   })
 
-  ipcMain.handle('notifications:clear', async () => {
-    try {
-      const db = getDatabase()
-      await db.notifications.clearAllNotifications()
-    } catch (error) {
-      getLoggingService().error('[IPC notifications]', 'Error in clear:', error)
-      throw error
-    }
+  createIpcHandler('notifications:clear', async () => {
+    await db.notifications.clearAllNotifications()
   })
+
+  getLoggingService().info('[notifications]', 'Notification IPC handlers registered')
 }
 
