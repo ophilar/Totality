@@ -63,123 +63,36 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
   }
 
   async add(item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): Promise<number> {
+    const data = {
+      mediaType: item.media_type,
+      title: item.title,
+      subtitle: item.subtitle,
+      year: item.year,
+      reason: item.reason || 'missing',
+      tmdbId: item.tmdb_id,
+      imdbId: item.imdb_id,
+      musicbrainzId: item.musicbrainz_id,
+      seriesTitle: item.series_title,
+      seasonNumber: item.season_number,
+      episodeNumber: item.episode_number,
+      collectionName: item.collection_name,
+      artistName: item.artist_name,
+      albumTitle: item.album_title,
+      posterUrl: item.poster_url,
+      priority: item.priority || 3,
+      notes: item.notes,
+      status: item.status || 'active',
+    }
+
     const result = await this.drizzle.insert(schema.wishlistItems)
-      .values({
-        mediaType: item.media_type,
-        title: item.title,
-        subtitle: item.subtitle,
-        year: item.year,
-        reason: item.reason || 'missing',
-        tmdbId: item.tmdb_id,
-        imdbId: item.imdb_id,
-        musicbrainzId: item.musicbrainz_id,
-        seriesTitle: item.series_title,
-        seasonNumber: item.season_number,
-        episodeNumber: item.episode_number,
-        collectionName: item.collection_name,
-        artistName: item.artist_name,
-        albumTitle: item.album_title,
-        posterUrl: item.poster_url,
-        priority: item.priority || 3,
-        notes: item.notes,
-        status: item.status || 'active',
-        addedAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
+      .values(data)
       .returning({ id: schema.wishlistItems.id })
 
     return result[0]?.id || 0
   }
 
-  async addMany(items: Array<Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>>): Promise<number> {
-    let count = 0
-    await this.beginBatch()
-    try {
-      for (const item of items) {
-        await this.add(item)
-        count++
-      }
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
-    return count
-  }
-
-  async update(id: number, updates: Partial<WishlistItem>): Promise<void> {
-    const data: any = {}
-    if (updates.media_type) data.mediaType = updates.media_type
-    if (updates.title) data.title = updates.title
-    if (updates.subtitle) data.subtitle = updates.subtitle
-    if (updates.year) data.year = updates.year
-    if (updates.reason) data.reason = updates.reason
-    if (updates.tmdb_id) data.tmdbId = updates.tmdb_id
-    if (updates.imdb_id) data.imdbId = updates.imdb_id
-    if (updates.musicbrainz_id) data.musicbrainzId = updates.musicbrainz_id
-    if (updates.series_title) data.seriesTitle = updates.series_title
-    if (updates.season_number) data.seasonNumber = updates.season_number
-    if (updates.episode_number) data.episodeNumber = updates.episode_number
-    if (updates.collection_name) data.collectionName = updates.collection_name
-    if (updates.artist_name) data.artistName = updates.artist_name
-    if (updates.album_title) data.albumTitle = updates.album_title
-    if (updates.poster_url) data.posterUrl = updates.poster_url
-    if (updates.priority) data.priority = updates.priority
-    if (updates.notes) data.notes = updates.notes
-    if (updates.status) {
-      data.status = updates.status
-      if (updates.status === 'completed') data.completedAt = sql`(datetime('now'))`
-    }
-    
-    data.updatedAt = sql`(datetime('now'))`
-
-    await this.drizzle.update(schema.wishlistItems)
-      .set(data)
-      .where(eq(schema.wishlistItems.id, id))
-  }
-
-  async batchUpdateStatus(ids: number[], status: string): Promise<void> {
-    if (ids.length === 0) return
-    const data: any = { 
-      status, 
-      updatedAt: sql`(datetime('now'))`
-    }
-    if (status === 'completed') {
-      data.completedAt = sql`(datetime('now'))`
-    }
-
-    // Process in chunks if needed, but LibSQL IN clause is usually fine for a few hundred
-    await this.drizzle.update(schema.wishlistItems)
-      .set(data)
-      .where(sql`${schema.wishlistItems.id} IN (${sql.join(ids, sql`,`)})`)
-  }
-
-  async delete(id: number): Promise<boolean> {
-    await this.drizzle.delete(schema.wishlistItems)
-      .where(eq(schema.wishlistItems.id, id))
-    return true
-  }
-
-  async exists(tmdbId?: string, musicbrainzId?: string, mediaItemId?: number): Promise<boolean> {
-    const conditions = [eq(schema.wishlistItems.status, 'active')]
-    if (tmdbId) conditions.push(eq(schema.wishlistItems.tmdbId, tmdbId))
-    else if (musicbrainzId) conditions.push(eq(schema.wishlistItems.musicbrainzId, musicbrainzId))
-    else if (mediaItemId) conditions.push(eq(schema.wishlistItems.mediaItemId, mediaItemId))
-    else return false
-
-    const row = await this.drizzle.select({ id: schema.wishlistItems.id })
-      .from(schema.wishlistItems)
-      .where(and(...conditions))
-      .get()
-    
-    return !!row
-  }
-
   async getCount(): Promise<number> {
-    const result = await this.drizzle.select({ count: sql<number>`count(*)` })
-      .from(schema.wishlistItems)
-      .get()
-    return result?.count || 0
+    return await this.countInternal()
   }
 
   async getCountsByReason(): Promise<Record<string, number>> {

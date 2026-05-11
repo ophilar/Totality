@@ -26,7 +26,6 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
         message: notification.message,
         referenceId: notification.reference_id || null,
         isRead: 0,
-        createdAt: sql`(datetime('now'))`
       })
       .returning({ id: schema.notifications.id })
     
@@ -34,11 +33,7 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
   }
 
   async getUnreadCount(): Promise<number> {
-    const result = await this.drizzle.select({ count: sql<number>`count(*)` })
-      .from(schema.notifications)
-      .where(eq(schema.notifications.isRead, 0))
-      .get()
-    return result?.count || 0
+    return await this.countInternal(eq(schema.notifications.isRead, 0))
   }
 
   async createNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): Promise<number> {

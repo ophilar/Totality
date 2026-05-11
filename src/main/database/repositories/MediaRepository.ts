@@ -1,4 +1,4 @@
-import { eq, and, or, like, desc, asc, sql, inArray, lt, gte } from 'drizzle-orm'
+import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'drizzle-orm'
 import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
@@ -522,13 +522,13 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
   async removeStaleProviderItems(
     sourceId: string,
-    libraryId: string,
+    libraryId: string | null,
     itemType: MediaItemType,
     validProviderIds: Set<string>
   ): Promise<number> {
     const where = and(
       eq(schema.mediaItems.sourceId, sourceId),
-      eq(schema.mediaItems.libraryId, libraryId),
+      libraryId === null ? isNull(schema.mediaItems.libraryId) : eq(schema.mediaItems.libraryId, libraryId),
       eq(schema.mediaItems.type, itemType)
     )
     return await this.reconcileStaleItems(where, schema.mediaItems.plexId, validProviderIds)

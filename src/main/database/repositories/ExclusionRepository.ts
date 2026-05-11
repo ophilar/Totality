@@ -41,7 +41,6 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
         referenceKey: exclusion.reference_key ?? null,
         parentKey: exclusion.parent_key ?? null,
         title: exclusion.title ?? null,
-        createdAt: sql`(datetime('now'))`
       })
       .onConflictDoNothing()
   }

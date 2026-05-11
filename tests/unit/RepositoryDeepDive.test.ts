@@ -55,14 +55,15 @@ describe('BaseRepository Generic Logic', () => {
   describe('reconcileStaleItems', () => {
     it('should remove items not present in the valid IDs set', async () => {
       const sourceId = 'reconcile-test'
-      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id1', title: 'Keep', type: MediaItemType.Movie, file_path: '1.mkv' } as any)
-      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id2', title: 'Remove', type: MediaItemType.Movie, file_path: '2.mkv' } as any)
+      // Use null for libraryId to match default storage
+      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id1', title: 'Keep', type: MediaItemType.Movie, file_path: '1.mkv', library_id: null } as any)
+      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id2', title: 'Remove', type: MediaItemType.Movie, file_path: '2.mkv', library_id: null } as any)
 
-      // Reconcile: only 'id1' is valid
-      const removed = await db.media.removeStaleProviderItems(sourceId, '', 'movie', new Set(['id1']))
+      // Reconcile: only 'id1' is valid. Pass null for libraryId.
+      const removed = await db.media.removeStaleProviderItems(sourceId, null as any, 'movie' as any, new Set(['id1']))
       expect(removed).toBe(1)
 
-      const remaining = await db.media.getItems({ sourceId })
+      const remaining = await db.media.getItems({ sourceId, includeDisabledLibraries: true })
       expect(remaining).toHaveLength(1)
       expect(remaining[0].plex_id).toBe('id1')
     })
