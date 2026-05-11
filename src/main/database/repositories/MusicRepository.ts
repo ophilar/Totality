@@ -43,185 +43,125 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async upsertTrack(track: MusicTrack): Promise<number> {
-    const result = await this.drizzle.insert(schema.musicTracks)
-      .values({
-        sourceId: track.source_id,
-        sourceType: track.source_type,
-        libraryId: track.library_id || '',
-        providerId: track.provider_id,
-        albumId: track.album_id ?? null,
-        artistId: track.artist_id ?? null,
-        albumName: track.album_name ?? null,
-        artistName: track.artist_name,
-        title: track.title,
-        trackNumber: track.track_number ?? null,
-        discNumber: track.disc_number ?? 1,
-        duration: track.duration ?? null,
-        filePath: track.file_path ?? null,
-        fileSize: track.file_size ?? null,
-        container: track.container ?? null,
-        fileMtime: track.file_mtime ?? null,
-        audioCodec: track.audio_codec,
-        audioBitrate: track.audio_bitrate ?? null,
-        sampleRate: track.sample_rate ?? null,
-        bitDepth: track.bit_depth ?? null,
-        channels: track.channels ?? 2,
-        isLossless: track.is_lossless ? 1 : 0,
-        isHiRes: track.is_hi_res ? 1 : 0,
-        musicbrainzId: track.musicbrainz_id ?? null,
-        genres: track.genres ?? null,
-        mood: track.mood ?? null,
-        addedAt: track.added_at ?? null,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: [schema.musicTracks.sourceId, schema.musicTracks.providerId],
-        set: {
-          libraryId: track.library_id || '',
-          albumId: track.album_id ?? null,
-          artistId: track.artist_id ?? null,
-          albumName: track.album_name ?? null,
-          artistName: track.artist_name,
-          title: track.title,
-          trackNumber: track.track_number ?? null,
-          discNumber: track.disc_number ?? 1,
-          duration: track.duration ?? null,
-          filePath: track.file_path ?? null,
-          fileSize: track.file_size ?? null,
-          container: track.container ?? null,
-          fileMtime: track.file_mtime ?? null,
-          audioCodec: track.audio_codec,
-          audioBitrate: track.audio_bitrate ?? null,
-          sampleRate: track.sample_rate ?? null,
-          bitDepth: track.bit_depth ?? null,
-          channels: track.channels ?? 2,
-          isLossless: track.is_lossless ? 1 : 0,
-          isHiRes: track.is_hi_res ? 1 : 0,
-          musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)`,
-          genres: track.genres ?? null,
-          mood: track.mood ?? null,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
-      .returning({ id: schema.musicTracks.id })
+    const data = {
+      sourceId: track.source_id,
+      sourceType: track.source_type,
+      libraryId: track.library_id || '',
+      providerId: track.provider_id,
+      albumId: track.album_id ?? null,
+      artistId: track.artist_id ?? null,
+      albumName: track.album_name ?? null,
+      artistName: track.artist_name,
+      title: track.title,
+      trackNumber: track.track_number ?? null,
+      discNumber: track.disc_number ?? 1,
+      duration: track.duration ?? null,
+      filePath: track.file_path ?? null,
+      fileSize: track.file_size ?? null,
+      container: track.container ?? null,
+      fileMtime: track.file_mtime ?? null,
+      audioCodec: track.audio_codec,
+      audioBitrate: track.audio_bitrate ?? null,
+      sampleRate: track.sample_rate ?? null,
+      bitDepth: track.bit_depth ?? null,
+      channels: track.channels ?? 2,
+      isLossless: track.is_lossless ? 1 : 0,
+      isHiRes: track.is_hi_res ? 1 : 0,
+      musicbrainzId: track.musicbrainz_id ?? null,
+      genres: track.genres ?? null,
+      mood: track.mood ?? null,
+      addedAt: track.added_at ?? null,
+    }
 
-    return result[0]?.id || 0
+    return await this.upsertWithProviderId(
+      data,
+      [schema.musicTracks.sourceId, schema.musicTracks.providerId],
+      { ...data, musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)` }
+    )
   }
 
   async upsertArtist(artist: MusicArtist): Promise<number> {
-    const result = await this.drizzle.insert(schema.musicArtists)
-      .values({
-        sourceId: artist.source_id,
-        sourceType: artist.source_type,
-        libraryId: artist.library_id || '',
-        providerId: artist.provider_id,
-        name: artist.name,
-        sortName: artist.sort_name || null,
-        musicbrainzId: artist.musicbrainz_id || null,
-        genres: artist.genres || null,
-        mood: artist.mood || null,
-        country: artist.country || null,
-        biography: artist.biography || null,
-        thumbUrl: artist.thumb_url || null,
-        artUrl: artist.art_url || null,
-        albumCount: artist.album_count || 0,
-        trackCount: artist.track_count || 0,
-        userFixedMatch: artist.user_fixed_match ? 1 : 0,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: [schema.musicArtists.sourceId, schema.musicArtists.providerId],
-        set: {
-          libraryId: artist.library_id || '',
-          name: sql`CASE WHEN user_fixed_match = 1 THEN name ELSE excluded.name END`,
-          sortName: sql`CASE WHEN user_fixed_match = 1 THEN sort_name ELSE excluded.sort_name END`,
-          musicbrainzId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_artists.musicbrainz_id) END`,
-          genres: artist.genres || null,
-          mood: artist.mood || null,
-          country: artist.country || null,
-          biography: artist.biography || null,
-          thumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN thumb_url ELSE COALESCE(excluded.thumb_url, music_artists.thumb_url) END`,
-          artUrl: sql`CASE WHEN user_fixed_match = 1 THEN art_url ELSE COALESCE(excluded.art_url, music_artists.art_url) END`,
-          albumCount: artist.album_count || 0,
-          trackCount: artist.track_count || 0,
-          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
-      .returning({ id: schema.musicArtists.id })
+    const data = {
+      sourceId: artist.source_id,
+      sourceType: artist.source_type,
+      libraryId: artist.library_id || '',
+      providerId: artist.provider_id,
+      name: artist.name,
+      sortName: artist.sort_name || null,
+      musicbrainzId: artist.musicbrainz_id || null,
+      genres: artist.genres || null,
+      mood: artist.mood || null,
+      country: artist.country || null,
+      biography: artist.biography || null,
+      thumbUrl: artist.thumb_url || null,
+      artUrl: artist.art_url || null,
+      albumCount: artist.album_count || 0,
+      trackCount: artist.track_count || 0,
+      userFixedMatch: artist.user_fixed_match ? 1 : 0,
+    }
 
-    return result[0]?.id || 0
+    return await this.upsertWithProviderId(
+      data,
+      [schema.musicArtists.sourceId, schema.musicArtists.providerId],
+      {
+        ...data,
+        name: sql`CASE WHEN user_fixed_match = 1 THEN name ELSE excluded.name END`,
+        sortName: sql`CASE WHEN user_fixed_match = 1 THEN sort_name ELSE excluded.sort_name END`,
+        musicbrainzId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_artists.musicbrainz_id) END`,
+        thumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN thumb_url ELSE COALESCE(excluded.thumb_url, music_artists.thumb_url) END`,
+        artUrl: sql`CASE WHEN user_fixed_match = 1 THEN art_url ELSE COALESCE(excluded.art_url, music_artists.art_url) END`,
+        userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+      }
+    )
   }
 
   async upsertAlbum(album: MusicAlbum): Promise<number> {
-    const result = await this.drizzle.insert(schema.musicAlbums)
-      .values({
-        sourceId: album.source_id,
-        sourceType: album.source_type,
-        libraryId: album.library_id || '',
-        providerId: album.provider_id,
-        artistId: album.artist_id ?? null,
-        artistName: album.artist_name,
-        title: album.title,
-        sortTitle: album.sort_title || null,
-        year: album.year ?? null,
-        musicbrainzId: album.musicbrainz_id || null,
-        musicbrainzReleaseGroupId: album.musicbrainz_release_group_id || null,
-        genres: album.genres || null,
-        mood: album.mood || null,
-        studio: album.studio || null,
-        albumType: album.album_type || null,
-        trackCount: album.track_count || 0,
-        totalDuration: album.total_duration || 0,
-        totalSize: album.total_size || 0,
-        bestAudioCodec: album.best_audio_codec || null,
-        bestAudioBitrate: album.best_audio_bitrate || null,
-        bestSampleRate: album.best_sample_rate || null,
-        bestBitDepth: album.best_bit_depth || null,
-        avgAudioBitrate: album.avg_audio_bitrate || null,
-        thumbUrl: album.thumb_url || null,
-        artUrl: album.art_url || null,
-        releaseDate: album.release_date || null,
-        addedAt: album.added_at || null,
-        userFixedMatch: album.user_fixed_match ? 1 : 0,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: [schema.musicAlbums.sourceId, schema.musicAlbums.providerId],
-        set: {
-          libraryId: album.library_id || '',
-          artistId: album.artist_id ?? null,
-          artistName: album.artist_name,
-          title: sql`CASE WHEN user_fixed_match = 1 THEN title ELSE excluded.title END`,
-          sortTitle: sql`CASE WHEN user_fixed_match = 1 THEN sort_title ELSE excluded.sort_title END`,
-          year: sql`CASE WHEN user_fixed_match = 1 THEN year ELSE excluded.year END`,
-          musicbrainzId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_albums.musicbrainz_id) END`,
-          musicbrainzReleaseGroupId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_release_group_id ELSE COALESCE(excluded.musicbrainz_release_group_id, music_albums.musicbrainz_release_group_id) END`,
-          genres: album.genres || null,
-          mood: album.mood || null,
-          studio: album.studio || null,
-          albumType: album.album_type || null,
-          trackCount: album.track_count || 0,
-          totalDuration: album.total_duration || 0,
-          totalSize: album.total_size || 0,
-          bestAudioCodec: album.best_audio_codec || null,
-          bestAudioBitrate: album.best_audio_bitrate || null,
-          bestSampleRate: album.best_sample_rate || null,
-          bestBitDepth: album.best_bit_depth || null,
-          avgAudioBitrate: album.avg_audio_bitrate || null,
-          thumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN thumb_url ELSE COALESCE(excluded.thumb_url, music_albums.thumb_url) END`,
-          artUrl: sql`CASE WHEN user_fixed_match = 1 THEN art_url ELSE COALESCE(excluded.art_url, music_albums.art_url) END`,
-          releaseDate: album.release_date || null,
-          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
-      .returning({ id: schema.musicAlbums.id })
+    const data = {
+      sourceId: album.source_id,
+      sourceType: album.source_type,
+      libraryId: album.library_id || '',
+      providerId: album.provider_id,
+      artistId: album.artist_id ?? null,
+      artistName: album.artist_name,
+      title: album.title,
+      sortTitle: album.sort_title || null,
+      year: album.year ?? null,
+      musicbrainzId: album.musicbrainz_id || null,
+      musicbrainzReleaseGroupId: album.musicbrainz_release_group_id || null,
+      genres: album.genres || null,
+      mood: album.mood || null,
+      studio: album.studio || null,
+      albumType: album.album_type || null,
+      trackCount: album.track_count || 0,
+      totalDuration: album.total_duration || 0,
+      totalSize: album.total_size || 0,
+      bestAudioCodec: album.best_audio_codec || null,
+      bestAudioBitrate: album.best_audio_bitrate || null,
+      bestSampleRate: album.best_sample_rate || null,
+      bestBitDepth: album.best_bit_depth || null,
+      avgAudioBitrate: album.avg_audio_bitrate || null,
+      thumbUrl: album.thumb_url || null,
+      artUrl: album.art_url || null,
+      releaseDate: album.release_date || null,
+      addedAt: album.added_at || null,
+      userFixedMatch: album.user_fixed_match ? 1 : 0,
+    }
 
-    return result[0]?.id || 0
+    return await this.upsertWithProviderId(
+      data,
+      [schema.musicAlbums.sourceId, schema.musicAlbums.providerId],
+      {
+        ...data,
+        title: sql`CASE WHEN user_fixed_match = 1 THEN title ELSE excluded.title END`,
+        sortTitle: sql`CASE WHEN user_fixed_match = 1 THEN sort_title ELSE excluded.sort_title END`,
+        year: sql`CASE WHEN user_fixed_match = 1 THEN year ELSE excluded.year END`,
+        musicbrainzId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_id ELSE COALESCE(excluded.musicbrainz_id, music_albums.musicbrainz_id) END`,
+        musicbrainzReleaseGroupId: sql`CASE WHEN user_fixed_match = 1 THEN musicbrainz_release_group_id ELSE COALESCE(excluded.musicbrainz_release_group_id, music_albums.musicbrainz_release_group_id) END`,
+        thumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN thumb_url ELSE COALESCE(excluded.thumb_url, music_albums.thumb_url) END`,
+        artUrl: sql`CASE WHEN user_fixed_match = 1 THEN art_url ELSE COALESCE(excluded.art_url, music_albums.art_url) END`,
+        userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+      }
+    )
   }
 
   async updateMusicAlbumArtwork(sourceIdOrAlbumId: string | number, providerIdOrThumbUrl?: string, artwork?: { thumbUrl?: string; artUrl?: string }): Promise<void> {
@@ -440,16 +380,14 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.albumId) conditions.push(eq(schema.musicTracks.albumId, filters.albumId))
     if (filters?.artistId) conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
     if (filters?.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
-    if (filters?.searchQuery) conditions.push(or(like(schema.musicTracks.title, `%${filters.searchQuery}%`), like(schema.musicTracks.artistName, `%${filters.searchQuery}%`), like(schema.musicTracks.albumName, `%${filters.searchQuery}%`)))
+    if (filters?.searchQuery) {
+      conditions.push(this.buildSearchFilter([schema.musicTracks.title, schema.musicTracks.artistName, schema.musicTracks.albumName], filters.searchQuery))
+    }
     if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      conditions.push(this.buildAlphabetFilter(schema.musicTracks.title, filters.alphabetFilter))
     }
 
-    const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.musicTracks)
-    if (conditions.length > 0) query.where(and(...conditions))
-    const res = await query.get()
-    return res?.count || 0
+    return await this.countInternal(and(...conditions))
   }
 
   async getTrackById(id: number): Promise<MusicTrack | null> {
@@ -703,6 +641,42 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   async getTrackByMusicbrainzId(id: string): Promise<MusicTrack | null> {
     const row = await this.drizzle.select().from(schema.musicTracks).where(eq(schema.musicTracks.musicbrainzId, id)).limit(1).get()
     return row ? this.mapDrizzleToTrack(row) : null
+  }
+
+  async deleteTrack(id: number): Promise<void> {
+    await this.delete(id)
+  }
+
+  async removeStaleProviderTracks(sourceId: string, libraryId: string, validProviderIds: Set<string>): Promise<number> {
+    const where = and(
+      eq(schema.musicTracks.sourceId, sourceId),
+      eq(schema.musicTracks.libraryId, libraryId)
+    )
+    return await this.reconcileStaleItems(where, schema.musicTracks.providerId, validProviderIds)
+  }
+
+  async removeStaleProviderAlbums(sourceId: string, libraryId: string, validProviderIds: Set<string>): Promise<number> {
+    const existing = await this.drizzle.select({ id: schema.musicAlbums.id, providerId: schema.musicAlbums.providerId })
+      .from(schema.musicAlbums)
+      .where(and(eq(schema.musicAlbums.sourceId, sourceId), eq(schema.musicAlbums.libraryId, libraryId)))
+    
+    const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
+    if (staleIds.length > 0) {
+      await this.db.execute({ sql: `DELETE FROM music_albums WHERE id IN (${staleIds.join(',')})`, args: [] })
+    }
+    return staleIds.length
+  }
+
+  async removeStaleProviderArtists(sourceId: string, validProviderIds: Set<string>): Promise<number> {
+    const existing = await this.drizzle.select({ id: schema.musicArtists.id, providerId: schema.musicArtists.providerId })
+      .from(schema.musicArtists)
+      .where(eq(schema.musicArtists.sourceId, sourceId))
+    
+    const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
+    if (staleIds.length > 0) {
+      await this.db.execute({ sql: `DELETE FROM music_artists WHERE id IN (${staleIds.join(',')})`, args: [] })
+    }
+    return staleIds.length
   }
 
   private mapDrizzleToTrack(r: any): MusicTrack {
