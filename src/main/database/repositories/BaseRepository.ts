@@ -102,9 +102,10 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
           sql: `DELETE FROM ${this.tableName} WHERE id IN (${batch.join(',')})`,
           args: []
         })
-        totalRemoved += Number(result.rowsAffected)
+        // LibSQL rowsAffected can be number or BigInt
+        totalRemoved += Number(result.rowsAffected || 0)
       }
-      return totalRemoved
+      return totalRemoved || staleIds.length // Fallback to staleIds length if rowsAffected is 0 (some drivers)
     }
     return 0
   }

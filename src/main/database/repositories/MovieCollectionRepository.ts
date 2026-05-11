@@ -61,36 +61,25 @@ export class MovieCollectionRepository extends BaseRepository<typeof schema.movi
   }
 
   public async upsertCollection(data: Partial<MovieCollection>): Promise<void> {
-    await this.drizzle.insert(schema.movieCollections)
-      .values({
-        tmdbCollectionId: data.tmdb_collection_id!,
-        collectionName: data.collection_name!,
-        sourceId: data.source_id || '',
-        libraryId: data.library_id || '',
-        totalMovies: data.total_movies || 0,
-        ownedMovies: data.owned_movies || 0,
-        missingMovies: data.missing_movies || '[]',
-        ownedMovieIds: data.owned_movie_ids || '[]',
-        completenessPercentage: data.completeness_percentage || 0,
-        posterUrl: data.poster_url || null,
-        backdropUrl: data.backdrop_url || null,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: [schema.movieCollections.tmdbCollectionId, schema.movieCollections.sourceId, schema.movieCollections.libraryId],
-        set: {
-          collectionName: data.collection_name,
-          totalMovies: data.total_movies,
-          ownedMovies: data.owned_movies,
-          missingMovies: data.missing_movies,
-          ownedMovieIds: data.owned_movie_ids,
-          completenessPercentage: data.completeness_percentage,
-          posterUrl: data.poster_url,
-          backdropUrl: data.backdrop_url,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
+    const record = {
+      tmdbCollectionId: data.tmdb_collection_id!,
+      collectionName: data.collection_name!,
+      sourceId: data.source_id || '',
+      libraryId: data.library_id || '',
+      totalMovies: data.total_movies || 0,
+      ownedMovies: data.owned_movies || 0,
+      missingMovies: data.missing_movies || '[]',
+      ownedMovieIds: data.owned_movie_ids || '[]',
+      completenessPercentage: data.completeness_percentage || 0,
+      posterUrl: data.poster_url || null,
+      backdropUrl: data.backdrop_url || null,
+    }
+
+    await this.upsertWithProviderId(
+      record,
+      [schema.movieCollections.tmdbCollectionId, schema.movieCollections.sourceId, schema.movieCollections.libraryId],
+      record
+    )
   }
 
   private mapDrizzleToCollection(rows: any[]): MovieCollection[] {

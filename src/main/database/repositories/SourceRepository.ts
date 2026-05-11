@@ -27,25 +27,19 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   }
 
   async upsertSource(source: Omit<MediaSource, 'id' | 'updated_at' | 'created_at'>): Promise<void> {
-    await this.drizzle.insert(schema.mediaSources)
-      .values({
-        sourceId: source.source_id,
-        sourceType: source.source_type,
-        displayName: source.display_name,
-        connectionConfig: source.connection_config,
-        isEnabled: source.is_enabled ? 1 : 0,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: schema.mediaSources.sourceId,
-        set: {
-          displayName: source.display_name,
-          connectionConfig: source.connection_config,
-          isEnabled: source.is_enabled ? 1 : 0,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
+    const data = {
+      sourceId: source.source_id,
+      sourceType: source.source_type,
+      displayName: source.display_name,
+      connectionConfig: source.connection_config,
+      isEnabled: source.is_enabled ? 1 : 0,
+    }
+
+    await this.upsertWithProviderId(
+      data,
+      [schema.mediaSources.sourceId],
+      data
+    )
   }
 
   async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
