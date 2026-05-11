@@ -2,7 +2,7 @@ import type { Client, Value } from '@libsql/client'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { getDatabase } from '@main/database/BetterSQLiteService'
-import { eq, sql, count, desc, asc } from 'drizzle-orm'
+import { eq, sql, count, desc, asc, or, like } from 'drizzle-orm'
 import { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 /**
@@ -37,9 +37,44 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     return result[0]?.value || 0
   }
 
-  protected buildOrder(sortBy: string = 'id', sortOrder: 'asc' | 'desc' = 'asc') {
-    const col = (this.table as any)[sortBy] || (this.table as any).id
+  protected async listInternal<T = any>(options: {
+    where?: any,
+    orderBy?: any,
+    limit?: number,
+    offset?: number,
+    joins?: (query: any) => any
+  }): Promise<T[]> {
+    let query = this.drizzle.select().from(this.table)
+    if (options.joins) query = options.joins(query) as any
+    if (options.where) query.where(options.where)
+    if (options.orderBy) query.orderBy(options.orderBy)
+    if (options.limit) query.limit(options.limit)
+    if (options.offset) query.offset(options.offset)
+    
+    return await query.all() as T[]
+  }
+
+  protected buildOrder(sortBy: string = 'id', sortOrder: 'asc' | 'desc' = 'asc', customMap: Record<string, any> = {}) {
+    const col = customMap[sortBy] || (this.table as any)[sortBy] || (this.table as any).id
     return sortOrder === 'desc' ? desc(col) : asc(col)
+  }
+
+  /**
+   * Standardized alphabet filter logic for SQL.
+   */
+  protected buildAlphabetFilter(column: any, letter: string) {
+    if (letter === '#') {
+      return sql`${column} NOT GLOB '[A-Za-z]*'`
+    }
+    return eq(sql`UPPER(SUBSTR(${column}, 1, 1))`, letter.toUpperCase())
+  }
+
+  /**
+   * Standardized search filter logic.
+   */
+  protected buildSearchFilter(columns: any[], query: string) {
+    const q = `%${query}%`
+    return or(...columns.map(col => like(col, q)))
   }
 
   /**
@@ -50,16 +85,26 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     providerIdField: any,
     validProviderIds: Set<string>
   ): Promise<number> {
-    const existing = await this.drizzle.select({ id: (this.table as any).id, providerId: providerIdField }).from(this.table).where(whereClause)
+    const existing = await this.drizzle.select({ id: (this.table as any).id, providerId: providerIdField })
+      .from(this.table)
+      .where(whereClause)
+      .all()
+    
     const staleIds = existing.filter(item => !validProviderIds.has(item.providerId)).map(item => item.id)
 
     if (staleIds.length > 0) {
-      // Drizzle 'inArray' or raw SQL delete
-      const result = await this.db.execute({
-        sql: `DELETE FROM ${this.tableName} WHERE id IN (${staleIds.join(',')})`,
-        args: []
-      })
-      return Number(result.rowsAffected)
+      // Chunk deletion to avoid SQLITE_LIMIT_VARIABLE_NUMBER
+      const batchSize = 500
+      let totalRemoved = 0
+      for (let i = 0; i < staleIds.length; i += batchSize) {
+        const batch = staleIds.slice(i, i + batchSize)
+        const result = await this.db.execute({
+          sql: `DELETE FROM ${this.tableName} WHERE id IN (${batch.join(',')})`,
+          args: []
+        })
+        totalRemoved += Number(result.rowsAffected)
+      }
+      return totalRemoved
     }
     return 0
   }

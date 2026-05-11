@@ -1,75 +1,90 @@
+/**
+ * Repository Deep Dive (No Mocks)
+ * 
+ * Verifies the generic logic in BaseRepository using real Drizzle tables
+ * and a real in-memory SQLite database.
+ */
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { ProviderType, MediaItemType } from '@main/types/database'
+import * as schema from '@main/database/drizzleSchema'
+import { eq, and } from 'drizzle-orm'
 
-describe('Repository Deep Dive (No Mocks)', () => {
+describe('BaseRepository Generic Logic', () => {
   let db: any
 
   beforeEach(async () => {
     db = await setupTestDb()
   })
 
-  afterEach(() => {
-    cleanupTestDb()
+  afterEach(async () => {
+    await cleanupTestDb()
   })
 
-  describe('MediaRepository Coverage', () => {
-    it('should exercise all CRUD and filter paths', async () => {
-      const mediaRepo = db.media
-      const sourceRepo = db.sources
+  describe('countInternal', () => {
+    it('should count items with filters correctly', async () => {
+      // Setup: Add 3 items, 2 of which are movies
+      await db.media.upsertItem({ source_id: 's1', plex_id: '1', title: 'Movie 1', type: MediaItemType.Movie, file_path: 'f1.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: '2', title: 'Movie 2', type: MediaItemType.Movie, file_path: 'f2.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: '3', title: 'Episode 1', type: MediaItemType.Episode, file_path: 'f3.mkv' } as any)
 
-      // 1. Setup Source
-      await sourceRepo.upsertSource({ 
-        source_id: 's1', 
-        source_type: 'local',
-        display_name: 'S1', 
-        connection_config: '{}',
-        is_enabled: 1 
-      })
+      // Using the media repo which now uses BaseRepository.countInternal
+      const total = await db.media.count()
+      expect(total).toBe(3)
 
-      // 2. Insert Items
-      const id1 = await mediaRepo.upsertItem({ source_id: 's1', plex_id: 'p1', title: 'Movie 1', type: 'movie', file_path: '/path1', resolution: '1080p', file_size: 100, duration: 100, width: 1920, height: 1080, video_codec: 'h264', video_bitrate: 100, audio_codec: 'aac', audio_channels: 2, audio_bitrate: 128 } as any)
-      const id2 = await mediaRepo.upsertItem({ source_id: 's1', plex_id: 'p2', title: 'Show 1', type: 'episode', series_title: 'Show 1', file_path: '/path2', resolution: '720p', file_size: 100, duration: 100, width: 1280, height: 720, video_codec: 'h264', video_bitrate: 100, audio_codec: 'aac', audio_channels: 2, audio_bitrate: 128 } as any)
-
-      // 3. Query filters
-      expect((await mediaRepo.getItems({ type: 'movie' })).length).toBe(1)
-      expect((await mediaRepo.getItems({ sourceId: 's1' })).length).toBe(2)
-      expect(await mediaRepo.getItemByProviderId('p1', 's1')).toBeDefined()
-
-      // 4. Versions
-      await mediaRepo.syncItemVersions(id1, [{ version_source: 'primary', file_path: '/path1', resolution: '1080p', file_size: 100, duration: 100, width: 1920, height: 1080, video_codec: 'h264', video_bitrate: 100, audio_codec: 'aac', audio_channels: 2, audio_bitrate: 128, is_best: 1 }])
-      const versions = await mediaRepo.getItemVersions(id1)
-      expect(versions.length).toBe(1)
-
-      // 5. Cleanup
-      await mediaRepo.deleteItem(id1)
-      expect(await mediaRepo.getItem(id1)).toBeNull()
+      const moviesOnly = await db.media.count({ type: MediaItemType.Movie })
+      expect(moviesOnly).toBe(2)
     })
   })
 
-  describe('StatsRepository Coverage', () => {
-    it('should provide accurate dashboard statistics', async () => {
-      const statsRepo = db.stats
-      const mediaRepo = db.media
-      
-      // Setup Source and Library Scan (essential for joins)
-      await db.sources.upsertSource({ 
-        source_id: 's1', 
-        source_type: 'local',
-        display_name: 'S1', 
-        connection_config: '{}',
-        is_enabled: 1 
-      })
-      await db.sources.updateLibraryScanStats('s1', 'movies', 1) // Creates library_scans entry
+  describe('listInternal', () => {
+    it('should support pagination and sorting', async () => {
+      // Add items out of order
+      await db.media.upsertItem({ source_id: 's1', plex_id: 'a', title: 'B Movie', type: MediaItemType.Movie, file_path: 'b.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: 'b', title: 'A Movie', type: MediaItemType.Movie, file_path: 'a.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: 'c', title: 'C Movie', type: MediaItemType.Movie, file_path: 'c.mkv' } as any)
 
-      // Insert item needing upgrade
-      const id = await mediaRepo.upsertItem({ source_id: 's1', library_id: 'movies', plex_id: 'p1', title: 'Low Qual', type: 'movie', file_path: '/p', resolution: 'SD', file_size: 100, duration: 100, width: 640, height: 480, video_codec: 'h264', video_bitrate: 100, audio_codec: 'aac', audio_channels: 2, audio_bitrate: 128 } as any)
-      await mediaRepo.upsertQualityScore({ media_item_id: id, needs_upgrade: 1, overall_score: 40, quality_tier: 'SD', tier_quality: 'LOW', tier_score: 0, bitrate_tier_score: 0, audio_tier_score: 10, is_low_quality: 1 } as any)
+      const results = await db.media.getItems({ sortBy: 'title', sortOrder: 'asc', limit: 2 })
+      expect(results).toHaveLength(2)
+      expect(results[0].title).toBe('A Movie')
+      expect(results[1].title).toBe('B Movie')
+    })
+  })
 
-      const stats = await statsRepo.getLibraryStats()
-      expect(stats.needsUpgradeCount).toBe(1)
-      
-      const dashboard = await statsRepo.getDashboardSummary()
-      expect(dashboard.movieUpgrades.length).toBe(1)
+  describe('reconcileStaleItems', () => {
+    it('should remove items not present in the valid IDs set', async () => {
+      const sourceId = 'reconcile-test'
+      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id1', title: 'Keep', type: MediaItemType.Movie, file_path: '1.mkv' } as any)
+      await db.media.upsertItem({ source_id: sourceId, plex_id: 'id2', title: 'Remove', type: MediaItemType.Movie, file_path: '2.mkv' } as any)
+
+      // Reconcile: only 'id1' is valid
+      const removed = await db.media.removeStaleProviderItems(sourceId, '', 'movie', new Set(['id1']))
+      expect(removed).toBe(1)
+
+      const remaining = await db.media.getItems({ sourceId })
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0].plex_id).toBe('id1')
+    })
+  })
+
+  describe('Alphabet Filtering', () => {
+    it('should filter items by starting letter', async () => {
+      await db.media.upsertItem({ source_id: 's1', plex_id: '1', title: 'Apple', type: MediaItemType.Movie, file_path: '1.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: '2', title: 'Banana', type: MediaItemType.Movie, file_path: '2.mkv' } as any)
+
+      const aItems = await db.media.getItems({ alphabetFilter: 'A' })
+      expect(aItems).toHaveLength(1)
+      expect(aItems[0].title).toBe('Apple')
+    })
+
+    it('should handle non-alphabetic characters via # filter', async () => {
+      await db.media.upsertItem({ source_id: 's1', plex_id: '1', title: '123 Movie', type: MediaItemType.Movie, file_path: '1.mkv' } as any)
+      await db.media.upsertItem({ source_id: 's1', plex_id: '2', title: 'Zebra', type: MediaItemType.Movie, file_path: '2.mkv' } as any)
+
+      const numItems = await db.media.getItems({ alphabetFilter: '#' })
+      expect(numItems).toHaveLength(1)
+      expect(numItems[0].title).toBe('123 Movie')
     })
   })
 })

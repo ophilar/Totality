@@ -93,6 +93,11 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async count(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Promise<number> {
+    const conditions = this.buildFilters(filters)
+    return await this.countInternal(and(...conditions))
+  }
+
+  private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): any[] {
     const conditions = []
     
     if (!filters?.includeDisabledLibraries) {
@@ -105,24 +110,34 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
     
     if (filters?.searchQuery) {
-      const q = `%${filters.searchQuery}%`
+      conditions.push(this.buildSearchFilter([schema.mediaItems.title, schema.mediaItems.seriesTitle], filters.searchQuery))
+    }
+
+    if (filters?.alphabetFilter) {
+      conditions.push(this.buildAlphabetFilter(schema.mediaItems.title, filters.alphabetFilter))
+    }
+
+    if (filters?.qualityTier) conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
+    if (filters?.tierQuality) conditions.push(eq(schema.qualityScores.tierQuality, filters.tierQuality))
+    
+    if (filters?.efficiencyFilter) {
+      if (filters.efficiencyFilter === 'low') conditions.push(lt(schema.qualityScores.efficiencyScore, 60))
+      else if (filters.efficiencyFilter === 'medium') conditions.push(and(gte(schema.qualityScores.efficiencyScore, 60), lt(schema.qualityScores.efficiencyScore, 85)))
+      else if (filters.efficiencyFilter === 'high') conditions.push(gte(schema.qualityScores.efficiencyScore, 85))
+    }
+
+    if (filters?.slimDown) {
       conditions.push(or(
-        like(schema.mediaItems.title, q),
-        like(schema.mediaItems.seriesTitle, q)
+        lt(schema.qualityScores.efficiencyScore, 60),
+        sql`quality_scores.storage_debt_bytes > 5368709120`
       ))
     }
 
-    const query = this.drizzle.select({ count: sql<number>`count(*)` })
-      .from(schema.mediaItems)
-      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+    if (filters?.needsUpgrade !== undefined) {
+      conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
+    }
 
-    if (filters?.qualityTier) conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
-    if (filters?.needsUpgrade !== undefined) conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
-
-    if (conditions.length > 0) query.where(and(...conditions))
-
-    const res = await query.get()
-    return res?.count || 0
+    return conditions
   }
 
   async getItem(id: number): Promise<MediaItem | null> {
@@ -511,52 +526,12 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     itemType: MediaItemType,
     validProviderIds: Set<string>
   ): Promise<number> {
-    await this.beginBatch()
-    try {
-      if (validProviderIds.size === 0) {
-        await this.drizzle.delete(schema.mediaItems)
-          .where(and(
-            eq(schema.mediaItems.sourceId, sourceId),
-            eq(schema.mediaItems.libraryId, libraryId),
-            eq(schema.mediaItems.type, itemType)
-          ))
-        await this.endBatch()
-        return 0 // LibSQL doesn't easily return rowsAffected here
-      }
-
-      const currentItems = await this.drizzle.select({ plexId: schema.mediaItems.plexId })
-        .from(schema.mediaItems)
-        .where(and(
-          eq(schema.mediaItems.sourceId, sourceId),
-          eq(schema.mediaItems.libraryId, libraryId),
-          eq(schema.mediaItems.type, itemType)
-        ))
-        .all()
-
-      const toDelete = currentItems
-        .map(r => r.plexId)
-        .filter(id => !validProviderIds.has(id))
-
-      if (toDelete.length > 0) {
-        const batchSize = 100
-        for (let i = 0; i < toDelete.length; i += batchSize) {
-          const chunk = toDelete.slice(i, i + batchSize)
-          await this.drizzle.delete(schema.mediaItems)
-            .where(and(
-              eq(schema.mediaItems.sourceId, sourceId),
-              eq(schema.mediaItems.libraryId, libraryId),
-              eq(schema.mediaItems.type, itemType),
-              inArray(schema.mediaItems.plexId, chunk)
-            ))
-        }
-      }
-
-      await this.endBatch()
-      return toDelete.length
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    const where = and(
+      eq(schema.mediaItems.sourceId, sourceId),
+      eq(schema.mediaItems.libraryId, libraryId),
+      eq(schema.mediaItems.type, itemType)
+    )
+    return await this.reconcileStaleItems(where, schema.mediaItems.plexId, validProviderIds)
   }
 
   async updateItemArtwork(

@@ -150,35 +150,29 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   }
 
   async upsertCompleteness(data: SeriesCompleteness): Promise<number> {
+    const record = {
+      seriesTitle: data.series_title,
+      sourceId: data.source_id || '',
+      libraryId: data.library_id || '',
+      totalSeasons: data.total_seasons,
+      totalEpisodes: data.total_episodes,
+      ownedSeasons: data.owned_seasons,
+      ownedEpisodes: data.owned_episodes,
+      missingSeasons: data.missing_seasons || '[]',
+      missingEpisodes: data.missing_episodes || '[]',
+      completenessPercentage: data.completeness_percentage,
+      tmdbId: data.tmdb_id ?? null,
+      posterUrl: data.poster_url ?? null,
+      backdropUrl: data.backdrop_url ?? null,
+      status: data.status ?? null,
+    }
+
     const result = await this.drizzle.insert(schema.seriesCompleteness)
-      .values({
-        seriesTitle: data.series_title,
-        sourceId: data.source_id || '',
-        libraryId: data.library_id || '',
-        totalSeasons: data.total_seasons,
-        totalEpisodes: data.total_episodes,
-        ownedSeasons: data.owned_seasons,
-        ownedEpisodes: data.owned_episodes,
-        missingSeasons: data.missing_seasons || '[]',
-        missingEpisodes: data.missing_episodes || '[]',
-        completenessPercentage: data.completeness_percentage,
-        tmdbId: data.tmdb_id ?? null,
-        posterUrl: data.poster_url ?? null,
-        backdropUrl: data.backdrop_url ?? null,
-        status: data.status ?? null,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
+      .values(record)
       .onConflictDoUpdate({
         target: [schema.seriesCompleteness.seriesTitle, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
         set: {
-          totalSeasons: data.total_seasons,
-          totalEpisodes: data.total_episodes,
-          ownedSeasons: data.owned_seasons,
-          ownedEpisodes: data.owned_episodes,
-          missingSeasons: data.missing_seasons || '[]',
-          missingEpisodes: data.missing_episodes || '[]',
-          completenessPercentage: data.completeness_percentage,
+          ...record,
           tmdbId: sql`COALESCE(excluded.tmdb_id, series_completeness.tmdb_id)`,
           posterUrl: sql`COALESCE(excluded.poster_url, series_completeness.poster_url)`,
           backdropUrl: sql`COALESCE(excluded.backdrop_url, series_completeness.backdrop_url)`,
