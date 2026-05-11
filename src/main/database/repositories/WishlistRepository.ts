@@ -5,9 +5,9 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 
-export class WishlistRepository extends BaseRepository<WishlistItem> {
+export class WishlistRepository extends BaseRepository<typeof schema.wishlistItems> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'wishlist_items', drizzle)
+    super(db, 'wishlist_items', drizzle, schema.wishlistItems)
   }
 
   async getItems(filters?: WishlistFilters): Promise<WishlistItem[]> {

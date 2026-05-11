@@ -13,9 +13,9 @@ export interface Notification {
   created_at?: string
 }
 
-export class NotificationRepository extends BaseRepository<Notification> {
+export class NotificationRepository extends BaseRepository<typeof schema.notifications> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'notifications', drizzle)
+    super(db, 'notifications', drizzle, schema.notifications)
   }
 
   async addNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): Promise<number> {

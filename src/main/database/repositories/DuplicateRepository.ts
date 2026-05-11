@@ -16,9 +16,9 @@ export interface MediaDuplicate {
   updated_at?: string
 }
 
-export class DuplicateRepository extends BaseRepository<MediaDuplicate> {
+export class DuplicateRepository extends BaseRepository<typeof schema.mediaItemDuplicates> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'media_item_duplicates', drizzle)
+    super(db, 'media_item_duplicates', drizzle, schema.mediaItemDuplicates)
   }
 
   async getPendingDuplicates(sourceId?: string): Promise<MediaDuplicate[]> {
@@ -65,18 +65,23 @@ export class DuplicateRepository extends BaseRepository<MediaDuplicate> {
       .where(eq(schema.mediaItemDuplicates.id, id))
   }
 
+  async getById(id: number): Promise<MediaDuplicate | null> {
+    const results = await this.drizzle.select().from(this.table).where(eq((this.table as any).id, id)).limit(1)
+    return results[0] ? this.mapDrizzleToDuplicate([results[0]])[0] : null
+  }
+
   private mapDrizzleToDuplicate(rows: any[]): MediaDuplicate[] {
     return rows.map(r => ({
       id: r.id,
-      source_id: r.sourceId,
-      external_id: r.externalId,
-      external_type: r.externalType,
-      media_item_ids: r.mediaItemIds,
+      source_id: r.sourceId || r.source_id,
+      external_id: r.externalId || r.external_id,
+      external_type: (r.externalType || r.external_type) as any,
+      media_item_ids: r.mediaItemIds || r.media_item_ids,
       status: r.status,
-      resolution_strategy: r.resolutionStrategy || undefined,
-      resolved_at: r.resolvedAt || undefined,
-      created_at: r.createdAt,
-      updated_at: r.updatedAt
+      resolution_strategy: r.resolutionStrategy || r.resolution_strategy || undefined,
+      resolved_at: r.resolvedAt || r.resolved_at || undefined,
+      created_at: r.createdAt || r.created_at,
+      updated_at: r.updatedAt || r.updated_at
     }))
   }
 }

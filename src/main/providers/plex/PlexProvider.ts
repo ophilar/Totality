@@ -19,6 +19,7 @@ import { selectBestAudioTrack } from '@main/providers/utils/ProviderUtils'
 import { getFileNameParser } from '@main/services/FileNameParser'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { MediaTransformer } from '@main/providers/base/MediaTransformer'
 import {
   BaseMediaProvider,
   ProviderCredentials,
@@ -474,10 +475,13 @@ export class PlexProvider extends BaseMediaProvider {
                 episodes: episodesToSave.filter(e => e !== null)
               })
             } else if (res.type === 'movie' && res.detail) {
-              const mapped = this.convertToMediaItem(res.detail)
-              if (mapped) {
-                const qualityScore = await analyzer.analyzeMediaItem(mapped.mediaItem)
-                preparedData.push({ type: 'movie', mapped, qualityScore, ratingKey: res.plexItem.ratingKey })
+              try {
+                const result = MediaTransformer.fromPlex(res.detail, this.sourceId, this.selectedServer!.uri, this.selectedServer!.accessToken)
+                const qualityScore = await analyzer.analyzeMediaItem(result.mediaItem)
+                preparedData.push({ type: 'movie', mapped: result, qualityScore, ratingKey: res.plexItem.ratingKey })
+              } catch (e) {
+                if (e instanceof IncompleteMetadataError) getLoggingService().warn('[PlexProvider]', e.message)
+                else getLoggingService().error('[PlexProvider]', `Error mapping movie ${res.plexItem.ratingKey}:`, e)
               }
             }
           }
@@ -576,8 +580,7 @@ export class PlexProvider extends BaseMediaProvider {
     const detail = await this.getItemMetadataDetailed(itemId)
     if (!detail) throw new Error(`Item not found: ${itemId}`)
 
-    const mapped = this.convertToMediaItem(detail)
-    if (!mapped) throw new Error(`Unsupported item type: ${detail.type}`)
+    const { mediaItem } = MediaTransformer.fromPlex(detail, this.sourceId, this.selectedServer?.uri, this.selectedServer?.accessToken)
 
     return {
       providerId: itemId,
@@ -586,7 +589,7 @@ export class PlexProvider extends BaseMediaProvider {
       title: detail.title,
       type: detail.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
       year: detail.year,
-      filePath: mapped.mediaItem.file_path,
+      filePath: mediaItem.file_path,
     }
   }
 
@@ -631,159 +634,22 @@ export class PlexProvider extends BaseMediaProvider {
   }
 
   private convertToMediaItem(item: PlexMediaItem, showTmdbId?: string, showTitleSort?: string): { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null {
-    const allMedia = item.Media || []
-    if (allMedia.length === 0) return null
-
-    type VersionData = Omit<MediaItemVersion, 'id' | 'media_item_id'>
-    const versions: VersionData[] = []
-
-    for (const media of allMedia) {
-      const part = media.Part?.[0]
-      if (!part) continue
-
-      const videoStream = part.Stream?.find((s) => s.streamType === 1)
-      const audioStreams = part.Stream?.filter((s) => s.streamType === 2) || []
-      const subtitleStreams = part.Stream?.filter((s) => s.streamType === 3) || []
-
-      if (!videoStream || audioStreams.length === 0) continue
-
-      const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => ({
-        index,
-        codec: normalizeAudioCodec(stream.codec, stream.profile),
-        channels: normalizeAudioChannels(stream.channels, stream.audioChannelLayout),
-        bitrate: normalizeBitrate(stream.bitrate, 'kbps'),
-        language: stream.language || stream.languageCode,
-        title: stream.extendedDisplayTitle || stream.title,
-        profile: stream.profile,
-        sampleRate: normalizeSampleRate(stream.samplingRate),
-        isDefault: stream.selected === true,
-        hasObjectAudio: hasObjectAudio(stream.codec, stream.profile, stream.displayTitle || stream.title, stream.audioChannelLayout),
-      }))
-
-      const subtitleTracks: SubtitleTrack[] = subtitleStreams.map((stream, index) => ({
-        index,
-        codec: stream.codec || 'unknown',
-        language: stream.language || stream.languageCode,
-        title: stream.displayTitle || stream.title,
-        isDefault: stream.selected === true,
-        isForced: (stream.displayTitle || stream.title || '').toLowerCase().includes('forced'),
-      }))
-
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
-      const width = media.width || 0
-      const height = media.height || 0
-      const resolution = normalizeResolution(width, height)
-      const hdrFormat = normalizeHdrFormat(undefined, videoStream.colorTrc, videoStream.colorPrimaries, videoStream.bitDepth, videoStream.profile) || 'None'
-
-      const parsed = getFileNameParser().parse(part.file)
-      const edition = (parsed?.type === 'movie' ? parsed.edition : undefined) || item.editionTitle || undefined
-      const source = parsed?.type !== 'music' ? parsed?.source : undefined
-      const sourceType = source && /remux/i.test(source) ? 'REMUX' : source && /web-dl|webdl/i.test(source) ? 'WEB-DL' : undefined
-
-      const labelParts = [resolution]
-      if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-      if (sourceType) labelParts.push(sourceType)
-      if (edition) labelParts.push(edition)
-
-      versions.push({
-        version_source: `plex_media_${media.id}`,
-        edition,
-        source_type: sourceType,
-        label: labelParts.join(' '),
-        file_path: part.file,
-        file_size: part.size,
-        duration: item.duration,
-        resolution,
-        width,
-        height,
-        video_codec: normalizeVideoCodec(media.videoCodec),
-        video_bitrate: normalizeBitrate(getReliableVideoBitrate(videoStream.bitrate, media.bitrate, audioStreams), 'kbps'),
-        audio_codec: normalizeAudioCodec(media.audioCodec, audioStream?.profile),
-        audio_channels: normalizeAudioChannels(media.audioChannels, audioStream.audioChannelLayout),
-        audio_bitrate: normalizeBitrate(audioStream.bitrate, 'kbps'),
-        video_frame_rate: normalizeFrameRate(videoStream.frameRate),
-        color_bit_depth: videoStream.bitDepth,
-        hdr_format: hdrFormat,
-        color_space: videoStream.colorSpace,
-        video_profile: videoStream.profile,
-        video_level: videoStream.level,
-        audio_profile: audioStream.profile,
-        audio_sample_rate: normalizeSampleRate(audioStream.samplingRate),
-        has_object_audio: hasObjectAudio(audioStream.codec, audioStream.profile, audioStream.displayTitle || audioStream.title, audioStream.audioChannelLayout),
-        audio_tracks: JSON.stringify(audioTracks),
-        subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
-        container: normalizeContainer(part.container || media.container),
-      })
-    }
-
-    if (versions.length === 0) return null
-    if (versions.length > 1) extractVersionNames(versions)
-    const best = versions.reduce((a, b) => this.calculateVersionScore(b) > this.calculateVersionScore(a) ? b : a)
-
-    let imdbId, tmdbId
-    if (item.Guid) {
-      for (const guid of item.Guid) {
-        if (guid.id.includes('imdb://')) imdbId = guid.id.replace('imdb://', '')
-        else if (guid.id.includes('tmdb://')) tmdbId = guid.id.replace('tmdb://', '').split('?')[0]
+    try {
+      const result = MediaTransformer.fromPlex(item, this.sourceId, this.selectedServer?.uri, this.selectedServer?.accessToken)
+      if (item.type === 'episode' && showTitleSort) {
+        result.mediaItem.sort_title = showTitleSort
       }
-    }
-
-    let posterUrl, episodeThumbUrl, seasonPosterUrl
-    if (this.selectedServer) {
-      if (item.thumb) {
-        const thumbPath = item.type === 'episode' && item.grandparentThumb ? item.grandparentThumb : item.thumb
-        posterUrl = `${this.selectedServer.uri}${thumbPath}?X-Plex-Token=${this.selectedServer.accessToken}`
+      if (showTmdbId) {
+        result.mediaItem.series_tmdb_id = showTmdbId
       }
-      if (item.type === 'episode') {
-        if (item.thumb) episodeThumbUrl = `${this.selectedServer.uri}${item.thumb}?X-Plex-Token=${this.selectedServer.accessToken}`
-        if (item.parentThumb) seasonPosterUrl = `${this.selectedServer.uri}${item.parentThumb}?X-Plex-Token=${this.selectedServer.accessToken}`
+      return result
+    } catch (error) {
+      if (error instanceof IncompleteMetadataError) {
+        getLoggingService().warn('[PlexProvider]', error.message)
+      } else {
+        getLoggingService().error('[PlexProvider]', 'Transformation error:', error)
       }
-    }
-
-    return {
-      mediaItem: {
-        plex_id: item.ratingKey,
-        title: item.title,
-        sort_title: item.type === 'episode' ? (showTitleSort || undefined) : (item.titleSort || undefined),
-        year: item.year,
-        type: item.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
-        series_title: item.grandparentTitle,
-        season_number: item.parentIndex,
-        episode_number: item.index,
-        file_path: best.file_path,
-        file_size: best.file_size,
-        duration: best.duration,
-        resolution: best.resolution,
-        width: best.width,
-        height: best.height,
-        video_codec: best.video_codec,
-        video_bitrate: best.video_bitrate,
-        audio_codec: best.audio_codec,
-        audio_channels: best.audio_channels,
-        audio_bitrate: best.audio_bitrate,
-        video_frame_rate: best.video_frame_rate,
-        color_bit_depth: best.color_bit_depth,
-        hdr_format: best.hdr_format,
-        color_space: best.color_space,
-        video_profile: best.video_profile,
-        video_level: best.video_level,
-        audio_profile: best.audio_profile,
-        audio_sample_rate: best.audio_sample_rate,
-        has_object_audio: best.has_object_audio,
-        audio_tracks: best.audio_tracks,
-        subtitle_tracks: best.subtitle_tracks,
-        container: best.container,
-        version_count: versions.length,
-        imdb_id: imdbId,
-        tmdb_id: tmdbId,
-        series_tmdb_id: showTmdbId || undefined,
-        poster_url: posterUrl,
-        episode_thumb_url: episodeThumbUrl,
-        season_poster_url: seasonPosterUrl,
-        summary: item.summary || undefined,
-      } as MediaItem,
-      versions: versions.map(v => ({ ...v, media_item_id: 0 })) as any,
+      return null
     }
   }
 

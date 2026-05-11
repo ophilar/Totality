@@ -92,10 +92,34 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
         { ratingKey: 'show1', type: 'show', title: 'Plex Show', thumb: '/thumb.jpg', Guid: [{ id: 'tmdb://999' }] }
       ])
       vi.spyOn(provider as any, 'getShowEpisodes').mockResolvedValue([
-        { ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', Media: [{ id: 1, Part: [{ file: 'f.mkv' }] }] }
+        { 
+          ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
+          Media: [{ 
+            id: 1, 
+            videoCodec: 'h264', audioCodec: 'aac', width: 1920, height: 1080,
+            Part: [{ 
+              file: 'f.mkv',
+              Stream: [
+                { streamType: 1, codec: 'h264', frameRate: 23.976 },
+                { streamType: 2, codec: 'aac', channels: 2 }
+              ]
+            }] 
+          }] 
+        }
       ])
       vi.spyOn(provider as any, 'getItemMetadataDetailed').mockResolvedValue({
-        ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', Media: [{ id: 1, Part: [{ file: 'f.mkv' }] }]
+        ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
+        Media: [{ 
+          id: 1, 
+          videoCodec: 'h264', audioCodec: 'aac', width: 1920, height: 1080,
+          Part: [{ 
+            file: 'f.mkv',
+            Stream: [
+              { streamType: 1, codec: 'h264', frameRate: 23.976 },
+              { streamType: 2, codec: 'aac', channels: 2 }
+            ]
+          }] 
+        }]
       })
 
       // Select a server (mocked)

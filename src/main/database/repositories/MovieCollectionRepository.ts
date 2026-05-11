@@ -5,9 +5,9 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 
-export class MovieCollectionRepository extends BaseRepository<MovieCollection> {
+export class MovieCollectionRepository extends BaseRepository<typeof schema.movieCollections> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'movie_collections', drizzle)
+    super(db, 'movie_collections', drizzle, schema.movieCollections)
   }
 
   public async getCollections(sourceId?: string): Promise<MovieCollection[]> {

@@ -2,103 +2,83 @@ import type { Client, Value } from '@libsql/client'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { getDatabase } from '@main/database/BetterSQLiteService'
+import { eq, sql, count, desc, asc } from 'drizzle-orm'
+import { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 /**
  * BaseRepository
  *
- * Abstract base class for all repositories.
- * Provides generic CRUD operations and common SQL patterns.
+ * Provides generic CRUD operations for any Drizzle table.
  */
-export abstract class BaseRepository<T extends { id?: number }> {
+export abstract class BaseRepository<TTable extends SQLiteTable> {
   constructor(
-    protected db: Client, 
+    protected db: Client,
     protected tableName: string,
-    protected drizzle: LibSQLDatabase<typeof schema>
+    protected drizzle: LibSQLDatabase<typeof schema>,
+    protected table: TTable
   ) {}
 
-  protected async beginBatch(): Promise<void> {
-    await getDatabase().beginBatch()
+  protected async beginBatch(): Promise<void> { await getDatabase().beginBatch() }
+  protected async endBatch(): Promise<void> { await getDatabase().endBatch() }
+  protected async rollbackBatch(): Promise<void> { await getDatabase().rollbackBatch() }
+
+  async getById(id: number): Promise<any | null> {
+    const results = await this.drizzle.select().from(this.table).where(eq((this.table as any).id, id)).limit(1)
+    return results[0] || null
   }
 
-  protected async endBatch(): Promise<void> {
-    await getDatabase().endBatch()
-  }
-
-  protected async rollbackBatch(): Promise<void> {
-    await getDatabase().rollbackBatch()
-  }
-
-  /**
-   * Get a single record by ID.
-   * Uses raw SQL to avoid Drizzle query builder issues with dynamic table names.
-   */
-  async getById(id: number): Promise<T | null> {
-    const result = await this.db.execute({
-      sql: `SELECT * FROM ${this.tableName} WHERE id = ?`,
-      args: [id]
-    })
-    return (result.rows[0] as unknown as T) || null
-  }
-
-  /**
-   * Delete a record by ID
-   */
   async delete(id: number): Promise<boolean> {
-    await this.db.execute({
-      sql: `DELETE FROM ${this.tableName} WHERE id = ?`,
-      args: [id]
-    })
+    await this.drizzle.delete(this.table).where(eq((this.table as any).id, id))
     return true
   }
 
-  /**
-   * Generic count method
-   */
-  protected async countInternal(whereSql: string = '1=1', params: Value[] = []): Promise<number> {
-    const result = await this.db.execute({ 
-      sql: `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${whereSql}`, 
-      args: params 
-    })
-    return (result.rows[0]?.count as number) || 0
+  protected async countInternal(where?: any): Promise<number> {
+    const result = await this.drizzle.select({ value: count() }).from(this.table).where(where)
+    return result[0]?.value || 0
+  }
+
+  protected buildOrder(sortBy: string = 'id', sortOrder: 'asc' | 'desc' = 'asc') {
+    const col = (this.table as any)[sortBy] || (this.table as any).id
+    return sortOrder === 'desc' ? desc(col) : asc(col)
   }
 
   /**
-   * Update timestamps for a record
+   * Reconciliation pattern: Remove items for a provider/library that were not seen in a set of valid IDs.
    */
-  protected async updateTimestamps(id: number): Promise<void> {
-    await this.db.execute({
-      sql: `UPDATE ${this.tableName} SET updated_at = ? WHERE id = ?`,
-      args: [new Date().toISOString(), id]
-    })
-  }
+  protected async reconcileStaleItems(
+    whereClause: any,
+    providerIdField: any,
+    validProviderIds: Set<string>
+  ): Promise<number> {
+    const existing = await this.drizzle.select({ id: (this.table as any).id, providerId: providerIdField }).from(this.table).where(whereClause)
+    const staleIds = existing.filter(item => !validProviderIds.has(item.providerId)).map(item => item.id)
 
-  /**
-   * Helper to build paging SQL
-   */
-  protected buildPagingSql(limit?: number, offset?: number): string {
-    let sql = ''
-    if (limit !== undefined) {
-      sql += ` LIMIT ${limit}`
+    if (staleIds.length > 0) {
+      // Drizzle 'inArray' or raw SQL delete
+      const result = await this.db.execute({
+        sql: `DELETE FROM ${this.tableName} WHERE id IN (${staleIds.join(',')})`,
+        args: []
+      })
+      return Number(result.rowsAffected)
     }
-    if (offset !== undefined) {
-      sql += ` OFFSET ${offset}`
-    }
-    return sql
+    return 0
   }
 
   /**
-   * Execute a raw query and return results
+   * Standardized upsert logic for tables with a unique provider ID.
    */
-  protected async queryAll<R = T>(sql: string, params: Value[] = []): Promise<R[]> {
-    const result = await this.db.execute({ sql, args: params })
-    return result.rows as unknown as R[]
-  }
-
-  /**
-   * Execute a raw query and return a single result
-   */
-  protected async queryOne<R = T>(sql: string, params: Value[] = []): Promise<R | null> {
-    const result = await this.db.execute({ sql, args: params })
-    return (result.rows[0] as unknown as R) || null
+  protected async upsertWithProviderId(
+    data: any,
+    uniqueConstraint: any[],
+    updateFields: any
+  ): Promise<number> {
+    const result = await this.drizzle.insert(this.table)
+      .values(data)
+      .onConflictDoUpdate({
+        target: uniqueConstraint,
+        set: { ...updateFields, updatedAt: new Date().toISOString() }
+      })
+      .returning({ id: (this.table as any).id })
+    return result[0]?.id
   }
 }
