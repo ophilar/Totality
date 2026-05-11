@@ -5,9 +5,9 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 
-export class TVShowRepository extends BaseRepository<SeriesCompleteness> {
+export class TVShowRepository extends BaseRepository<typeof schema.seriesCompleteness> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'series_completeness', drizzle)
+    super(db, 'series_completeness', drizzle, schema.seriesCompleteness)
   }
 
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {

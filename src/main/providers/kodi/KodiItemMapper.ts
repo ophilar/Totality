@@ -1,13 +1,11 @@
-import * as fs from 'fs'
+import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 import {
+  normalizeVideoCodec,
+  normalizeAudioCodec,
   normalizeResolution,
   normalizeHdrFormat,
   hasObjectAudio,
 } from '@main/services/MediaNormalizer'
-import {
-  estimateAudioBitrate,
-} from '@main/providers/utils/ProviderUtils'
-import { getFileNameParser } from '@main/services/FileNameParser'
 import {
   isLosslessCodec,
   isHiRes,
@@ -18,8 +16,6 @@ import type {
 import {
   MediaItem,
   MediaItemVersion,
-  AudioTrack,
-  SubtitleTrack,
   MusicArtist,
   MusicAlbum,
   MusicTrack,
@@ -34,6 +30,7 @@ import type {
   KodiMusicSong,
 } from '@main/providers/kodi/KodiProvider'
 import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export class KodiItemMapper {
   constructor(
@@ -42,151 +39,49 @@ export class KodiItemMapper {
   ) {}
 
   convertToMediaMetadata(item: KodiMovie | KodiEpisode, type: MediaItemType): MediaMetadata {
-    const videoStream = item.streamdetails?.video?.[0]
-    const audioStream = item.streamdetails?.audio?.[0]
-    const width = videoStream?.width || 0
-    const height = videoStream?.height || 0
-    const resolution = normalizeResolution(width, height)
-    const duration = videoStream?.duration || (item.runtime ? item.runtime * 60 : undefined)
-
-    let posterUrl: string | undefined
-    const art = item.art as any
-    if (type === MediaItemType.Episode) {
-      posterUrl = this.client.buildImageUrl(art?.['tvshow.poster'] || art?.['season.poster'])
-    } else {
-      posterUrl = this.client.buildImageUrl(art?.poster)
-    }
-
-    const audioBitrate = estimateAudioBitrate(audioStream?.codec, audioStream?.channels)
-
-    const isEpisode = type === MediaItemType.Episode
-    const movieItem = item as KodiMovie
-    const episodeItem = item as KodiEpisode
-
-    return {
-      providerId: this.sourceId,
-      providerType: ProviderType.Kodi,
-      itemId: type === MediaItemType.Movie ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
-      title: item.title,
-      type: type,
-      year: isEpisode ? undefined : movieItem.year,
-      seriesTitle: isEpisode ? episodeItem.showtitle : undefined,
-      seasonNumber: isEpisode ? episodeItem.season : undefined,
-      episodeNumber: isEpisode ? episodeItem.episode : undefined,
-      imdbId: isEpisode ? undefined : movieItem.imdbnumber,
-      filePath: item.file,
-      fileSize: this.getFileSize(item.file),
-      duration,
-      resolution,
-      width,
-      height,
-      videoCodec: videoStream?.codec,
-      hdrFormat: normalizeHdrFormat(videoStream?.hdrtype, undefined, undefined, undefined, undefined),
-      audioCodec: audioStream?.codec,
-      audioChannels: audioStream?.channels,
-      audioBitrate,
-      hasObjectAudio: hasObjectAudio(audioStream?.codec, undefined, item.title, undefined),
-      posterUrl,
+    try {
+      const { mediaItem } = MediaTransformer.fromKodi(item as any, this.sourceId, type, (url) => this.client.buildImageUrl(url))
+      return {
+        providerId: this.sourceId,
+        providerType: ProviderType.Kodi,
+        itemId: mediaItem.plex_id || '',
+        title: item.title,
+        type: mediaItem.type,
+        year: item.year,
+        filePath: mediaItem.file_path,
+        resolution: mediaItem.resolution,
+        videoCodec: mediaItem.video_codec,
+        audioCodec: mediaItem.audio_codec,
+        audioChannels: mediaItem.audio_channels,
+        audioBitrate: mediaItem.audio_bitrate,
+        posterUrl: mediaItem.poster_url,
+        imdbId: mediaItem.imdb_id,
+      }
+    } catch (error) {
+      if (error instanceof IncompleteMetadataError) {
+        return {
+          providerId: this.sourceId,
+          providerType: ProviderType.Kodi,
+          itemId: type === MediaItemType.Movie ? `movie-${(item as KodiMovie).movieid}` : `episode-${(item as KodiEpisode).episodeid}`,
+          title: item.title,
+          type,
+        }
+      }
+      throw error
     }
   }
 
   async convertToMediaItem(item: KodiMovie | KodiEpisode, type: MediaItemType): Promise<{ mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null> {
-    const videoStream = item.streamdetails?.video?.[0]
-    if (!videoStream) return null
-
-    const width = videoStream.width || 0
-    const height = videoStream.height || 0
-    const resolution = normalizeResolution(width, height)
-    const hdrFormat = normalizeHdrFormat(videoStream.hdrtype, undefined, undefined, undefined, undefined) || 'None'
-    const duration = videoStream.duration || (item.runtime ? item.runtime * 60 : 0)
-    const fileSize = this.getFileSize(item.file)
-
-    const audioTracks: AudioTrack[] = (item.streamdetails?.audio || []).map((stream, index) => ({
-      index,
-      codec: stream.codec || 'unknown',
-      channels: stream.channels || 2,
-      language: stream.language,
-      bitrate: estimateAudioBitrate(stream.codec, stream.channels),
-      hasObjectAudio: hasObjectAudio(stream.codec, undefined, item.title, undefined),
-    }))
-
-    const subtitleTracks: SubtitleTrack[] = (item.streamdetails?.subtitle || []).map((stream, index) => ({
-      index,
-      codec: 'unknown',
-      language: stream.language,
-    }))
-
-    const filePath = item.file || ''
-    const parsed = getFileNameParser().parse(filePath)
-    const edition = (parsed?.type === 'movie' ? parsed.edition : undefined) || undefined
-    const source = parsed?.type !== 'music' ? parsed?.source : undefined
-    const sourceType = source && /remux/i.test(source) ? 'REMUX' : source && /web-dl|webdl/i.test(source) ? 'WEB-DL' : undefined
-
-    const labelParts = [resolution]
-    if (hdrFormat !== 'None') labelParts.push(hdrFormat)
-    if (sourceType) labelParts.push(sourceType)
-    if (edition) labelParts.push(edition)
-
-    const isEpisode = type === MediaItemType.Episode
-    const movieItem = item as KodiMovie
-    const episodeItem = item as KodiEpisode
-
-    const version: Omit<MediaItemVersion, 'id' | 'media_item_id'> = {
-      version_source: `kodi_${type}_${type === MediaItemType.Movie ? movieItem.movieid : episodeItem.episodeid}`,
-      edition,
-      source_type: sourceType,
-      label: labelParts.join(' '),
-      file_path: item.file,
-      file_size: fileSize,
-      duration,
-      resolution,
-      width,
-      height,
-      video_codec: videoStream.codec || 'unknown',
-      video_bitrate: 0,
-      audio_codec: audioTracks[0]?.codec,
-      audio_channels: audioTracks[0]?.channels,
-      audio_bitrate: audioTracks[0]?.bitrate,
-      hdr_format: hdrFormat,
-      has_object_audio: audioTracks[0]?.hasObjectAudio,
-      audio_tracks: JSON.stringify(audioTracks),
-      subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
+    try {
+      return MediaTransformer.fromKodi(item as any, this.sourceId, type, (url) => this.client.buildImageUrl(url))
+    } catch (error) {
+      if (error instanceof IncompleteMetadataError) {
+        getLoggingService().warn('[KodiItemMapper]', error.message)
+      } else {
+        getLoggingService().error('[KodiItemMapper]', 'Transformation error:', error)
+      }
+      return null
     }
-
-    const mediaItem: MediaItem = {
-      plex_id: type === MediaItemType.Movie ? `movie-${movieItem.movieid}` : `episode-${episodeItem.episodeid}`,
-      title: item.title,
-      year: isEpisode ? undefined : movieItem.year,
-      type: type,
-      series_title: isEpisode ? episodeItem.showtitle : undefined,
-      season_number: isEpisode ? episodeItem.season : undefined,
-      episode_number: isEpisode ? episodeItem.episode : undefined,
-      file_path: version.file_path,
-      file_size: version.file_size,
-      duration: version.duration,
-      resolution: version.resolution,
-      width: version.width,
-      height: version.height,
-      video_codec: version.video_codec,
-      video_bitrate: 0,
-      audio_codec: version.audio_codec,
-      audio_channels: version.audio_channels,
-      audio_bitrate: version.audio_bitrate,
-      hdr_format: version.hdr_format,
-      has_object_audio: version.has_object_audio,
-      audio_tracks: version.audio_tracks,
-      subtitle_tracks: version.subtitle_tracks,
-      version_count: 1,
-      imdb_id: isEpisode ? undefined : movieItem.imdbnumber,
-      poster_url: isEpisode ? this.client.buildImageUrl((item.art as any)?.['tvshow.poster'] || (item.art as any)?.['season.poster']) : this.client.buildImageUrl((item.art as any)?.poster),
-      episode_thumb_url: isEpisode ? this.client.buildImageUrl((item.art as any)?.thumb) : undefined,
-      season_poster_url: isEpisode ? this.client.buildImageUrl((item.art as any)?.['season.poster']) : undefined,
-      summary: item.plot,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-
-    return { mediaItem, versions: [version] }
   }
 
   convertToMusicArtist(item: KodiMusicArtist, libraryId?: string): MusicArtist {

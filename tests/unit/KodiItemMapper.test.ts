@@ -32,7 +32,7 @@ describe('KodiItemMapper', () => {
     expect(metadata.title).toBe('Inception')
     expect(metadata.year).toBe(2010)
     expect(metadata.resolution).toBe('1080p')
-    expect(metadata.audioCodec).toBe('dts')
+    expect(metadata.audioCodec).toBe('DTS')
     expect(metadata.audioChannels).toBe(6)
     expect(metadata.imdbId).toBe('tt1375666')
   })
@@ -45,7 +45,7 @@ describe('KodiItemMapper', () => {
     expect(mediaItem.title).toBe('Inception')
     expect(versions.length).toBe(1)
     expect(versions[0].resolution).toBe('1080p')
-    expect(versions[0].video_codec).toBe('h264')
+    expect(versions[0].video_codec).toBe('H.264')
   })
 })
 

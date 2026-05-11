@@ -5,9 +5,9 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 
-export class MediaRepository extends BaseRepository<MediaItem> {
+export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'media_items', drizzle)
+    super(db, 'media_items', drizzle, schema.mediaItems)
   }
 
   async getItems(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Promise<MediaItem[]> {

@@ -29,9 +29,9 @@ export interface ActivityLogEntry {
   created_at?: string
 }
 
-export class TaskRepository extends BaseRepository<TaskHistoryEntry> {
+export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'task_history', drizzle)
+    super(db, 'task_history', drizzle, schema.taskHistory)
   }
 
   async addTaskHistory(entry: TaskHistoryEntry): Promise<number> {

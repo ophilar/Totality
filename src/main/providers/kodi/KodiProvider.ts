@@ -236,20 +236,27 @@ export class KodiProvider extends BaseMediaProvider {
           const item = items[i]
           if (options?.onProgress) options.onProgress({ current: i + 1, total: items.length, phase: 'processing', currentItem: item.title, percentage: ((i + 1) / items.length) * 100 })
           
-          const converted = await this.mapper.convertToMediaItem(item, libraryId === 'movies' ? MediaItemType.Movie : MediaItemType.Episode)
-          if (converted) {
-            const { mediaItem, versions } = converted
-            mediaItem.source_id = this.sourceId
-            mediaItem.source_type = ProviderType.Kodi
-            mediaItem.library_id = libraryId
-            
-            const id = await db.media.upsertItem(mediaItem)
-            const scoredVersions = versions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as any) }))
-            db.media.syncItemVersions(id, scoredVersions as any)
-            
-            mediaItem.id = id
-            await db.media.upsertQualityScore(await analyzer.analyzeMediaItem(mediaItem))
-            result.itemsScanned++
+          try {
+            const converted = await this.mapper.convertToMediaItem(item, libraryId === 'movies' ? MediaItemType.Movie : MediaItemType.Episode)
+            if (converted) {
+              const { mediaItem, versions } = converted
+              mediaItem.source_id = this.sourceId
+              mediaItem.source_type = ProviderType.Kodi
+              mediaItem.library_id = libraryId
+              
+              const id = await db.media.upsertItem(mediaItem)
+              const scoredVersions = versions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as any) }))
+              await db.media.syncItemVersions(id, scoredVersions as any)
+              
+              const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
+              qualityScore.media_item_id = id
+              await db.media.upsertQualityScore(qualityScore)
+              
+              result.itemsScanned++
+            }
+          } catch (e) {
+            if (e instanceof IncompleteMetadataError) getLoggingService().warn('[KodiProvider]', e.message)
+            else result.errors.push(`Item ${item.title}: ${getErrorMessage(e)}`)
           }
 
           // Yield every 50 items to keep UI responsive

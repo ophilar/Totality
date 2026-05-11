@@ -2,11 +2,13 @@ import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { eq, like, sql } from 'drizzle-orm'
 import { getCredentialEncryptionService } from '@main/services/CredentialEncryptionService'
+import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { Client } from '@libsql/client'
 
-export class ConfigRepository {
-  constructor(
-    private drizzle: LibSQLDatabase<typeof schema>
-  ) {}
+export class ConfigRepository extends BaseRepository<typeof schema.settings> {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
+    super(db, 'settings', drizzle, schema.settings)
+  }
 
   async getSetting(key: string): Promise<string | null> {
     const row = await this.drizzle.select()

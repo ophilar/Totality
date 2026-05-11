@@ -74,6 +74,58 @@ describe('Library Issues Fixes (Deep Dive)', () => {
     })
   })
 
+  describe('Music Scan Routing Integrity', () => {
+    it('should correctly route music scans to the music-specific scanning engine', async () => {
+      const sourceId = 'music-route-test'
+      const libraryId = 'music'
+      
+      // 1. Setup local source with music library
+      const folderPath = path.join(tempDir.path, 'music-route')
+      fs.mkdirSync(folderPath, { recursive: true })
+      
+      await db.sources.upsertSource({ 
+        source_id: sourceId, 
+        source_type: 'local', 
+        display_name: 'Routing Test', 
+        connection_config: JSON.stringify({ folderPath, mediaType: LibraryType.Music }), 
+        is_enabled: 1 
+      })
+
+      // 2. Trigger scan via manager
+      const manager = new SourceManager()
+      await manager.initialize()
+      
+      // Ensure the provider itself knows it's a music source for the routing logic
+      const provider = manager.getProvider(sourceId) as any
+      if (provider) provider.mediaType = LibraryType.Music
+      
+      // Create a real file so the scanner has something to do
+      const artistDir = path.join(folderPath, 'Test Artist')
+      const albumDir = path.join(artistDir, 'Test Album')
+      fs.mkdirSync(albumDir, { recursive: true })
+      fs.writeFileSync(path.join(albumDir, 'song.mp3'), 'audio content')
+
+      // Mock ffprobe for the analyzer
+      const analyzer = (await import('@main/services/MediaFileAnalyzer')).getMediaFileAnalyzer()
+      vi.spyOn(analyzer as any, 'runFFprobe').mockResolvedValue({
+        format: { format_name: 'mp3', size: '500', duration: '200' },
+        streams: [{ codec_type: 'audio', codec_name: 'mp3', bit_rate: '256000', channels: 2 }]
+      })
+
+      await manager.scanLibrary(sourceId, libraryId)
+
+      // 3. Verify music-specific entities were created (MusicArtist, MusicAlbum)
+      // This proves it went through the MusicScanner route, not just the generic Media route
+      const artists = await db.music.getArtists({ sourceId })
+      expect(artists.length).toBeGreaterThan(0)
+      expect(artists[0].name).toBe('Test Artist')
+
+      const albums = await db.music.getAlbums({ sourceId })
+      expect(albums.length).toBeGreaterThan(0)
+      expect(albums[0].title).toBe('Test Album')
+    })
+  })
+
   describe('Dashboard Visibility - Unmatched Series', () => {
     it('should show unmatched series in the dashboard even if TMDB key is missing', async () => {
       const statsRepo = db.stats

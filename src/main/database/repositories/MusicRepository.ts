@@ -5,9 +5,9 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 
-export class MusicRepository extends BaseRepository<MusicArtist | MusicAlbum | MusicTrack> {
+export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'music_tracks', drizzle) // Default table, methods will override as needed
+    super(db, 'music_tracks', drizzle, schema.musicTracks)
   }
 
   async getTrackByPath(filePath: string): Promise<MusicTrack | null> {

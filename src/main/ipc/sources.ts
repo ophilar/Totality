@@ -389,7 +389,7 @@ export function registerSourceHandlers(): void {
 
   createValidatedIpcHandler('local:detectSubfolders', FilePathSchema, async (folderPath) => {
     const entries = await fs.readdir(folderPath, { withFileTypes: true })
-    const subfolders = entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => {
+    const subfolders = entries.filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== '@eadir').map(e => {
       const name = e.name.toLowerCase()
       let suggestedType = LibraryType.Unknown
       if (['movies', 'films', 'movie'].some(p => name.includes(p))) suggestedType = LibraryType.Movie

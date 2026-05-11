@@ -436,10 +436,14 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               const allVersions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
               let canonicalItem: MediaItem | null = null
               for (const item of group) {
-                const converted = await this.mapper.convertToMediaItem(item)
-                if (!converted) continue
-                if (!canonicalItem) canonicalItem = converted.mediaItem
-                allVersions.push(...converted.versions)
+                try {
+                  const res = MediaTransformer.fromJellyfin(item, this.sourceId, this.providerType, (id, t, tag) => this.client.buildImageUrl(id, t, tag))
+                  if (!canonicalItem) canonicalItem = res.mediaItem
+                  allVersions.push(...res.versions)
+                } catch (e) {
+                  if (e instanceof IncompleteMetadataError) getLoggingService().warn(`[${this.providerType}]`, e.message)
+                  else throw e
+                }
               }
 
               if (canonicalItem && allVersions.length > 0) {

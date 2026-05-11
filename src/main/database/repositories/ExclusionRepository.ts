@@ -13,9 +13,9 @@ export interface Exclusion {
   created_at?: string
 }
 
-export class ExclusionRepository extends BaseRepository<Exclusion> {
+export class ExclusionRepository extends BaseRepository<typeof schema.exclusions> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
-    super(db, 'exclusions', drizzle)
+    super(db, 'exclusions', drizzle, schema.exclusions)
   }
 
   async isExcluded(type: string, referenceId?: number, referenceKey?: string): Promise<boolean> {

@@ -98,7 +98,7 @@ export class BetterSQLiteService {
   }
 
   // Repository Getters
-  public get config() { return this.repos.config ??= new ConfigRepository(this.drizzle) }
+  public get config() { return this.repos.config ??= new ConfigRepository(this.db as any, this.drizzle) }
   public get media() { return this.repos.media ??= new MediaRepository(this.db as any, this.drizzle) }
   public get music() { return this.repos.music ??= new MusicRepository(this.db as any, this.drizzle) }
   public get stats() { return this.repos.stats ??= new StatsRepository(this.drizzle) }
