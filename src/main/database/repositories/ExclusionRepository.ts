@@ -48,6 +48,27 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
       .onConflictDoNothing()
   }
 
+  async batchAddExclusions(exclusions: Omit<Exclusion, 'id' | 'created_at'>[]): Promise<void> {
+    const now = new Date().toISOString()
+    const values = exclusions.map(e => ({
+      exclusionType: e.exclusion_type,
+      referenceId: e.reference_id ?? null,
+      referenceKey: e.reference_key ?? null,
+      parentKey: e.parent_key ?? null,
+      title: e.title ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }))
+    
+    const chunkSize = 100
+    for (let i = 0; i < values.length; i += chunkSize) {
+      const chunk = values.slice(i, i + chunkSize)
+      await this.drizzle.insert(schema.exclusions)
+        .values(chunk)
+        .onConflictDoNothing()
+    }
+  }
+
   async removeExclusion(type: string, referenceId?: number, referenceKey?: string): Promise<void> {
     const conditions = [eq(schema.exclusions.exclusionType, type)]
     if (referenceId != null) conditions.push(eq(schema.exclusions.referenceId, referenceId))

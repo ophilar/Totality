@@ -42,6 +42,7 @@ export const IPC_CHANNELS = {
     ADD_EXCLUSION: 'db:addExclusion',
     REMOVE_EXCLUSION: 'db:removeExclusion',
     GET_EXCLUSIONS: 'db:getExclusions',
+    BATCH_ADD_EXCLUSIONS: 'db:batchAddExclusions',
   },
   SOURCES: {
     LIST: 'sources:list',

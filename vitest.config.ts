@@ -42,8 +42,11 @@ export default defineConfig({
     },
     server: {
       deps: {
-        external: ['node:sqlite', 'electron']
+        external: ['node:sqlite', 'electron', 'node:path', 'node:fs', 'node:os']
       }
+    },
+    ssr: {
+      external: ['node:sqlite', 'electron']
     },
     coverage: {
       provider: 'istanbul',

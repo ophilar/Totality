@@ -132,6 +132,8 @@ export const mediaApi = {
   // Database - Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, exclusionType, referenceId, referenceKey, parentKey, title),
+  batchAddExclusions: (exclusions: any[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, exclusions),
   removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
@@ -329,6 +331,7 @@ export interface MediaAPI {
 
   // Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) => Promise<number>
+  batchAddExclusions: (exclusions: any[]) => Promise<void>
   removeExclusion: (id: number) => Promise<void>
   getExclusions: (exclusionType?: string, parentKey?: string) => Promise<Array<{
     id: number; exclusion_type: string; reference_id: number | null; reference_key: string | null

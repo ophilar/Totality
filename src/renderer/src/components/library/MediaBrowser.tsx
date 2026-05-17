@@ -15,6 +15,7 @@ import { PinEntryModal } from '@/components/library/PinEntryModal'
 import { BrowserHeader } from '@/components/library/browser/BrowserHeader'
 import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from '@/components/library/browser/BrowserAlphabetNav'
+import { BatchActionBar } from '@/components/library/browser/BatchActionBar'
 import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -72,6 +73,7 @@ export function MediaBrowser({
     selectedArtist, setSelectedArtist,
     selectedAlbum, setSelectedAlbum,
     searchQuery,
+    selectionMode, setSelectionMode, selectedIds, clearSelection
   } = useLibrary()
 
   const { sources, activeSourceId, setActiveSource, markLibraryAsNew } = useSources()
@@ -473,6 +475,22 @@ export function MediaBrowser({
     return { title: selectedShow, poster_url: selectedShowEpisodes[0]?.poster_url || undefined, seasons }
   }, [selectedShow, selectedShowEpisodes])
 
+  const handleBatchDismiss = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    const itemsToDismiss = Array.from(selectedIds).map(id => {
+      const movie = movies.find(m => m.id === id)
+      const episode = selectedShowEpisodes.find(e => e.id === id)
+      const item = movie || episode
+      return item ? { exclusion_type: 'media_upgrade' as const, reference_id: item.id, title: item.title } : null
+    }).filter(Boolean)
+    if (itemsToDismiss.length > 0) {
+      await window.electronAPI.batchAddExclusions(itemsToDismiss)
+      addToast({ message: `Dismissed ${itemsToDismiss.length} upgrades`, type: 'info' })
+      clearSelection()
+      reloadMedia()
+    }
+  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection, reloadMedia])
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {!hideHeader && (
@@ -506,6 +524,7 @@ export function MediaBrowser({
           gridScale={gridScale} setGridScale={setGridScale}
           viewType={viewType} setViewType={setViewType}
           selectedShow={selectedShow}
+          selectionMode={selectionMode} setSelectionMode={setSelectionMode} selectedCount={selectedIds.size}
         />
 
         <div className="flex-1 relative min-h-0">
@@ -587,6 +606,14 @@ export function MediaBrowser({
           <BrowserAlphabetNav alphabetFilter={alphabetFilter} scrollToLetter={(l) => setAlphabetFilter(l)} />
         </div>
       </div>
+
+      <BatchActionBar
+        selectedCount={selectedIds.size}
+        onClear={clearSelection}
+        onDismiss={handleBatchDismiss}
+        onTranscode={() => addToast({ message: 'Bulk Transcode coming soon!', type: 'info' })}
+        onAddToWishlist={() => addToast({ message: 'Bulk Wishlist coming soon!', type: 'info' })}
+      />
 
       <PinEntryModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onSuccess={() => setIsUnlocked(true)} />
       {selectedMediaId && (
