@@ -11,12 +11,12 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export interface KodiLocalInstallation {
   path: string            // Kodi userdata folder
@@ -117,20 +117,16 @@ export class KodiLocalDiscoveryService {
     try {
       if (platform === 'win32') {
         // Windows: use tasklist
-        const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq kodi.exe" /NH')
+        const { stdout } = await execFileAsync('tasklist', ['/FI', 'IMAGENAME eq kodi.exe', '/NH'])
         return stdout.toLowerCase().includes('kodi.exe')
       } else if (platform === 'darwin') {
         // macOS: use pgrep
-        try {
-          await execAsync('pgrep -x Kodi')
-          return true
-        } catch (error) { throw error }
+        await execFileAsync('pgrep', ['-x', 'Kodi'])
+        return true
       } else {
         // Linux: use pgrep
-        try {
-          await execAsync('pgrep -x kodi')
-          return true
-        } catch (error) { throw error }
+        await execFileAsync('pgrep', ['-x', 'kodi'])
+        return true
       }
     } catch (error) {
       // If command fails, assume Kodi is not running
