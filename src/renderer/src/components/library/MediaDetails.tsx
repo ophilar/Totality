@@ -53,7 +53,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
         if (best) setSelectedVersionId(best.id!)
       }
     } catch (err) {
-      console.error('Failed to load media details:', err)
+      window.electronAPI.log.error('[MediaDetails]', 'Failed to load media details:', err)
       addToast({ title: 'Failed to load details', type: 'error' })
     } finally {
       setLoading(false)
