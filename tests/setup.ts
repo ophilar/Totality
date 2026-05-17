@@ -103,6 +103,11 @@ vi.mock('child_process', () => {
       if (cb) setImmediate(() => cb(null, { stdout: '' }, ''))
       return mockProc
     }),
+    execFile: vi.fn((file, args, options, callback) => {
+      const cb = typeof options === 'function' ? options : typeof args === 'function' ? args : callback
+      if (cb) setImmediate(() => cb(null, { stdout: '' }, ''))
+      return mockProc
+    }),
     execSync: vi.fn().mockReturnValue(''),
     spawn: vi.fn().mockReturnValue(mockProc),
     fork: vi.fn(),
