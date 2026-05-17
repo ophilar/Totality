@@ -35,6 +35,12 @@ interface LibraryContextType {
   // Selection
   activeSourceId: string | null
   setActiveSourceId: (id: string | null) => void
+  selectionMode: boolean
+  setSelectionMode: (enabled: boolean) => void
+  selectedIds: Set<number>
+  toggleSelection: (id: number) => void
+  clearSelection: () => void
+  selectAll: (ids: number[]) => void
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined)
@@ -55,6 +61,27 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const [selectedArtist, setSelectedArtist] = useState<MusicArtist | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<MusicAlbum | null>(null)
 
+  // Batch Selection State
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
+  const toggleSelection = useCallback((id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+  }, [])
+
+  const selectAll = useCallback((ids: number[]) => {
+    setSelectedIds(new Set(ids))
+  }, [])
+
   // Persist view preferences
   const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number }>>({})
 
@@ -71,7 +98,9 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
         } catch (e) { /* ignore */ }
       }
     })
-  }, [view])
+    // Reset selection when changing tabs
+    clearSelection()
+  }, [view, clearSelection])
 
   const setGridScale = useCallback((scale: number) => {
     setGridScaleState(scale)
@@ -102,7 +131,9 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       selectedArtist, setSelectedArtist,
       selectedAlbum, setSelectedAlbum,
       sortBy, setSortBy,
-      activeSourceId, setActiveSourceId
+      activeSourceId, setActiveSourceId,
+      selectionMode, setSelectionMode,
+      selectedIds, toggleSelection, clearSelection, selectAll
     }}>
       {children}
     </LibraryContext.Provider>

@@ -16,18 +16,18 @@ export class PathUtils {
   static toDatabasePath(filePath: string): string {
     if (!filePath) return ''
     
-    // Normalize using standard path module first to resolve segments
-    let normalized = path.normalize(filePath)
+    // First, convert all backslashes to forward slashes to ensure posix-style normalization works everywhere
+    let normalized = filePath.replace(/\\/g, '/')
     
-    // Preserve UNC prefix if on Windows
-    const isUnc = normalized.startsWith('\\\\') || normalized.startsWith('//')
+    // Preserve Windows UNC prefix (e.g., //nas/movies)
+    const isUnc = normalized.startsWith('//')
     
-    // Convert all to forward slashes
-    normalized = normalized.replace(/\\/g, '/')
+    // Resolve redundant segments using posix normalization (which works on forward slashes)
+    normalized = path.posix.normalize(normalized)
     
-    // Ensure UNC paths start with // if they were normalized away (unlikely with replace)
+    // If it was a UNC path, ensure it has the double slash (posix.normalize might reduce // to /)
     if (isUnc && !normalized.startsWith('//')) {
-        normalized = '/' + normalized
+      normalized = '/' + normalized
     }
     
     return normalized

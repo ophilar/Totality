@@ -33,6 +33,18 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
+    deps: {
+      optimizer: {
+        web: {
+          include: ['vitest-canvas-mock']
+        }
+      }
+    },
+    server: {
+      deps: {
+        external: ['node:sqlite', 'electron']
+      }
+    },
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'html', 'lcov'],
