@@ -280,6 +280,10 @@ export function registerDatabaseHandlers() {
     return await db.exclusions.addExclusion({ exclusion_type: type as any, reference_id: refId, reference_key: refKey, parent_key: pKey, title })
   })
 
+  createIpcHandler(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, async (exclusions: any[]) => {
+    return await db.exclusions.batchAddExclusions(exclusions)
+  })
+
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, PositiveIntSchema, async (id) => {
     await db.exclusions.delete(id)
     return true
