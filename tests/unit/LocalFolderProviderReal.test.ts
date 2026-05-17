@@ -5,6 +5,7 @@ import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 // Mock TMDB so we don't hit real API
 vi.mock('../../src/main/services/TMDBService', () => ({
@@ -99,7 +100,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     expect(items).toHaveLength(1)
 
     expect(items[0].year).toBe(2020)
-    expect(items[0].file_path).toBe(movieFile)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(movieFile))
     expect(items[0].resolution).toBe('1080p') // From real MediaNormalizer
   })
 
@@ -153,7 +154,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     
     const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
-    expect(items[0].file_path).toBe(file1)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(file1))
   })
 
   it('should scan music library', async () => {
@@ -216,7 +217,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     
     const items = await db.media.getItems({ sourceId })
     expect(items).toHaveLength(1)
-    expect(items[0].file_path).toBe(movieFile)
+    expect(items[0].file_path).toBe(PathUtils.toDatabasePath(movieFile))
   })
 
   it('should skip short files (samples)', async () => {

@@ -9,6 +9,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { useToast } from '@/contexts/ToastContext'
 import { LibraryType, ProviderType } from '@main/types/database'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
@@ -502,38 +503,32 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Plex-specific: Start auth flow
   const plexStartAuth = useCallback(async () => {
-    return await window.electronAPI.plexStartAuth()
+    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.START_AUTH)
   }, [])
 
   // Plex-specific: Check auth PIN
   const plexCheckAuth = useCallback(async (pinId: number) => {
-    return await window.electronAPI.plexCheckAuth(pinId)
+    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.CHECK_AUTH, pinId)
   }, [])
 
   // Plex-specific: Authenticate and discover servers
-  // Note: We intentionally don't call refreshSources() here because the source
-  // is incomplete until a server is selected. Calling refreshSources() would
-  // update sources.length and potentially unmount UI components mid-flow.
-  // refreshSources() should be called after plexSelectServer completes.
   const plexAuthenticateAndDiscover = useCallback(async (
     token: string,
     displayName: string
   ) => {
-    const result = await window.electronAPI.plexAuthenticateAndDiscover(token, displayName)
+    const result = await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.AUTHENTICATE_AND_DISCOVER, token, displayName)
     return result
   }, [])
 
   // Plex-specific: Select server
-  // NOTE: Don't call refreshSources() here - the flow continues to library selection.
-  // Refresh should happen after the full flow completes (library selection saved).
   const plexSelectServer = useCallback(async (sourceId: string, serverId: string) => {
-    const result = await window.electronAPI.plexSelectServerForSource(sourceId, serverId)
+    const result = await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.SELECT_SERVER, sourceId, serverId)
     return result
   }, [])
 
   // Plex-specific: Get servers
   const plexGetServers = useCallback(async (sourceId: string) => {
-    return await window.electronAPI.plexGetServersForSource(sourceId)
+    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.GET_SERVERS, sourceId)
   }, [])
 
   const value: SourceContextType = {

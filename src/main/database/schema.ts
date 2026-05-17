@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   poster_url TEXT,
   backdrop_url TEXT,
   status TEXT,
+  user_fixed_match INTEGER,
 
   -- Efficiency metrics
   efficiency_score INTEGER,

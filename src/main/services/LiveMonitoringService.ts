@@ -226,6 +226,7 @@ export class LiveMonitoringService {
       const watcher = fs.watch(watchPath, { recursive: true }, (_eventType, filename) => {
         if (!filename || /(^|[/\\])\./.test(filename)) return
         const fullPath = path.join(watchPath, filename)
+        getLoggingService().debug('[LiveMonitoring]', `File event: ${filename} for ${sourceName}`)
         if (this.isMediaFile(fullPath)) {
           const action = fs.existsSync(fullPath) ? 'change' : 'unlink'
           this.handleFileChange(sourceId, action, fullPath)
@@ -508,4 +509,9 @@ let liveMonitoringService: LiveMonitoringService | null = null
 export function getLiveMonitoringService(): LiveMonitoringService {
   if (!liveMonitoringService) liveMonitoringService = new LiveMonitoringService()
   return liveMonitoringService
+}
+
+export function resetLiveMonitoringServiceForTesting(): void {
+  if (liveMonitoringService) liveMonitoringService.stop()
+  liveMonitoringService = null
 }

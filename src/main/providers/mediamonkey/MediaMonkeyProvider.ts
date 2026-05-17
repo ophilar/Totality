@@ -132,7 +132,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
       
       this.db = new DatabaseSync(this.databasePath, { readOnly: true })
       const db = getDatabase()
-      const musicRepo = (db as any).musicRepo
+      const musicRepo = db.music
 
       getLoggingService().info('[MediaMonkeyProvider]', `Starting scan of MediaMonkey database: ${this.databasePath}`)
 
@@ -179,7 +179,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
             name: artist.Artist,
             sort_name: artist.SortArtist || undefined,
           }
-          const id = musicRepo.upsertMusicArtist(totalityArtist)
+          const id = await musicRepo.upsertArtist(totalityArtist)
           artistIdMap.set(artist.ID, id)
         }
 
@@ -196,7 +196,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
             sort_title: album.SortAlbum || undefined,
             year: album.ReleaseYear || undefined,
           }
-          const id = musicRepo.upsertMusicAlbum(totalityAlbum)
+          const id = await musicRepo.upsertAlbum(totalityAlbum)
           albumIdMap.set(album.ID, id)
         }
 
@@ -235,7 +235,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
             added_at: song.DateAdded ? new Date(song.DateAdded * 1000).toISOString() : undefined
           }
 
-          musicRepo.upsertMusicTrack(totalityTrack)
+          await musicRepo.upsertTrack(totalityTrack)
 
           // Add to tracks map for album stat calculation
           if (song.IDAlbum) {
@@ -253,7 +253,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
             // Find the original album data from our local albums array to avoid another DB hit
             const originalAlbum = albums.find(a => a.ID === mm5AlbumId)
             if (originalAlbum) {
-              musicRepo.upsertMusicAlbum({
+              await musicRepo.upsertAlbum({
                 source_id: this.sourceId,
                 source_type: this.providerType,
                 library_id: libraryId,
@@ -277,11 +277,11 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
         }
 
         // Bulk update all artist counts for this source
-        musicRepo.updateAllMusicArtistCounts(this.sourceId)
+        await musicRepo.updateAllMusicArtistCounts(this.sourceId)
 
         result.success = true
       } finally {
-        db.endBatch()
+        await db.endBatch()
       }
 
       result.durationMs = Date.now() - startTime

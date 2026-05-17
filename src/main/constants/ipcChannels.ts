@@ -52,7 +52,19 @@ export const IPC_CHANNELS = {
     GET_STATS: 'sources:getStats',
     GET_SUPPORTED_PROVIDERS: 'sources:getSupportedProviders',
     GET_LIBRARIES_WITH_STATUS: 'sources:getLibrariesWithStatus',
+    SET_LIBRARIES_ENABLED: 'sources:setLibrariesEnabled',
     OPEN_FOLDER: 'sources:openFolder',
+    PLEX: {
+      START_AUTH: 'plex:startAuth',
+      CHECK_AUTH: 'plex:completeAuth',
+      AUTHENTICATE_AND_DISCOVER: 'plex:authenticateAndDiscover',
+      SELECT_SERVER: 'plex:selectServer',
+      GET_SERVERS: 'plex:getServers',
+    },
+    JELLYFIN: {
+      AUTHENTICATE: 'jellyfin:authenticateCredentials',
+      GET_LIBRARIES: 'jellyfin:getLibraries',
+    }
   },
   TASK_QUEUE: {
     GET_STATE: 'taskQueue:getState',
