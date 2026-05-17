@@ -491,6 +491,60 @@ export function MediaBrowser({
     }
   }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection, reloadMedia])
 
+  const handleBatchTranscode = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    const tasks = Array.from(selectedIds).map(id => {
+      const movie = movies.find(m => m.id === id)
+      const episode = selectedShowEpisodes.find(e => e.id === id)
+      const item = movie || episode
+      if (!item) return null
+      return {
+        type: 'transcode' as const,
+        label: `Transcode ${item.title}`,
+        mediaItemId: item.id,
+        sourceId: item.source_id,
+        libraryId: item.library_id || undefined,
+        options: { targetCodec: 'av1', overwriteOriginal: true }
+      }
+    }).filter(Boolean)
+    
+    if (tasks.length > 0) {
+      await window.electronAPI.taskQueueAddTasks(tasks as any)
+      addToast({ message: `Added ${tasks.length} items to transcode queue`, type: 'success' })
+      clearSelection()
+    }
+  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection])
+
+  const handleBatchWishlist = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    const items = Array.from(selectedIds).map(id => {
+      const movie = movies.find(m => m.id === id)
+      const episode = selectedShowEpisodes.find(e => e.id === id)
+      const item = movie || episode
+      if (!item) return null
+      
+      const type = movie ? 'movie' : 'episode'
+      return {
+        media_type: type as any,
+        title: item.title,
+        year: item.year || undefined,
+        tmdb_id: item.tmdb_id || undefined,
+        season_number: item.season_number || undefined,
+        episode_number: item.episode_number || undefined,
+        series_title: item.series_title || undefined,
+        current_quality: item.tier_quality || undefined,
+        status: 'active' as const,
+        priority: 3
+      }
+    }).filter(Boolean)
+    
+    if (items.length > 0) {
+      await window.electronAPI.wishlistAddBulk(items as any)
+      addToast({ message: `Added ${items.length} items to wishlist`, type: 'success' })
+      clearSelection()
+    }
+  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection])
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {!hideHeader && (
@@ -611,8 +665,8 @@ export function MediaBrowser({
         selectedCount={selectedIds.size}
         onClear={clearSelection}
         onDismiss={handleBatchDismiss}
-        onTranscode={() => addToast({ message: 'Bulk Transcode coming soon!', type: 'info' })}
-        onAddToWishlist={() => addToast({ message: 'Bulk Wishlist coming soon!', type: 'info' })}
+        onTranscode={handleBatchTranscode}
+        onAddToWishlist={handleBatchWishlist}
       />
 
       <PinEntryModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onSuccess={() => setIsUnlocked(true)} />

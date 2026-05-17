@@ -120,6 +120,33 @@ export class TaskQueueService {
   }
 
   /**
+   * Add multiple tasks to the queue at once
+   */
+  async addTasks(definitions: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>[]): Promise<string[]> {
+    const ids: string[] = []
+    const now = new Date().toISOString()
+
+    for (const definition of definitions) {
+      const task: QueuedTask = {
+        ...definition,
+        id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${ids.length}`,
+        status: TaskStatus.Queued,
+        createdAt: now,
+      }
+      this.queue.push(task)
+      ids.push(task.id)
+    }
+
+    this.logging.info('[TaskQueue]', `Added ${definitions.length} batch tasks`)
+    
+    await this.saveState()
+    this.processQueue()
+    this.notifyListeners()
+    
+    return ids
+  }
+
+  /**
    * Remove a task from the queue
    */
   async removeTask(taskId: string): Promise<boolean> {

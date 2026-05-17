@@ -73,6 +73,8 @@ export const IPC_CHANNELS = {
     RESUME: 'taskQueue:resume',
     CANCEL_TASK: 'taskQueue:cancelTask',
     CLEAR_HISTORY: 'taskQueue:clearHistory',
+    ADD_TASK: 'taskQueue:addTask',
+    ADD_TASKS: 'taskQueue:addTasks',
   },
   WISHLIST: {
     GET_ALL: 'wishlist:getAll',
