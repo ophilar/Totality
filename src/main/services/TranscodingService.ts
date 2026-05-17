@@ -115,10 +115,30 @@ export class TranscodingService {
     }
   }
 
+
+  private sanitizePath(filePath: string): string {
+    if (filePath.includes('\0')) {
+      throw new Error('Invalid path: contains null bytes')
+    }
+    return path.resolve(filePath)
+  }
+
+  private resolveExecutablePath(toolPath: string): string {
+    if (!toolPath) return toolPath
+    if (toolPath.includes('\0')) {
+      throw new Error('Invalid path: contains null bytes')
+    }
+    if (path.isAbsolute(toolPath) || toolPath.includes(path.sep)) {
+      return path.resolve(toolPath)
+    }
+    return toolPath
+  }
+
   private async testTool(toolPath: string, args: string[]): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        const proc = spawn(toolPath, args, { stdio: 'ignore' })
+        const actualPath = this.resolveExecutablePath(toolPath)
+        const proc = spawn(actualPath, args, { stdio: 'ignore' })
         proc.on('close', (code) => resolve(code === 0))
         proc.on('error', () => resolve(false))
       } catch (e) {
@@ -228,14 +248,14 @@ export class TranscodingService {
     try {
       onProgress?.({ percent: 0, status: 'initializing' })
       
-      const inputPath = item.file_path
+      const inputPath = this.sanitizePath(item.file_path)
       const params = await this.getTranscodeParameters(inputPath, options)
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
-      tempPath = path.join(
+      tempPath = this.sanitizePath(path.join(
         path.dirname(inputPath),
         `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
-      )
+      ))
 
       getLoggingService().info('[TranscodingService]', `Starting transcode: ${inputPath} -> ${tempPath}`)
       getLoggingService().info('[TranscodingService]', `Using Handbrake args: ${params.handbrakeArgs.join(' ')}`)
@@ -315,7 +335,8 @@ export class TranscodingService {
 
   private runHandbrake(args: string[], onProgress: (p: any) => void, signal?: AbortSignal): Promise<boolean> {
     return new Promise((resolve) => {
-      const proc = spawn(this.handbrakePath || 'HandBrakeCLI', args)
+      const actualPath = this.resolveExecutablePath(this.handbrakePath || 'HandBrakeCLI')
+      const proc = spawn(actualPath, args)
       
       if (signal) {
         signal.addEventListener('abort', () => {
