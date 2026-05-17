@@ -1,9 +1,10 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
+import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, CheckCircle2, Circle } from 'lucide-react'
 import { QualityBadges } from '@/components/library/QualityBadges'
 import { EpisodePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { useMenuClose } from '@/hooks/useMenuClose'
+import { useLibrary } from '@/contexts/LibraryContext'
 import type { MediaItem } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
@@ -23,6 +24,8 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
   isExpanded?: boolean
   onToggleOptimize?: () => void
 }) => {
+  const { selectionMode, selectedIds, toggleSelection } = useLibrary()
+  const isSelected = episode.id ? selectedIds.has(episode.id) : false
   const cardRef = useRef<HTMLDivElement>(null)
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
@@ -55,6 +58,15 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
     if (onToggleOptimize) onToggleOptimize()
   }
 
+  const handleRowClick = (e: React.MouseEvent) => {
+    if (selectionMode && episode.id) {
+      e.stopPropagation()
+      toggleSelection(episode.id)
+    } else {
+      onClick()
+    }
+  }
+
   const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
   const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
@@ -63,15 +75,22 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
       <div
         ref={cardRef}
         tabIndex={0}
-        className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
-        onClick={onClick}
+        className={`group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden ${isSelected ? 'bg-primary/5' : ''}`}
+        onClick={handleRowClick}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            onClick()
+            if (selectionMode && episode.id) toggleSelection(episode.id)
+            else onClick()
           }
         }}
       >
+        {selectionMode && (
+          <div className={`shrink-0 transition-colors ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+            {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+          </div>
+        )}
+
         {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
         <div className="w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0">
           {episode.episode_thumb_url ? (
