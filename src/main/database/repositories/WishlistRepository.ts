@@ -63,6 +63,7 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
   }
 
   async add(item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): Promise<number> {
+    const now = new Date().toISOString()
     const data = {
       mediaType: item.media_type,
       title: item.title,
@@ -82,6 +83,8 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
       priority: item.priority || 3,
       notes: item.notes,
       status: item.status || 'active',
+      addedAt: now,
+      updatedAt: now,
     }
 
     const result = await this.drizzle.insert(schema.wishlistItems)
@@ -115,6 +118,40 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
       .where(eq(schema.wishlistItems.id, id))
       .get()
     return row ? this.mapDrizzleToWishlist([row])[0] : null
+  }
+
+  async updatePriority(id: number, priority: number): Promise<void> {
+    await this.drizzle.update(schema.wishlistItems)
+      .set({ priority, updatedAt: new Date().toISOString() })
+      .where(eq(schema.wishlistItems.id, id))
+  }
+
+  async updateStatus(id: number, status: string): Promise<void> {
+    const now = new Date().toISOString()
+    await this.drizzle.update(schema.wishlistItems)
+      .set({ 
+        status: status as any, 
+        updatedAt: now,
+        completedAt: status === 'completed' ? now : null 
+      })
+      .where(eq(schema.wishlistItems.id, id))
+  }
+
+  async batchUpdateStatus(ids: number[], status: string): Promise<void> {
+    if (ids.length === 0) return
+    const now = new Date().toISOString()
+    const inArray = (await import('drizzle-orm')).inArray
+    await this.drizzle.update(schema.wishlistItems)
+      .set({ 
+        status: status as any, 
+        updatedAt: now,
+        completedAt: status === 'completed' ? now : null
+      })
+      .where(inArray(schema.wishlistItems.id, ids))
+  }
+
+  async deleteWishlistItem(id: number): Promise<void> {
+    await this.delete(id)
   }
 
   private mapDrizzleToWishlist(rows: any[]): WishlistItem[] {

@@ -35,6 +35,7 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
   }
 
   async addTaskHistory(entry: TaskHistoryEntry): Promise<number> {
+    const now = new Date().toISOString()
     const result = await this.drizzle.insert(schema.taskHistory)
       .values({
         taskId: entry.task_id,
@@ -45,10 +46,12 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
         status: entry.status,
         error: entry.error || null,
         result: entry.result || null,
-        createdAt: entry.created_at,
+        createdAt: entry.created_at || now,
         startedAt: entry.started_at || null,
         completedAt: entry.completed_at || null,
         durationMs: entry.duration_ms || null,
+        recordedAt: now,
+        updatedAt: now,
       })
       .returning({ id: schema.taskHistory.id })
     

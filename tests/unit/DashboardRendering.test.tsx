@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, beforeEach, afterEach, act } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { Dashboard } from '@/components/dashboard/Dashboard'
 import { SourceProvider } from '@/contexts/SourceContext'
 import { WishlistProvider } from '@/contexts/WishlistContext'
@@ -18,28 +18,36 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
   let db: any
 
   beforeEach(async () => {
+    // Standardize global window for bridge
+    if (typeof window === 'undefined') {
+        (global as any).window = (global as any)
+    }
+
     db = await setupTestDb()
-    setupRealIntegratedBridge()
-    registerDatabaseHandlers()
-    registerWishlistHandlers()
-    registerSourceHandlers()
-    registerTaskQueueHandlers()
+    const bridge = setupRealIntegratedBridge()
+    
+    ;(window as any).electronAPI = bridge.api
+    ;(globalThis as any).electronAPI = bridge.api
   })
 
   afterEach(() => {
     cleanupTestDb()
   })
 
-  const renderDashboard = () => {
-    return render(
-      <ToastProvider>
-        <SourceProvider>
-          <WishlistProvider>
-            <Dashboard hasMovies={true} hasShows={true} hasMusic={true} />
-          </WishlistProvider>
-        </SourceProvider>
-      </ToastProvider>
-    )
+  const renderDashboard = async () => {
+    let result: any
+    await act(async () => {
+        result = render(
+            <ToastProvider>
+                <SourceProvider>
+                <WishlistProvider>
+                    <Dashboard hasMovies={true} hasShows={true} hasMusic={true} />
+                </WishlistProvider>
+                </SourceProvider>
+            </ToastProvider>
+        )
+    })
+    return result
   }
 
   it('should show empty state when real database is empty', async () => {
@@ -52,7 +60,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
       connection_config: '{}'
     })
 
-    renderDashboard()
+    await renderDashboard()
     
     await waitFor(() => {
       expect(screen.getByText('All caught up!')).toBeTruthy()
@@ -89,7 +97,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     })
 
 
-    renderDashboard()
+    await renderDashboard()
     
     await waitFor(() => {
       expect(screen.getByText('Real Upgrade Movie')).toBeTruthy()
@@ -101,7 +109,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     // Change sort setting in real DB
     await db.config.setSetting('dashboard_upgrade_sort', 'title')
 
-    renderDashboard()
+    await renderDashboard()
     
     await waitFor(() => {
       // If we got past loading, it means it read the settings from the real DB

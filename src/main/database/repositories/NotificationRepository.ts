@@ -26,6 +26,7 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
         message: notification.message,
         referenceId: notification.reference_id || null,
         isRead: 0,
+        createdAt: new Date().toISOString(),
       })
       .returning({ id: schema.notifications.id })
     

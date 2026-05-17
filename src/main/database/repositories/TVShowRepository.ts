@@ -1,6 +1,7 @@
 import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -154,6 +155,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       seriesTitle: data.series_title,
       sourceId: data.source_id || '',
       libraryId: data.library_id || '',
+      plexId: data.plex_id || '',
       totalSeasons: data.total_seasons,
       totalEpisodes: data.total_episodes,
       ownedSeasons: data.owned_seasons,
@@ -165,24 +167,21 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       posterUrl: data.poster_url ?? null,
       backdropUrl: data.backdrop_url ?? null,
       status: data.status ?? null,
+      userFixedMatch: data.user_fixed_match ? 1 : 0,
     }
 
-    const result = await this.drizzle.insert(schema.seriesCompleteness)
-      .values(record)
-      .onConflictDoUpdate({
-        target: [schema.seriesCompleteness.seriesTitle, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
-        set: {
-          ...record,
-          tmdbId: sql`COALESCE(excluded.tmdb_id, series_completeness.tmdb_id)`,
-          posterUrl: sql`COALESCE(excluded.poster_url, series_completeness.poster_url)`,
-          backdropUrl: sql`COALESCE(excluded.backdrop_url, series_completeness.backdrop_url)`,
-          status: sql`COALESCE(excluded.status, series_completeness.status)`,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
-      .returning({ id: schema.seriesCompleteness.id })
-
-    return result[0]?.id || 0
+    return await this.upsertWithProviderId(
+      schema.seriesCompleteness,
+      record,
+      [schema.seriesCompleteness.seriesTitle, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
+      {
+        ...record,
+        seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
+        tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
+        posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
+        userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+      }
+    )
   }
 
   async getAllCompleteness(sourceId?: string, libraryId?: string): Promise<SeriesCompleteness[]> {

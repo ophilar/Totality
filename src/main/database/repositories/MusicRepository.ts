@@ -1,6 +1,7 @@
 import { eq, and, or, like, desc, asc, sql, inArray, isNull, lt } from 'drizzle-orm'
 import type { MusicArtist, MusicAlbum, MusicTrack, MusicQualityScore, ArtistCompleteness, AlbumCompleteness, MusicFilters } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -11,9 +12,10 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async getTrackByPath(filePath: string): Promise<MusicTrack | null> {
+    const dbPath = PathUtils.toDatabasePath(filePath)
     const row = await this.drizzle.select()
       .from(schema.musicTracks)
-      .where(eq(schema.musicTracks.filePath, filePath))
+      .where(eq(schema.musicTracks.filePath, dbPath))
       .get()
     return row ? this.mapDrizzleToTrack(row) : null
   }
@@ -56,7 +58,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       trackNumber: track.track_number ?? null,
       discNumber: track.disc_number ?? 1,
       duration: track.duration ?? null,
-      filePath: track.file_path ?? null,
+      filePath: PathUtils.toDatabasePath(track.file_path || ''),
       fileSize: track.file_size ?? null,
       container: track.container ?? null,
       fileMtime: track.file_mtime ?? null,
@@ -74,6 +76,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
 
     return await this.upsertWithProviderId(
+      schema.musicTracks,
       data,
       [schema.musicTracks.sourceId, schema.musicTracks.providerId],
       { ...data, musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)` }
@@ -101,6 +104,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
 
     return await this.upsertWithProviderId(
+      schema.musicArtists,
       data,
       [schema.musicArtists.sourceId, schema.musicArtists.providerId],
       {
@@ -148,6 +152,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
 
     return await this.upsertWithProviderId(
+      schema.musicAlbums,
       data,
       [schema.musicAlbums.sourceId, schema.musicAlbums.providerId],
       {
