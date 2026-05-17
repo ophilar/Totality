@@ -43,6 +43,8 @@ import { registerSourceHandlers } from '@main/ipc/sources'
 import { registerCollectionHandlers } from '@main/ipc/collections'
 import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
 import { registerWishlistHandlers } from '@main/ipc/wishlist'
+import { registerMonitoringHandlers } from '@main/ipc/monitoring'
+import { registerLoggingHandlers } from '@main/ipc/logging'
 
 /**
  * Sets up a real bridge between Renderer and Main process handlers.
@@ -64,6 +66,8 @@ export function setupRealIntegratedBridge() {
   registerCollectionHandlers()
   registerTaskQueueHandlers()
   registerWishlistHandlers()
+  registerMonitoringHandlers()
+  registerLoggingHandlers()
 
   // Helper to invoke a handler with safety and logging
   const invoke = async (channel: string, ...args: any[]) => {
@@ -107,7 +111,15 @@ export function setupRealIntegratedBridge() {
     tvShowCount: (f: any) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, f),
     getLibraryStats: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sId).then(r => r || {}),
     getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k).then(r => r || ''),
+    setSetting: (k: string, v: string) => invoke(IPC_CHANNELS.DATABASE.SET_SETTING, k, v),
     getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS).then(r => r || {}),
+    isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE).then(r => !!r),
+    setVerboseLogging: (e: boolean) => invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, e),
+    getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l).then(r => r || []),
+    getFileLoggingSettings: () => invoke(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS).then(r => r || {}),
+    setFileLoggingSettings: (s: any) => invoke(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, s),
+    monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG).then(r => r || {}),
+    monitoringSetConfig: (c: any) => invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, c),
     
     // Music
     musicGetArtists: (f: any) => invoke('music:getArtists', f),
@@ -209,7 +221,12 @@ export function setupRealIntegratedBridge() {
     onAutoRefreshComplete: () => () => {},
   };
 
-  (window as any).electronAPI = api
+  if (typeof window !== 'undefined') {
+    (window as any).electronAPI = api
+  } else {
+    (globalThis as any).electronAPI = api
+  }
+  
   return { handlers, invoke, api }
 }
 

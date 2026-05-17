@@ -114,17 +114,19 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
    * Standardized upsert logic for tables with a unique provider ID.
    */
   protected async upsertWithProviderId(
+    table: any,
     data: any,
     uniqueConstraint: any[],
     updateFields: any
   ): Promise<number> {
-    const result = await this.drizzle.insert(this.table)
-      .values(data)
+    const now = new Date().toISOString()
+    const result = await this.drizzle.insert(table)
+      .values({ ...data, createdAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: uniqueConstraint,
-        set: { ...updateFields, updatedAt: new Date().toISOString() }
+        set: { ...updateFields, updatedAt: now }
       })
-      .returning({ id: (this.table as any).id })
+      .returning({ id: (table as any).id })
     return result[0]?.id
   }
 }

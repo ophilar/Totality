@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, asc, sql } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
@@ -34,6 +34,7 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
   }
 
   async addExclusion(exclusion: Omit<Exclusion, 'id' | 'created_at'>): Promise<void> {
+    const now = new Date().toISOString()
     await this.drizzle.insert(schema.exclusions)
       .values({
         exclusionType: exclusion.exclusion_type,
@@ -41,6 +42,8 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
         referenceKey: exclusion.reference_key ?? null,
         parentKey: exclusion.parent_key ?? null,
         title: exclusion.title ?? null,
+        createdAt: now,
+        updatedAt: now,
       })
       .onConflictDoNothing()
   }
@@ -62,7 +65,7 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
 
     const query = this.drizzle.select().from(schema.exclusions)
     if (conditions.length > 0) query.where(and(...conditions))
-    query.orderBy(desc(schema.exclusions.createdAt))
+    query.orderBy(desc(schema.exclusions.createdAt), asc(schema.exclusions.id))
 
     const rows = await query.all()
     return this.mapDrizzleToExclusion(rows)

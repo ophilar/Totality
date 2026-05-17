@@ -1,6 +1,7 @@
 import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'drizzle-orm'
 import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -211,9 +212,10 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async updatePathAndStats(mediaItemId: number, newPath: string, analysis: any): Promise<void> {
+    const dbPath = PathUtils.toDatabasePath(newPath)
     await this.drizzle.update(schema.mediaItems)
       .set({
-        filePath: newPath,
+        filePath: dbPath,
         fileSize: analysis.fileSize || 0,
         duration: analysis.duration || 0,
         resolution: analysis.video?.resolution || 'unknown',
@@ -230,13 +232,14 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async getItemByPath(filePath: string): Promise<MediaItem | null> {
+    const dbPath = PathUtils.toDatabasePath(filePath)
     const row = await this.drizzle.select({
       item: schema.mediaItems,
       quality: schema.qualityScores
     })
     .from(schema.mediaItems)
     .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
-    .where(eq(schema.mediaItems.filePath, filePath))
+    .where(eq(schema.mediaItems.filePath, dbPath))
     .get()
 
     return row ? this.mapDrizzleToMediaItems([row])[0] : null
@@ -255,115 +258,79 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async upsertItem(item: MediaItem): Promise<number> {
-    const result = await this.drizzle.insert(schema.mediaItems)
-      .values({
-        sourceId: item.source_id || 'legacy',
-        sourceType: item.source_type || 'plex',
-        libraryId: item.library_id ?? null,
-        plexId: item.plex_id || '',
-        title: item.title,
-        sortTitle: item.sort_title ?? null,
-        year: item.year ?? null,
-        type: item.type,
-        seriesTitle: item.series_title ?? null,
-        seasonNumber: item.season_number ?? null,
-        episodeNumber: item.episode_number ?? null,
-        filePath: item.file_path || '',
-        fileSize: item.file_size || 0,
-        duration: item.duration || 0,
-        resolution: item.resolution || 'unknown',
-        width: item.width || 0,
-        height: item.height || 0,
-        videoCodec: item.video_codec || 'unknown',
-        videoBitrate: item.video_bitrate || 0,
-        audioCodec: item.audio_codec || 'unknown',
-        audioChannels: item.audio_channels || 0,
-        audioBitrate: item.audio_bitrate || 0,
-        videoFrameRate: item.video_frame_rate ?? null,
-        colorBitDepth: item.color_bit_depth ?? null,
-        hdrFormat: item.hdr_format ?? null,
-        colorSpace: item.color_space ?? null,
-        videoProfile: item.video_profile ?? null,
-        videoLevel: item.video_level ?? null,
-        audioProfile: item.audio_profile ?? null,
-        audioSampleRate: item.audio_sample_rate ?? null,
-        hasObjectAudio: item.has_object_audio ? 1 : 0,
-        audioTracks: item.audio_tracks ?? null,
-        subtitleTracks: item.subtitle_tracks ?? null,
-        originalLanguage: item.original_language ?? null,
-        audioLanguage: item.audio_language ?? null,
-        container: item.container ?? null,
-        versionCount: item.version_count || 1,
-        fileMtime: item.file_mtime ?? null,
-        imdbId: item.imdb_id ?? null,
-        tmdbId: item.tmdb_id ?? null,
-        seriesTmdbId: item.series_tmdb_id ?? null,
-        posterUrl: item.poster_url ?? null,
-        episodeThumbUrl: item.episode_thumb_url ?? null,
-        seasonPosterUrl: item.season_poster_url ?? null,
-        summary: item.summary ?? null,
-        userFixedMatch: item.user_fixed_match ? 1 : 0,
-        qualityTier: item.quality_tier ?? null,
-        tierQuality: item.tier_quality ?? null,
-        tierScore: item.tier_score || 0,
-        createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
-      })
-      .onConflictDoUpdate({
-        target: [schema.mediaItems.sourceId, schema.mediaItems.plexId],
-        set: {
-          libraryId: item.library_id ?? null,
-          title: sql`CASE WHEN user_fixed_match = 1 THEN title ELSE excluded.title END`,
-          sortTitle: sql`CASE WHEN user_fixed_match = 1 THEN sort_title ELSE excluded.sort_title END`,
-          year: sql`CASE WHEN user_fixed_match = 1 THEN year ELSE excluded.year END`,
-          type: item.type,
-          seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
-          seasonNumber: item.season_number ?? null,
-          episodeNumber: item.episode_number ?? null,
-          filePath: item.file_path || '',
-          fileSize: item.file_size || 0,
-          duration: item.duration || 0,
-          resolution: item.resolution || 'unknown',
-          width: item.width || 0,
-          height: item.height || 0,
-          videoCodec: item.video_codec || 'unknown',
-          videoBitrate: item.video_bitrate || 0,
-          audioCodec: item.audio_codec || 'unknown',
-          audioChannels: item.audio_channels || 0,
-          audioBitrate: item.audio_bitrate || 0,
-          videoFrameRate: item.video_frame_rate ?? null,
-          colorBitDepth: item.color_bit_depth ?? null,
-          hdrFormat: item.hdr_format ?? null,
-          colorSpace: item.color_space ?? null,
-          videoProfile: item.video_profile ?? null,
-          videoLevel: item.video_level ?? null,
-          audioProfile: item.audio_profile ?? null,
-          audioSampleRate: item.audio_sample_rate ?? null,
-          hasObjectAudio: item.has_object_audio ? 1 : 0,
-          audioTracks: item.audio_tracks ?? null,
-          subtitleTracks: item.subtitle_tracks ?? null,
-          container: item.container ?? null,
-          versionCount: item.version_count || 1,
-          fileMtime: item.file_mtime ?? null,
-          originalLanguage: sql`CASE WHEN user_fixed_match = 1 THEN original_language ELSE COALESCE(excluded.original_language, original_language) END`,
-          audioLanguage: sql`COALESCE(excluded.audio_language, audio_language)`,
-          imdbId: sql`CASE WHEN user_fixed_match = 1 THEN imdb_id ELSE COALESCE(excluded.imdb_id, imdb_id) END`,
-          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, tmdb_id) END`,
-          seriesTmdbId: sql`CASE WHEN user_fixed_match = 1 THEN series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, series_tmdb_id) END`,
-          posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, poster_url) END`,
-          episodeThumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, episode_thumb_url) END`,
-          seasonPosterUrl: sql`CASE WHEN user_fixed_match = 1 THEN season_poster_url ELSE COALESCE(excluded.season_poster_url, season_poster_url) END`,
-          summary: sql`CASE WHEN user_fixed_match = 1 THEN summary ELSE COALESCE(excluded.summary, summary) END`,
-          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
-          qualityTier: sql`COALESCE(excluded.quality_tier, quality_tier)`,
-          tierQuality: sql`COALESCE(excluded.tier_quality, tier_quality)`,
-          tierScore: sql`COALESCE(excluded.tier_score, tier_score)`,
-          updatedAt: sql`(datetime('now'))`
-        }
-      })
-      .returning({ id: schema.mediaItems.id })
+    const data = {
+      sourceId: item.source_id || 'legacy',
+      sourceType: item.source_type || 'plex',
+      libraryId: item.library_id ?? null,
+      plexId: item.plex_id || '',
+      title: item.title,
+      sortTitle: item.sort_title ?? null,
+      year: item.year ?? null,
+      type: item.type,
+      seriesTitle: item.series_title ?? null,
+      seasonNumber: item.season_number ?? null,
+      episodeNumber: item.episode_number ?? null,
+      filePath: PathUtils.toDatabasePath(item.file_path || ''),
+      fileSize: item.file_size || 0,
+      duration: item.duration || 0,
+      resolution: item.resolution || 'unknown',
+      width: item.width || 0,
+      height: item.height || 0,
+      videoCodec: item.video_codec || 'unknown',
+      videoBitrate: item.video_bitrate || 0,
+      audioCodec: item.audio_codec || 'unknown',
+      audioChannels: item.audio_channels || 0,
+      audioBitrate: item.audio_bitrate || 0,
+      videoFrameRate: item.video_frame_rate ?? null,
+      colorBitDepth: item.color_bit_depth ?? null,
+      hdrFormat: item.hdr_format ?? null,
+      colorSpace: item.color_space ?? null,
+      videoProfile: item.video_profile ?? null,
+      videoLevel: item.video_level ?? null,
+      audioProfile: item.audio_profile ?? null,
+      audioSampleRate: item.audio_sample_rate ?? null,
+      hasObjectAudio: item.has_object_audio ? 1 : 0,
+      audioTracks: item.audio_tracks ?? null,
+      subtitleTracks: item.subtitle_tracks ?? null,
+      originalLanguage: item.original_language ?? null,
+      audioLanguage: item.audio_language ?? null,
+      container: item.container ?? null,
+      versionCount: item.version_count || 1,
+      fileMtime: item.file_mtime ?? null,
+      imdbId: item.imdb_id ?? null,
+      tmdbId: item.tmdb_id ?? null,
+      seriesTmdbId: item.series_tmdb_id ?? null,
+      posterUrl: item.poster_url ?? null,
+      episodeThumbUrl: item.episode_thumb_url ?? null,
+      seasonPosterUrl: item.season_poster_url ?? null,
+      summary: item.summary ?? null,
+      userFixedMatch: item.user_fixed_match ? 1 : 0,
+      qualityTier: item.quality_tier ?? null,
+      tierQuality: item.tier_quality ?? null,
+      tierScore: item.tier_score || 0,
+    }
 
-    return result[0]?.id || 0
+    return await this.upsertWithProviderId(
+      schema.mediaItems,
+      data,
+      [schema.mediaItems.sourceId, schema.mediaItems.plexId],
+      {
+        ...data,
+        title: sql`CASE WHEN user_fixed_match = 1 THEN title ELSE excluded.title END`,
+        sortTitle: sql`CASE WHEN user_fixed_match = 1 THEN sort_title ELSE excluded.sort_title END`,
+        year: sql`CASE WHEN user_fixed_match = 1 THEN year ELSE excluded.year END`,
+        seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
+        originalLanguage: sql`CASE WHEN user_fixed_match = 1 THEN original_language ELSE COALESCE(excluded.original_language, original_language) END`,
+        imdbId: sql`CASE WHEN user_fixed_match = 1 THEN imdb_id ELSE COALESCE(excluded.imdb_id, imdb_id) END`,
+        tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, tmdb_id) END`,
+        seriesTmdbId: sql`CASE WHEN user_fixed_match = 1 THEN series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, series_tmdb_id) END`,
+        posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, poster_url) END`,
+        episodeThumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, episode_thumb_url) END`,
+        seasonPosterUrl: sql`CASE WHEN user_fixed_match = 1 THEN season_poster_url ELSE COALESCE(excluded.season_poster_url, season_poster_url) END`,
+        summary: sql`CASE WHEN user_fixed_match = 1 THEN summary ELSE COALESCE(excluded.summary, summary) END`,
+        userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+      }
+    )
   }
 
   async deleteItem(id: number): Promise<void> {
@@ -800,7 +767,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           .values({
             mediaItemId,
             versionSource: v.version_source || 'primary',
-            filePath: v.file_path || '',
+            filePath: PathUtils.toDatabasePath(v.file_path || ''),
             fileSize: v.file_size || 0,
             duration: v.duration || 0,
             resolution: v.resolution || 'unknown',

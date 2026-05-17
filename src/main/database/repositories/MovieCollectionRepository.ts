@@ -76,6 +76,7 @@ export class MovieCollectionRepository extends BaseRepository<typeof schema.movi
     }
 
     await this.upsertWithProviderId(
+      schema.movieCollections,
       record,
       [schema.movieCollections.tmdbCollectionId, schema.movieCollections.sourceId, schema.movieCollections.libraryId],
       record

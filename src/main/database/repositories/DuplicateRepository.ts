@@ -34,6 +34,7 @@ export class DuplicateRepository extends BaseRepository<typeof schema.mediaItemD
   }
 
   async upsertDuplicate(dup: MediaDuplicate): Promise<void> {
+    const now = new Date().toISOString()
     const data = {
       sourceId: dup.source_id,
       externalId: dup.external_id,
@@ -42,14 +43,16 @@ export class DuplicateRepository extends BaseRepository<typeof schema.mediaItemD
       status: dup.status || 'pending',
     }
 
-    await this.upsertWithProviderId(
-      data,
-      [schema.mediaItemDuplicates.sourceId, schema.mediaItemDuplicates.externalId, schema.mediaItemDuplicates.externalType],
-      {
-        ...data,
-        status: sql`CASE WHEN status = 'resolved' THEN 'pending' ELSE status END`,
-      }
-    )
+    await this.drizzle.insert(schema.mediaItemDuplicates)
+      .values({ ...data, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [schema.mediaItemDuplicates.sourceId, schema.mediaItemDuplicates.externalId, schema.mediaItemDuplicates.externalType],
+        set: {
+          ...data,
+          status: sql`CASE WHEN status = 'resolved' THEN 'pending' ELSE status END`,
+          updatedAt: now
+        }
+      })
   }
 
   async resolveDuplicate(id: number, strategy: string): Promise<void> {

@@ -175,6 +175,7 @@ export const seriesCompleteness = sqliteTable('series_completeness', {
   posterUrl: text('poster_url'),
   backdropUrl: text('backdrop_url'),
   status: text('status'),
+  userFixedMatch: integer('user_fixed_match'),
   efficiencyScore: integer('efficiency_score'),
   storageDebtBytes: integer('storage_debt_bytes'),
   totalSize: integer('total_size'),

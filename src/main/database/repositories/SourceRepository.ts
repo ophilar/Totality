@@ -36,6 +36,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     }
 
     await this.upsertWithProviderId(
+      schema.mediaSources,
       data,
       [schema.mediaSources.sourceId],
       data
