@@ -441,8 +441,29 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
 
-      const validFiles = filePaths.filter(fp => fs.existsSync(fp) && parser.isVideoFile(path.basename(fp)))
-      const deletedFiles = filePaths.filter(fp => !fs.existsSync(fp))
+      const validFiles: string[] = []
+      const deletedFiles: string[] = []
+      const chunkSize = 500
+      for (let i = 0; i < filePaths.length; i += chunkSize) {
+        const chunk = filePaths.slice(i, i + chunkSize)
+        const existsChecks = await Promise.all(chunk.map(async fp => {
+          try {
+            await fsPromises.access(fp, fs.constants.F_OK)
+            return true
+          } catch {
+            return false
+          }
+        }))
+        for (let j = 0; j < chunk.length; j++) {
+          if (existsChecks[j]) {
+            if (parser.isVideoFile(path.basename(chunk[j]))) {
+              validFiles.push(chunk[j])
+            }
+          } else {
+            deletedFiles.push(chunk[j])
+          }
+        }
+      }
 
       for (const filePath of deletedFiles) {
         const existingItem = await db.media.getItemByPath(filePath)
@@ -510,8 +531,29 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
       const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
-      const validFiles = filePaths.filter(fp => fs.existsSync(fp) && parser.isAudioFile(path.basename(fp)))
-      const deletedFiles = filePaths.filter(fp => !fs.existsSync(fp))
+      const validFiles: string[] = []
+      const deletedFiles: string[] = []
+      const chunkSize = 500
+      for (let i = 0; i < filePaths.length; i += chunkSize) {
+        const chunk = filePaths.slice(i, i + chunkSize)
+        const existsChecks = await Promise.all(chunk.map(async fp => {
+          try {
+            await fsPromises.access(fp, fs.constants.F_OK)
+            return true
+          } catch {
+            return false
+          }
+        }))
+        for (let j = 0; j < chunk.length; j++) {
+          if (existsChecks[j]) {
+            if (parser.isAudioFile(path.basename(chunk[j]))) {
+              validFiles.push(chunk[j])
+            }
+          } else {
+            deletedFiles.push(chunk[j])
+          }
+        }
+      }
 
       for (const filePath of deletedFiles) {
         const existingTrack = await db.music.getTrackByPath(filePath)
