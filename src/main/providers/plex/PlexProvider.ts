@@ -677,12 +677,12 @@ export class PlexProvider extends BaseMediaProvider {
     const response = await this.api.get(url, { headers: { 'X-Plex-Token': this.selectedServer.accessToken } })
     const tracks = response.data?.MediaContainer?.Metadata || []
     if (tracks.length > 0 && !tracks[0].Media) {
-       const detailed: PlexMusicTrack[] = []
-       for (const t of tracks) {
-         const d = await this.api.get(`${this.selectedServer.uri}/library/metadata/${t.ratingKey}`, { headers: { 'X-Plex-Token': this.selectedServer.accessToken } })
-         if (d.data?.MediaContainer?.Metadata?.[0]) detailed.push(d.data.MediaContainer.Metadata[0])
-       }
-       return detailed
+      const detailedResults = await Promise.all(tracks.map(async (t: PlexMusicTrack) => {
+        const d = await this.api.get(`${this.selectedServer!.uri}/library/metadata/${t.ratingKey}`, { headers: { 'X-Plex-Token': this.selectedServer!.accessToken } })
+        return d.data?.MediaContainer?.Metadata?.[0]
+      }))
+      const detailed: PlexMusicTrack[] = detailedResults.filter(Boolean) as PlexMusicTrack[]
+      return detailed
     }
     return tracks
   }
