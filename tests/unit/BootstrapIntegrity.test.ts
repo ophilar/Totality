@@ -39,7 +39,8 @@ describe('Bootstrap Integrity', () => {
   }, 30000)
 
   it('should resolve the preload path correctly', async () => {
-    const mockDirname = '/Projects/Totality/src/main'
+    // Cross-platform mock dirname
+    const mockDirname = process.platform === 'win32' ? 'C:\\Projects\\Totality\\src\\main' : '/Projects/Totality/src/main'
     const preloadPath = path.join(mockDirname, '../preload/index.cjs')
     expect(preloadPath).not.toContain('@preload')
     expect(preloadPath).toMatch(/[\\\/]preload[\\\/]index\.cjs$/)
