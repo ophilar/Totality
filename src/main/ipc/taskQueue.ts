@@ -16,6 +16,10 @@ export function registerTaskQueueHandlers(): void {
     return { success: true, taskId: await service.addTask(definition) }
   })
 
+  createValidatedIpcHandler('taskQueue:addTasks', z.array(TaskDefinitionSchema), async (definitions) => {
+    return { success: true, taskIds: await service.addTasks(definitions) }
+  })
+
   createValidatedIpcHandler('taskQueue:removeTask', NonEmptyStringSchema, async (taskId) => {
     return { success: await service.removeTask(taskId) }
   })

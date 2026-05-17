@@ -67,6 +67,7 @@ export default defineConfig({
       '@main': path.resolve(__dirname, 'src/main'),
       '@preload': path.resolve(__dirname, 'src/preload'),
       '@tests': path.resolve(__dirname, 'tests'),
+      'node:sqlite': path.resolve(__dirname, 'tests/mocks/node-sqlite.ts'),
     },
   },
 })

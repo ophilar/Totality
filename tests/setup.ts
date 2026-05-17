@@ -143,13 +143,3 @@ vi.mock('react-virtuoso', () => {
 })
 
 globalThis.__TEST__ = true
-
-
-vi.mock('node:sqlite', () => ({
-  DatabaseSync: class {
-    constructor() {}
-    exec() {}
-    prepare() { return { all: () => [], get: () => null, run: () => ({ lastInsertRowid: 0, changes: 0 }) } }
-    close() {}
-  }
-}))
