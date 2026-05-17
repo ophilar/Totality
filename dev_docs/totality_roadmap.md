@@ -66,8 +66,11 @@
 - [x] **Service Orchestration Blitz**: Implement a "No Mocks" integration suite covering SourceManager, LiveMonitoring, Deduplication, and Gemini AI. (v0.4.7)
 - [x] **IPC Layer Consolidation**: Standardize library management channels and harden Zod-validated handlers. (v0.4.7)
 - [x] **LiveMonitoring Hardening**: Resolve file event propagation delays and standardize media type resolution across providers. (v0.4.7)
-- [ ] **CI Stabilization**: Resolve systemic test failures and unblock pull request pipeline. (v0.4.7)
-- [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode).
+- [x] **CI Stabilization**: Resolve systemic test failures and unblock pull request pipeline. (v0.4.7)
+- [x] **Security Hardening**: Fixed command injection vulnerabilities in Transcoding and Kodi discovery.
+- [x] **Performance Optimization**: Implemented async fs checks and Plex fetching optimizations.
+- [x] **Logging Standardization**: Centralized console logging across all specialized library views.
+- [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode). (v0.4.8)
 - [ ] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection.
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
 - [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
