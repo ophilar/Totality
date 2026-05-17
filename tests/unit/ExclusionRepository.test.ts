@@ -35,6 +35,7 @@ describe('ExclusionRepository (Real DB)', () => {
 
     const upgrades = await repo.getExclusions('media_upgrade', 'p1')
     expect(upgrades).toHaveLength(2)
+    upgrades.sort((a, b) => (a.title || '').localeCompare(b.title || ''))
     expect(upgrades[0].title).toBe('T1')
   })
 

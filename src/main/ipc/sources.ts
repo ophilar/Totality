@@ -88,6 +88,10 @@ export function registerSourceHandlers(): void {
     return await manager.getEnabledSources()
   })
 
+  createIpcHandler(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS, async () => {
+    return manager.getSupportedProviders()
+  })
+
   createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TOGGLE, ToggleSourceTupleSchema, async (sourceId, enabled) => {
     await manager.toggleSource(sourceId, enabled)
   })
@@ -168,7 +172,7 @@ export function registerSourceHandlers(): void {
     return { success: true }
   })
 
-  createValidatedIpcHandler('sources:setLibrariesEnabled', z.tuple([SourceIdSchema, z.array(z.any())]), async (sourceId, libraries) => {
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.SET_LIBRARIES_ENABLED, z.tuple([SourceIdSchema, z.array(z.any())]), async (sourceId, libraries) => {
     const db = getDatabase()
     await db.sources.setLibrariesEnabled(sourceId, libraries)
     return { success: true }

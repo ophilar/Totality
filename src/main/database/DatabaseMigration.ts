@@ -98,6 +98,7 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'series_completeness', 'poster_url', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'backdrop_url', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'status', 'TEXT')
+  await ensureColumn(db, 'series_completeness', 'user_fixed_match', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'source_id', "TEXT NOT NULL DEFAULT ''")
   await ensureColumn(db, 'series_completeness', 'library_id', "TEXT NOT NULL DEFAULT ''")
   await ensureColumn(db, 'series_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')

@@ -24,6 +24,7 @@ import { getFileNameParser, ParsedMovieInfo, ParsedEpisodeInfo } from '@main/ser
 import { getTMDBService } from '@main/services/TMDBService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { PathUtils } from '@main/services/utils/PathUtils'
 import { normalizeAudioCodec } from '@main/services/MediaNormalizer'
 import {
   BaseMediaProvider,
@@ -321,7 +322,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             const existingItem = await db.media.getItemByPath(filePath)
 
             if (existingItem?.file_mtime === fileMtime && !forceFullScan) {
-              scannedFilePaths.add(filePath)
+              scannedFilePaths.add(PathUtils.toDatabasePath(filePath))
               result.itemsScanned++
               continue
             }
@@ -385,7 +386,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) continue
             }
             processedItems.push({ metadata, parsed, fileMtime })
-            scannedFilePaths.add(filePath)
+            scannedFilePaths.add(PathUtils.toDatabasePath(filePath))
           } catch (error: unknown) {
             result.errors.push(`Failed to analyze ${path.basename(filePath)}: ${getErrorMessage(error)}`)
           }
@@ -436,7 +437,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
-      const scanType = libraryType === 'movies' ? MediaItemType.Movie : MediaItemType.Episode
+      const scanType = (libraryType === 'movie' || libraryType === 'movies') ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
 
@@ -823,7 +824,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               if (mbNameCorrectionEnabled && artistName !== 'Unknown Artist') artistName = await this.lookupCanonicalArtistName(artistName, mbArtistNameCache)
               const stats = await fsPromises.stat(filePath), fileMtime = stats.mtime.getTime()
               const existingTrack = await db.music.getTrackByPath(filePath)
-              if (existingTrack?.file_mtime === fileMtime) { scannedFilePaths.add(filePath); result.itemsScanned++; continue }
+              if (existingTrack?.file_mtime === fileMtime) { scannedFilePaths.add(PathUtils.toDatabasePath(filePath)); result.itemsScanned++; continue }
               filesToProcess.push({ filePath, relativePath, fileMtime, fileSize: stats.size, artistName, albumName: parsed.album || 'Unknown Album', trackTitle: parsed.title || path.basename(filePath, path.extname(filePath)), trackNumber: parsed.trackNumber, discNumber: parsed.discNumber, year: parsed.year })
               if (ffprobeAvailable) filesToAnalyze.push(filePath)
             } catch (e: any) { result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(e)}`) }
@@ -867,7 +868,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               }
 
               await db.music.upsertTrack({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: fileInfo.trackNumber, disc_number: fileInfo.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: fileInfo.fileSize, file_mtime: fileMtime, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-              scannedFilePaths.add(filePath); result.itemsScanned++
+              scannedFilePaths.add(PathUtils.toDatabasePath(filePath)); result.itemsScanned++
             } catch (e: any) { result.errors.push(`Failed to save ${path.basename(filePath)}: ${getErrorMessage(e)}`) }
           }
         }

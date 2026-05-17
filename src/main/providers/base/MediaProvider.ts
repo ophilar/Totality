@@ -319,6 +319,20 @@ export abstract class BaseMediaProvider implements MediaProvider {
     this.config = { ...config, sourceId: this.sourceId }
   }
 
+  /**
+   * Update the provider's configuration.
+   */
+  public updateConfig(updates: Partial<SourceConfig>): void {
+    this.config = {
+      ...this.config,
+      ...updates,
+      connectionConfig: {
+        ...this.config.connectionConfig,
+        ...(updates.connectionConfig || {})
+      }
+    }
+  }
+
   abstract authenticate(credentials: ProviderCredentials): Promise<AuthResult>
   abstract isAuthenticated(): Promise<boolean>
   abstract disconnect(): Promise<void>

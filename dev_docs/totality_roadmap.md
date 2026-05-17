@@ -62,7 +62,11 @@
 - [x] **Global Error Boundaries**: Compartmentalize library view failures using Section Error Boundaries. (v0.4.6)
 - [x] **Onboarding Experience**: Implement a "First Run Wizard" for initial provider configuration and API key setup. (v0.4.6)
 
-## Phase 8: Scaling & Advanced Management (Planned)
+## Phase 8: Scaling & Advanced Management (In Progress)
+- [x] **Service Orchestration Blitz**: Implement a "No Mocks" integration suite covering SourceManager, LiveMonitoring, Deduplication, and Gemini AI. (v0.4.7)
+- [x] **IPC Layer Consolidation**: Standardize library management channels and harden Zod-validated handlers. (v0.4.7)
+- [x] **LiveMonitoring Hardening**: Resolve file event propagation delays and standardize media type resolution across providers. (v0.4.7)
+- [ ] **CI Stabilization**: Resolve systemic test failures and unblock pull request pipeline. (v0.4.7)
 - [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode).
 - [ ] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection.
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
