@@ -61,7 +61,7 @@ export function DuplicatesView() {
       
       setGroups(enrichedGroups)
     } catch (err) {
-      console.error('Failed to load duplicates:', err)
+      window.electronAPI.log.error('[DuplicatesView]', 'Failed to load duplicates:', err)
       addToast({ title: 'Error', message: 'Error loading duplicates', type: 'error' })
     } finally {
       setLoading(false)
@@ -69,6 +69,7 @@ export function DuplicatesView() {
   }, [activeSourceId, addToast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDuplicates()
   }, [loadDuplicates])
 
