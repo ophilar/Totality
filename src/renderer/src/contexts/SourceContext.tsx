@@ -9,7 +9,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { useToast } from '@/contexts/ToastContext'
 import { LibraryType, ProviderType } from '@main/types/database'
-import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
@@ -177,7 +176,8 @@ export function SourceProvider({ children }: SourceProviderProps) {
         try {
           const result = await window.electronAPI.sourcesTestConnection(source.source_id)
           newStatus.set(source.source_id, result.success)
-        } catch {
+        } catch (e) {
+          window.electronAPI.log.error('[SourceContext]', `Failed to test connection for source ${source.source_id}:`, e)
           newStatus.set(source.source_id, false)
         }
       })
@@ -460,9 +460,13 @@ export function SourceProvider({ children }: SourceProviderProps) {
       updateProgress(state)
     })
 
-    window.electronAPI.taskQueueGetState?.().then(updateProgress)
+    window.electronAPI.taskQueueGetState?.().then(state => {
+      updateProgress(state)
+    })
 
-    return () => cleanup?.()
+    return () => {
+      cleanup?.()
+    }
   }, [])
 
   // Scan a single source library via Task Queue
@@ -503,12 +507,12 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Plex-specific: Start auth flow
   const plexStartAuth = useCallback(async () => {
-    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.START_AUTH)
+    return await window.electronAPI.plexStartAuth()
   }, [])
 
   // Plex-specific: Check auth PIN
   const plexCheckAuth = useCallback(async (pinId: number) => {
-    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.CHECK_AUTH, pinId)
+    return await window.electronAPI.plexCheckAuth(pinId)
   }, [])
 
   // Plex-specific: Authenticate and discover servers
@@ -516,19 +520,19 @@ export function SourceProvider({ children }: SourceProviderProps) {
     token: string,
     displayName: string
   ) => {
-    const result = await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.AUTHENTICATE_AND_DISCOVER, token, displayName)
+    const result = await window.electronAPI.plexAuthenticateAndDiscover(token, displayName)
     return result
   }, [])
 
   // Plex-specific: Select server
   const plexSelectServer = useCallback(async (sourceId: string, serverId: string) => {
-    const result = await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.SELECT_SERVER, sourceId, serverId)
+    const result = await window.electronAPI.plexSelectServerForSource(sourceId, serverId)
     return result
   }, [])
 
   // Plex-specific: Get servers
   const plexGetServers = useCallback(async (sourceId: string) => {
-    return await window.electronAPI.invoke(IPC_CHANNELS.SOURCES.PLEX.GET_SERVERS, sourceId)
+    return await window.electronAPI.plexGetServersForSource(sourceId)
   }, [])
 
   const value: SourceContextType = {

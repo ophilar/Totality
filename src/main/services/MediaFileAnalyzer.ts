@@ -107,6 +107,7 @@ export function getMediaFileAnalyzer(): MediaFileAnalyzer {
 
 export class MediaFileAnalyzer {
   private ffprobePath: string | null = null
+  private ffmpegPath: string | null = null
   private ffprobeChecked: boolean = false
   private availabilityPromise: Promise<boolean> | null = null
   private analysisOverride: Map<string, FileAnalysisResult> = new Map()
@@ -126,40 +127,6 @@ export class MediaFileAnalyzer {
   }
 
   /**
-   * Check if FFprobe is available on the system
-   */
-  async isAvailable(): Promise<boolean> {
-    if (this.ffprobeChecked && this.ffprobePath) return true
-    if (this.ffprobeChecked) return false
-    if (this.availabilityPromise) return this.availabilityPromise
-    this.availabilityPromise = this.checkAvailability()
-    try {
-      return await this.availabilityPromise
-    } finally {
-      this.availabilityPromise = null
-    }
-  }
-
-  private async checkAvailability(): Promise<boolean> {
-    const possiblePaths = this.getPossibleFFprobePaths()
-
-    for (const probePath of possiblePaths) {
-      try {
-        const available = await this.testFFprobe(probePath)
-        if (available) {
-          this.ffprobePath = probePath
-          this.ffprobeChecked = true
-          getLoggingService().info('[MediaFileAnalyzer]', `Found FFprobe at: ${probePath === 'ffprobe' ? 'system PATH' : 'bundled'}`)
-          return true
-        }
-      } catch (error) { throw error }
-    }
-
-    this.ffprobeChecked = true
-    return false
-  }
-
-  /**
    * Get FFprobe version string
    */
   async getVersion(): Promise<string | null> {
@@ -175,6 +142,227 @@ export class MediaFileAnalyzer {
         resolve(match ? match[1] : 'unknown')
       })
       proc.on('error', () => resolve(null))
+    })
+  }
+
+  /**
+   * Check if FFprobe and FFmpeg are available on the system
+   */
+  async isAvailable(): Promise<boolean> {
+    if (this.ffprobeChecked && this.ffprobePath) return true
+    if (this.ffprobeChecked) return false
+    if (this.availabilityPromise) return this.availabilityPromise
+    this.availabilityPromise = this.checkAvailability()
+    try {
+      return await this.availabilityPromise
+    } finally {
+      this.availabilityPromise = null
+    }
+  }
+
+  private async checkAvailability(): Promise<boolean> {
+    const possibleFFprobePaths = this.getPossiblePaths('ffprobe')
+    const possibleFFmpegPaths = this.getPossiblePaths('ffmpeg')
+
+    // Find ffprobe
+    for (const probePath of possibleFFprobePaths) {
+      try {
+        const available = await this.testBinary(probePath)
+        if (available) {
+          this.ffprobePath = probePath
+          this.ffprobeChecked = true
+          break
+        }
+      } catch (error) { /* ignore */ }
+    }
+
+    // Find ffmpeg
+    for (const ffmpegPath of possibleFFmpegPaths) {
+      try {
+        const available = await this.testBinary(ffmpegPath)
+        if (available) {
+          this.ffmpegPath = ffmpegPath
+          break
+        }
+      } catch (error) { /* ignore */ }
+    }
+
+    if (this.ffprobePath) {
+      getLoggingService().info('[MediaFileAnalyzer]', `Found FFprobe at: ${this.ffprobePath}`)
+    }
+    if (this.ffmpegPath) {
+      getLoggingService().info('[MediaFileAnalyzer]', `Found FFmpeg at: ${this.ffmpegPath}`)
+    }
+
+    this.ffprobeChecked = true
+    return !!this.ffprobePath
+  }
+
+  private async testBinary(binaryPath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const actualPath = (binaryPath && (path.isAbsolute(binaryPath) || binaryPath.includes(path.sep))) ? path.resolve(binaryPath) : binaryPath
+      const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
+      proc.on('close', (code) => resolve(code === 0))
+      proc.on('error', () => resolve(false))
+    })
+  }
+
+  private getPossiblePaths(binaryName: string): string[] {
+    const isWin = process.platform === 'win32'
+    const ext = isWin ? '.exe' : ''
+    const fullName = binaryName + ext
+
+    const paths: string[] = [this.getBundledPath(binaryName), binaryName]
+
+    if (isWin) {
+      paths.push(`C:\\ffmpeg\\bin\\${fullName}`, `C:\\Program Files\\ffmpeg\\bin\\${fullName}`)
+    } else if (process.platform === 'darwin') {
+      paths.push(`/usr/local/bin/${binaryName}`, `/opt/homebrew/bin/${binaryName}`)
+    } else {
+      paths.push(`/usr/bin/${binaryName}`, `/usr/local/bin/${binaryName}`)
+    }
+    return paths
+  }
+
+  getBundledPath(binaryName: string): string {
+    const isWin = process.platform === 'win32'
+    const ext = isWin ? '.exe' : ''
+    const userDataPath = app.getPath('userData')
+    return path.join(userDataPath, 'ffprobe', binaryName + ext) // Bundled usually installs together
+  }
+
+  getBundledFFprobePath(): string {
+    return this.getBundledPath('ffprobe')
+  }
+
+  /**
+   * Sanitize a file path to prevent command injection and ensure it's absolute
+   */
+  private sanitizePath(filePath: string): string {
+    if (filePath.includes('\0')) {
+      throw new Error('Invalid path: contains null bytes')
+    }
+    return path.resolve(filePath)
+  }
+
+  /**
+   * Perform deep analysis of a media file (bitrate variance, volume peaks)
+   */
+  async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean } = {}): Promise<Partial<FileAnalysisResult>> {
+    if (!await this.isAvailable()) throw new Error('FFmpeg/FFprobe not available')
+    
+    const results: any = { success: true, deepAnalysis: {} }
+    const startTime = Date.now()
+
+    if (options.detectVolume && this.ffmpegPath) {
+      const vol = await this.detectAudioVolume(filePath)
+      results.audioTracks = [{ index: 0, ...vol }] // Simplified for first track for now
+    }
+
+    if (options.scanBitrate) {
+      const bitrate = await this.analyzeBitrateVariance(filePath)
+      results.deepAnalysis = { ...results.deepAnalysis, ...bitrate }
+    }
+
+    results.deepAnalysis.scanDurationMs = Date.now() - startTime
+    return results
+  }
+
+  private async detectAudioVolume(filePath: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
+    const sanitizedPath = this.sanitizePath(filePath)
+    return new Promise((resolve, reject) => {
+      const args = ['-i', `file:${sanitizedPath}`, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-']
+      const proc = spawn(this.ffmpegPath || 'ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
+      
+      let stderr = ''
+      proc.stderr.on('data', (d) => { stderr += d.toString() })
+      
+      proc.on('close', (code) => {
+        if (code !== 0) return reject(new Error(`FFmpeg exited with code ${code}`))
+        
+        const maxVolumeMatch = stderr.match(/max_volume:\s+(-?[0-9.]+)\s+dB/)
+        const meanVolumeMatch = stderr.match(/mean_volume:\s+(-?[0-9.]+)\s+dB/)
+        if (maxVolumeMatch && meanVolumeMatch) {
+          resolve({
+            peakVolumeDB: parseFloat(maxVolumeMatch[1]),
+            meanVolumeDB: parseFloat(meanVolumeMatch[1])
+          })
+        } else {
+          reject(new Error('Failed to parse volume detection output'))
+        }
+      })
+      proc.on('error', reject)
+    })
+  }
+
+  private async analyzeBitrateVariance(filePath: string): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
+    const sanitizedPath = this.sanitizePath(filePath)
+    return new Promise((resolve, reject) => {
+      // Use ffprobe to get packet sizes for the first video stream
+      const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0:nk=1', `file:${sanitizedPath}`]
+      const proc = spawn(this.ffprobePath || 'ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 })
+      
+      let stdout = ''
+      proc.stdout.on('data', (d) => { stdout += d.toString() })
+      
+      proc.on('close', (code) => {
+        if (code !== 0) return reject(new Error(`FFprobe exited with code ${code}`))
+        
+        const lines = stdout.trim().split('\n')
+        if (lines.length < 10) return reject(new Error('Insufficient data for bitrate analysis'))
+        
+        let totalBytes = 0
+        let totalDuration = 0
+        let maxBitrate = 0
+        
+        // Windowed bitrate calculation (1-second sliding window)
+        const windowSize = 1.0 // seconds
+        let currentWindowBytes = 0
+        let currentWindowDuration = 0
+        const windowQueue: Array<{ bytes: number, duration: number }> = []
+        const bitrates: number[] = []
+
+        for (const line of lines) {
+          const [sizeStr, durStr] = line.split('|')
+          const size = parseInt(sizeStr, 10)
+          const duration = parseFloat(durStr)
+          if (isNaN(size) || isNaN(duration)) continue
+
+          totalBytes += size
+          totalDuration += duration
+
+          currentWindowBytes += size
+          currentWindowDuration += duration
+          windowQueue.push({ bytes: size, duration })
+
+          while (currentWindowDuration > windowSize && windowQueue.length > 0) {
+            const first = windowQueue.shift()!
+            currentWindowBytes -= first.bytes
+            currentWindowDuration -= first.duration
+          }
+
+          if (currentWindowDuration > 0.5) { // Only sample if we have at least half a second
+            const windowBitrate = (currentWindowBytes * 8) / currentWindowDuration / 1000 // kbps
+            if (windowBitrate > maxBitrate) maxBitrate = windowBitrate
+            bitrates.push(windowBitrate)
+          }
+        }
+
+        const avgBitrate = (totalBytes * 8) / totalDuration / 1000
+        
+        // Calculate variance
+        const squareDiffs = bitrates.map(b => Math.pow(b - avgBitrate, 2))
+        const variance = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length
+        const stdDev = Math.sqrt(variance)
+
+        resolve({
+          peakBitrate: Math.round(maxBitrate),
+          avgBitrate: Math.round(avgBitrate),
+          bitrateVariance: Math.round(stdDev),
+          isVariableBitrate: stdDev > (avgBitrate * 0.1) // More than 10% deviation
+        })
+      })
+      proc.on('error', reject)
     })
   }
 
@@ -367,21 +555,10 @@ export class MediaFileAnalyzer {
       return results
     }
 
-    try {
-      const { getFFprobeWorkerPool } = await import('./FFprobeWorkerPool')
-      const pool = getFFprobeWorkerPool()
-      await pool.initialize(this.ffprobePath!)
-      return await pool.analyzeFiles(filePaths, onProgress)
-    } catch (error) {
-      // Fallback
-      const results = new Map<string, FileAnalysisResult>()
-      for (let i = 0; i < filePaths.length; i++) {
-        const filePath = filePaths[i]
-        onProgress?.(i + 1, filePaths.length, path.basename(filePath))
-        results.set(filePath, await this.analyzeFile(filePath))
-      }
-      return results
-    }
+    const { getFFprobeWorkerPool } = await import('./FFprobeWorkerPool')
+    const pool = getFFprobeWorkerPool()
+    await pool.initialize(this.ffprobePath!)
+    return await pool.analyzeFiles(filePaths, onProgress)
   }
 
   /**
@@ -517,43 +694,6 @@ export class MediaFileAnalyzer {
   // ============================================================================
   // PRIVATE HELPERS
   // ============================================================================
-
-  getBundledFFprobePath(): string {
-    const userDataPath = app.getPath('userData')
-    const ffprobeDir = path.join(userDataPath, 'ffprobe')
-    return process.platform === 'win32' ? path.join(ffprobeDir, 'ffprobe.exe') : path.join(ffprobeDir, 'ffprobe')
-  }
-
-  private getPossibleFFprobePaths(): string[] {
-    const paths: string[] = [this.getBundledFFprobePath(), 'ffprobe']
-    if (process.platform === 'win32') {
-      paths.push('C:\\ffmpeg\\bin\\ffprobe.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffprobe.exe')
-    } else if (process.platform === 'darwin') {
-      paths.push('/usr/local/bin/ffprobe', '/opt/homebrew/bin/ffprobe')
-    } else {
-      paths.push('/usr/bin/ffprobe', '/usr/local/bin/ffprobe')
-    }
-    return paths
-  }
-
-  /**
-   * Sanitize a file path to prevent command injection and ensure it's absolute
-   */
-  private sanitizePath(filePath: string): string {
-    if (filePath.includes('\0')) {
-      throw new Error('Invalid path: contains null bytes')
-    }
-    return path.resolve(filePath)
-  }
-
-  private async testFFprobe(probePath: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const actualPath = (probePath && (path.isAbsolute(probePath) || probePath.includes(path.sep))) ? path.resolve(probePath) : probePath
-      const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
-      proc.on('close', (code) => resolve(code === 0))
-      proc.on('error', () => resolve(false))
-    })
-  }
 
   private async runFFprobe(filePath: string): Promise<FFprobeOutput> {
     const sanitizedPath = this.sanitizePath(filePath)

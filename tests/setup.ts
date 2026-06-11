@@ -148,3 +148,22 @@ vi.mock('react-virtuoso', () => {
 })
 
 globalThis.__TEST__ = true
+
+const mockElectronAPI = {
+  getSetting: vi.fn().mockResolvedValue(null),
+  setSetting: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
+  off: vi.fn(),
+  invoke: vi.fn(),
+  send: vi.fn(),
+  getMovies: vi.fn().mockResolvedValue([]),
+  getTVShows: vi.fn().mockResolvedValue([]),
+  getMusicStats: vi.fn().mockResolvedValue({ totalArtists: 0, totalAlbums: 0, totalTracks: 0 }),
+  getCollections: vi.fn().mockResolvedValue([]),
+}
+
+// Mock global electronAPI for renderer tests
+;(globalThis as any).electronAPI = mockElectronAPI
+if (typeof window !== 'undefined') {
+  ;(window as any).electronAPI = mockElectronAPI
+}

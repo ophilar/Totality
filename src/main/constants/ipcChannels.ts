@@ -49,6 +49,7 @@ export const IPC_CHANNELS = {
     ADD: 'sources:add',
     REMOVE: 'sources:remove',
     TOGGLE: 'sources:toggle',
+    GET_ACTIVE: 'sources:getActive',
     TEST_CONNECTION: 'sources:testConnection',
     GET_STATS: 'sources:getStats',
     GET_SUPPORTED_PROVIDERS: 'sources:getSupportedProviders',
@@ -171,6 +172,8 @@ export const IPC_CHANNELS = {
     GET_STATS: 'music:getStats',
     GET_ALBUM_QUALITY: 'music:getAlbumQuality',
     GET_ALBUMS_NEEDING_UPGRADE: 'music:getAlbumsNeedingUpgrade',
+    ANALYZE_ARTIST: 'music:analyzeArtist',
+    ANALYZE_ALBUM: 'music:analyzeAlbum',
     ANALYZE_ALL_QUALITY: 'music:analyzeAllQuality',
     ANALYZE_ALL: 'music:analyzeAll',
     CANCEL_ANALYSIS: 'music:cancelAnalysis',
@@ -197,5 +200,6 @@ export const IPC_CHANNELS = {
   },
   MEDIA: {
     SEARCH: 'media:search',
+    DEEP_ANALYZE: 'media:deepAnalyze',
   }
 } as const

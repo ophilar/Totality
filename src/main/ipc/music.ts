@@ -3,25 +3,21 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
  * Music IPC Handlers
  */
 
-import { ipcMain } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
-import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 import { getSourceManager } from '@main/services/SourceManager'
-import { MusicFilters, MusicTrack, ProviderType } from '@main/types/database'
-import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import {
   PositiveIntSchema,
   NonEmptyStringSchema,
-  OptionalSourceIdSchema,
   SourceIdSchema,
   LibraryIdSchema,
   MusicFiltersSchema,
 } from '@main/validation/schemas'
 import { z } from 'zod'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
@@ -108,6 +104,27 @@ export function registerMusicHandlers(): void {
     return await db.stats.getMusicStats(sourceId)
   })
 
+  createIpcHandler('music:getAlbumsNeedingUpgrade', async (limit?: number, sourceId?: string) => {
+    return await db.music.getAlbumsNeedingUpgrade(limit, sourceId)
+  })
+
+  createIpcHandler(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, async (sourceId?: string) => {
+    return await db.music.getAllArtistCompleteness(sourceId)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, PositiveIntSchema, async (albumId) => {
+    return await db.music.getAlbumCompleteness(albumId)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST, PositiveIntSchema, async (artistId) => {
+    // Analysis is now handled by completeness background jobs, but we trigger a refresh
+    return await db.music.getArtistCompleteness(artistId)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM, PositiveIntSchema, async (albumId) => {
+    return await db.music.getAlbumCompleteness(albumId)
+  })
+
   // ============================================================================
   // MUSICBRAINZ & SYNC
   // ============================================================================
@@ -115,7 +132,12 @@ export function registerMusicHandlers(): void {
   createValidatedIpcHandler('music:searchMusicBrainz', z.tuple([z.string(), z.enum(['artist', 'release', 'recording', 'release-group'])]), async (query, type) => {
     const mb = getMusicBrainzService()
     if (type === 'artist') return await mb.searchArtist(query)
-    if (type === 'release') return await mb.searchRelease(query)
+    if (type === 'release') {
+       const parts = query.split(' - ')
+       const artist = parts[0] || query
+       const album = parts[1] || query
+       return await mb.searchRelease(artist, album)
+    }
     return []
   })
 

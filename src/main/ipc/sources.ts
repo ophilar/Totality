@@ -5,18 +5,16 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
  * Handles all source-related IPC calls from the renderer process.
  */
 
-import { ipcMain, dialog, shell } from 'electron'
+import { ipcMain, dialog, shell, IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { getSourceManager } from '@main/services/SourceManager'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getKodiLocalDiscoveryService } from '@main/services/KodiLocalDiscoveryService'
-import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '@main/services/KodiMySQLConnectionService'
+import { getKodiMySQLConnectionService } from '@main/services/KodiMySQLConnectionService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { LibraryType, ProviderType } from '@main/types/database'
-import type { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
-import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
 import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import { createValidatedIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandler } from '@main/ipc/utils/createHandler'
@@ -28,15 +26,14 @@ import {
   ScanLibraryTupleSchema,
   ScanItemTupleSchema,
   PlexAuthTupleSchema,
-  PlexSelectServerTupleSchema,
   SourceIdSchema,
   SafeUrlSchema,
-  BooleanSchema,
-  FilePathSchema,
   KodiMySQLConfigSchema,
   KodiMySQLTestConfigSchema,
   LocalFolderConfigSchema,
   LocalFolderWithLibrariesSchema,
+  FilePathSchema,
+  validateInput,
 } from '@main/validation/schemas'
 import { z } from 'zod'
 
@@ -164,7 +161,7 @@ export function registerSourceHandlers(): void {
     } catch { return [] }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:toggleLibrary', ToggleLibraryTupleSchema, async (event, sourceId, libraryId, enabled) => {
+  createValidatedIpcHandlerWithEvent('sources:toggleLibrary', ToggleLibraryTupleSchema, async (event: IpcMainInvokeEvent, sourceId, libraryId, enabled) => {
     const db = getDatabase()
     await db.sources.toggleLibrary(sourceId, libraryId, enabled)
     const win = getWindowFromEvent(event)
@@ -188,7 +185,7 @@ export function registerSourceHandlers(): void {
     return { success: true }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanLibrary', ScanLibraryTupleSchema, async (event, sourceId, libraryId) => {
+  createValidatedIpcHandlerWithEvent('sources:scanLibrary', ScanLibraryTupleSchema, async (event: IpcMainInvokeEvent, sourceId, libraryId) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -201,7 +198,7 @@ export function registerSourceHandlers(): void {
     } finally { flush() }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanAll', z.any().optional(), async (event) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAll', z.any().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -221,7 +218,7 @@ export function registerSourceHandlers(): void {
   // INCREMENTAL SCANNING
   // ============================================================================
 
-  createValidatedIpcHandlerWithEvent('sources:scanItem', ScanItemTupleSchema, async (event, sourceId, libraryId, filePath) => {
+  createValidatedIpcHandlerWithEvent('sources:scanItem', ScanItemTupleSchema, async (event: IpcMainInvokeEvent, sourceId, libraryId, filePath) => {
     const win = getWindowFromEvent(event)
     let resolvedLibraryId = libraryId
     if (!resolvedLibraryId) {
@@ -234,7 +231,7 @@ export function registerSourceHandlers(): void {
     } finally { flush() }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanLibraryIncremental', ScanLibraryTupleSchema, async (event, sourceId, libraryId) => {
+  createValidatedIpcHandlerWithEvent('sources:scanLibraryIncremental', ScanLibraryTupleSchema, async (event: IpcMainInvokeEvent, sourceId, libraryId) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -247,7 +244,7 @@ export function registerSourceHandlers(): void {
     } finally { flush() }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanAllIncremental', z.any().optional(), async (event) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAllIncremental', z.any().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -289,7 +286,7 @@ export function registerSourceHandlers(): void {
     return await discovery.isKodiRunning()
   })
 
-  createValidatedIpcHandlerWithEvent('kodi:importCollections', SourceIdSchema, async (event, sourceId) => {
+  createValidatedIpcHandlerWithEvent('kodi:importCollections', SourceIdSchema, async (event: IpcMainInvokeEvent, sourceId) => {
     const provider = manager.getProvider(sourceId)
     if (provider?.providerType !== ProviderType.KodiLocal) throw new Error('Not a Kodi local source')
     const win = getWindowFromEvent(event)
@@ -309,6 +306,7 @@ export function registerSourceHandlers(): void {
   })
 
   createValidatedIpcHandler('kodi:authenticateMySQL', KodiMySQLConfigSchema, async (config) => {
+    const { KodiMySQLProvider } = await import('@main/providers/kodi/KodiMySQLProvider')
     const provider = new KodiMySQLProvider({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: {} })
     const res = await provider.authenticate({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_' } as any)
     if (!res.success) return { success: false, error: res.error }
@@ -356,7 +354,7 @@ export function registerSourceHandlers(): void {
     return getMediaFileAnalyzer().canInstall()
   })
 
-  createValidatedIpcHandlerWithEvent('ffprobe:install', z.any().optional(), async (event) => {
+  createValidatedIpcHandlerWithEvent('ffprobe:install', z.any().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     return await getMediaFileAnalyzer().installFFprobe((p) => safeSend(win, 'ffprobe:installProgress', p))
   })
@@ -424,4 +422,3 @@ export function registerSourceHandlers(): void {
 
   getLoggingService().info('[sources]', '[IPC] Source handlers registered')
 }
-

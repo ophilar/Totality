@@ -546,6 +546,7 @@ export const SetSettingTupleSchema = z.tuple([SettingKeySchema, SettingValueSche
 export const TestNfsMappingTupleSchema = z.tuple([z.any(), FilePathSchema])
 export const FixMatchTupleSchema = z.tuple([PositiveIntSchema, PositiveIntSchema])
 export const AddExclusionTupleSchema = z.tuple([z.string(), PositiveIntSchema.optional(), z.string().optional(), z.string().optional(), z.string().optional()])
+export const GetExclusionsTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
 export const FixArtistMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])
 export const SearchMbReleaseTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema])
 export const FixAlbumMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])

@@ -8,6 +8,7 @@ interface BatchActionBarProps {
   onDismiss: () => void
   onTranscode: () => void
   onAddToWishlist: () => void
+  onSelectAll?: () => void
   onDelete?: () => void
 }
 
@@ -17,6 +18,7 @@ export const BatchActionBar: React.FC<BatchActionBarProps> = ({
   onDismiss,
   onTranscode,
   onAddToWishlist,
+  onSelectAll,
   onDelete
 }) => {
   if (selectedCount === 0) return null
@@ -25,7 +27,17 @@ export const BatchActionBar: React.FC<BatchActionBarProps> = ({
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div className="bg-black/90 backdrop-blur-md border border-white/10 rounded-full shadow-2xl px-2 py-2 flex items-center gap-2">
         <div className="flex items-center gap-3 px-4 border-r border-white/10">
-          <span className="text-sm font-medium text-white">{selectedCount} items selected</span>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-white">{selectedCount} items selected</span>
+            {onSelectAll && (
+              <button 
+                onClick={onSelectAll}
+                className="text-[10px] text-primary hover:underline text-left"
+              >
+                Select all visible
+              </button>
+            )}
+          </div>
           <button 
             onClick={onClear}
             className="p-1 hover:bg-white/10 rounded-full transition-colors text-white/60 hover:text-white"

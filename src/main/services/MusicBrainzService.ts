@@ -323,6 +323,25 @@ export class MusicBrainzService extends CancellableOperation {
   }
 
   /**
+   * Get artist details by MusicBrainz ID
+   */
+  async getArtistDetails(musicbrainzId: string): Promise<MBArtist | null> {
+    return this.requestWithRetry(async () => {
+      try {
+        const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
+          params: {
+            fmt: 'json',
+          },
+        })
+        return response.data
+      } catch (error: any) {
+        if (error.response?.status === 404) return null
+        throw error
+      }
+    }, `getArtistDetails(${musicbrainzId})`)
+  }
+
+  /**
    * Get artist discography (all releases)
    * @param musicbrainzId MusicBrainz artist ID
    * @param filterVinylOnly If true, excludes vinyl-only releases (much slower due to extra API calls)

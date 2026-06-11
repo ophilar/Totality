@@ -15,7 +15,6 @@ import { PinEntryModal } from '@/components/library/PinEntryModal'
 import { BrowserHeader } from '@/components/library/browser/BrowserHeader'
 import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from '@/components/library/browser/BrowserAlphabetNav'
-import { BatchActionBar } from '@/components/library/browser/BatchActionBar'
 import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -72,8 +71,7 @@ export function MediaBrowser({
     selectedShow, setSelectedShow,
     selectedArtist, setSelectedArtist,
     selectedAlbum, setSelectedAlbum,
-    searchQuery,
-    selectionMode, setSelectionMode, selectedIds, clearSelection
+    searchQuery
   } = useLibrary()
 
   const { sources, activeSourceId, setActiveSource, markLibraryAsNew } = useSources()
@@ -216,52 +214,27 @@ export function MediaBrowser({
     activeSourceId
   })
 
-  // Bootstrap all views in a single IPC call to reduce overhead and Main thread contention
+  // Bootstrap
   useEffect(() => {
     let isMounted = true
-    
     window.electronAPI.getLibraryOverview(activeSourceId || undefined).then(data => {
       if (!isMounted) return
-      
-      if (data.movies) {
-        setMovies(data.movies.items)
-        setTotalMovieCount(data.movies.total)
-      }
-      if (data.tvShows) {
-        setShows(data.tvShows.items)
-        setTotalShowCount(data.tvShows.total)
-      }
-      if (data.music?.artists) {
-        setArtists(data.music.artists.items)
-        setTotalArtistCount(data.music.artists.total)
-      }
-      if (data.music?.albums) {
-        setAlbums(data.music.albums.items)
-        setTotalAlbumCountSetter(data.music.albums.total)
-      }
-      if (data.music?.tracks) {
-        setAllMusicTracks(data.music.tracks.items)
-        setTotalTrackCountSetter(data.music.tracks.total)
-      }
-      if (data.stats) {
-        setStats(data.stats)
-      }
+      if (data.movies) { setMovies(data.movies.items); setTotalMovieCount(data.movies.total) }
+      if (data.tvShows) { setShows(data.tvShows.items); setTotalShowCount(data.tvShows.total) }
+      if (data.music?.artists) { setArtists(data.music.artists.items); setTotalArtistCount(data.music.artists.total) }
+      if (data.music?.albums) { setAlbums(data.music.albums.items); setTotalAlbumCountSetter(data.music.albums.total) }
+      if (data.music?.tracks) { setAllMusicTracks(data.music.tracks.items); setTotalTrackCountSetter(data.music.tracks.total) }
+      if (data.stats) setStats(data.stats)
     }).catch(err => {
       window.electronAPI.log.error('MediaBrowser', 'Bootstrap failed:', err)
     })
-
     return () => { isMounted = false }
   }, [activeSourceId, setMovies, setTotalMovieCount, setShows, setTotalShowCount, setArtists, setTotalArtistCount, setAlbums, setTotalAlbumCountSetter, setAllMusicTracks, setTotalTrackCountSetter])
 
   // Filters
   const [searchInput, setSearchInput] = useState('')
-  const {
-    tierFilter, setTierFilter,
-    alphabetFilter, setAlphabetFilter,
-    slimDown, setSlimDown,
-  } = useLibraryFilters(searchInput)
+  const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters(searchInput)
 
-  // Sync filters to paginated hooks
   useEffect(() => {
     const commonFilters = {
       sortBy: sortBy === 'title' ? (view === 'music' ? 'name' : 'title') : sortBy,
@@ -273,11 +246,9 @@ export function MediaBrowser({
       libraryId: activeLibraryId || undefined
     }
 
-    if (view === 'movies') {
-      setMoviesFilters({ ...commonFilters, type: 'movie' } as any)
-    } else if (view === 'tv') {
-      setShowsFilters({ ...commonFilters } as any)
-    } else if (view === 'music') {
+    if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as any)
+    else if (view === 'tv') setShowsFilters({ ...commonFilters } as any)
+    else if (view === 'music') {
       if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: 'name' } as any)
       else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as any)
       else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as any)
@@ -287,13 +258,8 @@ export function MediaBrowser({
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
   const {
-    showSearchResults, setShowSearchResults,
-    searchResultIndex, setSearchResultIndex,
-    searchContainerRef,
-    globalSearchResults,
-    hasSearchResults,
-    handleSearchKeyDown,
-    handleSearchResultClick,
+    showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex,
+    searchContainerRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
   } = useGlobalSearch({
     items: movies,
     tvShows: new Map(shows.map(s => [s.series_title, { title: s.series_title, poster_url: s.poster_url, seasons: new Map() }])),
@@ -317,22 +283,16 @@ export function MediaBrowser({
     }
   })
 
-  // Load episodes when selectedShow changes
+  // Load episodes/tracks
   useEffect(() => {
     if (selectedShow) {
       setSelectedShowEpisodesLoading(true)
       window.electronAPI.seriesGetEpisodes(selectedShow, activeSourceId || undefined)
-        .then(eps => {
-          setSelectedShowEpisodes(eps as MediaItem[])
-          setSelectedShowEpisodesLoading(false)
-        })
+        .then(eps => { setSelectedShowEpisodes(eps as MediaItem[]); setSelectedShowEpisodesLoading(false) })
         .catch(() => setSelectedShowEpisodesLoading(false))
-    } else {
-      setSelectedShowEpisodes([])
-    }
+    } else setSelectedShowEpisodes([])
   }, [selectedShow, activeSourceId])
 
-  // Load tracks when selectedAlbum changes
   useEffect(() => {
     if (selectedAlbum) {
       setAlbumTracksLoading(true)
@@ -344,10 +304,7 @@ export function MediaBrowser({
         setSelectedAlbumCompleteness(completeness as AlbumCompletenessData)
         setAlbumTracksLoading(false)
       }).catch(() => setAlbumTracksLoading(false))
-    } else {
-      setAlbumTracks([])
-      setSelectedAlbumCompleteness(null)
-    }
+    } else { setAlbumTracks([]); setSelectedAlbumCompleteness(null) }
   }, [selectedAlbum])
 
   const currentTypeLibraries = useMemo(() =>
@@ -369,28 +326,18 @@ export function MediaBrowser({
         window.electronAPI.seriesGetAll(activeSourceId || undefined),
         window.electronAPI.collectionsGetAll(activeSourceId || undefined),
       ])
-
       setMovieCollections((collectionsData as MovieCollectionData[]).filter(c => c.total_movies > 1))
-      
       const sMap = new Map<string, SeriesCompletenessData>()
       ;(seriesData as SeriesCompletenessData[]).forEach(s => sMap.set(s.series_title, s))
       setSeriesCompleteness(sMap)
     } catch { /* ignore */ }
   }, [activeSourceId])
 
-  const {
-    showCollectionModal, setShowCollectionModal,
-    selectedCollection, setSelectedCollection,
-    getCollectionForMovie,
-    ownedMoviesForSelectedCollection,
-  } = useCollections(movies, movieCollections)
+  const { showCollectionModal, setShowCollectionModal, selectedCollection, setSelectedCollection, getCollectionForMovie, ownedMoviesForSelectedCollection } = useCollections(movies, movieCollections)
 
   const {
-    isAnalyzing, setIsAnalyzing,
-    analysisProgress, setAnalysisProgress,
-    analysisType, setAnalysisType,
-    handleAnalyzeSeries, handleAnalyzeCollections, handleAnalyzeMusic,
-    handleAnalyzeSingleSeries, handleCancelAnalysis, checkTmdbApiKey,
+    isAnalyzing, setIsAnalyzing, analysisProgress, setAnalysisProgress, analysisType, setAnalysisType,
+    handleAnalyzeSeries, handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeSingleSeries, handleCancelAnalysis, checkTmdbApiKey,
   } = useAnalysisManager({ sources, activeSourceId, activeSourceLibraries, loadCompletenessData })
 
   const loadActiveSourceLibraries = useCallback(async () => {
@@ -401,12 +348,8 @@ export function MediaBrowser({
   }, [activeSourceId])
 
   const loadEpSingleSettings = useCallback(async () => {
-    const [eps, sin] = await Promise.all([
-      window.electronAPI.getSetting('completeness_include_eps'),
-      window.electronAPI.getSetting('completeness_include_singles'),
-    ])
-    setIncludeEps(eps !== 'false')
-    setIncludeSingles(sin !== 'false')
+    const [eps, sin] = await Promise.all([window.electronAPI.getSetting('completeness_include_eps'), window.electronAPI.getSetting('completeness_include_singles')])
+    setIncludeEps(eps !== 'false'); setIncludeSingles(sin !== 'false')
   }, [])
 
   const loadMusicCompletenessData = useCallback(async () => {
@@ -417,8 +360,7 @@ export function MediaBrowser({
   }, [])
 
   const reloadMedia = useCallback(async () => {
-    refreshMovies()
-    refreshShows()
+    refreshMovies(); refreshShows()
     if (selectedShow) {
       const eps = await window.electronAPI.seriesGetEpisodes(selectedShow, activeSourceId || undefined)
       setSelectedShowEpisodes(eps as MediaItem[])
@@ -426,42 +368,20 @@ export function MediaBrowser({
   }, [refreshMovies, refreshShows, selectedShow, activeSourceId])
 
   useLibraryEventListeners({
-    activeSourceId,
-    loadMedia: reloadMedia, loadStats, loadCompletenessData,
-    loadMusicData: async () => {}, loadMusicCompletenessData,
-    loadActiveSourceLibraries, loadEpSingleSettings,
-    setIsAnalyzing, setAnalysisType, setAnalysisProgress,
-    setTmdbApiKeySet: () => {}, setIsAutoRefreshing,
-    setActiveSource, markLibraryAsNew, addToast,
+    activeSourceId, loadMedia: reloadMedia, loadStats, loadCompletenessData, loadMusicData: async () => {}, loadMusicCompletenessData,
+    loadActiveSourceLibraries, loadEpSingleSettings, setIsAnalyzing, setAnalysisType, setAnalysisProgress,
+    setTmdbApiKeySet: () => {}, setIsAutoRefreshing, setActiveSource, markLibraryAsNew, addToast,
   })
 
   useEffect(() => {
-    loadStats(activeSourceId || undefined)
-    loadCompletenessData()
-    loadMusicCompletenessData()
-    loadActiveSourceLibraries()
-    loadEpSingleSettings()
-    checkTmdbApiKey()
+    loadStats(activeSourceId || undefined); loadCompletenessData(); loadMusicCompletenessData(); loadActiveSourceLibraries(); loadEpSingleSettings(); checkTmdbApiKey()
   }, [activeSourceId, loadStats, loadCompletenessData, loadMusicCompletenessData, loadActiveSourceLibraries, loadEpSingleSettings, checkTmdbApiKey])
 
-  const {
-    matchFixModal, setMatchFixModal,
-    selectedMissingItem, setSelectedMissingItem,
-    handleRescanItem,
-  } = useMediaActions({ selectedMediaId, loadMedia: reloadMedia, setDetailRefreshKey })
+  const { matchFixModal, setMatchFixModal, selectedMissingItem, setSelectedMissingItem, handleRescanItem } = useMediaActions({ selectedMediaId, loadMedia: reloadMedia, setDetailRefreshKey })
 
-  const {
-    handleDismissUpgrade,
-    handleDismissMissingEpisode,
-    handleDismissMissingSeason,
-    handleDismissCollectionMovie,
-    handleDismissMissingAlbum,
-    handleDismissMissingItem,
-  } = useDismissHandlers({
-    setPaginatedMovies: setMovies as any, setSelectedShowEpisodes,
-    seriesCompleteness, setSeriesCompleteness,
-    selectedCollection, setSelectedCollection, setMovieCollections,
-    setArtistCompleteness, selectedMissingItem, setSelectedMissingItem, addToast,
+  const { handleDismissUpgrade, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie, handleDismissMissingAlbum, handleDismissMissingItem } = useDismissHandlers({
+    setPaginatedMovies: setMovies as any, setSelectedShowEpisodes, seriesCompleteness, setSeriesCompleteness,
+    selectedCollection, setSelectedCollection, setMovieCollections, setArtistCompleteness, selectedMissingItem, setSelectedMissingItem, addToast,
   })
 
   const selectedShowData = useMemo((): TVShow | null => {
@@ -475,92 +395,16 @@ export function MediaBrowser({
     return { title: selectedShow, poster_url: selectedShowEpisodes[0]?.poster_url || undefined, seasons }
   }, [selectedShow, selectedShowEpisodes])
 
-  const handleBatchDismiss = useCallback(async () => {
-    if (selectedIds.size === 0) return
-    const itemsToDismiss = Array.from(selectedIds).map(id => {
-      const movie = movies.find(m => m.id === id)
-      const episode = selectedShowEpisodes.find(e => e.id === id)
-      const item = movie || episode
-      return item ? { exclusion_type: 'media_upgrade' as const, reference_id: item.id, title: item.title } : null
-    }).filter(Boolean)
-    if (itemsToDismiss.length > 0) {
-      await window.electronAPI.batchAddExclusions(itemsToDismiss)
-      addToast({ message: `Dismissed ${itemsToDismiss.length} upgrades`, type: 'info' })
-      clearSelection()
-      reloadMedia()
-    }
-  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection, reloadMedia])
-
-  const handleBatchTranscode = useCallback(async () => {
-    if (selectedIds.size === 0) return
-    const tasks = Array.from(selectedIds).map(id => {
-      const movie = movies.find(m => m.id === id)
-      const episode = selectedShowEpisodes.find(e => e.id === id)
-      const item = movie || episode
-      if (!item) return null
-      return {
-        type: 'transcode' as const,
-        label: `Transcode ${item.title}`,
-        mediaItemId: item.id,
-        sourceId: item.source_id,
-        libraryId: item.library_id || undefined,
-        options: { targetCodec: 'av1', overwriteOriginal: true }
-      }
-    }).filter(Boolean)
-    
-    if (tasks.length > 0) {
-      await window.electronAPI.taskQueueAddTasks(tasks as any)
-      addToast({ message: `Added ${tasks.length} items to transcode queue`, type: 'success' })
-      clearSelection()
-    }
-  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection])
-
-  const handleBatchWishlist = useCallback(async () => {
-    if (selectedIds.size === 0) return
-    const items = Array.from(selectedIds).map(id => {
-      const movie = movies.find(m => m.id === id)
-      const episode = selectedShowEpisodes.find(e => e.id === id)
-      const item = movie || episode
-      if (!item) return null
-      
-      const type = movie ? 'movie' : 'episode'
-      return {
-        media_type: type as any,
-        title: item.title,
-        year: item.year || undefined,
-        tmdb_id: item.tmdb_id || undefined,
-        season_number: item.season_number || undefined,
-        episode_number: item.episode_number || undefined,
-        series_title: item.series_title || undefined,
-        current_quality: item.tier_quality || undefined,
-        status: 'active' as const,
-        priority: 3
-      }
-    }).filter(Boolean)
-    
-    if (items.length > 0) {
-      await window.electronAPI.wishlistAddBulk(items as any)
-      addToast({ message: `Added ${items.length} items to wishlist`, type: 'success' })
-      clearSelection()
-    }
-  }, [selectedIds, movies, selectedShowEpisodes, addToast, clearSelection])
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {!hideHeader && (
         <BrowserHeader
-          view={view} setView={setView}
-          hasMovies={(stats?.totalMovies ?? 0) > 0} hasTV={(stats?.totalShows ?? 0) > 0} hasMusic={musicArtists.length > 0}
-          wishlistCount={wishlistCount} isAutoRefreshing={isAutoRefreshing}
-          tmdbApiKeySet={true} themeAccentColor={themeAccentColor}
+          view={view} setView={setView} hasMovies={(stats?.totalMovies ?? 0) > 0} hasTV={(stats?.totalShows ?? 0) > 0} hasMusic={musicArtists.length > 0}
+          wishlistCount={wishlistCount} isAutoRefreshing={isAutoRefreshing} tmdbApiKeySet={true} themeAccentColor={themeAccentColor}
           showCompletenessPanel={showCompletenessPanel} setShowCompletenessPanel={setShowCompletenessPanel}
           showWishlistPanel={showWishlistPanel} setShowWishlistPanel={setShowWishlistPanel}
           onOpenSettings={onOpenSettings || (() => {})} onNavigateHome={onNavigateHome}
-          searchProps={{
-            searchInput, setSearchInput, showSearchResults, setShowSearchResults,
-            searchResultIndex, setSearchResultIndex, searchContainerRef, searchInputRef,
-            globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick
-          }}
+          searchProps={{ searchInput, setSearchInput, showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex, searchContainerRef, searchInputRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick }}
         />
       )}
 
@@ -569,16 +413,10 @@ export function MediaBrowser({
           view={view} musicViewMode={musicViewMode} setMusicViewMode={setMusicViewMode}
           activeSourceId={activeSourceId} activeLibraryId={activeLibraryId} setActiveLibraryId={setActiveLibraryId}
           currentTypeLibraries={currentTypeLibraries} isUnlocked={isUnlocked} setIsUnlocked={setIsUnlocked}
-          setShowPinModal={setShowPinModal}
-          tierFilter={tierFilter} setTierFilter={setTierFilter}
-          qualityFilter={qualityFilter} setQualityFilter={setQualityFilter}
-          slimDown={slimDown} setSlimDown={setSlimDown}
-          collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly}
-          hasCollections={movieCollections.length > 0}
-          gridScale={gridScale} setGridScale={setGridScale}
-          viewType={viewType} setViewType={setViewType}
-          selectedShow={selectedShow}
-          selectionMode={selectionMode} setSelectionMode={setSelectionMode} selectedCount={selectedIds.size}
+          setShowPinModal={setShowPinModal} tierFilter={tierFilter} setTierFilter={setTierFilter}
+          qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} slimDown={slimDown} setSlimDown={setSlimDown}
+          collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly} hasCollections={movieCollections.length > 0}
+          gridScale={gridScale} setGridScale={setGridScale} viewType={viewType} setViewType={setViewType} selectedShow={selectedShow}
         />
 
         <div className="flex-1 relative min-h-0">
@@ -660,14 +498,6 @@ export function MediaBrowser({
           <BrowserAlphabetNav alphabetFilter={alphabetFilter} scrollToLetter={(l) => setAlphabetFilter(l)} />
         </div>
       </div>
-
-      <BatchActionBar
-        selectedCount={selectedIds.size}
-        onClear={clearSelection}
-        onDismiss={handleBatchDismiss}
-        onTranscode={handleBatchTranscode}
-        onAddToWishlist={handleBatchWishlist}
-      />
 
       <PinEntryModal isOpen={showPinModal} onClose={() => setShowPinModal(false)} onSuccess={() => setIsUnlocked(true)} />
       {selectedMediaId && (

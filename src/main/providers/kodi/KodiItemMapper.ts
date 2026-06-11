@@ -1,36 +1,12 @@
 import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
-import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
-  hasObjectAudio,
-} from '@main/services/MediaNormalizer'
-import {
-  isLosslessCodec,
-  isHiRes,
-} from '@main/providers/base/MusicScannerUtils'
-import type {
-  MediaMetadata,
-} from '@main/providers/base/MediaProvider'
-import {
-  MediaItem,
-  MediaItemVersion,
-  MusicArtist,
-  MusicAlbum,
-  MusicTrack,
-  ProviderType,
-  MediaItemType,
-} from '@main/types/database'
-import type {
-  KodiMovie,
-  KodiEpisode,
-  KodiMusicArtist,
-  KodiMusicAlbum,
-  KodiMusicSong,
-} from '@main/providers/kodi/KodiProvider'
+import { MediaItemType } from '@main/types/database'
+import type { MediaMetadata } from '@main/providers/base/MediaProvider'
+import type { KodiMovie, KodiEpisode, KodiMusicArtist, KodiMusicAlbum, KodiMusicSong } from '@main/providers/kodi/KodiProvider'
 import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
 import { getLoggingService } from '@main/services/LoggingService'
+import { isLosslessCodec, isHiRes } from '@main/providers/base/MusicScannerUtils'
+import { MediaItem, MediaItemVersion, MusicArtist, MusicAlbum, MusicTrack, ProviderType } from '@main/types/database'
+import * as fs from 'fs'
 
 export class KodiItemMapper {
   constructor(
@@ -47,7 +23,7 @@ export class KodiItemMapper {
         itemId: mediaItem.plex_id || '',
         title: item.title,
         type: mediaItem.type,
-        year: item.year,
+        year: 'year' in item ? item.year : undefined,
         filePath: mediaItem.file_path,
         resolution: mediaItem.resolution,
         videoCodec: mediaItem.video_codec,

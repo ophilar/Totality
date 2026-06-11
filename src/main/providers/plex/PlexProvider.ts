@@ -3,23 +3,8 @@ import { getLoggingService } from '@main/services/LoggingService'
 import axios, { AxiosInstance } from 'axios'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
-import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
-  normalizeBitrate,
-  normalizeFrameRate,
-  normalizeAudioChannels,
-  normalizeSampleRate,
-  normalizeContainer,
-  hasObjectAudio,
-} from '@main/services/MediaNormalizer'
-import { selectBestAudioTrack } from '@main/providers/utils/ProviderUtils'
-import { getFileNameParser } from '@main/services/FileNameParser'
-import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
-import { MediaTransformer } from '@main/providers/base/MediaTransformer'
+import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 import {
   BaseMediaProvider,
   ProviderCredentials,
@@ -46,7 +31,7 @@ import type {
   PlexMusicTrack,
   PlexResource,
 } from '@main/types/plex'
-import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
+import type { MediaItem, MediaItemVersion, MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
 
 export interface PlexCollection {
   key: string
@@ -59,24 +44,6 @@ const PLEX_API_URL = 'https://plex.tv/api/v2'
 const PLEX_TV_URL = 'https://plex.tv'
 const CLIENT_IDENTIFIER = 'totality'
 const PRODUCT_NAME = 'Totality'
-
-function getReliableVideoBitrate(
-  videoStreamBitrate: number | undefined,
-  mediaBitrate: number | undefined,
-  audioStreams: Array<{ bitrate?: number }>
-): number {
-  const overall = mediaBitrate || 0
-  const audioBitrateSum = audioStreams.reduce((sum, s) => sum + (s.bitrate || 0), 0)
-  const calculated = Math.max(0, overall - audioBitrateSum)
-
-  if (videoStreamBitrate && overall > 0 && videoStreamBitrate >= overall * 0.3) {
-    return videoStreamBitrate
-  }
-  if (videoStreamBitrate && !overall) {
-    return videoStreamBitrate
-  }
-  return calculated || overall
-}
 
 export class PlexProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = ProviderType.Plex
@@ -643,14 +610,14 @@ export class PlexProvider extends BaseMediaProvider {
         result.mediaItem.series_tmdb_id = showTmdbId
       }
       return result
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof IncompleteMetadataError) {
         getLoggingService().warn('[PlexProvider]', error.message)
       } else {
-        getLoggingService().error('[PlexProvider]', 'Transformation error:', error)
+        getLoggingService().error('[PlexProvider]', 'Scan failed:', error)
       }
-      return null
     }
+    return null
   }
 
   async getMusicArtists(libraryKey: string): Promise<PlexMusicArtist[]> {

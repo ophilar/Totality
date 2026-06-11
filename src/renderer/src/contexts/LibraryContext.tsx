@@ -41,6 +41,7 @@ interface LibraryContextType {
   toggleSelection: (id: number) => void
   clearSelection: () => void
   selectAll: (ids: number[]) => void
+  deepAnalyzeMedia: (filePath: string) => Promise<any>
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined)
@@ -82,6 +83,15 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
     setSelectedIds(new Set(ids))
   }, [])
 
+  const deepAnalyzeMedia = useCallback(async (filePath: string) => {
+    try {
+      return await window.electronAPI.mediaDeepAnalyze({ filePath })
+    } catch (e) {
+      window.electronAPI.log.error('[LibraryContext]', 'Deep analysis failed:', e)
+      throw e
+    }
+  }, [])
+
   // Persist view preferences
   const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number }>>({})
 
@@ -95,7 +105,9 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
             setViewTypeState(current.viewType)
             setGridScaleState(current.gridScale)
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          window.electronAPI.log.error('[LibraryContext]', 'Failed to parse view preferences:', e)
+        }
       }
     })
     // Reset selection when changing tabs
@@ -133,7 +145,8 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       sortBy, setSortBy,
       activeSourceId, setActiveSourceId,
       selectionMode, setSelectionMode,
-      selectedIds, toggleSelection, clearSelection, selectAll
+      selectedIds, toggleSelection, clearSelection, selectAll,
+      deepAnalyzeMedia
     }}>
       {children}
     </LibraryContext.Provider>

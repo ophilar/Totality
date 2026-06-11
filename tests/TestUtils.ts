@@ -47,6 +47,11 @@ import { registerMonitoringHandlers } from '@main/ipc/monitoring'
 import { registerLoggingHandlers } from '@main/ipc/logging'
 import { registerDuplicateHandlers } from '@main/ipc/duplicates'
 import { registerAutoUpdateHandlers } from '@main/ipc/autoUpdate'
+import { registerGeminiHandlers } from '@main/ipc/gemini'
+import { registerQualityHandlers } from '@main/ipc/quality'
+import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { registerNotificationHandlers } from '@main/ipc/notifications'
+import { registerJellyfinHandlers } from '@main/ipc/jellyfin'
 
 /**
  * Sets up a real bridge between Renderer and Main process handlers.
@@ -72,91 +77,88 @@ export function setupRealIntegratedBridge() {
   registerLoggingHandlers()
   registerDuplicateHandlers()
   registerAutoUpdateHandlers()
+  registerGeminiHandlers()
+  registerQualityHandlers()
+  registerTranscodingHandlers()
+  registerNotificationHandlers()
+  registerJellyfinHandlers()
 
-  // Helper to invoke a handler with safety and logging
+  // Helper to invoke a handler with no fallbacks and loud errors
   const invoke = async (channel: string, ...args: any[]) => {
-    if (!channel) return undefined
+    if (!channel) throw new Error('IPC Invoke: Channel is required')
     const handler = handlers.get(channel)
     
     if (!handler) {
-      if (channel.includes(':count')) return 0
-      if (channel.includes(':list') || channel.includes('getAll')) return []
-      if (channel.includes('getStats')) return {}
-      return undefined
+      throw new Error(`IPC Invoke: No handler registered for channel "${channel}"`)
     }
 
     const event = { sender: { send: vi.fn() } }
-    try {
-      const result = await handler(event, ...args)
-      return result
-    } catch (e) {
-      return undefined
-    }
+    return await handler(event, ...args)
   }
 
   // Create an exhaustive API object that matches preload scripts
   const api: any = {
     invoke,
     // Database / Media retrieval
-    getMediaItems: (f: any) => invoke('db:getMediaItems', f).then(r => r || []),
-    countMediaItems: (f: any) => invoke('db:countMediaItems', f).then(r => r || 0),
-    mediaList: (f: any) => invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, f).then(r => r || []),
-    mediaCount: (f: any) => invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, f).then(r => r || 0),
+    getMediaItems: (f: any) => invoke('db:getMediaItems', f),
+    countMediaItems: (f: any) => invoke('db:countMediaItems', f),
+    mediaList: (f: any) => invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, f),
+    mediaCount: (f: any) => invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, f),
     getMediaItem: (id: number) => invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_ITEM, id),
-    getMediaItemVersions: (id: number) => invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, id).then(r => r || []),
-    getTVShows: (f: any) => invoke('db:getTVShows', f).then(r => r || []),
-    countTVShows: (f: any) => invoke('db:countTVShows', f).then(r => r || 0),
+    getMediaItemVersions: (id: number) => invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, id),
+    getTVShows: (f: any) => invoke('db:getTVShows', f),
+    countTVShows: (f: any) => invoke('db:countTVShows', f),
     getLibraryOverview: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sId),
-    getDashboardSummary: (sId?: string) => invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, sId).then(r => r || {}),
-    tvShowList: (f: any) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, f).then(r => r || []),
-    tvShowCount: (f: any) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, f).then(r => r || 0),
-    countTVEpisodes: (f: any) => invoke(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, f).then(r => r || 0),
-    getLibraryStats: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sId).then(r => r || {}),
-    getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k).then(r => r || ''),
+    getDashboardSummary: (sId?: string) => invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, sId),
+    tvShowList: (f: any) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, f),
+    tvShowCount: (f: any) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, f),
+    countTVEpisodes: (f: any) => invoke(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, f),
+    getLibraryStats: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sId),
+    getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k),
     setSetting: (k: string, v: string) => invoke(IPC_CHANNELS.DATABASE.SET_SETTING, k, v),
-    getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS).then(r => r || {}),
-    isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE).then(r => !!r),
+    getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
+    isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE),
     setVerboseLogging: (e: boolean) => invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, e),
-    getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l).then(r => r || []),
-    getFileLoggingSettings: () => invoke(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS).then(r => r || {}),
+    getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l),
+    getFileLoggingSettings: () => invoke(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS),
     setFileLoggingSettings: (s: any) => invoke(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, s),
-    monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG).then(r => r || {}),
+    monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
     monitoringSetConfig: (c: any) => invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, c),
     
     // Transcoding
-    checkAvailability: () => invoke('transcoding:checkAvailability').then(r => r || { handbrake: false, mkvtoolnix: false, ffmpeg: false }),
+    checkAvailability: () => invoke('transcoding:checkAvailability'),
     generateTranscodeParams: (p: string, o: any) => invoke('transcoding:getParameters', p, o),
     startTranscoding: (id: number, o: any) => invoke('transcoding:start', id, o),
     stopTranscoding: () => invoke('transcoding:stop'),
     onProgress: (cb: any) => () => {},
 
     // Duplicates
-    duplicatesGetPending: (sId?: string) => invoke('duplicates:getPending', sId).then(r => r || []),
+    duplicatesGetPending: (sId?: string) => invoke('duplicates:getPending', sId),
     duplicatesScan: (sId?: string) => invoke('duplicates:scan', sId),
     duplicatesGetRecommendation: (ids: number[]) => invoke('duplicates:getRecommendation', ids),
     duplicatesResolve: (gId: number, kId: number, d: boolean) => invoke('duplicates:resolve', gId, kId, d),
 
     // Music
-    musicGetArtists: (f: any) => invoke('music:getArtists', f).then(r => r || []),
-    musicArtistList: (f: any) => invoke('music:artists:list', f).then(r => r || []),
-    musicArtistCount: (f: any) => invoke('music:artists:count', f).then(r => r || 0),
-    musicGetAlbums: (f: any) => invoke('music:getAlbums', f).then(r => r || []),
-    musicAlbumList: (f: any) => invoke('music:albums:list', f).then(r => r || []),
-    musicAlbumCount: (f: any) => invoke('music:albums:count', f).then(r => r || 0),
-    musicGetTracks: (f: any) => invoke('music:getTracks', f).then(r => r || []),
-    musicTrackList: (f: any) => invoke('music:tracks:list', f).then(r => r || []),
-    musicTrackCount: (f: any) => invoke('music:tracks:count', f).then(r => r || 0),
-    musicGetTracksByAlbum: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_TRACKS_BY_ALBUM, id).then(r => r || []),
+    musicGetArtists: (f: any) => invoke('music:getArtists', f),
+    musicArtistList: (f: any) => invoke('music:artists:list', f),
+    musicArtistCount: (f: any) => invoke('music:artists:count', f),
+    musicGetAlbums: (f: any) => invoke('music:getAlbums', f),
+    musicAlbumList: (f: any) => invoke('music:albums:list', f),
+    musicAlbumCount: (f: any) => invoke('music:albums:count', f),
+    musicGetTracks: (f: any) => invoke('music:getTracks', f),
+    musicTrackList: (f: any) => invoke('music:tracks:list', f),
+    musicTrackCount: (f: any) => invoke('music:tracks:count', f),
+    musicGetTracksByAlbum: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_TRACKS_BY_ALBUM, id),
     musicGetAlbumCompleteness: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, id),
-    musicGetAllArtistCompleteness: (sId: string) => invoke(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, sId).then(r => r || []),
-    musicGetAlbumsNeedingUpgrade: (l: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUMS_NEEDING_UPGRADE, l).then(r => r || []),
+    musicGetAllArtistCompleteness: (sId: string) => invoke(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, sId),
+    musicGetAlbumsNeedingUpgrade: (l: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUMS_NEEDING_UPGRADE, l),
 
     // Sources
-    sourcesList: (t: any) => invoke(IPC_CHANNELS.SOURCES.LIST, t).then(r => r || []),
+    sourcesList: (t: any) => invoke(IPC_CHANNELS.SOURCES.LIST, t),
     sourcesGetActive: () => invoke(IPC_CHANNELS.SOURCES.GET_ACTIVE),
-    sourcesGetLibrariesWithStatus: (sId: string) => invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sId).then(r => r || []),
-    sourcesGetStats: (sId?: string) => invoke(IPC_CHANNELS.SOURCES.GET_STATS, sId).then(r => r || {}),
-    sourcesGetSupportedProviders: () => invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS).then(r => r || []),
+    sourcesGetLibrariesWithStatus: (sId: string) => invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sId),
+    sourcesGetStats: (sId?: string) => invoke(IPC_CHANNELS.SOURCES.GET_STATS, sId),
+    sourcesGetSupportedProviders: () => invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS),
     sourcesUpsert: (s: any) => invoke(IPC_CHANNELS.SOURCES.UPSERT, s),
     sourcesDelete: (id: string) => invoke(IPC_CHANNELS.SOURCES.DELETE, id),
     sourcesToggle: (id: string, e: boolean) => invoke(IPC_CHANNELS.SOURCES.TOGGLE, id, e),
@@ -174,23 +176,23 @@ export function setupRealIntegratedBridge() {
     jellyfinGetLibraries: (c: any) => invoke(IPC_CHANNELS.SOURCES.JELLYFIN.GET_LIBRARIES, c),
 
     // Series / Collections
-    seriesGetAll: (sId: string) => invoke('series:getAll', sId).then(r => r || []),
-    seriesGetEpisodes: (t: string, sId: string) => invoke('series:getEpisodes', t, sId).then(r => r || []),
-    collectionsGetAll: (sId: string) => invoke(IPC_CHANNELS.COLLECTIONS.GET_ALL, sId).then(r => r || []),
+    seriesGetAll: (sId: string) => invoke('series:getAll', sId),
+    seriesGetEpisodes: (t: string, sId: string) => invoke('series:getEpisodes', t, sId),
+    collectionsGetAll: (sId: string) => invoke(IPC_CHANNELS.COLLECTIONS.GET_ALL, sId),
 
     // Wishlist
-    wishlistGetAll: (f: any) => invoke(IPC_CHANNELS.WISHLIST.GET_ALL, f).then(r => r || []),
-    wishlistGetCount: () => invoke(IPC_CHANNELS.WISHLIST.GET_COUNT).then(r => r || 0),
-    wishlistGetCountsByReason: () => invoke(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON).then(r => r || {}),
-    wishlistGetRegion: () => invoke(IPC_CHANNELS.WISHLIST.GET_REGION).then(r => r || 'US'),
+    wishlistGetAll: (f: any) => invoke(IPC_CHANNELS.WISHLIST.GET_ALL, f),
+    wishlistGetCount: () => invoke(IPC_CHANNELS.WISHLIST.GET_COUNT),
+    wishlistGetCountsByReason: () => invoke(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON),
+    wishlistGetRegion: () => invoke(IPC_CHANNELS.WISHLIST.GET_REGION),
     wishlistAdd: (i: any) => invoke(IPC_CHANNELS.WISHLIST.ADD, i),
     wishlistDelete: (id: number) => invoke(IPC_CHANNELS.WISHLIST.DELETE, id),
     wishlistUpdateStatus: (id: number, s: string) => invoke(IPC_CHANNELS.WISHLIST.UPDATE_STATUS, id, s),
     wishlistUpdatePriority: (id: number, p: number) => invoke(IPC_CHANNELS.WISHLIST.UPDATE_PRIORITY, id, p),
 
     // AI
-    aiIsConfigured: () => invoke(IPC_CHANNELS.AI.IS_CONFIGURED).then(r => !!r),
-    aiGetRateLimitInfo: () => invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO).then(r => r || { limited: false, retryAfterSeconds: 0 }),
+    aiIsConfigured: () => invoke(IPC_CHANNELS.AI.IS_CONFIGURED),
+    aiGetRateLimitInfo: () => invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO),
     aiSendMessage: (p: any) => invoke(IPC_CHANNELS.AI.SEND_MESSAGE, p),
     aiQualityReport: (p: any) => invoke(IPC_CHANNELS.AI.QUALITY_REPORT, p),
     aiUpgradePriorities: (p: any) => invoke(IPC_CHANNELS.AI.UPGRADE_PRIORITIES, p),
@@ -210,16 +212,27 @@ export function setupRealIntegratedBridge() {
     dbIgnoreDuplicate: (sId: string, eId: string, t: string) => invoke(IPC_CHANNELS.DATABASE.IGNORE_DUPLICATE, sId, eId, t),
 
     // Task Queue
-    taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || { tasks: [], isPaused: false }),
+    taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || api.__taskState),
+    onTaskQueueUpdated: (cb: any) => {
+      api.__taskListeners = api.__taskListeners || []
+      api.__taskListeners.push(cb)
+      return () => { api.__taskListeners = api.__taskListeners.filter((l: any) => l !== cb) }
+    },
+    __triggerTaskQueueUpdate: (state: any) => {
+      api.__taskState = state
+      if (api.__taskListeners) {
+        api.__taskListeners.forEach((l: any) => l(state))
+      }
+    },
 
     // Metadata
     tmdbGetTVShowDetails: (id: string) => invoke('tmdb:getTVShowDetails', id),
 
-    getAppVersion: () => invoke('app:getVersion').then(r => r || '0.0.0'),
+    getAppVersion: () => invoke('app:getVersion'),
     openExternal: (url: string) => invoke('app:openExternal', url),
 
     // Auto Update
-    autoUpdateGetState: () => invoke(IPC_CHANNELS.AUTO_UPDATE.GET_STATE).then(r => r || { status: 'idle' }),
+    autoUpdateGetState: () => invoke(IPC_CHANNELS.AUTO_UPDATE.GET_STATE),
     autoUpdateCheckForUpdates: () => invoke(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES),
     autoUpdateDownloadUpdate: () => invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE),
     autoUpdateInstallUpdate: () => invoke(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE),

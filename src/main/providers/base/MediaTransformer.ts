@@ -442,7 +442,7 @@ export class MediaTransformer {
     const audioTracks: AudioTrack[] = (item.streamdetails?.audio || []).map((stream, index) => ({
       index,
       codec: normalizeAudioCodec(stream.codec),
-      channels: normalizeAudioChannels(stream.channels),
+      channels: normalizeAudioChannels(stream.channels, undefined),
       language: stream.language,
       bitrate: 0, 
       hasObjectAudio: hasObjectAudio(stream.codec, undefined, item.title, undefined),
@@ -502,7 +502,7 @@ export class MediaTransformer {
         type,
         series_title: item.showtitle,
         season_number: item.season,
-        episode_number: item.index,
+        episode_number: item.episode,
         file_path: version.file_path,
         file_size: version.file_size,
         duration: version.duration,
@@ -529,7 +529,7 @@ export class MediaTransformer {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as MediaItem,
-      versions: [{ ...version, media_item_id: 0 }],
+      versions: [version],
     }
   }
 }
