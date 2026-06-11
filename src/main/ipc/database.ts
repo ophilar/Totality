@@ -7,22 +7,20 @@ import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getGeminiService } from '@main/services/GeminiService'
 import { getTMDBService } from '@main/services/TMDBService'
 import { invalidateNfsMappingsCache } from '@main/providers/kodi/KodiDatabaseSchema'
-import { getErrorMessage, isNodeError, createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import fs from 'fs/promises'
 import {
   PositiveIntSchema,
   NonEmptyStringSchema,
   SettingKeySchema,
-  SettingValueSchema,
   MediaItemFiltersSchema,
   TVShowFiltersSchema,
   MediaItemSchema,
   QualityScoreSchema,
   NfsMappingsSchema,
   ExportCSVOptionsSchema,
-  AddExclusionSchema,
   OptionalSourceIdSchema,
-  FilePathSchema,
   LetterOffsetSchema,
   SetSettingTupleSchema,
   TestNfsMappingTupleSchema,
@@ -32,7 +30,7 @@ import {
 } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getSourceManager } from '@main/services/SourceManager'
-import { MediaItemType } from '@main/types/database'
+import { MediaItemType, MediaItemFilters } from '@main/types/database'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
@@ -41,6 +39,15 @@ import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
  */
 export function registerDatabaseHandlers() {
   const db = getDatabase()
+
+  // Media retrieval
+  ipcMain.handle('db:getMediaItems', async (_event, filters: MediaItemFilters) => {
+    return await db.media.getItems(filters)
+  })
+
+  ipcMain.handle('db:countMediaItems', async (_event, filters: MediaItemFilters) => {
+    return await db.media.count(filters)
+  })
 
   // Register generic list/count handlers
   registerListHandlers('db:media', (f: any) => db.media.getItems(f), (f: any) => db.media.count(f), MediaItemFiltersSchema, {

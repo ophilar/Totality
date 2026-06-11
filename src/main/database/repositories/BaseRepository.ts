@@ -1,8 +1,8 @@
-import type { Client, Value } from '@libsql/client'
+import type { Client } from '@libsql/client'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { getDatabase } from '@main/database/BetterSQLiteService'
-import { eq, sql, count, desc, asc, or, like } from 'drizzle-orm'
+import { eq, sql, count, desc, asc, or, like, inArray } from 'drizzle-orm'
 import { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
 /**
@@ -98,14 +98,12 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
       let totalRemoved = 0
       for (let i = 0; i < staleIds.length; i += batchSize) {
         const batch = staleIds.slice(i, i + batchSize)
-        const result = await this.db.execute({
-          sql: `DELETE FROM ${this.tableName} WHERE id IN (${batch.join(',')})`,
-          args: []
-        })
-        // LibSQL rowsAffected can be number or BigInt
+        const result = await this.drizzle.delete(this.table)
+          .where(inArray((this.table as any).id, batch))
+          .run()
         totalRemoved += Number(result.rowsAffected || 0)
       }
-      return totalRemoved || staleIds.length // Fallback to staleIds length if rowsAffected is 0 (some drivers)
+      return totalRemoved
     }
     return 0
   }

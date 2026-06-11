@@ -20,10 +20,9 @@ Conducted a deep review of the Totality codebase, focusing on security, database
   - Verified 790/790 tests pass successfully.
   - Confirmed "No Mocks" testing infrastructure using real in-memory SQLite instances is robust and effective.
 
-## Next Steps
-- [x] Address connection credential exposure by integrating `CredentialEncryptionService` into the media sources save/load paths.
-- [x] Call `migrateCredentials` on startup to encrypt any legacy plain-text connection configs.
-- [ ] Refactor raw SQL interpolation in `BaseRepository.reconcileStaleItems` to use `inArray`.
+- [x] Refactor raw SQL interpolation in `BaseRepository.reconcileStaleItems` to use `inArray`.
+- [x] Remove all silent try-catch blocks/failsafes in database encryption & startup routines to ensure Fail-Fast loud failures.
+- [x] Remove thin wrappers and re-exports in createHandler utility.
 
 ## Technical Changes & Implementation Details
 - **Credential Encryption Integration:**
@@ -32,8 +31,15 @@ Conducted a deep review of the Totality codebase, focusing on security, database
   - Modified [SourceRepository.ts:mapDrizzleToSources](file:///H:/Totality/src/main/database/repositories/SourceRepository.ts#L197-L210) to decrypt media source connection configs on retrieval, ensuring that downstream main-process services and the renderer receive decrypted data automatically.
   - Fixed an asynchronous callback bug in [CredentialEncryptionService.ts:migrateCredentials](file:///H:/Totality/src/main/services/CredentialEncryptionService.ts#L204-L209) to accept and await Promise-based database getters for sources and settings.
   - Hooked up `migrateCredentials` dynamically on startup inside [BetterSQLiteService.ts:initialize](file:///H:/Totality/src/main/database/BetterSQLiteService.ts#L80-L102) to automatically encrypt any existing connection configurations and settings on application load without blocking startup on errors.
+- **Fail-Fast Enforcement & Cleanup:**
+  - Removed silent try-catch error swallowing blocks from [SourceRepository.ts](file:///H:/Totality/src/main/database/repositories/SourceRepository.ts) in `upsertSource` and `mapDrizzleToSources`, ensuring database parsing issues throw loudly.
+  - Removed the try-catch block from [BetterSQLiteService.ts](file:///H:/Totality/src/main/database/BetterSQLiteService.ts) during startup credential migration, forcing loud failure if the system cannot securely migrate its configs.
+  - Removed thin re-exports of `getErrorMessage` and `isNodeError` from [createHandler.ts](file:///H:/Totality/src/main/ipc/utils/createHandler.ts) and cleaned up its imports.
+  - Updated [database.ts](file:///H:/Totality/src/main/ipc/database.ts) to import directly from its source utility file.
+  - Refactored [BaseRepository.ts:reconcileStaleItems](file:///H:/Totality/src/main/database/repositories/BaseRepository.ts#L93-L112) to use Drizzle's `inArray` instead of raw string interpolation, and removed the driver output fallback.
 - **Verification & Testing:**
   - Added a comprehensive integration test case in [SourceRepository.test.ts](file:///H:/Totality/tests/unit/SourceRepository.test.ts) verifying that credentials are encrypted in the raw database row but correctly decrypted when retrieved through the repository.
   - Verified zero TypeScript compiler errors (`tsc --noEmit`).
   - Verified 791/791 unit and integration tests pass successfully.
+
 

@@ -29,14 +29,9 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
 
   async upsertSource(source: Omit<MediaSource, 'id' | 'updated_at' | 'created_at'>): Promise<void> {
     const encryption = getCredentialEncryptionService()
-    let encryptedConfig = source.connection_config
-    try {
-      const parsed = JSON.parse(source.connection_config)
-      const encrypted = encryption.encryptConnectionConfig(parsed)
-      encryptedConfig = JSON.stringify(encrypted)
-    } catch (err) {
-      // Keep original config if JSON parsing fails (e.g. mock data in tests)
-    }
+    const parsed = JSON.parse(source.connection_config)
+    const encrypted = encryption.encryptConnectionConfig(parsed)
+    const encryptedConfig = JSON.stringify(encrypted)
 
     const data = {
       sourceId: source.source_id,
@@ -208,14 +203,9 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   private mapDrizzleToSources(rows: any[]): MediaSource[] {
     const encryption = getCredentialEncryptionService()
     return rows.map(r => {
-      let decryptedConfig = r.connectionConfig
-      try {
-        const parsed = JSON.parse(r.connectionConfig)
-        const decrypted = encryption.decryptConnectionConfig(parsed)
-        decryptedConfig = JSON.stringify(decrypted)
-      } catch (err) {
-        // Keep original if JSON parsing fails (e.g. mock data in tests)
-      }
+      const parsed = JSON.parse(r.connectionConfig)
+      const decrypted = encryption.decryptConnectionConfig(parsed)
+      const decryptedConfig = JSON.stringify(decrypted)
 
       return {
         id: r.id,

@@ -8,7 +8,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getErrorMessage, isNodeError } from '@main/services/utils/errorUtils'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
 import { validateInput } from '@main/validation/schemas'
@@ -23,8 +23,7 @@ export interface HandlerOptions {
   onError?: (channel: string, error: unknown) => void
 }
 
-// Re-export error utilities for consumers
-export { getErrorMessage, isNodeError }
+
 
 /**
  * Create a type-safe IPC handler with consistent validation and error handling.
@@ -36,7 +35,9 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<any>, TRet
   channel: string,
   schema: TSchema,
   handler: z.infer<TSchema> extends any[] 
-    ? (...args: z.infer<TSchema>) => Promise<TReturn>
+    ? (number extends z.infer<TSchema>['length']
+        ? (arg: z.infer<TSchema>) => Promise<TReturn>
+        : (...args: z.infer<TSchema>) => Promise<TReturn>)
     : (arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
@@ -76,7 +77,9 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<a
   channel: string,
   schema: TSchema,
   handler: z.infer<TSchema> extends any[] 
-    ? (event: IpcMainInvokeEvent, ...args: z.infer<TSchema>) => Promise<TReturn>
+    ? (number extends z.infer<TSchema>['length']
+        ? (event: IpcMainInvokeEvent, arg: z.infer<TSchema>) => Promise<TReturn>
+        : (event: IpcMainInvokeEvent, ...args: z.infer<TSchema>) => Promise<TReturn>)
     : (event: IpcMainInvokeEvent, arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
