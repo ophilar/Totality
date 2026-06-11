@@ -50,5 +50,6 @@ Conducted a deep review of the Totality codebase, focusing on security, database
   - Added the missing `mediaDeepAnalyze` method to the preload `mediaApi` definition in `src/preload/api/media.ts` so the renderer can invoke deep analysis cleanly.
   - Verified compilation (`tsc --noEmit`), Vite production builds (`vite build`), and all 791/791 tests passing successfully.
   - Removed standard Vitest mocks (`vi.mock`) for `TMDBService` and `MusicBrainzService` from `LocalFolderProviderReal.test.ts`. Pointed the real services to loopback endpoints served by `LocalIntegratedApiServer` and configured mock JSON handlers, verifying the real client implementation over loopback sockets.
-
-
+- **Indefinitely Postponed Features & Code Cleanup:**
+  - Removed remaining multi-select (batch selection) references from [MoviesView.tsx](file:///H:/Totality/src/renderer/src/components/library/MoviesView.tsx). Removed `CheckCircle2` and `Circle` imports, selection states (`selectionMode`, `selectedIds`, `toggleSelection`), click handler overrides, and checklist selection controls from the `MovieListItem` component.
+  - Documented that "Multi-Select Batching" and "Database Partitioning" are indefinitely postponed in [totality_roadmap.md](file:///H:/Totality/dev_docs/totality_roadmap.md) as there is no need for batch processing or partitioning at this scale yet.
