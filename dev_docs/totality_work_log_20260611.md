@@ -42,4 +42,12 @@ Conducted a deep review of the Totality codebase, focusing on security, database
   - Verified zero TypeScript compiler errors (`tsc --noEmit`).
   - Verified 791/791 unit and integration tests pass successfully.
 
+- **Refactoring & Silent Fallbacks Removal:**
+  - Removed silent error-swallowing try-catch block from `JellyfinEmbyBase.ts:getLibraries()` (user views endpoint) and updated the integration test mock for `/Users/u1/Views` in `ProviderIntegrationBlitz.test.ts`.
+  - Removed silent sequential scan fallback from `MediaFileAnalyzer.ts:analyzeFilesParallel()` when parallel worker pool initialization fails.
+  - Mocked `analyzeFilesParallel` in `LocalFolderProviderReal.test.ts` to execute sequentially under tests to respect system environment constraints cleanly.
+  - Removed internal try-catch swallowing blocks in `MediaFileAnalyzer.ts:deepAnalyzeFile()` for audio volume and bitrate variance detection, forcing loud failures, and updated corresponding test suite in `DeepMediaAnalysis.test.ts` to expect throw behaviors.
+  - Added the missing `mediaDeepAnalyze` method to the preload `mediaApi` definition in `src/preload/api/media.ts` so the renderer can invoke deep analysis cleanly.
+  - Verified compilation (`tsc --noEmit`), Vite production builds (`vite build`), and all 791/791 tests passing successfully.
+
 
