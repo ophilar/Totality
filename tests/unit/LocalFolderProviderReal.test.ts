@@ -3,43 +3,82 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 import { LibraryType } from '@main/types/database'
-import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, createTempDir, LocalIntegratedApiServer } from '@tests/TestUtils'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { PathUtils } from '@main/services/utils/PathUtils'
-
-// Mock TMDB so we don't hit real API
-vi.mock('../../src/main/services/TMDBService', () => ({
-  getTMDBService: () => ({
-    searchMovie: vi.fn().mockImplementation(async (title) => {
-      const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
-      return { results: [{ id, title, release_date: '2020-01-01' }] }
-    }),
-    searchMovieWithFallbacks: vi.fn().mockImplementation(async (title) => {
-      const id = title.includes('Stay') ? 111 : title.includes('Delete') ? 222 : 123
-      return { tmdbId: id, title, year: 2020 }
-    }),
-    getMovieDetails: vi.fn().mockResolvedValue({ id: 123, title: 'Test Movie' }),
-    buildImageUrl: vi.fn().mockReturnValue('http://image.url'),
-  }),
-}))
-
-// Mock MusicBrainzService
-vi.mock('../../src/main/services/MusicBrainzService', () => ({
-  getMusicBrainzService: () => ({
-    searchArtist: vi.fn().mockResolvedValue([{ name: 'Test Artist', id: 'artist-id' }]),
-    getArtistDetails: vi.fn().mockResolvedValue({ name: 'Test Artist' }),
-  }),
-}))
+import { getTMDBService } from '@main/services/TMDBService'
+import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 
 describe('LocalFolderProvider Integration (Real FS)', () => {
   let db: any
   let provider: LocalFolderProvider
   let tempDir: { path: string; cleanup: () => void }
+  let server: LocalIntegratedApiServer
   const sourceId = 'test-local'
 
   beforeEach(async () => {
     db = await setupTestDb()
     tempDir = createTempDir('local-provider-test')
+    
+    // Start local integrated mock API server
+    server = new LocalIntegratedApiServer()
+    await server.start()
+
+    // Configure base URLs in database settings to point to the local server
+    await db.config.setSetting('tmdb_base_url', `${server.url}/tmdb/`)
+    await db.config.setSetting('musicbrainz_base_url', `${server.url}/musicbrainz/`)
+
+    // Initialize real TMDB and MusicBrainz services with the new settings
+    const tmdb = getTMDBService()
+    await tmdb.initialize()
+    const mb = getMusicBrainzService()
+    await mb.initialize()
+
+    // Setup mock handlers on the local server
+    server.setHandler('/tmdb/search/movie', (req, body) => {
+      const url = new URL(req.url!, 'http://localhost')
+      const query = url.searchParams.get('query') || ''
+      const id = query.includes('Stay') ? 111 : query.includes('Delete') ? 222 : 123
+      return {
+        status: 200,
+        body: {
+          results: [{ id, title: query, release_date: '2020-01-01', poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg' }]
+        }
+      }
+    })
+
+    server.setHandler('/tmdb/search/tv', (req, body) => {
+      const url = new URL(req.url!, 'http://localhost')
+      const query = url.searchParams.get('query') || ''
+      return {
+        status: 200,
+        body: {
+          results: [{ id: 1234, name: query, poster_path: '/tv-poster.jpg' }]
+        }
+      }
+    })
+
+    server.setResponse('/tmdb/tv/1234/season/1', {
+      poster_path: '/season-poster.jpg'
+    })
+
+    server.setResponse('/tmdb/tv/1234/season/1/episode/1', {
+      still_path: '/episode-still.jpg'
+    })
+
+    server.setResponse('/tmdb/movie/123', {
+      id: 123,
+      title: 'Test Movie'
+    })
+
+    server.setHandler('/musicbrainz/artist', (req, body) => {
+      return {
+        status: 200,
+        body: {
+          artists: [{ name: 'Test Artist', id: 'artist-id', 'sort-name': 'Test Artist' }]
+        }
+      }
+    })
     
     // Setup real analyzer but mock ffprobe call
     const analyzer = getMediaFileAnalyzer()
@@ -87,7 +126,8 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     await db.config.setSetting('tmdb_api_key', 'fake-key')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await server.stop()
     tempDir.cleanup()
     cleanupTestDb()
   })
