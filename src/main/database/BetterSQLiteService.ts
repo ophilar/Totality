@@ -76,6 +76,34 @@ export class BetterSQLiteService {
 
     // Run migrations
     await runMigrations(client)
+
+    // Run credential encryption migration
+    try {
+      const { getCredentialEncryptionService } = await import('@main/services/CredentialEncryptionService')
+      
+      const encryption = getCredentialEncryptionService()
+      await encryption.migrateCredentials(
+        async () => this.sources.getSources(),
+        async (id, config) => {
+          const existing = await this.sources.getSourceById(id)
+          if (existing) {
+            await this.sources.upsertSource({
+              ...existing,
+              connection_config: config
+            })
+          }
+        },
+        async () => this.config.getAllSettings(),
+        async (key, val) => this.config.setSetting(key, val)
+      )
+    } catch (err) {
+      try {
+        const { getLoggingService } = await import('@main/services/LoggingService')
+        getLoggingService().error('[Database]', 'Failed to migrate credentials during initialization:', err)
+      } catch {
+        console.error('[Database] Failed to migrate credentials during initialization:', err)
+      }
+    }
   }
 
   public close(): void {

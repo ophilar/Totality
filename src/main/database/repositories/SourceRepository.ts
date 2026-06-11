@@ -1,6 +1,7 @@
 import { eq, and, sql } from 'drizzle-orm'
 import type { MediaSource } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { getCredentialEncryptionService } from '@main/services/CredentialEncryptionService'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -27,11 +28,21 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   }
 
   async upsertSource(source: Omit<MediaSource, 'id' | 'updated_at' | 'created_at'>): Promise<void> {
+    const encryption = getCredentialEncryptionService()
+    let encryptedConfig = source.connection_config
+    try {
+      const parsed = JSON.parse(source.connection_config)
+      const encrypted = encryption.encryptConnectionConfig(parsed)
+      encryptedConfig = JSON.stringify(encrypted)
+    } catch (err) {
+      // Keep original config if JSON parsing fails (e.g. mock data in tests)
+    }
+
     const data = {
       sourceId: source.source_id,
       sourceType: source.source_type,
       displayName: source.display_name,
-      connectionConfig: source.connection_config,
+      connectionConfig: encryptedConfig,
       isEnabled: source.is_enabled ? 1 : 0,
     }
 
@@ -195,17 +206,29 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   }
 
   private mapDrizzleToSources(rows: any[]): MediaSource[] {
-    return rows.map(r => ({
-      id: r.id,
-      source_id: r.sourceId,
-      source_type: r.sourceType as any,
-      display_name: r.displayName,
-      connection_config: r.connectionConfig,
-      is_enabled: r.isEnabled,
-      last_connected_at: r.lastConnectedAt || undefined,
-      last_scan_at: r.lastScanAt || undefined,
-      created_at: r.createdAt,
-      updated_at: r.updatedAt
-    }))
+    const encryption = getCredentialEncryptionService()
+    return rows.map(r => {
+      let decryptedConfig = r.connectionConfig
+      try {
+        const parsed = JSON.parse(r.connectionConfig)
+        const decrypted = encryption.decryptConnectionConfig(parsed)
+        decryptedConfig = JSON.stringify(decrypted)
+      } catch (err) {
+        // Keep original if JSON parsing fails (e.g. mock data in tests)
+      }
+
+      return {
+        id: r.id,
+        source_id: r.sourceId,
+        source_type: r.sourceType as any,
+        display_name: r.displayName,
+        connection_config: decryptedConfig,
+        is_enabled: r.isEnabled,
+        last_connected_at: r.lastConnectedAt || undefined,
+        last_scan_at: r.lastScanAt || undefined,
+        created_at: r.createdAt,
+        updated_at: r.updatedAt
+      }
+    })
   }
 }

@@ -89,6 +89,40 @@ describe('SourceRepository (Real DB)', () => {
     expect(sources).toHaveLength(2)
   })
 
+  it('should encrypt connection config at rest and decrypt it when retrieved', async () => {
+    const sourceId = 'src-enc-test'
+    const secretConfig = {
+      host: 'localhost',
+      token: 'super-secret-plex-token-123',
+      password: 'my-secure-password'
+    }
+
+    await repo.upsertSource({
+      source_id: sourceId,
+      source_type: 'plex',
+      display_name: 'Encrypted Source',
+      connection_config: JSON.stringify(secretConfig),
+      is_enabled: 1,
+    })
+
+    // Retrieve via repository (should be decrypted automatically)
+    const retrieved = await repo.getSourceById(sourceId)
+    expect(retrieved).toBeDefined()
+    const parsedConfig = JSON.parse(retrieved!.connection_config)
+    expect(parsedConfig.token).toBe('super-secret-plex-token-123')
+    expect(parsedConfig.password).toBe('my-secure-password')
+
+    // Query raw DB row to verify it is actually encrypted in SQLite
+    const rawResult = await db.db.execute({
+      sql: `SELECT connection_config FROM media_sources WHERE source_id = ?`,
+      args: [sourceId]
+    })
+    const rawVal = rawResult.rows[0].connection_config as string
+    expect(rawVal).not.toContain('super-secret-plex-token-123')
+    expect(rawVal).not.toContain('my-secure-password')
+    expect(rawVal).toContain('ENC:') // Prefix used by safeStorage
+  })
+
   describe('Library Scans', () => {
     const sourceId = 'src-lib-test'
     
