@@ -49,5 +49,6 @@ Conducted a deep review of the Totality codebase, focusing on security, database
   - Removed internal try-catch swallowing blocks in `MediaFileAnalyzer.ts:deepAnalyzeFile()` for audio volume and bitrate variance detection, forcing loud failures, and updated corresponding test suite in `DeepMediaAnalysis.test.ts` to expect throw behaviors.
   - Added the missing `mediaDeepAnalyze` method to the preload `mediaApi` definition in `src/preload/api/media.ts` so the renderer can invoke deep analysis cleanly.
   - Verified compilation (`tsc --noEmit`), Vite production builds (`vite build`), and all 791/791 tests passing successfully.
+  - Removed standard Vitest mocks (`vi.mock`) for `TMDBService` and `MusicBrainzService` from `LocalFolderProviderReal.test.ts`. Pointed the real services to loopback endpoints served by `LocalIntegratedApiServer` and configured mock JSON handlers, verifying the real client implementation over loopback sockets.
 
 
