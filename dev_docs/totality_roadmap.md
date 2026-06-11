@@ -76,3 +76,6 @@
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
 - [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
 
+## Indefinitely Postponed Features
+- **Multi-Select Batching**: Indefinitely postponed. The renderer-side selection states, context handlers, highlight classes, check overlays, and the BatchActionBar have been completely removed from the codebase. There is no need for batch processing at this time.
+- **Database Partitioning**: Indefinitely postponed. Deferred research and design for SQLite partitioning as scaling for extreme library sizes (100k+ items) is not currently required.

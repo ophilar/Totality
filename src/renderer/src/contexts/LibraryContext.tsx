@@ -35,12 +35,6 @@ interface LibraryContextType {
   // Selection
   activeSourceId: string | null
   setActiveSourceId: (id: string | null) => void
-  selectionMode: boolean
-  setSelectionMode: (enabled: boolean) => void
-  selectedIds: Set<number>
-  toggleSelection: (id: number) => void
-  clearSelection: () => void
-  selectAll: (ids: number[]) => void
   deepAnalyzeMedia: (filePath: string) => Promise<any>
 }
 
@@ -61,27 +55,6 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const [selectedShow, setSelectedShow] = useState<string | null>(null)
   const [selectedArtist, setSelectedArtist] = useState<MusicArtist | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<MusicAlbum | null>(null)
-
-  // Batch Selection State
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-
-  const toggleSelection = useCallback((id: number) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }, [])
-
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set())
-    setSelectionMode(false)
-  }, [])
-
-  const selectAll = useCallback((ids: number[]) => {
-    setSelectedIds(new Set(ids))
-  }, [])
 
   const deepAnalyzeMedia = useCallback(async (filePath: string) => {
     try {
@@ -110,9 +83,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
         }
       }
     })
-    // Reset selection when changing tabs
-    clearSelection()
-  }, [view, clearSelection])
+  }, [view])
 
   const setGridScale = useCallback((scale: number) => {
     setGridScaleState(scale)
@@ -144,8 +115,6 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       selectedAlbum, setSelectedAlbum,
       sortBy, setSortBy,
       activeSourceId, setActiveSourceId,
-      selectionMode, setSelectionMode,
-      selectedIds, toggleSelection, clearSelection, selectAll,
       deepAnalyzeMedia
     }}>
       {children}

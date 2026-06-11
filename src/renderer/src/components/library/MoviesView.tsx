@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, memo, useRef } from 'react'
-import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film, CheckCircle2, Circle } from 'lucide-react'
+import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film } from 'lucide-react'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { QualityBadges } from '@/components/library/QualityBadges'
 import { SlimDownBanner } from '@/components/library/SlimDownBanner'
@@ -7,7 +7,6 @@ import { ConversionRecommendation } from '@/components/library/ConversionRecomme
 import { MoviePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { useSources } from '@/contexts/SourceContext'
-import { useLibrary } from '@/contexts/LibraryContext'
 import { providerColors } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 
@@ -367,8 +366,6 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
 }
 
 const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; isExpanded?: boolean; onToggleOptimize?: () => void }) => {
-  const { selectionMode, selectedIds, toggleSelection } = useLibrary()
-  const isSelected = movie.id ? selectedIds.has(movie.id) : false
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
@@ -400,13 +397,8 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
     if (onToggleOptimize) onToggleOptimize()
   }
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    if (selectionMode && movie.id) {
-      e.stopPropagation()
-      toggleSelection(movie.id)
-    } else {
-      onClick()
-    }
+  const handleCardClick = () => {
+    onClick()
   }
 
   const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
@@ -415,22 +407,10 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
   return (
     <div
       tabIndex={0}
-      className={`focus-poster-only group cursor-pointer hover-scale outline-hidden relative ${isSelected ? 'scale-95' : ''}`}
+      className="focus-poster-only group cursor-pointer hover-scale outline-hidden relative"
       onClick={handleCardClick}
     >
-      {/* Selection Overlay */}
-      {selectionMode && (
-        <div className={`absolute top-2 right-2 z-30 p-1.5 rounded-full shadow-lg transition-all ${isSelected ? 'bg-primary text-primary-foreground opacity-100' : 'bg-black/40 text-white/60 opacity-0 group-hover:opacity-100'}`}>
-          {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-        </div>
-      )}
-      
-      {/* Selection Border */}
-      {selectionMode && isSelected && (
-        <div className="absolute inset-0 z-20 border-4 border-primary rounded-md pointer-events-none" />
-      )}
-
-      <div className={`aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30 ${selectionMode && isSelected ? 'opacity-80' : ''}`}>
+      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {showMenuButton && (
           <div ref={menuRef} className="absolute top-2 left-2 z-20">
             <button
@@ -516,8 +496,6 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
 })
 
 const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, onFixMatch, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize }: { movie: MediaItem; onClick: () => void; showSourceBadge?: boolean; collectionData?: MovieCollectionData; onFixMatch?: () => void; onRescan?: () => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; isExpanded?: boolean; onToggleOptimize?: () => void }) => {
-  const { selectionMode, selectedIds, toggleSelection } = useLibrary()
-  const isSelected = movie.id ? selectedIds.has(movie.id) : false
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
@@ -527,26 +505,12 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
   const handleDismissUpgrade = (e: React.MouseEvent) => { e.stopPropagation(); setShowMenu(false); if (onDismissUpgrade) onDismissUpgrade(movie) }
   const handleToggleOptimize = (e: React.MouseEvent) => { e.stopPropagation(); setShowMenu(false); if (onToggleOptimize) onToggleOptimize() }
 
-  const handleItemClick = (e: React.MouseEvent) => {
-    if (selectionMode && movie.id) {
-      e.stopPropagation()
-      toggleSelection(movie.id)
-    } else {
-      onClick()
-    }
-  }
-
   const formatBitrate = (kbps: number) => kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${kbps} kbps`
   const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
   const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
-    <div tabIndex={0} className={`group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10 flex items-center gap-4 ${isSelected ? 'bg-primary/10' : ''}`} onClick={handleItemClick}>
-      {selectionMode && (
-        <div className={`shrink-0 transition-colors ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
-          {isSelected ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-        </div>
-      )}
+    <div tabIndex={0} className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10 flex items-center gap-4" onClick={onClick}>
       <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center flex-1">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 relative shadow-sm">
