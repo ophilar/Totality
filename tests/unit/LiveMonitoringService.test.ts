@@ -3,11 +3,15 @@ import { LiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
 
-// Mock child_process.exec
+// Mock child_process
 vi.mock('child_process', () => ({
   exec: (cmd: string, options: any, callback: any) => {
     if (typeof options === 'function') callback = options
     callback(null, { stdout: 'DeviceID DriveType\nC: 3\n' })
+  },
+  execFile: (cmd: string, args: any[], options: any, callback: any) => {
+    if (typeof options === 'function') callback = options
+    callback(null, { stdout: '' })
   },
   promisify: (fn: any) => {
     return (...args: any[]) => new Promise((resolve) => {

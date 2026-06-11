@@ -105,6 +105,9 @@ export interface AnalyzedAudioStream {
   title?: string
   isDefault: boolean
   hasObjectAudio: boolean
+  peakVolumeDB?: number
+  meanVolumeDB?: number
+  lufsLoudness?: number
 }
 
 export interface AnalyzedSubtitleStream {
@@ -143,6 +146,13 @@ export interface FileAnalysisResult {
     streamIndex?: number
   }
   embeddedMetadata?: EmbeddedMetadataTags
+  deepAnalysis?: {
+    peakBitrate?: number
+    avgBitrate?: number
+    bitrateVariance?: number
+    isVariableBitrate?: boolean
+    scanDurationMs?: number
+  }
 }
 
 

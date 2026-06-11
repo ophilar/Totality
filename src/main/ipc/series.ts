@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getTMDBService } from '@main/services/TMDBService'

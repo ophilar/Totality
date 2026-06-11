@@ -1,7 +1,6 @@
 import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
-import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -155,7 +154,6 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       seriesTitle: data.series_title,
       sourceId: data.source_id || '',
       libraryId: data.library_id || '',
-      plexId: data.plex_id || '',
       totalSeasons: data.total_seasons,
       totalEpisodes: data.total_episodes,
       ownedSeasons: data.owned_seasons,

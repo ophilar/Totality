@@ -9,7 +9,7 @@ import type { WishlistItem } from '@main/types/database'
 import type { StoreRegion } from '@main/services/StoreSearchService'
 import { PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '@main/validation/schemas'
 import { z } from 'zod'
-import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 

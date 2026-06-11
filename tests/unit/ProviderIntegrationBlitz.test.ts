@@ -91,6 +91,13 @@ describe('Provider Integration (No Mocks)', () => {
         { Name: 'TV', CollectionType: 'tvshows', Id: 'l2' }
       ])
 
+      server.setResponse('/Users/u1/Views', {
+        Items: [
+          { Name: 'Movies', CollectionType: 'movies', Id: 'l1', ItemCount: 10 },
+          { Name: 'TV', CollectionType: 'tvshows', Id: 'l2', ItemCount: 20 }
+        ]
+      })
+
       const auth = await provider.authenticate({ serverUrl: server.url, username: 'test', password: 'password' })
       expect(auth.success).toBe(true)
 

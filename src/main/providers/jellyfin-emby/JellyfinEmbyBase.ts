@@ -25,6 +25,7 @@ import { getMovieCollectionService } from '@main/services/MovieCollectionService
 import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 
 // Jellyfin/Emby API response types
 export interface JellyfinAuthResponse {
@@ -255,23 +256,20 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     const userId = this.client.getUserId()
     try {
       if (userId) {
-        try {
-          const response = await this.client.get<{ Items: JellyfinLibrary[] }>(`/Users/${userId}/Views`)
-          const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed', 'boxsets', 'music']
-          const libraries = (response.Items || [])
-            .filter(lib => {
-              const collType = (lib.CollectionType || '').toLowerCase()
-              return mediaTypes.includes(collType) || !lib.CollectionType
-            })
-            .map(lib => ({
-              id: lib.Id,
-              name: lib.Name,
-              type: this.mapper.mapLibraryType(lib.CollectionType),
-              collectionType: (lib.CollectionType || '').toLowerCase(),
-              itemCount: lib.ItemCount,
-            }))
-          if (libraries.length > 0) return libraries
-        } catch { /* fallback */ }
+        const response = await this.client.get<{ Items: JellyfinLibrary[] }>(`/Users/${userId}/Views`)
+        const mediaTypes = ['movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed', 'boxsets', 'music']
+        return (response.Items || [])
+          .filter(lib => {
+            const collType = (lib.CollectionType || '').toLowerCase()
+            return mediaTypes.includes(collType) || !lib.CollectionType
+          })
+          .map(lib => ({
+            id: lib.Id,
+            name: lib.Name,
+            type: this.mapper.mapLibraryType(lib.CollectionType),
+            collectionType: (lib.CollectionType || '').toLowerCase(),
+            itemCount: lib.ItemCount,
+          }))
       }
       const response = await this.client.get<JellyfinLibrary[] | { Items: JellyfinLibrary[] }>('/Library/VirtualFolders')
       const folders = Array.isArray(response) ? response : response.Items || []

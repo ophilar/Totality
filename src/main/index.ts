@@ -37,6 +37,7 @@ import { registerAutoUpdateHandlers } from '@main/ipc/autoUpdate'
 import { registerGeminiHandlers } from '@main/ipc/gemini'
 import { registerDuplicateHandlers } from '@main/ipc/duplicates'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { registerMediaHandlers } from '@main/ipc/media'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { getLoggingService } from '@main/services/LoggingService'
@@ -243,6 +244,7 @@ app.whenReady().then(async () => {
     registerGeminiHandlers()
     registerDuplicateHandlers()
     registerTranscodingHandlers()
+    registerMediaHandlers()
 
     await getLiveMonitoringService().initialize()
 

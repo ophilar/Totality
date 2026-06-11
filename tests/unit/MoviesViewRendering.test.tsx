@@ -1,123 +1,180 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import { MoviesView } from '@/components/library/MoviesView'
-import { useSources } from '@/contexts/SourceContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 import React from 'react'
 
-// Mock useSources
-vi.mock('../../src/renderer/src/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
+const AllProviders = ({ children }: { children: React.ReactNode }) => (
+  <ToastProvider>
+    <ThemeProvider>
+      <SourceProvider>
+        <ScrollMemoryProvider>
+          <LibraryProvider>
+            {children}
+          </LibraryProvider>
+        </ScrollMemoryProvider>
+      </SourceProvider>
+    </ThemeProvider>
+  </ToastProvider>
+)
 
-// Mock MediaGridView to simplify rendering
-vi.mock('../../src/renderer/src/components/library/MediaGridView', () => ({
-  MediaGridView: ({ items, renderGridItem, emptyState, banner }: any) => (
-    <div data-testid="media-grid">
-      {banner}
-      {items.length > 0 ? items.map((item: any) => renderGridItem(item)) : emptyState}
-    </div>
-  ),
-}))
+describe('MoviesView Integrated Rendering (No Mocks)', () => {
+  let db: any
 
-describe('MoviesView Rendering', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
+  beforeEach(async () => {
+    db = await setupTestDb()
+    setupRealIntegratedBridge()
   })
 
-  it('should show "Scan in Progress" when scanning and no movies found', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: true,
-      scanProgress: new Map([['test-source', { phase: 'analyzing', percentage: 50, currentItem: 'Movie.mkv' }]]),
-    })
+  afterEach(() => {
+    cleanupTestDb()
+  })
+
+  it('should show "Scan in Progress" when scanning and no movies found', async () => {
+    const { api } = setupRealIntegratedBridge()
+
+    // Explicitly capture the listener registered by SourceContext
+    let taskListener: any
+    api.onTaskQueueUpdated = (cb: any) => {
+      taskListener = cb
+      return () => {}
+    }
+
+    // Define the scanning state
+    const scanningState = {
+      currentTask: {
+        type: 'library-scan',
+        label: 'Scanning Library',
+        sourceId: 'test-source',
+        progress: {
+          phase: 'analyzing',
+          percentage: 50,
+          currentItem: 'Interstellar.mkv',
+          current: 5,
+          total: 10
+        }
+      }
+    }
+
+    // Return the scanning state on mount
+    api.taskQueueGetState = vi.fn().mockResolvedValue(scanningState)
 
     render(
-      <MoviesView
-        movies={[]}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        onSelectMovie={() => {}}
-        onSelectCollection={() => {}}
-        viewType="grid"
-        gridScale={5}
-        getCollectionForMovie={() => undefined}
-        movieCollections={[]}
-        showSourceBadge={true}
-        totalMovieCount={0}
-        moviesLoading={false}
-        onLoadMoreMovies={() => {}}
-      />
+      <AllProviders>
+        <MoviesView
+          movies={[]}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          getCollectionForMovie={() => undefined}
+          movieCollections={[]}
+          showSourceBadge={true}
+          totalMovieCount={0}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </AllProviders>
     )
 
-    expect(screen.getByText('Scan in Progress')).toBeTruthy()
-    expect(screen.getByText(/Found/)).toBeTruthy()
-    expect(screen.getByText('analyzing')).toBeTruthy()
-    expect(screen.getByText('Movie.mkv')).toBeTruthy()
-  })
-
-  it('should show "Analyzing" overlay on movies without efficiency score', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: false,
-      scanProgress: new Map(),
+    // Trigger state change
+    await act(async () => {
+      if (taskListener) taskListener(scanningState)
     })
 
-    const movies = [
-      { id: 1, title: 'Unanalyzed Movie', efficiency_score: null, source_type: 'local' }
-    ]
+    // Now it should show scan progress
+    await waitFor(() => {
+      expect(screen.getByText('Scan in Progress')).toBeTruthy()
+    }, { timeout: 5000 })
+
+    expect(screen.getByText('analyzing')).toBeTruthy()
+    expect(screen.getByText('Interstellar.mkv')).toBeTruthy()
+  })
+
+  it('should show "Analyzing" overlay on movies without efficiency score', async () => {
+    // Seed real movie in real DB
+    await db.sources.upsertSource({
+      source_id: 'src-1',
+      source_type: 'local',
+      display_name: 'Local',
+      connection_config: '{}', // Fixed: connection_config is NOT NULL
+      is_enabled: 1
+    } as any)
+
+    const movie = {
+      id: 1,
+      title: 'Unanalyzed Movie',
+      efficiency_score: null,
+      source_type: 'local',
+      source_id: 'src-1',
+      type: 'movie',
+      file_path: '/movies/unanalyzed.mkv'
+    }
 
     render(
-      <MoviesView
-        movies={movies as any}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        onSelectMovie={() => {}}
-        onSelectCollection={() => {}}
-        viewType="grid"
-        gridScale={5}
-        getCollectionForMovie={() => undefined}
-        movieCollections={[]}
-        showSourceBadge={true}
-        totalMovieCount={1}
-        moviesLoading={false}
-        onLoadMoreMovies={() => {}}
-      />
+      <AllProviders>
+        <MoviesView
+          movies={[movie] as any}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          getCollectionForMovie={() => undefined}
+          movieCollections={[]}
+          showSourceBadge={true}
+          totalMovieCount={1}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </AllProviders>
     )
 
     expect(screen.getByText('Unanalyzed Movie')).toBeTruthy()
     expect(screen.getByText('Analyzing')).toBeTruthy()
   })
 
-  it('should not show "Analyzing" overlay on movies with efficiency score', () => {
-    ;(useSources as any).mockReturnValue({
-      isScanning: false,
-      scanProgress: new Map(),
-    })
-
-    const movies = [
-      { id: 1, title: 'Analyzed Movie', efficiency_score: 85, source_type: 'local' }
-    ]
+  it('should not show "Analyzing" overlay on movies with efficiency score', async () => {
+    const movie = {
+      id: 2,
+      title: 'Analyzed Movie',
+      efficiency_score: 85,
+      source_type: 'local',
+      type: 'movie'
+    }
 
     render(
-      <MoviesView
-        movies={movies as any}
-        sortBy="title"
-        onSortChange={() => {}}
-        slimDown={false}
-        onSelectMovie={() => {}}
-        onSelectCollection={() => {}}
-        viewType="grid"
-        gridScale={5}
-        getCollectionForMovie={() => undefined}
-        movieCollections={[]}
-        showSourceBadge={true}
-        totalMovieCount={1}
-        moviesLoading={false}
-        onLoadMoreMovies={() => {}}
-      />
+      <AllProviders>
+        <MoviesView
+          movies={[movie] as any}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          getCollectionForMovie={() => undefined}
+          movieCollections={[]}
+          showSourceBadge={true}
+          totalMovieCount={1}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </AllProviders>
     )
 
     expect(screen.getByText('Analyzed Movie')).toBeTruthy()

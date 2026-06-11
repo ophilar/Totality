@@ -1,3 +1,6 @@
+import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 import { KodiRpcClient } from '@main/providers/kodi/KodiRpcClient'
 import { KodiItemMapper } from '@main/providers/kodi/KodiItemMapper'
 import {
@@ -18,7 +21,6 @@ import {
 } from '@main/providers/base/MusicScannerUtils'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
-import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 // Kodi JSON-RPC types (exported for mapper)
 export interface KodiMovie {

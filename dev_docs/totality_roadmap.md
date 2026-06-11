@@ -70,8 +70,9 @@
 - [x] **Security Hardening**: Fixed command injection vulnerabilities in Transcoding and Kodi discovery.
 - [x] **Performance Optimization**: Implemented async fs checks and Plex fetching optimizations.
 - [x] **Logging Standardization**: Centralized console logging across all specialized library views.
+- [x] **Build Stabilization**: Resolved 84 compilation errors and structural corruption across 20 files. (v0.4.8)
 - [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode). (v0.4.8)
-- [ ] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection.
+- [x] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection. (v0.4.8)
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
 - [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
 

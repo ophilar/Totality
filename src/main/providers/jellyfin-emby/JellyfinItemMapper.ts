@@ -1,14 +1,6 @@
 import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 import {
-  normalizeVideoCodec,
-  normalizeAudioCodec,
-  normalizeResolution,
-  normalizeHdrFormat,
   normalizeBitrate,
-  normalizeAudioChannels,
-  normalizeSampleRate,
-  normalizeContainer,
-  hasObjectAudio,
 } from '@main/services/MediaNormalizer'
 import {
   isLosslessCodec,
@@ -218,20 +210,5 @@ export class JellyfinItemMapper {
     return title.toLowerCase().trim()
       .replace(/\s*[-:(]\s*(director'?s?\s*cut|extended|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition)\s*[):]?\s*$/i, '')
       .replace(/\s*\(\s*\)\s*$/, '').trim()
-  }
-
-  private async getAudioBitratesViaFFprobe(filePath: string): Promise<Map<number, number> | null> {
-    if (!filePath || !fs.existsSync(filePath)) return null
-    try {
-      const analyzer = getMediaFileAnalyzer()
-      if (!await analyzer.isAvailable()) return null
-      const result = await analyzer.analyzeFile(filePath)
-      if (!result.success || result.audioTracks.length === 0) return null
-      const bitrateMap = new Map<number, number>()
-      for (const track of result.audioTracks) {
-        if (track.bitrate) bitrateMap.set(track.index, track.bitrate)
-      }
-      return bitrateMap.size > 0 ? bitrateMap : null
-    } catch { return null }
   }
 }

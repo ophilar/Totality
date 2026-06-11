@@ -64,7 +64,6 @@ export function MoviesView({
   onLoadMoreMovies: () => void
   collectionsOnly?: boolean
 }) {
-  const { selectionMode, selectedIds, toggleSelection } = useLibrary()
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
 
   const toggleRecommendation = useCallback((id: number) => {

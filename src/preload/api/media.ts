@@ -137,6 +137,8 @@ export const mediaApi = {
   removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, options),
 }
 
 export interface MediaAPI {
@@ -327,6 +329,20 @@ export interface MediaAPI {
     artists: Array<{ id: number; name: string; thumb_url?: string }>
     albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
     tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string }>
+  }>
+
+  // Deep Analysis
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) => Promise<{
+    success: boolean
+    error?: string
+    audioTracks?: Array<{ index: number; peakVolumeDB?: number; meanVolumeDB?: number }>
+    deepAnalysis?: {
+      peakBitrate?: number
+      avgBitrate?: number
+      bitrateVariance?: number
+      isVariableBitrate?: boolean
+      scanDurationMs?: number
+    }
   }>
 
   // Exclusions

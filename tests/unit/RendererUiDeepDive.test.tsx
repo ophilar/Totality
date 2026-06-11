@@ -14,6 +14,10 @@ import { registerSourceHandlers } from '@main/ipc/sources'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { registerSeriesHandlers } from '@main/ipc/series'
 import { registerDuplicateHandlers } from '@main/ipc/duplicates'
+import { registerMusicHandlers } from '@main/ipc/music'
+import { registerWishlistHandlers } from '@main/ipc/wishlist'
+import { registerGeminiHandlers } from '@main/ipc/gemini'
+import { sql } from 'drizzle-orm'
 import React from 'react'
 
 describe('Renderer UI Deep Dive (Integrated Stack)', () => {
@@ -35,6 +39,9 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
     registerTranscodingHandlers()
     registerSeriesHandlers()
     registerDuplicateHandlers()
+    registerMusicHandlers()
+    registerWishlistHandlers()
+    registerGeminiHandlers()
   })
 
   afterEach(async () => {
@@ -57,9 +64,11 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
       await db.sources.upsertSource({ 
         source_id: 's1', source_type: 'local', display_name: 'Local', is_enabled: 1, connection_config: '{}' 
       })
+      const now = new Date().toISOString()
+      await db.drizzle.run(sql`INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, is_protected, created_at, updated_at) VALUES ('s1', 'lib1', 'Library 1', 'movie', 1, 0, ${now}, ${now})`)
       
       const mediaId = await db.media.upsertItem({
-        source_id: 's1', plex_id: 'm1', title: 'Details Movie', type: 'movie', file_path: 'movie.mkv',
+        source_id: 's1', library_id: 'lib1', plex_id: 'm1', title: 'Details Movie', type: 'movie', file_path: 'movie.mkv',
         resolution: '4K', video_codec: 'hevc', video_bitrate: 50000
       } as any)
 
@@ -83,9 +92,11 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
       await db.sources.upsertSource({ 
         source_id: 's1', source_type: 'local', display_name: 'Local', is_enabled: 1, connection_config: '{}' 
       })
+      const now = new Date().toISOString()
+      await db.drizzle.run(sql`INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, is_protected, created_at, updated_at) VALUES ('s1', 'lib1', 'Library 1', 'movie', 1, 0, ${now}, ${now})`)
 
       const mediaId = await db.media.upsertItem({
-        source_id: 's1', plex_id: 'u1', title: 'Bad Quality Movie', type: 'movie', file_path: 'bad.mkv'
+        source_id: 's1', library_id: 'lib1', plex_id: 'u1', title: 'Bad Quality Movie', type: 'movie', file_path: 'bad.mkv'
       } as any)
 
       await db.media.upsertQualityScore({

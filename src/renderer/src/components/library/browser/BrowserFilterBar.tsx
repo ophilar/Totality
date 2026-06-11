@@ -1,6 +1,6 @@
 
 
-import { Unlock, Lock, Layers, Grid3x3, List, CheckSquare } from 'lucide-react'
+import { Unlock, Lock, Layers, Grid3x3, List } from 'lucide-react'
 
 interface BrowserFilterBarProps {
   view: string
@@ -27,10 +27,6 @@ interface BrowserFilterBarProps {
   viewType: string
   setViewType: (val: any) => void
   selectedShow: any
-  // Selection props
-  selectionMode?: boolean
-  setSelectionMode?: (val: boolean) => void
-  selectedCount?: number
 }
 
 export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
@@ -49,27 +45,12 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
   gridScale, setGridScale,
   viewType, setViewType,
   selectedShow,
-  selectionMode,
-  setSelectionMode,
-  selectedCount = 0
 }) => {
   return (
     <div className="shrink-0 py-3 px-4">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Selection Mode */}
-            {setSelectionMode && (
-              <button
-                onClick={() => setSelectionMode(!selectionMode)}
-                className={`px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5 ${selectionMode ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-              >
-                <CheckSquare className="w-3.5 h-3.5" />
-                <span>{selectionMode ? `Selecting (${selectedCount})` : 'Select'}</span>
-              </button>
-            )}
-            {setSelectionMode && <div className="h-6 w-px bg-border/50" />}
-
             {/* Music View Mode */}
             {view === 'music' && (
               <div className="flex items-center gap-2">

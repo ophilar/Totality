@@ -49,7 +49,7 @@ export async function runMigrations(db: Client): Promise<void> {
       } catch (err) {
         const msg = getErrorMessage(err)
         if (msg.includes('already exists')) continue
-        console.error(`[DatabaseMigration] Schema statement failed: "${sql.substring(0, 100)}..." Error: ${msg}`)
+        getLoggingService().error('[DatabaseMigration]', `Schema statement failed: "${sql.substring(0, 100)}..." Error: ${msg}`)
       }
     }
     getLoggingService().debug('[DatabaseMigration]', 'Baseline schema applied/verified')

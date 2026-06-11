@@ -51,7 +51,6 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
         completedAt: entry.completed_at || null,
         durationMs: entry.duration_ms || null,
         recordedAt: now,
-        updatedAt: now,
       })
       .returning({ id: schema.taskHistory.id })
     

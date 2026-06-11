@@ -53,6 +53,15 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
       }
     })
     vi.spyOn(analyzer, 'isAvailable').mockResolvedValue(true)
+    vi.spyOn(analyzer, 'analyzeFilesParallel').mockImplementation(async (filePaths, onProgress) => {
+      const results = new Map()
+      for (let i = 0; i < filePaths.length; i++) {
+        const filePath = filePaths[i]
+        onProgress?.(i + 1, filePaths.length, path.basename(filePath))
+        results.set(filePath, await analyzer.analyzeFile(filePath))
+      }
+      return results
+    })
 
     // Correctly initialize with SourceConfig object
     provider = new LocalFolderProvider({

@@ -355,6 +355,7 @@ export interface SeriesCompleteness {
   poster_url?: string | null | undefined
   backdrop_url?: string | null | undefined
   status?: string // "Returning Series", "Ended", "Canceled"
+  user_fixed_match?: boolean
 
   last_sync_at?: string
 

@@ -3,7 +3,7 @@ import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import { getLoggingService } from '@main/services/LoggingService'
 import path from 'path'
 import fs from 'fs/promises'
-import { createIpcHandler, createIpcHandlerWithEvent, createSyncHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { z } from 'zod'
 
 export function registerLoggingHandlers(): void {
@@ -34,7 +34,7 @@ export function registerLoggingHandlers(): void {
 
   createIpcHandler(IPC_CHANNELS.LOGGING.IS_VERBOSE, async () => service.isVerboseEnabled())
   createIpcHandler(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS, async () => service.getFileLoggingSettings())
-  createIpcHandler(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, async (settings) => {
+  createIpcHandler(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, async (settings: any) => {
     service.updateFileLoggingSettings(settings)
     return { success: true }
   })

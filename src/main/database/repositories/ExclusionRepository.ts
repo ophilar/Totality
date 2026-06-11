@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, sql } from 'drizzle-orm'
+import { eq, and, desc, asc } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
@@ -43,7 +43,6 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
         parentKey: exclusion.parent_key ?? null,
         title: exclusion.title ?? null,
         createdAt: now,
-        updatedAt: now,
       })
       .onConflictDoNothing()
   }
@@ -57,7 +56,6 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
       parentKey: e.parent_key ?? null,
       title: e.title ?? null,
       createdAt: now,
-      updatedAt: now,
     }))
     
     const chunkSize = 100
