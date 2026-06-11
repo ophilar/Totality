@@ -202,9 +202,9 @@ export class CredentialEncryptionService {
    * Call this during app initialization to encrypt any existing unencrypted credentials
    */
   async migrateCredentials(
-    getMediaSources: () => Array<{ source_id: string; connection_config: string }>,
+    getMediaSources: () => Promise<Array<{ source_id: string; connection_config: string }>> | Array<{ source_id: string; connection_config: string }>,
     updateMediaSource: (sourceId: string, connectionConfig: string) => Promise<void>,
-    getSettings: () => Record<string, string>,
+    getSettings: () => Promise<Record<string, string>> | Record<string, string>,
     setSetting: (key: string, value: string) => Promise<void>
   ): Promise<{ sourcesEncrypted: number; settingsEncrypted: number }> {
     let sourcesEncrypted = 0
@@ -218,7 +218,7 @@ export class CredentialEncryptionService {
     getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Starting credential migration...')
 
     // Migrate media source credentials
-    const sources = getMediaSources()
+    const sources = await getMediaSources()
     for (const source of sources) {
       try {
         const config = JSON.parse(source.connection_config)
@@ -244,7 +244,7 @@ export class CredentialEncryptionService {
     }
 
     // Migrate sensitive settings
-    const settings = getSettings()
+    const settings = await getSettings()
     for (const key of SENSITIVE_SETTINGS_KEYS) {
       const value = settings[key]
       if (value && !this.isEncrypted(value)) {
