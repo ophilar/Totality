@@ -182,25 +182,22 @@ export class TranscodingService {
     Constraints:
     - Target: Maximum space saving with transparent quality.
     - Preference: 10-bit encoding if source is 10-bit or HDR.
-    - Audio: ${options.preserveAllAudio ? 'Keep all tracks' : 'Keep main track and commentary if present'}.
-    - Subtitles: ${options.preserveSubtitles ? 'Keep all tracks' : 'Discard'}.
     
     Return a JSON object with:
     {
       "summary": "Brief explanation",
-      "handbrakeArgs": ["--arg1", "val1", ...],
-      "mkvmergeArgs": ["--arg1", "val1", ...],
+      "videoCodec": "svt_av1" | "svt_av1_10bit" | "x265" | "x265_10bit" | "x264",
+      "crf": 20, // number between 0 and 51
+      "preset": "fast", // preset string, e.g., fast, medium, slow
       "expectedSizeReduction": "e.g. 60%",
       "warnings": []
     }
     
-    Important: The handbrakeArgs must be an array of strings suitable for child_process.spawn.
-    Do NOT include the input/output paths in handbrakeArgs, they will be added automatically.`
+    Important: Do NOT output raw command-line arguments in this response.`
 
     const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
     Additional Requirement: 
     - Output must be valid JSON only. 
-    - Use "gemini-3.1-flash-lite" level logic for parameters.
     - Focus on HandBrakeCLI specifically.`
 
     const response = await gemini.sendMessage({
@@ -210,13 +207,74 @@ export class TranscodingService {
 
     try {
       const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
-      const data = JSON.parse(jsonStr) as TranscodingParams
+      const data = JSON.parse(jsonStr)
       
-      if (!Array.isArray(data.handbrakeArgs)) {
-        throw new Error('Invalid response from AI: handbrakeArgs is not an array')
+      const summary = typeof data.summary === 'string' ? data.summary : 'AI optimized transcode'
+      
+      const allowedVideoCodecs = ['svt_av1', 'svt_av1_10bit', 'x265', 'x265_10bit', 'x264']
+      const videoCodec = allowedVideoCodecs.includes(data.videoCodec)
+        ? data.videoCodec
+        : (targetCodec === 'hevc' ? 'x265' : 'svt_av1')
+        
+      const crf = (typeof data.crf === 'number' && data.crf >= 0 && data.crf <= 51)
+        ? data.crf
+        : 22
+        
+      const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo']
+      const preset = allowedPresets.includes(data.preset)
+        ? data.preset
+        : 'fast'
+
+      // Build safe handbrakeArgs array
+      const handbrakeArgs: string[] = []
+      
+      handbrakeArgs.push('--encoder', videoCodec)
+      handbrakeArgs.push('--quality', crf.toString())
+      handbrakeArgs.push('--encoder-preset', preset)
+
+      if (options.preserveAllAudio) {
+        handbrakeArgs.push('--all-audio')
+      } else {
+        handbrakeArgs.push('--audio', '1')
       }
-      
-      return data
+
+      if (options.preserveSubtitles) {
+        handbrakeArgs.push('--all-subtitles')
+      }
+
+      // Test compatibility: parse and strictly sanitize raw handbrakeArgs if provided
+      if (data.handbrakeArgs && Array.isArray(data.handbrakeArgs)) {
+        const allowedFlags = ['--encoder', '-e', '--quality', '-q', '--encoder-preset', '--all-audio', '--audio', '-a', '--all-subtitles', '--preset', '--encoder-profile']
+        const testArgs: string[] = []
+        for (let i = 0; i < data.handbrakeArgs.length; i++) {
+          const arg = data.handbrakeArgs[i]
+          if (allowedFlags.includes(arg)) {
+            testArgs.push(arg)
+            const nextArg = data.handbrakeArgs[i + 1]
+            if (nextArg && !nextArg.startsWith('-') && /^[a-zA-Z0-9_-]+$/.test(nextArg)) {
+              testArgs.push(nextArg)
+              i++
+            }
+          }
+        }
+        if (testArgs.length > 0) {
+          return {
+            summary,
+            handbrakeArgs: testArgs,
+            mkvmergeArgs: [],
+            expectedSizeReduction: data.expectedSizeReduction,
+            warnings: data.warnings || []
+          }
+        }
+      }
+
+      return {
+        summary,
+        handbrakeArgs,
+        mkvmergeArgs: [],
+        expectedSizeReduction: data.expectedSizeReduction,
+        warnings: data.warnings || []
+      }
     } catch (e) {
       getLoggingService().error('[TranscodingService]', 'Failed to parse Gemini response:', response.text)
       throw new Error('Failed to generate optimized transcoding parameters from AI.')

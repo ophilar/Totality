@@ -71,11 +71,12 @@
 - [x] **Performance Optimization**: Implemented async fs checks and Plex fetching optimizations.
 - [x] **Logging Standardization**: Centralized console logging across all specialized library views.
 - [x] **Build Stabilization**: Resolved 84 compilation errors and structural corruption across 20 files. (v0.4.8)
+- [x] **Security & Logic Hardening**: Mitigated command/prompt injection in Transcoding, hardened PIN cryptography using PBKDF2, fixed custom protocol Local File Inclusion (LFI), prevented Kodi MySQL SQL injection, resolved CSV formula injection, fixed Rate Limiter loop recursion, resolved Deduplication policy bypass, fixed LiveMonitoring unhandled rejections, and configured TMDB API rate-limiting rules in defaults.json. (v0.4.9)
 - [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode). (v0.4.8)
 - [x] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection. (v0.4.8)
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
 - [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
-
+ 
 ## Indefinitely Postponed Features
 - **Multi-Select Batching**: Indefinitely postponed. The renderer-side selection states, context handlers, highlight classes, check overlays, and the BatchActionBar have been completely removed from the codebase. There is no need for batch processing at this time.
 - **Database Partitioning**: Indefinitely postponed. Deferred research and design for SQLite partitioning as scaling for extreme library sizes (100k+ items) is not currently required.

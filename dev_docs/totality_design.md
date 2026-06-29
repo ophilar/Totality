@@ -41,3 +41,11 @@
 - **Non-Blocking Discovery (Show-Aware):** Media scanning must be "Show-Aware." Providers must extract series-level metadata (posters, IDs) during the primary file scan. This ensures the library is populated immediately using provider data as the foundation, with TMDB used only for enrichment.
 - **Defensive UI (Robust Virtualization):** UI components must be built defensively against large datasets. Virtualized lists (React Virtuoso) must have explicit height propagation and use padding instead of margins on item roots to ensure 1:1 pixel accuracy for the ResizeObserver.
 - **SSOT Metadata Registry:** Provider metadata (names, icons, colors) must be managed in a central registry (`PROVIDERS`) shared across main and renderer processes to eliminate "magic strings" and ensure cross-platform visual consistency.
+
+## Security Enhancements (2026-06-29)
+
+- **AI Argument Sanitization:** Mitigated prompt injection by enforcing structured JSON output for transcoding parameters (videoCodec, crf, preset) instead of raw CLI argument lists. Arguments are strictly constructed and validated in TypeScript using whitelists and regex.
+- **Argon2/PBKDF2 PIN Protection:** Upgraded master PIN hashing to PBKDF2 (100,000 iterations of SHA-512 with a cryptographically secure random salt), with legacy SHA-256 fallback compatibility.
+- **Artwork Custom Protocol Jail:** Secured custom `local-artwork://` handler against Local File Inclusion (LFI) by path-resolving input and validating it against a whitelist of registered media source directories, user home subfolders, and temporary folders.
+- **SQL Identifier Validation:** Sanitized dynamic database targets in Kodi MySQL queries by validating identifier patterns using `/^[a-zA-Z0-9_]+$/` before interpolating them into `USE \`...\`` statements.
+- **Formula Injection Mitigation:** Escaped formula trigger characters (`=`, `+`, `-`, `@`) in CSV exports of wishlists by prepending a single quote (`'`).

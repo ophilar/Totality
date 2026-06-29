@@ -1,11 +1,25 @@
-import { getDatabase } from '@main/database/BetterSQLiteService'
-import { getTMDBService } from '@main/services/TMDBService'
+import { getDatabase, BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getTMDBService, TMDBService } from '@main/services/TMDBService'
 import { SeriesCompleteness, MediaItem, MediaItemType, ProviderType } from '@main/types/database'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { CompletenessEngine } from '@main/services/CompletenessEngine'
+import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 
 export class SeriesCompletenessService {
   private cancelRequested = false
+
+  constructor(
+    private _db?: BetterSQLiteService,
+    private _tmdb?: TMDBService
+  ) {}
+
+  private get db(): BetterSQLiteService {
+    return this._db || getDatabase()
+  }
+
+  private get tmdb(): TMDBService {
+    return this._tmdb || getTMDBService()
+  }
 
   cancel(): void {
     this.cancelRequested = true
@@ -13,16 +27,14 @@ export class SeriesCompletenessService {
 
   async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: any) => void): Promise<any> {
     this.cancelRequested = false
-    const db = getDatabase()
-    const tmdb = getTMDBService()
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[] }
 
-    const tmdbApiKey = await db.config.getSetting('tmdb_api_key')
+    const tmdbApiKey = await this.db.config.getSetting('tmdb_api_key')
 
     try {
-      if (tmdbApiKey) await tmdb.initialize()
-      const existingShows = await db.tvShows.getSummaries({ sourceId, libraryId })
-      const titlesFromMedia = await db.media.getUniqueSeriesTitles({ sourceId, libraryId })
+      if (tmdbApiKey) await this.tmdb.initialize()
+      const existingShows = await this.db.tvShows.getSummaries({ sourceId, libraryId })
+      const titlesFromMedia = await this.db.media.getUniqueSeriesTitles({ sourceId, libraryId })
       
       const showsToAnalyze: Array<{ series_title: string }> = [...existingShows]
       for (const title of titlesFromMedia) {
@@ -33,7 +45,7 @@ export class SeriesCompletenessService {
 
       result.totalSeries = showsToAnalyze.length
 
-      const allEpisodes = await db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
+      const allEpisodes = await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
       const episodesBySeries = new Map<string, any[]>()
       for (const ep of allEpisodes) {
         if (ep.series_title) {
@@ -42,7 +54,7 @@ export class SeriesCompletenessService {
         }
       }
 
-      await db.beginBatch()
+      await this.db.beginBatch()
       try {
         for (let i = 0; i < showsToAnalyze.length; i++) {
           if (this.cancelRequested) break
@@ -59,8 +71,7 @@ export class SeriesCompletenessService {
           } catch (error) { result.errors.push(`"${title}": ${getErrorMessage(error)}`) }
         }
       } finally { 
-        await db.endBatch() 
-        const { getLiveMonitoringService } = await import('@main/services/LiveMonitoringService')
+        await this.db.endBatch() 
         getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       }
       return { ...result, completed: true }
@@ -68,27 +79,26 @@ export class SeriesCompletenessService {
   }
 
   async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: MediaItem[]): Promise<SeriesCompleteness | null> {
-    const db = getDatabase(), tmdb = getTMDBService()
-    const episodes = providedEpisodes || (await db.tvShows.getEpisodes(seriesTitle, sourceId))
+    const episodes = providedEpisodes || (await this.db.tvShows.getEpisodes(seriesTitle, sourceId))
     if (episodes.length === 0) return null
 
-    const tmdbApiKey = await db.config.getSetting('tmdb_api_key')
+    const tmdbApiKey = await this.db.config.getSetting('tmdb_api_key')
     let tmdbId = cachedTmdbId || episodes.find((e: any) => e.series_tmdb_id)?.series_tmdb_id
     
-    if (!tmdbId && tmdbApiKey && tmdb.isConfigured()) {
-      const search = await tmdb.searchTVShow(seriesTitle)
+    if (!tmdbId && tmdbApiKey && this.tmdb.isConfigured()) {
+      const search = await this.tmdb.searchTVShow(seriesTitle)
       if (search.results.length > 0) tmdbId = String(search.results[0].id)
     }
     
-    if (!tmdbId || !tmdbApiKey || !tmdb.isConfigured()) {
+    if (!tmdbId || !tmdbApiKey || !this.tmdb.isConfigured()) {
       const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, sourceId || '', libraryId || '')
-      await db.tvShows.upsertCompleteness(unmatched)
-      return await db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      await this.db.tvShows.upsertCompleteness(unmatched)
+      return await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     }
 
-    const showDetails = await tmdb.getTVShowDetails(tmdbId)
+    const showDetails = await this.tmdb.getTVShowDetails(tmdbId)
     const seasonNums = showDetails.seasons.filter((s: any) => s.season_number > 0).map((s: any) => s.season_number)
-    const fullDetails = await tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
+    const fullDetails = await this.tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
     
     const targetEpisodes: any[] = []
     for (const sn of seasonNums) {
@@ -111,37 +121,36 @@ export class SeriesCompletenessService {
       missing_episodes: JSON.stringify(analysis.missing),
       completeness_percentage: analysis.percentage,
       tmdb_id: tmdbId,
-      poster_url: tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
-      backdrop_url: tmdb.buildImageUrl(showDetails.backdrop_path, 'original') || undefined,
+      poster_url: this.tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
+      backdrop_url: this.tmdb.buildImageUrl(showDetails.backdrop_path, 'original') || undefined,
       status: showDetails.status,
     }
 
-    await db.tvShows.upsertCompleteness(result)
+    await this.db.tvShows.upsertCompleteness(result)
 
     // RESTORE ARTWORK UPDATE
-    const source = await db.sources.getSourceById(sourceId || '')
+    const source = await this.db.sources.getSourceById(sourceId || '')
     if (source && (source.source_type === ProviderType.Local || source.source_type === ProviderType.KodiLocal)) {
       const seasonPosterUrls = new Map<number, string | undefined>()
       for (const s of showDetails.seasons) {
-        seasonPosterUrls.set(s.season_number, tmdb.buildImageUrl(s.poster_path, 'w500') || undefined)
+        seasonPosterUrls.set(s.season_number, this.tmdb.buildImageUrl(s.poster_path, 'w500') || undefined)
       }
 
       for (const ep of episodes) {
         const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
-        await db.media.updateItemArtwork(ep.id!, {
+        await this.db.media.updateItemArtwork(ep.id!, {
           posterUrl: result.poster_url,
-          episodeThumbUrl: epData ? tmdb.buildImageUrl(epData.still_path, 'w500') || undefined : undefined,
+          episodeThumbUrl: epData ? this.tmdb.buildImageUrl(epData.still_path, 'w500') || undefined : undefined,
           seasonPosterUrl: ep.season_number != null ? seasonPosterUrls.get(ep.season_number) : undefined
         })
       }
     }
 
-    return await db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+    return await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
   }
 
   private async createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string): Promise<SeriesCompleteness> {
-    const db = getDatabase()
-    const existing = await db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
+    const existing = await this.db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
     
     const fallbackPoster = existing?.poster_url || owned.find(e => e.poster_url)?.poster_url
     const tmdbId = existing?.tmdb_id || owned.find(e => e.series_tmdb_id)?.series_tmdb_id

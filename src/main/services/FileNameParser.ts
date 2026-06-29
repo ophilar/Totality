@@ -201,6 +201,9 @@ export class FileNameParser {
    * Parse a media filename and return extracted metadata
    */
   parse(filename: string, folderContext?: string): ParsedMediaInfo | null {
+    if (!filename || filename.length > 500) {
+      return null
+    }
     // Remove extension for parsing
     const ext = this.getExtension(filename)
     const nameWithoutExt = filename.slice(0, filename.length - ext.length)

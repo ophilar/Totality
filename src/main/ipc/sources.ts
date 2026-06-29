@@ -36,6 +36,8 @@ import {
   validateInput,
 } from '@main/validation/schemas'
 import { z } from 'zod'
+import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
+import { MediaMonkeyProvider } from '@main/providers/mediamonkey/MediaMonkeyProvider'
 
 /**
  * Register all source-related IPC handlers
@@ -306,7 +308,6 @@ export function registerSourceHandlers(): void {
   })
 
   createValidatedIpcHandler('kodi:authenticateMySQL', KodiMySQLConfigSchema, async (config) => {
-    const { KodiMySQLProvider } = await import('@main/providers/kodi/KodiMySQLProvider')
     const provider = new KodiMySQLProvider({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: {} })
     const res = await provider.authenticate({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_' } as any)
     if (!res.success) return { success: false, error: res.error }
@@ -407,7 +408,6 @@ export function registerSourceHandlers(): void {
   })
 
   createValidatedIpcHandler('mediamonkey:testConnection', z.object({ databasePath: z.string() }), async (config) => {
-    const { MediaMonkeyProvider } = await import('@main/providers/mediamonkey/MediaMonkeyProvider')
     const provider = new MediaMonkeyProvider({ sourceType: ProviderType.MediaMonkey, displayName: 'Test', connectionConfig: { databasePath: config.databasePath } })
     return await provider.testConnection()
   })

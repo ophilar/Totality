@@ -262,20 +262,28 @@ export class LiveMonitoringService {
   }
 
   private async handleFileChange(sourceId: string, event: 'add' | 'change' | 'unlink', filePath: string): Promise<void> {
-    if (this.shouldPause()) return
+    try {
+      if (this.shouldPause()) return
 
-    const db = getDatabase()
-    const source = await db.sources.getSourceById(sourceId)
-    const sourceName = source?.display_name || sourceId
+      const db = getDatabase()
+      const source = await db.sources.getSourceById(sourceId)
+      const sourceName = source?.display_name || sourceId
 
-    getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
-    this.emitDebugEvent(event === 'unlink' ? 'removed' : 'info', `[${sourceName}] File ${event}: ${path.basename(filePath)}`)
+      getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
+      this.emitDebugEvent(event === 'unlink' ? 'removed' : 'info', `[${sourceName}] File ${event}: ${path.basename(filePath)}`)
 
-    if (!this.pendingFileChanges.has(sourceId)) this.pendingFileChanges.set(sourceId, new Set())
-    this.pendingFileChanges.get(sourceId)!.add(filePath)
+      if (!this.pendingFileChanges.has(sourceId)) this.pendingFileChanges.set(sourceId, new Set())
+      this.pendingFileChanges.get(sourceId)!.add(filePath)
 
-    if (this.fileChangeDebounce.has(sourceId)) clearTimeout(this.fileChangeDebounce.get(sourceId)!)
-    this.fileChangeDebounce.set(sourceId, setTimeout(() => this.processFileChanges(sourceId), LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS))
+      if (this.fileChangeDebounce.has(sourceId)) clearTimeout(this.fileChangeDebounce.get(sourceId)!)
+      this.fileChangeDebounce.set(sourceId, setTimeout(() => {
+        this.processFileChanges(sourceId).catch((err) => {
+          getLoggingService().error('[LiveMonitoring]', `Error in processFileChanges for ${sourceId}:`, err)
+        })
+      }, LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS))
+    } catch (error) {
+      getLoggingService().error('[LiveMonitoring]', `Error in handleFileChange for ${sourceId}:`, error)
+    }
   }
 
   private async processFileChanges(sourceId: string): Promise<void> {

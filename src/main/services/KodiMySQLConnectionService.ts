@@ -258,6 +258,11 @@ class KodiMySQLConnectionService {
     const connection = await pool.getConnection()
 
     try {
+      // Validate database identifier strictly to prevent SQL injection
+      if (!/^[a-zA-Z0-9_]+$/.test(database)) {
+        throw new Error(`Invalid database name: ${database}`)
+      }
+
       // Switch to the target database
       await connection.query(`USE \`${database}\``)
 

@@ -67,7 +67,9 @@
     "cacheDuration": 86400000,
     "maxConcurrent": 10,
     "requestTimeout": 30000,
-    "maxCacheSize": 1000
+    "maxCacheSize": 1000,
+    "rateLimitRequests": 40,
+    "rateLimitWindowMs": 10000
   },
   "logging": {
     "maxInfoEntries": 500,

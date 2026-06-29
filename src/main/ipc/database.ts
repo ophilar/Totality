@@ -1,5 +1,5 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
+import { BrowserWindow, dialog, shell } from 'electron'
 import * as path from 'path'
 import { z } from 'zod'
 import { getDatabase } from '@main/database/BetterSQLiteService'
@@ -30,7 +30,9 @@ import {
 } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getSourceManager } from '@main/services/SourceManager'
-import { MediaItemType, MediaItemFilters } from '@main/types/database'
+import { MediaItemType } from '@main/types/database'
+import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
@@ -40,14 +42,7 @@ import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 export function registerDatabaseHandlers() {
   const db = getDatabase()
 
-  // Media retrieval
-  ipcMain.handle('db:getMediaItems', async (_event, filters: MediaItemFilters) => {
-    return await db.media.getItems(filters)
-  })
 
-  ipcMain.handle('db:countMediaItems', async (_event, filters: MediaItemFilters) => {
-    return await db.media.count(filters)
-  })
 
   // Register generic list/count handlers
   registerListHandlers('db:media', (f: any) => db.media.getItems(f), (f: any) => db.media.count(f), MediaItemFiltersSchema, {
@@ -129,7 +124,6 @@ export function registerDatabaseHandlers() {
     if (['gemini_api_key', 'gemini_model', 'ai_enabled'].includes(key)) {
       getGeminiService().refreshApiKey()
       if (key === 'gemini_api_key' && value) {
-        const { getGeminiAnalysisService } = await import('@main/services/GeminiAnalysisService')
         getGeminiAnalysisService().generateCompletenessInsights(() => {}).catch(() => {})
       }
     }
@@ -228,7 +222,6 @@ export function registerDatabaseHandlers() {
     await db.media.updateMovieMatch(mediaItemId, tmdbId.toString(), posterUrl, details.title, year)
     const item = await db.media.getItem(mediaItemId)
     if (item?.source_id) {
-      const { getDeduplicationService } = await import('@main/services/DeduplicationService')
       await getDeduplicationService().scanForDuplicates(item.source_id)
     }
     const win = BrowserWindow.fromWebContents(event.sender)

@@ -168,6 +168,13 @@ function cleanEdges(text: string): string {
 export function extractVersionNames<T extends VersionInput>(versions: T[]): T[] {
   if (versions.length <= 1) return versions
 
+  // Skip names extraction if paths are excessively long to mitigate ReDoS risks
+  for (const v of versions) {
+    if (v.file_path && v.file_path.length > 500) {
+      return versions
+    }
+  }
+
   // Phase 1: Extract {edition-X} Plex tags from filenames
   for (const v of versions) {
     if (v.edition) continue // Already has edition from FileNameParser or API
