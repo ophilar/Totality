@@ -101,10 +101,13 @@ function generateWishlistCsv(items: WishlistItem[]): string {
   const numColumns = 10
   const emptyRow = ','.repeat(numColumns - 1)
 
-  // Escape CSV field (handle commas, quotes, newlines)
+  // Escape CSV field (handle commas, quotes, newlines, and formula injection)
   const escapeField = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return ''
-    const str = String(value)
+    let str = String(value)
+    if (str.startsWith('=') || str.startsWith('+') || str.startsWith('-') || str.startsWith('@')) {
+      str = `'${str}`
+    }
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`
     }

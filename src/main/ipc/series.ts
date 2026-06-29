@@ -6,6 +6,7 @@ import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesAnalyzeAllTupleSchema, SeriesGetEpisodesTupleSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema, SeriesFixMatchTupleSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { getDeduplicationService } from '@main/services/DeduplicationService'
 
 export function registerSeriesHandlers() {
   const service = getSeriesCompletenessService()
@@ -85,7 +86,6 @@ export function registerSeriesHandlers() {
     const d = await tmdb.getTVShowDetails(tmdbId.toString())
     const poster = tmdb.buildImageUrl(d.poster_path, 'w500') || undefined
     const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId.toString(), poster, d.name)
-    const { getDeduplicationService } = await import('@main/services/DeduplicationService')
     await getDeduplicationService().scanForDuplicates(sourceId)
     const completeness = await service.analyzeSeries(d.name, sourceId)
     return { success: true, updatedEpisodes: updated, completeness, newTitle: d.name }

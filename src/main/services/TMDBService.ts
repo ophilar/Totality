@@ -49,6 +49,11 @@ export class TMDBService {
     this.apiKey = (await db.config.getSetting('tmdb_api_key')) || null
     this.baseURL = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
 
+    // Dynamically configure rate limits from settings/config
+    const requests = APP_CONFIG.tmdb.rateLimitRequests || 40
+    const windowMs = APP_CONFIG.tmdb.rateLimitWindowMs || 10000
+    this.rateLimiter = RateLimiters.createTMDBLimiter(requests, windowMs)
+
     if (!this.apiKey || this.apiKey === '') {
       getLoggingService().warn('[TMDBService]', 'TMDB API key not configured. Collection detection will be unavailable.')
     }

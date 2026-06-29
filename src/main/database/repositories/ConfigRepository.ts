@@ -70,17 +70,35 @@ export class ConfigRepository extends BaseRepository<typeof schema.settings> {
   }
 
   async setPin(pin: string): Promise<void> {
-    const { createHash } = await import('node:crypto')
-    const hashed = createHash('sha256').update(pin).digest('hex')
-    await this.setSetting('app_pin_hash', hashed)
+    const { pbkdf2Sync, randomBytes } = await import('node:crypto')
+    const salt = randomBytes(16).toString('hex')
+    const iterations = 100000
+    const keylen = 64
+    const digest = 'sha512'
+    const hash = pbkdf2Sync(pin, salt, iterations, keylen, digest).toString('hex')
+    await this.setSetting('app_pin_hash', `pbkdf2$${iterations}$${salt}$${hash}`)
   }
 
   async verifyPin(pin: string): Promise<boolean> {
     const stored = await this.getSetting('app_pin_hash')
     if (!stored) return true // No PIN set
-    const { createHash } = await import('node:crypto')
-    const hashed = createHash('sha256').update(pin).digest('hex')
-    return hashed === stored
+    
+    const { createHash, pbkdf2Sync } = await import('node:crypto')
+    
+    // Legacy plain SHA-256 check
+    if (!stored.startsWith('pbkdf2$')) {
+      const hashed = createHash('sha256').update(pin).digest('hex')
+      return hashed === stored
+    }
+
+    const parts = stored.split('$')
+    if (parts.length !== 4) return false
+    const [, iterationsStr, salt, hash] = parts
+    const iterations = parseInt(iterationsStr, 10)
+    const keylen = 64
+    const digest = 'sha512'
+    const computed = pbkdf2Sync(pin, salt, iterations, keylen, digest).toString('hex')
+    return computed === hash
   }
 
   async hasPin(): Promise<boolean> {

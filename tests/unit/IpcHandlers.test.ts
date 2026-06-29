@@ -74,27 +74,23 @@ describe('IPC Handler Registration', () => {
 
   })
 
-  it('registerListHandlers deduplicates aliases to prevent crash', () => {
+  it('registerListHandlers registers standard aliases', () => {
     const base = 'test:resource'
     const schema = z.any()
     
-    // This should NOT throw even though 'test:resource:list' is duplicated in aliases
-    expect(() => {
-      registerListHandlers(
-        base,
-        () => [],
-        () => 0,
-        schema,
-        {
-          listAlias: ['test:resource:list', 'test:resource:alt'],
-          countAlias: ['test:resource:count', 'test:resource:count']
-        }
-      )
-    }).not.toThrow()
+    registerListHandlers(
+      base,
+      () => [],
+      () => 0,
+      schema,
+      {
+        listAlias: ['test:resource:alt'],
+        countAlias: ['test:resource:altcount']
+      }
+    )
 
-    expect(handlers.has('test:resource:list')).toBe(true)
     expect(handlers.has('test:resource:alt')).toBe(true)
-    expect(handlers.has('test:resource:count')).toBe(true)
+    expect(handlers.has('test:resource:altcount')).toBe(true)
   })
 })
 

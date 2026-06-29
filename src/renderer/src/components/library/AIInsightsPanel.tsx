@@ -67,10 +67,10 @@ export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen)
     if (!isOpen) {
-      // Reset state when panel closes
-      setSelectedReport(null)
-      setReportContent('')
-      setError(null)
+      // Reset state when panel closes (gated checks to avoid unnecessary re-renders)
+      if (selectedReport !== null) setSelectedReport(null)
+      if (reportContent !== '') setReportContent('')
+      if (error !== null) setError(null)
     }
   }
 

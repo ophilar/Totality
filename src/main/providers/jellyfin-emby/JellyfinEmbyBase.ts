@@ -21,7 +21,6 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getTMDBService } from '@main/services/TMDBService'
-import { getMovieCollectionService } from '@main/services/MovieCollectionService'
 import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
@@ -336,6 +335,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               }
               if (resolvedTmdbCollectionId) {
                 try {
+                  const { getMovieCollectionService } = await import('@main/services/MovieCollectionService')
                   const collectionService = getMovieCollectionService()
                   const res = await collectionService.lookupCollectionCompleteness(resolvedTmdbCollectionId, ownedTmdbIds)
                   if (res) {

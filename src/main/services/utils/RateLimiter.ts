@@ -52,22 +52,28 @@ export class SlidingWindowRateLimiter implements RateLimiter {
   }
 
   async waitForSlot(): Promise<void> {
-    const now = Date.now()
+    while (true) {
+      const now = Date.now()
 
-    // Remove timestamps outside the window
-    this.requestTimestamps = this.requestTimestamps.filter(
-      timestamp => now - timestamp < this.windowMs
-    )
+      // Remove timestamps outside the window
+      this.requestTimestamps = this.requestTimestamps.filter(
+        timestamp => now - timestamp < this.windowMs
+      )
 
-    // If at capacity, wait until oldest request expires
-    if (this.requestTimestamps.length >= this.maxRequests) {
+      // If not at capacity, we can record the slot and proceed
+      if (this.requestTimestamps.length < this.maxRequests) {
+        break
+      }
+
+      // If at capacity, wait until oldest request expires
       const oldestTimestamp = this.requestTimestamps[0]
       const waitTime = this.windowMs - (now - oldestTimestamp) + this.bufferMs
 
       if (waitTime > 0) {
         await this.delay(waitTime)
-        // Recursively check again after waiting
-        return this.waitForSlot()
+      } else {
+        // Yield to the event loop briefly to prevent busy loop in edge cases
+        await this.delay(1)
       }
     }
 
@@ -160,8 +166,8 @@ export const RateLimiters = {
    * TMDB API: ~40 requests per second per IP
    * Using 40 req/1s to maximize throughput while staying within limits
    */
-  createTMDBLimiter(): SlidingWindowRateLimiter {
-    return new SlidingWindowRateLimiter(40, 1000, 25)
+  createTMDBLimiter(maxRequests: number = 40, windowMs: number = 1000): SlidingWindowRateLimiter {
+    return new SlidingWindowRateLimiter(maxRequests, windowMs, 25)
   },
 
   /**

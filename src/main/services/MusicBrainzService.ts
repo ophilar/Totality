@@ -115,6 +115,8 @@ export class MusicBrainzService extends CancellableOperation {
   private readonly RETRY_DELAY_MS = 5000
 
   private baseURL: string = 'https://musicbrainz.org/ws/2'
+  private missingCoverArtCache = new Map<string, number>()
+  private static readonly NEGATIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // Cache negative results for 24 hours
 
   private async getBaseUrl(): Promise<string> {
     const db = getDatabase()
@@ -164,6 +166,12 @@ export class MusicBrainzService extends CancellableOperation {
    * Returns the artwork URL if available, null otherwise
    */
   async getCoverArtUrl(releaseGroupId: string): Promise<string | null> {
+    const now = Date.now()
+    const cachedTime = this.missingCoverArtCache.get(releaseGroupId)
+    if (cachedTime && now - cachedTime < MusicBrainzService.NEGATIVE_CACHE_TTL_MS) {
+      return null
+    }
+
     try {
       // Try to get the cover art info from Cover Art Archive
       const response = await axios.head(
@@ -180,9 +188,14 @@ export class MusicBrainzService extends CancellableOperation {
         return this.buildCoverArtUrl(releaseGroupId, '500')
       }
 
+      // Negative cache the 404 status
+      this.missingCoverArtCache.set(releaseGroupId, now)
       return null
     } catch (error) {
       // Cover art not available or request failed
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        this.missingCoverArtCache.set(releaseGroupId, now)
+      }
       return null
     }
   }

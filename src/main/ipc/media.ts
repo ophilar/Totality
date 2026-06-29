@@ -6,34 +6,13 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
  * and performing deep file analysis.
  */
 
-import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
-import { NonEmptyStringSchema } from '@main/validation/schemas'
 import { z } from 'zod'
 import { getLoggingService } from '@main/services/LoggingService'
 
 export function registerMediaHandlers(): void {
-  const db = getDatabase()
   const analyzer = getMediaFileAnalyzer()
-
-  /**
-   * Global Search
-   * Searches across Movies, TV Shows, and Music
-   */
-  createValidatedIpcHandler(IPC_CHANNELS.MEDIA.SEARCH, NonEmptyStringSchema, async (query) => {
-    const [movies, shows, music] = await Promise.all([
-      db.media.searchMediaItems(query, { limit: 10 }),
-      db.tvShows.searchTVShows(query, { limit: 10 }),
-      db.music.searchArtists(query, { limit: 10 })
-    ])
-
-    return {
-      movies,
-      shows,
-      music
-    }
-  })
 
   /**
    * Deep Media Analysis

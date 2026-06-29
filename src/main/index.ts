@@ -195,14 +195,65 @@ app.whenReady().then(async () => {
     await getDatabase().initialize(dbPath)
 
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
-    protocol.handle('local-artwork', (request) => {
+    protocol.handle('local-artwork', async (request) => {
       const url = new URL(request.url)
       if (url.hostname === 'file') {
         const filePath = url.searchParams.get('path')
         if (!filePath) return new Response('Not found', { status: 404 })
         const ext = path.extname(filePath).toLowerCase()
         if (!new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff']).has(ext)) return new Response('Forbidden', { status: 403 })
-        if (filePath && fs.existsSync(filePath)) {
+        
+        // Strict LFI validation
+        const resolvedPath = path.resolve(filePath)
+        let isAllowed = false
+        const userDataPath = app.getPath('userData')
+        const tempPath = app.getPath('temp')
+        const homePath = app.getPath('home')
+        
+        const allowedRoots = [
+          userDataPath,
+          tempPath,
+          path.join(homePath, 'Music'),
+          path.join(homePath, 'Videos'),
+          path.join(homePath, 'Pictures')
+        ]
+        
+        try {
+          const db = getDatabase()
+          if (db && db.isInitialized && db.drizzle) {
+            const schema = await import('@main/database/drizzleSchema')
+            const sources = await db.drizzle.select().from(schema.mediaSources).all()
+            for (const src of sources) {
+              if (src.connectionConfig) {
+                try {
+                  const config = JSON.parse(src.connectionConfig)
+                  if (config.folderPath) allowedRoots.push(config.folderPath)
+                  if (config.databasePath) allowedRoots.push(config.databasePath)
+                } catch (e) {
+                  // ignore
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore DB or initialization errors
+        }
+
+        for (const root of allowedRoots) {
+          const resolvedRoot = path.resolve(root)
+          const normPath = resolvedPath.toLowerCase()
+          const normRoot = resolvedRoot.toLowerCase()
+          if (normPath.startsWith(normRoot)) {
+            isAllowed = true
+            break
+          }
+        }
+
+        if (!isAllowed) {
+          return new Response('Forbidden', { status: 403 })
+        }
+
+        if (fs.existsSync(filePath)) {
           if (filePath.startsWith('\\\\')) return net.fetch(`file:${filePath.replace(/\\/g, '/')}`)
           if (/^[A-Za-z]:/.test(filePath)) return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
           return net.fetch(`file://${filePath}`)

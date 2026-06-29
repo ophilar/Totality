@@ -165,7 +165,7 @@ export class DeduplicationService {
     const discardIds = allIds.filter(id => id !== keepItemId)
     
     const policy = await this.getRetentionPolicy()
-    const actualDelete = deleteOthers && (policy.autoDelete || true) // If manual resolve, we respect the deleteOthers flag
+    const actualDelete = deleteOthers && policy.autoDelete // If manual resolve, we respect the deleteOthers flag and auto-delete settings
 
     if (actualDelete) {
       const items = await db.media.getItemsByIds(discardIds)

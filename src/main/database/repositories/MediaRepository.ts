@@ -1,10 +1,20 @@
 import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'drizzle-orm'
-import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType, MusicArtist, MusicAlbum, MusicTrack, ProviderType } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
+
+function cleanNulls<T>(obj: T): any {
+  const result: any = {}
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      result[key] = (obj as any)[key] === null ? undefined : (obj as any)[key]
+    }
+  }
+  return result
+}
 
 export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
@@ -875,22 +885,33 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return rows.map(r => r.seriesTitle as string)
   }
 
-  async globalSearch(query: string, limit = 5): Promise<{ movies: MediaItem[], tvShows: Array<{ title: string }>, artists: any[], albums: any[] }> {
+  async globalSearch(query: string, limit = 5): Promise<{
+    movies: MediaItem[],
+    tvShows: Array<{ id: number; title: string; poster_url?: string }>,
+    episodes: MediaItem[],
+    artists: MusicArtist[],
+    albums: MusicAlbum[],
+    tracks: MusicTrack[]
+  }> {
     const q = `%${query}%`
     
     // We execute these in parallel using Drizzle
-    const [movies, tvShows, artists, albums] = await Promise.all([
+    const [movies, tvShows, episodes, artists, albums, tracks] = await Promise.all([
       this.drizzle.select().from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'movie'), like(schema.mediaItems.title, q))).limit(limit).all(),
-      this.drizzle.selectDistinct({ title: schema.mediaItems.seriesTitle }).from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'episode'), like(schema.mediaItems.seriesTitle, q))).limit(limit).all(),
+      this.drizzle.select({ id: schema.seriesCompleteness.id, title: schema.seriesCompleteness.seriesTitle, poster_url: schema.seriesCompleteness.posterUrl }).from(schema.seriesCompleteness).where(like(schema.seriesCompleteness.seriesTitle, q)).limit(limit).all(),
+      this.drizzle.select().from(schema.mediaItems).where(and(eq(schema.mediaItems.type, 'episode'), like(schema.mediaItems.title, q))).limit(limit).all(),
       this.drizzle.select().from(schema.musicArtists).where(like(schema.musicArtists.name, q)).limit(limit).all(),
-      this.drizzle.select().from(schema.musicAlbums).where(like(schema.musicAlbums.title, q)).limit(limit).all()
+      this.drizzle.select().from(schema.musicAlbums).where(like(schema.musicAlbums.title, q)).limit(limit).all(),
+      this.drizzle.select().from(schema.musicTracks).where(like(schema.musicTracks.title, q)).limit(limit).all()
     ])
 
     return {
       movies: this.mapDrizzleToMediaItems(movies),
-      tvShows: tvShows as Array<{ title: string }>,
-      artists: artists, // Type mapping for music might be needed later
-      albums: albums
+      tvShows: tvShows.map(s => ({ id: s.id, title: s.title, poster_url: s.poster_url ?? undefined })),
+      episodes: this.mapDrizzleToMediaItems(episodes),
+      artists: artists.map(r => cleanNulls({ ...r, source_id: r.sourceId, source_type: r.sourceType as ProviderType, library_id: r.libraryId ?? undefined, provider_id: r.providerId, sort_name: r.sortName, musicbrainz_id: r.musicbrainzId, thumb_url: r.thumbUrl, art_url: r.artUrl, user_fixed_match: r.userFixedMatch === 1, album_count: r.albumCount, track_count: r.trackCount, created_at: r.createdAt, updated_at: r.updatedAt })),
+      albums: albums.map(r => cleanNulls({ ...r, source_id: r.sourceId, source_type: r.sourceType as ProviderType, library_id: r.libraryId ?? undefined, provider_id: r.providerId, artist_id: r.artistId, artist_name: r.artistName, sort_title: r.sortTitle, musicbrainz_id: r.musicbrainzId, musicbrainz_release_group_id: r.musicbrainzReleaseGroupId, album_type: r.albumType, track_count: r.trackCount, total_duration: r.totalDuration, total_size: r.totalSize, best_audio_codec: r.bestAudioCodec, best_audio_bitrate: r.bestAudioBitrate, best_sample_rate: r.bestSampleRate, best_bit_depth: r.bestBitDepth, avg_audio_bitrate: r.avgAudioBitrate, thumb_url: r.thumbUrl, art_url: r.artUrl, user_fixed_match: r.userFixedMatch === 1, release_date: r.releaseDate, added_at: r.addedAt, created_at: r.createdAt, updated_at: r.updatedAt })),
+      tracks: tracks.map(r => cleanNulls({ ...r, source_id: r.sourceId, source_type: r.sourceType as ProviderType, library_id: r.libraryId ?? undefined, provider_id: r.providerId, album_id: r.albumId, artist_id: r.artistId, album_name: r.albumName, artist_name: r.artistName, track_number: r.trackNumber, disc_number: r.discNumber, file_path: r.filePath, file_size: r.fileSize, file_mtime: r.fileMtime, audio_codec: r.audioCodec, audio_bitrate: r.audioBitrate, sample_rate: r.sampleRate, bit_depth: r.bitDepth, is_lossless: r.isLossless === 1, is_hi_res: r.isHiRes === 1, musicbrainz_id: r.musicbrainzId, added_at: r.addedAt, created_at: r.createdAt, updated_at: r.updatedAt }))
     }
   }
 
