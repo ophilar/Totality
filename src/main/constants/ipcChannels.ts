@@ -156,6 +156,7 @@ export const IPC_CHANNELS = {
     WISHLIST_ADVICE: 'ai:wishlistAdvice',
     COMPRESSION_ADVICE: 'ai:compressionAdvice',
     EXPLAIN_QUALITY: 'ai:explainQuality',
+    GET_AVAILABLE_MODELS: 'ai:getAvailableModels',
   },
   JELLYFIN: {
     IS_QUICK_CONNECT_ENABLED: 'jellyfin:isQuickConnectEnabled',

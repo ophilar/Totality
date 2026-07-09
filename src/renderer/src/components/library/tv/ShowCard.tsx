@@ -13,13 +13,14 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: {
+export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, isLibraryAnalyzing }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => void
   onFixMatch?: (sourceId: string, folderPath?: string) => void
+  isLibraryAnalyzing?: boolean
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -146,7 +147,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         )}
 
         {/* Analyzing Overlay */}
-        {completenessData && (completenessData as any).efficiency_score === null && (
+        {completenessData && (completenessData as any).efficiency_score === null && isLibraryAnalyzing && (
           <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
             <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
             <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
@@ -210,5 +211,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
          prevProps.completenessData?.id === nextProps.completenessData?.id &&
          prevProps.completenessData?.completeness_percentage === nextProps.completenessData?.completeness_percentage &&
-         prevProps.onAnalyzeSeries === nextProps.onAnalyzeSeries
+         prevProps.onAnalyzeSeries === nextProps.onAnalyzeSeries &&
+         prevProps.isLibraryAnalyzing === nextProps.isLibraryAnalyzing
 })

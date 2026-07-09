@@ -7,24 +7,8 @@ import { MoviesView } from '@/components/library/MoviesView'
 import { LibraryProvider } from '@/contexts/LibraryContext'
 import { SourceProvider } from '@/contexts/SourceContext'
 import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { ToastProvider } from '@/contexts/ToastContext'
-import { ThemeProvider } from '@/contexts/ThemeContext'
-import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
-
-const AllProviders = ({ children }: { children: React.ReactNode }) => (
-  <ToastProvider>
-    <ThemeProvider>
-      <SourceProvider>
-        <ScrollMemoryProvider>
-          <LibraryProvider>
-            {children}
-          </LibraryProvider>
-        </ScrollMemoryProvider>
-      </SourceProvider>
-    </ThemeProvider>
-  </ToastProvider>
-)
 
 describe('MoviesView Integrated Rendering (No Mocks)', () => {
   let db: any
@@ -68,7 +52,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     api.taskQueueGetState = vi.fn().mockResolvedValue(scanningState)
 
     render(
-      <AllProviders>
+      <TestProviders>
         <MoviesView
           movies={[]}
           sortBy="title"
@@ -85,7 +69,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
           moviesLoading={false}
           onLoadMoreMovies={() => {}}
         />
-      </AllProviders>
+      </TestProviders>
     )
 
     // Trigger state change
@@ -123,7 +107,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     }
 
     render(
-      <AllProviders>
+      <TestProviders>
         <MoviesView
           movies={[movie] as any}
           sortBy="title"
@@ -139,8 +123,9 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
           totalMovieCount={1}
           moviesLoading={false}
           onLoadMoreMovies={() => {}}
+          isAnalyzing={true}
         />
-      </AllProviders>
+      </TestProviders>
     )
 
     expect(screen.getByText('Unanalyzed Movie')).toBeTruthy()
@@ -157,7 +142,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     }
 
     render(
-      <AllProviders>
+      <TestProviders>
         <MoviesView
           movies={[movie] as any}
           sortBy="title"
@@ -174,7 +159,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
           moviesLoading={false}
           onLoadMoreMovies={() => {}}
         />
-      </AllProviders>
+      </TestProviders>
     )
 
     expect(screen.getByText('Analyzed Movie')).toBeTruthy()

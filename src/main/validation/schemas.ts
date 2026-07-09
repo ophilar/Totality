@@ -511,11 +511,37 @@ export const TranscodeMediaItemSchema = z.tuple([
   TranscodeOptionsSchema
 ])
 
+function preprocessFilterKeys(input: unknown): any {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const clone = { ...input } as any
+  if ('tier' in clone && !('qualityTier' in clone)) {
+    clone.qualityTier = clone.tier
+    delete clone.tier
+  }
+  if ('quality' in clone && !('tierQuality' in clone)) {
+    clone.tierQuality = clone.quality
+    delete clone.quality
+  }
+  if ('alphabet' in clone && !('alphabetFilter' in clone)) {
+    clone.alphabetFilter = clone.alphabet
+    delete clone.alphabet
+  }
+  if ('search' in clone && !('searchQuery' in clone)) {
+    clone.searchQuery = clone.search
+    delete clone.search
+  }
+  if (clone.sortBy === 'waste') {
+    clone.sortBy = 'storage_debt'
+  }
+  return clone
+}
+
 /**
  * Validate and parse input, throwing a descriptive error on failure
  */
 export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context?: string): T {
-  const result = schema.safeParse(input)
+  const preprocessed = preprocessFilterKeys(input)
+  const result = schema.safeParse(preprocessed)
   if (!result.success) {
     const errors = result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
     throw new Error(`${context ? `[${context}] ` : ''}Validation failed: ${errors}`)
@@ -527,7 +553,8 @@ export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context
  * Safely validate input, returning null on failure instead of throwing
  */
 export function safeValidateInput<T>(schema: z.ZodSchema<T>, input: unknown): T | null {
-  const result = schema.safeParse(input)
+  const preprocessed = preprocessFilterKeys(input)
+  const result = schema.safeParse(preprocessed)
   return result.success ? result.data : null
 }
 

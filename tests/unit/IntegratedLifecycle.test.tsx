@@ -4,37 +4,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import { MediaBrowser } from '@/components/library/MediaBrowser'
-import { LibraryProvider } from '@/contexts/LibraryContext'
-import { SourceProvider } from '@/contexts/SourceContext'
-import { ToastProvider } from '@/contexts/ToastContext'
-import { ThemeProvider } from '@/contexts/ThemeContext'
-import { WishlistProvider } from '@/contexts/WishlistContext'
-import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
 import { MediaRepository } from '@main/database/repositories/MediaRepository'
+import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 
 // Mock the heavy event listener hook to prevent background noise during tests
 vi.mock('@/components/library/hooks/useLibraryEventListeners', () => ({
   useLibraryEventListeners: () => {}
 }))
-
-const AllProviders = ({ children }: { children: React.ReactNode }) => (
-  <ToastProvider>
-    <ThemeProvider>
-      <SourceProvider>
-        <WishlistProvider>
-          <ScrollMemoryProvider>
-            <LibraryProvider>
-              {children}
-            </LibraryProvider>
-          </ScrollMemoryProvider>
-        </WishlistProvider>
-      </SourceProvider>
-    </ThemeProvider>
-  </ToastProvider>
-)
 
 describe('MediaBrowser Lifecycle Integration', () => {
   let db: any
@@ -109,7 +88,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
     }])
 
     // 2. Render UI
-    render(<MediaBrowser />, { wrapper: AllProviders })
+    render(<MediaBrowser />, { wrapper: TestProviders })
 
     // 3. Wait for the TV Shows button and click it
     const tvTab = await screen.findByRole('button', { name: /TV Shows/i }, { timeout: 30000 })
@@ -169,7 +148,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
     // Patch the bridge
     api.seriesGetEpisodes = delayedGetEpisodes
 
-    render(<MediaBrowser />, { wrapper: AllProviders })
+    render(<MediaBrowser />, { wrapper: TestProviders })
 
     // Switch to TV
     const tvTab = await screen.findByRole('button', { name: /TV Shows/i }, { timeout: 30000 })

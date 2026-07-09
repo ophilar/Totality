@@ -36,7 +36,8 @@ export function TVShowsView({
   onDismissMissingSeason,
   totalShowCount,
   showsLoading,
-  onLoadMoreShows
+  onLoadMoreShows,
+  isAnalyzing = false
 }: {
   shows: TVShowSummary[]
   sortBy: string
@@ -65,6 +66,7 @@ export function TVShowsView({
   totalEpisodeCount?: number
   showsLoading: boolean
   onLoadMoreShows: () => void
+  isAnalyzing?: boolean
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
   const { scanProgress } = useSources()
@@ -121,6 +123,7 @@ export function TVShowsView({
               completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
               onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
+              isLibraryAnalyzing={!!activeScan || isAnalyzing}
             />
           )}
           renderListItem={(show) => (

@@ -147,6 +147,7 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
                   shows={shows as any} 
                   totalShowCount={1} 
                   seriesCompleteness={seriesCompleteness as any} 
+                  isAnalyzing={true}
                 />
               </ScrollMemoryProvider>
             </SourceProvider>

@@ -1,6 +1,7 @@
 import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -103,41 +104,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .orderBy(asc(schema.mediaItems.seasonNumber), asc(schema.mediaItems.episodeNumber))
     .all()
 
-    // Map using shared logic if possible, but for now reuse MediaRepository pattern
-    return rows.map(r => {
-      const item = r.item;
-      const q = r.quality || {};
-      return {
-        ...item,
-        source_id: item.sourceId,
-        source_type: item.sourceType,
-        library_id: item.libraryId,
-        plex_id: item.plexId,
-        series_title: item.seriesTitle,
-        season_number: item.seasonNumber,
-        episode_number: item.episodeNumber,
-        file_path: item.filePath,
-        file_size: item.fileSize,
-        video_codec: item.videoCodec,
-        video_bitrate: item.videoBitrate,
-        audio_codec: item.audioCodec,
-        audio_channels: item.audioChannels,
-        audio_bitrate: item.audioBitrate,
-        video_frame_rate: item.videoFrameRate,
-        color_bit_depth: item.colorBitDepth,
-        hdr_format: item.hdrFormat,
-        has_object_audio: item.hasObjectAudio === 1,
-        user_fixed_match: item.userFixedMatch === 1,
-        poster_url: item.posterUrl,
-        episode_thumb_url: item.episodeThumbUrl,
-        season_poster_url: item.seasonPosterUrl,
-        quality_tier: (q as any).qualityTier || item.qualityTier,
-        tier_quality: (q as any).tierQuality || item.tierQuality,
-        tier_score: (q as any).tierScore || item.tierScore,
-        efficiency_score: (q as any).efficiencyScore || item.efficiencyScore,
-        storage_debt_bytes: (q as any).storageDebtBytes || item.storageDebtBytes
-      }
-    }) as any[]
+    return rows.map(r => toSnakeCaseMediaItem(r)) as any[]
   }
 
   async getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): Promise<SeriesCompleteness | null> {

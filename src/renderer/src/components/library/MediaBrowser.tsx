@@ -237,13 +237,16 @@ export function MediaBrowser({
 
   useEffect(() => {
     const commonFilters = {
-      sortBy: sortBy === 'title' ? (view === 'music' ? 'name' : 'title') : sortBy,
-      sortOrder: 'asc',
-      tier: tierFilter !== 'all' ? tierFilter : undefined,
-      quality: qualityFilter !== 'all' ? qualityFilter : undefined,
-      alphabet: alphabetFilter || undefined,
-      search: searchInput.trim() || undefined,
-      libraryId: activeLibraryId || undefined
+      sortBy: sortBy === 'title' 
+        ? (view === 'music' ? 'name' : 'title') 
+        : (sortBy === 'waste' ? 'storage_debt' : sortBy),
+      sortOrder: (sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'storage_debt') ? 'desc' : 'asc',
+      qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
+      tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
+      alphabetFilter: alphabetFilter || undefined,
+      searchQuery: searchInput.trim() || undefined,
+      libraryId: activeLibraryId || undefined,
+      slimDown: slimDown || undefined
     }
 
     if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as any)
@@ -253,7 +256,7 @@ export function MediaBrowser({
       else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as any)
       else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as any)
     }
-  }, [view, musicViewMode, sortBy, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
+  }, [view, musicViewMode, sortBy, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
 
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -433,6 +436,7 @@ export function MediaBrowser({
                   onFixMatch={(mediaItemId, title, year, filePath) => setMatchFixModal({ isOpen: true, type: 'movie', title, year, filePath, mediaItemId })}
                   onRescan={handleRescanItem} onDismissUpgrade={handleDismissUpgrade}
                   totalMovieCount={totalMovieCount} moviesLoading={moviesLoading} onLoadMoreMovies={loadMoreMovies}
+                  isAnalyzing={isAnalyzing}
                 />
               </SectionErrorBoundary>
             )}
@@ -452,6 +456,7 @@ export function MediaBrowser({
                   onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
                   onDismissMissingSeason={handleDismissMissingSeason} totalShowCount={totalShowCount}
                   totalEpisodeCount={0} showsLoading={showsLoading} onLoadMoreShows={loadMoreShows}
+                  isAnalyzing={isAnalyzing}
                 />
               </SectionErrorBoundary>
             )}

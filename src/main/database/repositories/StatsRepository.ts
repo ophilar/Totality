@@ -3,6 +3,7 @@ import type { DashboardSummary, MovieCollection, SeriesCompleteness as _SeriesCo
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
+import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
 export class StatsRepository {
   constructor(
@@ -153,7 +154,7 @@ export class StatsRepository {
     ])
 
     // Mapper helper
-    const mapItem = (r: any) => ({ ...r.item, quality_tier: r.q.qualityTier, tier_quality: r.q.tierQuality, tier_score: r.q.tierScore, efficiency_score: r.q.efficiencyScore, storage_debt_bytes: r.q.storageDebtBytes })
+    const mapItem = (r: any) => toSnakeCaseMediaItem(r)
 
     // Process Collections exclusions
     const incompleteCollections: MovieCollection[] = []
@@ -191,7 +192,42 @@ export class StatsRepository {
     return {
       movieUpgrades: movieUpgradesRows.map(mapItem) as any,
       tvUpgrades: tvUpgradesRows.map(mapItem) as any,
-      musicUpgrades: musicUpgradesRows.map(r => ({ ...r.album, quality_tier: r.q.qualityTier, tier_quality: r.q.tierQuality, tier_score: r.q.tierScore, efficiency_score: r.q.efficiencyScore, storage_debt_bytes: r.q.storageDebtBytes })) as any,
+      musicUpgrades: musicUpgradesRows.map(r => {
+        const album = r.album
+        return {
+          ...album,
+          source_id: album.sourceId,
+          source_type: album.sourceType,
+          library_id: album.libraryId,
+          provider_id: album.providerId,
+          artist_id: album.artistId,
+          artist_name: album.artistName,
+          sort_title: album.sortTitle,
+          musicbrainz_id: album.musicbrainzId,
+          musicbrainz_release_group_id: album.musicbrainzReleaseGroupId,
+          album_type: album.albumType,
+          track_count: album.trackCount,
+          total_duration: album.totalDuration,
+          total_size: album.totalSize,
+          best_audio_codec: album.bestAudioCodec,
+          best_audio_bitrate: album.bestAudioBitrate,
+          best_sample_rate: album.bestSampleRate,
+          best_bit_depth: album.bestBitDepth,
+          avg_audio_bitrate: album.avgAudioBitrate,
+          thumb_url: album.thumbUrl,
+          art_url: album.artUrl,
+          user_fixed_match: album.userFixedMatch === 1,
+          release_date: album.releaseDate,
+          added_at: album.addedAt,
+          created_at: album.createdAt,
+          updated_at: album.updatedAt,
+          quality_tier: r.q.qualityTier,
+          tier_quality: r.q.tierQuality,
+          tier_score: r.q.tierScore,
+          efficiency_score: r.q.efficiencyScore,
+          storage_debt_bytes: r.q.storageDebtBytes
+        }
+      }) as any,
       incompleteCollections,
       incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => ({ ...s, series_title: s.seriesTitle, source_id: s.sourceId, library_id: s.libraryId, total_seasons: s.totalSeasons, total_episodes: s.totalEpisodes, owned_seasons: s.ownedSeasons, owned_episodes: s.ownedEpisodes, missing_seasons: s.missingSeasons, missing_episodes: s.missingEpisodes, completeness_percentage: s.completenessPercentage, tmdb_id: s.tmdbId || undefined, poster_url: s.posterUrl || undefined })) as any,
       incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => ({ ...a, artist_name: a.artistName, musicbrainz_id: a.musicbrainzId || undefined, completeness_percentage: a.completenessPercentage })) as any,

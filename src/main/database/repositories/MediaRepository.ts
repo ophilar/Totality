@@ -2,6 +2,7 @@ import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'dri
 import type { MediaItem, MediaItemFilters, MediaItemVersion, QualityScore, MediaItemType, MusicArtist, MusicAlbum, MusicTrack, ProviderType } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
+import { toSnakeCaseMediaItem, toSnakeCaseQualityScore } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -165,60 +166,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   private mapDrizzleToMediaItems(rows: any[]): MediaItem[] {
-    return rows.map(r => {
-      const item = r.item || r; // Handle both joined and direct select
-      const quality = r.quality || {};
-      return {
-        ...item,
-        source_id: item.sourceId,
-        source_type: item.sourceType,
-        library_id: item.libraryId,
-        plex_id: item.plexId,
-        sort_title: item.sortTitle,
-        series_title: item.seriesTitle,
-        season_number: item.seasonNumber,
-        episode_number: item.episodeNumber,
-        file_path: item.filePath,
-        file_size: item.fileSize,
-        video_codec: item.videoCodec,
-        video_bitrate: item.videoBitrate,
-        audio_codec: item.audioCodec,
-        audio_channels: item.audioChannels,
-        audio_bitrate: item.audioBitrate,
-        video_frame_rate: item.videoFrameRate,
-        color_bit_depth: item.colorBitDepth,
-        hdr_format: item.hdrFormat,
-        color_space: item.colorSpace,
-        video_profile: item.videoProfile,
-        video_level: item.videoLevel,
-        audio_profile: item.audioProfile,
-        audio_sample_rate: item.audioSampleRate,
-        has_object_audio: item.hasObjectAudio === 1,
-        audio_tracks: item.audioTracks,
-        subtitle_tracks: item.subtitleTracks,
-        version_count: item.versionCount,
-        file_mtime: item.fileMtime,
-        imdb_id: item.imdbId,
-        tmdb_id: item.tmdbId,
-        series_tmdb_id: item.seriesTmdbId,
-        original_language: item.originalLanguage,
-        audio_language: item.audioLanguage,
-        poster_url: item.posterUrl,
-        episode_thumb_url: item.episodeThumbUrl,
-        season_poster_url: item.seasonPosterUrl,
-        user_fixed_match: item.userFixedMatch === 1,
-        quality_tier: quality.qualityTier || item.qualityTier,
-        tier_quality: quality.tierQuality || item.tierQuality,
-        tier_score: quality.tierScore || item.tierScore,
-        overall_score: quality.overallScore,
-        needs_upgrade: quality.needsUpgrade === 1,
-        efficiency_score: quality.efficiencyScore || item.efficiencyScore,
-        storage_debt_bytes: quality.storageDebtBytes || item.storageDebtBytes,
-        issues: quality.issues,
-        created_at: item.createdAt,
-        updated_at: item.updatedAt
-      }
-    })
+    return rows.map(r => toSnakeCaseMediaItem(r))
   }
 
   async updatePathAndStats(mediaItemId: number, newPath: string, analysis: any): Promise<void> {
@@ -989,25 +937,6 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   private mapDrizzleToQualityScores(rows: any[]): QualityScore[] {
-    return rows.map(r => ({
-      id: r.id,
-      media_item_id: r.mediaItemId,
-      quality_tier: r.qualityTier,
-      tier_quality: r.tierQuality,
-      tier_score: r.tierScore,
-      bitrate_tier_score: r.bitrateTierScore,
-      audio_tier_score: r.audioTierScore,
-      overall_score: r.overallScore,
-      resolution_score: r.resolutionScore,
-      bitrate_score: r.bitrateScore,
-      audio_score: r.audioScore,
-      efficiency_score: r.efficiencyScore,
-      storage_debt_bytes: r.storageDebtBytes,
-      is_low_quality: r.isLowQuality === 1,
-      needs_upgrade: r.needsUpgrade === 1,
-      issues: r.issues,
-      created_at: r.createdAt,
-      updated_at: r.updatedAt
-    }))
+    return rows.map(r => toSnakeCaseQualityScore(r))
   }
 }
