@@ -17,7 +17,7 @@ import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { LibraryType, ProviderType } from '@main/types/database'
 import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
-import { createValidatedIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandler } from '@main/ipc/utils/createHandler'
+import { createValidatedIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandler, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import {
   AddSourceSchema,
   UpdateSourceTupleSchema,
@@ -376,14 +376,14 @@ export function registerSourceHandlers(): void {
   // LOCAL FOLDER
   // ============================================================================
 
-  createIpcHandler('local:selectFolder', async (event: any) => {
+  createIpcHandlerWithEvent('local:selectFolder', async (event: any) => {
     const win = getWindowFromEvent(event)
     if (!win) return { cancelled: true }
     const result = await dialog.showOpenDialog(win, { title: 'Select Media Folder', properties: ['openDirectory'], buttonLabel: 'Select Folder' })
     return result.canceled || result.filePaths.length === 0 ? { cancelled: true } : { cancelled: false, folderPath: result.filePaths[0] }
   })
 
-  createIpcHandler('local:selectFile', async (event: any, options?: any) => {
+  createIpcHandlerWithEvent('local:selectFile', async (event: any, options?: any) => {
     const win = getWindowFromEvent(event)
     if (!win) return { cancelled: true }
     const result = await dialog.showOpenDialog(win, options || { title: 'Select File', properties: ['openFile'] })

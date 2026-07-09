@@ -7,7 +7,7 @@ import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 import { getSourceManager } from '@main/services/SourceManager'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
-import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import {
   PositiveIntSchema,
   NonEmptyStringSchema,
@@ -51,7 +51,7 @@ export function registerMusicHandlers(): void {
     } finally { flush() }
   })
 
-  createIpcHandler('music:scanAll', async (event: any) => {
+  createIpcHandlerWithEvent('music:scanAll', async (event: any) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
     try {
