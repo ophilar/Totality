@@ -106,7 +106,18 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
   async count(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): Promise<number> {
     const conditions = this.buildFilters(filters)
-    return await this.countInternal(and(...conditions))
+
+    // We need to join quality_scores if the filters rely on it
+    const query = this.drizzle.select({ count: sql<number>`count(*)` })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+
+    if (conditions.length > 0) {
+      query.where(and(...conditions))
+    }
+
+    const res = await query.get()
+    return res?.count || 0
   }
 
   private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): any[] {

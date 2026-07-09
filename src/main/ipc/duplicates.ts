@@ -23,6 +23,6 @@ export function registerDuplicateHandlers() {
     return await getDeduplicationService().resolveDuplicate(duplicateId, keepItemId, deleteOthers)
   })
 
-  getLoggingService().info('[duplicates]', 'Duplicate IPC handlers registered')
+  getLoggingService().info('[duplicates]', 'Duplicates IPC handlers registered')
 }
 
