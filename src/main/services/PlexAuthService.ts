@@ -39,7 +39,7 @@ export class PlexAuthService {
       is_enabled: true,
     }
     await this.db.sources.upsertSource(sourceRecord)
-    const source = this.db.sources.getSourceById(sourceId)
+    const source = await this.db.sources.getSourceById(sourceId)
     if (!source) throw new Error('Failed to retrieve created source')
 
     this.providers.set(sourceId, provider)
@@ -56,7 +56,7 @@ export class PlexAuthService {
 
     const server = plexProvider.getSelectedServer()
     if (server) {
-      const source = this.db.sources.getSourceById(sourceId)
+      const source = await this.db.sources.getSourceById(sourceId)
       if (source) {
         const config = JSON.parse(source.connection_config)
         config.serverId = server.machineIdentifier

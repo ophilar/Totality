@@ -527,6 +527,51 @@ export class GeminiService {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
   }
+
+  /**
+   * List available models by querying the REST endpoint
+   */
+  async listModels(): Promise<Array<{ name: string; displayName: string }>> {
+    if (!this.apiKey) return []
+    try {
+      let baseUrl = 'https://generativelanguage.googleapis.com'
+      const db = getDatabase()
+      const customBaseUrl = process.env.GOOGLE_GENAI_BASE_URL || (await db.config.getSetting('gemini_base_url'))
+      if (customBaseUrl) {
+        baseUrl = customBaseUrl.replace(/\/v1beta\/?$/, '').replace(/\/v1\/?$/, '')
+      }
+      const url = `${baseUrl}/v1beta/models?key=${this.apiKey}`
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`Failed to fetch models: ${response.statusText}`)
+      const data = await response.json() as { models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }> }
+      
+      if (!data.models) return []
+      
+      const filtered = data.models
+        .filter(m => {
+          const name = m.name.replace('models/', '')
+          const supportsGeneration = m.supportedGenerationMethods?.includes('generateContent')
+          return supportsGeneration && (name.startsWith('gemini-') || name.startsWith('tunedModels/'))
+        })
+        .map(m => {
+          const name = m.name.replace('models/', '')
+          return {
+            name,
+            displayName: m.displayName || name
+          }
+        })
+
+      if (filtered.length > 0) return filtered
+    } catch (error) {
+      getLoggingService().error('[GeminiService]', 'Failed to list models:', error)
+    }
+
+    // Default fallback models
+    return [
+      { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash (Recommended)' },
+      { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (Most capable)' }
+    ]
+  }
 }
 
 // Singleton instance

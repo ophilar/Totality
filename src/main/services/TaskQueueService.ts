@@ -432,7 +432,24 @@ export class TaskQueueService {
     const service = this.getMusicBrainz()
     const db = this.db
     
-    if (!task.artistId) throw new Error('Missing artistId for music completeness analysis')
+    if (!task.artistId) {
+      const result = await service.analyzeAllMusic(
+        (prog: any) => {
+          onProgress({
+            current: prog.current,
+            total: prog.total,
+            percentage: Math.round(prog.percentage),
+            phase: prog.phase || 'processing',
+            currentItem: prog.currentItem
+          })
+        },
+        task.sourceId
+      )
+      task.result = {
+        itemsScanned: result.artistsAnalyzed || 0,
+      }
+      return
+    }
     
     const artist = await db.music.getArtistById(task.artistId)
     if (!artist) throw new Error(`Artist not found: ${task.artistId}`)

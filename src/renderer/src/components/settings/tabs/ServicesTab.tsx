@@ -166,6 +166,10 @@ export function ServicesTab() {
   const [originalGemini, setOriginalGemini] = useState('')
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [originalGeminiModel, setOriginalGeminiModel] = useState('gemini-2.5-flash')
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; displayName: string }>>([
+    { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash (Recommended)' },
+    { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (Most capable)' }
+  ])
   const [aiEnabled, setAiEnabled] = useState(true)
 
   // General state
@@ -232,6 +236,10 @@ export function ServicesTab() {
       setOriginalGemini(gemini)
       if (gemini) {
         setGeminiStatus('valid')
+        const models = await window.electronAPI.aiGetAvailableModels().catch(() => [])
+        if (models && models.length > 0) {
+          setAvailableModels(models)
+        }
       }
       const model = allSettings.gemini_model || 'gemini-2.5-flash'
       setGeminiModel(model)
@@ -273,6 +281,10 @@ export function ServicesTab() {
       const result = await window.electronAPI.aiTestApiKey(geminiApiKey)
       if (result.success) {
         setGeminiStatus('valid')
+        const models = await window.electronAPI.aiGetAvailableModels().catch(() => [])
+        if (models && models.length > 0) {
+          setAvailableModels(models)
+        }
       } else {
         setGeminiStatus('invalid')
         setGeminiError(result.error || 'Invalid API key')
@@ -734,8 +746,11 @@ export function ServicesTab() {
               onChange={(e) => setGeminiModel(e.target.value)}
               className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
             >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Most capable)</option>
+              {availableModels.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.displayName}
+                </option>
+              ))}
             </select>
           </div>
 

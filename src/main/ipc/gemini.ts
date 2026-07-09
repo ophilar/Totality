@@ -38,6 +38,7 @@ export function registerGeminiHandlers() {
 
   createIpcHandler(IPC_CHANNELS.AI.IS_CONFIGURED, async () => service.isConfigured())
   createIpcHandler(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO, async () => service.getRateLimitInfo())
+  createIpcHandler(IPC_CHANNELS.AI.GET_AVAILABLE_MODELS, async () => service.listModels())
 
   createValidatedIpcHandler(IPC_CHANNELS.AI.TEST_API_KEY, AiTestApiKeySchema, async (apiKey) => {
     try { return await service.testApiKey(apiKey) }

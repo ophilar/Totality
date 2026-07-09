@@ -7,6 +7,7 @@ export const aiApi = {
   // ============================================================================
   aiIsConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.AI.IS_CONFIGURED),
   aiGetRateLimitInfo: () => ipcRenderer.invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO),
+  aiGetAvailableModels: () => ipcRenderer.invoke(IPC_CHANNELS.AI.GET_AVAILABLE_MODELS),
   aiTestApiKey: (apiKey: string) => ipcRenderer.invoke(IPC_CHANNELS.AI.TEST_API_KEY, apiKey),
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -97,6 +98,7 @@ export interface AiAPI {
   // ============================================================================
   aiIsConfigured: () => Promise<boolean>
   aiGetRateLimitInfo: () => Promise<{ limited: boolean; retryAfterSeconds: number }>
+  aiGetAvailableModels: () => Promise<Array<{ name: string; displayName: string }>>
   aiTestApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>

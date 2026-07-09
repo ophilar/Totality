@@ -42,7 +42,8 @@ export function MoviesView({
   totalMovieCount,
   moviesLoading,
   onLoadMoreMovies,
-  collectionsOnly = false
+  collectionsOnly = false,
+  isAnalyzing = false
 }: {
   movies: MediaItem[]
   sortBy: 'title' | 'efficiency' | 'waste' | 'size'
@@ -62,6 +63,7 @@ export function MoviesView({
   moviesLoading: boolean
   onLoadMoreMovies: () => void
   collectionsOnly?: boolean
+  isAnalyzing?: boolean
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
 
@@ -174,6 +176,7 @@ export function MoviesView({
   )
 
   const { isScanning, scanProgress } = useSources()
+  const isActivelyProcessing = isAnalyzing || isScanning
   const activeScan = Array.from(scanProgress.values())[0]
 
   const emptyState = (
@@ -246,6 +249,7 @@ export function MoviesView({
               onDismissUpgrade={onDismissUpgrade}
               isExpanded={expandedRecommendations.has(item.movie.id!)}
               onToggleOptimize={() => toggleRecommendation(item.movie.id!)}
+              isAnalyzing={isActivelyProcessing}
             />
           </div>
         )
@@ -365,7 +369,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
   )
 }
 
-const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; isExpanded?: boolean; onToggleOptimize?: () => void }) => {
+const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize, isAnalyzing }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void; isExpanded?: boolean; onToggleOptimize?: () => void; isAnalyzing?: boolean }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
@@ -463,7 +467,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         )}
 
         {/* Analyzing Overlay */}
-        {(movie.efficiency_score === null || movie.efficiency_score === undefined) && (
+        {(movie.efficiency_score === null || movie.efficiency_score === undefined) && isAnalyzing && (
           <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
             <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
             <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>

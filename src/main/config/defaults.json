@@ -89,8 +89,8 @@
     "maxStoredNotifications": 100
   },
   "gemini": {
-    "defaultModel": "gemini-2.5-flash",
-    "fastModel": "gemini-2.5-flash",
+    "defaultModel": "gemini-3.1-flash-lite",
+    "fastModel": "gemini-3.1-flash-lite",
     "maxExplanationCache": 20
   },
   "quality": {

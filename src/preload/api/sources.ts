@@ -30,7 +30,6 @@ export const sourcesApi = {
   sourcesRemove: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.REMOVE, sourceId),
   sourcesList: (type?: string) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.LIST, type),
   sourcesGet: (sourceId: string) => ipcRenderer.invoke('sources:get', sourceId),
-  sourcesGetEnabled: () => ipcRenderer.invoke('sources:getEnabled'),
   sourcesToggle: (sourceId: string, enabled: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TOGGLE, sourceId, enabled),
 
@@ -39,14 +38,14 @@ export const sourcesApi = {
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId),
 
   // Plex-specific Auth (new flow for multi-source)
-  plexStartAuth: () => ipcRenderer.invoke('plex:startAuth'),
-  plexCheckAuth: (pinId: number) => ipcRenderer.invoke('plex:checkAuth', pinId),
+  plexStartAuth: () => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.START_AUTH),
+  plexCheckAuth: (pinId: number) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.CHECK_AUTH, pinId),
   plexAuthenticateAndDiscover: (token: string, displayName: string) =>
-    ipcRenderer.invoke('plex:authenticateAndDiscover', token, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.AUTHENTICATE_AND_DISCOVER, token, displayName),
   plexSelectServerForSource: (sourceId: string, serverId: string) =>
-    ipcRenderer.invoke('plex:selectServer', sourceId, serverId),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.SELECT_SERVER, sourceId, serverId),
   plexGetServersForSource: (sourceId: string) =>
-    ipcRenderer.invoke('plex:getServers', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.GET_SERVERS, sourceId),
 
   // Library Operations
   sourcesGetLibraries: (sourceId: string) =>
@@ -117,7 +116,6 @@ export const sourcesApi = {
 
   // Kodi Collections
   kodiImportCollections: (sourceId: string) => ipcRenderer.invoke('kodi:importCollections', sourceId),
-  kodiGetCollections: (sourceId: string) => ipcRenderer.invoke('kodi:getCollections', sourceId),
   onKodiCollectionProgress: (callback: (progress: { current: number; total: number; currentItem: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: { current: number; total: number; currentItem: string }) => callback(progress)
     ipcRenderer.on('kodi:collectionProgress', handler)
@@ -135,13 +133,6 @@ export const sourcesApi = {
     connectionTimeout?: number
   }) => ipcRenderer.invoke('kodi:testMySQLConnection', config),
 
-  kodiDetectMySQLDatabases: (config: {
-    host: string
-    port?: number
-    username: string
-    password: string
-    databasePrefix?: string
-  }) => ipcRenderer.invoke('kodi:detectMySQLDatabases', config),
 
   kodiAuthenticateMySQL: (config: {
     host: string
@@ -299,7 +290,6 @@ export interface SourcesAPI {
   sourcesRemove: (sourceId: string) => Promise<void>
   sourcesList: (type?: string) => Promise<MediaSourceResponse[]>
   sourcesGet: (sourceId: string) => Promise<MediaSourceResponse | null>
-  sourcesGetEnabled: () => Promise<MediaSourceResponse[]>
   sourcesToggle: (sourceId: string, enabled: boolean) => Promise<void>
 
   // Connection Testing
@@ -386,14 +376,6 @@ export interface SourcesAPI {
 
   // Kodi Collections
   kodiImportCollections: (sourceId: string) => Promise<{ imported: number; skipped: number }>
-  kodiGetCollections: (sourceId: string) => Promise<Array<{
-    idSet: number
-    name: string
-    overview: string | null
-    movieCount: number
-    posterUrl: string | null
-    fanartUrl: string | null
-  }>>
   onKodiCollectionProgress: (callback: (progress: { current: number; total: number; currentItem: string }) => void) => () => void
 
   // Kodi MySQL/MariaDB Connection
@@ -414,18 +396,6 @@ export interface SourcesAPI {
     musicDatabaseName?: string
     musicDatabaseVersion?: number
     latencyMs?: number
-  }>
-  kodiDetectMySQLDatabases: (config: {
-    host: string
-    port?: number
-    username: string
-    password: string
-    databasePrefix?: string
-  }) => Promise<{
-    videoDatabase: string | null
-    videoVersion: number | null
-    musicDatabase: string | null
-    musicVersion: number | null
   }>
   kodiAuthenticateMySQL: (config: {
     host: string

@@ -4,6 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as http from 'node:http'
 import { AddressInfo } from 'node:net'
 import { ProviderType } from '@main/types/database'
+import { SafeUrlSchema } from '@main/validation/schemas'
 
 describe('Plex Authentication (Real Logic)', () => {
   let server: http.Server
@@ -48,7 +49,7 @@ describe('Plex Authentication (Real Logic)', () => {
     await new Promise(resolve => server.close(resolve))
   })
 
-  it('should generate a correctly encoded Auth URL with hashbang', () => {
+  it('should generate a correctly encoded Auth URL with fragment parameters', () => {
     const provider = new PlexProvider({
       sourceId: 'test',
       sourceType: ProviderType.Plex,
@@ -59,9 +60,29 @@ describe('Plex Authentication (Real Logic)', () => {
     const url = provider.getAuthUrl(12345, 'TEST-CODE')
     
     // Verify 2026 Standards
-    expect(url).toContain('https://app.plex.tv/auth/#!?')
+    expect(url).toContain('https://app.plex.tv/auth#?')
     expect(url).toContain('context%5Bdevice%5D%5Bproduct%5D=Totality') // Encoded brackets
     expect(url).toContain('code=TEST-CODE')
+
+    // Parse URL and verify hash query params
+    const parsed = new URL(url)
+    expect(parsed.protocol).toBe('https:')
+    expect(parsed.host).toBe('app.plex.tv')
+    expect(parsed.pathname).toBe('/auth')
+    
+    // Extract fragment parameters manually
+    const fragment = parsed.hash.substring(1) // remove leading '#'
+    expect(fragment.startsWith('?')).toBe(true)
+    const hashParams = new URLSearchParams(fragment.substring(1)) // remove leading '?'
+    
+    expect(hashParams.get('clientID')).toBe('totality')
+    expect(hashParams.get('code')).toBe('TEST-CODE')
+    expect(hashParams.get('context[device][product]')).toBe('Totality')
+    expect(hashParams.get('context[device][platform]')).toMatch(/Windows|macOS/)
+    expect(hashParams.get('context[device][device]')).toBe('Totality')
+
+    // Verify it passes main process IPC SafeUrlSchema validation
+    expect(() => SafeUrlSchema.parse(url)).not.toThrow()
   })
 
   it('should successfully request and poll for a PIN using local server', async () => {

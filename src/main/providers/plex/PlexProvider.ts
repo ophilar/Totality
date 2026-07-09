@@ -99,7 +99,7 @@ export class PlexProvider extends BaseMediaProvider {
       'context[device][platform]': process.platform === 'win32' ? 'Windows' : 'macOS',
       'context[device][device]': PRODUCT_NAME
     })
-    return `${authBase}/#!?${params.toString()}`
+    return `${authBase}#?${params.toString()}`
   }
 
   async checkAuthPin(pinId: number): Promise<string | null> {
@@ -513,7 +513,7 @@ export class PlexProvider extends BaseMediaProvider {
         getLoggingService().info('[PlexProvider]', `Reconciling library ${libraryId}...`)
         const type = libraryInfo?.type === LibraryType.Show ? MediaItemType.Episode : MediaItemType.Movie
         
-        const removed = db.media.removeStaleProviderItems(this.sourceId, libraryId, type, validPlexIds)
+        const removed = await db.media.removeStaleProviderItems(this.sourceId, libraryId, type, validPlexIds)
         result.itemsRemoved = removed
         getLoggingService().info('[PlexProvider]', `Reconciling ${type}s: ${validPlexIds.size} in scan, removed ${removed} stale items from DB`)
       }

@@ -239,8 +239,8 @@ export class SourceManager {
 
   async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
     await this.initialize()
-    const source = this.db.sources.getSourceById(sourceId)
-    if (source) this.db.sources.upsertSource({ ...source, is_enabled: enabled })
+    const source = await this.db.sources.getSourceById(sourceId)
+    if (source) await this.db.sources.upsertSource({ ...source, is_enabled: enabled })
   }
 
   // Delegate Plex Auth to PlexAuthService
@@ -272,14 +272,14 @@ export class SourceManager {
     
     // Auth check for JF/Emby
     if (provider.providerType === ProviderType.Jellyfin || provider.providerType === ProviderType.Emby) {
-      const source = this.db.sources.getSourceById(sourceId)
+      const source = await this.db.sources.getSourceById(sourceId)
       if (source) {
         const config = JSON.parse(source.connection_config)
         if (config.username && config.password && !config.accessToken) {
           const res = await provider.authenticate({ serverUrl: config.serverUrl, username: config.username, password: config.password })
           if (res.success) {
             const updated = { ...config, accessToken: res.token, userId: res.userId, password: undefined }
-            this.db.sources.upsertSource({ ...source, connection_config: JSON.stringify(updated) })
+            await this.db.sources.upsertSource({ ...source, connection_config: JSON.stringify(updated) })
             this.providers.set(sourceId, createProvider(source.source_type as ProviderType, { sourceId, sourceType: source.source_type as ProviderType, displayName: source.display_name, connectionConfig: updated, isEnabled: !!source.is_enabled }))
           }
         }
@@ -287,7 +287,7 @@ export class SourceManager {
     }
 
     const res = await this.providers.get(sourceId)!.testConnection()
-    if (res.success) this.db.sources.updateSourceConnectionTime(sourceId)
+    if (res.success) await this.db.sources.updateSourceConnectionTime(sourceId)
     return res
   }
 
@@ -302,7 +302,7 @@ export class SourceManager {
     
     const promise = (async () => {
       const libs = await provider.getLibraries()
-      const scanTimes = this.db.sources.getLibraryScanTimes(sourceId)
+      const scanTimes = await this.db.sources.getLibraryScanTimes(sourceId)
       return libs.map(l => ({ ...l, scannedAt: scanTimes.get(l.id)?.lastScanAt || l.scannedAt, itemCount: scanTimes.get(l.id)?.itemsScanned || l.itemCount }))
     })()
     
@@ -311,14 +311,14 @@ export class SourceManager {
   }
 
   async triggerPostScanAnalysis(sourceId?: string, libraryId?: string): Promise<void> {
-    const sources = sourceId ? [this.db.sources.getSourceById(sourceId)].filter(Boolean) : this.db.sources.getEnabledSources()
+    const sources = sourceId ? [await this.db.sources.getSourceById(sourceId)].filter((s): s is MediaSource => s !== null) : await this.db.sources.getEnabledSources()
     const { getWishlistCompletionService } = await import('./WishlistCompletionService')
     for (const source of sources) {
       if (!source) continue
       const libs = await this.getLibraries(source.source_id)
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
-        if (!this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
-        if (this.db.config.getSetting('tmdb_api_key')) {
+        if (!await this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
+        if (await this.db.config.getSetting('tmdb_api_key')) {
           if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.SeriesCompleteness, label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
           if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.CollectionCompleteness, label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
         }
@@ -332,7 +332,7 @@ export class SourceManager {
   getSupportedProviders() { return getSupportedProviders() }
   async reloadProvider(sourceId: string) {
     await this.initialize()
-    const s = this.db.sources.getSourceById(sourceId)
+    const s = await this.db.sources.getSourceById(sourceId)
     if (!s) throw new Error('Not found')
     this.providers.set(sourceId, createProvider(s.source_type as ProviderType, { sourceId: s.source_id, sourceType: s.source_type as ProviderType, displayName: s.display_name, connectionConfig: JSON.parse(s.connection_config), isEnabled: !!s.is_enabled }))
   }
