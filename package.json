@@ -64,7 +64,7 @@
         "axios": "^1.16.1",
         "cross-env": "10.1.0",
         "cssnano": "^8.0.1",
-        "drizzle-kit": "^0.31.10",
+        "drizzle-kit": "^0.18.1",
         "electron": "^42.1.0",
         "electron-builder": "26.9.0",
         "esbuild": "0.28.1",
