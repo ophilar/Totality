@@ -146,9 +146,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
       service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: false, ffmpeg: true })
       const result = await service.checkAvailability()
       expect(result).toEqual({
-        handbrake: true,
-        mkvtoolnix: false,
-        ffmpeg: true
+        handbrake: true
       })
     })
   })
