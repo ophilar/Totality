@@ -48,4 +48,80 @@ export class PathUtils {
   static arePathsEqual(pathA: string, pathB: string): boolean {
     return this.toDatabasePath(pathA) === this.toDatabasePath(pathB)
   }
+
+  /**
+   * Strictly sanitizes an arbitrary file path to prevent command injection and ensure it is absolute.
+   * Rejects paths containing null bytes.
+   */
+  static sanitizeAbsolutePath(filePath: string): string {
+    if (!filePath) return ''
+    if (filePath.includes('\0')) {
+      throw new Error('Invalid path: contains null bytes')
+    }
+    return path.resolve(filePath)
+  }
+
+  /**
+   * Resolves the path for an executable.
+   * If the path contains path separators, it resolves it to an absolute path.
+   * Otherwise, it relies on the system's PATH.
+   */
+  static resolveExecutablePath(toolPath: string): string {
+    if (!toolPath) return toolPath
+    if (toolPath.includes('\0')) {
+      throw new Error('Invalid executable path: contains null bytes')
+    }
+    if (path.isAbsolute(toolPath) || toolPath.includes(path.sep)) {
+      return path.resolve(toolPath)
+    }
+    return toolPath
+  }
+
+  /**
+   * Generates a list of possible paths for a given executable binary,
+   * allowing services to test and automatically find system dependencies.
+   * @param binaryName Base name of the binary (e.g. 'ffmpeg', 'HandBrakeCLI')
+   * @param bundledPath Optional path to a bundled version of the binary
+   * @param extraWindowsPaths Additional expected install locations on Windows
+   */
+  static getPossibleExecutablePaths(
+    binaryName: string,
+    bundledPath?: string,
+    extraWindowsPaths: string[] = []
+  ): string[] {
+    const isWin = process.platform === 'win32'
+    const ext = isWin ? '.exe' : ''
+    const fullName = binaryName + ext
+
+    const paths: string[] = []
+    if (bundledPath) {
+      paths.push(bundledPath)
+    }
+
+    // Always include bare binary name to rely on system PATH
+    paths.push(fullName)
+
+    if (isWin) {
+      // Common Windows installation paths
+      paths.push(`C:\\Program Files\\${binaryName}\\${fullName}`)
+      paths.push(`C:\\Program Files\\${binaryName}\\bin\\${fullName}`)
+      paths.push(`C:\\${binaryName}\\bin\\${fullName}`)
+      // Custom extra paths provided by caller
+      for (const p of extraWindowsPaths) {
+        paths.push(p)
+      }
+    } else if (process.platform === 'darwin') {
+      paths.push(`/usr/local/bin/${binaryName}`)
+      paths.push(`/opt/homebrew/bin/${binaryName}`)
+      if (binaryName.toLowerCase().includes('handbrake')) {
+        paths.push(`/Applications/HandBrake.app/Contents/MacOS/HandBrakeCLI`)
+      }
+    } else {
+      paths.push(`/usr/bin/${binaryName}`)
+      paths.push(`/usr/local/bin/${binaryName}`)
+    }
+
+    // Deduplicate array
+    return Array.from(new Set(paths))
+  }
 }

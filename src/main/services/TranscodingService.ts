@@ -7,6 +7,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { getGeminiService } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { APP_CONFIG } from '@main/config'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
@@ -40,9 +41,7 @@ export interface TranscodingParams {
  */
 export class TranscodingService {
   private handbrakePath: string | null = null
-  private mkvmergePath: string | null = null
-  private ffmpegPath: string | null = null
-  private availabilityOverride: { handbrake?: boolean; mkvtoolnix?: boolean; ffmpeg?: boolean } | null = null
+  private availabilityOverride: { handbrake?: boolean } | null = null
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
 
@@ -62,25 +61,31 @@ export class TranscodingService {
       throw new Error('Database not initialized. Cannot load transcoding tool paths.')
     }
 
-    const [hb, mkv] = await Promise.all([
-      db.config.getSetting('handbrake_path'),
-      db.config.getSetting('mkvmerge_path')
-    ])
+    const hbConfig = await db.config.getSetting('handbrake_path')
+    
+    // Find HandBrakeCLI using standard OS search paths if config is not set
+    const possibleHbPaths = PathUtils.getPossibleExecutablePaths('HandBrakeCLI', hbConfig || undefined)
 
-    this.handbrakePath = hb || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
-    this.mkvmergePath = mkv || (process.platform === 'win32' ? 'mkvmerge.exe' : 'mkvmerge')
+    // Test each possible path and use the first working one
+    for (const p of possibleHbPaths) {
+      if (await this.testTool(p, ['--version'])) {
+        this.handbrakePath = p
+        break
+      }
+    }
     
-    // Fallback FFmpeg from MediaFileAnalyzer
-    const analyzer = getMediaFileAnalyzer()
-    this.ffmpegPath = analyzer.getFFprobePath()?.replace(/ffprobe/i, 'ffmpeg') || 'ffmpeg'
-    
-    getLoggingService().debug('[TranscodingService]', `Paths initialized - Handbrake: ${this.handbrakePath}, MKVMerge: ${this.mkvmergePath}`)
+    // If none worked, fallback to bare command so PATH can be attempted
+    if (!this.handbrakePath) {
+      this.handbrakePath = hbConfig || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
+    }
+
+    getLoggingService().debug('[TranscodingService]', `Paths initialized - Handbrake: ${this.handbrakePath}`)
   }
 
   /**
    * For testing: Override tool availability
    */
-  setAvailabilityOverride(override: { handbrake?: boolean; mkvtoolnix?: boolean; ffmpeg?: boolean } | null): void {
+  setAvailabilityOverride(override: { handbrake?: boolean } | null): void {
     this.availabilityOverride = override
   }
 
@@ -89,55 +94,27 @@ export class TranscodingService {
    */
   async checkAvailability(): Promise<{ 
     handbrake: boolean; 
-    mkvtoolnix: boolean;
-    ffmpeg: boolean;
   }> {
     await this.ensureInitialized()
 
     if (this.availabilityOverride) {
       return {
-        handbrake: this.availabilityOverride.handbrake ?? false,
-        mkvtoolnix: this.availabilityOverride.mkvtoolnix ?? false,
-        ffmpeg: this.availabilityOverride.ffmpeg ?? false
+        handbrake: this.availabilityOverride.handbrake ?? false
       }
     }
 
-    const [hb, mkv, ff] = await Promise.all([
-      this.testTool(this.handbrakePath || 'HandBrakeCLI', ['--version']),
-      this.testTool(this.mkvmergePath || 'mkvmerge', ['--version']),
-      this.testTool(this.ffmpegPath || 'ffmpeg', ['-version'])
-    ])
+    const hb = await this.testTool(this.handbrakePath || 'HandBrakeCLI', ['--version'])
 
     return { 
-      handbrake: hb, 
-      mkvtoolnix: mkv,
-      ffmpeg: ff
+      handbrake: hb
     }
   }
 
-
-  private sanitizePath(filePath: string): string {
-    if (filePath.includes('\0')) {
-      throw new Error('Invalid path: contains null bytes')
-    }
-    return path.resolve(filePath)
-  }
-
-  private resolveExecutablePath(toolPath: string): string {
-    if (!toolPath) return toolPath
-    if (toolPath.includes('\0')) {
-      throw new Error('Invalid path: contains null bytes')
-    }
-    if (path.isAbsolute(toolPath) || toolPath.includes(path.sep)) {
-      return path.resolve(toolPath)
-    }
-    return toolPath
-  }
 
   private async testTool(toolPath: string, args: string[]): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        const actualPath = this.resolveExecutablePath(toolPath)
+        const actualPath = PathUtils.resolveExecutablePath(toolPath)
         const proc = spawn(actualPath, args, { stdio: 'ignore' })
         proc.on('close', (code) => resolve(code === 0))
         proc.on('error', () => resolve(false))
@@ -242,31 +219,7 @@ export class TranscodingService {
         handbrakeArgs.push('--all-subtitles')
       }
 
-      // Test compatibility: parse and strictly sanitize raw handbrakeArgs if provided
-      if (data.handbrakeArgs && Array.isArray(data.handbrakeArgs)) {
-        const allowedFlags = ['--encoder', '-e', '--quality', '-q', '--encoder-preset', '--all-audio', '--audio', '-a', '--all-subtitles', '--preset', '--encoder-profile']
-        const testArgs: string[] = []
-        for (let i = 0; i < data.handbrakeArgs.length; i++) {
-          const arg = data.handbrakeArgs[i]
-          if (allowedFlags.includes(arg)) {
-            testArgs.push(arg)
-            const nextArg = data.handbrakeArgs[i + 1]
-            if (nextArg && !nextArg.startsWith('-') && /^[a-zA-Z0-9_-]+$/.test(nextArg)) {
-              testArgs.push(nextArg)
-              i++
-            }
-          }
-        }
-        if (testArgs.length > 0) {
-          return {
-            summary,
-            handbrakeArgs: testArgs,
-            mkvmergeArgs: [],
-            expectedSizeReduction: data.expectedSizeReduction,
-            warnings: data.warnings || []
-          }
-        }
-      }
+
 
       return {
         summary,
@@ -306,11 +259,11 @@ export class TranscodingService {
     try {
       onProgress?.({ percent: 0, status: 'initializing' })
       
-      const inputPath = this.sanitizePath(item.file_path)
+      const inputPath = PathUtils.sanitizeAbsolutePath(item.file_path)
       const params = await this.getTranscodeParameters(inputPath, options)
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
-      tempPath = this.sanitizePath(path.join(
+      tempPath = PathUtils.sanitizeAbsolutePath(path.join(
         path.dirname(inputPath),
         `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
@@ -354,22 +307,15 @@ export class TranscodingService {
         getLoggingService().info('[TranscodingService]', `Replacing original file: ${inputPath}`)
         
         const finalPath = path.join(path.dirname(inputPath), path.basename(inputPath, path.extname(inputPath)) + outputExt)
-        const backupPath = inputPath + '.bak'
         
-        await fs.rename(inputPath, backupPath)
+        // Remove original and rename directly. Atomic moves cross-device are not supported by rename, but rename works on same device.
+        if (existsSync(inputPath)) await fs.unlink(inputPath)
+        await fs.rename(tempPath, finalPath)
         
-        try {
-          await fs.rename(tempPath, finalPath)
-          if (existsSync(backupPath)) await fs.unlink(backupPath)
-          
-          // Re-analyze the new file
-          const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
-          if (newAnalysis.success) {
-             await db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
-          }
-        } catch (err) {
-          if (existsSync(backupPath)) await fs.rename(backupPath, inputPath)
-          throw err
+        // Re-analyze the new file
+        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
+        if (newAnalysis.success) {
+           await db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
         }
       }
 
@@ -381,7 +327,7 @@ export class TranscodingService {
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
       
       if (tempPath && existsSync(tempPath)) {
-        await fs.unlink(tempPath).catch(() => {})
+        try { await fs.unlink(tempPath) } catch (e) { getLoggingService().warn('[TranscodingService]', 'Failed to clean up temp file:', e) }
       }
 
       onProgress?.({ percent: 0, status: 'failed', error: msg })
@@ -393,7 +339,7 @@ export class TranscodingService {
 
   private runHandbrake(args: string[], onProgress: (p: any) => void, signal?: AbortSignal): Promise<boolean> {
     return new Promise((resolve) => {
-      const actualPath = this.resolveExecutablePath(this.handbrakePath || 'HandBrakeCLI')
+      const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || 'HandBrakeCLI')
       const proc = spawn(actualPath, args)
       
       if (signal) {
