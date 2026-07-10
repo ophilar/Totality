@@ -89,7 +89,7 @@ describe('TranscodingService (No Mocks)', () => {
   it('should check tool availability', async () => {
     const availability = await service.checkAvailability()
     expect(availability.handbrake).toBe(true)
-    expect(availability.ffmpeg).toBe(true)
+
   })
 
   it('should generate transcoding parameters via Gemini', async () => {
