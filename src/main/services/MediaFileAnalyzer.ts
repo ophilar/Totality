@@ -199,8 +199,12 @@ export class MediaFileAnalyzer {
         const actualPath = PathUtils.resolveExecutablePath(binaryPath)
         const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
         proc.on('close', (code) => resolve(code === 0))
-        proc.on('error', (err) => {
-          getLoggingService().warn('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
+        proc.on('error', (err: any) => {
+          if (err.code === 'ENOENT') {
+            getLoggingService().debug('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
+          } else {
+            getLoggingService().warn('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
+          }
           resolve(false)
         })
       } catch (err) {
