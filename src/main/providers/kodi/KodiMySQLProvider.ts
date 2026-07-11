@@ -40,16 +40,16 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     }
   }
 
-  protected async queryAll<T>(sql: string, params: any[] = []): Promise<T[]> {
-    const pool = await this.getVideoPool()
+  protected async queryAll<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
+    const pool = dbType === 'music' ? await this.getMusicPool() : await this.getVideoPool()
     // MySQL uses ? for placeholders, same as SQLite
     // We might need to adjust some syntax if it's too SQLite-specific
     const [rows] = await pool.execute(sql, params)
     return rows as T[]
   }
 
-  protected async queryOne<T>(sql: string, params: any[] = []): Promise<T | null> {
-    const rows = await this.queryAll<T>(sql, params)
+  protected async queryOne<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
+    const rows = await this.queryAll<T>(sql, params, dbType)
     return rows.length > 0 ? rows[0] : null
   }
 
@@ -60,6 +60,16 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     const service = getKodiMySQLConnectionService()
     this.videoPool = await service.getConnection(this.mysqlConfig, 'video')
     return this.videoPool
+  }
+
+  private async getMusicPool(): Promise<Pool> {
+    if (this.musicPool) return this.musicPool
+    if (!this.mysqlConfig) throw new Error('MySQL config not found')
+    if (!this.mysqlConfig.musicDatabaseName) throw new Error('Music database not configured')
+
+    const service = getKodiMySQLConnectionService()
+    this.musicPool = await service.getConnection(this.mysqlConfig, 'music')
+    return this.musicPool
   }
 
   async getLibraries(): Promise<MediaLibrary[]> {
@@ -74,8 +84,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
       if (episodeCount > 0) libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show', itemCount: episodeCount })
       
       if (this.mysqlConfig?.musicDatabaseName) {
-        const service = getKodiMySQLConnectionService()
-        const mPool = await service.getConnection(this.mysqlConfig, 'music')
+        const mPool = await this.getMusicPool()
         const [rows] = await mPool.execute(QUERY_MUSIC_SONG_COUNT)
         const songCount = (rows as any)?.[0]?.count || 0
         if (songCount > 0) libraries.push({ id: 'music', name: 'Music', type: 'music', itemCount: songCount })
