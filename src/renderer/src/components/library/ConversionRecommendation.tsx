@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { Sparkles, Loader2, AlertCircle, Copy, Check, Info, Zap } from 'lucide-react'
 import type { MediaItem } from '@/components/library/types'
 
@@ -31,10 +32,17 @@ export function ConversionRecommendation({
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiConfigured, setAiConfigured] = useState<boolean>(false)
   const [mode, setMode] = useState<'standard' | 'ai'>('standard')
+  const [handbrakeAvailable, setHandbrakeAvailable] = useState<boolean>(false)
+  const [handbrakeEnabled, setHandbrakeEnabled] = useState<boolean>(false)
+  const [showTranscodeModal, setShowTranscodeModal] = useState<boolean>(false)
+
 
   useEffect(() => {
     window.electronAPI.aiIsConfigured().then(setAiConfigured)
+    window.electronAPI.checkAvailability().then(res => setHandbrakeAvailable(res.handbrake))
+    window.electronAPI.getAllSettings().then(settings => setHandbrakeEnabled(settings.handbrake_enabled !== 'false'))
   }, [])
+
 
   // Visibility logic: Only show for items that are inefficient or have significant storage debt
   const isInefficient = useMemo(() => {
@@ -120,7 +128,18 @@ export function ConversionRecommendation({
     >
       {/* Header & Mode Toggles */}
       <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+
         <div className="flex items-center gap-4">
+          {handbrakeAvailable && handbrakeEnabled && (
+            <button
+              onClick={() => setShowTranscodeModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded font-semibold text-xs shadow-sm transition-all animate-in fade-in"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              Optimize with HandBrake...
+            </button>
+          )}
+
           <button
             onClick={() => setMode('standard')}
             className={`flex items-center gap-1.5 transition-colors ${mode === 'standard' ? 'text-primary font-bold underline underline-offset-4' : 'text-muted-foreground hover:text-foreground'}`}
@@ -323,6 +342,7 @@ export function ConversionRecommendation({
           Parameters focus on reducing storage footprint while targeting visual transparency.
         </span>
       </div>
+      {showTranscodeModal && <TranscodeModal mediaId={item.id!} onClose={() => setShowTranscodeModal(false)} />}
     </div>
   )
 }
