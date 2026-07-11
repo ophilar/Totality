@@ -139,6 +139,11 @@ export function ServicesTab() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
+  // Handbrake state
+  const [handbrakeAvailable, setHandbrakeAvailable] = useState<boolean | null>(null)
+  const [handbrakeVersion, setHandbrakeVersion] = useState<string | null>(null)
+  const [handbrakePath, setHandbrakePath] = useState<string>('')
+
   // NFS Mappings state
   const [nfsMappings, setNfsMappings] = useState<Record<string, string>>({})
   const [originalNfsMappings, setOriginalNfsMappings] = useState<Record<string, string>>({})
@@ -216,11 +221,13 @@ export function ServicesTab() {
   const loadSettings = async () => {
     setIsLoading(true)
     try {
-      const [allSettings, ffAvailable, ffBundled, ffVersion, nfsMaps] = await Promise.all([
+      const [allSettings, ffAvailable, ffBundled, ffVersion, transcodeAvail, hbVersion, nfsMaps] = await Promise.all([
         window.electronAPI.getAllSettings(),
         window.electronAPI.ffprobeIsAvailable(),
         window.electronAPI.ffprobeIsBundled(),
         window.electronAPI.ffprobeGetVersion().catch(() => null),
+        window.electronAPI.checkAvailability(),
+        window.electronAPI.handbrakeGetVersion().catch(() => null),
         window.electronAPI.getNfsMappings(),
       ])
 
@@ -250,6 +257,10 @@ export function ServicesTab() {
       setFfprobeBundled(ffBundled)
       setFfprobeVersion(ffVersion)
       setFfprobeEnabled(allSettings.ffprobe_enabled === 'true')
+
+      setHandbrakeAvailable(transcodeAvail.handbrake)
+      setHandbrakeVersion(hbVersion)
+      setHandbrakePath(allSettings.handbrake_path || '')
 
       setNfsMappings(nfsMaps || {})
       setOriginalNfsMappings(nfsMaps || {})
@@ -439,6 +450,28 @@ export function ServicesTab() {
   const nfsConfigured = Object.keys(nfsMappings).length > 0
   const geminiConfigured = !!geminiApiKey.trim() && aiEnabled
 
+  const handleSelectHandbrakePath = async () => {
+    const result = await window.electronAPI.localSelectFile({
+      title: 'Select HandBrake CLI Executable',
+      properties: ['openFile'],
+      filters: [{ name: 'Executables', extensions: ['exe', 'app', ''] }]
+    })
+    if (!result.cancelled && result.filePath) {
+      setHandbrakePath(result.filePath)
+      try {
+        await window.electronAPI.setSetting('handbrake_path', result.filePath)
+        await loadSettings() // Reload to verify availability
+      } catch (error) {
+        window.electronAPI.log.error('[ServicesTab]', 'Failed to save HandBrake setting:', error)
+      }
+    }
+  }
+
+  const getHandbrakeStatusText = () => {
+    if (!handbrakeAvailable) return 'Not configured'
+    return handbrakeVersion ? `${handbrakeVersion}` : 'Configured'
+  }
+
   const getFFprobeStatusText = () => {
     if (!ffprobeAvailable) return 'Not installed'
     if (!ffprobeEnabled) return 'Installed but disabled'
@@ -527,6 +560,52 @@ export function ServicesTab() {
             Free API key from{' '}
             <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
           </p>
+        </div>
+      </ServiceCard>
+
+
+      {/* HandBrake Card */}
+      <ServiceCard
+        title="HandBrake CLI"
+        description="Used for AI-optimized video transcoding"
+        icon={<Film className="w-5 h-5" />}
+        status={handbrakeAvailable ? 'configured' : 'not-configured'}
+        statusText={getHandbrakeStatusText()}
+        expanded={expandedCards.has('handbrake')}
+        onToggle={() => toggleCard('handbrake')}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Executable Path</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={handbrakePath}
+                onChange={(e) => setHandbrakePath(e.target.value)}
+                onBlur={async () => {
+                  await window.electronAPI.setSetting('handbrake_path', handbrakePath)
+                  await loadSettings()
+                }}
+                placeholder="Leave empty to use system PATH"
+                className="flex-1 px-3 py-1.5 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                onClick={handleSelectHandbrakePath}
+                className="px-3 py-1.5 text-sm border border-input bg-background hover:bg-muted rounded-md transition-colors"
+              >
+                Browse...
+              </button>
+            </div>
+            {!handbrakeAvailable && (
+              <div className="text-xs text-muted-foreground mt-2">
+                <p>HandBrakeCLI is not currently detected on your system. You can:</p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>Download it from <button type="button" onClick={() => window.electronAPI.openExternal('https://handbrake.fr/downloads2.php')} className="text-primary hover:underline">handbrake.fr/downloads2.php</button></li>
+                  <li>Extract the executable (HandBrakeCLI) to a standard path or specify its location above.</li>
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       </ServiceCard>
 
