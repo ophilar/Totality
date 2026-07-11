@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod'
-import { ProviderType, MediaItemType, WishlistMediaType, WishlistReason, WishlistStatus, TaskType } from '@main/types/database'
+import { ProviderType, MediaItemType, WishlistMediaType, WishlistReason, WishlistStatus, TaskType, LibraryType } from '@main/types/database'
 
 // ============================================================================
 // COMMON SCHEMAS
@@ -292,7 +292,7 @@ export const KodiMySQLTestConfigSchema = z.object({
 export const LocalFolderConfigSchema = z.object({
   folderPath: FilePathSchema,
   displayName: z.string().min(1).max(100).trim(),
-  mediaType: z.enum(['movies', 'tvshows', 'mixed']),
+  mediaType: z.nativeEnum(LibraryType),
 })
 
 /**
@@ -304,7 +304,7 @@ export const LocalFolderWithLibrariesSchema = z.object({
   libraries: z.array(z.object({
     name: z.string().min(1).max(200),
     path: FilePathSchema,
-    mediaType: z.enum(['movies', 'tvshows', 'music']),
+    mediaType: z.nativeEnum(LibraryType),
     enabled: z.boolean(),
   })).max(50),
 })
