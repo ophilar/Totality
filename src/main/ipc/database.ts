@@ -29,6 +29,7 @@ import {
   GetExclusionsTupleSchema,
 } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getTranscodingService } from '@main/services/TranscodingService'
 import { getSourceManager } from '@main/services/SourceManager'
 import { MediaItemType } from '@main/types/database'
 import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
@@ -127,7 +128,10 @@ export function registerDatabaseHandlers() {
         getGeminiAnalysisService().generateCompletenessInsights(() => {}).catch(() => {})
       }
     }
+
     if (key === 'ffprobe_enabled' && value === 'true') getQualityAnalyzer().analyzeAllMediaItems().catch(() => {})
+    if (key === 'handbrake_path' || key === 'handbrake_enabled') getTranscodingService().invalidate()
+
 
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.webContents.send('settings:changed', { key, hasValue: !!value })

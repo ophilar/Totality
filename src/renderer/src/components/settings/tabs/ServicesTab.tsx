@@ -143,6 +143,7 @@ export function ServicesTab() {
   const [handbrakeAvailable, setHandbrakeAvailable] = useState<boolean | null>(null)
   const [handbrakeVersion, setHandbrakeVersion] = useState<string | null>(null)
   const [handbrakePath, setHandbrakePath] = useState<string>('')
+  const [handbrakeEnabled, setHandbrakeEnabled] = useState(false)
 
   // NFS Mappings state
   const [nfsMappings, setNfsMappings] = useState<Record<string, string>>({})
@@ -261,6 +262,7 @@ export function ServicesTab() {
       setHandbrakeAvailable(transcodeAvail.handbrake)
       setHandbrakeVersion(hbVersion)
       setHandbrakePath(allSettings.handbrake_path || '')
+      setHandbrakeEnabled(allSettings.handbrake_enabled !== 'false')
 
       setNfsMappings(nfsMaps || {})
       setOriginalNfsMappings(nfsMaps || {})
@@ -374,6 +376,18 @@ export function ServicesTab() {
     }
   }
 
+
+  const handleToggleHandbrake = async () => {
+    const newValue = !handbrakeEnabled
+    setHandbrakeEnabled(newValue)
+    try {
+      await window.electronAPI.setSetting('handbrake_enabled', newValue ? 'true' : 'false')
+    } catch (error) {
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save Handbrake setting:', error)
+      setHandbrakeEnabled(!newValue)
+    }
+  }
+
   const handleToggleFFprobe = async () => {
     const newValue = !ffprobeEnabled
     setFfprobeEnabled(newValue)
@@ -447,6 +461,13 @@ export function ServicesTab() {
       ? 'configured'
       : 'partial'
     : 'not-configured'
+
+  const handbrakeStatus: 'configured' | 'partial' | 'not-configured' = handbrakeAvailable
+    ? handbrakeEnabled
+      ? 'configured'
+      : 'partial'
+    : 'not-configured'
+
   const nfsConfigured = Object.keys(nfsMappings).length > 0
   const geminiConfigured = !!geminiApiKey.trim() && aiEnabled
 
@@ -469,6 +490,7 @@ export function ServicesTab() {
 
   const getHandbrakeStatusText = () => {
     if (!handbrakeAvailable) return 'Not configured'
+    if (!handbrakeEnabled) return 'Installed but disabled'
     return handbrakeVersion ? `${handbrakeVersion}` : 'Configured'
   }
 
@@ -569,10 +591,11 @@ export function ServicesTab() {
         title="HandBrake CLI"
         description="Used for AI-optimized video transcoding"
         icon={<Film className="w-5 h-5" />}
-        status={handbrakeAvailable ? 'configured' : 'not-configured'}
+        status={handbrakeStatus}
         statusText={getHandbrakeStatusText()}
         expanded={expandedCards.has('handbrake')}
         onToggle={() => toggleCard('handbrake')}
+        enableToggle={handbrakeAvailable ? { enabled: handbrakeEnabled, onToggle: handleToggleHandbrake, id: toggleId + '-hb' } : undefined}
       >
         <div className="space-y-4">
           <div className="space-y-2">
