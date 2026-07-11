@@ -28,12 +28,12 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
   /**
    * Execute a SQL query and return all rows.
    */
-  protected abstract queryAll<T>(sql: string, params?: any[]): Promise<T[]>
+  protected abstract queryAll<T>(sql: string, params?: any[], dbType?: 'video' | 'music'): Promise<T[]>
 
   /**
    * Execute a SQL query and return a single row.
    */
-  protected abstract queryOne<T>(sql: string, params?: any[]): Promise<T | null>
+  protected abstract queryOne<T>(sql: string, params?: any[], dbType?: 'video' | 'music'): Promise<T | null>
 
   /**
    * Get audio streams from streamdetails table.
@@ -215,6 +215,120 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
             }
           }
         }
+      }
+
+      await db.sources.updateSourceScanTime(this.sourceId)
+      result.success = true
+      result.durationMs = Date.now() - startTime
+      return result
+    } catch (error: unknown) {
+      result.errors.push(getErrorMessage(error))
+      result.durationMs = Date.now() - startTime
+      return result
+    }
+  }
+
+
+  async scanMusicLibrary(options?: ScanOptions): Promise<ScanResult> {
+    const { onProgress } = options || {}
+    this.scanCancelled = false
+    const startTime = Date.now()
+    const result: ScanResult = {
+      success: false,
+      itemsScanned: 0,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      itemsRemoved: 0,
+      errors: [],
+      durationMs: 0,
+    }
+
+    try {
+      const db = getDatabase()
+
+      const { QUERY_MUSIC_ARTISTS, QUERY_MUSIC_ALBUMS, QUERY_MUSIC_SONGS } = await import('@main/providers/kodi/KodiMusicDatabaseSchema')
+
+      const artists = await this.queryAll<any>(QUERY_MUSIC_ARTISTS, [], 'music')
+      const albums = await this.queryAll<any>(QUERY_MUSIC_ALBUMS, [], 'music')
+      const songs = await this.queryAll<any>(QUERY_MUSIC_SONGS, [], 'music')
+
+      const totalItems = artists.length + albums.length + songs.length
+      getLoggingService().info(`[${this.constructor.name}]`, `Scanning ${totalItems} music items...`)
+
+      db.startBatch()
+
+      let itemIndex = 0
+
+      try {
+        // Sync Artists
+        for (const artist of artists) {
+          if (this.scanCancelled) break
+          itemIndex++
+          if (onProgress) {
+            onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: artist.strArtist, percentage: (itemIndex / totalItems) * 100 })
+          }
+          try {
+            const mappedArtist = KodiMappingUtils.mapToMusicArtist(artist, this.sourceId, this.providerType)
+            await db.music.upsertArtist(mappedArtist)
+            result.itemsScanned++
+          } catch (err: unknown) {
+             result.errors.push(`Failed to process artist ${artist.strArtist}: ${getErrorMessage(err)}`)
+          }
+        }
+
+        // Sync Albums
+        for (const album of albums) {
+          if (this.scanCancelled) break
+          itemIndex++
+          if (onProgress) {
+            onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: album.strAlbum, percentage: (itemIndex / totalItems) * 100 })
+          }
+          try {
+            // Find Totality artist ID for this album's Kodi artistId
+            let dbArtistId: number | undefined = undefined
+            if (album.artistId) {
+               const a = db.music.getArtistByProviderId(this.sourceId, String(album.artistId))
+               if (a) dbArtistId = a.id
+            }
+
+            const mappedAlbum = KodiMappingUtils.mapToMusicAlbum(album, this.sourceId, this.providerType, dbArtistId)
+            await db.music.upsertAlbum(mappedAlbum)
+            result.itemsScanned++
+          } catch (err: unknown) {
+             result.errors.push(`Failed to process album ${album.strAlbum}: ${getErrorMessage(err)}`)
+          }
+        }
+
+        // Sync Songs
+        for (const song of songs) {
+          if (this.scanCancelled) break
+          itemIndex++
+          if (onProgress) {
+            onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: song.strTitle, percentage: (itemIndex / totalItems) * 100 })
+          }
+          try {
+             // We need to resolve db album and artist IDs
+             let dbAlbumId: number | undefined = undefined
+             let dbArtistId: number | undefined = undefined
+
+             if (song.idAlbum) {
+                 const a = db.music.getAlbumByProviderId(this.sourceId, String(song.idAlbum))
+                 if (a) {
+                     dbAlbumId = a.id
+                     dbArtistId = a.artist_id
+                 }
+             }
+
+             const mappedSong = KodiMappingUtils.mapToMusicTrack(song, this.sourceId, this.providerType, dbAlbumId, dbArtistId)
+             await db.music.upsertTrack(mappedSong)
+             result.itemsScanned++
+          } catch (err: unknown) {
+             result.errors.push(`Failed to process song ${song.strTitle}: ${getErrorMessage(err)}`)
+          }
+        }
+
+      } finally {
+        await db.endBatch()
       }
 
       await db.sources.updateSourceScanTime(this.sourceId)

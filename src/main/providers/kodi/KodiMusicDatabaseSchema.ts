@@ -321,6 +321,7 @@ export function buildMusicFilePath(path: string, filename: string): string {
  * Extract codec from file extension (fallback when Kodi doesn't have stream details)
  */
 export function guessCodecFromExtension(filename: string): string {
+  if (!filename) return 'unknown';
   const ext = filename.split('.').pop()?.toLowerCase() || ''
 
   const codecMap: Record<string, string> = {

@@ -37,13 +37,13 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
     }
   }
 
-  protected async queryAll<T>(sql: string, params: any[] = []): Promise<T[]> {
-    const db = await this.getDb()
+  protected async queryAll<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
+    const db = dbType === 'music' ? await this.getMusicDb() : await this.getDb()
     return db.prepare(sql).all(...params) as T[]
   }
 
-  protected async queryOne<T>(sql: string, params: any[] = []): Promise<T | null> {
-    const db = await this.getDb()
+  protected async queryOne<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
+    const db = dbType === 'music' ? await this.getMusicDb() : await this.getDb()
     return (db.prepare(sql).get(...params) as T) || null
   }
 
@@ -57,6 +57,16 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
     return this.db
   }
 
+  private async getMusicDb(): Promise<DatabaseSync> {
+    if (this.musicDb) return this.musicDb
+    if (!this.musicDatabasePath || !fs.existsSync(this.musicDatabasePath)) {
+      throw new Error(`Kodi music database not found at: ${this.musicDatabasePath}`)
+    }
+    const { DatabaseSync } = await import('node:sqlite')
+    this.musicDb = new DatabaseSync(this.musicDatabasePath, { readOnly: true })
+    return this.musicDb
+  }
+
   async getLibraries(): Promise<MediaLibrary[]> {
     const libraries: MediaLibrary[] = []
     try {
@@ -67,11 +77,9 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
       if (episodeCount > 0) libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show', itemCount: episodeCount })
       
       if (this.musicDatabasePath && fs.existsSync(this.musicDatabasePath)) {
-        const { DatabaseSync } = await import('node:sqlite')
-        const mdb = new DatabaseSync(this.musicDatabasePath, { readOnly: true })
+        const mdb = await this.getMusicDb()
         const songCount = (mdb.prepare(QUERY_MUSIC_SONG_COUNT).get() as any)?.count || 0
         if (songCount > 0) libraries.push({ id: 'music', name: 'Music', type: 'music', itemCount: songCount })
-        mdb.close()
       }
     } catch (err) {
       getLoggingService().error('[KodiLocalProvider]', 'Error reading video libraries:', err)
@@ -93,11 +101,13 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
       this.db.close()
       this.db = null
     }
+    if (this.musicDb) {
+      this.musicDb.close()
+      this.musicDb = null
+    }
   }
 
-  async scanMusicLibrary(progress?: any): Promise<any> {
-    return this.scanLibrary('music', { onProgress: progress })
-  }
+
 
   cancelScan(): void {
     // Basic implementation for KodiLocal
