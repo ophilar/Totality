@@ -8,6 +8,10 @@ export function registerTranscodingHandlers(): void {
     return await getTranscodingService().checkAvailability()
   })
 
+  createIpcHandler('handbrake:getVersion', async () => {
+    return await getTranscodingService().getVersion()
+  })
+
   createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsSchema, async (filePath, options) => {
     return await getTranscodingService().getTranscodeParameters(filePath, options as any)
   })
