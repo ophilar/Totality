@@ -314,7 +314,7 @@ describe('IPC Validation Schemas', () => {
       const result = validateInput(LocalFolderConfigSchema, {
         folderPath: '/media/movies',
         displayName: 'Movies',
-        mediaType: 'movies',
+        mediaType: 'movie',
       }, 'test')
       expect(result.folderPath).toBe('/media/movies')
     })
@@ -323,7 +323,7 @@ describe('IPC Validation Schemas', () => {
       expect(() => validateInput(LocalFolderConfigSchema, {
         folderPath: '/media/\0/evil',
         displayName: 'Test',
-        mediaType: 'movies',
+        mediaType: 'movie',
       }, 'test')).toThrow('null bytes')
     })
 
@@ -344,7 +344,7 @@ describe('IPC Validation Schemas', () => {
         libraries: [{
           name: 'Movies',
           path: '/media/movies',
-          mediaType: 'movies',
+          mediaType: 'movie',
           enabled: true,
         }],
       }, 'test')
@@ -358,7 +358,7 @@ describe('IPC Validation Schemas', () => {
         libraries: [{
           name: 'Evil',
           path: '/media/\0/evil',
-          mediaType: 'movies',
+          mediaType: 'movie',
           enabled: true,
         }],
       }, 'test')).toThrow('null bytes')
@@ -368,7 +368,7 @@ describe('IPC Validation Schemas', () => {
       const libraries = Array(51).fill({
         name: 'Lib',
         path: '/media/lib',
-        mediaType: 'movies',
+        mediaType: 'movie',
         enabled: true,
       })
       expect(() => validateInput(LocalFolderWithLibrariesSchema, {
