@@ -61,6 +61,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .from(schema.seriesCompleteness)
 
     if (conditions.length > 0) query.where(and(...conditions))
+    query.groupBy(schema.seriesCompleteness.seriesTitle)
     query.orderBy(sortOrder)
 
     if (filters?.limit) query.limit(filters.limit)
@@ -81,7 +82,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       else conditions.push(eq(sql`UPPER(SUBSTR(series_title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
 
-    const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.seriesCompleteness)
+    const query = this.drizzle.select({ count: sql<number>`count(DISTINCT ${schema.seriesCompleteness.seriesTitle.name})` }).from(schema.seriesCompleteness)
     if (conditions.length > 0) query.where(and(...conditions))
     const res = await query.get()
     return res?.count || 0
