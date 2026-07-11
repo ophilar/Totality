@@ -49,6 +49,13 @@ export class TranscodingService {
     // Initialization is deferred until first use to allow DB to be ready
   }
 
+
+  invalidate(): void {
+    this.initializedPromise = null
+    this.handbrakePath = null
+    getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
+  }
+
   private async ensureInitialized(): Promise<void> {
     if (this.initializedPromise) return this.initializedPromise
     this.initializedPromise = this.initializePaths()
@@ -103,7 +110,14 @@ export class TranscodingService {
       }
     }
 
+
+    const db = getDatabase()
+    const isEnabled = (await db.config.getSetting('handbrake_enabled')) !== 'false'
+    if (!isEnabled) {
+      return { handbrake: false }
+    }
     const hb = await this.testTool(this.handbrakePath || 'HandBrakeCLI', ['--version'])
+
 
     return { 
       handbrake: hb
