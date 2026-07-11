@@ -111,6 +111,33 @@ export class TranscodingService {
   }
 
 
+
+  /**
+   * Get HandBrake CLI version string
+   */
+  async getVersion(): Promise<string | null> {
+    await this.ensureInitialized()
+
+    if (!this.handbrakePath) return null
+
+    return new Promise((resolve) => {
+      try {
+        const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || '')
+        const proc = spawn(actualPath, ['--version'])
+        let output = ''
+        proc.stdout.on('data', (data) => { output += data.toString() })
+        proc.stderr.on('data', (data) => { output += data.toString() })
+        proc.on('close', () => {
+          const match = output.match(/HandBrake\s+([^\s]+)/i)
+          resolve(match ? match[1] : 'unknown')
+        })
+        proc.on('error', () => resolve(null))
+      } catch (e) {
+        resolve(null)
+      }
+    })
+  }
+
   private async testTool(toolPath: string, args: string[]): Promise<boolean> {
     return new Promise((resolve) => {
       try {

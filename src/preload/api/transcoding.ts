@@ -2,6 +2,8 @@ import { ipcRenderer } from 'electron'
 
 export const transcodingAPI = {
   checkAvailability: () => ipcRenderer.invoke('transcoding:checkAvailability'),
+  handbrakeGetVersion: () => ipcRenderer.invoke('handbrake:getVersion'),
+
   getParameters: (filePath: string, options?: any) => ipcRenderer.invoke('transcoding:getParameters', filePath, options),
   start: (mediaItemId: number, options?: any) => ipcRenderer.invoke('transcoding:start', mediaItemId, options),
   onProgress: (callback: (progress: any) => void) => {
