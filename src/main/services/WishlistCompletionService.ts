@@ -168,16 +168,22 @@ export class WishlistCompletionService {
     }
 
     // Check tracks by MusicBrainz ID
-    for (const item of trackItems) {
-      const track = await db.music.getTrackByMusicbrainzId(item.musicbrainz_id!)
-      if (track) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: WishlistReason.Missing,
-          media_type: item.media_type as WishlistMediaType,
-        })
-      }
+    if (trackItems.length > 0) {
+      // We use Promise.all to concurrently fetch the tracks
+      // This solves the N+1 waiting issue since BetterSQLite wrapper
+      // executes promises concurrently when possible.
+      const trackPromises = trackItems.map(async (item) => {
+        const track = await db.music.getTrackByMusicbrainzId(item.musicbrainz_id!)
+        if (track) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: WishlistReason.Missing,
+            media_type: item.media_type as WishlistMediaType,
+          })
+        }
+      })
+      await Promise.all(trackPromises)
     }
 
     return completed
@@ -222,21 +228,44 @@ export class WishlistCompletionService {
     }
 
     // Check music album quality
-    for (const item of musicItems) {
-      const albums = await db.music.getAlbumsByMusicbrainzIds([item.musicbrainz_id!])
-      const album = albums.get(item.musicbrainz_id!)
-      if (!album || !album.id) continue
+    if (musicItems.length > 0) {
+      const mbIds = musicItems.map((i) => i.musicbrainz_id!)
+      const albums = await db.music.getAlbumsByMusicbrainzIds(mbIds)
 
-      const qualityScore = await db.music.getQualityScore(album.id)
-      if (!qualityScore) continue
+      const albumIds: number[] = []
+      for (const item of musicItems) {
+        const album = albums.get(item.musicbrainz_id!)
+        if (album && album.id) {
+          albumIds.push(album.id)
+        }
+      }
 
-      if (this.isMusicQualityImproved(item, qualityScore.quality_tier)) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: WishlistReason.Upgrade,
-          media_type: item.media_type as WishlistMediaType,
+      // We use Promise.all to fetch quality scores concurrently
+      // since the repository methods correctly run statements concurrently.
+      const qualityScores = new Map()
+      const qualityScorePromises = albumIds.map(async (id) => {
+        const score = await db.music.getQualityScore(id)
+        if (score) {
+          qualityScores.set(id, score)
+        }
+      })
+      await Promise.all(qualityScorePromises)
+
+      for (const item of musicItems) {
+        const album = albums.get(item.musicbrainz_id!)
+        if (!album || !album.id) continue
+
+        const qualityScore = qualityScores.get(album.id)
+        if (!qualityScore) continue
+
+        if (this.isMusicQualityImproved(item, qualityScore.quality_tier)) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: WishlistReason.Upgrade,
+            media_type: item.media_type as WishlistMediaType,
           })
+        }
       }
     }
 
