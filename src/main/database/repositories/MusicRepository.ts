@@ -579,17 +579,106 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return row ? this.mapDrizzleToArtistCompleteness(row) : null
   }
 
-  async getAllArtistCompleteness(sourceId?: string): Promise<ArtistCompleteness[]> {
-    if (sourceId) {
-      const rows = await this.drizzle.selectDistinct({ ac: schema.artistCompleteness })
-        .from(schema.artistCompleteness)
-        .innerJoin(schema.musicArtists, and(eq(schema.artistCompleteness.artistName, schema.musicArtists.name), eq(schema.musicArtists.sourceId, sourceId)))
-        .orderBy(asc(schema.artistCompleteness.artistName))
-        .all()
-      return rows.map(r => this.mapDrizzleToArtistCompleteness(r.ac))
+  async getAllArtistCompleteness(
+    sourceId?: string,
+    epsEnabled = true,
+    singlesEnabled = true
+  ): Promise<{
+    stats: {
+      totalArtists: number
+      analyzedArtists: number
+      completeArtists: number
+      incompleteArtists: number
+      totalMissingAlbums: number
+      averageCompleteness: number
     }
-    const rows = await this.drizzle.select().from(schema.artistCompleteness).orderBy(asc(schema.artistCompleteness.artistName)).all()
-    return rows.map(r => this.mapDrizzleToArtistCompleteness(r))
+    artists: ArtistCompleteness[]
+  }> {
+    const epsWeight = epsEnabled ? 2 : 0
+    const singlesWeight = singlesEnabled ? 1 : 0
+
+    // Fetch individual artists with on-the-fly completeness calculations
+    const artistsQuery = sql`
+      SELECT 
+        ac.id,
+        ac.artist_name as artistName,
+        ac.musicbrainz_id as musicbrainzId,
+        ac.library_id as libraryId,
+        ac.total_albums as totalAlbums,
+        ac.owned_albums as ownedAlbums,
+        ac.total_singles as totalSingles,
+        ac.owned_singles as ownedSingles,
+        ac.total_eps as totalEps,
+        ac.owned_eps as ownedEps,
+        ac.missing_albums as missingAlbums,
+        ac.missing_singles as missingSingles,
+        ac.missing_eps as missingEps,
+        ac.country,
+        ac.active_years as activeYears,
+        ac.artist_type as artistType,
+        ac.thumb_url as thumbUrl,
+        ac.efficiency_score as efficiencyScore,
+        ac.storage_debt_bytes as storageDebtBytes,
+        ac.total_size as totalSize,
+        ac.last_sync_at as lastSyncAt,
+        ac.created_at as createdAt,
+        ac.updated_at as updatedAt,
+        CASE 
+          WHEN (ac.total_albums * 3 + ${epsWeight} * ac.total_eps + ${singlesWeight} * ac.total_singles) > 0 
+          THEN ROUND((CAST(ac.owned_albums * 3 + ${epsWeight} * ac.owned_eps + ${singlesWeight} * ac.owned_singles AS REAL) / (ac.total_albums * 3 + ${epsWeight} * ac.total_eps + ${singlesWeight} * ac.total_singles)) * 100)
+          ELSE 100
+        END AS completenessPercentage
+      FROM artist_completeness ac
+      ${sourceId ? sql`INNER JOIN music_artists ma ON ac.artist_name = ma.name WHERE ma.source_id = ${sourceId}` : sql``}
+      ORDER BY ac.artist_name ASC
+    `
+
+    const artistRows = await this.drizzle.all<any>(artistsQuery)
+
+    // Fetch aggregated summary stats directly from the database using SUM/COUNT
+    const statsQuery = sql`
+      SELECT
+        COUNT(*) AS totalArtists,
+        SUM(CASE WHEN pct >= 100 THEN 1 ELSE 0 END) AS completeArtists,
+        SUM(CASE WHEN pct < 100 THEN 1 ELSE 0 END) AS incompleteArtists,
+        SUM(missing_count) AS totalMissingAlbums,
+        COALESCE(ROUND(AVG(pct)), 0) AS averageCompleteness
+      FROM (
+        SELECT
+          CASE 
+            WHEN (ac.total_albums * 3 + ${epsWeight} * ac.total_eps + ${singlesWeight} * ac.total_singles) > 0 
+            THEN ROUND((CAST(ac.owned_albums * 3 + ${epsWeight} * ac.owned_eps + ${singlesWeight} * ac.owned_singles AS REAL) / (ac.total_albums * 3 + ${epsWeight} * ac.total_eps + ${singlesWeight} * ac.total_singles)) * 100)
+            ELSE 100
+          END AS pct,
+          (
+            (CASE WHEN ac.total_albums > ac.owned_albums THEN ac.total_albums - ac.owned_albums ELSE 0 END) +
+            CASE WHEN ${epsEnabled} THEN (CASE WHEN ac.total_eps > ac.owned_eps THEN ac.total_eps - ac.owned_eps ELSE 0 END) ELSE 0 END +
+            CASE WHEN ${singlesEnabled} THEN (CASE WHEN ac.total_singles > ac.owned_singles THEN ac.total_singles - ac.owned_singles ELSE 0 END) ELSE 0 END
+          ) AS missing_count
+        FROM artist_completeness ac
+        ${sourceId ? sql`INNER JOIN music_artists ma ON ac.artist_name = ma.name WHERE ma.source_id = ${sourceId}` : sql``}
+      )
+    `
+
+    const statsRow = await this.drizzle.get<any>(statsQuery) || {
+      totalArtists: 0,
+      completeArtists: 0,
+      incompleteArtists: 0,
+      totalMissingAlbums: 0,
+      averageCompleteness: 0
+    }
+
+    return {
+      stats: {
+        totalArtists: Number(statsRow.totalArtists || 0),
+        analyzedArtists: Number(statsRow.totalArtists || 0),
+        completeArtists: Number(statsRow.completeArtists || 0),
+        incompleteArtists: Number(statsRow.incompleteArtists || 0),
+        totalMissingAlbums: Number(statsRow.totalMissingAlbums || 0),
+        averageCompleteness: Number(statsRow.averageCompleteness || 0)
+      },
+      artists: artistRows.map(r => this.mapDrizzleToArtistCompleteness(r))
+    }
   }
 
   async upsertAlbumCompleteness(data: AlbumCompleteness): Promise<void> {

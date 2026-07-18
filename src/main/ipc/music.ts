@@ -22,6 +22,8 @@ import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 import { MusicAlbum, MusicTrack } from '@main/types/database'
 
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+
 export function registerMusicHandlers(): void {
   const db = getDatabase()
   const manager = getSourceManager()
@@ -48,7 +50,9 @@ export function registerMusicHandlers(): void {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
     try {
-      return await manager.scanLibrary(sourceId, libraryId, (p) => onProgress(p, { sourceId, libraryId }))
+      const res = await manager.scanLibrary(sourceId, libraryId, (p) => onProgress(p, { sourceId, libraryId }))
+      getStatsCacheService().invalidate()
+      return res
     } finally { flush() }
   })
 
@@ -57,6 +61,7 @@ export function registerMusicHandlers(): void {
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
     try {
       const results = await manager.scanAllSources((sId, sName, p) => onProgress(p, { sourceId: sId, sourceName: sName }))
+      getStatsCacheService().invalidate()
       return Array.from(results.entries()).map(([key, value]) => ({ key, ...value }))
     } finally { flush() }
   })
@@ -110,7 +115,14 @@ export function registerMusicHandlers(): void {
   })
 
   createIpcHandler(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, async (sourceId?: string) => {
-    return await db.music.getAllArtistCompleteness(sourceId)
+    const epsVal = await db.config.getSetting('completeness_include_eps')
+    const singlesVal = await db.config.getSetting('completeness_include_singles')
+    const epsEnabled = epsVal !== 'false'
+    const singlesEnabled = singlesVal !== 'false'
+    const cacheKey = `${sourceId || 'all'}-${epsEnabled}-${singlesEnabled}`
+    return await getStatsCacheService().getMusicCompleteness(cacheKey, () =>
+      db.music.getAllArtistCompleteness(sourceId, epsEnabled, singlesEnabled)
+    )
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, PositiveIntSchema, async (albumId) => {
@@ -171,6 +183,7 @@ export function registerMusicHandlers(): void {
       ownedMbIds
     )
     await db.music.upsertArtistCompleteness(completeness)
+    getStatsCacheService().invalidate()
     return completeness
   })
 
@@ -189,16 +202,19 @@ export function registerMusicHandlers(): void {
     if (completeness) {
       await db.music.upsertAlbumCompleteness(completeness)
     }
+    getStatsCacheService().invalidate()
     return completeness
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.FIX_ARTIST_MATCH, z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (artistId, musicbrainzId) => {
     await db.music.fixArtistMatch(artistId, musicbrainzId)
+    getStatsCacheService().invalidate()
     return { success: true }
   })
 
   createValidatedIpcHandler('music:fixAlbumMatch', z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (albumId, musicbrainzReleaseGroupId) => {
     await db.music.fixAlbumMatch(albumId, musicbrainzReleaseGroupId)
+    getStatsCacheService().invalidate()
     return { success: true }
   })
 

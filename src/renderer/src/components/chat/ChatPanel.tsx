@@ -3,14 +3,19 @@ import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '@/hooks/useChat'
 import { ChatMessage } from '@/components/chat/ChatMessage'
 
+import { usePanel } from '@/contexts/PanelContext'
+
 interface ChatPanelProps {
-  isOpen: boolean
-  onClose: () => void
+  isOpen?: boolean
+  onClose?: () => void
   onOpenSettings?: () => void
   viewContext?: ViewContext
 }
 
-export function ChatPanel({ isOpen, onClose, onOpenSettings, viewContext }: ChatPanelProps) {
+export function ChatPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSettings, viewContext }: ChatPanelProps) {
+  const { showChatPanel, setShowChatPanel } = usePanel()
+  const isOpen = propIsOpen !== undefined ? propIsOpen : showChatPanel
+  const onClose = propOnClose !== undefined ? propOnClose : () => setShowChatPanel(false)
   const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)

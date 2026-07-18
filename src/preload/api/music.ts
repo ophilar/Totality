@@ -138,7 +138,7 @@ export interface MusicAPI {
   musicSearchMusicBrainzArtist: (name: string) => Promise<unknown[]>
   musicAnalyzeArtistCompleteness: (artistId: number) => Promise<unknown>
   musicGetArtistCompleteness: (artistName: string) => Promise<unknown | null>
-  musicGetAllArtistCompleteness: (sourceId?: string) => Promise<unknown[]>
+  musicGetAllArtistCompleteness: (sourceId?: string) => Promise<any>
 
   // Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) => Promise<unknown | null>

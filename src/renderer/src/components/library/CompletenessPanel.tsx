@@ -40,12 +40,14 @@ interface AnalysisProgress {
   skipped?: number  // Number of items skipped (already recently analyzed)
 }
 
+import { usePanel } from '@/contexts/PanelContext'
+
 interface CompletenessPanelProps {
-  isOpen: boolean
-  onClose: () => void
-  seriesStats: SeriesStats | null
-  collectionStats: CollectionStats | null
-  musicStats: MusicStats | null
+  isOpen?: boolean
+  onClose?: () => void
+  seriesStats?: SeriesStats | null
+  collectionStats?: CollectionStats | null
+  musicStats?: MusicStats | null
   onAnalyzeSeries: (libraryId?: string) => Promise<void>
   onAnalyzeCollections: (libraryId?: string) => Promise<void>
   onAnalyzeMusic: () => Promise<void>
@@ -62,11 +64,11 @@ interface CompletenessPanelProps {
 }
 
 export function CompletenessPanel({
-  isOpen,
-  onClose,
-  seriesStats,
-  collectionStats,
-  musicStats,
+  isOpen: propIsOpen,
+  onClose: propOnClose,
+  seriesStats: initialSeriesStats,
+  collectionStats: initialCollectionStats,
+  musicStats: initialMusicStats,
   onAnalyzeSeries,
   onAnalyzeCollections,
   onAnalyzeMusic,
@@ -81,11 +83,76 @@ export function CompletenessPanel({
   onOpenSettings,
   libraries = []
 }: CompletenessPanelProps) {
+  const { showCompletenessPanel, setShowCompletenessPanel } = usePanel()
+  const isOpen = propIsOpen !== undefined ? propIsOpen : showCompletenessPanel
+  const onClose = propOnClose !== undefined ? propOnClose : () => setShowCompletenessPanel(false)
+  const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(initialSeriesStats || null)
+  const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
+  const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [queueState, setQueueState] = useState<any>(null)
   const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
   const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
+
+  const loadCompletenessData = useCallback(async () => {
+    if (initialSeriesStats !== undefined && initialCollectionStats !== undefined) {
+      setSeriesStats(initialSeriesStats)
+      setCollectionStats(initialCollectionStats)
+      return
+    }
+    try {
+      const [sStats, cStats] = await Promise.all([
+        window.electronAPI.seriesGetStats(),
+        window.electronAPI.collectionsGetStats()
+      ])
+      setSeriesStats(sStats as SeriesStats)
+      setCollectionStats(cStats as CollectionStats)
+    } catch (err) {
+      window.electronAPI.log.warn('[CompletenessPanel]', 'Failed to load completeness stats:', err)
+    }
+  }, [initialSeriesStats, initialCollectionStats])
+
+  const loadMusicCompletenessData = useCallback(async () => {
+    if (initialMusicStats !== undefined) {
+      setMusicStats(initialMusicStats)
+      return
+    }
+    try {
+      const res = await window.electronAPI.musicGetAllArtistCompleteness()
+      const { stats } = res as {
+        stats: MusicStats
+        artists: unknown[]
+      }
+      setMusicStats(stats)
+    } catch (err) {
+      window.electronAPI.log.warn('[CompletenessPanel]', 'Failed to load music completeness stats:', err)
+    }
+  }, [initialMusicStats])
+
+  useEffect(() => {
+    if (isOpen) {
+      loadCompletenessData()
+      loadMusicCompletenessData()
+    }
+  }, [isOpen, loadCompletenessData, loadMusicCompletenessData])
+
+  useEffect(() => {
+    if (isOpen && !isAnalyzing) {
+      loadCompletenessData()
+      loadMusicCompletenessData()
+    }
+  }, [isOpen, isAnalyzing, loadCompletenessData, loadMusicCompletenessData])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data: { key: string; value: string }) => {
+      if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
+        loadMusicCompletenessData()
+      }
+    })
+    return () => cleanupSettingsChanged?.()
+  }, [isOpen, loadMusicCompletenessData])
 
   const movieLibraries = libraries.filter(l => l.type === 'movie')
   const showLibraries = libraries.filter(l => l.type === 'show')

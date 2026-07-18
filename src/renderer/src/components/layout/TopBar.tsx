@@ -23,18 +23,14 @@ interface SearchResults {
   tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string }>
 }
 
+import { usePanel } from '@/contexts/PanelContext'
+
 interface TopBarProps {
   currentView: 'dashboard' | 'library'
   libraryTab: MediaViewType
   onNavigateHome: () => void
   onNavigateToLibrary: (tab: MediaViewType) => void
   onOpenSettings: () => void
-  onToggleCompleteness: () => void
-  onToggleWishlist: () => void
-  onToggleChat: () => void
-  showCompletenessPanel: boolean
-  showWishlistPanel: boolean
-  showChatPanel: boolean
   isAutoRefreshing?: boolean
   hasMovies?: boolean
   hasTV?: boolean
@@ -51,12 +47,6 @@ export function TopBar({
   onNavigateHome,
   onNavigateToLibrary,
   onOpenSettings,
-  onToggleCompleteness,
-  onToggleWishlist,
-  onToggleChat,
-  showCompletenessPanel,
-  showWishlistPanel,
-  showChatPanel,
   isAutoRefreshing = false,
   hasMovies = false,
   hasTV = false,
@@ -66,6 +56,14 @@ export function TopBar({
   onForward,
   canGoForward = false,
 }: TopBarProps) {
+  const {
+    showCompletenessPanel,
+    showWishlistPanel,
+    showChatPanel,
+    toggleCompleteness: onToggleCompleteness,
+    toggleWishlist: onToggleWishlist,
+    toggleChat: onToggleChat,
+  } = usePanel()
   const { sources } = useSources()
   const { count: wishlistCount } = useWishlist()
   const { navigateTo } = useNavigation()

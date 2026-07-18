@@ -356,9 +356,10 @@ export function MediaBrowser({
   }, [])
 
   const loadMusicCompletenessData = useCallback(async () => {
-    const [data] = await Promise.all([window.electronAPI.musicGetAllArtistCompleteness()])
+    const res = await window.electronAPI.musicGetAllArtistCompleteness()
+    const { artists } = res as { stats: any; artists: ArtistCompletenessData[] }
     const map = new Map<string, ArtistCompletenessData>()
-    ;(data as any[]).forEach(c => map.set(c.artist_name, c))
+    artists.forEach(c => map.set(c.artist_name, c))
     setArtistCompleteness(map)
   }, [])
 

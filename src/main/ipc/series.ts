@@ -8,6 +8,8 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+
 export function registerSeriesHandlers() {
   const service = getSeriesCompletenessService()
   const db = getDatabase()
@@ -16,7 +18,11 @@ export function registerSeriesHandlers() {
   createValidatedIpcHandlerWithEvent('series:analyzeAll', SeriesAnalyzeAllTupleSchema, async (event, sourceId, libraryId) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'series:progress', 'media')
-    try { return await service.analyzeAllSeries(sourceId, libraryId, onProgress) } finally { flush() }
+    try {
+      const res = await service.analyzeAllSeries(sourceId, libraryId, onProgress)
+      getStatsCacheService().invalidate()
+      return res
+    } finally { flush() }
   })
 
   createIpcHandler('series:cancelAnalysis', async () => {
@@ -25,7 +31,9 @@ export function registerSeriesHandlers() {
   })
 
   createValidatedIpcHandler('series:analyze', NonEmptyStringSchema, async (title) => {
-    return await service.analyzeSeries(title)
+    const res = await service.analyzeSeries(title)
+    getStatsCacheService().invalidate()
+    return res
   })
 
   createValidatedIpcHandler('series:getAll', OptionalSourceIdSchema, async (sourceId) => {
@@ -37,7 +45,7 @@ export function registerSeriesHandlers() {
   })
 
   createIpcHandler('series:getStats', async () => {
-    return await db.stats.getLibraryStats()
+    return await getStatsCacheService().getSeriesStats(() => db.stats.getLibraryStats())
   })
 
   createValidatedIpcHandler('series:getEpisodes', SeriesGetEpisodesTupleSchema, async (title, sourceId) => {
@@ -46,6 +54,7 @@ export function registerSeriesHandlers() {
 
   createValidatedIpcHandler('series:delete', PositiveIntSchema, async (id) => {
     await db.tvShows.deleteCompleteness(id)
+    getStatsCacheService().invalidate()
     return true
   })
 
@@ -88,6 +97,7 @@ export function registerSeriesHandlers() {
     const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId.toString(), poster, d.name)
     await getDeduplicationService().scanForDuplicates(sourceId)
     const completeness = await service.analyzeSeries(d.name, sourceId)
+    getStatsCacheService().invalidate()
     return { success: true, updatedEpisodes: updated, completeness, newTitle: d.name }
   })
 

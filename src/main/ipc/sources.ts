@@ -42,6 +42,8 @@ import { MediaMonkeyProvider } from '@main/providers/mediamonkey/MediaMonkeyProv
 /**
  * Register all source-related IPC handlers
  */
+import { getStatsCacheService } from '@main/services/StatsCacheService'
+
 export function registerSourceHandlers(): void {
   const manager = getSourceManager()
 
@@ -64,15 +66,19 @@ export function registerSourceHandlers(): void {
   // ============================================================================
 
   createValidatedIpcHandler(IPC_CHANNELS.SOURCES.ADD, AddSourceSchema, async (config) => {
-    return await manager.addSource(config)
+    const res = await manager.addSource(config)
+    getStatsCacheService().invalidate()
+    return res
   })
 
   createValidatedIpcHandler('sources:update', UpdateSourceTupleSchema, async (sourceId, updates) => {
     await manager.updateSource(sourceId, updates)
+    getStatsCacheService().invalidate()
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.SOURCES.REMOVE, SourceIdSchema, async (sourceId) => {
     await manager.removeSource(sourceId)
+    getStatsCacheService().invalidate()
   })
 
   createIpcHandler(IPC_CHANNELS.SOURCES.LIST, async (type?: ProviderType) => {
@@ -93,6 +99,7 @@ export function registerSourceHandlers(): void {
 
   createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TOGGLE, ToggleSourceTupleSchema, async (sourceId, enabled) => {
     await manager.toggleSource(sourceId, enabled)
+    getStatsCacheService().invalidate()
   })
 
   // ============================================================================

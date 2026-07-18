@@ -26,6 +26,8 @@ import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStat
 
 type AppView = 'dashboard' | 'library'
 
+import { usePanel } from '@/contexts/PanelContext'
+
 function AppContent() {
   const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
   const [showAddSourceModal, setShowAddSourceModal] = useState(false)
@@ -42,20 +44,20 @@ function AppContent() {
   const { pushNavState, goBack, goForward, canGoBack, canGoForward } = useNavigation()
   const isRestoringRef = useRef(false)
 
-  // Panel states - managed at app level for TopBar to control
-  const [showCompletenessPanel, setShowCompletenessPanel] = useState(false)
-  const [showWishlistPanel, setShowWishlistPanel] = useState(false)
-  const [showChatPanel, setShowChatPanel] = useState(false)
-  const [showAIInsights, setShowAIInsights] = useState(false)
-  const [aiInsightsInitialReport, setAiInsightsInitialReport] = useState<string | undefined>(undefined)
+  const {
+    showCompletenessPanel,
+    showWishlistPanel,
+    showChatPanel,
+    showAIInsights,
+    aiInsightsInitialReport,
+    openAIInsights,
+    closeAIInsights,
+  } = usePanel()
 
   // Auto-refresh state (passed up from MediaBrowser)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
   // Completeness panel state - managed at app level for both Dashboard and Library views
-  const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(null)
-  const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null)
-  const [musicCompletenessStats, setMusicCompletenessStats] = useState<MusicCompletenessStats | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
   const [analysisType, setAnalysisType] = useState<'series' | 'collections' | 'music' | null>(null)
@@ -91,89 +93,6 @@ function AppContent() {
     }
   }, [isLoading, onboardingComplete])
 
-  // Load completeness stats data
-  const loadCompletenessData = useCallback(async () => {
-    try {
-      const [sStats, cStats] = await Promise.all([
-        window.electronAPI.seriesGetStats(),
-        window.electronAPI.collectionsGetStats()
-      ])
-      setSeriesStats(sStats as SeriesStats)
-      setCollectionStats(cStats as CollectionStats)
-    } catch (err) {
-      window.electronAPI.log.warn('[App]', 'Failed to load completeness stats:', err)
-    }
-  }, [])
-
-  // Load music completeness stats with real-time EP/Singles filtering
-  const loadMusicCompletenessData = useCallback(async () => {
-    try {
-      const [artistsData, epsVal, singlesVal] = await Promise.all([
-        window.electronAPI.musicGetAllArtistCompleteness(),
-        window.electronAPI.getSetting('completeness_include_eps'),
-        window.electronAPI.getSetting('completeness_include_singles'),
-      ])
-      const artists = artistsData as Array<{
-        completeness_percentage: number
-        total_albums: number
-        owned_albums: number
-        total_eps: number
-        owned_eps: number
-        total_singles: number
-        owned_singles: number
-      }>
-      const epsEnabled = (epsVal as string) !== 'false'
-      const singlesEnabled = (singlesVal as string) !== 'false'
-
-      // Recalculate stats from raw counts using current settings
-      const totalArtists = artists.length
-      let completeArtists = 0
-      let totalMissingAlbums = 0
-      let totalPctSum = 0
-      for (const a of artists) {
-        const totalItems = (a.total_albums || 0) * 3
-          + (epsEnabled ? (a.total_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.total_singles || 0) : 0)
-        const ownedItems = (a.owned_albums || 0) * 3
-          + (epsEnabled ? (a.owned_eps || 0) * 2 : 0)
-          + (singlesEnabled ? (a.owned_singles || 0) : 0)
-        const pct = totalItems > 0 ? Math.round((ownedItems / totalItems) * 100) : 100
-        totalPctSum += pct
-        if (pct >= 100) completeArtists++
-
-        const missingAlbumCount = Math.max(0, (a.total_albums || 0) - (a.owned_albums || 0))
-        const missingEpCount = epsEnabled ? Math.max(0, (a.total_eps || 0) - (a.owned_eps || 0)) : 0
-        const missingSingleCount = singlesEnabled ? Math.max(0, (a.total_singles || 0) - (a.owned_singles || 0)) : 0
-        totalMissingAlbums += missingAlbumCount + missingEpCount + missingSingleCount
-      }
-      const incompleteArtists = totalArtists - completeArtists
-      const avgCompleteness = totalArtists > 0
-        ? Math.round(totalPctSum / totalArtists)
-        : 0
-
-      setMusicCompletenessStats({
-        totalArtists,
-        analyzedArtists: totalArtists,
-        completeArtists,
-        incompleteArtists,
-        totalMissingAlbums,
-        averageCompleteness: avgCompleteness
-      })
-    } catch (err) {
-      window.electronAPI.log.warn('[App]', 'Failed to load music completeness stats:', err)
-    }
-  }, [])
-
-  // Load completeness data on mount and when sources change
-  useEffect(() => {
-    // Wrap in Promise.resolve().then() to avoid "set-state-in-effect" cascading render warning
-    // This ensures state updates happen in a separate microtask
-    void Promise.resolve().then(() => {
-      loadCompletenessData()
-      loadMusicCompletenessData()
-    })
-  }, [loadCompletenessData, loadMusicCompletenessData])
-
   // Listen for completeness analysis progress events
   useEffect(() => {
     const cleanupSeriesProgress = window.electronAPI.onSeriesProgress((prog: unknown) => {
@@ -199,16 +118,6 @@ function AppContent() {
         setIsAnalyzing(false)
         setAnalysisProgress(null)
         setAnalysisType(null)
-        // Refresh stats after completion
-        loadCompletenessData()
-        loadMusicCompletenessData()
-      }
-    })
-
-    // Listen for EP/Singles settings changes to refresh music stats
-    const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data) => {
-      if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
-        loadMusicCompletenessData()
       }
     })
 
@@ -217,9 +126,8 @@ function AppContent() {
       cleanupCollectionsProgress()
       cleanupMusicProgress()
       cleanupTaskQueue()
-      cleanupSettingsChanged?.()
     }
-  }, [loadCompletenessData, loadMusicCompletenessData])
+  }, [])
 
   // Analysis handlers
   const handleAnalyzeSeries = async (_libraryId?: string) => {
@@ -274,11 +182,6 @@ function AppContent() {
       window.electronAPI.log.error('[App]', 'Failed to cancel analysis:', err)
     }
   }
-
-  const handleCompletenessDataRefresh = useCallback(() => {
-    loadCompletenessData()
-    loadMusicCompletenessData()
-  }, [loadCompletenessData, loadMusicCompletenessData])
 
   const handleOnboardingComplete = async () => {
     try {
@@ -357,30 +260,6 @@ function AppContent() {
     setShowSettingsModal(true)
   }
 
-  const handleToggleCompleteness = () => {
-    setShowCompletenessPanel(prev => {
-      const newState = !prev
-      if (newState) { setShowWishlistPanel(false); setShowChatPanel(false) }
-      return newState
-    })
-  }
-
-  const handleToggleWishlist = () => {
-    setShowWishlistPanel(prev => {
-      const newState = !prev
-      if (newState) { setShowCompletenessPanel(false); setShowChatPanel(false) }
-      return newState
-    })
-  }
-
-  const handleToggleChat = () => {
-    setShowChatPanel(prev => {
-      const newState = !prev
-      if (newState) { setShowCompletenessPanel(false); setShowWishlistPanel(false) }
-      return newState
-    })
-  }
-
   const chatViewContext = useMemo((): ViewContext => ({
     currentView: currentView as 'dashboard' | 'library',
     libraryTab: currentView === 'library' ? libraryTab as 'movies' | 'tv' | 'music' : undefined,
@@ -434,12 +313,6 @@ function AppContent() {
           onNavigateHome={handleNavigateToDashboard}
           onNavigateToLibrary={handleNavigateToLibrary}
           onOpenSettings={() => handleOpenSettings()}
-          onToggleCompleteness={handleToggleCompleteness}
-          onToggleWishlist={handleToggleWishlist}
-          onToggleChat={handleToggleChat}
-          showCompletenessPanel={showCompletenessPanel}
-          showWishlistPanel={showWishlistPanel}
-          showChatPanel={showChatPanel}
           isAutoRefreshing={isAutoRefreshing}
           hasMovies={hasMovies}
           hasTV={hasTV}
@@ -475,12 +348,6 @@ function AppContent() {
                 sidebarCollapsed={sidebarCollapsed}
                 onOpenSettings={handleOpenSettings}
                 hideHeader={true}
-                showCompletenessPanel={showCompletenessPanel}
-                showWishlistPanel={showWishlistPanel}
-                showChatPanel={showChatPanel}
-                onToggleCompleteness={handleToggleCompleteness}
-                onToggleWishlist={handleToggleWishlist}
-                onToggleChat={handleToggleChat}
                 libraryTab={libraryTab}
                 onLibraryTabChange={setLibraryTab}
                 onAutoRefreshChange={setIsAutoRefreshing}
@@ -507,12 +374,7 @@ function AppContent() {
         {currentView === 'dashboard' && (
           <>
             <SectionErrorBoundary section="Completeness Panel" compact>
-              <CompletenessPanel
-                isOpen={showCompletenessPanel}
-                onClose={() => setShowCompletenessPanel(false)}
-                seriesStats={seriesStats}
-                collectionStats={collectionStats}
-                musicStats={musicCompletenessStats}
+            <CompletenessPanel
                 onAnalyzeSeries={handleAnalyzeSeries}
                 onAnalyzeCollections={handleAnalyzeCollections}
                 onAnalyzeMusic={handleAnalyzeMusic}
@@ -520,7 +382,7 @@ function AppContent() {
                 isAnalyzing={isAnalyzing}
                 analysisProgress={analysisProgress}
                 analysisType={analysisType}
-                onDataRefresh={handleCompletenessDataRefresh}
+                onDataRefresh={() => {}}
                 hasTV={hasTV}
                 hasMovies={hasMovies}
                 hasMusic={hasMusic}
@@ -530,31 +392,18 @@ function AppContent() {
             </SectionErrorBoundary>
             <SectionErrorBoundary section="Wishlist Panel" compact>
               <WishlistPanel
-                isOpen={showWishlistPanel}
-                onClose={() => setShowWishlistPanel(false)}
-                onOpenAIAdvice={() => {
-                  setAiInsightsInitialReport('wishlist')
-                  setShowAIInsights(true)
-                }}
+                onOpenAIAdvice={() => openAIInsights('wishlist')}
               />
             </SectionErrorBoundary>
           </>
         )}
         {/* Chat Panel - rendered at App level, available in all views */}
         <ChatPanel
-          isOpen={showChatPanel}
-          onClose={() => setShowChatPanel(false)}
           onOpenSettings={() => handleOpenSettings('services')}
           viewContext={chatViewContext}
         />
         <AIInsightsPanel
-          isOpen={showAIInsights}
-          onClose={() => {
-            setShowAIInsights(false)
-            setAiInsightsInitialReport(undefined)
-          }}
           onOpenSettings={() => handleOpenSettings('services')}
-          initialReport={aiInsightsInitialReport as 'quality' | 'upgrades' | 'completeness' | 'wishlist' | undefined}
         />
       </div>
       {/* Splash screen overlays the app and fades out to reveal it */}
@@ -566,6 +415,7 @@ function AppContent() {
 }
 
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+import { PanelProvider } from '@/contexts/PanelContext'
 
 function App() {
   return (
@@ -577,7 +427,9 @@ function App() {
               <NavigationProvider>
                 <LibraryProvider>
                   <ScrollMemoryProvider>
-                    <AppContent />
+                    <PanelProvider>
+                      <AppContent />
+                    </PanelProvider>
                   </ScrollMemoryProvider>
                 </LibraryProvider>
               </NavigationProvider>
