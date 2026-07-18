@@ -3,12 +3,15 @@ import { getMovieCollectionService } from '@main/services/MovieCollectionService
 import { OptionalSourceIdSchema, PositiveIntSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { getStatsCacheService } from '@main/services/StatsCacheService'
 
 export function registerCollectionHandlers(): void {
   const service = getMovieCollectionService()
 
   createValidatedIpcHandler(IPC_CHANNELS.COLLECTIONS.ANALYZE_ALL, OptionalSourceIdSchema, async (sourceId) => {
-    return { success: true, result: await service.analyzeAllCollections(sourceId) }
+    const result = { success: true, result: await service.analyzeAllCollections(sourceId) }
+    getStatsCacheService().invalidate()
+    return result
   })
 
   createIpcHandler(IPC_CHANNELS.COLLECTIONS.CANCEL_ANALYSIS, async () => {
@@ -25,11 +28,12 @@ export function registerCollectionHandlers(): void {
   })
 
   createIpcHandler(IPC_CHANNELS.COLLECTIONS.GET_STATS, async () => {
-    return await service.getStats()
+    return await getStatsCacheService().getCollectionStats(() => service.getStats())
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.COLLECTIONS.DELETE, PositiveIntSchema, async (id) => {
     await service.deleteCollection(id)
+    getStatsCacheService().invalidate()
     return { success: true }
   })
 

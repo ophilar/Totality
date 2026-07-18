@@ -1,3 +1,4 @@
+import { getStatsCacheService } from '@main/services/StatsCacheService'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { BrowserWindow, dialog, shell } from 'electron'
 import * as path from 'path'
@@ -81,9 +82,9 @@ export function registerDatabaseHandlers() {
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, PositiveIntSchema, async (mediaItemId) => {
     return await db.media.getItemVersions(mediaItemId)
   })
-
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_DELETE, PositiveIntSchema, async (id) => {
     await db.media.deleteItem(id)
+    getStatsCacheService().invalidate()
     return true
   })
 

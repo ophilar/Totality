@@ -4,6 +4,7 @@
 
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import { getStatsCacheService } from '@main/services/StatsCacheService'
 import { getLoggingService, LoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getSourceManager, SourceManager } from '@main/services/SourceManager'
@@ -362,6 +363,7 @@ export class TaskQueueService {
       
       // Emit completion event for UI sounds/effects
       if (prevTask.status === TaskStatus.Completed && this.mainWindow) {
+        getStatsCacheService().invalidate()
         safeSend(this.mainWindow, 'taskQueue:taskComplete', prevTask)
 
         // Special case: Scan tasks should also emit scan:completed

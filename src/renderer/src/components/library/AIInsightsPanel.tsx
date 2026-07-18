@@ -4,9 +4,11 @@ import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
 
 type ReportType = 'quality' | 'upgrades' | 'completeness' | 'wishlist'
 
+import { usePanel } from '@/contexts/PanelContext'
+
 interface AIInsightsPanelProps {
-  isOpen: boolean
-  onClose: () => void
+  isOpen?: boolean
+  onClose?: () => void
   onOpenSettings?: () => void
   initialReport?: ReportType
 }
@@ -18,7 +20,11 @@ const REPORT_OPTIONS: { type: ReportType; label: string; description: string; ic
   { type: 'wishlist', label: 'Wishlist Advice', description: 'Shopping strategy for your wishlist items', icon: Star },
 ]
 
-export function AIInsightsPanel({ isOpen, onClose, onOpenSettings, initialReport }: AIInsightsPanelProps) {
+export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSettings, initialReport: propInitialReport }: AIInsightsPanelProps) {
+  const { showAIInsights, closeAIInsights, aiInsightsInitialReport } = usePanel()
+  const isOpen = propIsOpen !== undefined ? propIsOpen : showAIInsights
+  const onClose = propOnClose !== undefined ? propOnClose : closeAIInsights
+  const initialReport = propInitialReport !== undefined ? propInitialReport : aiInsightsInitialReport as ReportType | undefined
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
   const [selectedReport, setSelectedReport] = useState<ReportType | null>(null)
   const [reportContent, setReportContent] = useState('')
