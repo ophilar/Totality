@@ -188,9 +188,6 @@ export function MediaGridView<T>({
                   }}
                 />
               )),
-              Item: ({ children, ...props }) => (
-                <div {...props}>{children}</div>
-              ),
               Footer
             }}
             itemContent={(index, item) => renderGridItem(item, index)}

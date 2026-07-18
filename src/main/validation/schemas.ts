@@ -497,6 +497,14 @@ export const TranscodeOptionsSchema = z.object({
   preserveAllAudio: z.boolean().optional(),
   overwriteOriginal: z.boolean().optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
+  useGpu: z.boolean().optional(),
+  encoder: z.string().optional(),
+  crf: z.number().min(0).max(51).optional(),
+  preset: z.string().optional(),
+  customArgs: z.string().optional(),
+  gpuId: z.string().optional(),
+  transcodingEngine: z.enum(['handbrake', 'ffmpeg']).optional(),
+  targetSize: z.string().optional(),
 }).optional()
 
 export const CheckTranscoderAvailabilitySchema = z.any().optional()
@@ -509,6 +517,10 @@ export const GetTranscodeParamsSchema = z.tuple([
 export const TranscodeMediaItemSchema = z.tuple([
   z.number().int().positive(),
   TranscodeOptionsSchema
+])
+
+export const CancelTranscodeSchema = z.tuple([
+  z.number().int().positive()
 ])
 
 function preprocessFilterKeys(input: unknown): any {

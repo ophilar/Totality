@@ -77,6 +77,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
       libraryType: schema.libraryScans.libraryType,
       isEnabled: schema.libraryScans.isEnabled,
       isProtected: schema.libraryScans.isProtected,
+      allowAdultMatching: schema.libraryScans.allowAdultMatching,
       lastScanAt: schema.libraryScans.lastScanAt,
       itemsScanned: schema.libraryScans.itemsScanned
     })
@@ -185,6 +186,12 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   async setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean): Promise<void> {
     await this.drizzle.update(schema.libraryScans)
       .set({ isProtected: isProtected ? 1 : 0, updatedAt: sql`(datetime('now'))` })
+      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+  }
+
+  async setLibraryAllowAdultMatching(sourceId: string, libraryId: string, allowAdultMatching: boolean): Promise<void> {
+    await this.drizzle.update(schema.libraryScans)
+      .set({ allowAdultMatching: allowAdultMatching ? 1 : 0, updatedAt: sql`(datetime('now'))` })
       .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
   }
 

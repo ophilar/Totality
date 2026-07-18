@@ -380,7 +380,8 @@ export class TMDBService {
   async searchMovieWithFallbacks(
     originalTitle: string,
     normalizedTitle: string,
-    year: number | undefined
+    year: number | undefined,
+    includeAdult?: boolean
   ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
     // Helper to find best match from results
     const findBestMatch = (
@@ -433,21 +434,21 @@ export class TMDBService {
 
     // Strategy 1: Original title with year
     if (year) {
-      const response = await this.searchMovie(originalTitle, year)
+      const response = await this.searchMovie(originalTitle, year, includeAdult)
       const match = findBestMatch(response.results, year)
       if (match) return match
     }
 
     // Strategy 2: Normalized title with year
     if (year && normalizedTitle !== originalTitle) {
-      const response = await this.searchMovie(normalizedTitle, year)
+      const response = await this.searchMovie(normalizedTitle, year, includeAdult)
       const match = findBestMatch(response.results, year)
       if (match) return match
     }
 
     // Strategy 3: Original title without year (to get more results)
     {
-      const response = await this.searchMovie(originalTitle)
+      const response = await this.searchMovie(originalTitle, undefined, includeAdult)
       if (response.results?.length > 1) {
         const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
         if (aiMatch) return aiMatch
@@ -458,7 +459,7 @@ export class TMDBService {
 
     // Strategy 4: Normalized title without year
     if (normalizedTitle !== originalTitle) {
-      const response = await this.searchMovie(normalizedTitle)
+      const response = await this.searchMovie(normalizedTitle, undefined, includeAdult)
       if (response.results?.length > 1) {
         const aiMatch = await this.tryAIDisambiguation(originalTitle, year, response.results)
         if (aiMatch) return aiMatch
@@ -504,16 +505,17 @@ export class TMDBService {
     } catch (error) { throw error }
   }
 
-  /**
-   * Search for movies by title and optional year
-   */
-  async searchMovie(query: string, year?: number): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
+  async searchMovie(query: string, year?: number, includeAdult?: boolean): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
     const params: Record<string, string> = {
       query
     }
 
     if (year) {
       params.year = year.toString()
+    }
+
+    if (includeAdult) {
+      params.include_adult = 'true'
     }
 
     return await this.request<TMDBSearchResponse<TMDBMovieSearchResult>>('/search/movie', params)

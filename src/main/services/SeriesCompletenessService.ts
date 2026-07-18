@@ -109,6 +109,22 @@ export class SeriesCompletenessService {
     const ownedKeys = new Set(episodes.map((e: any) => `S${e.season_number}E${e.episode_number}`))
     const analysis = CompletenessEngine.calculateEpisodic(targetEpisodes, ownedKeys as Set<string>)
 
+    let totalSize = 0
+    let totalStorageDebt = 0
+    let scoredCount = 0
+    let totalEfficiencyScore = 0
+
+    for (const ep of episodes) {
+      totalSize += ep.size || ep.file_size || 0
+      totalStorageDebt += ep.storage_debt_bytes || 0
+      if (ep.efficiency_score !== undefined && ep.efficiency_score > 0) {
+        totalEfficiencyScore += ep.efficiency_score
+        scoredCount++
+      }
+    }
+
+    const efficiencyScore = scoredCount > 0 ? Math.round(totalEfficiencyScore / scoredCount) : 0
+
     const result: SeriesCompleteness = {
       series_title: seriesTitle,
       source_id: sourceId || '',
@@ -124,6 +140,9 @@ export class SeriesCompletenessService {
       poster_url: this.tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
       backdrop_url: this.tmdb.buildImageUrl(showDetails.backdrop_path, 'original') || undefined,
       status: showDetails.status,
+      efficiency_score: efficiencyScore,
+      storage_debt_bytes: totalStorageDebt,
+      total_size: totalSize,
     }
 
     await this.db.tvShows.upsertCompleteness(result)
@@ -155,6 +174,22 @@ export class SeriesCompletenessService {
     const fallbackPoster = existing?.poster_url || owned.find(e => e.poster_url)?.poster_url
     const tmdbId = existing?.tmdb_id || owned.find(e => e.series_tmdb_id)?.series_tmdb_id
 
+    let totalSize = 0
+    let totalStorageDebt = 0
+    let scoredCount = 0
+    let totalEfficiencyScore = 0
+
+    for (const ep of owned) {
+      totalSize += (ep as { size?: number }).size || ep.file_size || 0
+      totalStorageDebt += ep.storage_debt_bytes || 0
+      if (ep.efficiency_score !== undefined && ep.efficiency_score > 0) {
+        totalEfficiencyScore += ep.efficiency_score
+        scoredCount++
+      }
+    }
+
+    const efficiencyScore = scoredCount > 0 ? Math.round(totalEfficiencyScore / scoredCount) : 0
+
     return {
       series_title: title,
       source_id: sourceId,
@@ -168,7 +203,10 @@ export class SeriesCompletenessService {
       completeness_percentage: -1, // MAGIC VALUE for unmatched/no-data
       poster_url: fallbackPoster,
       tmdb_id: tmdbId,
-      status: existing?.status || 'Continuing'
+      status: existing?.status || 'Continuing',
+      efficiency_score: efficiencyScore,
+      storage_debt_bytes: totalStorageDebt,
+      total_size: totalSize
     }
   }
 }

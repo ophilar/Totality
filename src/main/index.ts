@@ -44,6 +44,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { getGeminiService } from '@main/services/GeminiService'
 import { getAutoUpdateService } from '@main/services/AutoUpdateService'
 import { getWishlistCompletionService } from '@main/services/WishlistCompletionService'
+import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 
 // __dirname is provided by CommonJS/Node
 declare const __dirname: string
@@ -276,6 +277,7 @@ app.whenReady().then(async () => {
 
     await getSourceManager().initialize()
     await getGeminiService().initialize()
+    await getMusicBrainzService().initialize()
     await getTaskQueueService().loadPersistedHistory()
 
     // Register all IPC handlers

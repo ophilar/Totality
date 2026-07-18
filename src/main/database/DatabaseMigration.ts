@@ -154,6 +154,7 @@ export async function runMigrations(db: Client): Promise<void> {
 
   // Library scans
   await ensureColumn(db, 'library_scans', 'is_enabled', 'INTEGER NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'library_scans', 'allow_adult_matching', 'INTEGER NOT NULL DEFAULT 0')
 
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)

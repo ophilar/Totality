@@ -430,6 +430,26 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     await this.drizzle.update(schema.musicAlbums).set({ musicbrainzId, updatedAt: sql`(datetime('now'))` }).where(eq(schema.musicAlbums.id, albumId))
   }
 
+  async fixArtistMatch(artistId: number, musicbrainzId: string): Promise<void> {
+    await this.drizzle.update(schema.musicArtists)
+      .set({ 
+        musicbrainzId, 
+        userFixedMatch: 1, 
+        updatedAt: sql`(datetime('now'))` 
+      })
+      .where(eq(schema.musicArtists.id, artistId))
+  }
+
+  async fixAlbumMatch(albumId: number, musicbrainzReleaseGroupId: string): Promise<void> {
+    await this.drizzle.update(schema.musicAlbums)
+      .set({ 
+        musicbrainzReleaseGroupId, 
+        userFixedMatch: 1, 
+        updatedAt: sql`(datetime('now'))` 
+      })
+      .where(eq(schema.musicAlbums.id, albumId))
+  }
+
   async upsertMusicQualityScore(score: MusicQualityScore): Promise<void> {
     await this.upsertQualityScore(score)
   }

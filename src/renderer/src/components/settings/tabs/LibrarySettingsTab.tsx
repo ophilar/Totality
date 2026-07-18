@@ -227,6 +227,15 @@ export function LibrarySettingsTab() {
     }
   }
 
+  const handleToggleAllowAdultMatching = async (sourceId: string, libraryId: string, allowAdultMatching: boolean) => {
+    try {
+      await window.electronAPI.dbSetLibraryAllowAdultMatching(sourceId, libraryId, allowAdultMatching)
+      await loadSourceData()
+    } catch (err) {
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library adult matching:', err)
+    }
+  }
+
   const handleSetPin = async () => {
     if (newPin.length < 4) return
     try {
@@ -543,12 +552,23 @@ export function LibrarySettingsTab() {
                               <p className="text-sm font-medium truncate">{lib.name}</p>
                               <p className="text-[10px] text-muted-foreground uppercase">{lib.type}</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                              {lib.isProtected && <Lock className="w-3 h-3 text-amber-500" />}
-                              <Toggle 
-                                checked={!!lib.isProtected}
-                                onChange={(checked) => handleToggleProtected(source.source_id, lib.id, checked)}
-                              />
+                            <div className="flex items-center gap-4">
+                              {lib.isProtected && (
+                                <div className="flex items-center gap-1.5 border-r border-border/20 pr-4">
+                                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Adult Match</span>
+                                  <Toggle 
+                                    checked={!!lib.allowAdultMatching}
+                                    onChange={(checked) => handleToggleAllowAdultMatching(source.source_id, lib.id, checked)}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Protected</span>
+                                <Toggle 
+                                  checked={!!lib.isProtected}
+                                  onChange={(checked) => handleToggleProtected(source.source_id, lib.id, checked)}
+                                />
+                              </div>
                             </div>
                           </div>
                         ))}

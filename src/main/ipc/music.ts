@@ -20,6 +20,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
+import { MusicAlbum, MusicTrack } from '@main/types/database'
 
 export function registerMusicHandlers(): void {
   const db = getDatabase()
@@ -143,6 +144,62 @@ export function registerMusicHandlers(): void {
 
   createValidatedIpcHandler('music:getMusicBrainzArtist', z.string(), async (mbid) => {
     return await getMusicBrainzService().getArtistDetails(mbid)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.SEARCH_MB_ARTIST, z.string(), async (name) => {
+    return await getMusicBrainzService().searchArtist(name)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.SEARCH_MB_RELEASE, z.tuple([z.string(), z.string()]), async (artistName, albumTitle) => {
+    return await getMusicBrainzService().searchRelease(artistName, albumTitle)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, z.string(), async (artistName) => {
+    return await db.music.getArtistCompleteness(artistName)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
+    const artist = await db.music.getArtist(artistId)
+    if (!artist) throw new Error(`Artist with ID ${artistId} not found`)
+    const albums = await db.music.getAlbums({ artistId, limit: 1000 })
+    const ownedTitles = albums.map((a: MusicAlbum) => a.title)
+    const ownedMbIds = albums.map((a: MusicAlbum) => a.musicbrainz_id).filter((id: string | undefined): id is string => !!id)
+    const completeness = await getMusicBrainzService().analyzeArtistCompleteness(
+      artist.name,
+      artist.musicbrainz_id || undefined,
+      ownedTitles,
+      ownedMbIds
+    )
+    await db.music.upsertArtistCompleteness(completeness)
+    return completeness
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM_TRACK_COMPLETENESS, PositiveIntSchema, async (albumId) => {
+    const album = await db.music.getAlbum(albumId)
+    if (!album) throw new Error(`Album with ID ${albumId} not found`)
+    const tracks = await db.music.getTracks({ albumId, limit: 1000 })
+    const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)
+    const completeness = await getMusicBrainzService().analyzeAlbumTrackCompleteness(
+      albumId,
+      album.artist_name,
+      album.title,
+      album.musicbrainz_release_group_id || album.musicbrainz_id || undefined,
+      ownedTrackTitles
+    )
+    if (completeness) {
+      await db.music.upsertAlbumCompleteness(completeness)
+    }
+    return completeness
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.FIX_ARTIST_MATCH, z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (artistId, musicbrainzId) => {
+    await db.music.fixArtistMatch(artistId, musicbrainzId)
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('music:fixAlbumMatch', z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (albumId, musicbrainzReleaseGroupId) => {
+    await db.music.fixAlbumMatch(albumId, musicbrainzReleaseGroupId)
+    return { success: true }
   })
 
   getLoggingService().info('[music]', 'Music IPC handlers registered')

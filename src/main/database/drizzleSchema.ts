@@ -421,6 +421,7 @@ export const libraryScans = sqliteTable('library_scans', {
   itemsScanned: integer('items_scanned'),
   isEnabled: integer('is_enabled').notNull(),
   isProtected: integer('is_protected').notNull(),
+  allowAdultMatching: integer('allow_adult_matching').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
