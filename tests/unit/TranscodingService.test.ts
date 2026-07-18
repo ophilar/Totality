@@ -128,7 +128,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
       const handler = handlers.get('transcoding:start')!
       const mockEvent = { sender: { send: vi.fn() } }
       
-      const result = await handler(mockEvent as any, 1, { overwriteOriginal: true, targetCodec: 'hevc' })
+      const result = await handler(mockEvent as any, 1, { overwriteOriginal: true, targetCodec: 'hevc', transcodingEngine: 'handbrake' })
       
       expect(result).toBe(true)
       
@@ -145,9 +145,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
     it('respects availability overrides', async () => {
       service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: false, ffmpeg: true })
       const result = await service.checkAvailability()
-      expect(result).toEqual({
-        handbrake: true
-      })
+      expect(result.handbrake).toBe(true)
     })
   })
 })

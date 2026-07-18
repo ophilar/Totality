@@ -28,7 +28,9 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
     const sortMap: any = {
       'title': schema.wishlistItems.title,
       'priority': schema.wishlistItems.priority,
-      'added_at': schema.wishlistItems.addedAt
+      'added_at': schema.wishlistItems.addedAt,
+      'year': schema.wishlistItems.year,
+      'completed_at': schema.wishlistItems.completedAt
     }
     const sortCol = sortMap[filters?.sortBy || 'added_at'] || schema.wishlistItems.addedAt
     const sortOrder = filters?.sortOrder === 'asc' ? asc(sortCol) : desc(sortCol)

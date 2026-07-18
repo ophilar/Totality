@@ -6,6 +6,8 @@ export const transcodingAPI = {
 
   getParameters: (filePath: string, options?: any) => ipcRenderer.invoke('transcoding:getParameters', filePath, options),
   start: (mediaItemId: number, options?: any) => ipcRenderer.invoke('transcoding:start', mediaItemId, options),
+  cancel: (mediaItemId: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  gpusList: () => ipcRenderer.invoke('gpus:list'),
   onProgress: (callback: (progress: any) => void) => {
     const listener = (_event: any, progress: any) => callback(progress)
     ipcRenderer.on('transcoding:progress', listener)

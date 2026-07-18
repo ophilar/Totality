@@ -45,6 +45,8 @@ export const mediaApi = {
   // Library Protection
   dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => 
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, sourceId, libraryId, isProtected),
+  dbSetLibraryAllowAdultMatching: (sourceId: string, libraryId: string, allowAdultMatching: boolean) => 
+    ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_ADULT_MATCHING, sourceId, libraryId, allowAdultMatching),
   dbVerifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.VERIFY_PIN, pin),
   dbSetPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SET_PIN, pin),
   dbHasPin: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.HAS_PIN),
@@ -101,7 +103,7 @@ export const mediaApi = {
     ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, tmdbId),
 
   // Movie Match Fixing
-  movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year),
+  movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
   movieFixMatch: (mediaItemId: number, tmdbId: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, tmdbId),
 
@@ -195,6 +197,7 @@ export interface MediaAPI {
 
   // Library Protection
   dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) => Promise<boolean>
+  dbSetLibraryAllowAdultMatching: (sourceId: string, libraryId: string, allowAdultMatching: boolean) => Promise<boolean>
   dbVerifyPin: (pin: string) => Promise<boolean>
   dbSetPin: (pin: string) => Promise<boolean>
   dbHasPin: () => Promise<boolean>
@@ -267,7 +270,7 @@ export interface MediaAPI {
   }>
 
   // Movie Match Fixing
-  movieSearchTMDB: (query: string, year?: number) => Promise<Array<{
+  movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => Promise<Array<{
     id: number
     title: string
     release_date: string

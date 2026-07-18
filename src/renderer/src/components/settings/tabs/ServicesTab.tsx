@@ -16,6 +16,7 @@ import {
   Network,
   Circle,
   Bot,
+  Music,
 } from 'lucide-react'
 
 interface ServiceCardProps {
@@ -124,6 +125,11 @@ export function ServicesTab() {
   const [tmdbStatus, setTmdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
   const [originalTmdb, setOriginalTmdb] = useState('')
 
+  // MusicBrainz state
+  const [musicbrainzBaseUrl, setMusicbrainzBaseUrl] = useState('')
+  const [musicbrainzStatus, setMusicbrainzStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalMusicbrainzBaseUrl, setOriginalMusicbrainzBaseUrl] = useState('')
+
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
   const [ffprobeBundled, setFfprobeBundled] = useState(false)
@@ -184,6 +190,7 @@ export function ServicesTab() {
   const [hasChanges, setHasChanges] = useState(false)
 
   const tmdbId = useId()
+  const musicbrainzId = useId()
   const toggleId = useId()
   const geminiId = useId()
   const geminiModelId = useId()
@@ -209,8 +216,9 @@ export function ServicesTab() {
     const tmdbChanged = tmdbApiKey !== originalTmdb
     const nfsChanged = JSON.stringify(nfsMappings) !== JSON.stringify(originalNfsMappings)
     const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
-    setHasChanges(tmdbChanged || nfsChanged || geminiChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel])
+    const musicbrainzChanged = musicbrainzBaseUrl !== originalMusicbrainzBaseUrl
+    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged)
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
@@ -237,6 +245,13 @@ export function ServicesTab() {
       setOriginalTmdb(tmdb)
       if (tmdb) {
         setTmdbStatus('valid')
+      }
+
+      const mbBaseUrl = allSettings.musicbrainz_base_url || 'https://musicbrainz.org/ws/2'
+      setMusicbrainzBaseUrl(mbBaseUrl)
+      setOriginalMusicbrainzBaseUrl(mbBaseUrl)
+      if (mbBaseUrl) {
+        setMusicbrainzStatus('valid')
       }
 
       const gemini = allSettings.gemini_api_key || ''
@@ -316,16 +331,32 @@ export function ServicesTab() {
         window.electronAPI.setNfsMappings(nfsMappings),
         window.electronAPI.setSetting('gemini_api_key', geminiApiKey),
         window.electronAPI.setSetting('gemini_model', geminiModel),
+        window.electronAPI.setSetting('musicbrainz_base_url', musicbrainzBaseUrl),
       ])
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
       setOriginalGemini(geminiApiKey)
       setOriginalGeminiModel(geminiModel)
+      setOriginalMusicbrainzBaseUrl(musicbrainzBaseUrl)
       setHasChanges(false)
     } catch (error) {
       window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleTestMusicbrainz = async () => {
+    if (!musicbrainzBaseUrl.trim()) return
+    setMusicbrainzStatus('testing')
+    try {
+      const response = await fetch(
+        `${musicbrainzBaseUrl}/artist?query=Beatles&limit=1`,
+        { headers: { 'Accept': 'application/json' } }
+      )
+      setMusicbrainzStatus(response.ok ? 'valid' : 'invalid')
+    } catch {
+      setMusicbrainzStatus('invalid')
     }
   }
 
@@ -581,6 +612,68 @@ export function ServicesTab() {
           <p className="text-xs text-muted-foreground">
             Free API key from{' '}
             <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
+          </p>
+        </div>
+      </ServiceCard>
+
+
+      {/* MusicBrainz Card */}
+      <ServiceCard
+        title="MusicBrainz API"
+        description="Music metadata base URL for completeness analysis"
+        icon={<Music className="w-5 h-5" />}
+        status={musicbrainzBaseUrl ? 'configured' : 'not-configured'}
+        statusText={musicbrainzBaseUrl ? 'Configured' : 'Not configured'}
+        expanded={expandedCards.has('musicbrainz')}
+        onToggle={() => toggleCard('musicbrainz')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                id={musicbrainzId}
+                type="text"
+                value={musicbrainzBaseUrl}
+                onChange={(e) => {
+                  setMusicbrainzBaseUrl(e.target.value)
+                  setMusicbrainzStatus('idle')
+                }}
+                placeholder="Enter MusicBrainz API base URL"
+                className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <button
+              onClick={handleTestMusicbrainz}
+              disabled={!musicbrainzBaseUrl.trim() || musicbrainzStatus === 'testing' || musicbrainzStatus === 'valid'}
+              className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                musicbrainzStatus === 'valid' ? 'text-green-500' :
+                musicbrainzStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
+                'text-sm bg-muted hover:bg-muted/80'
+              }`}
+              title={musicbrainzStatus === 'valid' ? 'Base URL is valid' : musicbrainzStatus === 'invalid' ? 'Invalid Base URL' : 'Test Base URL'}
+            >
+              {musicbrainzStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> :
+               musicbrainzStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
+               musicbrainzStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+               <span className="text-sm">Test</span>}
+            </button>
+            {musicbrainzBaseUrl !== 'https://musicbrainz.org/ws/2' && (
+              <button
+                onClick={() => {
+                  setMusicbrainzBaseUrl('https://musicbrainz.org/ws/2')
+                  setMusicbrainzStatus('idle')
+                }}
+                className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                aria-label="Reset MusicBrainz API base URL"
+                title="Reset to default URL"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Default endpoint:{' '}
+            <button type="button" onClick={() => window.electronAPI.openExternal('https://musicbrainz.org')} className="text-primary hover:underline">musicbrainz.org</button>
           </p>
         </div>
       </ServiceCard>

@@ -74,6 +74,8 @@ export function MatchFixModal({
   // Focus trap
   useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>)
 
+  const [includeAdult, setIncludeAdult] = useState(false)
+
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -81,8 +83,27 @@ export function MatchFixModal({
       setSearchResults([])
       setSelectedResult(null)
       setError(null)
+      setIncludeAdult(false)
+
+      async function checkAdultMatching() {
+        if (type === 'movie' && mediaItemId) {
+          try {
+            const item = await window.electronAPI.getMediaItem(mediaItemId)
+            if (item?.source_id && item?.library_id) {
+              const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
+              const lib = libs.find((l: any) => l.libraryId === item.library_id)
+              if (lib?.isProtected && lib?.allowAdultMatching) {
+                setIncludeAdult(true)
+              }
+            }
+          } catch (e) {
+            console.error('Failed to check adult matching status:', e)
+          }
+        }
+      }
+      checkAdultMatching()
     }
-  }, [isOpen, currentTitle])
+  }, [isOpen, currentTitle, type, mediaItemId])
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
@@ -101,7 +122,7 @@ export function MatchFixModal({
           break
         case 'movie':
           // Don't filter by year - let users see all results and select the correct one
-          results = await window.electronAPI.movieSearchTMDB(searchQuery)
+          results = await window.electronAPI.movieSearchTMDB(searchQuery, undefined, includeAdult)
           break
         case 'artist':
           results = await window.electronAPI.musicSearchMusicBrainzArtist(searchQuery) as MusicBrainzArtistResult[]

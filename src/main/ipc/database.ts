@@ -147,6 +147,11 @@ export function registerDatabaseHandlers() {
     return true
   })
 
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_ADULT_MATCHING, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, allowAdultMatching) => {
+    await db.sources.setLibraryAllowAdultMatching(sourceId, libraryId, allowAdultMatching)
+    return true
+  })
+
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.VERIFY_PIN, z.string(), async (pin) => {
     return await db.config.verifyPin(pin)
   })
@@ -210,10 +215,10 @@ export function registerDatabaseHandlers() {
 
   const OptionalYearSchema = z.number().int().min(1800).max(2100).optional()
 
-  createValidatedIpcHandler(IPC_CHANNELS.MOVIE.SEARCH_TMDB, z.tuple([NonEmptyStringSchema, OptionalYearSchema]), async (query, year) => {
+  createValidatedIpcHandler(IPC_CHANNELS.MOVIE.SEARCH_TMDB, z.tuple([NonEmptyStringSchema, OptionalYearSchema, z.boolean().optional()]), async (query, year, includeAdult) => {
     const tmdb = getTMDBService()
     await tmdb.initialize()
-    const res = await tmdb.searchMovie(query, year)
+    const res = await tmdb.searchMovie(query, year, includeAdult)
     return (res?.results || []).map((m: any) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
   })
 

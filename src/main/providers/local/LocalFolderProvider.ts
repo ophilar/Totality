@@ -264,6 +264,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
+      const libs = await db.sources.getSourceLibraries(this.sourceId)
+      const currentLib = libs.find(l => l.libraryId === libraryId)
+      const includeAdult = !!(currentLib?.isProtected && currentLib?.allowAdultMatching)
       const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false'
       const ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '25', 10)
 
@@ -333,7 +336,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let metadata: MediaMetadata
             if (parsed.type === 'movie') {
-              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache)
+              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache, includeAdult)
             } else {
               const epParsed = parsed as ParsedEpisodeInfo
               metadata = await this.createEpisodeMetadata(filePath, epParsed, tmdbConfigured, tmdb, seriesTmdbCache)
@@ -437,6 +440,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
+      const libs = await db.sources.getSourceLibraries(this.sourceId)
+      const currentLib = libs.find(l => l.libraryId === libraryId)
+      const includeAdult = !!(currentLib?.isProtected && currentLib?.allowAdultMatching)
       const scanType = (libraryType === 'movie' || libraryType === 'movies') ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, any>()
       const seriesTmdbCache = new Map<string, any>()
@@ -493,7 +499,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let metadata: MediaMetadata
             if (parsed.type === 'movie') {
-              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache)
+              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache, includeAdult)
             } else {
               metadata = await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
             }
@@ -675,7 +681,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     } catch (error) { cache.set(artistName.toLowerCase(), artistName); return artistName }
   }
 
-  private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, any>): Promise<MediaMetadata> {
+  private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, any>, includeAdult?: boolean): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
     const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.title || path.basename(filePath), type: MediaItemType.Movie, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 
@@ -687,7 +693,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           if (cached) { metadata.tmdbId = cached.tmdbId; metadata.title = cached.title; metadata.year = cached.year; metadata.posterUrl = cached.posterPath ? `https://image.tmdb.org/t/p/w500${cached.posterPath}` : undefined; metadata.backdropUrl = cached.backdropPath ? `https://image.tmdb.org/t/p/w1280${cached.backdropPath}` : undefined }
           return metadata
         }
-        const match = await tmdb.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year)
+        const match = await tmdb.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year, includeAdult)
         if (match) { metadata.tmdbId = match.tmdbId; metadata.title = match.title; metadata.year = match.year; metadata.posterUrl = tmdb.buildImageUrl(match.posterPath || null); metadata.backdropUrl = tmdb.buildImageUrl(match.backdropPath || null); movieTmdbCache?.set(cacheKey, match) }
         else { movieTmdbCache?.set(cacheKey, null) }
       } catch (error) { getLoggingService().warn('[LocalFolderProvider]', `TMDB lookup failed for "${parsed.title}":`, error) }

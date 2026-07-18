@@ -8,6 +8,7 @@ import { getGeminiService } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { APP_CONFIG } from '@main/config'
 import { PathUtils } from '@main/services/utils/PathUtils'
+import { GpuDetector } from '@main/services/utils/GpuDetector'
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
@@ -15,6 +16,14 @@ export interface TranscodeOptions {
   preserveAllAudio?: boolean
   overwriteOriginal?: boolean
   priority?: 'low' | 'normal' | 'high'
+  useGpu?: boolean
+  encoder?: string
+  crf?: number
+  preset?: string
+  customArgs?: string
+  gpuId?: string
+  transcodingEngine?: 'handbrake' | 'ffmpeg'
+  targetSize?: string
 }
 
 export interface TranscodeProgress {
@@ -28,9 +37,13 @@ export interface TranscodeProgress {
 export interface TranscodingParams {
   summary: string
   handbrakeArgs: string[]
+  ffmpegArgs?: string[]
   mkvmergeArgs?: string[]
   expectedSizeReduction?: string
   warnings?: string[]
+  encoder?: string
+  crf?: number
+  preset?: string
 }
 
 /**
@@ -44,6 +57,8 @@ export class TranscodingService {
   private availabilityOverride: { handbrake?: boolean } | null = null
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
+  private cachedHandbrakeAvailable: boolean | null = null
+  private cachedHandbrakeVersion: string | null = null
 
   constructor() {
     // Initialization is deferred until first use to allow DB to be ready
@@ -53,6 +68,8 @@ export class TranscodingService {
   invalidate(): void {
     this.initializedPromise = null
     this.handbrakePath = null
+    this.cachedHandbrakeAvailable = null
+    this.cachedHandbrakeVersion = null
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -101,26 +118,39 @@ export class TranscodingService {
    */
   async checkAvailability(): Promise<{ 
     handbrake: boolean; 
+    ffmpeg: boolean;
   }> {
     await this.ensureInitialized()
 
+    const analyzer = getMediaFileAnalyzer()
+    const ffmpegAvailable = await analyzer.isAvailable()
+
     if (this.availabilityOverride) {
       return {
-        handbrake: this.availabilityOverride.handbrake ?? false
+        handbrake: this.availabilityOverride.handbrake ?? false,
+        ffmpeg: ffmpegAvailable
       }
     }
 
+    if (this.cachedHandbrakeAvailable !== null) {
+      return {
+        handbrake: this.cachedHandbrakeAvailable,
+        ffmpeg: ffmpegAvailable
+      }
+    }
 
     const db = getDatabase()
     const isEnabled = (await db.config.getSetting('handbrake_enabled')) !== 'false'
     if (!isEnabled) {
-      return { handbrake: false }
+      this.cachedHandbrakeAvailable = false
+      return { handbrake: false, ffmpeg: ffmpegAvailable }
     }
     const hb = await this.testTool(this.handbrakePath || 'HandBrakeCLI', ['--version'])
-
+    this.cachedHandbrakeAvailable = hb
 
     return { 
-      handbrake: hb
+      handbrake: hb,
+      ffmpeg: ffmpegAvailable
     }
   }
 
@@ -132,9 +162,13 @@ export class TranscodingService {
   async getVersion(): Promise<string | null> {
     await this.ensureInitialized()
 
+    if (this.cachedHandbrakeVersion !== null) {
+      return this.cachedHandbrakeVersion
+    }
+
     if (!this.handbrakePath) return null
 
-    return new Promise((resolve) => {
+    const version = await new Promise<string | null>((resolve) => {
       try {
         const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || '')
         const proc = spawn(actualPath, ['--version'])
@@ -150,6 +184,9 @@ export class TranscodingService {
         resolve(null)
       }
     })
+
+    this.cachedHandbrakeVersion = version
+    return version
   }
 
   private async testTool(toolPath: string, args: string[]): Promise<boolean> {
@@ -186,92 +223,254 @@ export class TranscodingService {
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
 
     const gemini = getGeminiService()
-    if (!gemini.isConfigured()) {
-      throw new Error('Gemini AI is not configured. Please add your API key in settings.')
-    }
-
     const targetCodec = options.targetCodec || 'av1'
-    
-    const prompt = `Analyze this media file and provide optimized ${targetCodec.toUpperCase()} transcoding parameters for HandBrakeCLI.
-    
-    File Analysis:
-    ${JSON.stringify(analysis, null, 2)}
-    
-    Constraints:
-    - Target: Maximum space saving with transparent quality.
-    - Preference: 10-bit encoding if source is 10-bit or HDR.
-    
-    Return a JSON object with:
-    {
-      "summary": "Brief explanation",
-      "videoCodec": "svt_av1" | "svt_av1_10bit" | "x265" | "x265_10bit" | "x264",
-      "crf": 20, // number between 0 and 51
-      "preset": "fast", // preset string, e.g., fast, medium, slow
-      "expectedSizeReduction": "e.g. 60%",
-      "warnings": []
+    const hasManualOverrides = options.encoder && options.crf !== undefined && options.preset
+
+    let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
+    let gpuName = ''
+    if (options.useGpu || options.gpuId) {
+      const gpus = await GpuDetector.detectGpus()
+      if (gpus.length === 0) {
+        throw new Error('GPU acceleration requested, but no GPUs were detected on the machine.')
+      }
+      let matchedGpu = gpus[0]
+      if (options.gpuId) {
+        const found = gpus.find(g => g.id === options.gpuId)
+        if (!found) {
+          throw new Error(`Requested GPU ID "${options.gpuId}" is not available on the machine.`)
+        }
+        matchedGpu = found
+      }
+      selectedVendor = matchedGpu.vendor
+      gpuName = matchedGpu.name
+      if (selectedVendor === 'Unknown') {
+        throw new Error(`GPU acceleration is not supported for GPU: "${matchedGpu.name}". Supported vendors are NVIDIA, Intel, AMD, and Apple.`)
+      }
     }
-    
-    Important: Do NOT output raw command-line arguments in this response.`
 
-    const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
-    Additional Requirement: 
-    - Output must be valid JSON only. 
-    - Focus on HandBrakeCLI specifically.`
+    let expectedEncoder = ''
+    if (options.useGpu || options.gpuId) {
+      if (targetCodec === 'av1') {
+        if (selectedVendor === 'NVIDIA') expectedEncoder = 'nvenc_av1'
+        else if (selectedVendor === 'Intel') expectedEncoder = 'qsv_av1'
+        else if (selectedVendor === 'AMD') expectedEncoder = 'av1_amf'
+        else if (selectedVendor === 'Apple') {
+          throw new Error('AV1 hardware encoding is not supported on Apple VideoToolbox.')
+        }
+      } else { // hevc
+        if (selectedVendor === 'NVIDIA') expectedEncoder = 'nvenc_h265'
+        else if (selectedVendor === 'Intel') expectedEncoder = 'qsv_h265'
+        else if (selectedVendor === 'AMD') expectedEncoder = 'hevc_amf'
+        else if (selectedVendor === 'Apple') expectedEncoder = 'vt_h265'
+      }
+    } else {
+      expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
+    }
 
-    const response = await gemini.sendMessage({
-      messages: [{ role: 'user', content: prompt }],
-      system: systemPrompt
-    })
+    let summary = 'AI optimized transcode'
+    let videoCodec = options.encoder
+    let crf = options.crf
+    let preset = options.preset
+    let expectedSizeReduction = 'e.g. 50%'
+    let warnings: string[] = []
 
-    try {
-      const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
-      const data = JSON.parse(jsonStr)
-      
-      const summary = typeof data.summary === 'string' ? data.summary : 'AI optimized transcode'
-      
-      const allowedVideoCodecs = ['svt_av1', 'svt_av1_10bit', 'x265', 'x265_10bit', 'x264']
-      const videoCodec = allowedVideoCodecs.includes(data.videoCodec)
-        ? data.videoCodec
-        : (targetCodec === 'hevc' ? 'x265' : 'svt_av1')
-        
-      const crf = (typeof data.crf === 'number' && data.crf >= 0 && data.crf <= 51)
-        ? data.crf
-        : 22
-        
-      const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo']
-      const preset = allowedPresets.includes(data.preset)
-        ? data.preset
-        : 'fast'
-
-      // Build safe handbrakeArgs array
-      const handbrakeArgs: string[] = []
-      
-      handbrakeArgs.push('--encoder', videoCodec)
-      handbrakeArgs.push('--quality', crf.toString())
-      handbrakeArgs.push('--encoder-preset', preset)
-
-      if (options.preserveAllAudio) {
-        handbrakeArgs.push('--all-audio')
+    if (!hasManualOverrides) {
+      if (!gemini.isConfigured()) {
+        summary = 'Handbrake transcoding (AI not configured)'
       } else {
-        handbrakeArgs.push('--audio', '1')
+        const sizeConstraint = options.targetSize === 'ai-recommended'
+          ? '- Target Size: Recommend the optimal target size that preserves maximum transparent visual quality while maximizing space savings.'
+          : options.targetSize
+            ? `- Target Size: The user has requested a target file size of ${options.targetSize}. Adjust the CRF value and preset parameters to try to reach or stay below this target size while maintaining acceptable quality.`
+            : '- Target: Maximum space saving with transparent quality.';
+
+        const prompt = `Analyze this media file and provide optimized ${targetCodec.toUpperCase()} transcoding parameters for HandBrakeCLI.
+        
+        File Analysis:
+        ${JSON.stringify(analysis, null, 2)}
+        
+        Constraints:
+        ${sizeConstraint}
+        - Preference: 10-bit encoding if source is 10-bit or HDR.
+        ${(options.useGpu || options.gpuId) ? `- Hardware Acceleration: Use GPU encoder (${expectedEncoder}) for ${gpuName} as the videoCodec.` : ''}
+        
+        Return a JSON object with:
+        {
+          "summary": "Brief explanation",
+          "videoCodec": "${expectedEncoder}", // use this exact encoder
+          "crf": 20, // number between 0 and 51
+          "preset": "fast", // preset string, e.g., fast, medium, slow
+          "expectedSizeReduction": "e.g. 60%",
+          "warnings": []
+        }
+        
+        Important: Do NOT output raw command-line arguments in this response.`
+
+        const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
+        Additional Requirement: 
+        - Output must be valid JSON only. 
+        - Focus on HandBrakeCLI specifically.`
+
+        try {
+          const response = await gemini.sendMessage({
+            messages: [{ role: 'user', content: prompt }],
+            system: systemPrompt
+          })
+          const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
+          const data = JSON.parse(jsonStr)
+          
+          summary = typeof data.summary === 'string' ? data.summary : 'AI optimized transcode'
+          if (!videoCodec) videoCodec = data.videoCodec
+          if (crf === undefined) crf = data.crf
+          if (!preset) preset = data.preset
+          expectedSizeReduction = data.expectedSizeReduction || expectedSizeReduction
+          warnings = data.warnings || []
+        } catch (e) {
+          getLoggingService().error('[TranscodingService]', 'Failed to parse Gemini response or fetch parameters:', e)
+          throw new Error(`Failed to generate optimized transcoding parameters: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
+    } else {
+      summary = 'User-defined custom parameters'
+      expectedSizeReduction = 'Custom'
+    }
 
-      if (options.preserveSubtitles) {
-        handbrakeArgs.push('--all-subtitles')
+    // Set defaults if still not resolved
+    if (!videoCodec) {
+      videoCodec = expectedEncoder
+    }
+
+    // Normalize encoder names for HandBrake CLI compatibility
+    if (videoCodec === 'av1_nvenc') {
+      videoCodec = 'nvenc_av1'
+    }
+
+    if (crf === undefined) {
+      crf = 22
+    }
+    if (!preset) {
+      preset = 'fast'
+    }
+
+    // Validate parameters against allowed lists to prevent command injection
+    const allowedVideoCodecs = [
+      'svt_av1', 'svt_av1_10bit', 'x265', 'x265_10bit', 'x264',
+      'nvenc_h264', 'nvenc_h265', 'nvenc_h265_10bit', 'nvenc_av1', 'nvenc_av1_10bit', 'av1_nvenc',
+      'qsv_av1', 'qsv_h265', 'qsv_h265_10bit', 'qsv_h264',
+      'av1_amf', 'hevc_amf', 'vce_h264',
+      'vt_h264', 'vt_h265'
+    ]
+    if (!allowedVideoCodecs.includes(videoCodec)) {
+      throw new Error(`Invalid or unsupported video encoder: ${videoCodec}`)
+    }
+      
+    const finalCrf = (typeof crf === 'number' && crf >= 0 && crf <= 51)
+      ? crf
+      : 22
+      
+    const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless']
+    const finalPreset = allowedPresets.includes(preset)
+      ? preset
+      : 'fast'
+
+    // Build safe handbrakeArgs array
+    const handbrakeArgs: string[] = []
+    
+    handbrakeArgs.push('--encoder', videoCodec)
+    handbrakeArgs.push('--quality', finalCrf.toString())
+    handbrakeArgs.push('--encoder-preset', finalPreset)
+
+    if (options.preserveAllAudio) {
+      handbrakeArgs.push('--all-audio')
+    } else {
+      handbrakeArgs.push('--audio', '1')
+    }
+
+    if (options.preserveSubtitles) {
+      handbrakeArgs.push('--all-subtitles')
+    }
+
+    // Add custom args if present
+    if (options.customArgs) {
+      const parts = options.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
+      const safeRegex = /^[a-zA-Z0-9\-_\+=\/:,\.\*"'\s]+$/
+      for (const part of parts) {
+        const cleaned = part.replace(/^["']|["']$/g, '').trim()
+        if (cleaned && safeRegex.test(cleaned)) {
+          handbrakeArgs.push(cleaned)
+        }
       }
+    }
 
+    // Build equivalent ffmpegArgs array
+    const encoderMap: Record<string, string> = {
+      'svt_av1': 'libsvtav1',
+      'svt_av1_10bit': 'libsvtav1',
+      'x265': 'libx265',
+      'x265_10bit': 'libx265',
+      'x264': 'libx264',
+      'nvenc_h264': 'h264_nvenc',
+      'nvenc_h265': 'hevc_nvenc',
+      'nvenc_h265_10bit': 'hevc_nvenc',
+      'nvenc_av1': 'av1_nvenc',
+      'nvenc_av1_10bit': 'av1_nvenc',
+      'qsv_av1': 'av1_qsv',
+      'qsv_h265': 'hevc_qsv',
+      'qsv_h265_10bit': 'hevc_qsv',
+      'qsv_h264': 'h264_qsv',
+      'av1_amf': 'av1_amf',
+      'hevc_amf': 'hevc_amf',
+      'vce_h264': 'h264_amf',
+      'vt_h264': 'h264_videotoolbox',
+      'vt_h265': 'hevc_videotoolbox'
+    }
 
+    const ffmpegEncoder = encoderMap[videoCodec] || 'libx265'
+    const ffmpegArgs: string[] = ['-y', '-i', '<input>']
+    ffmpegArgs.push('-c:v', ffmpegEncoder)
 
-      return {
-        summary,
-        handbrakeArgs,
-        mkvmergeArgs: [],
-        expectedSizeReduction: data.expectedSizeReduction,
-        warnings: data.warnings || []
-      }
-    } catch (e) {
-      getLoggingService().error('[TranscodingService]', 'Failed to parse Gemini response:', response.text)
-      throw new Error('Failed to generate optimized transcoding parameters from AI.')
+    if (videoCodec.endsWith('_10bit')) {
+      ffmpegArgs.push('-pix_fmt', 'yuv420p10le')
+    }
+
+    if (ffmpegEncoder.includes('nvenc')) {
+      ffmpegArgs.push('-rc', 'constqp', '-cq', finalCrf.toString())
+    } else if (ffmpegEncoder.includes('qsv')) {
+      ffmpegArgs.push('-global_quality', finalCrf.toString())
+    } else {
+      ffmpegArgs.push('-crf', finalCrf.toString())
+    }
+
+    if (finalPreset) {
+      ffmpegArgs.push('-preset', finalPreset)
+    }
+
+    if (options.preserveAllAudio) {
+      ffmpegArgs.push('-c:a', 'copy')
+    } else {
+      ffmpegArgs.push('-map', '0:v:0', '-map', '0:a:0?', '-c:a', 'copy')
+    }
+
+    if (options.preserveSubtitles) {
+      ffmpegArgs.push('-map', '0:s?', '-c:s', 'copy')
+    }
+
+    if (options.preserveAllAudio) {
+      ffmpegArgs.push('-map', '0')
+    }
+
+    ffmpegArgs.push('<output>')
+
+    return {
+      summary,
+      handbrakeArgs,
+      ffmpegArgs,
+      mkvmergeArgs: [],
+      expectedSizeReduction,
+      warnings,
+      encoder: videoCodec,
+      crf: finalCrf,
+      preset: finalPreset
     }
   }
 
@@ -288,8 +487,15 @@ export class TranscodingService {
     if (!item || !item.file_path) throw new Error('Media item or file path not found')
 
     const availability = await this.checkAvailability()
-    if (!availability.handbrake) {
-      throw new Error('HandBrakeCLI not found. Please install it and set the path in settings.')
+    const engine = options.transcodingEngine
+    if (!engine) {
+      throw new Error('Transcoding engine must be explicitly selected.')
+    }
+    if (engine === 'handbrake' && !availability.handbrake) {
+      throw new Error('HandBrakeCLI is not available on this system.')
+    }
+    if (engine === 'ffmpeg' && !availability.ffmpeg) {
+      throw new Error('FFmpeg is not available on this system.')
     }
 
     const controller = new AbortController()
@@ -309,30 +515,48 @@ export class TranscodingService {
         `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
 
-      getLoggingService().info('[TranscodingService]', `Starting transcode: ${inputPath} -> ${tempPath}`)
-      getLoggingService().info('[TranscodingService]', `Using Handbrake args: ${params.handbrakeArgs.join(' ')}`)
+      const useFfmpeg = engine === 'ffmpeg'
+      let success = false
 
-      const args = [
-        '-i', inputPath,
-        '-o', tempPath,
-        ...params.handbrakeArgs.filter((a): a is string => a !== null && a !== undefined)
-      ]
+      if (useFfmpeg) {
+        getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
+        success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
+          onProgress?.({ 
+            percent: p.percent, 
+            fps: p.fps, 
+            eta: p.eta, 
+            status: 'encoding' 
+          })
+        }, controller.signal)
+      } else {
+        getLoggingService().info('[TranscodingService]', `Starting Handbrake transcode: ${inputPath} -> ${tempPath}`)
+        getLoggingService().info('[TranscodingService]', `Using Handbrake args: ${params.handbrakeArgs.join(' ')}`)
 
-      const success = await this.runHandbrake(args, (p) => {
-        onProgress?.({ 
-          percent: p.percent, 
-          fps: p.fps, 
-          eta: p.eta, 
-          status: 'encoding' 
-        })
-      }, controller.signal)
+        const args = [
+          '-i', inputPath,
+          '-o', tempPath,
+          ...params.handbrakeArgs.filter((a): a is string => a !== null && a !== undefined)
+        ]
+
+        success = await this.runHandbrake(args, (p) => {
+          onProgress?.({ 
+            percent: p.percent, 
+            fps: p.fps, 
+            eta: p.eta, 
+            status: 'encoding' 
+          })
+        }, controller.signal)
+      }
 
       if (!success) {
         if (controller.signal.aborted) {
+          if (tempPath && existsSync(tempPath)) {
+            try { await fs.unlink(tempPath) } catch (e) { getLoggingService().warn('[TranscodingService]', 'Failed to clean up temp file on abort:', e) }
+          }
           onProgress?.({ percent: 0, status: 'cancelled' })
           return false
         }
-        throw new Error('Handbrake encoding failed')
+        throw new Error(useFfmpeg ? 'FFmpeg encoding failed' : 'Handbrake encoding failed')
       }
 
       onProgress?.({ percent: 100, status: 'verifying' })
@@ -413,6 +637,148 @@ export class TranscodingService {
       proc.on('error', (err) => {
         if (signal?.aborted) return
         getLoggingService().error('[Handbrake]', 'Process error:', err)
+        resolve(false)
+      })
+    })
+  }
+
+  private runFFmpeg(
+    inputPath: string,
+    outputPath: string,
+    params: TranscodingParams,
+    options: TranscodeOptions,
+    onProgress: (p: any) => void,
+    signal?: AbortSignal
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const analyzer = getMediaFileAnalyzer()
+      const ffmpegPath = analyzer.getFFmpegPath() || 'ffmpeg'
+      const actualPath = PathUtils.resolveExecutablePath(ffmpegPath)
+
+      // Map Handbrake encoders to FFmpeg encoders
+      const encoderMap: Record<string, string> = {
+        'svt_av1': 'libsvtav1',
+        'svt_av1_10bit': 'libsvtav1',
+        'x265': 'libx265',
+        'x265_10bit': 'libx265',
+        'x264': 'libx264',
+        'nvenc_h264': 'h264_nvenc',
+        'nvenc_h265': 'hevc_nvenc',
+        'nvenc_h265_10bit': 'hevc_nvenc',
+        'nvenc_av1': 'av1_nvenc',
+        'nvenc_av1_10bit': 'av1_nvenc',
+        'qsv_av1': 'av1_qsv',
+        'qsv_h265': 'hevc_qsv',
+        'qsv_h265_10bit': 'hevc_qsv',
+        'qsv_h264': 'h264_qsv',
+        'av1_amf': 'av1_amf',
+        'hevc_amf': 'hevc_amf',
+        'vce_h264': 'h264_amf',
+        'vt_h264': 'h264_videotoolbox',
+        'vt_h265': 'hevc_videotoolbox'
+      }
+
+      const encoder = params.encoder || 'x265'
+      const ffmpegEncoder = encoderMap[encoder] || 'libx265'
+      const args: string[] = ['-y', '-i', inputPath]
+
+      // Video settings
+      args.push('-c:v', ffmpegEncoder)
+
+      // Apply 10-bit pixel format if encoder ends with _10bit or target is 10-bit
+      if (encoder.endsWith('_10bit')) {
+        args.push('-pix_fmt', 'yuv420p10le')
+      }
+
+      // Quality setting (CRF / CQ)
+      const crf = typeof params.crf === 'number' ? params.crf : 22
+      if (ffmpegEncoder.includes('nvenc')) {
+        args.push('-rc', 'constqp', '-cq', crf.toString())
+      } else if (ffmpegEncoder.includes('qsv')) {
+        args.push('-global_quality', crf.toString())
+      } else {
+        args.push('-crf', crf.toString())
+      }
+
+      // Preset setting
+      if (params.preset) {
+        args.push('-preset', params.preset)
+      }
+
+      // Audio mapping
+      if (options.preserveAllAudio) {
+        args.push('-c:a', 'copy')
+      } else {
+        args.push('-map', '0:v:0', '-map', '0:a:0?', '-c:a', 'copy')
+      }
+
+      // Subtitle mapping
+      if (options.preserveSubtitles) {
+        args.push('-map', '0:s?', '-c:s', 'copy')
+      }
+
+      // If we didn't use map above, make sure we map video
+      if (options.preserveAllAudio) {
+        args.push('-map', '0')
+      }
+
+      args.push(outputPath)
+
+      getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
+
+      const proc = spawn(actualPath, args)
+
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          proc.kill()
+          resolve(false)
+        })
+      }
+
+      // Parse FFmpeg progress
+      let durationSeconds = 0
+      proc.stderr.on('data', (data) => {
+        const line = data.toString()
+        getLoggingService().verbose('[FFmpeg]', line.trim())
+
+        // Extract duration first time
+        if (durationSeconds === 0) {
+          const durMatch = line.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/)
+          if (durMatch) {
+            durationSeconds = parseInt(durMatch[1], 10) * 3600 + parseInt(durMatch[2], 10) * 60 + parseFloat(durMatch[3])
+          }
+        }
+
+        // Parse time and speed
+        const timeMatch = line.match(/time=\s*(\d+):(\d+):(\d+\.\d+)/)
+        const fpsMatch = line.match(/fps=\s*(\d+(\.\d+)?)/)
+        const speedMatch = line.match(/speed=\s*(\d+(\.\d+)?)x/)
+        
+        if (timeMatch && durationSeconds > 0) {
+          const currentTime = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseFloat(timeMatch[3])
+          const percent = Math.min(99.9, (currentTime / durationSeconds) * 100)
+          const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0
+          const speed = speedMatch ? parseFloat(speedMatch[1]) : 1
+          
+          let eta = 'unknown'
+          if (speed > 0 && fps > 0) {
+            const remainingSec = (durationSeconds - currentTime) / speed
+            const etaMin = Math.floor(remainingSec / 60)
+            const etaSec = Math.floor(remainingSec % 60)
+            eta = `${etaMin}m ${etaSec}s`
+          }
+
+          onProgress({ percent, fps, eta })
+        }
+      })
+
+      proc.on('close', (code) => {
+        resolve(code === 0)
+      })
+
+      proc.on('error', (err) => {
+        if (signal?.aborted) return
+        getLoggingService().error('[FFmpeg]', 'Process error:', err)
         resolve(false)
       })
     })

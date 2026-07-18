@@ -30,9 +30,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     const sortMap: any = {
       'title': schema.seriesCompleteness.seriesTitle,
       'completeness': schema.seriesCompleteness.completenessPercentage,
+      'episode_count': schema.seriesCompleteness.totalEpisodes,
       'episodes': schema.seriesCompleteness.totalEpisodes,
+      'season_count': schema.seriesCompleteness.totalSeasons,
+      'storage_debt': schema.seriesCompleteness.storageDebtBytes,
       'debt': schema.seriesCompleteness.storageDebtBytes,
-      'efficiency': schema.seriesCompleteness.efficiencyScore
+      'efficiency': schema.seriesCompleteness.efficiencyScore,
+      'size': schema.seriesCompleteness.totalSize,
     }
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.seriesCompleteness.seriesTitle
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
@@ -134,6 +138,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       backdropUrl: data.backdrop_url ?? null,
       status: data.status ?? null,
       userFixedMatch: data.user_fixed_match ? 1 : 0,
+      efficiencyScore: data.efficiency_score ?? null,
+      storageDebtBytes: data.storage_debt_bytes ?? null,
+      totalSize: data.total_size ?? null,
     }
 
     return await this.upsertWithProviderId(
