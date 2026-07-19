@@ -115,24 +115,28 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     await this.beginBatch()
     try {
       for (const lib of libraries) {
-        await this.drizzle.insert(schema.libraryScans)
-          .values({
+        const existing = await this.drizzle.select({ id: schema.libraryScans.id })
+          .from(schema.libraryScans)
+          .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, lib.id)))
+          .get()
+
+        if (existing) {
+          await this.drizzle.update(schema.libraryScans)
+            .set({ isEnabled: lib.enabled ? 1 : 0, updatedAt: sql`(datetime('now'))` })
+            .where(eq(schema.libraryScans.id, existing.id))
+        } else {
+          await this.drizzle.insert(schema.libraryScans).values({
             sourceId,
             libraryId: lib.id,
             libraryName: lib.name,
             libraryType: lib.type,
             isEnabled: lib.enabled ? 1 : 0,
             isProtected: 0, // Explicitly provide 0 instead of relying on default
+            allowAdultMatching: 0,
             createdAt: sql`(datetime('now'))`,
             updatedAt: sql`(datetime('now'))`
           })
-          .onConflictDoUpdate({
-            target: [schema.libraryScans.sourceId, schema.libraryScans.libraryId],
-            set: {
-              isEnabled: lib.enabled ? 1 : 0,
-              updatedAt: sql`(datetime('now'))`
-            }
-          })
+        }
       }
       await this.endBatch()
     } catch (err) {
@@ -192,16 +196,43 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     return map
   }
 
-  async setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean): Promise<void> {
-    await this.drizzle.update(schema.libraryScans)
-      .set({ isProtected: isProtected ? 1 : 0, updatedAt: sql`(datetime('now'))` })
+  private async upsertLibraryScanToggle(
+    sourceId: string,
+    libraryId: string,
+    updates: { isProtected?: number, allowAdultMatching?: number },
+    fallbackName: string,
+    fallbackType: string
+  ): Promise<void> {
+    const existing = await this.drizzle.select({ id: schema.libraryScans.id })
+      .from(schema.libraryScans)
       .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+      .get()
+
+    if (existing) {
+      await this.drizzle.update(schema.libraryScans)
+        .set({ ...updates, updatedAt: sql`(datetime('now'))` })
+        .where(eq(schema.libraryScans.id, existing.id))
+    } else {
+      await this.drizzle.insert(schema.libraryScans).values({
+        sourceId,
+        libraryId,
+        libraryName: fallbackName,
+        libraryType: fallbackType,
+        isEnabled: 1,
+        isProtected: updates.isProtected ?? 0,
+        allowAdultMatching: updates.allowAdultMatching ?? 0,
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`
+      })
+    }
   }
 
-  async setLibraryAllowAdultMatching(sourceId: string, libraryId: string, allowAdultMatching: boolean): Promise<void> {
-    await this.drizzle.update(schema.libraryScans)
-      .set({ allowAdultMatching: allowAdultMatching ? 1 : 0, updatedAt: sql`(datetime('now'))` })
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+  async setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean, fallbackName: string, fallbackType: string): Promise<void> {
+    await this.upsertLibraryScanToggle(sourceId, libraryId, { isProtected: isProtected ? 1 : 0 }, fallbackName, fallbackType)
+  }
+
+  async setLibraryAllowAdultMatching(sourceId: string, libraryId: string, allowAdultMatching: boolean, fallbackName: string, fallbackType: string): Promise<void> {
+    await this.upsertLibraryScanToggle(sourceId, libraryId, { allowAdultMatching: allowAdultMatching ? 1 : 0 }, fallbackName, fallbackType)
   }
 
   async updateLibraryScanStats(sourceId: string, libraryId: string, items: number): Promise<void> {
