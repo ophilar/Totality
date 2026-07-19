@@ -70,7 +70,16 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   // LIBRARY SETTINGS
   // ============================================================================
 
-  async getSourceLibraries(sourceId: string): Promise<any[]> {
+  async getSourceLibraries(sourceId: string): Promise<Array<{
+    libraryId: string
+    libraryName: string
+    libraryType: string
+    isEnabled: number
+    isProtected: number
+    allowAdultMatching: number
+    lastScanAt: string | null
+    itemsScanned: number | null
+  }>> {
     const rows = await this.drizzle.select({
       libraryId: schema.libraryScans.libraryId,
       libraryName: schema.libraryScans.libraryName,
