@@ -165,9 +165,25 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
         await refreshSources()
 
-        // Queue library scan
+        // Initialize enabled libraries
         const sourceId = result.source_id
         const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
+
+        try {
+          await window.electronAPI.sourcesSetLibrariesEnabled(
+            sourceId,
+            sourceLibraries.map(lib => ({
+              id: lib.id,
+              name: lib.name,
+              type: lib.type,
+              enabled: true
+            }))
+          )
+        } catch (err) {
+          window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to set libraries enabled:', err)
+        }
+
+        // Queue library scan
         for (const srcLib of sourceLibraries) {
           try {
             const taskType = srcLib.type === LibraryType.Music ? 'music-scan' : 'library-scan'
@@ -196,10 +212,25 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
         await refreshSources()
 
-        // Queue library scans for selected libraries
+        // Initialize enabled libraries
         const sourceId = result.source_id
         const sourceLibraries = await window.electronAPI.sourcesGetLibraries(sourceId)
 
+        try {
+          await window.electronAPI.sourcesSetLibrariesEnabled(
+            sourceId,
+            sourceLibraries.map(lib => ({
+              id: lib.id,
+              name: lib.name,
+              type: lib.type,
+              enabled: true
+            }))
+          )
+        } catch (err) {
+          window.electronAPI.log.error('[LocalFolderFlow]', 'Failed to set libraries enabled:', err)
+        }
+
+        // Queue library scans for selected libraries
         for (const srcLib of sourceLibraries) {
           try {
             const taskType = srcLib.type === 'music' ? 'music-scan' : 'library-scan'
