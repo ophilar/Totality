@@ -146,7 +146,7 @@ export function CompletenessPanel({
 
   useEffect(() => {
     if (!isOpen) return
-    const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data: { key: string; value: string }) => {
+    const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data: { key: string; hasValue: boolean }) => {
       if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
         loadMusicCompletenessData()
       }
