@@ -25,7 +25,7 @@ export class GpuDetector {
         const cached = await db.config.getSetting('detected_gpus')
         if (cached) {
           const parsed = JSON.parse(cached)
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             GpuDetector.cachedGpus = parsed
             return parsed
           }
@@ -86,7 +86,7 @@ export class GpuDetector {
 
     try {
       const db = getDatabase()
-      if (db.isInitialized && gpus.length > 0) {
+      if (db.isInitialized) {
         await db.config.setSetting('detected_gpus', JSON.stringify(gpus))
       }
     } catch (e) {

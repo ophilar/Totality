@@ -112,6 +112,8 @@ export class MediaFileAnalyzer {
   private ffprobeChecked: boolean = false
   private availabilityPromise: Promise<boolean> | null = null
   private analysisOverride: Map<string, FileAnalysisResult> = new Map()
+  private cachedVersion: string | null | undefined = undefined
+  private cachedIsBundledVersion: boolean | undefined = undefined
 
   /**
    * For testing: Set a pre-baked analysis result for a specific path
@@ -131,9 +133,14 @@ export class MediaFileAnalyzer {
    * Get FFprobe version string
    */
   async getVersion(): Promise<string | null> {
-    if (!await this.isAvailable()) return null
+    if (this.cachedVersion !== undefined) return this.cachedVersion
 
-    return new Promise((resolve) => {
+    if (!await this.isAvailable()) {
+      this.cachedVersion = null
+      return null
+    }
+
+    this.cachedVersion = await new Promise<string | null>((resolve) => {
       const actualPath = PathUtils.resolveExecutablePath(this.ffprobePath || 'ffprobe')
       const proc = spawn(actualPath, ['-version'])
       let output = ''
@@ -144,6 +151,8 @@ export class MediaFileAnalyzer {
       })
       proc.on('error', () => resolve(null))
     })
+
+    return this.cachedVersion || null
   }
 
   /**
@@ -450,8 +459,10 @@ export class MediaFileAnalyzer {
   }
 
   async isBundledVersion(): Promise<boolean> {
+    if (this.cachedIsBundledVersion !== undefined) return this.cachedIsBundledVersion
     if (!this.ffprobePath) await this.isAvailable()
-    return this.ffprobePath === this.getBundledFFprobePath()
+    this.cachedIsBundledVersion = this.ffprobePath === this.getBundledFFprobePath()
+    return this.cachedIsBundledVersion
   }
 
   /**
