@@ -265,7 +265,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
-      const currentLib = libs.find(l => l.libraryId === libraryId)
+      const currentLib = libs.find((l: any) => l.libraryId === libraryId)
       const includeAdult = !!(currentLib?.isProtected && currentLib?.allowAdultMatching)
       const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false'
       const ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '25', 10)
@@ -441,7 +441,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
-      const currentLib = libs.find(l => l.libraryId === libraryId)
+      const currentLib = libs.find((l: any) => l.libraryId === libraryId)
       const includeAdult = !!(currentLib?.isProtected && currentLib?.allowAdultMatching)
       const scanType = (libraryType === 'movie' || libraryType === 'movies') ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, any>()

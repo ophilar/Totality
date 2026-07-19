@@ -22,7 +22,7 @@ import { SplashScreen } from '@/components/layout/SplashScreen'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { SectionErrorBoundary } from '@/components/ui/SectionErrorBoundary'
-import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from '@/components/library/types'
+import type { MediaViewType, AnalysisProgress } from '@/components/library/types'
 
 type AppView = 'dashboard' | 'library'
 
@@ -48,10 +48,7 @@ function AppContent() {
     showCompletenessPanel,
     showWishlistPanel,
     showChatPanel,
-    showAIInsights,
-    aiInsightsInitialReport,
     openAIInsights,
-    closeAIInsights,
   } = usePanel()
 
   // Auto-refresh state (passed up from MediaBrowser)
