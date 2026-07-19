@@ -88,10 +88,12 @@ export function MatchFixModal({
       async function checkAdultMatching() {
         if (type === 'movie' && mediaItemId) {
           try {
-            const item = await window.electronAPI.getMediaItem(mediaItemId) as any
+            const item = await window.electronAPI.getMediaItem(mediaItemId) as { source_id?: string; library_id?: string } | null
             if (item?.source_id && item?.library_id) {
               const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
-              const lib = libs.find((l: any) => l.libraryId === item.library_id || l.id === item.library_id) as any
+              const lib = libs.find(l =>
+                (l as any).libraryId === item.library_id || l.id === item.library_id
+              ) as { isProtected?: boolean; allowAdultMatching?: boolean } | undefined
               if (lib?.isProtected && lib?.allowAdultMatching) {
                 setIncludeAdult(true)
               }
