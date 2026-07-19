@@ -201,7 +201,7 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
       // Queue library scans for selected libraries
       for (const srcLib of sourceLibraries) {
         try {
-          const taskType = srcLib.type === 'music' ? 'music-scan' : 'library-scan'
+          const taskType = srcLib.type === LibraryType.Music ? 'music-scan' : 'library-scan'
           await window.electronAPI.taskQueueAddTask({
             type: taskType,
             label: `Scan ${srcLib.name} (${displayName.trim()})`,
