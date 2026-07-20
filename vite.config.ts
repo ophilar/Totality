@@ -26,6 +26,10 @@ export default defineConfig({
               fileName: () => 'index.cjs'
             },
             rollupOptions: {
+              onwarn(warning, warn) {
+                if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return
+                warn(warning)
+              },
               external: [
                 'electron', 'electron-updater', 'sql.js', 'mysql2',
                 'fsevents',
