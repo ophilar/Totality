@@ -163,6 +163,7 @@ export function registerSourceHandlers(): void {
           ...lib,
           isEnabled: stored ? !!stored.isEnabled : true,
           isProtected: stored ? !!stored.isProtected : false,
+          allowAdultMatching: stored ? !!stored.allowAdultMatching : false,
           lastScanAt: stored?.lastScanAt || null,
           itemsScanned: stored?.itemsScanned || 0,
         }
