@@ -312,6 +312,8 @@ export interface SourcesAPI {
   sourcesGetLibraries: (sourceId: string) => Promise<MediaLibraryResponse[]>
   sourcesGetLibrariesWithStatus: (sourceId: string) => Promise<Array<MediaLibraryResponse & {
     isEnabled: boolean
+    isProtected: boolean
+    allowAdultMatching: boolean
     lastScanAt: string | null
     itemsScanned: number
   }>>
