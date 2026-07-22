@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
 
 // https://vitejs.dev/config/
@@ -95,9 +94,8 @@ export default defineConfig({
         }
       }
     ]),
-    renderer(),
     {
-      name: 'fix-rolldown-warnings',
+      name: 'configure-rolldown-output',
       configResolved(config) {
         // Rolldown (Vite 8) doesn't support 'freeze'
         const output = config.build.rollupOptions.output
@@ -111,21 +109,7 @@ export default defineConfig({
           }
         }
 
-        // Silence customResolver deprecation warning by removing it from aliases
-        // Note: This might break resolution if the plugin relied on it, but Vite 8/Rolldown 
-        // usually handles standard aliases fine.
-        if (config.resolve?.alias && Array.isArray(config.resolve.alias)) {
-          for (const alias of config.resolve.alias) {
-            if ((alias as any).customResolver) {
-              delete (alias as any).customResolver
-            }
-          }
-        }
       },
-      // Adding resolveId as suggested by the warning
-      resolveId() {
-        return null
-      }
     }
   ],
   resolve: {

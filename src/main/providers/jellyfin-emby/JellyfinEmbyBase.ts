@@ -25,129 +25,11 @@ import { calculateVersionScore } from '@main/providers/utils/ProviderUtils'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
+import type { JellyfinAuthResponse, JellyfinLibrary, JellyfinMediaItem, JellyfinMusicArtist, JellyfinMusicAlbum, JellyfinMusicTrack } from '@main/providers/jellyfin-emby/JellyfinTypes'
+import { getMovieCollectionService } from '@main/services/MovieCollectionService'
 
-// Jellyfin/Emby API response types
-export interface JellyfinAuthResponse {
-  User: { Id: string; Name: string; ServerId: string }
-  AccessToken: string
-  ServerId: string
-}
-
-export interface JellyfinLibrary {
-  Id: string
-  Name: string
-  CollectionType?: string
-  ItemCount?: number
-  ItemId?: string
-}
-
-export interface JellyfinMediaItem {
-  Id: string
-  Name: string
-  Type: string
-  ProductionYear?: number
-  SeriesName?: string
-  ParentIndexNumber?: number
-  IndexNumber?: number
-  Path?: string
-  Overview?: string
-  MediaSources?: JellyfinMediaSource[]
-  ProviderIds?: { Imdb?: string; Tmdb?: string }
-  ImageTags?: { Primary?: string; Thumb?: string; Screenshot?: string }
-  SeriesId?: string
-  SeasonId?: string
-  SeriesPrimaryImageTag?: string
-  ParentPrimaryImageTag?: string
-  ParentPrimaryImageItemId?: string
-  ParentThumbItemId?: string
-  ParentThumbImageTag?: string
-  ParentBackdropItemId?: string
-  ParentBackdropImageTags?: string[]
-  SeriesProviderIds?: { Imdb?: string; Tmdb?: string }
-  DateCreated?: string
-  PremiereDate?: string
-  SortName?: string
-  _seriesSortName?: string // Internal property added by mapper
-}
-
-export interface JellyfinMediaSource {
-  Id: string
-  Path?: string
-  Size?: number
-  Container?: string
-  RunTimeTicks?: number
-  Bitrate?: number
-  MediaStreams?: JellyfinMediaStream[]
-}
-
-export interface JellyfinMediaStream {
-  Type: 'Video' | 'Audio' | 'Subtitle'
-  Index: number
-  Codec?: string
-  CodecTag?: string
-  Language?: string
-  Title?: string
-  DisplayTitle?: string
-  IsDefault?: boolean
-  Width?: number
-  Height?: number
-  BitRate?: number
-  RealFrameRate?: number
-  BitDepth?: number
-  VideoRange?: string
-  ColorSpace?: string
-  Profile?: string
-  Level?: number
-  Channels?: number
-  SampleRate?: number
-  ChannelLayout?: string
-  IsForced?: boolean
-}
-
-export interface JellyfinMusicArtist {
-  Id: string
-  Name: string
-  Overview?: string
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  Genres?: string[]
-  SortName?: string
-}
-
-export interface JellyfinMusicAlbum {
-  Id: string
-  Name: string
-  AlbumArtists?: Array<{ Id: string; Name: string }>
-  AlbumArtist?: string
-  Artists?: string[]
-  ProductionYear?: number
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  Genres?: string[]
-  ChildCount?: number
-  RunTimeTicks?: number
-  SortName?: string
-}
-
-export interface JellyfinMusicTrack {
-  Id: string
-  Name: string
-  AlbumId?: string
-  Album?: string
-  AlbumArtist?: string
-  Artists?: string[]
-  ArtistItems?: Array<{ Id: string; Name: string }>
-  IndexNumber?: number
-  ParentIndexNumber?: number
-  RunTimeTicks?: number
-  MediaSources?: JellyfinMediaSource[]
-  Path?: string
-  ProviderIds?: Record<string, string>
-  ImageTags?: { Primary?: string; Thumb?: string }
-  PrimaryImageTag?: string
-  Moods?: string[]
-  Tags?: string[]
-}
+// Backward-compatible type exports for provider utilities.
+export type { JellyfinMediaItem, JellyfinMediaSource, JellyfinMediaStream, JellyfinMusicArtist, JellyfinMusicAlbum, JellyfinMusicTrack } from '@main/providers/jellyfin-emby/JellyfinTypes'
 
 export abstract class JellyfinEmbyBase extends BaseMediaProvider {
   abstract override readonly providerType: ProviderType.Jellyfin | ProviderType.Emby
@@ -296,10 +178,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
   }
 
   async scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult> {
+    this.scanCancelled = false
     const { onProgress, sinceTimestamp, forceFullScan } = options || {}
     const isIncremental = !!sinceTimestamp && !forceFullScan
     const startTime = Date.now()
-    const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
+    const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0, cancelled: false }
     try {
       const libraries = await this.getLibraries()
       const library = libraries.find(l => l.id === libraryId)
@@ -335,7 +218,6 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
               }
               if (resolvedTmdbCollectionId) {
                 try {
-                  const { getMovieCollectionService } = await import('@main/services/MovieCollectionService')
                   const collectionService = getMovieCollectionService()
                   const res = await collectionService.lookupCollectionCompleteness(resolvedTmdbCollectionId, ownedTmdbIds)
                   if (res) {
@@ -497,7 +379,8 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         result.errors.push(`Scan failed during processing: ${getErrorMessage(e)}`)
       }
 
-      if (!isIncremental) {
+      result.cancelled = this.scanCancelled
+      if (!isIncremental && !result.cancelled) {
         const itemType = libraryType === LibraryType.Show ? MediaItemType.Episode : MediaItemType.Movie
         const removed = await db.media.removeStaleProviderItems(this.sourceId, libraryId, itemType, scannedProviderIds)
         result.itemsRemoved = removed
@@ -602,4 +485,9 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
   }
 
   cancelMusicScan(): void { this.musicScanCancelled = true }
+
+  cancelScan(): void {
+    this.scanCancelled = true
+    this.musicScanCancelled = true
+  }
 }

@@ -21,12 +21,7 @@ import type {
   MusicAlbum,
   MusicTrack,
 } from '@main/types/database'
-import type {
-  JellyfinMediaItem,
-  JellyfinMusicArtist,
-  JellyfinMusicAlbum,
-  JellyfinMusicTrack,
-} from '@main/providers/jellyfin-emby/JellyfinEmbyBase'
+import type { JellyfinMediaItem, JellyfinMusicArtist, JellyfinMusicAlbum, JellyfinMusicTrack } from '@main/providers/jellyfin-emby/JellyfinTypes'
 import { JellyfinApiClient } from '@main/providers/jellyfin-emby/JellyfinApiClient'
 import { getLoggingService } from '@main/services/LoggingService'
 
