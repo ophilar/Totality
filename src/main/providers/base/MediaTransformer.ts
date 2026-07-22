@@ -25,7 +25,7 @@ import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { ProviderType, MediaItemType } from '@main/types/database'
 import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack } from '@main/types/database'
 import type { PlexMediaItem } from '@main/types/plex'
-import type { JellyfinMediaItem } from '@main/providers/jellyfin-emby/JellyfinEmbyBase'
+import type { JellyfinMediaItem } from '@main/providers/jellyfin-emby/JellyfinTypes'
 
 export interface KodiStreamDetails {
   video?: Array<{
