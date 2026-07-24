@@ -126,6 +126,7 @@ export interface TMDBMovieSearchResult {
   vote_average: number
   vote_count: number
   popularity: number
+  adult?: boolean
 }
 
 export interface TMDBTVSearchResult {
