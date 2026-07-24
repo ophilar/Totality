@@ -484,7 +484,6 @@ export class TMDBService {
 
     return null
   }
-  }
 
   async searchMovie(query: string, year?: number, includeAdult?: boolean): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
     const params: Record<string, string> = {

@@ -693,7 +693,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           if (cached) { metadata.tmdbId = cached.tmdbId; metadata.title = cached.title; metadata.year = cached.year; metadata.posterUrl = cached.posterPath ? `https://image.tmdb.org/t/p/w500${cached.posterPath}` : undefined; metadata.backdropUrl = cached.backdropPath ? `https://image.tmdb.org/t/p/w1280${cached.backdropPath}` : undefined }
           return metadata
         }
-        const match = await tmdb.matchMovie(parsed.title, parsed.year, includeAdult)
+        const match = await tmdb.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year, includeAdult)
         if (match) { metadata.tmdbId = match.tmdbId; metadata.title = match.title; metadata.year = match.year; metadata.posterUrl = tmdb.buildImageUrl(match.posterPath || null); metadata.backdropUrl = tmdb.buildImageUrl(match.backdropPath || null); movieTmdbCache?.set(cacheKey, match) }
         else { movieTmdbCache?.set(cacheKey, null) }
       } catch (error) { getLoggingService().warn('[LocalFolderProvider]', `TMDB lookup failed for "${parsed.title}":`, error) }
