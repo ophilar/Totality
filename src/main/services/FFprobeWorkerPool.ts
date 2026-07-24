@@ -35,6 +35,7 @@ interface WorkerInfo {
   worker: Worker
   busy: boolean
   currentTask: QueuedTask | null
+  lastBusyTime: number
 }
 
 // Singleton instance
@@ -49,6 +50,7 @@ export function getFFprobeWorkerPool(): FFprobeWorkerPool {
 
 export class FFprobeWorkerPool {
   private static readonly MAX_QUEUE_DEPTH = APP_CONFIG.workers.ffprobe.maxQueueDepth
+  private static readonly IDLE_WORKER_TTL_MS = 30000
   private workers: WorkerInfo[] = []
   private taskQueue: QueuedTask[] = []
   private taskIdCounter = 0
@@ -57,6 +59,7 @@ export class FFprobeWorkerPool {
   private initialized = false
   private workerScriptPath: string
   private isShuttingDown = false
+  private idleReapTimer: NodeJS.Timeout | null = null
 
   constructor() {
     // Default to CPU cores - 1, minimum 1, maximum configured limit
@@ -232,6 +235,7 @@ export class FFprobeWorkerPool {
         worker,
         busy: false,
         currentTask: null,
+        lastBusyTime: Date.now(),
       }
 
       worker.on('message', (result: WorkerResult) => {
@@ -284,9 +288,11 @@ export class FFprobeWorkerPool {
 
     workerInfo.busy = false
     workerInfo.currentTask = null
+    workerInfo.lastBusyTime = Date.now()
 
     // Process next task in queue
     this.processQueue()
+    this.scheduleIdleReap()
   }
 
   /**
@@ -306,9 +312,35 @@ export class FFprobeWorkerPool {
 
     workerInfo.busy = false
     workerInfo.currentTask = null
+    workerInfo.lastBusyTime = Date.now()
 
     // Try to process next task
     this.processQueue()
+    this.scheduleIdleReap()
+  }
+
+  private scheduleIdleReap(): void {
+    if (this.idleReapTimer || this.isShuttingDown) return
+    this.idleReapTimer = setTimeout(() => {
+      this.idleReapTimer = null
+      this.reapIdleWorkers()
+    }, FFprobeWorkerPool.IDLE_WORKER_TTL_MS)
+  }
+
+  private reapIdleWorkers(): void {
+    if (this.isShuttingDown || this.taskQueue.length > 0) return
+    const now = Date.now()
+    const idleWorkers = this.workers.filter(w => !w.busy && (now - w.lastBusyTime) >= FFprobeWorkerPool.IDLE_WORKER_TTL_MS)
+    
+    for (const workerInfo of idleWorkers) {
+      getLoggingService().info('[FFprobeWorkerPool]', 'Reaping idle worker thread to free system RAM')
+      workerInfo.worker.terminate()
+      this.removeWorker(workerInfo)
+    }
+
+    if (this.workers.some(w => !w.busy)) {
+      this.scheduleIdleReap()
+    }
   }
 
   /**
@@ -334,6 +366,10 @@ export class FFprobeWorkerPool {
    */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true
+    if (this.idleReapTimer) {
+      clearTimeout(this.idleReapTimer)
+      this.idleReapTimer = null
+    }
 
     // Reject all queued tasks
     for (const task of this.taskQueue) {
