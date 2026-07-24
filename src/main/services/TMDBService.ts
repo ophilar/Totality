@@ -373,34 +373,117 @@ export class TMDBService {
     }
   }
 
-  async matchMovie(
-    title: string,
-    year?: number,
-    includeAdult?: boolean
+  /**
+   * Refactored movie matching using Strategy Pattern principles.
+   * Matches candidate title/year strictly against constraints and respects includeAdult setting per library.
+   */
+  async searchMovieWithFallbacks(
+    originalTitle: string,
+    normalizedTitle: string,
+    year: number | undefined,
+    includeAdult: boolean = false
   ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
-    const response = await this.searchMovie(title, year, includeAdult)
-    const results = response.results
+    const normalizeString = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const targetNormalized = normalizeString(normalizedTitle || originalTitle)
 
-    if (!results || results.length === 0) {
+    const evaluateCandidates = (
+      results: TMDBMovieSearchResult[]
+    ): TMDBMovieSearchResult | null => {
+      if (!results || results.length === 0) return null
+
+      // Filter out adult content strictly if includeAdult is false
+      const safeCandidates = includeAdult ? results : results.filter((r) => !r.adult)
+      if (safeCandidates.length === 0) return null
+
+      // 1. Exact Year & Exact Normalized Title Strategy
+      if (year) {
+        const exactMatch = safeCandidates.find((r) => {
+          if (!r.release_date) return false
+          const resultYear = parseInt(r.release_date.split('-')[0], 10)
+          return resultYear === year && normalizeString(r.title) === targetNormalized
+        })
+        if (exactMatch) return exactMatch
+      }
+
+      // 2. Fuzzy Year (+/- 1 year) & Normalized Title Strategy
+      if (year) {
+        const fuzzyYearMatch = safeCandidates.find((r) => {
+          if (!r.release_date) return false
+          const resultYear = parseInt(r.release_date.split('-')[0], 10)
+          return Math.abs(resultYear - year) <= 1 && normalizeString(r.title) === targetNormalized
+        })
+        if (fuzzyYearMatch) return fuzzyYearMatch
+      }
+
+      // 3. Exact Normalized Title Strategy (regardless of year if target year not specified or not matched)
+      const exactTitleMatch = safeCandidates.find((r) => normalizeString(r.title) === targetNormalized)
+      if (exactTitleMatch) return exactTitleMatch
+
       return null
     }
 
-    let bestMatch = results[0]
-
+    // Pass 1: Search with original title and target year
     if (year) {
-      const exactMatch = results.find((r) => r.release_date?.startsWith(String(year)))
-      if (exactMatch) {
-        bestMatch = exactMatch
+      const response = await this.searchMovie(originalTitle, year, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
       }
     }
 
-    return {
-      tmdbId: bestMatch.id,
-      title: bestMatch.title,
-      year: bestMatch.release_date ? parseInt(bestMatch.release_date.split('-')[0], 10) : undefined,
-      posterPath: bestMatch.poster_path || undefined,
-      backdropPath: bestMatch.backdrop_path || undefined,
+    // Pass 2: Search with normalized title and target year
+    if (year && normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle, year, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
     }
+
+    // Pass 3: Search with original title without year filter
+    {
+      const response = await this.searchMovie(originalTitle, undefined, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    // Pass 4: Search with normalized title without year filter
+    if (normalizedTitle !== originalTitle) {
+      const response = await this.searchMovie(normalizedTitle, undefined, includeAdult)
+      const match = evaluateCandidates(response.results)
+      if (match) {
+        return {
+          tmdbId: match.id,
+          title: match.title,
+          year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          posterPath: match.poster_path || undefined,
+          backdropPath: match.backdrop_path || undefined,
+        }
+      }
+    }
+
+    return null
+  }
   }
 
   async searchMovie(query: string, year?: number, includeAdult?: boolean): Promise<TMDBSearchResponse<TMDBMovieSearchResult>> {
