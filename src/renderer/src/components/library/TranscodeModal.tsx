@@ -11,7 +11,10 @@ import {
   Info,
   Sliders,
   Cpu,
-  Copy
+  Copy,
+  Save,
+  Trash2,
+  Bookmark
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
@@ -38,6 +41,26 @@ interface TranscodeModalProps {
   onClose: () => void
 }
 
+interface PresetTemplate {
+  name: string
+  options: {
+    targetCodec: 'av1' | 'hevc'
+    preserveSubtitles: boolean
+    preserveAllAudio: boolean
+    overwriteOriginal: boolean
+    useGpu: boolean
+    gpuId: string
+    encoder: string
+    crf: number
+    preset: string
+    customArgs: string
+    transcodingEngine: 'handbrake' | 'ffmpeg'
+    targetSize: string
+  }
+}
+
+const TEMPLATES_STORAGE_KEY = 'totality_transcode_templates'
+
 export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [availability, setAvailability] = useState<{ handbrake: boolean; mkvtoolnix: boolean; ffmpeg: boolean } | null>(null)
@@ -46,6 +69,10 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [params, setParams] = useState<TranscodingParams | null>(null)
   const [customize, setCustomize] = useState(false)
   const [gpus, setGpus] = useState<GpuInfo[]>([])
+  const [templates, setTemplates] = useState<PresetTemplate[]>([])
+  const [selectedTemplateName, setSelectedTemplateName] = useState<string>('')
+  const [newTemplateName, setNewTemplateName] = useState<string>('')
+  const [showSaveInput, setShowSaveInput] = useState(false)
   
   const [options, setOptions] = useState({
     targetCodec: 'av1' as 'av1' | 'hevc',
@@ -65,6 +92,66 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [progress, setProgress] = useState<{ percent: number; fps?: number; eta?: string; error?: string } | null>(null)
   
   const { addToast } = useToast()
+
+  // Load saved templates from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TEMPLATES_STORAGE_KEY)
+      if (stored) {
+        setTemplates(JSON.parse(stored))
+      }
+    } catch (e) {
+      console.error('Failed to load templates:', e)
+    }
+  }, [])
+
+  const saveTemplatesToStorage = (updated: PresetTemplate[]) => {
+    setTemplates(updated)
+    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(updated))
+  }
+
+  const handleSaveTemplate = () => {
+    if (!newTemplateName.trim()) {
+      addToast({ title: 'Please enter a template name', type: 'error' })
+      return
+    }
+    const name = newTemplateName.trim()
+    const existingIndex = templates.findIndex(t => t.name.toLowerCase() === name.toLowerCase())
+    const newTemplate: PresetTemplate = { name, options: { ...options } }
+    
+    let updated: PresetTemplate[] = []
+    if (existingIndex >= 0) {
+      updated = [...templates]
+      updated[existingIndex] = newTemplate
+    } else {
+      updated = [...templates, newTemplate]
+    }
+
+    saveTemplatesToStorage(updated)
+    setSelectedTemplateName(name)
+    setNewTemplateName('')
+    setShowSaveInput(false)
+    addToast({ title: `Template "${name}" saved`, type: 'success' })
+  }
+
+  const handleLoadTemplate = (name: string) => {
+    setSelectedTemplateName(name)
+    const found = templates.find(t => t.name === name)
+    if (found) {
+      setOptions({ ...found.options })
+      setCustomize(true)
+      addToast({ title: `Loaded template "${name}"`, type: 'info' })
+    }
+  }
+
+  const handleDeleteTemplate = (name: string) => {
+    const updated = templates.filter(t => t.name !== name)
+    saveTemplatesToStorage(updated)
+    if (selectedTemplateName === name) {
+      setSelectedTemplateName('')
+    }
+    addToast({ title: `Deleted template "${name}"`, type: 'info' })
+  }
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -135,7 +222,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
                 overwriteOriginal: options.overwriteOriginal,
                 useGpu: options.useGpu,
                 gpuId: options.gpuId,
-                targetSize: options.targetSize
+                targetSize: options.targetSize,
+                transcodingEngine: options.transcodingEngine
               }
           const p = await window.electronAPI.getParameters(media.file_path!, paramsOptions)
           setParams(p)
@@ -161,7 +249,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
             overwriteOriginal: options.overwriteOriginal,
             useGpu: options.useGpu,
             gpuId: options.gpuId,
-            targetSize: options.targetSize
+            targetSize: options.targetSize,
+            transcodingEngine: options.transcodingEngine
           }
       const p = await window.electronAPI.getParameters(media.file_path!, paramsOptions)
       setParams(p)
@@ -196,7 +285,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
             overwriteOriginal: options.overwriteOriginal,
             useGpu: options.useGpu,
             gpuId: options.gpuId,
-            targetSize: options.targetSize
+            targetSize: options.targetSize,
+            transcodingEngine: options.transcodingEngine
           }
       const success = await window.electronAPI.start(media.id!, transcodeOptions)
       if (success) {
@@ -254,7 +344,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   return createPortal(
     <div className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={status === 'encoding' ? undefined : onClose}>
       <div 
-        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
         <div className="p-6 pb-4 border-b border-border/10 flex justify-between items-center">
@@ -283,7 +373,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
               <div className="text-center space-y-2">
                 <RefreshCw className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
                 <h4 className="text-xl font-bold">Optimizing Media...</h4>
-                <p className="text-sm text-muted-foreground">Using optimized Handbrake parameters for maximum efficiency.</p>
+                <p className="text-sm text-muted-foreground">Using optimized codec parameters for maximum efficiency.</p>
               </div>
 
               <div className="space-y-3">
@@ -352,6 +442,70 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
                   </div>
                 </div>
               )}
+
+              {/* Template / Preset Manager */}
+              <div className="bg-muted/20 border border-border/40 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5">
+                    <Bookmark className="w-3.5 h-3.5 text-primary" />
+                    Preset Templates
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveInput(!showSaveInput)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                  >
+                    <Save className="w-3 h-3" />
+                    Save Current as Template
+                  </button>
+                </div>
+
+                {showSaveInput && (
+                  <div className="flex gap-2 animate-in slide-in-from-top-1 duration-200">
+                    <input
+                      type="text"
+                      placeholder="Template name (e.g. 4K High Quality AV1)"
+                      value={newTemplateName}
+                      onChange={(e) => setNewTemplateName(e.target.value)}
+                      className="flex-1 px-3 py-1.5 bg-background border border-border/50 rounded-xl text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveTemplate}
+                      className="px-3 py-1.5 bg-primary text-primary-foreground font-bold text-xs rounded-xl hover:opacity-90 transition-all"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+
+                {templates.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedTemplateName}
+                      onChange={(e) => handleLoadTemplate(e.target.value)}
+                      className="flex-1 bg-background border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary transition-all"
+                    >
+                      <option value="">-- Load Saved Preset --</option>
+                      {templates.map(t => (
+                        <option key={t.name} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                    {selectedTemplateName && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(selectedTemplateName)}
+                        className="p-2 text-red-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                        title="Delete selected template"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground italic">No custom templates saved yet.</p>
+                )}
+              </div>
 
               {/* Options */}
               <div className="grid grid-cols-2 gap-4">
