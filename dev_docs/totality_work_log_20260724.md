@@ -21,3 +21,11 @@ Refactored TMDB movie matching to introduce Strategy Pattern evaluation and stri
   - Analyzed the screenshot at `D:\OneDrive\Pictures\Screenshots\Screenshot 2026-07-24 153827.png`.
   - Cause: The error is caused by a bundler code-splitting/minification bug when ES modules (`import`/`export`) are converted to CommonJS (`require`) chunks. Esbuild/Rolldown minifiers inject internal module initializers (`init_<module>()` / `__esmMin`). If a chunk references `init_<module>()` without importing or defining that initializer within scope, V8 throws an uncaught `ReferenceError: init_cache is not defined` at main process runtime.
   - Fix: Updated [vite.config.ts](file:///H:/Totality/vite.config.ts) to set `codeSplitting: false` across main process, worker, and preload build options (modern Vite 8 / Rolldown option), forcing single-file bundling and preventing undefined module initializer scope mismatches. Verified production build completes cleanly.
+- **Background Daemon Resource & Responsiveness Audit**:
+  - Audited core background services: [LiveMonitoringService.ts](file:///H:/Totality/src/main/services/LiveMonitoringService.ts), [TaskQueueService.ts](file:///H:/Totality/src/main/services/TaskQueueService.ts), [FFprobeWorkerPool.ts](file:///H:/Totality/src/main/services/FFprobeWorkerPool.ts), [LoggingService.ts](file:///H:/Totality/src/main/services/LoggingService.ts), and [BetterSQLiteService.ts](file:///H:/Totality/src/main/database/BetterSQLiteService.ts).
+  - Validated all 91 test suites (796 unit tests passing clean).
+- **Daemon Optimization Implementation**:
+  - Enhanced [FFprobeWorkerPool.ts](file:///H:/Totality/src/main/services/FFprobeWorkerPool.ts) with dynamic idle worker TTL reclamation (`IDLE_WORKER_TTL_MS = 30000`). Idle V8 worker isolates are reaped and terminated automatically when no analysis tasks are queued, reducing idle daemon RAM footprint.
+  - Ensured timer cleanup during shutdown in `FFprobeWorkerPool.ts`.
+  - Re-ran Vitest validation across all test suites to guarantee stability.
+

@@ -32,7 +32,7 @@ async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
     const { stdout } = await execAsync('powershell.exe -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID"', {
-      timeout: 5000,
+      timeout: 2000,
       windowsHide: true,
     })
     const detected = new Set<string>()
