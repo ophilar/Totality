@@ -37,6 +37,7 @@ export default defineConfig({
                 format: 'cjs',
                 entryFileNames: 'index.cjs',
                 manualChunks: undefined,
+                codeSplitting: false
               }
             }
           }
@@ -61,6 +62,7 @@ export default defineConfig({
                 format: 'cjs',
                 entryFileNames: 'ffprobe-worker.cjs',
                 manualChunks: undefined,
+                codeSplitting: false
               }
             }
           }
@@ -88,6 +90,7 @@ export default defineConfig({
                 format: 'cjs',
                 entryFileNames: 'index.cjs',
                 manualChunks: undefined,
+                codeSplitting: false
               }
             }
           }
