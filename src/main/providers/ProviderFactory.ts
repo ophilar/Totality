@@ -7,8 +7,6 @@
 import { MediaProvider, SourceConfig } from '@main/providers/base/MediaProvider'
 import { ProviderType } from '@main/types/database'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
-import { JellyfinProvider } from '@main/providers/jellyfin-emby/JellyfinProvider'
-import { EmbyProvider } from '@main/providers/jellyfin-emby/EmbyProvider'
 import { KodiProvider } from '@main/providers/kodi/KodiProvider'
 import { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
@@ -23,11 +21,15 @@ export function createProvider(type: ProviderType, config: SourceConfig): MediaP
     case ProviderType.Plex:
       return new PlexProvider(config)
 
-    case ProviderType.Jellyfin:
+    case ProviderType.Jellyfin: {
+      const { JellyfinProvider } = require('@main/providers/jellyfin-emby/JellyfinProvider')
       return new JellyfinProvider(config)
+    }
 
-    case ProviderType.Emby:
+    case ProviderType.Emby: {
+      const { EmbyProvider } = require('@main/providers/jellyfin-emby/EmbyProvider')
       return new EmbyProvider(config)
+    }
 
     case ProviderType.Kodi:
       return new KodiProvider(config)

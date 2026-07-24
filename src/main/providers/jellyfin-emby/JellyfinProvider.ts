@@ -15,7 +15,7 @@ export class JellyfinProvider extends JellyfinEmbyBase {
   // Jellyfin uses standard Authorization header (X-Emby-Authorization is for Emby)
   protected authHeaderName = 'Authorization'
   protected clientName = 'Totality'
-  protected clientVersion = app.getVersion()
+  protected clientVersion = app?.getVersion?.() || '0.0.0'
 
   constructor(config: SourceConfig) {
     super(config)
