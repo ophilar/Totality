@@ -776,7 +776,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     
     const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
     if (staleIds.length > 0) {
-      await this.db.execute({ sql: `DELETE FROM music_albums WHERE id IN (${staleIds.join(',')})`, args: [] })
+      const batchSize = 500
+      for (let i = 0; i < staleIds.length; i += batchSize) {
+        const batch = staleIds.slice(i, i + batchSize)
+        const placeholders = batch.map(() => '?').join(',')
+        await this.db.execute({ sql: `DELETE FROM music_albums WHERE id IN (${placeholders})`, args: batch })
+      }
     }
     return staleIds.length
   }
@@ -788,7 +793,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     
     const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
     if (staleIds.length > 0) {
-      await this.db.execute({ sql: `DELETE FROM music_artists WHERE id IN (${staleIds.join(',')})`, args: [] })
+      const batchSize = 500
+      for (let i = 0; i < staleIds.length; i += batchSize) {
+        const batch = staleIds.slice(i, i + batchSize)
+        const placeholders = batch.map(() => '?').join(',')
+        await this.db.execute({ sql: `DELETE FROM music_artists WHERE id IN (${placeholders})`, args: batch })
+      }
     }
     return staleIds.length
   }
