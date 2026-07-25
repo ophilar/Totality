@@ -139,10 +139,11 @@ export class SourceScannerService {
 
         try {
           const libraries = await provider.getLibraries()
+          const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
           for (const library of libraries) {
             if (this.scanCancelled) break
             if (library.type === LibraryType.Music) continue
-            if (!(await this.db.sources.isLibraryEnabled(source.source_id, library.id))) continue
+            if (!enabledLibraries.has(library.id)) continue
 
             const result = await provider.scanLibrary(library.id, {
               onProgress: (progress) => {

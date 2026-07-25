@@ -160,6 +160,14 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     await this.updateLibraryScanStats(sourceId, libraryId, items)
   }
 
+  async getEnabledLibraries(sourceId: string): Promise<Set<string>> {
+    const rows = await this.drizzle.select({ libraryId: schema.libraryScans.libraryId })
+      .from(schema.libraryScans)
+      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.isEnabled, 1)))
+      .all()
+    return new Set(rows.map(r => r.libraryId))
+  }
+
   async isLibraryEnabled(sourceId: string, libraryId: string): Promise<boolean> {
     const row = await this.drizzle.select({ isEnabled: schema.libraryScans.isEnabled })
       .from(schema.libraryScans)
