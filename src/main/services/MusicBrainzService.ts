@@ -15,6 +15,7 @@ import { retryWithBackoff } from '@main/services/utils/retryWithBackoff'
  * - No rate limiting but be respectful
  */
 
+import pLimit from 'p-limit'
 import axios, { AxiosInstance } from 'axios'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
@@ -428,27 +429,25 @@ export class MusicBrainzService extends CancellableOperation {
     if (filterVinylOnly) {
       getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (this may take a while)...`)
 
-      const albums: MBReleaseGroup[] = []
-      for (const album of allAlbums) {
-        if (await this.hasDigitalRelease(album.id)) {
-          albums.push(album)
-        }
+      const limit = pLimit(5)
+
+      const filterReleases = async (releases: MBReleaseGroup[]) => {
+        const results = await Promise.all(
+          releases.map(release => limit(async () => {
+            const hasDigital = await this.hasDigitalRelease(release.id)
+            return hasDigital ? release : null
+          }))
+        )
+        return results.filter((r): r is MBReleaseGroup => r !== null)
       }
+
+      const [albums, eps, singles] = await Promise.all([
+        filterReleases(allAlbums),
+        filterReleases(allEps),
+        filterReleases(allSingles)
+      ])
+
       getLoggingService().info('[MusicBrainzService]', `${albums.length}/${allAlbums.length} albums have digital releases`)
-
-      const eps: MBReleaseGroup[] = []
-      for (const ep of allEps) {
-        if (await this.hasDigitalRelease(ep.id)) {
-          eps.push(ep)
-        }
-      }
-
-      const singles: MBReleaseGroup[] = []
-      for (const single of allSingles) {
-        if (await this.hasDigitalRelease(single.id)) {
-          singles.push(single)
-        }
-      }
 
       return { artist, albums, eps, singles }
     }
