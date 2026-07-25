@@ -35,53 +35,71 @@ export class MovieCollectionService {
       
       const allMovies = await this.db.media.getItems({ type: MediaItemType.Movie, sourceId, libraryId, includeDisabledLibraries: true })
       
-      for (const m of allMovies) {
-        if (this.cancelRequested) break
-        
-        if (!m.tmdb_id) {
-          try {
-            const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
-            if (search?.results?.length > 0) {
-              const best = search.results[0]
-              await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
-              m.tmdb_id = String(best.id)
-            }
-          } catch {}
-        }
+      const processedCollections = new Set<string>()
+      const concurrency = 10
 
-        if (m.tmdb_id) {
-          try {
-            const details = await this.tmdb.getMovieDetails(m.tmdb_id)
-            if (details?.belongs_to_collection) {
-              const cid = String(details.belongs_to_collection.id)
-              const cDetails = await this.tmdb.getCollectionDetails(cid)
-              await this.db.movieCollections.upsertCollection({
-                tmdb_collection_id: cid,
-                collection_name: cDetails.name,
-                source_id: m.source_id || '',
-                library_id: m.library_id || '',
-                poster_url: this.tmdb.buildImageUrl(cDetails.poster_path, 'w500') || undefined,
-                backdrop_url: this.tmdb.buildImageUrl(cDetails.backdrop_path, 'original') || undefined
-              })
-            }
-          } catch {}
-        }
+      for (let i = 0; i < allMovies.length; i += concurrency) {
+        if (this.cancelRequested) break
+        const chunk = allMovies.slice(i, i + concurrency)
+        
+        await Promise.all(chunk.map(async (m) => {
+          if (this.cancelRequested) return
+
+          if (!m.tmdb_id) {
+            try {
+              const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+              if (search?.results?.length > 0) {
+                const best = search.results[0]
+                await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
+                m.tmdb_id = String(best.id)
+              }
+            } catch {}
+          }
+
+          if (m.tmdb_id && !this.cancelRequested) {
+            try {
+              const details = await this.tmdb.getMovieDetails(m.tmdb_id)
+              if (details?.belongs_to_collection) {
+                const cid = String(details.belongs_to_collection.id)
+                const cacheKey = `${cid}-${m.source_id || ''}-${m.library_id || ''}`
+                if (!processedCollections.has(cacheKey)) {
+                  processedCollections.add(cacheKey)
+                  const cDetails = await this.tmdb.getCollectionDetails(cid)
+                  await this.db.movieCollections.upsertCollection({
+                    tmdb_collection_id: cid,
+                    collection_name: cDetails.name,
+                    source_id: m.source_id || '',
+                    library_id: m.library_id || '',
+                    poster_url: this.tmdb.buildImageUrl(cDetails.poster_path, 'w500') || undefined,
+                    backdrop_url: this.tmdb.buildImageUrl(cDetails.backdrop_path, 'original') || undefined
+                  })
+                }
+              }
+            } catch {}
+          }
+        }))
       }
 
       const collections = await this.db.movieCollections.getCollections(sourceId)
       result.total = collections.length
 
-      for (let i = 0; i < collections.length; i++) {
+      let currentIndex = 0
+      for (let i = 0; i < collections.length; i += concurrency) {
         if (this.cancelRequested) break
-        const c = collections[i]
-        onProgress?.({ current: i + 1, total: collections.length, phase: 'analyzing', currentItem: c.collection_name })
-        try {
-          const analysis = await this.analyzeCollection(c.collection_name, c.source_id, c.library_id)
-          if (analysis) {
-            result.analyzed++
-            if (analysis.completeness_percentage >= 100) result.complete++
-          }
-        } catch (e: any) { result.errors.push(e.message) }
+        const chunk = collections.slice(i, i + concurrency)
+
+        await Promise.all(chunk.map(async (c) => {
+          if (this.cancelRequested) return
+          currentIndex++
+          onProgress?.({ current: currentIndex, total: collections.length, phase: 'analyzing', currentItem: c.collection_name })
+          try {
+            const analysis = await this.analyzeCollection(c.collection_name, c.source_id, c.library_id)
+            if (analysis) {
+              result.analyzed++
+              if (analysis.completeness_percentage >= 100) result.complete++
+            }
+          } catch (e: any) { result.errors.push(e.message) }
+        }))
       }
       
       getLiveMonitoringService().notifyLibraryUpdated(sourceId)
