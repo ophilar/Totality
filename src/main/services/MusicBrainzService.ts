@@ -25,6 +25,7 @@ import {
   wasRecentlyAnalyzed,
   type AnalysisOptions,
 } from '@main/services/utils/ProgressTracker'
+import pLimit from 'p-limit'
 import {
   ArtistCompleteness,
   AlbumCompleteness,
@@ -428,27 +429,32 @@ export class MusicBrainzService extends CancellableOperation {
     if (filterVinylOnly) {
       getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (this may take a while)...`)
 
-      const albums: MBReleaseGroup[] = []
-      for (const album of allAlbums) {
-        if (await this.hasDigitalRelease(album.id)) {
-          albums.push(album)
-        }
-      }
+      const limit = pLimit(10)
+
+      const albumsWithResult = await Promise.all(
+        allAlbums.map(async (album) => ({
+          album,
+          hasRelease: await limit(() => this.hasDigitalRelease(album.id))
+        }))
+      )
+      const albums = albumsWithResult.filter(a => a.hasRelease).map(a => a.album)
       getLoggingService().info('[MusicBrainzService]', `${albums.length}/${allAlbums.length} albums have digital releases`)
 
-      const eps: MBReleaseGroup[] = []
-      for (const ep of allEps) {
-        if (await this.hasDigitalRelease(ep.id)) {
-          eps.push(ep)
-        }
-      }
+      const epsWithResult = await Promise.all(
+        allEps.map(async (ep) => ({
+          ep,
+          hasRelease: await limit(() => this.hasDigitalRelease(ep.id))
+        }))
+      )
+      const eps = epsWithResult.filter(e => e.hasRelease).map(e => e.ep)
 
-      const singles: MBReleaseGroup[] = []
-      for (const single of allSingles) {
-        if (await this.hasDigitalRelease(single.id)) {
-          singles.push(single)
-        }
-      }
+      const singlesWithResult = await Promise.all(
+        allSingles.map(async (single) => ({
+          single,
+          hasRelease: await limit(() => this.hasDigitalRelease(single.id))
+        }))
+      )
+      const singles = singlesWithResult.filter(s => s.hasRelease).map(s => s.single)
 
       return { artist, albums, eps, singles }
     }
