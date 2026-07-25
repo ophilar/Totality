@@ -199,15 +199,27 @@ export class BetterSQLiteService {
     let imported = 0, errors = 0
     await this.beginBatch()
     try {
+      const tableCheck = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      const validTables = new Set(tableCheck.rows.map(row => row.name as string))
+
       for (const [table, rows] of Object.entries(data)) {
-        if (table === '_meta' || !Array.isArray(rows)) continue
+        if (table === '_meta' || !Array.isArray(rows) || !validTables.has(table)) continue
+
+        const colCheck = await this.db.execute(`PRAGMA table_info("${table}")`)
+        const validCols = new Set(colCheck.rows.map(row => row.name as string))
+
         for (const row of rows) {
           try {
-            const keys = Object.keys(row)
+            const validEntries = Object.entries(row).filter(([key]) => validCols.has(key))
+            if (validEntries.length === 0) continue
+
+            const keys = validEntries.map(([key]) => key)
+            const values = validEntries.map(([, val]) => val)
+
             const cols = keys.join(','), vals = keys.map(() => '?').join(',')
             await this.db.execute({
               sql: `INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${vals})`,
-              args: Object.values(row) as any[]
+              args: values as any[]
             })
             imported++
           } catch { errors++ }
