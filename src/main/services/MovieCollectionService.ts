@@ -42,7 +42,7 @@ export class MovieCollectionService {
         if (this.cancelRequested) break
         const chunk = allMovies.slice(i, i + concurrency)
         
-        await Promise.all(chunk.map(async (m) => {
+        await Promise.all(chunk.map(async (m: any) => {
           if (this.cancelRequested) return
 
           if (!m.tmdb_id) {
@@ -88,7 +88,7 @@ export class MovieCollectionService {
         if (this.cancelRequested) break
         const chunk = collections.slice(i, i + concurrency)
 
-        await Promise.all(chunk.map(async (c) => {
+        await Promise.all(chunk.map(async (c: any) => {
           if (this.cancelRequested) return
           currentIndex++
           onProgress?.({ current: currentIndex, total: collections.length, phase: 'analyzing', currentItem: c.collection_name })
