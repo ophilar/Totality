@@ -30,12 +30,19 @@ export class SeriesCompletenessService {
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[] }
 
     const tmdbApiKey = await this.db.config.getSetting('tmdb_api_key')
+    const source = await this.db.sources.getSourceById(sourceId || '')
 
     try {
       if (tmdbApiKey) await this.tmdb.initialize()
       const existingShows = await this.db.tvShows.getSummaries({ sourceId, libraryId })
       const titlesFromMedia = await this.db.media.getUniqueSeriesTitles({ sourceId, libraryId })
       
+      const allCompleteness = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
+      const completenessMap = new Map<string, SeriesCompleteness>()
+      for (const comp of allCompleteness) {
+        completenessMap.set(comp.series_title, comp)
+      }
+
       const showsToAnalyze: Array<{ series_title: string }> = [...existingShows]
       for (const title of titlesFromMedia) {
         if (!showsToAnalyze.some(s => s.series_title === title)) {
@@ -62,7 +69,12 @@ export class SeriesCompletenessService {
           onProgress?.({ current: i + 1, total: showsToAnalyze.length, percentage: Math.round(((i + 1) / showsToAnalyze.length) * 100), phase: 'analyzing', currentItem: title })
           try {
             const episodes = episodesBySeries.get(title) || []
-            const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes)
+            const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes, {
+              tmdbApiKey,
+              source,
+              existingCompleteness: completenessMap.get(title) || null,
+              returnConstructed: true
+            })
             if (analysis) {
               result.analyzed++
               if (analysis.completeness_percentage >= 100) result.complete++
@@ -78,11 +90,23 @@ export class SeriesCompletenessService {
     } catch (error) { throw error }
   }
 
-  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string, providedEpisodes?: MediaItem[]): Promise<SeriesCompleteness | null> {
+  async analyzeSeries(
+    seriesTitle: string,
+    sourceId?: string,
+    libraryId?: string,
+    cachedTmdbId?: string,
+    providedEpisodes?: MediaItem[],
+    prefetchedData?: {
+      tmdbApiKey?: string | null;
+      source?: any;
+      existingCompleteness?: SeriesCompleteness | null;
+      returnConstructed?: boolean;
+    }
+  ): Promise<SeriesCompleteness | null> {
     const episodes = providedEpisodes || (await this.db.tvShows.getEpisodes(seriesTitle, sourceId))
     if (episodes.length === 0) return null
 
-    const tmdbApiKey = await this.db.config.getSetting('tmdb_api_key')
+    const tmdbApiKey = prefetchedData?.tmdbApiKey !== undefined ? prefetchedData.tmdbApiKey : await this.db.config.getSetting('tmdb_api_key')
     let tmdbId = cachedTmdbId || episodes.find((e: any) => e.series_tmdb_id)?.series_tmdb_id
     
     if (!tmdbId && tmdbApiKey && this.tmdb.isConfigured()) {
@@ -91,9 +115,9 @@ export class SeriesCompletenessService {
     }
     
     if (!tmdbId || !tmdbApiKey || !this.tmdb.isConfigured()) {
-      const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, sourceId || '', libraryId || '')
+      const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, sourceId || '', libraryId || '', prefetchedData?.existingCompleteness)
       await this.db.tvShows.upsertCompleteness(unmatched)
-      return await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      return prefetchedData?.returnConstructed ? unmatched : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     }
 
     const showDetails = await this.tmdb.getTVShowDetails(tmdbId)
@@ -148,7 +172,7 @@ export class SeriesCompletenessService {
     await this.db.tvShows.upsertCompleteness(result)
 
     // RESTORE ARTWORK UPDATE
-    const source = await this.db.sources.getSourceById(sourceId || '')
+    const source = prefetchedData?.source !== undefined ? prefetchedData.source : await this.db.sources.getSourceById(sourceId || '')
     if (source && (source.source_type === ProviderType.Local || source.source_type === ProviderType.KodiLocal)) {
       const seasonPosterUrls = new Map<number, string | undefined>()
       for (const s of showDetails.seasons) {
@@ -165,11 +189,11 @@ export class SeriesCompletenessService {
       }
     }
 
-    return await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+    return prefetchedData?.returnConstructed ? result : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
   }
 
-  private async createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string): Promise<SeriesCompleteness> {
-    const existing = await this.db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
+  private async createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string, preFetchedExisting?: SeriesCompleteness | null): Promise<SeriesCompleteness> {
+    const existing = preFetchedExisting !== undefined ? preFetchedExisting : await this.db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
     
     const fallbackPoster = existing?.poster_url || owned.find(e => e.poster_url)?.poster_url
     const tmdbId = existing?.tmdb_id || owned.find(e => e.series_tmdb_id)?.series_tmdb_id
