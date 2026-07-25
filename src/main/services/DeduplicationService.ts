@@ -169,6 +169,7 @@ export class DeduplicationService {
 
     if (actualDelete) {
       const items = await db.media.getItemsByIds(discardIds)
+      const idsToDelete: number[] = []
       for (const item of items) {
         if (item.file_path) {
           try {
@@ -177,14 +178,17 @@ export class DeduplicationService {
               fs.unlinkSync(item.file_path)
             }
             // Only delete from DB if file unlinked successfully (or didn't exist)
-            await db.media.deleteItem(item.id!)
+            if (item.id) idsToDelete.push(item.id)
           } catch (err) {
             getLoggingService().error('[DeduplicationService]', `Failed to delete file ${item.file_path}:`, err)
           }
         } else {
           // No path, just delete record
-          await db.media.deleteItem(item.id!)
+          if (item.id) idsToDelete.push(item.id)
         }
+      }
+      if (idsToDelete.length > 0) {
+        await db.media.deleteItems(idsToDelete)
       }
     } else {
       // Just mark them as resolved but don't delete files
