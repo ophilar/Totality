@@ -263,9 +263,6 @@ export interface KodiMovieWithDetails {
   setId: number | null
   setName: string | null
   setPosterUrl: string | null
-  // Debug fields (raw values before transformation)
-  c07_raw: string | null       // Raw c07 value (year string)
-  premiered_raw: string | null // Raw premiered value (full date)
 }
 
 export interface KodiEpisodeWithDetails {
@@ -313,8 +310,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
@@ -413,8 +408,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
@@ -518,8 +511,6 @@ SELECT
   m.c00 AS title,
   NULLIF(m.c10, '') AS sortTitle,
   COALESCE(CAST(NULLIF(m.c07, '') AS INTEGER), CAST(SUBSTR(m.premiered, 1, 4) AS INTEGER)) AS year,
-  m.c07 AS c07_raw,
-  m.premiered AS premiered_raw,
   NULLIF(m.c09, '') AS imdbId,
   (SELECT value FROM uniqueid WHERE media_id = m.idMovie AND media_type = 'movie' AND type = 'tmdb' LIMIT 1) AS tmdbId,
   CAST(NULLIF(m.c11, '') AS INTEGER) AS runtime,
