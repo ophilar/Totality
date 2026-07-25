@@ -1,8 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
-import { 
-  Layers, RefreshCw, CheckCircle2, AlertTriangle, 
-  ChevronDown, ChevronRight, Info, Search,
-  HardDrive
+import { useState, useEffect } from 'react'
+import {
+  Layers,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  Search,
+  HardDrive,
 } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -19,7 +25,7 @@ interface DuplicateGroup {
   resolution_strategy?: string
   resolved_at?: string
   created_at: string
-  
+
   // Joined/Loaded data
   items?: MediaItem[]
   recommendation?: { keep: number; discard: number[]; reason: string }
@@ -28,57 +34,81 @@ interface DuplicateGroup {
 export function DuplicatesView() {
   const { activeSourceId } = useSources()
   const { addToast } = useToast()
-  
+
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
-
-  const loadDuplicates = useCallback(async () => {
-    setLoading(true)
-    try {
-      const pendingGroups = await window.electronAPI.duplicatesGetPending(activeSourceId || undefined)
-      
-      // Load full items and recommendations for each group
-      const enrichedGroups = await Promise.all(pendingGroups.map(async (group: any) => {
-        const itemIds = JSON.parse(group.media_item_ids) as number[]
-        
-        // Fetch full media item records
-        const items = await Promise.all(itemIds.map(id => window.electronAPI.getMediaItem(id)))
-        const validItems = items.filter((i: any): i is MediaItem => !!i)
-        
-        // Get recommendation
-        const recommendation = await window.electronAPI.duplicatesGetRecommendation(itemIds)
-        
-        return {
-          ...group,
-          items: validItems,
-          recommendation
-        }
-      }))
-      
-      setGroups(enrichedGroups)
-    } catch (err) {
-      window.electronAPI.log.error('[DuplicatesView]', 'Failed to load duplicates:', err)
-      addToast({ title: 'Error', message: 'Error loading duplicates', type: 'error' })
-    } finally {
-      setLoading(false)
-    }
-  }, [activeSourceId, addToast])
+  const [reloadTick, setReloadTick] = useState(0)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadDuplicates()
-  }, [loadDuplicates])
+    let isMounted = true
+
+    const fetchDuplicates = async () => {
+      setLoading(true)
+      try {
+        const pendingGroups = await window.electronAPI.duplicatesGetPending(
+          activeSourceId || undefined
+        )
+
+        if (!isMounted) return
+
+        // Load full items and recommendations for each group
+        const enrichedGroups = await Promise.all(
+          pendingGroups.map(async (group: any) => {
+            const itemIds = JSON.parse(group.media_item_ids) as number[]
+
+            // Fetch full media item records
+            const items = await Promise.all(
+              itemIds.map((id) => window.electronAPI.getMediaItem(id))
+            )
+            const validItems = items.filter((i: any): i is MediaItem => !!i)
+
+            // Get recommendation
+            const recommendation = await window.electronAPI.duplicatesGetRecommendation(itemIds)
+
+            return {
+              ...group,
+              items: validItems,
+              recommendation,
+            }
+          })
+        )
+
+        if (isMounted) {
+          setGroups(enrichedGroups)
+        }
+      } catch (err) {
+        if (isMounted) {
+          window.electronAPI.log.error('[DuplicatesView]', 'Failed to load duplicates:', err)
+          addToast({ title: 'Error', message: 'Error loading duplicates', type: 'error' })
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchDuplicates()
+
+    return () => {
+      isMounted = false
+    }
+  }, [activeSourceId, addToast, reloadTick])
 
   const handleScan = async () => {
     setScanning(true)
     try {
       const count = await window.electronAPI.duplicatesScan(activeSourceId || undefined)
-      addToast({ title: 'Scan Complete', message: `Scan complete. Found ${count} duplicate groups.`, type: 'success' })
-      loadDuplicates()
+      addToast({
+        title: 'Scan Complete',
+        message: `Scan complete. Found ${count} duplicate groups.`,
+        type: 'success',
+      })
+      setReloadTick((prev) => prev + 1)
     } catch (err) {
       addToast({ title: 'Scan Failed', message: 'Failed to scan for duplicates', type: 'error' })
     } finally {
@@ -87,7 +117,7 @@ export function DuplicatesView() {
   }
 
   const toggleGroup = (id: number) => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -100,7 +130,7 @@ export function DuplicatesView() {
     try {
       await window.electronAPI.duplicatesResolve(groupId, keepItemId, deleteFiles)
       addToast({ title: 'Resolved', message: 'Duplicate resolved successfully', type: 'success' })
-      loadDuplicates()
+      setReloadTick((prev) => prev + 1)
     } catch (err) {
       addToast({ title: 'Error', message: 'Failed to resolve duplicate', type: 'error' })
     } finally {
@@ -138,12 +168,12 @@ export function DuplicatesView() {
             Review and resolve items with multiple physical files.
           </p>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 bg-card border rounded-lg px-3 py-1.5 text-sm">
-            <input 
-              type="checkbox" 
-              id="delete-files" 
+            <input
+              type="checkbox"
+              id="delete-files"
               checked={deleteFiles}
               onChange={(e) => setDeleteFiles(e.target.checked)}
               className="rounded border-border text-primary focus:ring-primary"
@@ -152,13 +182,17 @@ export function DuplicatesView() {
               Delete files from disk on resolve
             </label>
           </div>
-          
+
           <button
             onClick={handleScan}
             disabled={scanning}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {scanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            {scanning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
             {scanning ? 'Scanning...' : 'Scan for Duplicates'}
           </button>
         </div>
@@ -186,37 +220,50 @@ export function DuplicatesView() {
           <div className="space-y-4 max-w-6xl mx-auto">
             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span>Found {groups.length} items with duplicate files. Resolve them to save storage space.</span>
+              <span>
+                Found {groups.length} items with duplicate files. Resolve them to save storage
+                space.
+              </span>
             </div>
 
             {groups.map((group) => {
               const mainItem = group.items?.[0]
               const isExpanded = expandedGroups.has(group.id)
               const rec = group.recommendation
-              
+
               if (!mainItem) return null
 
               return (
                 <div key={group.id} className="bg-card border rounded-xl overflow-hidden shadow-sm">
                   {/* Summary Card */}
-                  <div 
+                  <div
                     className="p-4 flex items-center gap-4 cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => toggleGroup(group.id)}
                   >
                     <div className="w-12 h-18 bg-muted rounded overflow-hidden shrink-0">
                       {mainItem.poster_url ? (
-                        <img src={mainItem.poster_url} alt="" className="w-full h-full object-cover" />
+                        <img
+                          src={mainItem.poster_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          {mainItem.type === 'movie' ? <MoviePlaceholder className="w-6 h-6" /> : <TvPlaceholder className="w-6 h-6" />}
+                          {mainItem.type === 'movie' ? (
+                            <MoviePlaceholder className="w-6 h-6" />
+                          ) : (
+                            <TvPlaceholder className="w-6 h-6" />
+                          )}
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h4 className="font-bold text-lg truncate">{mainItem.title}</h4>
-                        {mainItem.year && <span className="text-muted-foreground">({mainItem.year})</span>}
+                        {mainItem.year && (
+                          <span className="text-muted-foreground">({mainItem.year})</span>
+                        )}
                         <span className="px-2 py-0.5 bg-muted rounded text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
                           {group.external_type.replace('tmdb_', '')}
                         </span>
@@ -228,13 +275,18 @@ export function DuplicatesView() {
                         </span>
                         <span className="flex items-center gap-1">
                           <Info className="w-3.5 h-3.5" />
-                          Rec: {group.items?.find(i => i.id === rec?.keep)?.resolution || 'Unknown'}
+                          Rec:{' '}
+                          {group.items?.find((i) => i.id === rec?.keep)?.resolution || 'Unknown'}
                         </span>
                       </div>
                     </div>
 
                     <div className="shrink-0 flex items-center gap-3">
-                      {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                      )}
                     </div>
                   </div>
 
@@ -261,11 +313,15 @@ export function DuplicatesView() {
                                 <tr key={item.id} className={`${isRec ? 'bg-primary/5' : ''}`}>
                                   <td className="py-3 pl-2">
                                     <div className="flex items-center gap-2">
-                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                        item.quality_tier === '4K' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
-                                        item.quality_tier === '1080p' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                                        'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30'
-                                      }`}>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                          item.quality_tier === '4K'
+                                            ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                            : item.quality_tier === '1080p'
+                                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                              : 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30'
+                                        }`}
+                                      >
                                         {item.resolution}
                                       </span>
                                       {isRec && (
@@ -276,23 +332,37 @@ export function DuplicatesView() {
                                     </div>
                                   </td>
                                   <td className="py-3">
-                                    <div className="font-medium">{item.video_codec?.toUpperCase()}</div>
-                                    <div className="text-[10px] text-muted-foreground uppercase">{item.video_profile || 'Standard'}</div>
-                                  </td>
-                                  <td className="py-3">
-                                    <div className="font-medium">{(item.video_bitrate! / 1000).toFixed(1)} Mbps</div>
-                                  </td>
-                                  <td className="py-3">
-                                    <div className="text-[11px] text-foreground/80">{item.audio_codec?.toUpperCase()} {item.audio_channels}ch</div>
+                                    <div className="font-medium">
+                                      {item.video_codec?.toUpperCase()}
+                                    </div>
                                     <div className="text-[10px] text-muted-foreground uppercase">
-                                      {item.audio_language?.toUpperCase() || 'UNK'} | {item.audio_tracks ? 'PARSED' : 'NO INFO'}
+                                      {item.video_profile || 'Standard'}
                                     </div>
                                   </td>
                                   <td className="py-3">
-                                    <div className="font-medium">{formatSize(item.file_size || 0)}</div>
+                                    <div className="font-medium">
+                                      {(item.video_bitrate! / 1000).toFixed(1)} Mbps
+                                    </div>
+                                  </td>
+                                  <td className="py-3">
+                                    <div className="text-[11px] text-foreground/80">
+                                      {item.audio_codec?.toUpperCase()} {item.audio_channels}ch
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground uppercase">
+                                      {item.audio_language?.toUpperCase() || 'UNK'} |{' '}
+                                      {item.audio_tracks ? 'PARSED' : 'NO INFO'}
+                                    </div>
+                                  </td>
+                                  <td className="py-3">
+                                    <div className="font-medium">
+                                      {formatSize(item.file_size || 0)}
+                                    </div>
                                   </td>
                                   <td className="py-3 max-w-xs">
-                                    <div className="text-[11px] text-muted-foreground truncate hover:text-foreground cursor-help" title={item.file_path || ''}>
+                                    <div
+                                      className="text-[11px] text-muted-foreground truncate hover:text-foreground cursor-help"
+                                      title={item.file_path || ''}
+                                    >
                                       {item.file_path}
                                     </div>
                                   </td>
@@ -301,12 +371,16 @@ export function DuplicatesView() {
                                       disabled={resolvingId !== null}
                                       onClick={() => handleResolve(group.id, item.id!)}
                                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                                        isRec 
-                                          ? 'bg-primary text-primary-foreground hover:opacity-90' 
+                                        isRec
+                                          ? 'bg-primary text-primary-foreground hover:opacity-90'
                                           : 'bg-card border hover:bg-muted'
                                       }`}
                                     >
-                                      {resolvingId === group.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : 'Keep'}
+                                      {resolvingId === group.id ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        'Keep'
+                                      )}
                                     </button>
                                   </td>
                                 </tr>
@@ -315,12 +389,14 @@ export function DuplicatesView() {
                           </tbody>
                         </table>
                       </div>
-                      
+
                       {rec && (
                         <div className="mt-4 p-3 bg-card border rounded-lg flex items-start gap-3">
                           <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Reasoning
+                            </p>
                             <p className="text-sm mt-0.5">{rec.reason}</p>
                           </div>
                         </div>
