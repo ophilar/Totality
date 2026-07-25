@@ -352,6 +352,65 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }
   }
 
+async deleteItems(ids: number[]): Promise<void> {
+    if (!ids.length) return
+    await this.beginBatch()
+    try {
+      const items = await this.drizzle.select()
+        .from(schema.mediaItems)
+        .where(inArray(schema.mediaItems.id, ids))
+        .all()
+
+      if (items.length > 0) {
+        await this.drizzle.delete(schema.mediaItemVersions).where(inArray(schema.mediaItemVersions.mediaItemId, ids))
+        await this.drizzle.delete(schema.qualityScores).where(inArray(schema.qualityScores.mediaItemId, ids))
+        await this.drizzle.delete(schema.mediaItemCollections).where(inArray(schema.mediaItemCollections.mediaItemId, ids))
+        await this.drizzle.delete(schema.mediaItems).where(inArray(schema.mediaItems.id, ids))
+
+        const episodeSeriesToUpdate = new Map<string, { seriesTitle: string, sourceId: string, libraryId: string }>()
+        for (const item of items) {
+          if (item.type === 'episode' && item.seriesTitle) {
+            const key = `${item.seriesTitle}-${item.sourceId}-${item.libraryId || ''}`
+            episodeSeriesToUpdate.set(key, {
+              seriesTitle: item.seriesTitle,
+              sourceId: item.sourceId,
+              libraryId: item.libraryId || ''
+            })
+          }
+        }
+
+        for (const series of episodeSeriesToUpdate.values()) {
+          await this.drizzle.update(schema.seriesCompleteness)
+            .set({
+              ownedEpisodes: sql`(SELECT COUNT(*) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
+              ownedSeasons: sql`(SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
+              completenessPercentage: sql`CASE WHEN total_episodes > 0
+                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode') AS REAL) * 100.0 / total_episodes)
+                ELSE 0 END`,
+              updatedAt: sql`(datetime('now'))`
+            })
+            .where(and(
+              eq(schema.seriesCompleteness.seriesTitle, series.seriesTitle),
+              eq(schema.seriesCompleteness.sourceId, series.sourceId),
+              eq(schema.seriesCompleteness.libraryId, series.libraryId)
+            ))
+
+          await this.drizzle.delete(schema.seriesCompleteness)
+            .where(and(
+              eq(schema.seriesCompleteness.seriesTitle, series.seriesTitle),
+              eq(schema.seriesCompleteness.sourceId, series.sourceId),
+              eq(schema.seriesCompleteness.libraryId, series.libraryId),
+              sql`owned_episodes <= 0`
+            ))
+        }
+      }
+      await this.endBatch()
+    } catch (err) {
+      await this.rollbackBatch()
+      throw err
+    }
+  }
+
   async deleteItemsForSource(sourceId: string): Promise<void> {
     await this.beginBatch()
     try {
