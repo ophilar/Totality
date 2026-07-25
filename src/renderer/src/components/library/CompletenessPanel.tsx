@@ -90,8 +90,10 @@ export function CompletenessPanel({
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [queueState, setQueueState] = useState<any>(null)
+  const [queueState, setQueueState] = useState<{
+    currentTask: { type: string; status: string } | null
+    queue: { type: string }[]
+  } | null>(null)
   const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
   const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
 
@@ -172,8 +174,7 @@ export function CompletenessPanel({
     }
 
     // Check if queued
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isQueued = queueState.queue?.some((task: any) => task.type === taskType)
+    const isQueued = queueState.queue?.some((task) => task.type === taskType)
     if (isQueued) return 'queued'
 
     return null
@@ -193,9 +194,12 @@ export function CompletenessPanel({
     loadQueueState()
 
     // Subscribe to queue updates
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: any) => {
-      setQueueState(state)
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      // Extract the state we need to match queueState type
+      setQueueState({
+        currentTask: state.currentTask as { type: string; status: string } | null,
+        queue: state.queue as { type: string }[]
+      })
     })
 
     return () => cleanup?.()
