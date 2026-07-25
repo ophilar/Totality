@@ -754,7 +754,6 @@ export class PlexProvider extends BaseMediaProvider {
   setAuthToken(token: string): void { this.authToken = token }
   setSelectedServer(server: PlexServer): void {
     this.selectedServer = server
-    // @ts-ignore
-    this.config.connectionConfig = { ...this.config.connectionConfig, serverId: server.machineIdentifier, token: this.authToken || '' }
+    this.config.connectionConfig = { ...(this.config.connectionConfig || {}), serverId: server.machineIdentifier, token: this.authToken || '' }
   }
 }
