@@ -159,9 +159,10 @@ export class SourceManager {
     const provider = this.providers.get(sourceId)
     if (!provider) throw new Error(`Source not found: ${sourceId}`)
     const libraries = await provider.getLibraries()
+    const enabledLibraries = await this.db.sources.getEnabledLibraries(sourceId)
     for (const library of libraries) {
       if (library.type === LibraryType.Music) continue
-      if (!this.db.sources.isLibraryEnabled(sourceId, library.id)) continue
+      if (!enabledLibraries.has(library.id)) continue
       await this.scanLibrary(sourceId, library.id, onProgress)
     }
   }
@@ -206,9 +207,10 @@ export class SourceManager {
       if (!provider) continue
       try {
         const libraries = await provider.getLibraries()
+        const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
         for (const library of libraries) {
           if (library.type === LibraryType.Music) continue
-          if (!this.db.sources.isLibraryEnabled(source.source_id, library.id)) continue
+          if (!enabledLibraries.has(library.id)) continue
           const lastScanTime = this.db.sources.getLibraryScanTime(source.source_id, library.id)
           const result = await provider.scanLibrary(library.id, { sinceTimestamp: lastScanTime ? new Date(lastScanTime) : undefined, onProgress: onProgress ? (p) => onProgress(source.source_id, source.display_name, p) : undefined })
           if (result.success) await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
@@ -316,8 +318,9 @@ export class SourceManager {
     for (const source of sources) {
       if (!source) continue
       const libs = await this.getLibraries(source.source_id)
+      const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
-        if (!await this.db.sources.isLibraryEnabled(source.source_id, lib.id)) continue
+        if (!enabledLibraries.has(lib.id)) continue
         if (await this.db.config.getSetting('tmdb_api_key')) {
           if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.SeriesCompleteness, label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
           if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.CollectionCompleteness, label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
