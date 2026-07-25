@@ -76,7 +76,7 @@
         "globals": "^17.7.0",
         "happy-dom": "^20.10.6",
         "lucide-react": "^1.16.0",
-        "postcss": "^8.5.14",
+        "postcss": "^8.5.23",
         "prettier": "^3.9.5",
         "react": "^19.2.6",
         "react-dom": "^19.2.6",
