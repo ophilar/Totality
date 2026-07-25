@@ -158,7 +158,7 @@ export class LiveMonitoringService {
     this.pollingTimers.clear()
 
     for (const watcher of this.fileWatchers.values()) {
-      try { watcher.close() } catch (err) {}
+      try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', 'Error closing watcher:', err) }
     }
     this.fileWatchers.clear()
 
@@ -252,7 +252,7 @@ export class LiveMonitoringService {
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
       this.fileWatchers.delete(sourceId)
-      try { watcher.close() } catch {}
+      try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err) }
     }
     const debounceTimer = this.fileChangeDebounce.get(sourceId)
     if (debounceTimer) clearTimeout(debounceTimer)
@@ -504,7 +504,7 @@ export class LiveMonitoringService {
     if (timer) clearTimeout(timer)
     this.pollingTimers.delete(sourceId)
     const watcher = this.fileWatchers.get(sourceId)
-    if (watcher) { this.fileWatchers.delete(sourceId); try { watcher.close() } catch {} }
+    if (watcher) { this.fileWatchers.delete(sourceId); try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err) } }
     const debounce = this.fileChangeDebounce.get(sourceId)
     if (debounce) clearTimeout(debounce)
     this.fileChangeDebounce.delete(sourceId)
