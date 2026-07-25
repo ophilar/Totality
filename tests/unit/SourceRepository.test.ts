@@ -150,6 +150,20 @@ describe('SourceRepository (Real DB)', () => {
       expect(saved.find(l => l.libraryId === 'l2')?.isEnabled).toBe(0)
     })
 
+    it('should get enabled libraries in bulk', async () => {
+      await repo.setLibrariesEnabled(sourceId, [
+        { id: 'l1', name: 'Movies', type: LibraryType.Movie, enabled: true },
+        { id: 'l2', name: 'TV', type: LibraryType.Show, enabled: false },
+        { id: 'l3', name: 'Music', type: LibraryType.Music, enabled: true }
+      ])
+
+      const enabled = await repo.getEnabledLibraries(sourceId)
+      expect(enabled.size).toBe(2)
+      expect(enabled.has('l1')).toBe(true)
+      expect(enabled.has('l2')).toBe(false)
+      expect(enabled.has('l3')).toBe(true)
+    })
+
     it('should toggle library status', async () => {
       await repo.setLibrariesEnabled(sourceId, [{ id: 'l1', name: 'Movies', type: LibraryType.Movie, enabled: true }])
       await repo.toggleLibrary(sourceId, 'l1', false)
