@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 import { ArrowUpCircle, X, HardDrive, Zap, Info, Disc3 } from 'lucide-react'
 import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
@@ -34,7 +34,7 @@ export function WishlistView(_props: WishlistViewProps) {
   const { addToast } = useToast()
 
   // Load data for the wishlist view
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
       // 1. Load Upgrades (items with needs_upgrade = true or high storage debt)
@@ -110,12 +110,11 @@ export function WishlistView(_props: WishlistViewProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [addToast])
 
   useEffect(() => {
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadData])
 
   // Handle Dismiss for Upgrades
   const handleDismissUpgrade = async (item: any) => {
