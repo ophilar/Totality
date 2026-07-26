@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
 import { LibraryType, ProviderType } from '@main/types/database'
@@ -80,14 +80,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
   const [allSourceLibraries, setAllSourceLibraries] = useState<Map<string, Array<MediaLibraryResponse & { isEnabled: boolean }>>>(new Map())
   const [loadingLibraries, setLoadingLibraries] = useState<Set<string>>(new Set())
   const [managingSourceId, setManagingSourceId] = useState<string | null>(null)
-  // These state values are read but setters reserved for future use
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [scanningLibrary, _setScanningLibrary] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [scanningLibraryType, _setScanningLibraryType] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [scanPhase, _setScanPhase] = useState<'scanning' | 'analyzing' | null>(null)
-  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; percentage: number; currentItem?: string } | null>(null)
   const [musicScanProgress, setMusicScanProgress] = useState<Map<string, { current: number; total: number; percentage: number; currentItem?: string; phase?: string }>>(new Map())
   const [renamingSourceId, setRenamingSourceId] = useState<string | null>(null)
   const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
@@ -133,20 +125,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       })
     })
     return () => cleanup?.()
-  }, [])
-
-  // Listen for quality analysis progress events
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onQualityAnalysisProgress?.((progress: unknown) => {
-      const p = progress as { current: number; total: number }
-      const percentage = p.total > 0 ? (p.current / p.total) * 100 : 0
-      setAnalysisProgress({
-        current: p.current,
-        total: p.total,
-        percentage,
-      })
-    })
-    return () => unsubscribe?.()
   }, [])
 
   // Listen for music scan progress events
@@ -353,13 +331,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
     }
   }
 
-  // Extract library ID from scanningLibrary, handling library IDs that contain colons (e.g., "movies:Movies")
-  const getScanningLibraryId = (sourceId: string) => {
-    if (!scanningLibrary?.startsWith(`${sourceId}:`)) return null
-    // Return everything after "sourceId:" to handle library IDs with colons
-    return scanningLibrary.slice(sourceId.length + 1)
-  }
-
   // Unified sidebar with conditional collapsed/expanded content
   return (
     <aside
@@ -481,9 +452,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
             onScanLibrary={(libraryId, libraryType) => handleScanLibrary(source.source_id, libraryId, libraryType)}
             onManageLibraries={() => handleManageLibraries(source.source_id)}
             onToggleLibrary={(libraryId, enabled) => handleToggleLibrary(source.source_id, libraryId, enabled)}
-            scanningLibraryId={getScanningLibraryId(source.source_id)}
-            scanPhase={scanningLibrary?.startsWith(`${source.source_id}:`) ? scanPhase : null}
-            analysisProgress={scanningLibrary?.startsWith(`${source.source_id}:`) ? analysisProgress : null}
             onDelete={async () => {
               await removeSource(source.source_id)
               if (activeSourceId === source.source_id) setActiveSource(null)
@@ -504,7 +472,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
             onStartRename={() => setRenamingSourceId(source.source_id)}
             onRename={(newName) => handleRenameSource(source.source_id, newName)}
             onCancelRename={() => setRenamingSourceId(null)}
-            onStopScan={handleStopScan}
             onScanAll={() => handleScanAllLibraries(source.source_id)}
             taskQueueState={taskQueueState}
             newItemCounts={newItemCounts}
@@ -569,14 +536,10 @@ interface SourceItemProps {
   onScanLibrary: (libraryId: string, libraryType: string) => void
   onManageLibraries: () => void
   onToggleLibrary: (libraryId: string, enabled: boolean) => void
-  scanningLibraryId: string | null
-  scanPhase: 'scanning' | 'analyzing' | null
-  analysisProgress: { current: number; total: number; percentage: number; currentItem?: string } | null
   onDelete: () => Promise<void>
   onStartRename: () => void
   onRename: (newName: string) => Promise<void>
   onCancelRename: () => void
-  onStopScan: () => void
   onScanAll: () => void
   taskQueueState: TaskQueueState | null
   newItemCounts: Map<string, number>
@@ -604,14 +567,10 @@ function SourceItem({
   onScanLibrary,
   onManageLibraries,
   onToggleLibrary,
-  scanningLibraryId,
-  scanPhase,
-  analysisProgress,
   onDelete,
   onStartRename,
   onRename,
   onCancelRename,
-  onStopScan,
   onScanAll,
   taskQueueState,
   newItemCounts,
@@ -836,7 +795,6 @@ function SourceItem({
               {libraries.map((library) => {
                 // Use library-specific scan time instead of source-level
                 const lastScan = formatRelativeTime(library.scannedAt)
-                const isScanning = scanningLibraryId === library.id
 
                 // Check task queue status for this library
                 const queueStatus = getTaskQueueStatus(library.id)
@@ -844,8 +802,8 @@ function SourceItem({
                 const isQueued = queueStatus.isQueued
                 const queueProgress = queueStatus.progress
 
-                // Combined scanning state: either from manual scan or task queue
-                const showScanningUI = isScanning || isQueueScanning
+                // Combined scanning state
+                const showScanningUI = isQueueScanning
 
                 const libraryKey = `${source.source_id}:${library.id}`
                 const newItemCount = newItemCounts.get(libraryKey)
@@ -902,7 +860,7 @@ function SourceItem({
                             e.stopPropagation()
                             onScanLibrary(library.id, library.type)
                           }}
-                          disabled={!!scanningLibraryId || isQueueScanning || isQueued}
+                          disabled={isQueueScanning || isQueued}
                           className={`p-1.5 text-muted-foreground hover:text-foreground transition-opacity disabled:opacity-50 rounded focus:outline-hidden focus:ring-2 focus:ring-primary ${showScanningUI ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                           title={lastScan ? `Last scanned: ${lastScan}` : 'Never scanned'}
                           aria-label={showScanningUI ? `Scanning ${library.name}` : `Scan ${library.name} library`}
