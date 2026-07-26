@@ -1,3 +1,4 @@
+import { SourceLibrary } from '@main/types/database'
 import { eq, and, sql } from 'drizzle-orm'
 import type { MediaSource } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
@@ -70,16 +71,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   // LIBRARY SETTINGS
   // ============================================================================
 
-  async getSourceLibraries(sourceId: string): Promise<Array<{
-    libraryId: string
-    libraryName: string
-    libraryType: string
-    isEnabled: number
-    isProtected: number
-    allowAdultMatching: number
-    lastScanAt: string | null
-    itemsScanned: number | null
-  }>> {
+  async getSourceLibraries(sourceId: string): Promise<SourceLibrary[]> {
     const rows = await this.drizzle.select({
       libraryId: schema.libraryScans.libraryId,
       libraryName: schema.libraryScans.libraryName,

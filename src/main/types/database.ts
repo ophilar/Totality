@@ -13,6 +13,17 @@ export enum ProviderType {
 }
 
 // Media source configuration (Plex, Jellyfin, Emby, Kodi servers)
+export interface SourceLibrary {
+  libraryId: string
+  libraryName: string
+  libraryType: string
+  isEnabled: number
+  isProtected: number
+  allowAdultMatching: number
+  lastScanAt: string | null
+  itemsScanned: number | null
+}
+
 export interface MediaSource {
   id?: number
   source_id: string
