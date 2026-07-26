@@ -158,8 +158,8 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
       {/* Title and info below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{show.series_title}</h4>
-          <p className="text-xs text-muted-foreground">
+          <h4 className="font-medium text-sm line-clamp-2 break-words leading-tight" title={show.series_title}>{show.series_title}</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
           </p>
         </div>

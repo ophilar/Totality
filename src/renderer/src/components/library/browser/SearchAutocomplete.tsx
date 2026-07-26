@@ -34,22 +34,30 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   handleSearchKeyDown,
   handleSearchResultClick,
 }) => {
+  const movies = globalSearchResults?.movies || []
+  const tvShows = globalSearchResults?.tvShows || []
+  const episodes = globalSearchResults?.episodes || []
+  const artists = globalSearchResults?.artists || []
+  const albums = globalSearchResults?.albums || []
+  const tracks = globalSearchResults?.tracks || []
+
   return (
     <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64" role="combobox" aria-expanded={showSearchResults && hasSearchResults} aria-haspopup="listbox">
       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" aria-hidden="true" />
       <input
         ref={searchInputRef}
         type="text"
-        placeholder="Search all libraries..."
+        placeholder="Search library (movies, TV, music)..."
         value={searchInput}
         onChange={(e) => {
           setSearchInput(e.target.value)
           setShowSearchResults(true)
+          setSearchResultIndex(-1)
         }}
         onFocus={() => setShowSearchResults(true)}
         onKeyDown={handleSearchKeyDown}
-        className="w-full pl-10 pr-8 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
-        aria-label="Search all libraries"
+        className="w-full pl-9 pr-8 py-1.5 bg-muted/30 hover:bg-muted/50 focus:bg-background border border-border/50 focus:border-primary rounded-full text-xs text-foreground placeholder:text-muted-foreground transition-all duration-200 shadow-inner"
+        aria-label="Search media library"
         aria-autocomplete="list"
       />
       {searchInput && (
@@ -57,12 +65,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           onClick={() => {
             setSearchInput('')
             setShowSearchResults(false)
-            setSearchResultIndex(-1)
           }}
-          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground z-10 focus:outline-hidden focus:ring-2 focus:ring-primary rounded"
+          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Clear search"
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5" />
         </button>
       )}
 
@@ -73,13 +80,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl overflow-hidden z-9999 max-h-[400px] overflow-y-auto"
         >
           {/* Movies */}
-          {globalSearchResults.movies.length > 0 && (
+          {movies.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <Film className="w-3 h-3" />
                 Movies
               </div>
-              {globalSearchResults.movies.map((movie: MediaItem, idx: number) => (
+              {movies.map((movie: MediaItem, idx: number) => (
                 <button
                   key={`movie-${movie.id}`}
                   onClick={() => handleSearchResultClick('movie', movie.id)}
@@ -107,18 +114,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           )}
 
           {/* TV Shows */}
-          {globalSearchResults.tvShows.length > 0 && (
+          {tvShows.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <Tv className="w-3 h-3" />
                 TV Shows
               </div>
-              {globalSearchResults.tvShows.map((show: any, idx: number) => (
+              {tvShows.map((show: any, idx: number) => (
                 <button
                   key={`tv-${show.id}`}
                   onClick={() => handleSearchResultClick('tv', show.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
-                    searchResultIndex === (globalSearchResults.movies.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
+                    searchResultIndex === (movies.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
                   {show.poster_url ? (
@@ -137,18 +144,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           )}
 
           {/* Episodes */}
-          {globalSearchResults.episodes.length > 0 && (
+          {episodes.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <Tv className="w-3 h-3" />
                 Episodes
               </div>
-              {globalSearchResults.episodes.map((episode: MediaItem, idx: number) => (
+              {episodes.map((episode: MediaItem, idx: number) => (
                 <button
                   key={`episode-${episode.id}`}
                   onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
-                    searchResultIndex === (globalSearchResults.movies.length + globalSearchResults.tvShows.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
+                    searchResultIndex === (movies.length + tvShows.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
                   {episode.episode_thumb_url ? (
@@ -170,18 +177,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           )}
 
           {/* Music */}
-          {globalSearchResults.artists.length > 0 && (
+          {artists.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <User className="w-3 h-3" />
                 Artists
               </div>
-              {globalSearchResults.artists.map((artist: MusicArtist, idx: number) => (
+              {artists.map((artist: MusicArtist, idx: number) => (
                 <button
                   key={`artist-${artist.id}`}
                   onClick={() => handleSearchResultClick('artist', artist.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
-                    searchResultIndex === (globalSearchResults.movies.length + globalSearchResults.tvShows.length + globalSearchResults.episodes.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
+                    searchResultIndex === (movies.length + tvShows.length + episodes.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
                   <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shrink-0 overflow-hidden">
@@ -193,18 +200,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             </div>
           )}
 
-          {globalSearchResults.albums.length > 0 && (
+          {albums.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <Disc3 className="w-3 h-3" />
                 Albums
               </div>
-              {globalSearchResults.albums.map((album: MusicAlbum, idx: number) => (
+              {albums.map((album: MusicAlbum, idx: number) => (
                 <button
                   key={`album-${album.id}`}
                   onClick={() => handleSearchResultClick('album', album.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
-                    searchResultIndex === (globalSearchResults.movies.length + globalSearchResults.tvShows.length + globalSearchResults.episodes.length + globalSearchResults.artists.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
+                    searchResultIndex === (movies.length + tvShows.length + episodes.length + artists.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
                   <div className="w-8 h-8 bg-muted rounded overflow-hidden shrink-0">
@@ -219,18 +226,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             </div>
           )}
 
-          {globalSearchResults.tracks.length > 0 && (
+          {tracks.length > 0 && (
             <div role="group">
               <div className="px-3 py-2 text-xs font-semibold text-foreground/70 bg-muted/50 flex items-center gap-2">
                 <Music className="w-3 h-3" />
                 Tracks
               </div>
-              {globalSearchResults.tracks.map((track: MusicTrack, idx: number) => (
+              {tracks.map((track: MusicTrack, idx: number) => (
                 <button
                   key={`track-${track.id}`}
                   onClick={() => handleSearchResultClick('track', track.id, { album_id: track.album_id })}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
-                    searchResultIndex === (globalSearchResults.movies.length + globalSearchResults.tvShows.length + globalSearchResults.episodes.length + globalSearchResults.artists.length + globalSearchResults.albums.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
+                    searchResultIndex === (movies.length + tvShows.length + episodes.length + artists.length + albums.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
                   <Music className="w-4 h-4 text-muted-foreground shrink-0" />

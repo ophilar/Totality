@@ -76,6 +76,7 @@
 - [ ] **Multi-Select Batching**: Implement "Selection Mode" for bulk library operations (Bulk Dismiss, Bulk Transcode). (v0.4.8)
 - [x] **Deep Media Analysis**: Integrate `ffmpeg` for frame-accurate bitrate analysis and peak volume detection. (v0.4.8)
 - [x] **Optimization Controls & GPU Support**: Add capability to cancel active optimization, customize/control optimization parameters (CRF, preset, encoder, custom args), and enable NVIDIA NVENC GPU acceleration. (v0.4.9)
+- [x] **Multi-Provider Metadata Strategy**: Implemented `IMetadataProvider` Strategy & Composite Pattern supporting TMDB and AniList for anime metadata aggregation. (v0.5.0)
 - [ ] **Database Partitioning**: Research partitioning strategies for extreme library sizes (100k+ items).
 - [ ] **Cross-Platform Hardening**: Audit and fix Windows/macOS/Linux path-separator and shell-command inconsistencies.
  

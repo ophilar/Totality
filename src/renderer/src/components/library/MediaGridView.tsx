@@ -39,8 +39,8 @@ interface MediaGridViewProps<T> {
  * Handles its own scrolling via React Virtuoso for best performance.
  */
 export function MediaGridView<T>({
-  items,
-  totalCount,
+  items = [],
+  totalCount = 0,
   loading,
   onLoadMore,
   viewType,
@@ -75,7 +75,9 @@ export function MediaGridView<T>({
     }
   }, [scrollKey, viewType, saveScrollState])
 
-  if (items.length === 0) {
+  const safeItems = Array.isArray(items) ? items : []
+
+  if (safeItems.length === 0) {
     if (loading) {
       return (
         <div className="h-full flex flex-col">
@@ -127,15 +129,15 @@ export function MediaGridView<T>({
     <div className="px-4 py-4 text-xs text-muted-foreground flex items-center gap-2">
       {loading && <RefreshCw className="w-3 h-3 animate-spin" />}
       <span>
-        {items.length === totalCount
+        {safeItems.length === totalCount
           ? `${totalCount.toLocaleString()} items`
-          : `${items.length.toLocaleString()} of ${totalCount.toLocaleString()} items`}
+          : `${safeItems.length.toLocaleString()} of ${totalCount.toLocaleString()} items`}
       </span>
     </div>
   )
 
   const handleEndReached = () => {
-    if (!loading && items.length < totalCount && onLoadMore) {
+    if (!loading && safeItems.length < totalCount && onLoadMore) {
       onLoadMore()
     }
   }
@@ -152,7 +154,7 @@ export function MediaGridView<T>({
             <Virtuoso
               ref={virtuosoRef}
               restoreStateFrom={restoredState}
-              data={items}
+              data={safeItems}
               endReached={handleEndReached}
               overscan={1200}
               style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
@@ -171,7 +173,7 @@ export function MediaGridView<T>({
             ref={virtuosoGridRef}
             restoreStateFrom={restoredState as any}
             stateChanged={handleGridStateChanged}
-            data={items}
+            data={safeItems}
             endReached={handleEndReached}
             overscan={1500}
             style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}

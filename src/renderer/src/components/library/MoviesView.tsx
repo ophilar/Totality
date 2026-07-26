@@ -25,7 +25,7 @@ type MovieDisplayItem =
   | { type: 'movie'; movie: MediaItem }
 
 export function MoviesView({
-  movies,
+  movies = [],
   sortBy,
   onSortChange,
   slimDown,
@@ -34,7 +34,7 @@ export function MoviesView({
   viewType,
   gridScale,
   getCollectionForMovie,
-  movieCollections,
+  movieCollections = [],
   showSourceBadge,
   onFixMatch,
   onRescan,
@@ -45,7 +45,7 @@ export function MoviesView({
   collectionsOnly = false,
   isAnalyzing = false
 }: {
-  movies: MediaItem[]
+  movies?: MediaItem[]
   sortBy: 'title' | 'efficiency' | 'waste' | 'size'
   onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
   slimDown: boolean
@@ -54,7 +54,7 @@ export function MoviesView({
   viewType: 'grid' | 'list'
   gridScale: number
   getCollectionForMovie: (movie: MediaItem) => MovieCollectionData | undefined
-  movieCollections: MovieCollectionData[]
+  movieCollections?: MovieCollectionData[]
   showSourceBadge: boolean
   onFixMatch?: (mediaItemId: number, title: string, year?: number, filePath?: string) => void
   onRescan?: (mediaItemId: number, sourceId: string, libraryId: string | null, filePath: string) => Promise<void>
@@ -85,10 +85,12 @@ export function MoviesView({
 
   // Group movies by collection
   const displayItems = useMemo<MovieDisplayItem[]>(() => {
+    const safeMovies = movies || []
+    const safeCollections = movieCollections || []
     const moviesInCollections = new Set<number>()
     const collectionMovieMap = new Map<string, MediaItem[]>()
 
-    for (const movie of movies) {
+    for (const movie of safeMovies) {
       const collection = getCollectionForMovie(movie)
       if (collection) {
         moviesInCollections.add(movie.id!)
@@ -100,7 +102,7 @@ export function MoviesView({
 
     const items: MovieDisplayItem[] = []
     const addedCollections = new Set<string>()
-    for (const collection of movieCollections) {
+    for (const collection of safeCollections) {
       if (collectionMovieMap.has(collection.tmdb_collection_id) && !addedCollections.has(collection.tmdb_collection_id)) {
         items.push({ type: 'collection', collection })
         addedCollections.add(collection.tmdb_collection_id)
@@ -108,7 +110,7 @@ export function MoviesView({
     }
 
     if (!collectionsOnly) {
-      for (const movie of movies) {
+      for (const movie of safeMovies) {
         if (!moviesInCollections.has(movie.id!)) {
           items.push({ type: 'movie', movie })
         }
@@ -319,19 +321,19 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
 
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{collection.collection_name}</h4>
-          <p className="text-xs text-muted-foreground">
+          <h4 className="font-medium text-sm line-clamp-2 break-words leading-tight" title={collection.collection_name}>{collection.collection_name}</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">
             {collection.owned_movies} of {collection.total_movies} movies
           </p>
         </div>
         <div
-          className={`shrink-0 text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 ${
+          className={`shrink-0 text-xs font-bold px-2 py-1 rounded shadow-md flex items-center gap-1 mt-0.5 ${
             collection.completeness_percentage === 100
               ? 'bg-green-500 text-white'
               : 'bg-foreground text-background border border-border'
           }`}
         >
-          <Layers className="w-3 h-3" />
+          <Layers className="w-3 h-3 shrink-0" />
           <span>{collection.owned_movies}/{collection.total_movies}</span>
         </div>
       </div>
@@ -357,8 +359,8 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm truncate">{collection.collection_name}</h4>
-        <div className="flex items-center gap-1 mt-0.5">
+        <h4 className="font-semibold text-sm line-clamp-2 break-words leading-tight">{collection.collection_name}</h4>
+        <div className="flex items-center gap-1 mt-1">
           <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded flex items-center gap-1">
             <Layers className="w-3 h-3" />
             {collection.owned_movies}/{collection.total_movies}
@@ -477,21 +479,21 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
 
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm truncate">{movie.title}</h4>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <h4 className="font-medium text-sm line-clamp-2 break-words leading-tight" title={movie.title}>{movie.title}</h4>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
             <span>{movie.year}</span>
             {movie.resolution && <><span className="text-muted-foreground/30">•</span><span>{movie.resolution}</span></>}
           </div>
         </div>
-        <div className="shrink-0 flex items-center gap-1">
+        <div className="shrink-0 flex items-center gap-1 mt-0.5">
           {collectionData && (
             <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${collectionData.completeness_percentage === 100 ? 'bg-green-500 text-white' : 'bg-foreground text-background border border-border'}`}>
-              <Layers className="w-2.5 h-2.5" /> <span>{collectionData.owned_movies}/{collectionData.total_movies}</span>
+              <Layers className="w-2.5 h-2.5 shrink-0" /> <span>{collectionData.owned_movies}/{collectionData.total_movies}</span>
             </div>
           )}
-          {(movie.tier_quality === 'LOW' || !!movie.needs_upgrade) && <CircleFadingArrowUp className="w-4 h-4 text-red-500" />}
-          {movie.storage_debt_bytes != null && movie.storage_debt_bytes > 5 * 1024 * 1024 * 1024 && <HardDrive className="w-4 h-4 text-blue-500" />}
-          {movie.efficiency_score != null && movie.efficiency_score < 60 && <Trash2 className="w-4 h-4 text-orange-500" />}
+          {(movie.tier_quality === 'LOW' || !!movie.needs_upgrade) && <CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" />}
+          {movie.storage_debt_bytes != null && movie.storage_debt_bytes > 5 * 1024 * 1024 * 1024 && <HardDrive className="w-4 h-4 text-blue-500 shrink-0" />}
+          {movie.efficiency_score != null && movie.efficiency_score < 60 && <Trash2 className="w-4 h-4 text-orange-500 shrink-0" />}
         </div>
       </div>
       {isExpanded && <div onClick={e => e.stopPropagation()}><ConversionRecommendation item={movie} compact /></div>}
