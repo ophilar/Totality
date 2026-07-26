@@ -886,6 +886,13 @@ export interface QueuedTask {
   options?: any
 }
 
+export interface TaskQueueState {
+  currentTask: QueuedTask | null
+  queue: QueuedTask[]
+  isPaused: boolean
+  completedTasks: QueuedTask[]
+}
+
 // ============================================================================
 // DASHBOARD TYPES
 // ============================================================================

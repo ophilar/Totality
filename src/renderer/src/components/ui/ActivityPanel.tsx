@@ -1,3 +1,4 @@
+import type { QueuedTask, TaskQueueState } from '@main/types/database'
 /**
  * ActivityPanel - Task queue and monitoring activity panel
  *
@@ -43,63 +44,7 @@ import {
 // Types
 // ============================================================================
 
-type TaskType =
-  | 'library-scan'
-  | 'source-scan'
-  | 'series-completeness'
-  | 'collection-completeness'
-  | 'music-completeness'
-  | 'music-scan'
 
-type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-
-interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-}
-
-interface QueuedTask {
-  id: string
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: TaskStatus
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: {
-    itemsScanned?: number
-    itemsAdded?: number
-    itemsUpdated?: number
-    itemsRemoved?: number
-  }
-}
-
-interface QueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-  completedTasks: QueuedTask[]
-}
-
-interface AppNotification {
-  id: number
-  type: string
-  title: string
-  message: string
-  sourceId?: string
-  sourceName?: string
-  itemCount?: number
-  isRead: boolean
-  createdAt: string
-  readAt?: string
-}
 
 // ============================================================================
 // Component
@@ -167,13 +112,26 @@ function SortableQueueItem({
   )
 }
 
+interface AppNotification {
+  id: number
+  type: string
+  title: string
+  message: string
+  sourceId?: string
+  sourceName?: string
+  itemCount?: number
+  isRead: boolean
+  createdAt: string
+  readAt?: string
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
 
 export function ActivityPanel() {
   const [isOpen, setIsOpen] = useState(false)
-  const [queueState, setQueueState] = useState<QueueState>({
+  const [queueState, setTaskQueueState] = useState<TaskQueueState>({
     currentTask: null,
     queue: [],
     isPaused: false,
@@ -224,10 +182,10 @@ export function ActivityPanel() {
   // Subscribe to task queue updates
   useEffect(() => {
     const unsubscribeQueue = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setQueueState(state as unknown as QueueState)
+      setTaskQueueState(state as unknown as TaskQueueState)
     })
 
-    window.electronAPI.taskQueueGetState?.().then(setQueueState)
+    window.electronAPI.taskQueueGetState?.().then(setTaskQueueState)
 
     return () => {
       unsubscribeQueue?.()
@@ -391,7 +349,7 @@ export function ActivityPanel() {
     const { active, over } = event
 
     if (over && active.id !== over.id) {
-      setQueueState((prev) => {
+      setTaskQueueState((prev) => {
         const oldIndex = prev.queue.findIndex((t) => t.id === active.id)
         const newIndex = prev.queue.findIndex((t) => t.id === over.id)
         const newQueue = arrayMove(prev.queue, oldIndex, newIndex)
@@ -580,11 +538,11 @@ export function ActivityPanel() {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={queueState.queue.map((t) => t.id)}
+                  items={queueState.queue.map((t: QueuedTask) => t.id)}
                   strategy={verticalListSortingStrategy}
                 >
                   <div className="divide-y divide-border/10">
-                    {queueState.queue.map((task) => (
+                    {queueState.queue.map((task: QueuedTask) => (
                       <SortableQueueItem
                         key={task.id}
                         task={task}
