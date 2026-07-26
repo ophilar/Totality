@@ -393,7 +393,7 @@ export class TranscodingService {
     // Add custom args if present
     if (options.customArgs) {
       const parts = options.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
-      const safeRegex = /^[a-zA-Z0-9\-_\+=\/:,\.\*"'\s]+$/
+      const safeRegex = /^[a-zA-Z0-9\-_+=/\\:,.*"'\s]+$/
       for (const part of parts) {
         const cleaned = part.replace(/^["']|["']$/g, '').trim()
         if (cleaned && safeRegex.test(cleaned)) {

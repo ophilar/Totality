@@ -176,7 +176,9 @@ export class BetterSQLiteService {
       try { 
         const result = await this.db.execute(`SELECT * FROM ${t}`)
         data[t] = result.rows as any[]
-      } catch {}
+      } catch {
+        // Ignore errors for missing tables or query issues
+      }
     }
     return data
   }
