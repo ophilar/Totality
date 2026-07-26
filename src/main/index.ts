@@ -171,7 +171,9 @@ app.on('before-quit', async (event) => {
   try {
     const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
     await getFFprobeWorkerPool().shutdown()
-  } catch {}
+  } catch {
+    // Ignore errors during worker pool shutdown
+  }
   
   await getLoggingService().shutdown()
   getTaskQueueService().persistInterruptedTasks()

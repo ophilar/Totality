@@ -42,7 +42,9 @@ async function detectWindowsNetworkDrivesAsync(): Promise<void> {
       if (drive.length === 1) detected.add(drive.toUpperCase())
     }
     networkDriveLetters = detected
-  } catch {}
+  } catch {
+    // Ignore error fetching network drives
+  }
 }
 
 function isNetworkPath(filePath: string): boolean {
