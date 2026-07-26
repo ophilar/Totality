@@ -41,6 +41,7 @@ interface AnalysisProgress {
 }
 
 import { usePanel } from '@/contexts/PanelContext'
+import type { QueuedTask, TaskQueueState } from '@main/types/database'
 
 interface CompletenessPanelProps {
   isOpen?: boolean
@@ -90,10 +91,7 @@ export function CompletenessPanel({
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
-  const [queueState, setQueueState] = useState<{
-    currentTask: { type: string; status: string } | null
-    queue: { type: string }[]
-  } | null>(null)
+  const [queueState, setQueueState] = useState<TaskQueueState | null>(null)
   const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
   const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
 
@@ -174,7 +172,11 @@ export function CompletenessPanel({
     }
 
     // Check if queued
+<<<<<<< HEAD
     const isQueued = queueState.queue?.some((task) => task.type === taskType)
+=======
+    const isQueued = queueState.queue?.some((task: QueuedTask) => task.type === taskType)
+>>>>>>> 0284502 (Refactor TaskQueueState to global interface and fix any usage)
     if (isQueued) return 'queued'
 
     return null
@@ -194,12 +196,17 @@ export function CompletenessPanel({
     loadQueueState()
 
     // Subscribe to queue updates
+<<<<<<< HEAD
     const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
       // Extract the state we need to match queueState type
       setQueueState({
         currentTask: state.currentTask as { type: string; status: string } | null,
         queue: state.queue as { type: string }[]
       })
+=======
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: TaskQueueState) => {
+      setQueueState(state)
+>>>>>>> 0284502 (Refactor TaskQueueState to global interface and fix any usage)
     })
 
     return () => cleanup?.()

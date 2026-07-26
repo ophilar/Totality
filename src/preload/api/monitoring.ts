@@ -76,6 +76,7 @@ export const monitoringApi = {
   taskQueuePause: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.PAUSE),
   taskQueueResume: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.RESUME),
   taskQueueCancelCurrent: () => ipcRenderer.invoke('taskQueue:cancelCurrent'),
+  taskQueueCancelTask: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.CANCEL_TASK, taskId),
 
   // History
   taskQueueGetTaskHistory: () => ipcRenderer.invoke('taskQueue:getTaskHistory'),
@@ -84,8 +85,8 @@ export const monitoringApi = {
   taskQueueClearMonitoringHistory: () => ipcRenderer.invoke('taskQueue:clearMonitoringHistory'),
 
   // Task Queue Events
-  onTaskQueueUpdated: (callback: (state: unknown) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
+  onTaskQueueUpdated: (callback: (state: import('@main/types/database').TaskQueueState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: import('@main/types/database').TaskQueueState) => callback(state)
     ipcRenderer.on('taskQueue:updated', handler)
     return () => ipcRenderer.removeListener('taskQueue:updated', handler)
   },
@@ -185,87 +186,7 @@ export interface MonitoringAPI {
   // ============================================================================
 
   // Queue State
-  taskQueueGetState: () => Promise<{
-    currentTask: {
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      artistId?: number
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    } | null
-    queue: Array<{
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      artistId?: number
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    }>
-    isPaused: boolean
-    completedTasks: Array<{
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      artistId?: number
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    }>
-  }>
+  taskQueueGetState: () => Promise<import('@main/types/database').TaskQueueState>
 
   // Task Management
   taskQueueAddTask: (definition: {
@@ -294,6 +215,7 @@ export interface MonitoringAPI {
   taskQueuePause: () => Promise<{ success: boolean }>
   taskQueueResume: () => Promise<{ success: boolean }>
   taskQueueCancelCurrent: () => Promise<{ success: boolean }>
+    taskQueueCancelTask: (taskId: string) => Promise<{ success: boolean }> | undefined
 
   // History
   taskQueueGetTaskHistory: () => Promise<Array<{
@@ -316,37 +238,7 @@ export interface MonitoringAPI {
   taskQueueClearMonitoringHistory: () => Promise<{ success: boolean }>
 
   // Task Queue Events
-  onTaskQueueUpdated: (callback: (state: {
-    currentTask: {
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      artistId?: number
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    } | null
-    queue: unknown[]
-    isPaused: boolean
-    completedTasks: unknown[]
-  }) => void) => () => void
+  onTaskQueueUpdated: (callback: (state: import('@main/types/database').TaskQueueState) => void) => () => void
   onTaskQueueTaskComplete: (callback: (task: {
     id: string
     type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
