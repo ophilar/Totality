@@ -47,7 +47,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       <input
         ref={searchInputRef}
         type="text"
-        placeholder="Search library (movies, TV, music)..."
+        placeholder="Search all libraries..."
         value={searchInput}
         onChange={(e) => {
           setSearchInput(e.target.value)
