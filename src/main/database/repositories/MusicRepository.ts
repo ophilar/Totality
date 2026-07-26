@@ -757,6 +757,18 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return row ? this.mapDrizzleToTrack(row) : null
   }
 
+  async getTracksByMusicbrainzIds(ids: string[]): Promise<Map<string, MusicTrack>> {
+    const result = new Map<string, MusicTrack>()
+    if (ids.length === 0) return result
+    const batchSize = 500
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize)
+      const rows = await this.drizzle.select().from(schema.musicTracks).where(inArray(schema.musicTracks.musicbrainzId, batch)).all()
+      rows.forEach(r => { if (r.musicbrainzId) result.set(r.musicbrainzId, this.mapDrizzleToTrack(r)) })
+    }
+    return result
+  }
+
   async deleteTrack(id: number): Promise<void> {
     await this.delete(id)
   }

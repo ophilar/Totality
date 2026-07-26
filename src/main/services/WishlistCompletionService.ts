@@ -169,12 +169,11 @@ export class WishlistCompletionService {
 
     // Check tracks by MusicBrainz ID
     if (trackItems.length > 0) {
-      // We use Promise.all to concurrently fetch the tracks
-      // This solves the N+1 waiting issue since BetterSQLite wrapper
-      // executes promises concurrently when possible.
-      const trackPromises = trackItems.map(async (item) => {
-        const track = await db.music.getTrackByMusicbrainzId(item.musicbrainz_id!)
-        if (track) {
+      const mbIds = trackItems.map((i) => i.musicbrainz_id!)
+      const tracks = await db.music.getTracksByMusicbrainzIds(mbIds)
+
+      for (const item of trackItems) {
+        if (tracks.has(item.musicbrainz_id!)) {
           completed.push({
             id: item.id!,
             title: item.title,
@@ -182,8 +181,7 @@ export class WishlistCompletionService {
             media_type: item.media_type as WishlistMediaType,
           })
         }
-      })
-      await Promise.all(trackPromises)
+      }
     }
 
     return completed
@@ -240,16 +238,8 @@ export class WishlistCompletionService {
         }
       }
 
-      // We use Promise.all to fetch quality scores concurrently
-      // since the repository methods correctly run statements concurrently.
-      const qualityScores = new Map()
-      const qualityScorePromises = albumIds.map(async (id) => {
-        const score = await db.music.getQualityScore(id)
-        if (score) {
-          qualityScores.set(id, score)
-        }
-      })
-      await Promise.all(qualityScorePromises)
+      // Batch fetch quality scores
+      const qualityScores = await db.music.getQualityScoresByAlbumIds(albumIds)
 
       for (const item of musicItems) {
         const album = albums.get(item.musicbrainz_id!)
