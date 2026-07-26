@@ -66,12 +66,13 @@ export function usePaginatedData<T, TFilters>({
       // Fetch count on reset or first load
       if (isReset || !hasInitialLoadRef.current) {
         const count = await countFn(currentFilters)
-        setTotalCount(count)
+        setTotalCount(count ?? 0)
       }
 
-      const newItems = await fetchFn(currentFilters)
+      const fetched = await fetchFn(currentFilters)
+      const newItems = Array.isArray(fetched) ? fetched : []
       
-      setItems(prev => isReset ? newItems : [...prev, ...newItems])
+      setItems(prev => isReset ? newItems : [...(prev || []), ...newItems])
       offsetRef.current += newItems.length
       hasInitialLoadRef.current = true
     } catch (err) {

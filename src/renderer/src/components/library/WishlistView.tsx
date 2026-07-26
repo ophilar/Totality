@@ -46,9 +46,12 @@ export function WishlistView(_props: WishlistViewProps) {
         window.electronAPI.musicGetAlbumsNeedingUpgrade(1000)
       ])
       
+      const safeMovieAndTv: any[] = Array.isArray(movieAndTvUpgrades) ? movieAndTvUpgrades : []
+      const safeMusic: any[] = Array.isArray(musicUpgrades) ? musicUpgrades : []
+
       const allUpgrades = [
-        ...(movieAndTvUpgrades as any[]).map(i => ({ ...i, category: 'media' })),
-        ...(musicUpgrades as any[]).map(i => ({ ...i, category: 'music', type: 'album' }))
+        ...safeMovieAndTv.map(i => (typeof i === 'object' && i !== null ? { ...i, category: 'media' } : i)),
+        ...safeMusic.map(i => (typeof i === 'object' && i !== null ? { ...i, category: 'music', type: 'album' } : i))
       ]
       
       setUpgrades(allUpgrades)
@@ -59,10 +62,13 @@ export function WishlistView(_props: WishlistViewProps) {
         window.electronAPI.collectionsGetAll(),
       ])
 
+      const safeSeries: SeriesCompletenessData[] = Array.isArray(seriesData) ? (seriesData as SeriesCompletenessData[]) : []
+      const safeCollections: MovieCollectionData[] = Array.isArray(collectionsData) ? (collectionsData as MovieCollectionData[]) : []
+
       const missingList: MissingItem[] = []
 
       // Extract missing movies
-      ;(collectionsData as MovieCollectionData[]).forEach(c => {
+      safeCollections.forEach(c => {
         try {
           const missingMovies = JSON.parse(c.missing_movies || '[]')
           missingMovies.forEach((m: { tmdb_id: string; title: string; year?: number; poster_path?: string }) => {
@@ -83,7 +89,7 @@ export function WishlistView(_props: WishlistViewProps) {
       })
 
       // Extract missing episodes
-      ;(seriesData as SeriesCompletenessData[]).forEach(s => {
+      safeSeries.forEach(s => {
         try {
           const missingEpisodes = JSON.parse(s.missing_episodes || '[]')
           missingEpisodes.forEach((ep: any) => {

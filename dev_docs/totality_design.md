@@ -49,3 +49,7 @@
 - **Artwork Custom Protocol Jail:** Secured custom `local-artwork://` handler against Local File Inclusion (LFI) by path-resolving input and validating it against a whitelist of registered media source directories, user home subfolders, and temporary folders.
 - **SQL Identifier Validation:** Sanitized dynamic database targets in Kodi MySQL queries by validating identifier patterns using `/^[a-zA-Z0-9_]+$/` before interpolating them into `USE \`...\`` statements.
 - **Formula Injection Mitigation:** Escaped formula trigger characters (`=`, `+`, `-`, `@`) in CSV exports of wishlists by prepending a single quote (`'`).
+
+## Multi-Provider Strategy & Aggregation (v0.5.0 / 2026-07-27)
+
+- **Strategy & Composite Design Patterns:** Implemented `IMetadataProvider` interface and `CompositeMetadataProvider` aggregator following SOLID design principles (Single Responsibility & Open/Closed Principles). Enables seamless integration of new metadata sources (TMDB, AniList for anime, TVDB, MusicBrainz) without mutating existing business logic or view code.
