@@ -422,7 +422,7 @@ export const WishlistItemSchema = z.object({
   priority: z.number().int().min(1).max(5).optional().default(3),
   reason: z.nativeEnum(WishlistReason).optional(),
   notes: z.string().max(1000).trim().optional().nullable(),
-  year: z.number().int().min(1800).max(2100).optional().nullable(),
+  year: z.preprocess((val) => (val === '' || val === null || val === undefined || (typeof val === 'number' && isNaN(val)) ? undefined : val), z.number().int().min(1800).max(2100).optional().nullable()),
   series_title: z.string().max(500).optional().nullable(),
   season_number: z.number().int().min(0).optional().nullable(),
   artist_name: z.string().max(500).optional().nullable(),
