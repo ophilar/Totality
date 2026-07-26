@@ -110,7 +110,7 @@ export function AddToWishlistButton({
         await addItem({
           media_type: effectiveMediaType,
           title: effectiveTitle,
-          year,
+          year: (typeof year === 'number' && !isNaN(year)) ? year : undefined,
           tmdb_id: tmdbId,
           imdb_id: imdbId,
           musicbrainz_id: musicbrainzId,
