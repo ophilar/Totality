@@ -1,7 +1,7 @@
 import type { GeminiToolDefinition } from '@main/services/GeminiService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
-import { MediaItemType, WishlistStatus } from '@main/types/database'
+import { MediaItemType, WishlistStatus, WishlistMediaType, WishlistReason, MediaItem, TVShowSummary } from '@main/types/database'
 
 /** Actionable item from tool results — not-owned titles the user can add to wishlist */
 export interface ActionableItem {
@@ -12,10 +12,10 @@ export interface ActionableItem {
 }
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact(obj: any): any {
-  const result: any = {}
+function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {}
   for (const [k, v] of Object.entries(obj)) {
-    if (v !== null && v !== undefined && v !== '') result[k] = v
+    if (v !== null && v !== undefined && v !== '') result[k as keyof T] = v as any
   }
   return result
 }
@@ -53,13 +53,13 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
 ]
 
 /** Sanitize and validate a string tool input */
-function toolString(input: any, key: string, maxLen = 500): string {
+function toolString(input: Record<string, unknown>, key: string, maxLen = 500): string {
   const val = input[key]
   return (typeof val === 'string') ? val.slice(0, maxLen).trim() : ''
 }
 
 /** Sanitize and validate a numeric tool input */
-function toolNumber(input: any, key: string, min = 0, max = 10000): number | undefined {
+function toolNumber(input: Record<string, unknown>, key: string, min = 0, max = 10000): number | undefined {
   const val = input[key]
   if (val === undefined || val === null) return undefined
   const num = typeof val === 'number' ? val : Number(val)
@@ -67,7 +67,7 @@ function toolNumber(input: any, key: string, min = 0, max = 10000): number | und
 }
 
 /** Sanitize and validate a boolean tool input */
-function toolBoolean(input: any, key: string): boolean | undefined {
+function toolBoolean(input: Record<string, unknown>, key: string): boolean | undefined {
   const val = input[key]
   return (typeof val === 'boolean') ? val : undefined
 }
@@ -75,7 +75,7 @@ function toolBoolean(input: any, key: string): boolean | undefined {
 /**
  * Execute a tool by name with the given input.
  */
-export async function executeTool(name: string, input: any): Promise<string> {
+export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
   const db = getDatabase()
 
   switch (name) {
@@ -95,12 +95,12 @@ export async function executeTool(name: string, input: any): Promise<string> {
         searchQuery: toolString(input, 'search_query', 200) || undefined,
         limit,
       })
-      return JSON.stringify(items.map((i: any) => compact({ id: i.id, title: i.title, year: i.year, resolution: i.resolution })))
+      return JSON.stringify(items.map((i: MediaItem) => compact({ id: i.id, title: i.title, year: i.year, resolution: i.resolution })))
     }
 
     case 'get_tv_shows': {
       const shows = await db.tvShows.getTVShowSummaries(toolString(input, 'search_query'))
-      return JSON.stringify(shows.map((s: any) => compact({ title: s.series_title, episodes: s.total_episodes, owned: s.owned_episodes })))
+      return JSON.stringify(shows.map((s: TVShowSummary & { owned_episodes?: number }) => compact({ title: s.series_title, episodes: s.total_episodes, owned: s.owned_episodes })))
     }
 
     case 'get_library_stats': {
@@ -120,12 +120,14 @@ export async function executeTool(name: string, input: any): Promise<string> {
     }
 
     case 'add_to_wishlist': {
-      const items = (Array.isArray(input.items) ? input.items : []).map((i: any) => ({
+      const items = (Array.isArray(input.items) ? input.items : []).map((i: Record<string, unknown>) => ({
         title: String(i.title || ''),
-        media_type: String(i.media_type || 'movie'),
-        status: WishlistStatus.Active
+        media_type: String(i.media_type || 'movie') as WishlistMediaType,
+        status: WishlistStatus.Active,
+        reason: WishlistReason.Missing,
+        priority: 3 as const
       }))
-      return JSON.stringify({ added: await db.wishlist.addMany(items as any) })
+      return JSON.stringify({ added: await db.wishlist.addMany(items) })
     }
 
     default:

@@ -64,6 +64,40 @@ export class WishlistRepository extends BaseRepository<typeof schema.wishlistIte
     return row ? this.mapDrizzleToWishlist([row])[0] : null
   }
 
+  async addMany(items: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>[]): Promise<number> {
+    if (items.length === 0) return 0
+
+    const now = new Date().toISOString()
+    const data = items.map(item => ({
+      mediaType: item.media_type,
+      title: item.title,
+      subtitle: item.subtitle,
+      year: item.year,
+      reason: item.reason || 'missing',
+      tmdbId: item.tmdb_id,
+      imdbId: item.imdb_id,
+      musicbrainzId: item.musicbrainz_id,
+      seriesTitle: item.series_title,
+      seasonNumber: item.season_number,
+      episodeNumber: item.episode_number,
+      collectionName: item.collection_name,
+      artistName: item.artist_name,
+      albumTitle: item.album_title,
+      posterUrl: item.poster_url,
+      priority: item.priority || 3,
+      notes: item.notes,
+      status: item.status || 'active',
+      addedAt: now,
+      updatedAt: now,
+    }))
+
+    const result = await this.drizzle.insert(schema.wishlistItems)
+      .values(data)
+      .returning({ id: schema.wishlistItems.id })
+
+    return result.length
+  }
+
   async add(item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): Promise<number> {
     const now = new Date().toISOString()
     const data = {
