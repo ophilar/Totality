@@ -171,12 +171,7 @@ export function CompletenessPanel({
       return 'running'
     }
 
-    // Check if queued
-<<<<<<< HEAD
-    const isQueued = queueState.queue?.some((task) => task.type === taskType)
-=======
     const isQueued = queueState.queue?.some((task: QueuedTask) => task.type === taskType)
->>>>>>> 0284502 (Refactor TaskQueueState to global interface and fix any usage)
     if (isQueued) return 'queued'
 
     return null
@@ -196,17 +191,8 @@ export function CompletenessPanel({
     loadQueueState()
 
     // Subscribe to queue updates
-<<<<<<< HEAD
-    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      // Extract the state we need to match queueState type
-      setQueueState({
-        currentTask: state.currentTask as { type: string; status: string } | null,
-        queue: state.queue as { type: string }[]
-      })
-=======
     const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: TaskQueueState) => {
       setQueueState(state)
->>>>>>> 0284502 (Refactor TaskQueueState to global interface and fix any usage)
     })
 
     return () => cleanup?.()
