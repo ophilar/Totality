@@ -53,7 +53,9 @@ export class MovieCollectionService {
                 await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
                 m.tmdb_id = String(best.id)
               }
-            } catch {}
+            } catch {
+              // Ignore matching errors to continue processing other movies
+            }
           }
 
           if (m.tmdb_id && !this.cancelRequested) {
@@ -75,7 +77,9 @@ export class MovieCollectionService {
                   })
                 }
               }
-            } catch {}
+            } catch {
+              // Ignore collection fetch errors
+            }
           }
         }))
       }

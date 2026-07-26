@@ -104,7 +104,7 @@ export class JellyfinApiClient {
   buildImageUrl(itemId: string, imageType: string, imageTag?: string): string {
     if (!this.options.serverUrl || !itemId) return ''
     const pathPrefix = this.options.providerType === 'emby' ? '/emby' : ''
-    let url = `${this.options.serverUrl}${pathPrefix}/Items/${itemId}/Images/${imageType}`
+    const url = `${this.options.serverUrl}${pathPrefix}/Items/${itemId}/Images/${imageType}`
     const params = new URLSearchParams()
     if (imageTag) params.set('tag', imageTag)
     const token = this.options.apiKey || this.options.accessToken

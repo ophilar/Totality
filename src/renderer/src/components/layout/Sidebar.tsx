@@ -1,3 +1,4 @@
+import type { QueuedTask, TaskQueueState } from '@main/types/database'
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
@@ -7,27 +8,9 @@ import { PROVIDERS } from '@main/constants/providers'
 import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
 
 // Task queue types
-interface QueuedTask {
-  id: string
-  type: string
-  label: string
-  sourceId?: string
-  libraryId?: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress?: {
-    current: number
-    total: number
-    percentage: number
-    phase: string
-    currentItem?: string
-  }
-}
 
-interface TaskQueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-}
+
+
 
 // ... remove old PROVIDER_COLORS ...
 
