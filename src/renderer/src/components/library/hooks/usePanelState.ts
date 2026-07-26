@@ -31,8 +31,16 @@ export function usePanelState({
   onToggleWishlist,
   onToggleChat,
 }: UsePanelStateOptions = {}): UsePanelStateReturn {
-  try {
-    const context = usePanel()
+  const context = usePanel()
+
+  // Fall back to original logic if Context is not present (e.g. in isolated tests)
+  const [internalShowCompletenessPanel, setInternalShowCompletenessPanel] = useState(false)
+  const [internalShowWishlistPanel, setInternalShowWishlistPanel] = useState(false)
+  const [internalShowChatPanel, setInternalShowChatPanel] = useState(false)
+
+  // usePanel returns a default object if context is undefined.
+  // We can detect it by checking a specific dummy property or if we modify usePanel.
+  if (context && context.toggleCompleteness && context.toggleCompleteness.name !== '') {
     return {
       showCompletenessPanel: context.showCompletenessPanel,
       showWishlistPanel: context.showWishlistPanel,
@@ -59,25 +67,20 @@ export function usePanelState({
         }
       },
     }
-  } catch (error) {
-    // Fall back to original logic if Context is not present (e.g. in isolated tests)
-    const [internalShowCompletenessPanel, setInternalShowCompletenessPanel] = useState(false)
-    const [internalShowWishlistPanel, setInternalShowWishlistPanel] = useState(false)
-    const [internalShowChatPanel, setInternalShowChatPanel] = useState(false)
+  }
 
-    return {
-      showCompletenessPanel: externalShowCompletenessPanel ?? internalShowCompletenessPanel,
-      showWishlistPanel: externalShowWishlistPanel ?? internalShowWishlistPanel,
-      showChatPanel: externalShowChatPanel ?? internalShowChatPanel,
-      setShowCompletenessPanel: onToggleCompleteness
-        ? () => onToggleCompleteness()
-        : setInternalShowCompletenessPanel,
-      setShowWishlistPanel: onToggleWishlist
-        ? () => onToggleWishlist()
-        : setInternalShowWishlistPanel,
-      setShowChatPanel: onToggleChat
-        ? () => onToggleChat()
-        : setInternalShowChatPanel,
-    }
+  return {
+    showCompletenessPanel: externalShowCompletenessPanel ?? internalShowCompletenessPanel,
+    showWishlistPanel: externalShowWishlistPanel ?? internalShowWishlistPanel,
+    showChatPanel: externalShowChatPanel ?? internalShowChatPanel,
+    setShowCompletenessPanel: onToggleCompleteness
+      ? () => onToggleCompleteness()
+      : setInternalShowCompletenessPanel,
+    setShowWishlistPanel: onToggleWishlist
+      ? () => onToggleWishlist()
+      : setInternalShowWishlistPanel,
+    setShowChatPanel: onToggleChat
+      ? () => onToggleChat()
+      : setInternalShowChatPanel,
   }
 }
