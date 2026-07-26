@@ -1,3 +1,4 @@
+import { MediaItem, SourceLibrary } from '@main/types/database'
 /**
  * LiveMonitoringService - Background service for detecting media library changes
  */
@@ -311,7 +312,7 @@ export class LiveMonitoringService {
     if (!source) return []
 
     const libraries = await db.sources.getSourceLibraries(sourceId)
-    const enabledLibraries = libraries.filter((lib: any) => lib.isEnabled)
+    const enabledLibraries = libraries.filter((lib: SourceLibrary) => lib.isEnabled)
     const events: SourceChangeEvent[] = []
 
     for (const library of enabledLibraries) {
@@ -342,7 +343,7 @@ export class LiveMonitoringService {
             } else {
               for (const fp of existingFiles) {
                 const it = await db.media.getItemByPath(fp)
-                if (it) changedItems.push({ id: it.id!.toString(), title: it.title, type: it.type as any, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined })
+                if (it) changedItems.push({ id: it.id!.toString(), title: it.title, type: it.type, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined })
               }
             }
           }
@@ -352,7 +353,7 @@ export class LiveMonitoringService {
           else if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
           else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type as any, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated + result.itemsRemoved, items: changedItems, detectedAt: new Date().toISOString() })
+          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated + result.itemsRemoved, items: changedItems, detectedAt: new Date().toISOString() })
           
           await db.notifications.createNotification({ type: 'info', title: 'Library updated', message: `${source.display_name}: Updated`, reference_id: sourceId })
           this.sendToRenderer('library:updated', { sourceId })
@@ -410,7 +411,7 @@ export class LiveMonitoringService {
     if (!source) return []
 
     const libraries = await db.sources.getSourceLibraries(sourceId)
-    const enabledLibraries = libraries.filter((lib: any) => lib.isEnabled)
+    const enabledLibraries = libraries.filter((lib: SourceLibrary) => lib.isEnabled)
     const events: SourceChangeEvent[] = []
 
     for (const library of enabledLibraries) {
@@ -418,17 +419,17 @@ export class LiveMonitoringService {
         const result = await sourceManager.scanLibraryIncremental(sourceId, library.libraryId, () => {})
         if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0)) {
           const recentItems = await db.media.getItems({ sourceId, libraryId: library.libraryId, sortBy: 'updated_at', sortOrder: 'desc', limit: result.itemsAdded + result.itemsUpdated })
-          const changedItems: ChangedItem[] = recentItems.map((it: any) => ({ id: it.id!.toString(), title: it.title, type: it.type as any, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined }))
+          const changedItems: ChangedItem[] = recentItems.map((it: MediaItem) => ({ id: it.id!.toString(), title: it.title, type: it.type, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined }))
 
           let changeType = ChangeType.Added
           if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
           else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type as any, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated, items: changedItems, detectedAt: new Date().toISOString() })
+          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated, items: changedItems, detectedAt: new Date().toISOString() })
           this.sendToRenderer('library:updated', {})
         }
         if (result.success && result.itemsRemoved > 0) {
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type as any, libraryId: library.libraryId, libraryName: library.libraryName, changeType: ChangeType.Removed, itemCount: result.itemsRemoved, items: [], detectedAt: new Date().toISOString() })
+          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType: ChangeType.Removed, itemCount: result.itemsRemoved, items: [], detectedAt: new Date().toISOString() })
         }
       } catch (error) {
         getLoggingService().error('[LiveMonitoring]', `Check error ${library.libraryId}:`, error)
