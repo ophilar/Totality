@@ -938,65 +938,6 @@ function SourceItem({
                         </div>
                       </div>
                     )}
-                    {/* Show scanning UI for manual scans (original code) */}
-                    {isScanning && !isQueueScanning && (
-                      <div className="mt-1.5">
-                        {(scanPhase === 'scanning' && progress) || (scanPhase === 'analyzing' && analysisProgress) ? (
-                          <>
-                            <div className="flex items-center gap-1">
-                              <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-primary transition-all"
-                                  style={{ width: `${(scanPhase === 'scanning' ? progress?.percentage : analysisProgress?.percentage) || 0}%` }}
-                                />
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onStopScan()
-                                }}
-                                className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
-                                title="Stop scan"
-                                aria-label="Stop scan"
-                              >
-                                <Square className="w-3 h-3" />
-                              </button>
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                              <span className="font-medium">
-                                {scanPhase === 'scanning' ? 'Scanning' : 'Analyzing Quality'}:
-                              </span>{' '}
-                              {(scanPhase === 'scanning' ? progress?.percentage : analysisProgress?.percentage)?.toFixed(0) || 0}%
-                              {scanPhase === 'scanning' && progress?.currentItem && (
-                                <span> • {progress.currentItem}</span>
-                              )}
-                              {scanPhase === 'analyzing' && analysisProgress && (
-                                <span> • {analysisProgress.current}/{analysisProgress.total}</span>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <div className="flex-1 text-xs text-muted-foreground truncate">
-                              <span className="font-medium">
-                                {scanPhase === 'scanning' ? 'Scanning...' : 'Analyzing Quality...'}
-                              </span>
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onStopScan()
-                              }}
-                              className="p-0.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
-                              title="Stop scan"
-                              aria-label="Stop scan"
-                            >
-                              <Square className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )
               })}
