@@ -381,8 +381,26 @@ export class TMDBService {
     originalTitle: string,
     normalizedTitle: string,
     year: number | undefined,
-    includeAdult: boolean = false
+    includeAdult: boolean = false,
+    externalImdbId?: string | null
   ): Promise<{ tmdbId: number; title: string; year?: number; posterPath?: string; backdropPath?: string } | null> {
+    // Priority 0: Direct External ID resolution (100% precision)
+    if (externalImdbId && externalImdbId.trim()) {
+      try {
+        const found = await this.findByExternalId(externalImdbId.trim(), 'imdb_id')
+        if (found && Array.isArray(found.movie_results) && found.movie_results.length > 0) {
+          const match = found.movie_results[0]
+          return {
+            tmdbId: match.id,
+            title: match.title,
+            year: match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined,
+          }
+        }
+      } catch (err) {
+        getLoggingService().warn('[TMDBService]', `External ID lookup failed for ${externalImdbId}, falling back to title search:`, err)
+      }
+    }
+
     const normalizeString = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '')
     const targetNormalized = normalizeString(normalizedTitle || originalTitle)
 

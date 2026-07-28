@@ -50,18 +50,44 @@ export class CompositeMetadataProvider implements IMetadataProvider {
     return results
   }
 
+  async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
+    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type) && typeof p.findByExternalId === 'function')
+
+    for (const provider of matchingProviders) {
+      try {
+        const details = await provider.findByExternalId!(externalId, source, type)
+        if (details) return details
+      } catch (err) {
+        // Fallback to next provider in cascade
+      }
+    }
+
+    return null
+  }
+
   async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
     const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type))
+    let primaryDetails: MediaMetadataDetails | null = null
 
     for (const provider of matchingProviders) {
       try {
         const details = await provider.getDetails(externalId, type)
-        if (details) return details
+        if (details) {
+          if (!primaryDetails) {
+            primaryDetails = details
+          } else {
+            // Aggregate complementary fields from secondary providers
+            primaryDetails.imdbRating = primaryDetails.imdbRating ?? details.imdbRating
+            primaryDetails.imdbVotes = primaryDetails.imdbVotes ?? details.imdbVotes
+            primaryDetails.contentRating = primaryDetails.contentRating ?? details.contentRating
+            primaryDetails.awards = primaryDetails.awards ?? details.awards
+          }
+        }
       } catch (err) {
         // Fallback to next provider
       }
     }
 
-    return null
+    return primaryDetails
   }
 }

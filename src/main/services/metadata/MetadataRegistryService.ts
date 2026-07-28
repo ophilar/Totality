@@ -1,6 +1,7 @@
 import { CompositeMetadataProvider } from './CompositeMetadataProvider'
 import { TMDBMetadataProvider } from './providers/TMDBMetadataProvider'
 import { AniListMetadataProvider } from './providers/AniListMetadataProvider'
+import { OMDbMetadataProvider } from './providers/OMDbMetadataProvider'
 
 /**
  * MetadataRegistryService - Singleton orchestrator for metadata provider strategies.
@@ -35,8 +36,19 @@ export class MetadataRegistryService {
     // AniList Provider (Anime Metadata)
     const aniListProvider = new AniListMetadataProvider()
 
+    // OMDb Provider (IMDb Metadata & Ratings)
+    const omdbProvider = new OMDbMetadataProvider(() => {
+      try {
+        const ConfigService = require('../ConfigService').ConfigService
+        return ConfigService.getInstance().get('omdb_api_key') || ''
+      } catch {
+        return ''
+      }
+    })
+
     this.compositeProvider.registerProvider(tmdbProvider)
     this.compositeProvider.registerProvider(aniListProvider)
+    this.compositeProvider.registerProvider(omdbProvider)
   }
 
   public getCompositeProvider(): CompositeMetadataProvider {
