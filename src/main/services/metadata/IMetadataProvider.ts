@@ -7,6 +7,7 @@ export interface MetadataSearchQuery {
   externalId?: string
   seasonNumber?: number
   episodeNumber?: number
+  includeAdult?: boolean
 }
 
 export interface MetadataSearchResult {
@@ -27,6 +28,15 @@ export interface MediaMetadataDetails extends MetadataSearchResult {
   totalEpisodes?: number
   collectionId?: string
   collectionName?: string
+  contentRating?: string
+  imdbRating?: number
+  imdbVotes?: string
+  awards?: string
+  externalIds?: {
+    imdbId?: string
+    tvdbId?: string
+    tmdbId?: string
+  }
   raw?: Record<string, unknown>
 }
 
@@ -41,4 +51,5 @@ export interface IMetadataProvider {
 
   search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]>
   getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null>
+  findByExternalId?(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null>
 }

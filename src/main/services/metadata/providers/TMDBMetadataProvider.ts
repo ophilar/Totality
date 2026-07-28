@@ -12,7 +12,8 @@ export class TMDBMetadataProvider implements IMetadataProvider {
     if (!apiKey) return []
 
     const endpoint = query.type === 'movie' ? 'search/movie' : 'search/tv'
-    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${query.year ? `&year=${query.year}` : ''}`
+    const adultParam = query.includeAdult ? '&include_adult=true' : ''
+    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${query.year ? `&year=${query.year}` : ''}${adultParam}`
 
     try {
       const res = await fetch(url)
@@ -37,6 +38,30 @@ export class TMDBMetadataProvider implements IMetadataProvider {
     } catch (err) {
       console.error('[TMDBMetadataProvider] Search error:', err)
       return []
+    }
+  }
+
+  async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
+    const apiKey = this.apiKeyGetter()
+    if (!apiKey || !externalId) return null
+
+    const url = `https://api.themoviedb.org/3/find/${encodeURIComponent(externalId)}?api_key=${apiKey}&external_source=${source}`
+
+    try {
+      const res = await fetch(url)
+      if (!res.ok) return null
+      const data = await res.json()
+
+      const match = type === 'movie'
+        ? (Array.isArray(data.movie_results) ? data.movie_results[0] : null)
+        : (Array.isArray(data.tv_results) ? data.tv_results[0] : null)
+
+      if (!match) return null
+
+      return this.getDetails(String(match.id), type)
+    } catch (err) {
+      console.error('[TMDBMetadataProvider] findByExternalId error:', err)
+      return null
     }
   }
 
