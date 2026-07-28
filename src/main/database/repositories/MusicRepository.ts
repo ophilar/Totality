@@ -410,6 +410,21 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       .where(eq(schema.musicArtists.id, artistId))
   }
 
+  async updateMusicArtistCountsBatch(artistIds: number[]): Promise<void> {
+    if (!artistIds || artistIds.length === 0) return
+    const batchSize = 500
+    for (let i = 0; i < artistIds.length; i += batchSize) {
+      const batch = artistIds.slice(i, i + batchSize)
+      await this.drizzle.update(schema.musicArtists)
+        .set({
+          albumCount: sql`(SELECT COUNT(*) FROM music_albums WHERE artist_id = music_artists.id)`,
+          trackCount: sql`(SELECT COUNT(*) FROM music_tracks WHERE artist_id = music_artists.id)`,
+          updatedAt: sql`(datetime('now'))`
+        })
+        .where(inArray(schema.musicArtists.id, batch))
+    }
+  }
+
   async updateAllMusicArtistCounts(sourceId?: string): Promise<void> {
     // Note: Drizzle subquery update syntax is a bit restrictive for this pattern, using sql tag for reliability
     let sqlStr = sql`
