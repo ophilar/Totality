@@ -670,6 +670,71 @@ async deleteItems(ids: number[]): Promise<void> {
     const row = res.rows[0] as unknown as { count: number } | undefined
     return row?.count || 0
   }
+  async getEpisodeCountsForSeasons(queries: { seriesTitle: string; seasonNumber: number }[]): Promise<number[]> {
+    if (queries.length === 0) return []
+
+    // Construct a single query using UNION ALL for each pair or simply parameterized ORs.
+    // For large arrays, SQLite has limits on the number of variables (SQLITE_MAX_VARIABLE_NUMBER, default 999 or 32766).
+    // We can chunk them if needed, but doing it in a single transaction with a batch of executes is also very fast.
+
+    const counts: number[] = []
+
+    // Process in batches of 500 to avoid variable limits
+    const BATCH_SIZE = 500;
+
+    for (let i = 0; i < queries.length; i += BATCH_SIZE) {
+      const batch = queries.slice(i, i + BATCH_SIZE);
+      const conditions = batch.map(() => "(series_title = ? AND season_number = ?)").join(" OR ");
+      const args = batch.flatMap(q => [q.seriesTitle, q.seasonNumber]);
+
+      const res = await this.db.execute({
+        sql: `SELECT series_title, season_number, COUNT(*) as count FROM media_items WHERE type = 'episode' AND (${conditions}) GROUP BY series_title, season_number`,
+        args
+      });
+
+      const rowMap = new Map();
+      for (const row of res.rows as unknown as { series_title: string; season_number: number; count: number }[]) {
+        rowMap.set(`${row.series_title}-${row.season_number}`, row.count);
+      }
+
+      for (const q of batch) {
+        counts.push(rowMap.get(`${q.seriesTitle}-${q.seasonNumber}`) || 0);
+      }
+    }
+
+    return counts;
+  }
+
+  async getEpisodeCountsForSeasonEpisodes(queries: { seriesTitle: string; seasonNumber: number; episodeNumber: number }[]): Promise<number[]> {
+    if (queries.length === 0) return []
+
+    const counts: number[] = []
+
+    const BATCH_SIZE = 300; // 300 * 3 = 900 variables, well under the 999 limit for older SQLite
+
+    for (let i = 0; i < queries.length; i += BATCH_SIZE) {
+      const batch = queries.slice(i, i + BATCH_SIZE);
+      const conditions = batch.map(() => "(series_title = ? AND season_number = ? AND episode_number = ?)").join(" OR ");
+      const args = batch.flatMap(q => [q.seriesTitle, q.seasonNumber, q.episodeNumber]);
+
+      const res = await this.db.execute({
+        sql: `SELECT series_title, season_number, episode_number, COUNT(*) as count FROM media_items WHERE type = 'episode' AND (${conditions}) GROUP BY series_title, season_number, episode_number`,
+        args
+      });
+
+      const rowMap = new Map();
+      for (const row of res.rows as unknown as { series_title: string; season_number: number; episode_number: number; count: number }[]) {
+        rowMap.set(`${row.series_title}-${row.season_number}-${row.episode_number}`, row.count);
+      }
+
+      for (const q of batch) {
+        counts.push(rowMap.get(`${q.seriesTitle}-${q.seasonNumber}-${q.episodeNumber}`) || 0);
+      }
+    }
+
+    return counts;
+  }
+
 
   async getLetterOffset(
     table: 'movies' | 'tvshows' | 'artists' | 'albums',

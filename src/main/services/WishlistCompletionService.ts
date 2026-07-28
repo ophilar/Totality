@@ -125,28 +125,40 @@ export class WishlistCompletionService {
     }
 
     // Check seasons by series_title + season_number
-    for (const item of seasonItems) {
-      const count = await db.media.getEpisodeCountForSeason(item.series_title!, item.season_number!)
-      if (count > 0) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: WishlistReason.Missing,
-          media_type: item.media_type as WishlistMediaType,
-        })
+    if (seasonItems.length > 0) {
+      const seasonQueries = seasonItems.map((i) => ({ seriesTitle: i.series_title!, seasonNumber: i.season_number! }))
+      const seasonCounts = await db.media.getEpisodeCountsForSeasons(seasonQueries)
+
+      for (let i = 0; i < seasonItems.length; i++) {
+        const item = seasonItems[i]
+        const count = seasonCounts[i]
+        if (count > 0) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: WishlistReason.Missing,
+            media_type: item.media_type as WishlistMediaType,
+          })
+        }
       }
     }
 
     // Check episodes by series_title + season_number + episode_number
-    for (const item of episodeItems) {
-      const count = await db.media.getEpisodeCountForSeasonEpisode(item.series_title!, item.season_number!, item.episode_number!)
-      if (count > 0) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: WishlistReason.Missing,
-          media_type: item.media_type as WishlistMediaType,
-        })
+    if (episodeItems.length > 0) {
+      const episodeQueries = episodeItems.map((i) => ({ seriesTitle: i.series_title!, seasonNumber: i.season_number!, episodeNumber: i.episode_number! }))
+      const episodeCounts = await db.media.getEpisodeCountsForSeasonEpisodes(episodeQueries)
+
+      for (let i = 0; i < episodeItems.length; i++) {
+        const item = episodeItems[i]
+        const count = episodeCounts[i]
+        if (count > 0) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: WishlistReason.Missing,
+            media_type: item.media_type as WishlistMediaType,
+          })
+        }
       }
     }
 
