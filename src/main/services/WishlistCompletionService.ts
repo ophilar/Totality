@@ -137,16 +137,25 @@ export class WishlistCompletionService {
       }
     }
 
-    // Check episodes by series_title + season_number + episode_number
-    for (const item of episodeItems) {
-      const count = await db.media.getEpisodeCountForSeasonEpisode(item.series_title!, item.season_number!, item.episode_number!)
-      if (count > 0) {
-        completed.push({
-          id: item.id!,
-          title: item.title,
-          reason: WishlistReason.Missing,
-          media_type: item.media_type as WishlistMediaType,
-        })
+    // Batch check episodes by series_title + season_number + episode_number
+    if (episodeItems.length > 0) {
+      const tuples = episodeItems.map((i) => ({
+        seriesTitle: i.series_title!,
+        seasonNumber: i.season_number!,
+        episodeNumber: i.episode_number!,
+      }))
+      const foundEpisodes = await db.media.getEpisodesForSeasonEpisodes(tuples)
+
+      for (const item of episodeItems) {
+        const key = `${item.series_title!}-${item.season_number!}-${item.episode_number!}`
+        if (foundEpisodes.has(key)) {
+          completed.push({
+            id: item.id!,
+            title: item.title,
+            reason: WishlistReason.Missing,
+            media_type: item.media_type as WishlistMediaType,
+          })
+        }
       }
     }
 
