@@ -451,7 +451,14 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         Object.assign(albumData, { ...stats })
         const albumId = await db.music.upsertAlbum(albumData)
         scannedAlbumIds.add(jellyfinAlbum.Id)
-        for (const t of trackDataList) { t.album_id = albumId; await db.music.upsertTrack(t); result.itemsScanned++ }
+
+        await db.beginBatch()
+        await Promise.all(trackDataList.map(async (t) => {
+          t.album_id = albumId
+          await db.music.upsertTrack(t)
+        }))
+        await db.endBatch()
+        result.itemsScanned += trackDataList.length
       }
 
       const artists = await this.getMusicArtists(libraryId)
