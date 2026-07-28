@@ -3,11 +3,6 @@ import { app, BrowserWindow, ipcMain, protocol, net, dialog, Tray, Menu, nativeI
 import path from 'node:path'
 import * as fs from 'fs'
 
-// Disable Chromium SUID sandbox on Linux
-if (process.platform === 'linux') {
-  app.commandLine.appendSwitch('no-sandbox')
-}
-
 // Disable hardware acceleration to prevent GPU process crashes
 app.disableHardwareAcceleration()
 
