@@ -612,10 +612,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
         // No endBatch needed
       }
 
-      for (const [, aId] of artistMap) {
-        const albums = await db.music.getMusicAlbums({ artistId: aId }); const tracks = await db.music.getMusicTracks({ artistId: aId })
-        await db.music.updateMusicArtistCounts(aId, albums.length, tracks.length)
-      }
+      await db.music.updateMusicArtistCountsBatch(Array.from(artistMap.values()))
       result.success = true; result.durationMs = Date.now() - startTime; return result
     } catch (error: unknown) { result.errors.push(getErrorMessage(error)); result.durationMs = Date.now() - startTime; return result }
   }
@@ -994,8 +991,6 @@ export class LocalFolderProvider extends BaseMediaProvider {
   }
 
   private async updateArtistStats(db: any, artistMap: Map<string, number>): Promise<void> {
-    for (const [, aId] of artistMap) {
-      await db.music.updateMusicArtistCounts(aId, (await db.music.getMusicAlbums({ artistId: aId })).length, (await db.music.getMusicTracks({ artistId: aId })).length)
-    }
+    await db.music.updateMusicArtistCountsBatch(Array.from(artistMap.values()))
   }
 }
