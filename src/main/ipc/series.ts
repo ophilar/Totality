@@ -1,6 +1,7 @@
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getTMDBService } from '@main/services/TMDBService'
+import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
 import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
 import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
 import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesAnalyzeAllTupleSchema, SeriesGetEpisodesTupleSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema, SeriesFixMatchTupleSchema } from '@main/validation/schemas'
@@ -90,15 +91,28 @@ export function registerSeriesHandlers() {
     return res.results.map(s => ({ id: s.id, name: s.name, first_air_date: s.first_air_date, overview: s.overview, poster_url: tmdb.buildImageUrl(s.poster_path, 'w500'), vote_average: s.vote_average }))
   })
 
-  createValidatedIpcHandler('series:fixMatch', SeriesFixMatchTupleSchema, async (title, sourceId, tmdbId) => {
-    await tmdb.initialize()
-    const d = await tmdb.getTVShowDetails(tmdbId.toString())
-    const poster = tmdb.buildImageUrl(d.poster_path, 'w500') || undefined
-    const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId.toString(), poster, d.name)
+  createValidatedIpcHandler('series:fixMatch', SeriesFixMatchTupleSchema, async (title, sourceId, providerId, externalId) => {
+    const details = await MetadataRegistryService.getInstance()
+      .getCompositeProvider()
+      .getDetails(externalId, 'tv')
+
+    if (!details) {
+      throw new Error(`Could not find details for ${providerId}:${externalId}`)
+    }
+
+    let tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
+    let imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+
+    if (!tmdbId) {
+      throw new Error(`A TMDB ID could not be resolved for this match`)
+    }
+
+    const poster = details.posterUrl || undefined
+    const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId, poster, details.title, imdbId || undefined)
     await getDeduplicationService().scanForDuplicates(sourceId)
-    const completeness = await service.analyzeSeries(d.name, sourceId)
+    const completeness = await service.analyzeSeries(details.title, sourceId)
     getStatsCacheService().invalidate()
-    return { success: true, updatedEpisodes: updated, completeness, newTitle: d.name }
+    return { success: true, updatedEpisodes: updated, completeness, newTitle: details.title }
   })
 
   getLoggingService().info('[series]', 'Series completeness IPC handlers registered')
