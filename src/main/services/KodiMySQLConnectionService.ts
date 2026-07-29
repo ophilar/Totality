@@ -178,7 +178,9 @@ class KodiMySQLConnectionService {
       if (connection) {
         try {
           await connection.end()
-        } catch (error) { throw error }
+        } catch (error) {
+          throw error
+        }
       }
 
       // Sanitize error message (don't expose passwords)
@@ -208,17 +210,22 @@ class KodiMySQLConnectionService {
   ): Promise<DetectedDatabases> {
     const dbPrefix = prefix || 'kodi_'
 
+    // Validate database prefix strictly to prevent SQL injection
+    if (!/^[a-zA-Z0-9_]+$/.test(dbPrefix)) {
+      throw new Error(`Invalid database prefix: ${dbPrefix}`)
+    }
+
     // Query for video databases
-    const [videoRows] = await connection.query(
-      `SHOW DATABASES LIKE '${dbPrefix}video%'`
+    const [videoRows] = await connection.query(`SHOW DATABASES LIKE '${dbPrefix}video%'`)
+    const videoDatabases = (videoRows as Array<Record<string, string>>).map(
+      (row) => Object.values(row)[0]
     )
-    const videoDatabases = (videoRows as Array<Record<string, string>>).map(row => Object.values(row)[0])
 
     // Query for music databases
-    const [musicRows] = await connection.query(
-      `SHOW DATABASES LIKE '${dbPrefix}music%'`
+    const [musicRows] = await connection.query(`SHOW DATABASES LIKE '${dbPrefix}music%'`)
+    const musicDatabases = (musicRows as Array<Record<string, string>>).map(
+      (row) => Object.values(row)[0]
     )
-    const musicDatabases = (musicRows as Array<Record<string, string>>).map(row => Object.values(row)[0])
 
     // Find highest version for each type
     const videoDb = this.findHighestVersion(videoDatabases, `${dbPrefix}video`)
@@ -249,12 +256,7 @@ class KodiMySQLConnectionService {
   /**
    * Execute a query on a specific database
    */
-  async query<T>(
-    pool: Pool,
-    database: string,
-    sql: string,
-    params?: unknown[]
-  ): Promise<T[]> {
+  async query<T>(pool: Pool, database: string, sql: string, params?: unknown[]): Promise<T[]> {
     const connection = await pool.getConnection()
 
     try {
