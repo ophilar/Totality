@@ -22,8 +22,28 @@ import {
 import { ProviderType } from '@main/types/database'
 
 const MEDIA_EXTENSIONS = new Set([
-  '.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts',
-  '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.wma', '.alac', '.aiff', '.opus',
+  '.mkv',
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.wmv',
+  '.flv',
+  '.webm',
+  '.m4v',
+  '.mpg',
+  '.mpeg',
+  '.ts',
+  '.m2ts',
+  '.mp3',
+  '.flac',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.wav',
+  '.wma',
+  '.alac',
+  '.aiff',
+  '.opus',
 ])
 
 const execAsync = promisify(exec)
@@ -32,10 +52,13 @@ let networkDriveLetters: Set<string> = new Set()
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    const { stdout } = await execAsync('powershell.exe -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID"', {
-      timeout: 2000,
-      windowsHide: true,
-    })
+    const { stdout } = await execAsync(
+      'powershell.exe -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID"',
+      {
+        timeout: 2000,
+        windowsHide: true,
+      }
+    )
     const detected = new Set<string>()
     for (const line of stdout.split('\n')) {
       const drive = line.trim().replace(':', '')
@@ -53,7 +76,12 @@ function isNetworkPath(filePath: string): boolean {
     const driveLetter = filePath.match(/^([A-Za-z]):/)?.[1]?.toUpperCase()
     if (driveLetter && networkDriveLetters.has(driveLetter)) return true
   }
-  return filePath.startsWith('/mnt/') || filePath.startsWith('/Volumes/') || filePath.includes('/smb/') || filePath.includes('/nfs/')
+  return (
+    filePath.startsWith('/mnt/') ||
+    filePath.startsWith('/Volumes/') ||
+    filePath.includes('/smb/') ||
+    filePath.includes('/nfs/')
+  )
 }
 
 export class LiveMonitoringService {
@@ -80,16 +108,29 @@ export class LiveMonitoringService {
     const db = getDatabase()
 
     this.config.enabled = (await db.config.getSetting('monitoring_enabled')) === 'true'
-    this.config.startOnLaunch = (await db.config.getSetting('monitoring_start_on_launch')) !== 'false'
-    this.config.pauseDuringManualScan = (await db.config.getSetting('monitoring_pause_during_scan')) !== 'false'
+    this.config.startOnLaunch =
+      (await db.config.getSetting('monitoring_start_on_launch')) !== 'false'
+    this.config.pauseDuringManualScan =
+      (await db.config.getSetting('monitoring_pause_during_scan')) !== 'false'
 
-    const providerTypes: ProviderType[] = [ProviderType.Plex, ProviderType.Jellyfin, ProviderType.Emby, ProviderType.Kodi, ProviderType.KodiLocal, ProviderType.KodiMySQL, ProviderType.Local]
+    const providerTypes: ProviderType[] = [
+      ProviderType.Plex,
+      ProviderType.Jellyfin,
+      ProviderType.Emby,
+      ProviderType.Kodi,
+      ProviderType.KodiLocal,
+      ProviderType.KodiMySQL,
+      ProviderType.Local,
+    ]
     for (const provider of providerTypes) {
       const interval = await db.config.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
         if (!Number.isNaN(parsed)) {
-          this.config.pollingIntervals[provider] = Math.max(parsed, LiveMonitoringService.MIN_POLL_INTERVAL_MS)
+          this.config.pollingIntervals[provider] = Math.max(
+            parsed,
+            LiveMonitoringService.MIN_POLL_INTERVAL_MS
+          )
         }
       }
     }
@@ -113,10 +154,16 @@ export class LiveMonitoringService {
     this.config = { ...this.config, ...config }
 
     const db = getDatabase()
-    if (config.enabled !== undefined) await db.config.setSetting('monitoring_enabled', config.enabled.toString())
-    if (config.startOnLaunch !== undefined) await db.config.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
-    if (config.pauseDuringManualScan !== undefined) await db.config.setSetting('monitoring_pause_during_scan', config.pauseDuringManualScan.toString())
-    
+    if (config.enabled !== undefined)
+      await db.config.setSetting('monitoring_enabled', config.enabled.toString())
+    if (config.startOnLaunch !== undefined)
+      await db.config.setSetting('monitoring_start_on_launch', config.startOnLaunch.toString())
+    if (config.pauseDuringManualScan !== undefined)
+      await db.config.setSetting(
+        'monitoring_pause_during_scan',
+        config.pauseDuringManualScan.toString()
+      )
+
     if (config.pollingIntervals) {
       for (const [provider, interval] of Object.entries(config.pollingIntervals)) {
         await db.config.setSetting(`monitoring_interval_${provider}`, interval.toString())
@@ -147,7 +194,11 @@ export class LiveMonitoringService {
     const sources = await db.sources.getEnabledSources()
 
     for (const source of sources) {
-      await this.startMonitoringSource(source.source_id, source.source_type as ProviderType, source.connection_config)
+      await this.startMonitoringSource(
+        source.source_id,
+        source.source_type as ProviderType,
+        source.connection_config
+      )
     }
 
     this.sendStatusUpdate()
@@ -161,7 +212,11 @@ export class LiveMonitoringService {
     this.pollingTimers.clear()
 
     for (const watcher of this.fileWatchers.values()) {
-      try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', 'Error closing watcher:', err) }
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', 'Error closing watcher:', err)
+      }
     }
     this.fileWatchers.clear()
 
@@ -203,7 +258,11 @@ export class LiveMonitoringService {
     return this.isActive && this.config.enabled
   }
 
-  private async startMonitoringSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): Promise<void> {
+  private async startMonitoringSource(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
     const isLocalSource = sourceType === ProviderType.Local || sourceType === ProviderType.KodiLocal
     if (isLocalSource) {
       await this.startFileWatcher(sourceId, sourceType, connectionConfig)
@@ -212,7 +271,11 @@ export class LiveMonitoringService {
     }
   }
 
-  private async startFileWatcher(sourceId: string, sourceType: ProviderType, connectionConfig: string): Promise<void> {
+  private async startFileWatcher(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
     try {
       const config = JSON.parse(connectionConfig)
       const watchPath = sourceType === ProviderType.Local ? config.folderPath : config.databasePath
@@ -223,15 +286,24 @@ export class LiveMonitoringService {
       const sourceName = source?.display_name || sourceId
       const usePolling = isNetworkPath(watchPath)
 
-      getLoggingService().info('[LiveMonitoring]', `Watching ${sourceName} (usePolling: ${usePolling})`)
+      getLoggingService().info(
+        '[LiveMonitoring]',
+        `Watching ${sourceName} (usePolling: ${usePolling})`
+      )
       this.emitDebugEvent('info', `Starting watcher: ${sourceName}`)
 
-      const watcher = fs.watch(watchPath, { recursive: true }, (_eventType, filename) => {
+      const watcher = fs.watch(watchPath, { recursive: true }, async (_eventType, filename) => {
         if (!filename || /(^|[/\\])\./.test(filename)) return
         const fullPath = path.join(watchPath, filename)
         getLoggingService().debug('[LiveMonitoring]', `File event: ${filename} for ${sourceName}`)
         if (this.isMediaFile(fullPath)) {
-          const action = fs.existsSync(fullPath) ? 'change' : 'unlink'
+          let action: 'change' | 'unlink'
+          try {
+            await fs.promises.access(fullPath, fs.constants.F_OK)
+            action = 'change'
+          } catch {
+            action = 'unlink'
+          }
           this.handleFileChange(sourceId, action, fullPath)
         }
       })
@@ -255,7 +327,11 @@ export class LiveMonitoringService {
     const watcher = this.fileWatchers.get(sourceId)
     if (watcher) {
       this.fileWatchers.delete(sourceId)
-      try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err) }
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
+      }
     }
     const debounceTimer = this.fileChangeDebounce.get(sourceId)
     if (debounceTimer) clearTimeout(debounceTimer)
@@ -264,7 +340,11 @@ export class LiveMonitoringService {
     this.startPolling(sourceId, sourceType)
   }
 
-  private async handleFileChange(sourceId: string, event: 'add' | 'change' | 'unlink', filePath: string): Promise<void> {
+  private async handleFileChange(
+    sourceId: string,
+    event: 'add' | 'change' | 'unlink',
+    filePath: string
+  ): Promise<void> {
     try {
       if (this.shouldPause()) return
 
@@ -273,19 +353,34 @@ export class LiveMonitoringService {
       const sourceName = source?.display_name || sourceId
 
       getLoggingService().info('[LiveMonitoring]', `File ${event}: ${path.basename(filePath)}`)
-      this.emitDebugEvent(event === 'unlink' ? 'removed' : 'info', `[${sourceName}] File ${event}: ${path.basename(filePath)}`)
+      this.emitDebugEvent(
+        event === 'unlink' ? 'removed' : 'info',
+        `[${sourceName}] File ${event}: ${path.basename(filePath)}`
+      )
 
       if (!this.pendingFileChanges.has(sourceId)) this.pendingFileChanges.set(sourceId, new Set())
       this.pendingFileChanges.get(sourceId)!.add(filePath)
 
-      if (this.fileChangeDebounce.has(sourceId)) clearTimeout(this.fileChangeDebounce.get(sourceId)!)
-      this.fileChangeDebounce.set(sourceId, setTimeout(() => {
-        this.processFileChanges(sourceId).catch((err) => {
-          getLoggingService().error('[LiveMonitoring]', `Error in processFileChanges for ${sourceId}:`, err)
-        })
-      }, LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS))
+      if (this.fileChangeDebounce.has(sourceId))
+        clearTimeout(this.fileChangeDebounce.get(sourceId)!)
+      this.fileChangeDebounce.set(
+        sourceId,
+        setTimeout(() => {
+          this.processFileChanges(sourceId).catch((err) => {
+            getLoggingService().error(
+              '[LiveMonitoring]',
+              `Error in processFileChanges for ${sourceId}:`,
+              err
+            )
+          })
+        }, LiveMonitoringService.FILE_CHANGE_DEBOUNCE_MS)
+      )
     } catch (error) {
-      getLoggingService().error('[LiveMonitoring]', `Error in handleFileChange for ${sourceId}:`, error)
+      getLoggingService().error(
+        '[LiveMonitoring]',
+        `Error in handleFileChange for ${sourceId}:`,
+        error
+      )
     }
   }
 
@@ -297,16 +392,24 @@ export class LiveMonitoringService {
     this.pendingFileChanges.delete(sourceId)
     this.fileChangeDebounce.delete(sourceId)
 
-    if (this.shouldPause() || changedFiles.length > LiveMonitoringService.MAX_REASONABLE_CHANGES) return
+    if (this.shouldPause() || changedFiles.length > LiveMonitoringService.MAX_REASONABLE_CHANGES)
+      return
 
     try {
       await this.checkSourceWithTargetedFiles(sourceId, changedFiles)
     } catch (error) {
-      getLoggingService().error('[LiveMonitoring]', `Error processing file changes for ${sourceId}:`, error)
+      getLoggingService().error(
+        '[LiveMonitoring]',
+        `Error processing file changes for ${sourceId}:`,
+        error
+      )
     }
   }
 
-  private async checkSourceWithTargetedFiles(sourceId: string, filePaths: string[]): Promise<SourceChangeEvent[]> {
+  private async checkSourceWithTargetedFiles(
+    sourceId: string,
+    filePaths: string[]
+  ): Promise<SourceChangeEvent[]> {
     const sourceManager = getSourceManager()
     const db = getDatabase()
 
@@ -319,19 +422,30 @@ export class LiveMonitoringService {
 
     for (const library of enabledLibraries) {
       try {
-        const result = await sourceManager.scanTargetedFiles(sourceId, library.libraryId, filePaths, () => {})
-        if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0 || result.itemsRemoved > 0)) {
+        const result = await sourceManager.scanTargetedFiles(
+          sourceId,
+          library.libraryId,
+          filePaths,
+          () => {}
+        )
+        if (
+          result.success &&
+          (result.itemsAdded > 0 || result.itemsUpdated > 0 || result.itemsRemoved > 0)
+        ) {
           const changedItems: ChangedItem[] = []
           if (result.itemsAdded > 0 || result.itemsUpdated > 0) {
             const isMusic = library.libraryId.split(':')[0] === 'music'
-            const existingFiles = filePaths.filter(fp => fs.existsSync(fp))
+            const existingFiles = filePaths.filter((fp) => fs.existsSync(fp))
 
             if (isMusic) {
               const albumIds = new Set<number>()
               const tracks = []
               for (const fp of existingFiles) {
                 const t = await db.music.getTrackByPath(fp)
-                if (t) { tracks.push(t); if (t.album_id) albumIds.add(t.album_id) }
+                if (t) {
+                  tracks.push(t)
+                  if (t.album_id) albumIds.add(t.album_id)
+                }
               }
               const albumMap = new Map()
               if (albumIds.size > 0) {
@@ -340,28 +454,62 @@ export class LiveMonitoringService {
               }
               for (const t of tracks) {
                 const a = t.album_id ? albumMap.get(t.album_id) : undefined
-                changedItems.push({ id: t.id!.toString(), title: t.title, type: 'track', artistName: t.artist_name, posterUrl: a?.thumb_url })
+                changedItems.push({
+                  id: t.id!.toString(),
+                  title: t.title,
+                  type: 'track',
+                  artistName: t.artist_name,
+                  posterUrl: a?.thumb_url,
+                })
               }
             } else {
               for (const fp of existingFiles) {
                 const it = await db.media.getItemByPath(fp)
-                if (it) changedItems.push({ id: it.id!.toString(), title: it.title, type: it.type, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined })
+                if (it)
+                  changedItems.push({
+                    id: it.id!.toString(),
+                    title: it.title,
+                    type: it.type,
+                    year: it.year || undefined,
+                    posterUrl: it.poster_url || undefined,
+                    seriesTitle: it.series_title || undefined,
+                  })
               }
             }
           }
 
           let changeType = ChangeType.Added
-          if (result.itemsRemoved > 0 && result.itemsAdded === 0 && result.itemsUpdated === 0) changeType = ChangeType.Removed
+          if (result.itemsRemoved > 0 && result.itemsAdded === 0 && result.itemsUpdated === 0)
+            changeType = ChangeType.Removed
           else if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
           else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated + result.itemsRemoved, items: changedItems, detectedAt: new Date().toISOString() })
-          
-          await db.notifications.createNotification({ type: 'info', title: 'Library updated', message: `${source.display_name}: Updated`, reference_id: sourceId })
+          events.push({
+            sourceId,
+            sourceName: source.display_name,
+            sourceType: source.source_type,
+            libraryId: library.libraryId,
+            libraryName: library.libraryName,
+            changeType,
+            itemCount: result.itemsAdded + result.itemsUpdated + result.itemsRemoved,
+            items: changedItems,
+            detectedAt: new Date().toISOString(),
+          })
+
+          await db.notifications.createNotification({
+            type: 'info',
+            title: 'Library updated',
+            message: `${source.display_name}: Updated`,
+            reference_id: sourceId,
+          })
           this.sendToRenderer('library:updated', { sourceId })
         }
       } catch (error) {
-        getLoggingService().error('[LiveMonitoring]', `Targeted scan error ${library.libraryId}:`, error)
+        getLoggingService().error(
+          '[LiveMonitoring]',
+          `Targeted scan error ${library.libraryId}:`,
+          error
+        )
       }
     }
 
@@ -370,7 +518,13 @@ export class LiveMonitoringService {
   }
 
   private startPolling(sourceId: string, sourceType: ProviderType): void {
-    this.pollingTimers.set(sourceId, setTimeout(() => this.pollSource(sourceId, sourceType), LiveMonitoringService.FIRST_POLL_DELAY_MS))
+    this.pollingTimers.set(
+      sourceId,
+      setTimeout(
+        () => this.pollSource(sourceId, sourceType),
+        LiveMonitoringService.FIRST_POLL_DELAY_MS
+      )
+    )
   }
 
   private async pollSource(sourceId: string, sourceType: ProviderType): Promise<void> {
@@ -389,7 +543,9 @@ export class LiveMonitoringService {
 
       await Promise.race([
         this.checkSource(sourceId),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), LiveMonitoringService.POLL_TIMEOUT_MS))
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), LiveMonitoringService.POLL_TIMEOUT_MS)
+        ),
       ])
     } catch (error) {
       getLoggingService().error('[LiveMonitoring]', `Poll error ${sourceId}:`, error)
@@ -401,8 +557,13 @@ export class LiveMonitoringService {
   private scheduleNextPoll(sourceId: string, sourceType: ProviderType): void {
     if (!this.isActive) return
     if (this.pollingTimers.has(sourceId)) clearTimeout(this.pollingTimers.get(sourceId)!)
-    const interval = this.config.pollingIntervals[sourceType] || DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType]
-    this.pollingTimers.set(sourceId, setTimeout(() => this.pollSource(sourceId, sourceType), interval))
+    const interval =
+      this.config.pollingIntervals[sourceType] ||
+      DEFAULT_MONITORING_CONFIG.pollingIntervals[sourceType]
+    this.pollingTimers.set(
+      sourceId,
+      setTimeout(() => this.pollSource(sourceId, sourceType), interval)
+    )
   }
 
   private async checkSource(sourceId: string): Promise<SourceChangeEvent[]> {
@@ -418,20 +579,57 @@ export class LiveMonitoringService {
 
     for (const library of enabledLibraries) {
       try {
-        const result = await sourceManager.scanLibraryIncremental(sourceId, library.libraryId, () => {})
+        const result = await sourceManager.scanLibraryIncremental(
+          sourceId,
+          library.libraryId,
+          () => {}
+        )
         if (result.success && (result.itemsAdded > 0 || result.itemsUpdated > 0)) {
-          const recentItems = await db.media.getItems({ sourceId, libraryId: library.libraryId, sortBy: 'updated_at', sortOrder: 'desc', limit: result.itemsAdded + result.itemsUpdated })
-          const changedItems: ChangedItem[] = recentItems.map((it: MediaItem) => ({ id: it.id!.toString(), title: it.title, type: it.type, year: it.year || undefined, posterUrl: it.poster_url || undefined, seriesTitle: it.series_title || undefined }))
+          const recentItems = await db.media.getItems({
+            sourceId,
+            libraryId: library.libraryId,
+            sortBy: 'updated_at',
+            sortOrder: 'desc',
+            limit: result.itemsAdded + result.itemsUpdated,
+          })
+          const changedItems: ChangedItem[] = recentItems.map((it: MediaItem) => ({
+            id: it.id!.toString(),
+            title: it.title,
+            type: it.type,
+            year: it.year || undefined,
+            posterUrl: it.poster_url || undefined,
+            seriesTitle: it.series_title || undefined,
+          }))
 
           let changeType = ChangeType.Added
           if (result.itemsAdded > 0 && result.itemsUpdated > 0) changeType = ChangeType.Mixed
           else if (result.itemsUpdated > 0) changeType = ChangeType.Updated
 
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType, itemCount: result.itemsAdded + result.itemsUpdated, items: changedItems, detectedAt: new Date().toISOString() })
+          events.push({
+            sourceId,
+            sourceName: source.display_name,
+            sourceType: source.source_type,
+            libraryId: library.libraryId,
+            libraryName: library.libraryName,
+            changeType,
+            itemCount: result.itemsAdded + result.itemsUpdated,
+            items: changedItems,
+            detectedAt: new Date().toISOString(),
+          })
           this.sendToRenderer('library:updated', {})
         }
         if (result.success && result.itemsRemoved > 0) {
-          events.push({ sourceId, sourceName: source.display_name, sourceType: source.source_type, libraryId: library.libraryId, libraryName: library.libraryName, changeType: ChangeType.Removed, itemCount: result.itemsRemoved, items: [], detectedAt: new Date().toISOString() })
+          events.push({
+            sourceId,
+            sourceName: source.display_name,
+            sourceType: source.source_type,
+            libraryId: library.libraryId,
+            libraryName: library.libraryName,
+            changeType: ChangeType.Removed,
+            itemCount: result.itemsRemoved,
+            items: [],
+            detectedAt: new Date().toISOString(),
+          })
         }
       } catch (error) {
         getLoggingService().error('[LiveMonitoring]', `Check error ${library.libraryId}:`, error)
@@ -439,7 +637,12 @@ export class LiveMonitoringService {
     }
 
     if (events.length > 0) {
-      await db.notifications.createNotification({ type: 'info', title: 'Library updated', message: `${source.display_name}: Changes detected`, reference_id: sourceId })
+      await db.notifications.createNotification({
+        type: 'info',
+        title: 'Library updated',
+        message: `${source.display_name}: Changes detected`,
+        reference_id: sourceId,
+      })
     }
 
     this.sendToRenderer('monitoring:sourceChecked', { sourceId, hasChanges: events.length > 0 })
@@ -458,7 +661,12 @@ export class LiveMonitoringService {
   private sendStatusUpdate(): void {
     this.sendToRenderer('monitoring:statusChanged', {
       isActive: this.isActive,
-      lastCheck: this.lastCheckTimes.size > 0 ? Array.from(this.lastCheckTimes.values()).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() : undefined,
+      lastCheck:
+        this.lastCheckTimes.size > 0
+          ? Array.from(this.lastCheckTimes.values())
+              .sort((a, b) => b.getTime() - a.getTime())[0]
+              ?.toISOString()
+          : undefined,
     })
     this.sendToRenderer('monitoring:status', { isActive: this.isActive })
   }
@@ -467,7 +675,10 @@ export class LiveMonitoringService {
     if (this.mainWindow) safeSend(this.mainWindow, channel, data)
   }
 
-  private emitDebugEvent(type: 'poll' | 'added' | 'removed' | 'error' | 'info', message: string): void {
+  private emitDebugEvent(
+    type: 'poll' | 'added' | 'removed' | 'error' | 'info',
+    message: string
+  ): void {
     this.sendToRenderer('monitoring:event', { type, message })
   }
 
@@ -480,11 +691,12 @@ export class LiveMonitoringService {
     const db = getDatabase()
     const sources = await db.sources.getEnabledSources()
     for (const source of sources) {
-      const isRemote = source.source_type !== ProviderType.Local && source.source_type !== ProviderType.KodiLocal
+      const isRemote =
+        source.source_type !== ProviderType.Local && source.source_type !== ProviderType.KodiLocal
       if (isRemote) {
         const lastCheck = this.lastCheckTimes.get(source.source_id)
         const now = new Date()
-        if (!lastCheck || (now.getTime() - lastCheck.getTime() > 30000)) {
+        if (!lastCheck || now.getTime() - lastCheck.getTime() > 30000) {
           this.checkSource(source.source_id).catch(() => {})
           this.lastCheckTimes.set(source.source_id, now)
         }
@@ -497,7 +709,11 @@ export class LiveMonitoringService {
     return this.checkSource(sourceId)
   }
 
-  async addSource(sourceId: string, sourceType: ProviderType, connectionConfig: string): Promise<void> {
+  async addSource(
+    sourceId: string,
+    sourceType: ProviderType,
+    connectionConfig: string
+  ): Promise<void> {
     if (!this.isActive) return
     await this.startMonitoringSource(sourceId, sourceType, connectionConfig)
   }
@@ -507,7 +723,14 @@ export class LiveMonitoringService {
     if (timer) clearTimeout(timer)
     this.pollingTimers.delete(sourceId)
     const watcher = this.fileWatchers.get(sourceId)
-    if (watcher) { this.fileWatchers.delete(sourceId); try { watcher.close() } catch (err) { getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err) } }
+    if (watcher) {
+      this.fileWatchers.delete(sourceId)
+      try {
+        watcher.close()
+      } catch (err) {
+        getLoggingService().error('[LiveMonitoring]', `Error closing watcher for ${sourceId}:`, err)
+      }
+    }
     const debounce = this.fileChangeDebounce.get(sourceId)
     if (debounce) clearTimeout(debounce)
     this.fileChangeDebounce.delete(sourceId)
