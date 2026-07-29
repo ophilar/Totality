@@ -49,7 +49,7 @@ CLAUDE.md
 # Jules / Gemini CLI
 .jules/
 .gemini/
-dev_docs/phase_5/
+dev_docs/
 
 # Test coverage
 coverage/
