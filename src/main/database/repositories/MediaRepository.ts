@@ -671,6 +671,42 @@ async deleteItems(ids: number[]): Promise<void> {
     return row?.count || 0
   }
 
+  /**
+   * Retrieves episodes given a list of { seriesTitle, seasonNumber, episodeNumber }.
+   * This batches requests into chunked parameterized queries.
+   */
+  async getEpisodesForSeasonEpisodes(
+    tuples: { seriesTitle: string; seasonNumber: number; episodeNumber: number }[]
+  ): Promise<Set<string>> {
+    const foundEpisodes = new Set<string>()
+    if (!tuples || tuples.length === 0) return foundEpisodes
+
+    // Chunk size: SQLite limits variables to 999/32766 depending on version. We'll use batches of 300 tuples (900 args).
+    const chunkSize = 300
+    for (let i = 0; i < tuples.length; i += chunkSize) {
+      const batch = tuples.slice(i, i + chunkSize)
+
+      const placeholders = batch.map(() => '(?, ?, ?)').join(', ')
+      const args: (string | number)[] = []
+
+      for (const t of batch) {
+        args.push(t.seriesTitle, t.seasonNumber, t.episodeNumber)
+      }
+
+      const res = await this.db.execute({
+        sql: `SELECT series_title, season_number, episode_number FROM media_items WHERE type = 'episode' AND (series_title, season_number, episode_number) IN (${placeholders})`,
+        args
+      })
+
+      for (const row of res.rows as unknown as { series_title: string; season_number: number; episode_number: number }[]) {
+        const key = `${row.series_title}-${row.season_number}-${row.episode_number}`
+        foundEpisodes.add(key)
+      }
+    }
+
+    return foundEpisodes
+  }
+
   async getLetterOffset(
     table: 'movies' | 'tvshows' | 'artists' | 'albums',
     letter: string,
