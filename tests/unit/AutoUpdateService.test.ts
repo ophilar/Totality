@@ -135,6 +135,77 @@ describe('AutoUpdateService', () => {
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
+  it('should quit and install even if db close fails', async () => {
+    app.isPackaged = true
+    const errorLogSpy = vi.spyOn(logging, 'error')
+    db.close = vi.fn().mockRejectedValueOnce(new Error('DB Close Failed'))
+
+    await service.installUpdate()
+
+    expect(errorLogSpy).toHaveBeenCalledWith('[AutoUpdateService]', '[AutoUpdate] Failed to close database before update:', expect.any(Error))
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  describe('scheduling and autoCheckIfEnabled', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('should schedule auto check after delay and interval', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval')
+      const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
+
+      service.initialize()
+
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 30_000)
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 4 * 60 * 60 * 1000)
+    })
+
+    it('should call checkForUpdates when auto_update_enabled is not false', async () => {
+      db.config.getSetting = vi.fn().mockReturnValue('true')
+      const checkForUpdatesSpy = vi.spyOn(service, 'checkForUpdates').mockResolvedValue()
+
+      service.initialize()
+
+      // Advance by CHECK_DELAY_MS
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(db.config.getSetting).toHaveBeenCalledWith('auto_update_enabled')
+      expect(checkForUpdatesSpy).toHaveBeenCalled()
+    })
+
+    it('should not call checkForUpdates when auto_update_enabled is false', async () => {
+      db.config.getSetting = vi.fn().mockReturnValue('false')
+      const checkForUpdatesSpy = vi.spyOn(service, 'checkForUpdates').mockResolvedValue()
+
+      service.initialize()
+
+      // Advance by CHECK_DELAY_MS
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(db.config.getSetting).toHaveBeenCalledWith('auto_update_enabled')
+      expect(checkForUpdatesSpy).not.toHaveBeenCalled()
+    })
+
+    it('should clear timer on cleanup', () => {
+      const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+      service.initialize()
+
+      // Service should now have a checkTimer set
+      service.cleanup()
+
+      expect(clearIntervalSpy).toHaveBeenCalled()
+      // Calling it again should not crash or call it again
+      clearIntervalSpy.mockClear()
+      service.cleanup()
+      expect(clearIntervalSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('event handlers', () => {
     beforeEach(() => {
       service.initialize()
