@@ -661,11 +661,15 @@ export class QualityAnalyzer {
           // Score individual versions and update best version selection
           if (item.id && item.version_count && item.version_count > 1) {
             const versions = await db.media.getItemVersions(item.id)
+            const updatePromises = []
             for (const version of versions) {
               if (version.id) {
                 const vScore = this.analyzeVersion(version)
-                await db.media.updateVersionQuality(version.id, vScore)
+                updatePromises.push(db.media.updateVersionQuality(version.id, vScore))
               }
+            }
+            if (updatePromises.length > 0) {
+              await Promise.all(updatePromises)
             }
             await db.media.updateBestVersion(item.id)
           }
