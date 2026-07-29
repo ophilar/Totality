@@ -249,6 +249,44 @@ describe('UdpDiscoveryService', () => {
       const servers = await service.discoverServers('jellyfin')
       expect(servers).toHaveLength(0)
     })
+
+    it('should handle setBroadcast exception gracefully', async () => {
+      const mockSocket = dgram.createSocket('udp4')
+
+      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+        cb()
+      })
+
+      ;(mockSocket.setBroadcast as any).mockImplementation(() => {
+        throw new Error('setBroadcast failed')
+      })
+
+      const discoverPromise = service.discoverServers('jellyfin')
+
+      vi.advanceTimersByTime(3000)
+
+      const servers = await discoverPromise
+      expect(servers).toHaveLength(0)
+    })
+
+    it('should handle close exception gracefully', async () => {
+      const mockSocket = dgram.createSocket('udp4')
+
+      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+        cb()
+      })
+
+      ;(mockSocket.close as any).mockImplementation(() => {
+        throw new Error('close failed')
+      })
+
+      const discoverPromise = service.discoverServers('jellyfin')
+
+      vi.advanceTimersByTime(3000)
+
+      const servers = await discoverPromise
+      expect(servers).toHaveLength(0)
+    })
   })
 
   describe('testServerUrl', () => {
@@ -300,6 +338,24 @@ describe('UdpDiscoveryService', () => {
       expect(result).toEqual({
         success: false,
         error: 'Network error', // getErrorMessage will extract this
+      })
+    })
+
+    it('should return default failure info on missing error message', async () => {
+      // getErrorMessage falls back to String(error) which will return "[object Object]"
+      // when passing an empty object, so it will not return an empty string and fallback to "Failed to connect"
+      // Therefore, I will mock getErrorMessage to return empty string to test the fallback,
+      // Or I can test an object with custom toString that returns empty string.
+      const errorObj = {
+        toString: () => ''
+      }
+      ;(axios.get as any).mockRejectedValueOnce(errorObj)
+
+      const result = await service.testServerUrl('http://192.168.1.100:8096')
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Failed to connect',
       })
     })
   })
