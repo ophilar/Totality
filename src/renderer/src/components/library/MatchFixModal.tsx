@@ -3,15 +3,16 @@ import { createPortal } from 'react-dom'
 import { X, Search, Check, Star, Calendar, Loader2 } from 'lucide-react'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 
-interface TMDBSearchResult {
-  id: number
-  name?: string  // TV show
-  title?: string // Movie
-  first_air_date?: string  // TV show
-  release_date?: string    // Movie
-  overview: string
-  poster_url: string | null
-  vote_average: number
+interface MetadataSearchResult {
+  id: string
+  provider: string
+  title: string
+  year?: number
+  type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork'
+  posterUrl?: string
+  bannerUrl?: string
+  overview?: string
+  score?: number
 }
 
 interface MusicBrainzArtistResult {
@@ -32,7 +33,7 @@ interface MusicBrainzReleaseResult {
   score: number
 }
 
-type SearchResult = TMDBSearchResult | MusicBrainzArtistResult | MusicBrainzReleaseResult
+type SearchResult = MetadataSearchResult | MusicBrainzArtistResult | MusicBrainzReleaseResult
 
 interface MatchFixModalProps {
   isOpen: boolean
@@ -79,6 +80,7 @@ export function MatchFixModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchQuery(currentTitle)
       setSearchResults([])
       setSelectedResult(null)
@@ -88,11 +90,14 @@ export function MatchFixModal({
       async function checkAdultMatching() {
         if (type === 'movie' && mediaItemId) {
           try {
-            const item = await window.electronAPI.getMediaItem(mediaItemId) as { source_id?: string; library_id?: string } | null
+            const item = (await window.electronAPI.getMediaItem(mediaItemId)) as {
+              source_id?: string
+              library_id?: string
+            } | null
             if (item?.source_id && item?.library_id) {
               const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
-              const lib = libs.find(l =>
-                (l as any).libraryId === item.library_id || l.id === item.library_id
+              const lib = libs.find(
+                (l) => (l as any).libraryId === item.library_id || l.id === item.library_id
               ) as { isProtected?: boolean; allowAdultMatching?: boolean } | undefined
               if (lib?.isProtected && lib?.allowAdultMatching) {
                 setIncludeAdult(true)
@@ -110,7 +115,13 @@ export function MatchFixModal({
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
 
-    window.electronAPI.log.info('[MatchFixModal]', '[MatchFixModal] Searching for:', searchQuery, 'type:', type)
+    window.electronAPI.log.info(
+      '[MatchFixModal]',
+      '[MatchFixModal] Searching for:',
+      searchQuery,
+      'type:',
+      type
+    )
     setIsSearching(true)
     setError(null)
     setSearchResults([])
@@ -120,11 +131,12 @@ export function MatchFixModal({
 
       switch (type) {
         case 'series':
-          results = await window.electronAPI.seriesSearchTMDB(searchQuery)
-          break
         case 'movie':
-          // Don't filter by year - let users see all results and select the correct one
-          results = await window.electronAPI.movieSearchTMDB(searchQuery, undefined, includeAdult)
+          results = await window.electronAPI.mediaSearchMetadata(
+            searchQuery,
+            type === 'movie' ? 'movie' : 'tv',
+            includeAdult
+          )
           break
         case 'artist':
           results = await window.electronAPI.musicSearchMusicBrainzArtist(searchQuery) as MusicBrainzArtistResult[]
@@ -144,7 +156,7 @@ export function MatchFixModal({
     } finally {
       setIsSearching(false)
     }
-  }, [searchQuery, type, artistName])
+  }, [searchQuery, type, artistName, includeAdult])
 
   const handleFixMatch = useCallback(async () => {
     if (!selectedResult) return
@@ -159,7 +171,8 @@ export function MatchFixModal({
             await window.electronAPI.seriesFixMatch(
               currentTitle,
               sourceId,
-              (selectedResult as TMDBSearchResult).id
+              (selectedResult as MetadataSearchResult).provider,
+              (selectedResult as MetadataSearchResult).id
             )
           }
           break
@@ -167,7 +180,8 @@ export function MatchFixModal({
           if (mediaItemId !== undefined) {
             await window.electronAPI.movieFixMatch(
               mediaItemId,
-              (selectedResult as TMDBSearchResult).id
+              (selectedResult as MetadataSearchResult).provider,
+              (selectedResult as MetadataSearchResult).id
             )
           }
           break
@@ -216,17 +230,14 @@ export function MatchFixModal({
   }
 
   const getResultTitle = (result: SearchResult): string => {
-    if ('name' in result && result.name) return result.name
     if ('title' in result && result.title) return result.title
+    if ('name' in result && result.name) return result.name
     return 'Unknown'
   }
 
   const getResultYear = (result: SearchResult): string | null => {
-    if ('first_air_date' in result && result.first_air_date) {
-      return result.first_air_date.split('-')[0]
-    }
-    if ('release_date' in result && result.release_date) {
-      return result.release_date.split('-')[0]
+    if ('year' in result && result.year) {
+      return result.year.toString()
     }
     if ('date' in result && result.date) {
       return result.date.split('-')[0]
@@ -235,13 +246,16 @@ export function MatchFixModal({
   }
 
   const getResultScore = (result: SearchResult): number => {
-    if ('vote_average' in result) return result.vote_average
-    if ('score' in result) return result.score / 10 // MusicBrainz score is 0-100
+    if ('score' in result && result.score !== undefined) {
+      // If it's a MetadataSearchResult, score is usually 0-10. If it's MusicBrainz, it's 0-100.
+      if ('provider' in result) return result.score
+      return result.score / 10
+    }
     return 0
   }
 
   const getResultPoster = (result: SearchResult): string | null => {
-    if ('poster_url' in result) return result.poster_url
+    if ('posterUrl' in result) return result.posterUrl || null
     return null
   }
 

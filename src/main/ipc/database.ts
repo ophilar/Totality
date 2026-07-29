@@ -7,6 +7,7 @@ import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getGeminiService } from '@main/services/GeminiService'
 import { getTMDBService } from '@main/services/TMDBService'
+import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
 import { invalidateNfsMappingsCache } from '@main/providers/kodi/KodiDatabaseSchema'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
@@ -233,21 +234,62 @@ export function registerDatabaseHandlers() {
     return (res?.results || []).map((m: any) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
   })
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.MOVIE.FIX_MATCH, FixMatchTupleSchema, async (event, mediaItemId, tmdbId) => {
-    const tmdb = getTMDBService()
-    await tmdb.initialize()
-    const details = await tmdb.getMovieDetails(tmdbId.toString())
-    const posterUrl = tmdb.buildImageUrl(details.poster_path, 'w500') || undefined
-    const year = details.release_date ? parseInt(details.release_date.split('-')[0], 10) : undefined
-    await db.media.updateMovieMatch(mediaItemId, tmdbId.toString(), posterUrl, details.title, year)
-    const item = await db.media.getItem(mediaItemId)
-    if (item?.source_id) {
-      await getDeduplicationService().scanForDuplicates(item.source_id)
+  createValidatedIpcHandler(
+    IPC_CHANNELS.MEDIA.SEARCH_METADATA,
+    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional()]),
+    async (query, type, includeAdult) => {
+      const provider = MetadataRegistryService.getInstance().getCompositeProvider()
+      return await provider.search({
+        title: query,
+        type: (type as any) || 'movie',
+        includeAdult: includeAdult
+      })
     }
-    const win = BrowserWindow.fromWebContents(event.sender)
-    win?.webContents.send('library:updated', { type: 'media' })
-    return { success: true, tmdbId, posterUrl, title: details.title, year }
-  })
+  )
+
+  createValidatedIpcHandlerWithEvent(
+    IPC_CHANNELS.MOVIE.FIX_MATCH,
+    FixMatchTupleSchema,
+    async (event, mediaItemId, providerId, externalId) => {
+      const details = await MetadataRegistryService.getInstance()
+        .getCompositeProvider()
+        .getDetails(externalId, 'movie')
+
+      if (!details) {
+        throw new Error(`Could not find details for ${providerId}:${externalId}`)
+      }
+
+      // Determine TMDB and IMDB IDs based on the provider and external IDs
+      let tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
+      let imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+
+      if (!tmdbId) {
+        throw new Error(`A TMDB ID could not be resolved for this match`)
+      }
+
+      const posterUrl = details.posterUrl || undefined
+      const year = details.year
+
+      await db.media.updateMovieMatch(
+        mediaItemId,
+        tmdbId,
+        posterUrl,
+        details.title,
+        year,
+        imdbId || undefined
+      )
+
+      const item = await db.media.getItem(mediaItemId)
+      if (item?.source_id) {
+        await getDeduplicationService().scanForDuplicates(item.source_id)
+      }
+
+      const win = BrowserWindow.fromWebContents(event.sender)
+      win?.webContents.send('library:updated', { type: 'media' })
+
+      return { success: true, tmdbId, posterUrl, title: details.title, year }
+    }
+  )
 
   createIpcHandler(IPC_CHANNELS.DATABASE.GET_PATH, async () => {
     return db.getDbPath()

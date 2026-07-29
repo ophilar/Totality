@@ -202,6 +202,7 @@ export const IPC_CHANNELS = {
   },
   MEDIA: {
     SEARCH: 'media:search',
+    SEARCH_METADATA: 'media:searchMetadata',
     DEEP_ANALYZE: 'media:deepAnalyze',
   }
 } as const

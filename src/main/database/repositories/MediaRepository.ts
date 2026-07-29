@@ -442,7 +442,8 @@ async deleteItems(ids: number[]): Promise<void> {
     sourceId: string,
     tmdbId: string,
     posterUrl?: string,
-    newSeriesTitle?: string
+    newSeriesTitle?: string,
+    imdbId?: string
   ): Promise<number> {
     const data: any = {
       seriesTmdbId: tmdbId,
@@ -451,6 +452,7 @@ async deleteItems(ids: number[]): Promise<void> {
     }
     if (posterUrl) data.posterUrl = posterUrl
     if (newSeriesTitle) data.seriesTitle = newSeriesTitle
+    if (imdbId) data.imdbId = imdbId
 
     await this.drizzle.update(schema.mediaItems)
       .set(data)
@@ -487,7 +489,8 @@ async deleteItems(ids: number[]): Promise<void> {
     tmdbId: string,
     posterUrl?: string,
     title?: string,
-    year?: number
+    year?: number,
+    imdbId?: string
   ): Promise<void> {
     const data: any = {
       tmdbId: tmdbId,
@@ -497,6 +500,7 @@ async deleteItems(ids: number[]): Promise<void> {
     if (posterUrl) data.posterUrl = posterUrl
     if (title) data.title = title
     if (year !== undefined) data.year = year
+    if (imdbId) data.imdbId = imdbId
 
     await this.drizzle.update(schema.mediaItems)
       .set(data)

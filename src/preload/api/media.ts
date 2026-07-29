@@ -99,13 +99,14 @@ export const mediaApi = {
 
   // Series Match Fixing
   seriesSearchTMDB: (query: string) => ipcRenderer.invoke('series:searchTMDB', query),
-  seriesFixMatch: (seriesTitle: string, sourceId: string, tmdbId: number) =>
-    ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, tmdbId),
+  seriesFixMatch: (seriesTitle: string, sourceId: string, providerId: string, externalId: string) =>
+    ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, providerId, externalId),
 
   // Movie Match Fixing
   movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
-  movieFixMatch: (mediaItemId: number, tmdbId: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, tmdbId),
+  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult),
+  movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, providerId, externalId),
 
   // TMDB Metadata
   tmdbGetTVShowDetails: (tmdbId: string) => ipcRenderer.invoke('tmdb:getTVShowDetails', tmdbId),
@@ -263,7 +264,7 @@ export interface MediaAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  seriesFixMatch: (seriesTitle: string, sourceId: string, tmdbId: number) => Promise<{
+  seriesFixMatch: (seriesTitle: string, sourceId: string, providerId: string, externalId: string) => Promise<{
     success: boolean
     updatedEpisodes: number
     completeness: unknown
@@ -278,7 +279,18 @@ export interface MediaAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  movieFixMatch: (mediaItemId: number, tmdbId: number) => Promise<{
+  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean) => Promise<Array<{
+    id: string
+    provider: string
+    title: string
+    year?: number
+    type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork'
+    posterUrl?: string
+    bannerUrl?: string
+    overview?: string
+    score?: number
+  }>>
+  movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) => Promise<{
     success: boolean
     tmdbId: number
     posterUrl?: string
