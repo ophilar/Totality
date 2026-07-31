@@ -2,6 +2,7 @@ import { CompositeMetadataProvider } from './CompositeMetadataProvider'
 import { TMDBMetadataProvider } from './providers/TMDBMetadataProvider'
 import { AniListMetadataProvider } from './providers/AniListMetadataProvider'
 import { OMDbMetadataProvider } from './providers/OMDbMetadataProvider'
+import { MetadataMatchingService } from './MetadataMatchingService'
 
 /**
  * MetadataRegistryService - Singleton orchestrator for metadata provider strategies.
@@ -53,5 +54,9 @@ export class MetadataRegistryService {
 
   public getCompositeProvider(): CompositeMetadataProvider {
     return this.compositeProvider
+  }
+
+  public getMatchingService(): MetadataMatchingService {
+    return new MetadataMatchingService(this.compositeProvider)
   }
 }

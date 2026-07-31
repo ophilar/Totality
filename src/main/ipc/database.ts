@@ -238,11 +238,10 @@ export function registerDatabaseHandlers() {
     IPC_CHANNELS.MEDIA.SEARCH_METADATA,
     z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional()]),
     async (query, type, includeAdult) => {
-      const provider = MetadataRegistryService.getInstance().getCompositeProvider()
-      return await provider.search({
+      const matchingService = MetadataRegistryService.getInstance().getMatchingService()
+      return await matchingService.matchMediaItem({
         title: query,
-        type: (type as any) || 'movie',
-        includeAdult: includeAdult
+        type: (type as any) || 'movie'
       })
     }
   )

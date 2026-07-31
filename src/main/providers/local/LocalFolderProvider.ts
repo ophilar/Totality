@@ -690,10 +690,25 @@ export class LocalFolderProvider extends BaseMediaProvider {
           if (cached) { metadata.tmdbId = cached.tmdbId; metadata.title = cached.title; metadata.year = cached.year; metadata.posterUrl = cached.posterPath ? `https://image.tmdb.org/t/p/w500${cached.posterPath}` : undefined; metadata.backdropUrl = cached.backdropPath ? `https://image.tmdb.org/t/p/w1280${cached.backdropPath}` : undefined }
           return metadata
         }
-        const match = await tmdb.searchMovieWithFallbacks(parsed.title, normalizedTitle, parsed.year, includeAdult)
-        if (match) { metadata.tmdbId = match.tmdbId; metadata.title = match.title; metadata.year = match.year; metadata.posterUrl = tmdb.buildImageUrl(match.posterPath || null); metadata.backdropUrl = tmdb.buildImageUrl(match.backdropPath || null); movieTmdbCache?.set(cacheKey, match) }
+        const MetadataRegistryService = require('@main/services/metadata/MetadataRegistryService').MetadataRegistryService
+        const matchingService = MetadataRegistryService.getInstance().getMatchingService()
+        const matches = await matchingService.matchMediaItem({
+          title: normalizedTitle,
+          year: parsed.year,
+          type: 'movie' as any
+        })
+        const match = matches.length > 0 ? matches[0] : null
+        
+        if (match) { 
+          metadata.tmdbId = match.externalIds?.tmdbId || match.id
+          metadata.title = match.title
+          metadata.year = match.year
+          metadata.posterUrl = match.posterUrl
+          metadata.backdropUrl = match.backdropUrl
+          movieTmdbCache?.set(cacheKey, { tmdbId: metadata.tmdbId, title: match.title, year: match.year, posterPath: match.posterUrl ? match.posterUrl.replace('https://image.tmdb.org/t/p/w500', '') : null, backdropPath: match.backdropUrl ? match.backdropUrl.replace('https://image.tmdb.org/t/p/w1280', '') : null })
+        }
         else { movieTmdbCache?.set(cacheKey, null) }
-      } catch (error) { getLoggingService().warn('[LocalFolderProvider]', `TMDB lookup failed for "${parsed.title}":`, error) }
+      } catch (error) { getLoggingService().warn('[LocalFolderProvider]', `Matching lookup failed for "${parsed.title}":`, error) }
     }
     return metadata
   }
@@ -707,10 +722,15 @@ export class LocalFolderProvider extends BaseMediaProvider {
         const seriesKey = parsed.seriesTitle.toLowerCase()
         let cachedSeries = seriesTmdbCache?.get(seriesKey)
         if (cachedSeries === undefined) {
-          const searchResponse = await tmdb.searchTVShow(parsed.seriesTitle)
-          if (searchResponse.results?.length > 0) {
-            const series = searchResponse.results[0]
-            cachedSeries = { tmdbId: series.id, name: series.name, posterPath: series.poster_path || undefined, seasonPosters: new Map() }
+          const MetadataRegistryService = require('@main/services/metadata/MetadataRegistryService').MetadataRegistryService
+          const matchingService = MetadataRegistryService.getInstance().getMatchingService()
+          const matches = await matchingService.matchMediaItem({
+            title: parsed.seriesTitle,
+            type: 'tv' as any
+          })
+          if (matches.length > 0) {
+            const series = matches[0]
+            cachedSeries = { tmdbId: series.externalIds?.tmdbId || series.id, name: series.title, posterPath: series.posterUrl ? series.posterUrl.replace('https://image.tmdb.org/t/p/w500', '') : undefined, seasonPosters: new Map() }
             seriesTmdbCache?.set(seriesKey, cachedSeries)
           } else { seriesTmdbCache?.set(seriesKey, null); cachedSeries = null }
         }
