@@ -1,7 +1,8 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from './IMetadataProvider'
+import { getLoggingService } from '../LoggingService'
 
 /**
- * Composite Metadata Provider that aggregates multiple providers and executes fallback strategies.
+ * Composite Metadata Provider that aggregates multiple providers and executes multi-provider result fusion.
  * Follows the Composite & Strategy design patterns (SOLID Principles).
  */
 export class CompositeMetadataProvider implements IMetadataProvider {
@@ -33,43 +34,36 @@ export class CompositeMetadataProvider implements IMetadataProvider {
   }
 
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    const results: MetadataSearchResult[] = []
-    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(query.type))
-
-    for (const provider of matchingProviders) {
-      try {
-        const providerResults = await provider.search(query)
-        if (Array.isArray(providerResults) && providerResults.length > 0) {
-          results.push(...providerResults)
-        }
-      } catch (err) {
-        // Continue to next provider in fallback strategy
-      }
-    }
-
-    return results
+    return this.searchAndFuse(query)
   }
 
   async searchAndFuse(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
     const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(query.type))
     const results = await Promise.allSettled(
-      matchingProviders.map(p => p.search(query))
+      matchingProviders.map(async p => {
+        try {
+          return await p.search(query)
+        } catch (err) {
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} search failed:`, err)
+          return []
+        }
+      })
     )
 
     const allCandidates: MetadataSearchResult[] = []
     for (const res of results) {
       if (res.status === 'fulfilled' && Array.isArray(res.value)) {
         allCandidates.push(...res.value)
+      } else if (res.status === 'rejected') {
+        getLoggingService().error('[CompositeMetadataProvider]', 'Provider search rejected:', res.reason)
       }
     }
 
-    // Naive fusion/scoring based on title and year
-    const targetTitle = query.title.toLowerCase()
+    const targetTitle = query.title.toLowerCase().trim()
     
-    // Score candidates and group them? We can just score them.
     for (const candidate of allCandidates) {
       let score = 0
-      const cTitle = candidate.title.toLowerCase()
+      const cTitle = candidate.title.toLowerCase().trim()
       if (cTitle === targetTitle) {
         score += 50
       } else if (cTitle.includes(targetTitle) || targetTitle.includes(cTitle)) {
@@ -87,20 +81,22 @@ export class CompositeMetadataProvider implements IMetadataProvider {
       candidate.score = score
     }
     
-    // We could do actual fusion, merging complementary fields
-    const fusedMap = new Map<string, MetadataSearchResult & { imdbRating?: number, imdbVotes?: string }>()
+    const fusedMap = new Map<string, MetadataSearchResult>()
     
     for (const candidate of allCandidates) {
-      const key = `${candidate.title.toLowerCase()}_${candidate.year || 'unknown'}`
+      const key = `${candidate.title.toLowerCase().trim()}_${candidate.year || 'unknown'}`
       if (!fusedMap.has(key)) {
         fusedMap.set(key, { ...candidate })
       } else {
         const existing = fusedMap.get(key)!
-        // Merge complementary fields (hacky but fits the requested description)
-        const cAsAny = candidate as any
-        if (cAsAny.imdbRating) existing.imdbRating = cAsAny.imdbRating
-        if (cAsAny.imdbVotes) existing.imdbVotes = cAsAny.imdbVotes
-        if ((candidate.score || 0) > (existing.score || 0)) existing.score = candidate.score
+        existing.overview = existing.overview || candidate.overview
+        existing.posterUrl = existing.posterUrl || candidate.posterUrl
+        existing.bannerUrl = existing.bannerUrl || candidate.bannerUrl
+        existing.imdbRating = existing.imdbRating ?? candidate.imdbRating
+        existing.imdbVotes = existing.imdbVotes ?? candidate.imdbVotes
+        if ((candidate.score || 0) > (existing.score || 0)) {
+          existing.score = candidate.score
+        }
       }
     }
 
@@ -112,13 +108,20 @@ export class CompositeMetadataProvider implements IMetadataProvider {
 
   async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
     const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type) && typeof p.findByExternalId === 'function')
+    const results = await Promise.allSettled(
+      matchingProviders.map(async p => {
+        try {
+          return await p.findByExternalId!(externalId, source, type)
+        } catch (err) {
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} findByExternalId failed:`, err)
+          return null
+        }
+      })
+    )
 
-    for (const provider of matchingProviders) {
-      try {
-        const details = await provider.findByExternalId!(externalId, source, type)
-        if (details) return details
-      } catch (err) {
-        // Fallback to next provider in cascade
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value) {
+        return res.value
       }
     }
 
@@ -127,27 +130,36 @@ export class CompositeMetadataProvider implements IMetadataProvider {
 
   async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
     const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(type))
+    const results = await Promise.allSettled(
+      matchingProviders.map(async p => {
+        try {
+          return await p.getDetails(externalId, type)
+        } catch (err) {
+          getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} getDetails failed:`, err)
+          return null
+        }
+      })
+    )
+
     let primaryDetails: MediaMetadataDetails | null = null
 
-    for (const provider of matchingProviders) {
-      try {
-        const details = await provider.getDetails(externalId, type)
-        if (details) {
-          if (!primaryDetails) {
-            primaryDetails = details
-          } else {
-            // Aggregate complementary fields from secondary providers
-            primaryDetails.imdbRating = primaryDetails.imdbRating ?? details.imdbRating
-            primaryDetails.imdbVotes = primaryDetails.imdbVotes ?? details.imdbVotes
-            primaryDetails.contentRating = primaryDetails.contentRating ?? details.contentRating
-            primaryDetails.awards = primaryDetails.awards ?? details.awards
-          }
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value) {
+        const details = res.value
+        if (!primaryDetails) {
+          primaryDetails = { ...details }
+        } else {
+          primaryDetails.imdbRating = primaryDetails.imdbRating ?? details.imdbRating
+          primaryDetails.imdbVotes = primaryDetails.imdbVotes ?? details.imdbVotes
+          primaryDetails.contentRating = primaryDetails.contentRating ?? details.contentRating
+          primaryDetails.awards = primaryDetails.awards ?? details.awards
+          primaryDetails.overview = primaryDetails.overview || details.overview
+          primaryDetails.posterUrl = primaryDetails.posterUrl || details.posterUrl
         }
-      } catch (err) {
-        // Fallback to next provider
       }
     }
 
     return primaryDetails
   }
 }
+

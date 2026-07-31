@@ -20,6 +20,8 @@ export interface MetadataSearchResult {
   posterUrl?: string
   bannerUrl?: string
   overview?: string
+  imdbRating?: number
+  imdbVotes?: string
   score?: number
 }
 
