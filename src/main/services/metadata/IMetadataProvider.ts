@@ -50,6 +50,7 @@ export interface IMetadataProvider {
   readonly supportedTypes: MetadataType[]
 
   search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]>
+  searchAndFuse?(query: MetadataSearchQuery): Promise<MetadataSearchResult[]>
   getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null>
   findByExternalId?(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null>
 }
