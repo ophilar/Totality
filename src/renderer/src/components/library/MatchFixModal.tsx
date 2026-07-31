@@ -75,7 +75,7 @@ export function MatchFixModal({
   // Focus trap
   useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>)
 
-  const [includeAdult, setIncludeAdult] = useState(false)
+  const [includeExpanded, setIncludeExpanded] = useState(false)
 
   // Reset state when modal opens
   useEffect(() => {
@@ -85,9 +85,9 @@ export function MatchFixModal({
       setSearchResults([])
       setSelectedResult(null)
       setError(null)
-      setIncludeAdult(false)
+      setIncludeExpanded(false)
 
-      async function checkAdultMatching() {
+      async function checkExpandedMatching() {
         if (type === 'movie' && mediaItemId) {
           try {
             const item = (await window.electronAPI.getMediaItem(mediaItemId)) as {
@@ -98,17 +98,17 @@ export function MatchFixModal({
               const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
               const lib = libs.find(
                 (l) => (l as any).libraryId === item.library_id || l.id === item.library_id
-              ) as { isProtected?: boolean; allowAdultMatching?: boolean } | undefined
-              if (lib?.isProtected && lib?.allowAdultMatching) {
-                setIncludeAdult(true)
+              ) as { isProtected?: boolean; allowExpandedMatching?: boolean } | undefined
+              if (lib?.isProtected && lib?.allowExpandedMatching) {
+                setIncludeExpanded(true)
               }
             }
           } catch (e) {
-            console.error('Failed to check adult matching status:', e)
+            console.error('Failed to check expanded matching status:', e)
           }
         }
       }
-      checkAdultMatching()
+      checkExpandedMatching()
     }
   }, [isOpen, currentTitle, type, mediaItemId])
 
@@ -135,7 +135,7 @@ export function MatchFixModal({
           results = await window.electronAPI.mediaSearchMetadata(
             searchQuery,
             type === 'movie' ? 'movie' : 'tv',
-            includeAdult
+            includeExpanded
           )
           break
         case 'artist':
@@ -156,7 +156,7 @@ export function MatchFixModal({
     } finally {
       setIsSearching(false)
     }
-  }, [searchQuery, type, artistName, includeAdult])
+  }, [searchQuery, type, artistName, includeExpanded])
 
   const handleFixMatch = useCallback(async () => {
     if (!selectedResult) return

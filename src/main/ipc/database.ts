@@ -154,13 +154,13 @@ export function registerDatabaseHandlers() {
     return true
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_ADULT_MATCHING, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, allowAdultMatching) => {
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_EXPANDED_MATCHING, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, allowExpandedMatching) => {
     const manager = getSourceManager()
     const libs = await manager.getLibraries(sourceId)
     const lib = libs.find(l => l.id === libraryId)
     if (!lib) throw new Error(`Library ${libraryId} not found in source ${sourceId}`)
 
-    await db.sources.setLibraryAllowAdultMatching(sourceId, libraryId, allowAdultMatching, lib.name, lib.type)
+    await db.sources.setLibraryAllowExpandedMatching(sourceId, libraryId, allowExpandedMatching, lib.name, lib.type)
     return true
   })
 

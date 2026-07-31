@@ -313,7 +313,7 @@ export interface SourcesAPI {
   sourcesGetLibrariesWithStatus: (sourceId: string) => Promise<Array<MediaLibraryResponse & {
     isEnabled: boolean
     isProtected: boolean
-    allowAdultMatching: boolean
+    allowExpandedMatching: boolean
     lastScanAt: string | null
     itemsScanned: number
   }>>

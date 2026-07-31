@@ -78,7 +78,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
       libraryType: schema.libraryScans.libraryType,
       isEnabled: schema.libraryScans.isEnabled,
       isProtected: schema.libraryScans.isProtected,
-      allowAdultMatching: schema.libraryScans.allowAdultMatching,
+      allowExpandedMatching: schema.libraryScans.allowExpandedMatching,
       lastScanAt: schema.libraryScans.lastScanAt,
       itemsScanned: schema.libraryScans.itemsScanned
     })
@@ -124,7 +124,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
             libraryType: lib.type,
             isEnabled: lib.enabled ? 1 : 0,
             isProtected: 0, // Explicitly provide 0 instead of relying on default
-            allowAdultMatching: 0,
+            allowExpandedMatching: 0,
             createdAt: sql`(datetime('now'))`,
             updatedAt: sql`(datetime('now'))`
           })
@@ -199,7 +199,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   private async upsertLibraryScanToggle(
     sourceId: string,
     libraryId: string,
-    updates: { isProtected?: number, allowAdultMatching?: number },
+    updates: { isProtected?: number, allowExpandedMatching?: number },
     fallbackName: string,
     fallbackType: string
   ): Promise<void> {
@@ -220,7 +220,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
         libraryType: fallbackType,
         isEnabled: 1,
         isProtected: updates.isProtected ?? 0,
-        allowAdultMatching: updates.allowAdultMatching ?? 0,
+        allowExpandedMatching: updates.allowExpandedMatching ?? 0,
         createdAt: sql`(datetime('now'))`,
         updatedAt: sql`(datetime('now'))`
       })
@@ -231,8 +231,8 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     await this.upsertLibraryScanToggle(sourceId, libraryId, { isProtected: isProtected ? 1 : 0 }, fallbackName, fallbackType)
   }
 
-  async setLibraryAllowAdultMatching(sourceId: string, libraryId: string, allowAdultMatching: boolean, fallbackName: string, fallbackType: string): Promise<void> {
-    await this.upsertLibraryScanToggle(sourceId, libraryId, { allowAdultMatching: allowAdultMatching ? 1 : 0 }, fallbackName, fallbackType)
+  async setLibraryAllowExpandedMatching(sourceId: string, libraryId: string, allowExpandedMatching: boolean, fallbackName: string, fallbackType: string): Promise<void> {
+    await this.upsertLibraryScanToggle(sourceId, libraryId, { allowExpandedMatching: allowExpandedMatching ? 1 : 0 }, fallbackName, fallbackType)
   }
 
   async updateLibraryScanStats(sourceId: string, libraryId: string, items: number): Promise<void> {

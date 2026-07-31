@@ -227,12 +227,12 @@ export function LibrarySettingsTab() {
     }
   }
 
-  const handleToggleAllowAdultMatching = async (sourceId: string, libraryId: string, allowAdultMatching: boolean) => {
+  const handleToggleAllowExpandedMatching = async (sourceId: string, libraryId: string, allowExpandedMatching: boolean) => {
     try {
-      await window.electronAPI.dbSetLibraryAllowAdultMatching(sourceId, libraryId, allowAdultMatching)
+      await window.electronAPI.dbSetLibraryAllowExpandedMatching(sourceId, libraryId, allowExpandedMatching)
       await loadSourceData()
     } catch (err) {
-      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library adult matching:', err)
+      window.electronAPI.log.error('[LibrarySettingsTab]', 'Failed to toggle library expanded matching:', err)
     }
   }
 
@@ -555,10 +555,10 @@ export function LibrarySettingsTab() {
                             <div className="flex items-center gap-4">
                               {lib.isProtected && (
                                 <div className="flex items-center gap-1.5 border-r border-border/20 pr-4">
-                                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Adult Match</span>
+                                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Expanded Match</span>
                                   <Toggle 
-                                    checked={!!lib.allowAdultMatching}
-                                    onChange={(checked) => handleToggleAllowAdultMatching(source.source_id, lib.id, checked)}
+                                    checked={!!lib.allowExpandedMatching}
+                                    onChange={(checked) => handleToggleAllowExpandedMatching(source.source_id, lib.id, checked)}
                                   />
                                 </div>
                               )}

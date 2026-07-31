@@ -19,7 +19,7 @@ export interface SourceLibrary {
   libraryType: string
   isEnabled: number
   isProtected: number
-  allowAdultMatching: number
+  allowExpandedMatching: number
   lastScanAt: string | null
   itemsScanned: number | null
 }
