@@ -130,6 +130,12 @@ export function ServicesTab() {
   const [musicbrainzStatus, setMusicbrainzStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
   const [originalMusicbrainzBaseUrl, setOriginalMusicbrainzBaseUrl] = useState('')
 
+  // OMDb state
+  const [omdbApiKey, setOmdbApiKey] = useState('')
+  const [showOmdbKey, setShowOmdbKey] = useState(false)
+  const [omdbStatus, setOmdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalOmdb, setOriginalOmdb] = useState('')
+
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
   const [ffprobeBundled, setFfprobeBundled] = useState(false)
@@ -191,6 +197,7 @@ export function ServicesTab() {
 
   const tmdbId = useId()
   const musicbrainzId = useId()
+  const omdbId = useId()
   const toggleId = useId()
   const geminiId = useId()
   const geminiModelId = useId()
@@ -217,8 +224,9 @@ export function ServicesTab() {
     const nfsChanged = JSON.stringify(nfsMappings) !== JSON.stringify(originalNfsMappings)
     const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
     const musicbrainzChanged = musicbrainzBaseUrl !== originalMusicbrainzBaseUrl
-    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl])
+    const omdbChanged = omdbApiKey !== originalOmdb
+    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged)
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
@@ -252,6 +260,13 @@ export function ServicesTab() {
       setOriginalMusicbrainzBaseUrl(mbBaseUrl)
       if (mbBaseUrl) {
         setMusicbrainzStatus('valid')
+      }
+
+      const omdb = allSettings.omdb_api_key || ''
+      setOmdbApiKey(omdb)
+      setOriginalOmdb(omdb)
+      if (omdb) {
+        setOmdbStatus('valid')
       }
 
       const gemini = allSettings.gemini_api_key || ''
@@ -332,12 +347,14 @@ export function ServicesTab() {
         window.electronAPI.setSetting('gemini_api_key', geminiApiKey),
         window.electronAPI.setSetting('gemini_model', geminiModel),
         window.electronAPI.setSetting('musicbrainz_base_url', musicbrainzBaseUrl),
+        window.electronAPI.setSetting('omdb_api_key', omdbApiKey),
       ])
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
       setOriginalGemini(geminiApiKey)
       setOriginalGeminiModel(geminiModel)
       setOriginalMusicbrainzBaseUrl(musicbrainzBaseUrl)
+      setOriginalOmdb(omdbApiKey)
       setHasChanges(false)
     } catch (error) {
       window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
@@ -357,6 +374,20 @@ export function ServicesTab() {
       setMusicbrainzStatus(response.ok ? 'valid' : 'invalid')
     } catch {
       setMusicbrainzStatus('invalid')
+    }
+  }
+
+  const handleTestOmdb = async () => {
+    if (!omdbApiKey.trim()) return
+    setOmdbStatus('testing')
+    try {
+      const response = await fetch(
+        `https://www.omdbapi.com/?apikey=${omdbApiKey}&t=test`
+      )
+      const data = await response.json()
+      setOmdbStatus(data.Response === 'True' || data.Error === 'Movie not found!' ? 'valid' : 'invalid')
+    } catch {
+      setOmdbStatus('invalid')
     }
   }
 
@@ -487,6 +518,7 @@ export function ServicesTab() {
 
   // Status calculations
   const tmdbConfigured = !!tmdbApiKey.trim()
+  const omdbConfigured = !!omdbApiKey.trim()
   const ffprobeStatus: 'configured' | 'partial' | 'not-configured' = ffprobeAvailable
     ? ffprobeEnabled
       ? 'configured'
@@ -612,6 +644,74 @@ export function ServicesTab() {
           <p className="text-xs text-muted-foreground">
             Free API key from{' '}
             <button type="button" onClick={() => window.electronAPI.openExternal('https://www.themoviedb.org/settings/api')} className="text-primary hover:underline">themoviedb.org</button>
+          </p>
+        </div>
+      </ServiceCard>
+
+      {/* OMDb Card */}
+      <ServiceCard
+        title="OMDb API"
+        description="Movie and TV metadata for ratings and additional info"
+        icon={<Film className="w-5 h-5" />}
+        status={omdbConfigured ? 'configured' : 'not-configured'}
+        statusText={omdbConfigured ? 'Configured' : 'Not configured'}
+        expanded={expandedCards.has('omdb')}
+        onToggle={() => toggleCard('omdb')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                id={omdbId}
+                type={showOmdbKey ? 'text' : 'password'}
+                value={omdbApiKey}
+                onChange={(e) => {
+                  setOmdbApiKey(e.target.value)
+                  setOmdbStatus('idle')
+                }}
+                placeholder="Enter your OMDb API key"
+                className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOmdbKey(!showOmdbKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                aria-label={showOmdbKey ? 'Hide API key' : 'Show API key'}
+              >
+                {showOmdbKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={handleTestOmdb}
+              disabled={!omdbApiKey.trim() || omdbStatus === 'testing' || omdbStatus === 'valid'}
+              className={`px-3 py-2 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                omdbStatus === 'valid' ? 'text-green-500' :
+                omdbStatus === 'invalid' ? 'text-red-500 bg-red-500/10' :
+                'text-sm bg-muted hover:bg-muted/80'
+              }`}
+              title={omdbStatus === 'valid' ? 'API key is valid' : omdbStatus === 'invalid' ? 'Invalid API key' : 'Test API key'}
+            >
+              {omdbStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> :
+               omdbStatus === 'valid' ? <CheckCircle className="w-4 h-4" /> :
+               omdbStatus === 'invalid' ? <><XCircle className="w-4 h-4" /><span className="text-xs">Invalid</span></> :
+               <span className="text-sm">Test</span>}
+            </button>
+            {omdbApiKey.trim() && (
+              <button
+                onClick={() => {
+                  setOmdbApiKey('')
+                  setOmdbStatus('idle')
+                }}
+                className="px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md transition-colors"
+                aria-label="Clear OMDb API key"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Get an API key from{' '}
+            <button type="button" onClick={() => window.electronAPI.openExternal('http://www.omdbapi.com/apikey.aspx')} className="text-primary hover:underline">omdbapi.com</button>
           </p>
         </div>
       </ServiceCard>

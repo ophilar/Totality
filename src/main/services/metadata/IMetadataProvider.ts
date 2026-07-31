@@ -5,6 +5,7 @@ export interface MetadataSearchQuery {
   year?: number
   type: MetadataType
   externalId?: string
+  externalIds?: { imdb_id?: string; tvdb_id?: string; tmdb_id?: string }
   seasonNumber?: number
   episodeNumber?: number
   includeAdult?: boolean

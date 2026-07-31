@@ -241,7 +241,8 @@ export function registerDatabaseHandlers() {
       const matchingService = MetadataRegistryService.getInstance().getMatchingService()
       return await matchingService.matchMediaItem({
         title: query,
-        type: (type as any) || 'movie'
+        type: (type as any) || 'movie',
+        includeAdult
       })
     }
   )

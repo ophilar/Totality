@@ -678,7 +678,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     } catch (error) { cache.set(artistName.toLowerCase(), artistName); return artistName }
   }
 
-  private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, any>, includeAdult?: boolean): Promise<MediaMetadata> {
+  private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, _tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, any>, _includeAdult?: boolean): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
     const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.title || path.basename(filePath), type: MediaItemType.Movie, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 

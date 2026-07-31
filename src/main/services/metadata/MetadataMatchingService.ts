@@ -6,6 +6,7 @@ export interface MatchMediaItemParams {
   year?: number
   type: MetadataType
   externalIds?: Record<string, string>
+  includeAdult?: boolean
 }
 
 /**
@@ -23,7 +24,8 @@ export class MetadataMatchingService {
       title: params.title,
       year: params.year,
       type: params.type,
-      externalIds: params.externalIds
+      externalIds: params.externalIds,
+      includeAdult: params.includeAdult
     })
   }
 }
