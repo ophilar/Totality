@@ -9,6 +9,14 @@ import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { APP_CONFIG } from '@main/config'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector } from '@main/services/utils/GpuDetector'
+import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
+
+export class TranscodeError extends Error {
+  constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
+    super(message)
+    this.name = 'TranscodeError'
+  }
+}
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
@@ -368,27 +376,22 @@ export class TranscodingService {
       ? crf
       : 22
       
-    const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless']
-    const finalPreset = allowedPresets.includes(preset)
-      ? preset
+    const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'quality']
+    const finalPreset = allowedPresets.includes(preset || '')
+      ? preset!
       : 'fast'
 
-    // Build safe handbrakeArgs array
-    const handbrakeArgs: string[] = []
-    
-    handbrakeArgs.push('--encoder', videoCodec)
-    handbrakeArgs.push('--quality', finalCrf.toString())
-    handbrakeArgs.push('--encoder-preset', finalPreset)
-
-    if (options.preserveAllAudio) {
-      handbrakeArgs.push('--all-audio')
-    } else {
-      handbrakeArgs.push('--audio', '1')
+    const resolvedOptions: TranscodeOptions = {
+      ...options,
+      targetCodec,
+      encoder: videoCodec,
+      crf: finalCrf,
+      preset: finalPreset
     }
 
-    if (options.preserveSubtitles) {
-      handbrakeArgs.push('--all-subtitles')
-    }
+    const builder = TranscodeCommandFactory.getBuilder(selectedVendor, resolvedOptions)
+    const handbrakeArgs = builder.buildHandbrakeArgs(filePath, '<output>', resolvedOptions, analysis)
+    const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', resolvedOptions, analysis)
 
     // Add custom args if present
     if (options.customArgs) {
@@ -401,65 +404,6 @@ export class TranscodingService {
         }
       }
     }
-
-    // Build equivalent ffmpegArgs array
-    const encoderMap: Record<string, string> = {
-      'svt_av1': 'libsvtav1',
-      'svt_av1_10bit': 'libsvtav1',
-      'x265': 'libx265',
-      'x265_10bit': 'libx265',
-      'x264': 'libx264',
-      'nvenc_h264': 'h264_nvenc',
-      'nvenc_h265': 'hevc_nvenc',
-      'nvenc_h265_10bit': 'hevc_nvenc',
-      'nvenc_av1': 'av1_nvenc',
-      'nvenc_av1_10bit': 'av1_nvenc',
-      'qsv_av1': 'av1_qsv',
-      'qsv_h265': 'hevc_qsv',
-      'qsv_h265_10bit': 'hevc_qsv',
-      'qsv_h264': 'h264_qsv',
-      'av1_amf': 'av1_amf',
-      'hevc_amf': 'hevc_amf',
-      'vce_h264': 'h264_amf',
-      'vt_h264': 'h264_videotoolbox',
-      'vt_h265': 'hevc_videotoolbox'
-    }
-
-    const ffmpegEncoder = encoderMap[videoCodec] || 'libx265'
-    const ffmpegArgs: string[] = ['-y', '-i', '<input>']
-    ffmpegArgs.push('-c:v', ffmpegEncoder)
-
-    if (videoCodec.endsWith('_10bit')) {
-      ffmpegArgs.push('-pix_fmt', 'yuv420p10le')
-    }
-
-    if (ffmpegEncoder.includes('nvenc')) {
-      ffmpegArgs.push('-rc', 'constqp', '-cq', finalCrf.toString())
-    } else if (ffmpegEncoder.includes('qsv')) {
-      ffmpegArgs.push('-global_quality', finalCrf.toString())
-    } else {
-      ffmpegArgs.push('-crf', finalCrf.toString())
-    }
-
-    if (finalPreset) {
-      ffmpegArgs.push('-preset', finalPreset)
-    }
-
-    if (options.preserveAllAudio) {
-      ffmpegArgs.push('-c:a', 'copy')
-    } else {
-      ffmpegArgs.push('-map', '0:v:0', '-map', '0:a:0?', '-c:a', 'copy')
-    }
-
-    if (options.preserveSubtitles) {
-      ffmpegArgs.push('-map', '0:s?', '-c:s', 'copy')
-    }
-
-    if (options.preserveAllAudio) {
-      ffmpegArgs.push('-map', '0')
-    }
-
-    ffmpegArgs.push('<output>')
 
     return {
       summary,
@@ -603,9 +547,10 @@ export class TranscodingService {
   }
 
   private runHandbrake(args: string[], onProgress: (p: any) => void, signal?: AbortSignal): Promise<boolean> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || 'HandBrakeCLI')
       const proc = spawn(actualPath, args)
+      let stderrBuffer = ''
       
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -627,17 +572,28 @@ export class TranscodingService {
       })
 
       proc.stderr.on('data', (data) => {
-        getLoggingService().verbose('[Handbrake]', data.toString().trim())
+        const text = data.toString()
+        stderrBuffer += text
+        getLoggingService().verbose('[Handbrake]', text.trim())
       })
 
       proc.on('close', (code) => {
-        resolve(code === 0)
+        if (code === 0) {
+          resolve(true)
+        } else {
+          if (signal?.aborted) {
+            resolve(false)
+          } else {
+            const stderrSnippet = stderrBuffer.trim()
+            reject(new TranscodeError(`HandBrake process failed with exit code ${code}`, code ?? undefined, stderrSnippet))
+          }
+        }
       })
 
       proc.on('error', (err) => {
-        if (signal?.aborted) return
+        if (signal?.aborted) return resolve(false)
         getLoggingService().error('[Handbrake]', 'Process error:', err)
-        resolve(false)
+        reject(new TranscodeError(`HandBrake process execution error: ${err.message}`, undefined, stderrBuffer.trim()))
       })
     })
   }
@@ -650,83 +606,27 @@ export class TranscodingService {
     onProgress: (p: any) => void,
     signal?: AbortSignal
   ): Promise<boolean> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const analyzer = getMediaFileAnalyzer()
       const ffmpegPath = analyzer.getFFmpegPath() || 'ffmpeg'
       const actualPath = PathUtils.resolveExecutablePath(ffmpegPath)
 
-      // Map Handbrake encoders to FFmpeg encoders
-      const encoderMap: Record<string, string> = {
-        'svt_av1': 'libsvtav1',
-        'svt_av1_10bit': 'libsvtav1',
-        'x265': 'libx265',
-        'x265_10bit': 'libx265',
-        'x264': 'libx264',
-        'nvenc_h264': 'h264_nvenc',
-        'nvenc_h265': 'hevc_nvenc',
-        'nvenc_h265_10bit': 'hevc_nvenc',
-        'nvenc_av1': 'av1_nvenc',
-        'nvenc_av1_10bit': 'av1_nvenc',
-        'qsv_av1': 'av1_qsv',
-        'qsv_h265': 'hevc_qsv',
-        'qsv_h265_10bit': 'hevc_qsv',
-        'qsv_h264': 'h264_qsv',
-        'av1_amf': 'av1_amf',
-        'hevc_amf': 'hevc_amf',
-        'vce_h264': 'h264_amf',
-        'vt_h264': 'h264_videotoolbox',
-        'vt_h265': 'hevc_videotoolbox'
-      }
-
-      const encoder = params.encoder || 'x265'
-      const ffmpegEncoder = encoderMap[encoder] || 'libx265'
-      const args: string[] = ['-y', '-i', inputPath]
-
-      // Video settings
-      args.push('-c:v', ffmpegEncoder)
-
-      // Apply 10-bit pixel format if encoder ends with _10bit or target is 10-bit
-      if (encoder.endsWith('_10bit')) {
-        args.push('-pix_fmt', 'yuv420p10le')
-      }
-
-      // Quality setting (CRF / CQ)
-      const crf = typeof params.crf === 'number' ? params.crf : 22
-      if (ffmpegEncoder.includes('nvenc')) {
-        args.push('-rc', 'constqp', '-cq', crf.toString())
-      } else if (ffmpegEncoder.includes('qsv')) {
-        args.push('-global_quality', crf.toString())
+      let args: string[] = []
+      if (params.ffmpegArgs && params.ffmpegArgs.length > 0) {
+        args = params.ffmpegArgs.map(arg => {
+          if (arg === '<input>') return inputPath
+          if (arg === '<output>') return outputPath
+          return arg
+        })
       } else {
-        args.push('-crf', crf.toString())
+        const builder = TranscodeCommandFactory.getBuilder(undefined, options)
+        args = builder.buildFFmpegArgs(inputPath, outputPath, options, {} as any)
       }
-
-      // Preset setting
-      if (params.preset) {
-        args.push('-preset', params.preset)
-      }
-
-      // Audio mapping
-      if (options.preserveAllAudio) {
-        args.push('-c:a', 'copy')
-      } else {
-        args.push('-map', '0:v:0', '-map', '0:a:0?', '-c:a', 'copy')
-      }
-
-      // Subtitle mapping
-      if (options.preserveSubtitles) {
-        args.push('-map', '0:s?', '-c:s', 'copy')
-      }
-
-      // If we didn't use map above, make sure we map video
-      if (options.preserveAllAudio) {
-        args.push('-map', '0')
-      }
-
-      args.push(outputPath)
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
 
       const proc = spawn(actualPath, args)
+      let stderrBuffer = ''
 
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -739,6 +639,7 @@ export class TranscodingService {
       let durationSeconds = 0
       proc.stderr.on('data', (data) => {
         const line = data.toString()
+        stderrBuffer += line
         getLoggingService().verbose('[FFmpeg]', line.trim())
 
         // Extract duration first time
@@ -773,13 +674,22 @@ export class TranscodingService {
       })
 
       proc.on('close', (code) => {
-        resolve(code === 0)
+        if (code === 0) {
+          resolve(true)
+        } else {
+          if (signal?.aborted) {
+            resolve(false)
+          } else {
+            const stderrSnippet = stderrBuffer.trim()
+            reject(new TranscodeError(`FFmpeg process failed with exit code ${code}`, code ?? undefined, stderrSnippet))
+          }
+        }
       })
 
       proc.on('error', (err) => {
-        if (signal?.aborted) return
+        if (signal?.aborted) return resolve(false)
         getLoggingService().error('[FFmpeg]', 'Process error:', err)
-        resolve(false)
+        reject(new TranscodeError(`FFmpeg process execution error: ${err.message}`, undefined, stderrBuffer.trim()))
       })
     })
   }

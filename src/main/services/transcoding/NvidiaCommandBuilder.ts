@@ -27,7 +27,8 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     )
 
     const is10BitSource = Boolean(
-      analysis?.video?.pix_fmt?.includes('10') ||
+      analysis?.video?.pixelFormat?.includes('10') ||
+      (analysis?.video as any)?.pix_fmt?.includes('10') ||
       analysis?.video?.bitDepth === 10
     )
 
@@ -49,7 +50,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     return args
   }
 
-  buildHandbrakeArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
+  buildHandbrakeArgs(_input: string, _output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
     const encoder = options.targetCodec === 'av1' ? 'nvenc_av1_10bit' : 'nvenc_h265_10bit'
     const args: string[] = [
       '--encoder', encoder,
