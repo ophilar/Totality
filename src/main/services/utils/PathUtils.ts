@@ -71,7 +71,7 @@ export class PathUtils {
     if (toolPath.includes('\0')) {
       throw new Error('Invalid executable path: contains null bytes')
     }
-    if (path.isAbsolute(toolPath) || toolPath.includes(path.sep)) {
+    if (path.isAbsolute(toolPath) || toolPath.includes('/') || toolPath.includes('\\')) {
       return path.resolve(toolPath)
     }
     return toolPath
