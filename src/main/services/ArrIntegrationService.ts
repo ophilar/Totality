@@ -46,6 +46,16 @@ export class ArrIntegrationService {
     return this.request(`/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${tvdbId}`)}`)
   }
 
+  async findManagedMovieByTmdbId(tmdbId: number): Promise<Record<string, unknown> | null> {
+    const movies = await this.request<Record<string, unknown>[]>(`/api/v3/movie?tmdbId=${encodeURIComponent(tmdbId)}`)
+    return movies[0] || null
+  }
+
+  async findManagedSeriesByTvdbId(tvdbId: number): Promise<Record<string, unknown> | null> {
+    const series = await this.request<Record<string, unknown>[]>(`/api/v3/series?tvdbId=${encodeURIComponent(tvdbId)}`)
+    return series[0] || null
+  }
+
   async searchSeries(seriesId: number, seasonNumber?: number, episodeIds?: number[]): Promise<Record<string, unknown>> {
     const body = seasonNumber !== undefined
       ? { name: 'SeasonSearch', seriesId, seasonNumber }
@@ -55,5 +65,18 @@ export class ArrIntegrationService {
 
   async getCommand(commandId: number): Promise<Record<string, unknown>> {
     return this.request(`/api/v3/command/${commandId}`)
+  }
+
+  async waitForCommand(commandId: number, options: { pollIntervalMs?: number; timeoutMs?: number } = {}): Promise<Record<string, unknown>> {
+    const pollIntervalMs = options.pollIntervalMs ?? 2000
+    const timeoutMs = options.timeoutMs ?? 120000
+    const deadline = Date.now() + timeoutMs
+    const terminal = new Set(['completed', 'failed', 'aborted'])
+    while (Date.now() <= deadline) {
+      const command = await this.getCommand(commandId)
+      if (terminal.has(String(command.status).toLowerCase())) return command
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
+    }
+    throw new Error('*arr command polling timed out')
   }
 }

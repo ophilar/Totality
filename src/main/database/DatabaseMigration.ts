@@ -162,8 +162,32 @@ export async function runMigrations(db: Client): Promise<void> {
   await fixMusicTrackAlbumReferences(db)
   await migrateExistingItemsToVersions(db)
   await cleanupOrphanedRecords(db)
+  await backfillMediaIdentities(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
+}
+
+async function backfillMediaIdentities(db: Client): Promise<void> {
+  const statements = [
+    `INSERT OR IGNORE INTO media_identities (entity_type, entity_id, provider, external_id, is_locked, lock_source)
+     SELECT 'movie', id, 'tmdb', tmdb_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
+     FROM media_items WHERE type = 'movie' AND tmdb_id IS NOT NULL AND tmdb_id <> ''`,
+    `INSERT OR IGNORE INTO media_identities (entity_type, entity_id, provider, external_id, is_locked, lock_source)
+     SELECT 'movie', id, 'imdb', imdb_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
+     FROM media_items WHERE type = 'movie' AND imdb_id IS NOT NULL AND imdb_id <> ''`,
+    `INSERT OR IGNORE INTO media_identities (entity_type, entity_id, provider, external_id, is_locked, lock_source)
+     SELECT 'series', id, 'tmdb', tmdb_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
+     FROM series_completeness WHERE tmdb_id IS NOT NULL AND tmdb_id <> ''`,
+    `INSERT OR IGNORE INTO media_identities (entity_type, entity_id, provider, external_id, is_locked, lock_source)
+     SELECT 'artist', id, 'musicbrainz', musicbrainz_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
+     FROM music_artists WHERE musicbrainz_id IS NOT NULL AND musicbrainz_id <> ''`,
+    `INSERT OR IGNORE INTO media_identities (entity_type, entity_id, provider, external_id, is_locked, lock_source)
+     SELECT 'album', id, 'musicbrainz', musicbrainz_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
+     FROM music_albums WHERE musicbrainz_id IS NOT NULL AND musicbrainz_id <> ''`
+  ]
+  for (const sql of statements) {
+    try { await db.execute(sql) } catch (error) { getLoggingService().warn('[DatabaseMigration]', `Identity backfill skipped: ${getErrorMessage(error)}`) }
+  }
 }
 
 /**

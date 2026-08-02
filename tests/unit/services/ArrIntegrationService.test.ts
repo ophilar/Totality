@@ -32,4 +32,25 @@ describe('ArrIntegrationService', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8989/api/v3/movie/lookup?term=tmdb%3A123')
     expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8989/api/v3/series/lookup?term=tvdb%3A456')
   })
+
+  it('resolves managed records from the library before issuing searches', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('[]', { status: 200 }))
+    const service = new ArrIntegrationService({ baseUrl: 'http://localhost:8989', apiKey: 'secret' })
+
+    await service.findManagedMovieByTmdbId(123)
+    await service.findManagedSeriesByTvdbId(456)
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8989/api/v3/movie?tmdbId=123')
+    expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8989/api/v3/series?tvdbId=456')
+  })
+
+  it('polls a command until a terminal status is returned', async () => {
+    const service = new ArrIntegrationService({ baseUrl: 'http://localhost:8989', apiKey: 'secret' })
+    const getCommand = vi.spyOn(service, 'getCommand')
+      .mockResolvedValueOnce({ status: 'started' })
+      .mockResolvedValueOnce({ status: 'completed' })
+
+    await expect(service.waitForCommand(42, { pollIntervalMs: 1, timeoutMs: 100 })).resolves.toMatchObject({ status: 'completed' })
+    expect(getCommand).toHaveBeenCalledTimes(2)
+  })
 })
