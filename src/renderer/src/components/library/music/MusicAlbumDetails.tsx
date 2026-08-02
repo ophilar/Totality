@@ -195,7 +195,7 @@ export function MusicAlbumDetails({
       </button>
 
       <div className="flex items-start gap-6">
-        <div className="w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+        <div className="w-28 sm:w-44 aspect-square bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
           {selectedAlbum.thumb_url ? (
             <img src={selectedAlbum.thumb_url} alt={selectedAlbum.title} className="w-full h-full object-cover" />
           ) : (

@@ -75,7 +75,7 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
       >
 
         {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
-        <div className="w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0">
+        <div className="w-28 sm:w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0">
           {episode.episode_thumb_url ? (
             <img
               src={episode.episode_thumb_url}

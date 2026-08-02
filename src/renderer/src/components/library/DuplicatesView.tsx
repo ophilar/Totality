@@ -294,7 +294,7 @@ export function DuplicatesView() {
                   {isExpanded && (
                     <div className="border-t bg-muted/10 p-4 animate-in slide-in-from-top-2 duration-200">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full min-w-[720px] text-sm">
                           <thead>
                             <tr className="text-muted-foreground border-b border-border/50">
                               <th className="text-left py-2 font-medium pl-2">Quality</th>

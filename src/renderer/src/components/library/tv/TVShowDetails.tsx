@@ -128,10 +128,10 @@ export function TVShowDetails({
       </button>
 
       {/* Show Header */}
-      <div className="flex gap-6 mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mb-6">
         {/* Poster */}
         {selectedShowData.poster_url && (
-          <div className="w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+          <div className="w-28 sm:w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
             <img
               src={selectedShowData.poster_url}
               alt={selectedShowData.title}
@@ -148,7 +148,7 @@ export function TVShowDetails({
         <div className="flex-1 min-w-0">
           {/* Title */}
           <div className="flex items-center gap-1.5">
-            <h3 className="text-3xl font-bold">{selectedShowData.title}</h3>
+            <h3 className="text-2xl sm:text-3xl font-bold break-words">{selectedShowData.title}</h3>
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -175,7 +175,7 @@ export function TVShowDetails({
           </div>
 
           {/* Action buttons row */}
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3">
             <button
               onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
               className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
