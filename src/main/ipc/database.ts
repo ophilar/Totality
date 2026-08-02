@@ -278,6 +278,11 @@ export function registerDatabaseHandlers() {
         year,
         imdbId || undefined
       )
+      const identityIds = details.externalIds || {}
+      for (const [provider, value] of Object.entries(identityIds)) {
+        if (value) await db.identities.upsertIdentity({ entityType: 'movie', entityId: mediaItemId, provider, externalId: String(value), locked: true, lockSource: 'manual' })
+      }
+      for (const alias of details.alternateTitles || []) await db.identities.addAlias({ entityType: 'movie', entityId: mediaItemId, alias, provider: providerId })
 
       const item = await db.media.getItem(mediaItemId)
       if (item?.source_id) {
