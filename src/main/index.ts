@@ -32,6 +32,7 @@ import { registerAutoUpdateHandlers } from '@main/ipc/autoUpdate'
 import { registerGeminiHandlers } from '@main/ipc/gemini'
 import { registerDuplicateHandlers } from '@main/ipc/duplicates'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
+import { getTranscodingService } from '@main/services/TranscodingService'
 import { registerMediaHandlers } from '@main/ipc/media'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
@@ -191,6 +192,14 @@ app.whenReady().then(async () => {
     // Explicit Database Initialization
     const dbPath = path.join(app.getPath('userData'), 'totality.db')
     await getDatabase().initialize(dbPath)
+
+    // Probe transcoding capabilities once per application startup so the renderer
+    // never repeatedly discovers hardware while opening individual dialogs.
+    try {
+      await getTranscodingService().getCapabilities({ refresh: true })
+    } catch (error) {
+      getLoggingService().warn('[index]', 'Transcoding capability probe failed; fallback detection will remain available:', error)
+    }
 
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     protocol.handle('local-artwork', async (request) => {

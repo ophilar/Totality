@@ -134,6 +134,15 @@ export function TVShowsView({
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
             />
           )}
+          listHeader={
+            <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="w-16 shrink-0">Poster</span>
+              <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">Title</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('efficiency')} aria-label="Sort TV shows by efficiency">Efficiency</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('waste')} aria-label="Sort TV shows by waste">Waste</button>
+              <span className="w-8 shrink-0" />
+            </div>
+          }
         />
       </div>
     )

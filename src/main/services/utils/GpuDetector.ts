@@ -13,15 +13,15 @@ export interface GpuInfo {
 export class GpuDetector {
   private static cachedGpus: GpuInfo[] | null = null
 
-  static async detectGpus(): Promise<GpuInfo[]> {
-    if (GpuDetector.cachedGpus) {
+  static async detectGpus(options: { refresh?: boolean } = {}): Promise<GpuInfo[]> {
+    if (GpuDetector.cachedGpus && !options.refresh) {
       return GpuDetector.cachedGpus
     }
 
     // Try reading persistent cache from SQLite settings table
     try {
       const db = getDatabase()
-      if (db.isInitialized) {
+      if (db.isInitialized && !options.refresh) {
         const cached = await db.config.getSetting('detected_gpus')
         if (cached) {
           const parsed = JSON.parse(cached)
@@ -94,6 +94,10 @@ export class GpuDetector {
     }
 
     return gpus
+  }
+
+  static clearCache(): void {
+    GpuDetector.cachedGpus = null
   }
 
   private static parseVendor(name: string): 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' {

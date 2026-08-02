@@ -47,9 +47,15 @@ export function MusicView({
   onFixArtistMatch,
   onFixAlbumMatch,
   onRescanTrack,
+  albumSortColumn,
+  albumSortDirection,
+  onAlbumSortChange,
   includeEps,
   includeSingles,
   onDismissMissingAlbum,
+  trackSortColumn,
+  trackSortDirection,
+  onTrackSortChange,
   sortBy,
   onSortChange,
   slimDown,
@@ -189,6 +195,33 @@ export function MusicView({
     </div>
   )
 
+  const handleListSort = (column: string) => {
+    if (musicViewMode === 'albums' && (column === 'title' || column === 'artist')) {
+      const direction = albumSortColumn === column && albumSortDirection === 'asc' ? 'desc' : 'asc'
+      onAlbumSortChange(column, direction)
+      return
+    }
+    if (musicViewMode === 'tracks' && ['title', 'artist', 'album', 'codec', 'duration'].includes(column)) {
+      const direction = trackSortColumn === column && trackSortDirection === 'asc' ? 'desc' : 'asc'
+      onTrackSortChange(column as typeof trackSortColumn, direction)
+      return
+    }
+    if (musicViewMode === 'artists' && ['title', 'efficiency', 'waste', 'size'].includes(column)) {
+      onSortChange(column as typeof sortBy)
+    }
+  }
+
+  const listHeader = (columns: string[]) => (
+    <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+      <span className="w-16 shrink-0">Artwork</span>
+      {columns.map(column => (
+        <button key={column} className="flex-1 text-left hover:text-foreground" onClick={() => handleListSort(column)} aria-label={`Sort music by ${column}`}>
+          {column}
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {slimDown && <SlimDownBanner className="mb-4" />}
@@ -199,6 +232,7 @@ export function MusicView({
           emptyState={<div className="py-20 text-center opacity-40"><User className="w-20 h-20 mx-auto mb-4" /><p>No artists found</p></div>}
           renderGridItem={(artist) => <ArtistCard artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} artistCompleteness={artistCompleteness} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
           renderListItem={(artist) => <ArtistListItem artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} completeness={artistCompleteness.get(artist.name)} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
+          listHeader={listHeader(['title', 'efficiency', 'waste', 'size'])}
         />
       )}
       {musicViewMode === 'albums' && (
@@ -208,6 +242,7 @@ export function MusicView({
           emptyState={<div className="py-20 text-center opacity-40"><Disc3 className="w-20 h-20 mx-auto mb-4" /><p>No albums found</p></div>}
           renderGridItem={(album) => <AlbumCard album={album} onClick={() => onSelectAlbum(album)} showSourceBadge={showSourceBadge} completeness={allAlbumCompleteness.get(album.id!)} onAnalyze={handleAnalyzeAlbum} onFixMatch={onFixAlbumMatch ? () => onFixAlbumMatch(album.id!, album.title, album.artist_name!) : undefined} />}
           renderListItem={(album) => <AlbumListItem album={album} onClick={() => onSelectAlbum(album)} showSourceBadge={showSourceBadge} completeness={allAlbumCompleteness.get(album.id!)} />}
+          listHeader={listHeader(['title', 'artist'])}
         />
       )}
       {musicViewMode === 'tracks' && (
@@ -216,6 +251,7 @@ export function MusicView({
           scrollKey="music-tracks"
           emptyState={<div className="py-20 text-center opacity-40"><Music className="w-20 h-20 mx-auto mb-4" /><p>No tracks found</p></div>}
           renderListItem={(track, index) => <TrackListItem track={track} index={index + 1} artistName={track.artist_name} albumTitle={track.album_name} onClickQuality={() => {}} />}
+          listHeader={listHeader(['title', 'artist', 'album', 'codec', 'duration'])}
           renderGridItem={() => <div />}
         />
       )}

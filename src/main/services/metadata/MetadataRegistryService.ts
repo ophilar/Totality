@@ -2,6 +2,7 @@ import { CompositeMetadataProvider } from './CompositeMetadataProvider'
 import { TMDBMetadataProvider } from './providers/TMDBMetadataProvider'
 import { AniListMetadataProvider } from './providers/AniListMetadataProvider'
 import { OMDbMetadataProvider } from './providers/OMDbMetadataProvider'
+import { TVMazeMetadataProvider } from './providers/TVMazeMetadataProvider'
 import { MetadataMatchingService } from './MetadataMatchingService'
 
 /**
@@ -50,6 +51,7 @@ export class MetadataRegistryService {
     this.compositeProvider.registerProvider(tmdbProvider)
     this.compositeProvider.registerProvider(aniListProvider)
     this.compositeProvider.registerProvider(omdbProvider)
+    this.compositeProvider.registerProvider(new TVMazeMetadataProvider())
   }
 
   public getCompositeProvider(): CompositeMetadataProvider {

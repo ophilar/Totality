@@ -23,6 +23,13 @@ export interface MetadataSearchResult {
   imdbRating?: number
   imdbVotes?: string
   score?: number
+  externalIds?: {
+    imdbId?: string
+    tvdbId?: string
+    tmdbId?: string
+    musicBrainzId?: string
+  }
+  alternateTitles?: string[]
 }
 
 export interface MediaMetadataDetails extends MetadataSearchResult {

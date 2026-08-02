@@ -31,6 +31,8 @@ export function AdvancedTab({
   availability
 }: AdvancedTabProps) {
   const { addToast } = useToast()
+  const availableVendors = Array.from(new Set(gpus.map(gpu => gpu.vendor)))
+  const hasHardwareAcceleration = availableVendors.length > 0
   const [templates, setTemplates] = useState<PresetTemplate[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('')
   const [newTemplateName, setNewTemplateName] = useState<string>('')
@@ -228,10 +230,11 @@ export function AdvancedTab({
             <Cpu className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold">Enable GPU Acceleration (Hardware VRAM Pipeline)</span>
           </div>
-          <input
-            type="checkbox"
-            checked={options.useGpu}
-            onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
+            <input
+              type="checkbox"
+              checked={options.useGpu}
+              onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
+              disabled={!hasHardwareAcceleration}
             className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20"
           />
         </label>
@@ -242,14 +245,14 @@ export function AdvancedTab({
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GPU Vendor</label>
                 <select
-                  value={options.vendor || (gpus.length > 0 ? gpus[0].vendor : 'NVIDIA')}
+                  value={options.vendor || (gpus.length > 0 ? gpus[0].vendor : 'Software')}
                   onChange={(e) => setOptions(prev => ({ ...prev, vendor: e.target.value as any }))}
                   className="w-full bg-muted/80 border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary"
                 >
-                  <option value="NVIDIA">NVIDIA (NVENC CUDA VRAM)</option>
-                  <option value="Intel">Intel (QuickSync QSV)</option>
-                  <option value="AMD">AMD (AMF VCE)</option>
-                  <option value="Apple">Apple (VideoToolbox VT)</option>
+                  {availableVendors.includes('NVIDIA') && <option value="NVIDIA">NVIDIA (NVENC CUDA VRAM)</option>}
+                  {availableVendors.includes('Intel') && <option value="Intel">Intel (QuickSync QSV)</option>}
+                  {availableVendors.includes('AMD') && <option value="AMD">AMD (AMF VCE)</option>}
+                  {availableVendors.includes('Apple') && <option value="Apple">Apple (VideoToolbox VT)</option>}
                   <option value="Software">Software CPU Fallback</option>
                 </select>
               </div>
@@ -267,9 +270,7 @@ export function AdvancedTab({
                         {gpu.name} ({gpu.vendor})
                       </option>
                     ))
-                  ) : (
-                    <option value="">Default GPU Adapter</option>
-                  )}
+                  ) : <option value="">Software CPU Encoding</option>}
                 </select>
               </div>
             </div>
@@ -350,11 +351,11 @@ export function AdvancedTab({
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs font-medium outline-hidden focus:border-primary transition-all"
           >
             <option value="">Auto (Recommended)</option>
-            <option value="nvenc_av1">AV1 NVENC (NVIDIA GPU)</option>
-            <option value="qsv_av1">AV1 QSV (Intel GPU)</option>
+            {availableVendors.includes('NVIDIA') && <option value="nvenc_av1">AV1 NVENC (NVIDIA GPU)</option>}
+            {availableVendors.includes('Intel') && <option value="qsv_av1">AV1 QSV (Intel GPU)</option>}
             <option value="svt_av1">SVT-AV1 10-bit (CPU)</option>
-            <option value="nvenc_h265">HEVC NVENC (NVIDIA GPU)</option>
-            <option value="qsv_h265">HEVC QSV (Intel GPU)</option>
+            {availableVendors.includes('NVIDIA') && <option value="nvenc_h265">HEVC NVENC (NVIDIA GPU)</option>}
+            {availableVendors.includes('Intel') && <option value="qsv_h265">HEVC QSV (Intel GPU)</option>}
             <option value="x265">x265 10-bit (CPU)</option>
           </select>
         </div>

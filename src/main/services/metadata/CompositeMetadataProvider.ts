@@ -1,5 +1,6 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from './IMetadataProvider'
 import { getLoggingService } from '../LoggingService'
+import { normalizeTitleForMatching, scoreTitleMatch } from './TitleMatching'
 
 /**
  * Composite Metadata Provider that aggregates multiple providers and executes multi-provider result fusion.
@@ -59,32 +60,20 @@ export class CompositeMetadataProvider implements IMetadataProvider {
       }
     }
 
-    const targetTitle = query.title.toLowerCase().trim()
-    
     for (const candidate of allCandidates) {
-      let score = 0
-      const cTitle = candidate.title.toLowerCase().trim()
-      if (cTitle === targetTitle) {
-        score += 50
-      } else if (cTitle.includes(targetTitle) || targetTitle.includes(cTitle)) {
-        score += 20
-      }
-
-      if (query.year && candidate.year) {
-        if (query.year === candidate.year) {
-          score += 30
-        } else if (Math.abs(query.year - candidate.year) === 1) {
-          score += 10
-        }
-      }
-
-      candidate.score = score
+      const titleScores = [candidate.title, ...(candidate.alternateTitles || [])]
+        .map(title => scoreTitleMatch(title, query.title, candidate.year, query.year))
+      candidate.score = Math.max(...titleScores, 0)
     }
     
     const fusedMap = new Map<string, MetadataSearchResult>()
     
     for (const candidate of allCandidates) {
-      const key = `${candidate.title.toLowerCase().trim()}_${candidate.year || 'unknown'}`
+      const key = candidate.externalIds?.tmdbId
+        ? `tmdb:${candidate.externalIds.tmdbId}`
+        : candidate.externalIds?.imdbId
+          ? `imdb:${candidate.externalIds.imdbId}`
+          : `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
       if (!fusedMap.has(key)) {
         fusedMap.set(key, { ...candidate })
       } else {
@@ -94,6 +83,8 @@ export class CompositeMetadataProvider implements IMetadataProvider {
         existing.bannerUrl = existing.bannerUrl || candidate.bannerUrl
         existing.imdbRating = existing.imdbRating ?? candidate.imdbRating
         existing.imdbVotes = existing.imdbVotes ?? candidate.imdbVotes
+        existing.externalIds = { ...candidate.externalIds, ...existing.externalIds }
+        existing.alternateTitles = Array.from(new Set([...(existing.alternateTitles || []), ...(candidate.alternateTitles || [])]))
         if ((candidate.score || 0) > (existing.score || 0)) {
           existing.score = candidate.score
         }
