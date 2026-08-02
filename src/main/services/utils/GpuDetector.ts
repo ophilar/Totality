@@ -40,8 +40,8 @@ export class GpuDetector {
     
     try {
       if (platform === 'win32') {
-        const { stdout } = await execAsync('wmic path win32_VideoController get name')
-        const lines = stdout.split('\n').map(l => l.trim()).filter(l => l && l !== 'Name' && !l.toLowerCase().includes('videocontroller'))
+        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"')
+        const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean)
         lines.forEach((name, idx) => {
           gpus.push({
             id: `win-gpu-${idx}`,

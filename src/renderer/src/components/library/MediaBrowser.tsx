@@ -66,7 +66,7 @@ export function MediaBrowser({
     gridScale, setGridScale,
     viewType, setViewType,
     selectedItemId: selectedMediaId, setSelectedMedia: setSelectedMediaId,
-    sortBy, setSortBy,
+    sortBy, setSortBy, sortOrder, setSortOrder,
     setActiveSourceId: setContextActiveSourceId,
     selectedShow, setSelectedShow,
     selectedArtist, setSelectedArtist,
@@ -130,6 +130,13 @@ export function MediaBrowser({
   const [selectedAlbumCompleteness, setSelectedAlbumCompleteness] = useState<AlbumCompletenessData | null>(null)
   const [activeSourceLibraries, setActiveSourceLibraries] = useState<any[]>([])
   const [detailRefreshKey, setDetailRefreshKey] = useState(0)
+  const handleSortChange = useCallback((nextSort: string) => {
+    if (nextSort === sortBy) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortBy(nextSort)
+      setSortOrder(nextSort === 'efficiency' || nextSort === 'waste' || nextSort === 'storage_debt' ? 'desc' : 'asc')
+    }
+  }, [setSortBy, setSortOrder, sortBy, sortOrder])
 
   // PAGINATION HOOKS
   const {
@@ -240,7 +247,7 @@ export function MediaBrowser({
       sortBy: sortBy === 'title' 
         ? (view === 'music' ? 'name' : 'title') 
         : (sortBy === 'waste' ? 'storage_debt' : sortBy),
-      sortOrder: (sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'storage_debt') ? 'desc' : 'asc',
+      sortOrder,
       qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
       tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
       alphabetFilter: alphabetFilter || undefined,
@@ -256,7 +263,7 @@ export function MediaBrowser({
       else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as any)
       else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as any)
     }
-  }, [view, musicViewMode, sortBy, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
+  }, [view, musicViewMode, sortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
 
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -428,7 +435,7 @@ export function MediaBrowser({
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
-                  movies={movies} sortBy={sortBy as any} onSortChange={setSortBy} slimDown={slimDown}
+                  movies={movies} sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
                   onSelectMovie={(id) => setSelectedMediaId(id)}
                   onSelectCollection={(c) => { setSelectedCollection(c); setShowCollectionModal(true) }}
                   viewType={viewType} gridScale={gridScale}
@@ -444,7 +451,7 @@ export function MediaBrowser({
             {view === 'tv' && (
               <SectionErrorBoundary title="TV Shows">
                 <TVShowsView
-                  shows={shows} sortBy={sortBy as any} onSortChange={setSortBy} slimDown={slimDown}
+                  shows={shows} sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
                   selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData}
                   selectedShowLoading={selectedShowEpisodesLoading} onSelectShow={setSelectedShow}
                   onSelectSeason={setSelectedSeason} onSelectEpisode={setSelectedMediaId}
@@ -464,7 +471,7 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-                  sortBy={sortBy as any} onSortChange={setSortBy} slimDown={slimDown}
+                  sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}
