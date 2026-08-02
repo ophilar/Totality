@@ -14,7 +14,10 @@ export const IPC_CHANNELS = {
     SEARCH_SERIES: 'arr:searchSeries',
     LOOKUP_MOVIE: 'arr:lookupMovie',
     LOOKUP_SERIES: 'arr:lookupSeries',
-    GET_COMMAND: 'arr:getCommand'
+    FIND_MANAGED_MOVIE: 'arr:findManagedMovie',
+    FIND_MANAGED_SERIES: 'arr:findManagedSeries',
+    GET_COMMAND: 'arr:getCommand',
+    WAIT_COMMAND: 'arr:waitCommand'
   },
   DATABASE: {
     GET_SETTING: 'db:getSetting',

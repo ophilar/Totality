@@ -156,6 +156,20 @@ export function ServicesTab() {
   const [arrStatus, setArrStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
   const [metadataProviderPreferences, setMetadataProviderPreferences] = useState('{"enabled":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"],"order":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"]}')
   const [originalMetadataProviderPreferences, setOriginalMetadataProviderPreferences] = useState('')
+  const metadataProviders = ['tmdb', 'anilist', 'omdb', 'tvmaze', 'tvdb', 'musicbrainz']
+  const metadataProviderLabels: Record<string, string> = { tmdb: 'TMDB', anilist: 'AniList', omdb: 'OMDb', tvmaze: 'TVmaze', tvdb: 'TVDB', musicbrainz: 'MusicBrainz' }
+  const readProviderPreferences = () => {
+    try {
+      const parsed = JSON.parse(metadataProviderPreferences)
+      return {
+        enabled: metadataProviders.filter(id => parsed.enabled?.includes(id)),
+        order: metadataProviders.filter(id => parsed.order?.includes(id)).concat(metadataProviders.filter(id => !parsed.order?.includes(id)))
+      }
+    } catch {
+      return { enabled: metadataProviders, order: metadataProviders }
+    }
+  }
+  const writeProviderPreferences = (enabled: string[], order: string[]) => setMetadataProviderPreferences(JSON.stringify({ enabled, order }))
 
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
@@ -1308,9 +1322,19 @@ export function ServicesTab() {
         onToggle={() => toggleCard('metadata-providers')}
       >
         <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">Provider preferences (JSON)</label>
-          <textarea value={metadataProviderPreferences} onChange={(e) => setMetadataProviderPreferences(e.target.value)} rows={3} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-xs font-mono" aria-label="Metadata provider preferences" />
-          <p className="text-xs text-muted-foreground">Use provider IDs such as tmdb, anilist, omdb, tvmaze, tvdb, and musicbrainz. Omit the setting to use all providers.</p>
+          <p className="text-xs text-muted-foreground">All enabled providers contribute to metadata fusion. Order controls conflicting field precedence.</p>
+          {(() => {
+            const preferences = readProviderPreferences()
+            return preferences.order.map((id, index) => (
+              <div key={id} className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-2">
+                <input type="checkbox" checked={preferences.enabled.includes(id)} onChange={(e) => writeProviderPreferences(e.target.checked ? [...preferences.enabled, id] : preferences.enabled.filter(provider => provider !== id), preferences.order)} aria-label={`Enable ${metadataProviderLabels[id]}`} />
+                <span className="flex-1 text-sm">{metadataProviderLabels[id]}</span>
+                <button type="button" disabled={index === 0} onClick={() => { const order = [...preferences.order]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} up`}>↑</button>
+                <button type="button" disabled={index === preferences.order.length - 1} onClick={() => { const order = [...preferences.order]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} down`}>↓</button>
+              </div>
+            ))
+          })()}
+          <p className="text-xs text-muted-foreground">TMDB, TVDB, and OMDb use API credentials. AniList, TVmaze, and MusicBrainz do not require an API key.</p>
         </div>
       </ServiceCard>
 
