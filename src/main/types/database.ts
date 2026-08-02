@@ -966,5 +966,8 @@ export interface DashboardSummary {
     collectionSort: string
     seriesSort: string
     artistSort: string
+    collectionSortOrder: 'asc' | 'desc'
+    seriesSortOrder: 'asc' | 'desc'
+    artistSortOrder: 'asc' | 'desc'
   }
 }

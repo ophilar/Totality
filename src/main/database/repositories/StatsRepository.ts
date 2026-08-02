@@ -14,7 +14,7 @@ export class StatsRepository {
     // 1. Settings
     const settingsList = await this.drizzle.select({ key: schema.settings.key, value: schema.settings.value })
       .from(schema.settings)
-      .where(sql`key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort')`)
+      .where(sql`key IN ('completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort', 'dashboard_collection_sort_order', 'dashboard_series_sort_order', 'dashboard_artist_sort_order')`)
       .all()
     
     const settingsMap = settingsList.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>)
@@ -23,6 +23,9 @@ export class StatsRepository {
     const cSort = settingsMap['dashboard_collection_sort'] || 'completeness'
     const sSort = settingsMap['dashboard_series_sort'] || 'completeness'
     const aSort = settingsMap['dashboard_artist_sort'] || 'completeness'
+    const cOrder = settingsMap['dashboard_collection_sort_order'] === 'asc' ? 'asc' : 'desc'
+    const sOrder = settingsMap['dashboard_series_sort_order'] === 'asc' ? 'asc' : 'desc'
+    const aOrder = settingsMap['dashboard_artist_sort_order'] === 'asc' ? 'asc' : 'desc'
 
     // Sort order helpers
     const getUpgradeOrder = (item: any, q: any) => {
@@ -33,20 +36,20 @@ export class StatsRepository {
     }
 
     const getCollectionOrder = () => {
-      if (cSort === 'name') return [asc(schema.movieCollections.collectionName)]
-      if (cSort === 'recent') return [desc(schema.movieCollections.createdAt)]
-      return [desc(schema.movieCollections.completenessPercentage)]
+      if (cSort === 'name') return [cOrder === 'asc' ? asc(schema.movieCollections.collectionName) : desc(schema.movieCollections.collectionName)]
+      if (cSort === 'recent') return [cOrder === 'asc' ? asc(schema.movieCollections.createdAt) : desc(schema.movieCollections.createdAt)]
+      return [cOrder === 'asc' ? asc(schema.movieCollections.completenessPercentage) : desc(schema.movieCollections.completenessPercentage)]
     }
 
     const getSeriesOrder = () => {
-      if (sSort === 'name') return [asc(schema.seriesCompleteness.seriesTitle)]
-      if (sSort === 'recent') return [desc(schema.seriesCompleteness.createdAt)]
-      return [desc(schema.seriesCompleteness.completenessPercentage)]
+      if (sSort === 'name') return [sOrder === 'asc' ? asc(schema.seriesCompleteness.seriesTitle) : desc(schema.seriesCompleteness.seriesTitle)]
+      if (sSort === 'recent') return [sOrder === 'asc' ? asc(schema.seriesCompleteness.createdAt) : desc(schema.seriesCompleteness.createdAt)]
+      return [sOrder === 'asc' ? asc(schema.seriesCompleteness.completenessPercentage) : desc(schema.seriesCompleteness.completenessPercentage)]
     }
 
     const getArtistOrder = () => {
-      if (aSort === 'name') return [asc(schema.artistCompleteness.artistName)]
-      return [desc(schema.artistCompleteness.completenessPercentage)]
+      if (aSort === 'name') return [aOrder === 'asc' ? asc(schema.artistCompleteness.artistName) : desc(schema.artistCompleteness.artistName)]
+      return [aOrder === 'asc' ? asc(schema.artistCompleteness.completenessPercentage) : desc(schema.artistCompleteness.completenessPercentage)]
     }
 
     // Common conditions for library visibility
@@ -239,6 +242,7 @@ export class StatsRepository {
         collectionSort: settingsMap['dashboard_collection_sort'] || 'completeness',
         seriesSort: settingsMap['dashboard_series_sort'] || 'completeness',
         artistSort: settingsMap['dashboard_artist_sort'] || 'completeness'
+        , collectionSortOrder: cOrder, seriesSortOrder: sOrder, artistSortOrder: aOrder
       }
     }
   }
