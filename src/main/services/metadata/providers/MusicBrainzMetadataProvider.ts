@@ -13,6 +13,10 @@ export class MusicBrainzMetadataProvider implements IMetadataProvider {
       const details = await this.getDetails(query.externalIds.musicbrainz_id, 'music')
       return details ? [details] : []
     }
+    if (query.artistName) {
+      const releaseResults = await mb.searchRelease(query.artistName, query.title)
+      return releaseResults.map((release: any) => ({ id: String(release.id), provider: this.providerId, title: release.title || query.title, type: 'music' as MetadataType, year: release.first_release_date ? Number(String(release.first_release_date).slice(0, 4)) : undefined, score: release.score, externalIds: { musicBrainzId: String(release.id) } }))
+    }
     const artistResults = await mb.searchArtist(query.title)
     return artistResults.map((artist: any) => ({
       id: String(artist.id), provider: this.providerId, title: artist.name || query.title,

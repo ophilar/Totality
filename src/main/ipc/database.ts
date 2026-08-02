@@ -236,13 +236,14 @@ export function registerDatabaseHandlers() {
 
   createValidatedIpcHandler(
     IPC_CHANNELS.MEDIA.SEARCH_METADATA,
-    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional()]),
-    async (query, type, includeAdult) => {
+    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional(), NonEmptyStringSchema.optional()]),
+    async (query, type, includeAdult, artistName) => {
       const matchingService = MetadataRegistryService.getInstance().getMatchingService()
       return await matchingService.matchMediaItem({
         title: query,
         type: (type as any) || 'movie',
-        includeAdult
+        includeAdult,
+        artistName
       })
     }
   )

@@ -8,6 +8,7 @@ export interface MetadataSearchQuery {
   externalIds?: { imdb_id?: string; tvdb_id?: string; tmdb_id?: string; anilist_id?: string; musicbrainz_id?: string }
   seasonNumber?: number
   episodeNumber?: number
+  artistName?: string
   includeExpanded?: boolean
   /** @deprecated Use includeExpanded in new callers. */
   includeAdult?: boolean

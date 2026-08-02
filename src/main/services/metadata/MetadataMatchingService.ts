@@ -7,6 +7,7 @@ export interface MatchMediaItemParams {
   year?: number
   type: MetadataType
   externalIds?: Record<string, string>
+  artistName?: string
   includeExpanded?: boolean
   /** @deprecated Compatibility alias for existing IPC callers. */
   includeAdult?: boolean
@@ -38,6 +39,7 @@ export class MetadataMatchingService {
         year: query.year,
         type: params.type,
         externalIds: params.externalIds,
+        artistName: params.artistName,
         includeAdult: params.includeAdult
       }
       const expanded = params.includeExpanded ?? params.includeAdult
