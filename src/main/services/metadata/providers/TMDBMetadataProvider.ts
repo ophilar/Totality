@@ -12,7 +12,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
     if (!apiKey) return []
 
     const endpoint = query.type === 'movie' ? 'search/movie' : 'search/tv'
-    const adultParam = query.includeAdult ? '&include_adult=true' : ''
+    const adultParam = (query.includeExpanded ?? query.includeAdult) ? '&include_adult=true' : ''
     const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${query.year ? `&year=${query.year}` : ''}${adultParam}`
 
     try {

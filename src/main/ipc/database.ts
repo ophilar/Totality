@@ -113,7 +113,7 @@ export function registerDatabaseHandlers() {
     return await db.config.getSetting(key)
   })
 
-  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key'])
+  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key', 'omdb_api_key', 'tvdb_api_key', 'tvdb_pin', 'sonarr_api_key', 'radarr_api_key'])
 
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.SET_SETTING, SetSettingTupleSchema, async (event, key, value) => {
     getLoggingService().info('[IPC db:setSetting]', key, sensitiveSettingKeys.has(key) ? '(redacted)' : value)

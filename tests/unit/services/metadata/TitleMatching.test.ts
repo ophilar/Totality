@@ -22,4 +22,8 @@ describe('TitleMatching', () => {
     expect(exactYear).toBeGreaterThan(closeYear)
     expect(closeYear).toBeGreaterThan(0)
   })
+
+  it('gives a small typo a positive fuzzy score without equating unrelated titles', () => {
+    expect(scoreTitleMatch('Spidre-Man', 'Spider-Man')).toBeGreaterThan(scoreTitleMatch('Batman', 'Spider-Man'))
+  })
 })

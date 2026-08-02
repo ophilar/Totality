@@ -34,6 +34,12 @@ export class CompositeMetadataProvider implements IMetadataProvider {
     return [...this.providers]
   }
 
+  private identityKey(candidate: MetadataSearchResult): string {
+    const ids = candidate.externalIds || {}
+    const identity = ids.tmdbId ? `tmdb:${ids.tmdbId}` : ids.tvdbId ? `tvdb:${ids.tvdbId}` : ids.imdbId ? `imdb:${ids.imdbId}` : ids.musicBrainzId ? `mb:${ids.musicBrainzId}` : ids.anilistId ? `anilist:${ids.anilistId}` : null
+    return identity || `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
+  }
+
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
     return this.searchAndFuse(query)
   }
@@ -69,11 +75,12 @@ export class CompositeMetadataProvider implements IMetadataProvider {
     const fusedMap = new Map<string, MetadataSearchResult>()
     
     for (const candidate of allCandidates) {
-      const key = candidate.externalIds?.tmdbId
-        ? `tmdb:${candidate.externalIds.tmdbId}`
-        : candidate.externalIds?.imdbId
-          ? `imdb:${candidate.externalIds.imdbId}`
-          : `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
+      const candidateIds = Object.values(candidate.externalIds || {}).filter(Boolean)
+      const sharedKey = Array.from(fusedMap.entries()).find(([, existing]) => {
+        const existingIds = Object.values(existing.externalIds || {}).filter(Boolean)
+        return candidateIds.some(id => existingIds.includes(id))
+      })?.[0]
+      const key = sharedKey || this.identityKey(candidate)
       if (!fusedMap.has(key)) {
         fusedMap.set(key, { ...candidate })
       } else {
@@ -146,6 +153,8 @@ export class CompositeMetadataProvider implements IMetadataProvider {
           primaryDetails.awards = primaryDetails.awards ?? details.awards
           primaryDetails.overview = primaryDetails.overview || details.overview
           primaryDetails.posterUrl = primaryDetails.posterUrl || details.posterUrl
+          primaryDetails.externalIds = { ...details.externalIds, ...primaryDetails.externalIds }
+          primaryDetails.alternateTitles = Array.from(new Set([...(primaryDetails.alternateTitles || []), ...(details.alternateTitles || [])]))
         }
       }
     }

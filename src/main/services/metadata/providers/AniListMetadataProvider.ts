@@ -18,6 +18,7 @@ export class AniListMetadataProvider implements IMetadataProvider {
               english
               native
             }
+            synonyms
             startDate {
               year
             }
@@ -55,7 +56,9 @@ export class AniListMetadataProvider implements IMetadataProvider {
         posterUrl: item.coverImage?.large,
         bannerUrl: item.bannerImage,
         overview: item.description,
-        score: item.meanScore ? item.meanScore / 10 : undefined
+        score: item.meanScore ? item.meanScore / 10 : undefined,
+        externalIds: { anilistId: String(item.id) },
+        alternateTitles: [item.title?.romaji, item.title?.english, item.title?.native, ...(item.synonyms || [])].filter(Boolean)
       }))
     } catch (err) {
       console.error('[AniListMetadataProvider] Search error:', err)
@@ -71,7 +74,9 @@ export class AniListMetadataProvider implements IMetadataProvider {
           title {
             romaji
             english
+            native
           }
+          synonyms
           startDate { year }
           coverImage { large }
           bannerImage
@@ -111,6 +116,8 @@ export class AniListMetadataProvider implements IMetadataProvider {
         score: item.meanScore ? item.meanScore / 10 : undefined,
         genres: item.genres || [],
         totalEpisodes: item.episodes,
+        externalIds: { anilistId: String(item.id) },
+        alternateTitles: [item.title?.romaji, item.title?.english, item.title?.native, ...(item.synonyms || [])].filter(Boolean),
         raw: item
       }
     } catch (err) {
