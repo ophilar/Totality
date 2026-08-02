@@ -11,5 +11,7 @@ export function registerArrHandlers() {
   createValidatedIpcHandler(IPC_CHANNELS.ARR.TEST_CONNECTION, z.tuple([kindSchema, configSchema]), async (kind, config) => service(kind, config).testConnection())
   createValidatedIpcHandler(IPC_CHANNELS.ARR.SEARCH_MOVIE, z.tuple([configSchema, z.number().int().positive()]), async (config, movieId) => service('radarr', config).searchMovie(movieId))
   createValidatedIpcHandler(IPC_CHANNELS.ARR.SEARCH_SERIES, z.tuple([configSchema, z.number().int().positive(), z.number().int().nonnegative().optional(), z.array(z.number().int().positive()).optional()]), async (config, seriesId, seasonNumber, episodeIds) => service('sonarr', config).searchSeries(seriesId, seasonNumber, episodeIds))
+  createValidatedIpcHandler(IPC_CHANNELS.ARR.LOOKUP_MOVIE, z.tuple([configSchema, z.number().int().positive()]), async (config, tmdbId) => service('radarr', config).lookupMovieByTmdbId(tmdbId))
+  createValidatedIpcHandler(IPC_CHANNELS.ARR.LOOKUP_SERIES, z.tuple([configSchema, z.number().int().positive()]), async (config, tvdbId) => service('sonarr', config).lookupSeriesByTvdbId(tvdbId))
   createValidatedIpcHandler(IPC_CHANNELS.ARR.GET_COMMAND, z.tuple([configSchema, z.number().int().positive()]), async (config, commandId) => service('sonarr', config).getCommand(commandId))
 }

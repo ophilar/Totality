@@ -38,6 +38,14 @@ export class ArrIntegrationService {
     return this.request('/api/v3/command', { method: 'POST', body: JSON.stringify({ name: 'MovieSearch', movieIds: [movieId] }) })
   }
 
+  async lookupMovieByTmdbId(tmdbId: number): Promise<Record<string, unknown>[]> {
+    return this.request(`/api/v3/movie/lookup?term=${encodeURIComponent(`tmdb:${tmdbId}`)}`)
+  }
+
+  async lookupSeriesByTvdbId(tvdbId: number): Promise<Record<string, unknown>[]> {
+    return this.request(`/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${tvdbId}`)}`)
+  }
+
   async searchSeries(seriesId: number, seasonNumber?: number, episodeIds?: number[]): Promise<Record<string, unknown>> {
     const body = seasonNumber !== undefined
       ? { name: 'SeasonSearch', seriesId, seasonNumber }

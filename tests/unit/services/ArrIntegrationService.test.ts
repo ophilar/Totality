@@ -21,4 +21,15 @@ describe('ArrIntegrationService', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:7878/api/v3/command')
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ name: 'MovieSearch', movieIds: [123] })
   })
+
+  it('looks up managed movie and series records by external identity', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('[]', { status: 200 }))
+    const service = new ArrIntegrationService({ baseUrl: 'http://localhost:8989', apiKey: 'secret' })
+
+    await service.lookupMovieByTmdbId(123)
+    await service.lookupSeriesByTvdbId(456)
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8989/api/v3/movie/lookup?term=tmdb%3A123')
+    expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8989/api/v3/series/lookup?term=tvdb%3A456')
+  })
 })

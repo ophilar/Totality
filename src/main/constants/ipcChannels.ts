@@ -12,6 +12,8 @@ export const IPC_CHANNELS = {
     TEST_CONNECTION: 'arr:testConnection',
     SEARCH_MOVIE: 'arr:searchMovie',
     SEARCH_SERIES: 'arr:searchSeries',
+    LOOKUP_MOVIE: 'arr:lookupMovie',
+    LOOKUP_SERIES: 'arr:lookupSeries',
     GET_COMMAND: 'arr:getCommand'
   },
   DATABASE: {
