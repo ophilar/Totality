@@ -154,6 +154,8 @@ export function ServicesTab() {
   const [originalRadarrUrl, setOriginalRadarrUrl] = useState('')
   const [originalRadarrKey, setOriginalRadarrKey] = useState('')
   const [arrStatus, setArrStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [metadataProviderPreferences, setMetadataProviderPreferences] = useState('{"enabled":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"],"order":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"]}')
+  const [originalMetadataProviderPreferences, setOriginalMetadataProviderPreferences] = useState('')
 
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
@@ -248,8 +250,8 @@ export function ServicesTab() {
     const omdbChanged = omdbApiKey !== originalOmdb
     const tvdbChanged = tvdbApiKey !== originalTvdbApiKey || tvdbPin !== originalTvdbPin
     const arrChanged = sonarrUrl !== originalSonarrUrl || sonarrKey !== originalSonarrKey || radarrUrl !== originalRadarrUrl || radarrKey !== originalRadarrKey
-    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged || tvdbChanged || arrChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb, tvdbApiKey, originalTvdbApiKey, tvdbPin, originalTvdbPin, sonarrUrl, sonarrKey, radarrUrl, radarrKey, originalSonarrUrl, originalSonarrKey, originalRadarrUrl, originalRadarrKey])
+    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged || tvdbChanged || arrChanged || metadataProviderPreferences !== originalMetadataProviderPreferences)
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb, tvdbApiKey, originalTvdbApiKey, tvdbPin, originalTvdbPin, sonarrUrl, sonarrKey, radarrUrl, radarrKey, originalSonarrUrl, originalSonarrKey, originalRadarrUrl, originalRadarrKey, metadataProviderPreferences, originalMetadataProviderPreferences])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
@@ -303,6 +305,9 @@ export function ServicesTab() {
       setSonarrKey(allSettings.sonarr_api_key || '')
       setRadarrUrl(allSettings.radarr_url || '')
       setRadarrKey(allSettings.radarr_api_key || '')
+      const providerPreferences = allSettings.metadata_provider_preferences || metadataProviderPreferences
+      setMetadataProviderPreferences(providerPreferences)
+      setOriginalMetadataProviderPreferences(providerPreferences)
       setOriginalSonarrUrl(allSettings.sonarr_url || '')
       setOriginalSonarrKey(allSettings.sonarr_api_key || '')
       setOriginalRadarrUrl(allSettings.radarr_url || '')
@@ -393,6 +398,7 @@ export function ServicesTab() {
         window.electronAPI.setSetting('sonarr_api_key', sonarrKey),
         window.electronAPI.setSetting('radarr_url', radarrUrl),
         window.electronAPI.setSetting('radarr_api_key', radarrKey),
+        window.electronAPI.setSetting('metadata_provider_preferences', metadataProviderPreferences),
       ])
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
@@ -406,6 +412,7 @@ export function ServicesTab() {
       setOriginalSonarrKey(sonarrKey)
       setOriginalRadarrUrl(radarrUrl)
       setOriginalRadarrKey(radarrKey)
+      setOriginalMetadataProviderPreferences(metadataProviderPreferences)
       setHasChanges(false)
     } catch (error) {
       window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
@@ -1288,6 +1295,22 @@ export function ServicesTab() {
             <button disabled={!radarrUrl || !radarrKey || arrStatus === 'testing'} onClick={async () => { setArrStatus('testing'); const result = await window.electronAPI.arrTestConnection('radarr', { baseUrl: radarrUrl, apiKey: radarrKey }); setArrStatus(result.success ? 'valid' : 'invalid') }} className="px-3 py-2 text-sm bg-muted rounded-md disabled:opacity-50">Test Radarr</button>
           </div>
           <p className="text-xs text-muted-foreground">Search commands require explicit confirmation from the media action menu. Totality does not choose indexers or releases.</p>
+        </div>
+      </ServiceCard>
+
+      <ServiceCard
+        title="Metadata providers"
+        description="Choose enabled providers and their fusion priority"
+        icon={<Network className="w-5 h-5" />}
+        status="configured"
+        statusText="Fusion enabled"
+        expanded={expandedCards.has('metadata-providers')}
+        onToggle={() => toggleCard('metadata-providers')}
+      >
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Provider preferences (JSON)</label>
+          <textarea value={metadataProviderPreferences} onChange={(e) => setMetadataProviderPreferences(e.target.value)} rows={3} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-xs font-mono" aria-label="Metadata provider preferences" />
+          <p className="text-xs text-muted-foreground">Use provider IDs such as tmdb, anilist, omdb, tvmaze, tvdb, and musicbrainz. Omit the setting to use all providers.</p>
         </div>
       </ServiceCard>
 

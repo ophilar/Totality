@@ -73,4 +73,17 @@ describe('CompositeMetadataProvider - searchAndFuse', () => {
     expect(results).toHaveLength(1)
     expect(results[0].externalIds).toMatchObject({ tmdbId: '10', imdbId: 'tt77', tvdbId: '77' })
   })
+
+  it('honors persisted provider enablement and ordering preferences', async () => {
+    const settings = vi.fn().mockResolvedValue({ enabled: ['omdb'], order: ['omdb', 'tmdb'] })
+    composite = new CompositeMetadataProvider([tmdb, omdb], settings)
+    omdb.mockSearch.mockResolvedValue([{ id: 'tt1', provider: 'omdb', title: 'Example', year: 2020, type: 'movie' }])
+
+    const results = await composite.searchAndFuse({ title: 'Example', type: 'movie', year: 2020 })
+
+    expect(settings).toHaveBeenCalledOnce()
+    expect(tmdb.mockSearch).not.toHaveBeenCalled()
+    expect(omdb.mockSearch).toHaveBeenCalledOnce()
+    expect(results).toHaveLength(1)
+  })
 })

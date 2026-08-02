@@ -12,7 +12,7 @@ export class CompositeMetadataProvider implements IMetadataProvider {
   
   private providers: IMetadataProvider[] = []
 
-  constructor(initialProviders: IMetadataProvider[] = []) {
+  constructor(initialProviders: IMetadataProvider[] = [], private readonly providerSettings?: () => Promise<{ enabled?: string[]; order?: string[] } | null>) {
     this.providers = [...initialProviders]
   }
 
@@ -45,7 +45,13 @@ export class CompositeMetadataProvider implements IMetadataProvider {
   }
 
   async searchAndFuse(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(query.type))
+    const settings = await this.providerSettings?.().catch(() => null)
+    const enabled = settings?.enabled
+    const order = settings?.order
+    const orderIndex = new Map((order || []).map((id, index) => [id, index]))
+    const matchingProviders = this.providers
+      .filter(p => p.supportedTypes.includes(query.type) && (!enabled || enabled.includes(p.providerId)))
+      .sort((a, b) => (orderIndex.get(a.providerId) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.providerId) ?? Number.MAX_SAFE_INTEGER))
     const results = await Promise.allSettled(
       matchingProviders.map(async p => {
         try {

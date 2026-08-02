@@ -6,6 +6,7 @@ import { TVMazeMetadataProvider } from './providers/TVMazeMetadataProvider'
 import { TVDBMetadataProvider } from './providers/TVDBMetadataProvider'
 import { MusicBrainzMetadataProvider } from './providers/MusicBrainzMetadataProvider'
 import { MetadataMatchingService } from './MetadataMatchingService'
+import { getDatabase } from '../../database/BetterSQLiteService'
 
 /**
  * MetadataRegistryService - Singleton orchestrator for metadata provider strategies.
@@ -15,7 +16,17 @@ export class MetadataRegistryService {
   private compositeProvider: CompositeMetadataProvider
 
   private constructor() {
-    this.compositeProvider = new CompositeMetadataProvider()
+    this.compositeProvider = new CompositeMetadataProvider([], async () => {
+      try {
+        const raw = await getDatabase().config.getSetting('metadata_provider_preferences')
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        return {
+          enabled: Array.isArray(parsed.enabled) ? parsed.enabled.filter((id: unknown): id is string => typeof id === 'string') : undefined,
+          order: Array.isArray(parsed.order) ? parsed.order.filter((id: unknown): id is string => typeof id === 'string') : undefined
+        }
+      } catch { return null }
+    })
     this.initializeProviders()
   }
 
