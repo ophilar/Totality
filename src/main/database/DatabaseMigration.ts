@@ -95,6 +95,7 @@ export async function runMigrations(db: Client): Promise<void> {
 
   // Series Completeness
   await ensureColumn(db, 'series_completeness', 'tmdb_id', 'TEXT')
+  await ensureColumn(db, 'series_completeness', 'tvdb_id', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'poster_url', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'backdrop_url', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'status', 'TEXT')

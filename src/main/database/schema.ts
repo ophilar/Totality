@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS series_completeness (
 
   -- TMDB metadata
   tmdb_id TEXT,
+  tvdb_id TEXT,
   poster_url TEXT,
   backdrop_url TEXT,
   status TEXT,
