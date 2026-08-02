@@ -6,6 +6,7 @@ export interface TranscodingAvailability {
 }
 
 export interface TranscodingCapabilities extends TranscodingAvailability {
+  detectedAt: string
   gpus: GpuInfo[]
   vendors: Array<GpuInfo['vendor'] | 'Software'>
   encoders: string[]
@@ -36,6 +37,7 @@ export function buildTranscodingCapabilities(
 
   return {
     ...availability,
+    detectedAt: new Date().toISOString(),
     gpus,
     vendors,
     encoders: Array.from(new Set(encoders)),

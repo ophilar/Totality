@@ -1,4 +1,5 @@
 import { CircleFadingArrowUp } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from '@/components/dashboard/UpgradeRows'
 import { Virtuoso } from 'react-virtuoso'
@@ -32,11 +33,26 @@ export function UpgradesColumn({
   onSelect, onDismissMovie, onDismissTv, onDismissMusic,
   expandedRecommendations, toggleRecommendation
 }: UpgradesColumnProps) {
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const sortItems = <T extends MediaItem | MusicAlbumUpgrade>(items: T[]) => [...items].sort((a, b) => {
+    const value = (item: T): string | number => {
+      if (upgradeSortBy === 'title') return item.title || ''
+      if (upgradeSortBy === 'recent') return new Date(item.updated_at || item.created_at || 0).getTime()
+      if (upgradeSortBy === 'efficiency') return 'file_size' in item ? item.file_size || 0 : 0
+      return item.quality_tier || ''
+    }
+    const left = value(a), right = value(b)
+    const result = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' })
+    return sortDirection === 'asc' ? result : -result
+  })
+  const sortedMovies = useMemo(() => sortItems(movieUpgrades), [movieUpgrades, upgradeSortBy, sortDirection])
+  const sortedTv = useMemo(() => sortItems(tvUpgrades), [tvUpgrades, upgradeSortBy, sortDirection])
+  const sortedMusic = useMemo(() => sortItems(musicUpgrades), [musicUpgrades, upgradeSortBy, sortDirection])
   const movieRow = (index: number) => (
     <MovieUpgradeRow
       index={index}
-      item={movieUpgrades[index]}
-      isExpanded={expandedRecommendations.has(movieUpgrades[index].id!)}
+      item={sortedMovies[index]}
+      isExpanded={expandedRecommendations.has(sortedMovies[index].id!)}
       onToggleExpand={toggleRecommendation}
       onSelect={onSelect}
       onDismiss={onDismissMovie}
@@ -46,8 +62,8 @@ export function UpgradesColumn({
   const tvRow = (index: number) => (
     <TvUpgradeRow
       index={index}
-      item={tvUpgrades[index]}
-      isExpanded={expandedRecommendations.has(tvUpgrades[index].id!)}
+      item={sortedTv[index]}
+      isExpanded={expandedRecommendations.has(sortedTv[index].id!)}
       onToggleExpand={toggleRecommendation}
       onSelect={onSelect}
       onDismiss={onDismissTv}
@@ -57,7 +73,7 @@ export function UpgradesColumn({
   const musicRow = (index: number) => (
     <MusicUpgradeRow
       index={index}
-      album={musicUpgrades[index]}
+      album={sortedMusic[index]}
       onSelect={onSelect}
       onDismiss={onDismissMusic}
     />
@@ -79,6 +95,9 @@ export function UpgradesColumn({
         <option value="recent">Recent</option>
         <option value="title">Title</option>
       </select>
+      <button type="button" onClick={() => setSortDirection(value => value === 'asc' ? 'desc' : 'asc')} className="text-xs px-1.5 py-0.5 border border-border/50 rounded hover:bg-muted" title="Toggle sort direction">
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </button>
     </div>
   )
 
@@ -99,13 +118,13 @@ export function UpgradesColumn({
         <div className="flex-1 min-h-0 relative">
           <div className="absolute inset-0">
             {upgradeTab === 'movies' && movieUpgrades.length > 0 && (
-              <Virtuoso className="h-full" totalCount={movieUpgrades.length} itemContent={movieRow} />
+              <Virtuoso className="h-full" totalCount={sortedMovies.length} itemContent={movieRow} />
             )}
             {upgradeTab === 'tv' && tvUpgrades.length > 0 && (
-              <Virtuoso className="h-full" totalCount={tvUpgrades.length} itemContent={tvRow} />
+              <Virtuoso className="h-full" totalCount={sortedTv.length} itemContent={tvRow} />
             )}
             {upgradeTab === 'music' && musicUpgrades.length > 0 && (
-              <Virtuoso className="h-full" totalCount={musicUpgrades.length} itemContent={musicRow} />
+              <Virtuoso className="h-full" totalCount={sortedMusic.length} itemContent={musicRow} />
             )}
           </div>
         </div>

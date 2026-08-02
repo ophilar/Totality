@@ -172,7 +172,9 @@ export class TranscodingService {
         this.checkAvailability(),
         GpuDetector.detectGpus({ refresh: options.refresh })
       ])
-      return buildTranscodingCapabilities(availability, gpus)
+      const capabilities = buildTranscodingCapabilities(availability, gpus)
+      getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
+      return capabilities
     })()
     return this.capabilitiesPromise
   }

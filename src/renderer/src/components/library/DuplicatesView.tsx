@@ -42,6 +42,42 @@ export function DuplicatesView() {
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
+  const [comparisonSort, setComparisonSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'quality', direction: 'desc' })
+
+  const sortComparisonItems = (items: MediaItem[]) => [...items].sort((a, b) => {
+    const value = (item: MediaItem): string | number => {
+      switch (comparisonSort.key) {
+        case 'codec': return item.video_codec || ''
+        case 'bitrate': return item.video_bitrate || 0
+        case 'audio': return `${item.audio_codec || ''} ${item.audio_channels || 0}`
+        case 'size': return item.file_size || 0
+        case 'path': return item.file_path || ''
+        default: return item.resolution || ''
+      }
+    }
+    const left = value(a)
+    const right = value(b)
+    const result = typeof left === 'number' && typeof right === 'number'
+      ? left - right
+      : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' })
+    return comparisonSort.direction === 'asc' ? result : -result
+  })
+
+  const comparisonHeader = (label: string, key: string, className = '') => (
+    <th className={`text-left py-2 font-medium ${className}`}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 hover:text-foreground"
+        onClick={() => setComparisonSort(current => ({
+          key,
+          direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+        }))}
+      >
+        {label}
+        {comparisonSort.key === key && (comparisonSort.direction === 'asc' ? ' ↑' : ' ↓')}
+      </button>
+    </th>
+  )
 
   useEffect(() => {
     let isMounted = true
@@ -297,17 +333,17 @@ export function DuplicatesView() {
                         <table className="w-full min-w-[720px] text-sm">
                           <thead>
                             <tr className="text-muted-foreground border-b border-border/50">
-                              <th className="text-left py-2 font-medium pl-2">Quality</th>
-                              <th className="text-left py-2 font-medium">Codec</th>
-                              <th className="text-left py-2 font-medium">Bitrate</th>
-                              <th className="text-left py-2 font-medium">Audio/Subs</th>
-                              <th className="text-left py-2 font-medium">Size</th>
-                              <th className="text-left py-2 font-medium">Path</th>
+                              {comparisonHeader('Quality', 'quality', 'pl-2')}
+                              {comparisonHeader('Codec', 'codec')}
+                              {comparisonHeader('Bitrate', 'bitrate')}
+                              {comparisonHeader('Audio/Subs', 'audio')}
+                              {comparisonHeader('Size', 'size')}
+                              {comparisonHeader('Path', 'path')}
                               <th className="text-right py-2 font-medium pr-2">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/50">
-                            {group.items?.map((item) => {
+                            {sortComparisonItems(group.items || []).map((item) => {
                               const isRec = rec?.keep === item.id
                               return (
                                 <tr key={item.id} className={`${isRec ? 'bg-primary/5' : ''}`}>
