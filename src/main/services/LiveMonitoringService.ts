@@ -439,13 +439,9 @@ export class LiveMonitoringService {
 
             if (isMusic) {
               const albumIds = new Set<number>()
-              const tracks = []
-              for (const fp of existingFiles) {
-                const t = await db.music.getTrackByPath(fp)
-                if (t) {
-                  tracks.push(t)
-                  if (t.album_id) albumIds.add(t.album_id)
-                }
+              const tracks = await db.music.getTracksByPaths(existingFiles)
+              for (const t of tracks) {
+                if (t.album_id) albumIds.add(t.album_id)
               }
               const albumMap = new Map()
               if (albumIds.size > 0) {
