@@ -109,6 +109,17 @@ export function registerSeriesHandlers() {
 
     const poster = details.posterUrl || undefined
     const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId, poster, details.title, imdbId || undefined)
+    const tvdbId = providerId === 'tvdb' ? externalId : details.externalIds?.tvdbId || null
+    if (tvdbId) {
+      const completeness = await db.tvShows.getCompletenessByTitle(title, sourceId)
+      if (completeness?.id) {
+        await db.db.execute({ sql: 'UPDATE series_completeness SET tvdb_id = ?, user_fixed_match = 1 WHERE id = ?', args: [tvdbId, completeness.id] })
+        await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'tvdb', externalId: tvdbId, locked: true, lockSource: 'manual' })
+        if (tmdbId) await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'tmdb', externalId: tmdbId, locked: true, lockSource: 'manual' })
+        if (imdbId) await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'imdb', externalId: imdbId, locked: true, lockSource: 'manual' })
+        for (const alias of details.alternateTitles || []) await db.identities.addAlias({ entityType: 'series', entityId: completeness.id, alias, provider: providerId })
+      }
+    }
     await getDeduplicationService().scanForDuplicates(sourceId)
     const completeness = await service.analyzeSeries(details.title, sourceId)
     getStatsCacheService().invalidate()

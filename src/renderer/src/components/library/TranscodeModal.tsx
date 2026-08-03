@@ -56,17 +56,18 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true)
-      const [item, avail, detectedGpus] = await Promise.all([
+      const [item, capabilities] = await Promise.all([
         window.electronAPI.getMediaItem(mediaId),
-        window.electronAPI.checkAvailability(),
-        window.electronAPI.gpusList()
+        window.electronAPI.getCapabilities()
       ])
       
       if (item) setMedia(item as MediaItem)
+      const avail = capabilities || { ffmpeg: false, handbrake: false }
+      const detectedGpus = capabilities?.gpus || []
       setAvailability(avail)
-      setGpus(detectedGpus || [])
+      setGpus(detectedGpus)
       
-      const defaultEngine = avail.ffmpeg ? 'ffmpeg' : (avail.handbrake ? 'handbrake' : 'ffmpeg')
+      const defaultEngine = capabilities?.engines?.[0] || (avail.ffmpeg ? 'ffmpeg' : 'handbrake')
       const firstGpu = detectedGpus && detectedGpus.length > 0 ? detectedGpus[0] : null
 
       setOptions(prev => ({

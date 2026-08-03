@@ -38,6 +38,9 @@ export function Dashboard({
     collectionSortBy, setCollectionSortBy,
     seriesSortBy, setSeriesSortBy,
     artistSortBy, setArtistSortBy,
+    collectionSortOrder, setCollectionSortOrder,
+    seriesSortOrder, setSeriesSortOrder,
+    artistSortOrder, setArtistSortOrder,
     loadDashboardData,
     includeEps, includeSingles
   } = useDashboardData(activeSourceId)
@@ -180,21 +183,21 @@ export function Dashboard({
 
           {hasMovies && (
             <CollectionsColumn
-              collections={collections} sortBy={collectionSortBy} setSortBy={setCollectionSortBy}
+              collections={collections} sortBy={collectionSortBy} setSortBy={setCollectionSortBy} sortOrder={collectionSortOrder} setSortOrder={setCollectionSortOrder}
               expandedCollections={expandedCollections} toggleExpand={toggleCollectionExpand} onDismiss={handleDismissCollectionMovie}
             />
           )}
 
           {hasTV && (
             <SeriesColumn
-              series={series} sortBy={seriesSortBy} setSortBy={setSeriesSortBy}
+              series={series} sortBy={seriesSortBy} setSortBy={setSeriesSortBy} sortOrder={seriesSortOrder} setSortOrder={setSeriesSortOrder}
               expandedSeries={expandedSeries} toggleExpand={toggleSeriesExpand} onDismiss={dismissSeriesEpisode}
             />
           )}
 
           {hasMusic && (
             <ArtistColumn
-              artists={artists} sortBy={artistSortBy} setSortBy={setArtistSortBy}
+              artists={artists} sortBy={artistSortBy} setSortBy={setArtistSortBy} sortOrder={artistSortOrder} setSortOrder={setArtistSortOrder}
               expandedArtists={expandedArtists} toggleExpand={toggleArtistExpand} onDismiss={dismissArtistAlbum}
               includeEps={includeEps} includeSingles={includeSingles}
             />

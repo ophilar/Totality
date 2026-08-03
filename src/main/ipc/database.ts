@@ -113,7 +113,7 @@ export function registerDatabaseHandlers() {
     return await db.config.getSetting(key)
   })
 
-  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key'])
+  const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key', 'omdb_api_key', 'tvdb_api_key', 'tvdb_pin', 'sonarr_api_key', 'radarr_api_key'])
 
   createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.SET_SETTING, SetSettingTupleSchema, async (event, key, value) => {
     getLoggingService().info('[IPC db:setSetting]', key, sensitiveSettingKeys.has(key) ? '(redacted)' : value)
@@ -236,13 +236,14 @@ export function registerDatabaseHandlers() {
 
   createValidatedIpcHandler(
     IPC_CHANNELS.MEDIA.SEARCH_METADATA,
-    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional()]),
-    async (query, type, includeAdult) => {
+    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional(), NonEmptyStringSchema.optional()]),
+    async (query, type, includeAdult, artistName) => {
       const matchingService = MetadataRegistryService.getInstance().getMatchingService()
       return await matchingService.matchMediaItem({
         title: query,
         type: (type as any) || 'movie',
-        includeAdult
+        includeAdult,
+        artistName
       })
     }
   )
@@ -278,6 +279,11 @@ export function registerDatabaseHandlers() {
         year,
         imdbId || undefined
       )
+      const identityIds = details.externalIds || {}
+      for (const [provider, value] of Object.entries(identityIds)) {
+        if (value) await db.identities.upsertIdentity({ entityType: 'movie', entityId: mediaItemId, provider, externalId: String(value), locked: true, lockSource: 'manual' })
+      }
+      for (const alias of details.alternateTitles || []) await db.identities.addAlias({ entityType: 'movie', entityId: mediaItemId, alias, provider: providerId })
 
       const item = await db.media.getItem(mediaItemId)
       if (item?.source_id) {

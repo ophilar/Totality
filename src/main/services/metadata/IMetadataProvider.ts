@@ -5,9 +5,12 @@ export interface MetadataSearchQuery {
   year?: number
   type: MetadataType
   externalId?: string
-  externalIds?: { imdb_id?: string; tvdb_id?: string; tmdb_id?: string }
+  externalIds?: { imdb_id?: string; tvdb_id?: string; tmdb_id?: string; anilist_id?: string; musicbrainz_id?: string }
   seasonNumber?: number
   episodeNumber?: number
+  artistName?: string
+  includeExpanded?: boolean
+  /** @deprecated Use includeExpanded in new callers. */
   includeAdult?: boolean
 }
 
@@ -23,6 +26,14 @@ export interface MetadataSearchResult {
   imdbRating?: number
   imdbVotes?: string
   score?: number
+  externalIds?: {
+    imdbId?: string
+    tvdbId?: string
+    tmdbId?: string
+    anilistId?: string
+    musicBrainzId?: string
+  }
+  alternateTitles?: string[]
 }
 
 export interface MediaMetadataDetails extends MetadataSearchResult {
@@ -39,6 +50,8 @@ export interface MediaMetadataDetails extends MetadataSearchResult {
     imdbId?: string
     tvdbId?: string
     tmdbId?: string
+    anilistId?: string
+    musicBrainzId?: string
   }
   raw?: Record<string, unknown>
 }

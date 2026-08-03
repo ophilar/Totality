@@ -34,6 +34,7 @@ export class OMDbMetadataProvider implements IMetadataProvider {
         type: query.type,
         posterUrl: item.Poster && item.Poster !== 'N/A' ? item.Poster : undefined,
         overview: undefined,
+        externalIds: { imdbId: item.imdbID },
       }))
     } catch (err) {
       getLoggingService().error('[OMDbMetadataProvider]', 'Search error:', err)

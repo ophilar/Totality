@@ -459,17 +459,16 @@ export class LiveMonitoringService {
                 })
               }
             } else {
-              for (const fp of existingFiles) {
-                const it = await db.media.getItemByPath(fp)
-                if (it)
-                  changedItems.push({
-                    id: it.id!.toString(),
-                    title: it.title,
-                    type: it.type,
-                    year: it.year || undefined,
-                    posterUrl: it.poster_url || undefined,
-                    seriesTitle: it.series_title || undefined,
-                  })
+              const items = await db.media.getItemsByPaths(existingFiles)
+              for (const it of items) {
+                changedItems.push({
+                  id: it.id!.toString(),
+                  title: it.title,
+                  type: it.type,
+                  year: it.year || undefined,
+                  posterUrl: it.poster_url || undefined,
+                  seriesTitle: it.series_title || undefined,
+                })
               }
             }
           }

@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS series_completeness (
 
   -- TMDB metadata
   tmdb_id TEXT,
+  tvdb_id TEXT,
   poster_url TEXT,
   backdrop_url TEXT,
   status TEXT,
@@ -928,4 +929,32 @@ END;
 -- Insert default settings
 INSERT OR IGNORE INTO settings (key, value) VALUES
 ${INITIAL_SETTINGS_SQL};
+
+CREATE TABLE IF NOT EXISTS media_identities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'artist', 'album')),
+  entity_id INTEGER NOT NULL,
+  provider TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  is_locked INTEGER NOT NULL DEFAULT 0,
+  lock_source TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(entity_type, entity_id, provider, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS media_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'artist', 'album')),
+  entity_id INTEGER NOT NULL,
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL,
+  provider TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(entity_type, entity_id, normalized_alias)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_identities_external ON media_identities(provider, external_id);
+CREATE INDEX IF NOT EXISTS idx_media_identities_entity ON media_identities(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_media_aliases_entity ON media_aliases(entity_type, entity_id);
 `

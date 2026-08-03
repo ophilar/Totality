@@ -12,6 +12,7 @@ import { aiApi, AiAPI } from '@preload/api/ai'
 import { loggingApi, LoggingAPI } from '@preload/api/logging'
 import { notificationsApi, NotificationsAPI } from '@preload/api/notifications'
 import { transcodingAPI } from '@preload/api/transcoding'
+import { arrApi, ArrAPI } from '@preload/api/arr'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -26,7 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ...aiApi,
   ...loggingApi,
   ...notificationsApi,
-  ...transcodingAPI
+  ...transcodingAPI,
+  ...arrApi
 })
 
 // Type definitions for window object
@@ -41,6 +43,7 @@ export type ElectronAPI = AppAPI &
   LoggingAPI &
   NotificationsAPI &
   typeof transcodingAPI
+  & ArrAPI
 
 declare global {
   interface Window {

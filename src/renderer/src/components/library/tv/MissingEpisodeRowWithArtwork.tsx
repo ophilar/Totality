@@ -48,7 +48,7 @@ export const MissingEpisodeRowWithArtwork = memo(({
       }}
     >
       {/* Missing Episode Thumbnail - 16:9 aspect ratio with shadow */}
-      <div className="w-44 aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20">
+      <div className="w-28 sm:w-44 aspect-video bg-muted shrink-0 overflow-hidden rounded-md shadow-md shadow-black/20">
         {stillUrl ? (
           <img
             src={stillUrl}

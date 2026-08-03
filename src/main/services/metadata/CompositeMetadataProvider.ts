@@ -1,5 +1,6 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from './IMetadataProvider'
 import { getLoggingService } from '../LoggingService'
+import { normalizeTitleForMatching, scoreTitleMatch } from './TitleMatching'
 
 /**
  * Composite Metadata Provider that aggregates multiple providers and executes multi-provider result fusion.
@@ -11,7 +12,7 @@ export class CompositeMetadataProvider implements IMetadataProvider {
   
   private providers: IMetadataProvider[] = []
 
-  constructor(initialProviders: IMetadataProvider[] = []) {
+  constructor(initialProviders: IMetadataProvider[] = [], private readonly providerSettings?: () => Promise<{ enabled?: string[]; order?: string[] } | null>) {
     this.providers = [...initialProviders]
   }
 
@@ -33,12 +34,24 @@ export class CompositeMetadataProvider implements IMetadataProvider {
     return [...this.providers]
   }
 
+  private identityKey(candidate: MetadataSearchResult): string {
+    const ids = candidate.externalIds || {}
+    const identity = ids.tmdbId ? `tmdb:${ids.tmdbId}` : ids.tvdbId ? `tvdb:${ids.tvdbId}` : ids.imdbId ? `imdb:${ids.imdbId}` : ids.musicBrainzId ? `mb:${ids.musicBrainzId}` : ids.anilistId ? `anilist:${ids.anilistId}` : null
+    return identity || `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
+  }
+
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
     return this.searchAndFuse(query)
   }
 
   async searchAndFuse(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    const matchingProviders = this.providers.filter(p => p.supportedTypes.includes(query.type))
+    const settings = await this.providerSettings?.().catch(() => null)
+    const enabled = settings?.enabled
+    const order = settings?.order
+    const orderIndex = new Map((order || []).map((id, index) => [id, index]))
+    const matchingProviders = this.providers
+      .filter(p => p.supportedTypes.includes(query.type) && (!enabled || enabled.includes(p.providerId)))
+      .sort((a, b) => (orderIndex.get(a.providerId) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.providerId) ?? Number.MAX_SAFE_INTEGER))
     const results = await Promise.allSettled(
       matchingProviders.map(async p => {
         try {
@@ -59,32 +72,21 @@ export class CompositeMetadataProvider implements IMetadataProvider {
       }
     }
 
-    const targetTitle = query.title.toLowerCase().trim()
-    
     for (const candidate of allCandidates) {
-      let score = 0
-      const cTitle = candidate.title.toLowerCase().trim()
-      if (cTitle === targetTitle) {
-        score += 50
-      } else if (cTitle.includes(targetTitle) || targetTitle.includes(cTitle)) {
-        score += 20
-      }
-
-      if (query.year && candidate.year) {
-        if (query.year === candidate.year) {
-          score += 30
-        } else if (Math.abs(query.year - candidate.year) === 1) {
-          score += 10
-        }
-      }
-
-      candidate.score = score
+      const titleScores = [candidate.title, ...(candidate.alternateTitles || [])]
+        .map(title => scoreTitleMatch(title, query.title, candidate.year, query.year))
+      candidate.score = Math.max(...titleScores, 0)
     }
     
     const fusedMap = new Map<string, MetadataSearchResult>()
     
     for (const candidate of allCandidates) {
-      const key = `${candidate.title.toLowerCase().trim()}_${candidate.year || 'unknown'}`
+      const candidateIds = Object.values(candidate.externalIds || {}).filter(Boolean)
+      const sharedKey = Array.from(fusedMap.entries()).find(([, existing]) => {
+        const existingIds = Object.values(existing.externalIds || {}).filter(Boolean)
+        return candidateIds.some(id => existingIds.includes(id))
+      })?.[0]
+      const key = sharedKey || this.identityKey(candidate)
       if (!fusedMap.has(key)) {
         fusedMap.set(key, { ...candidate })
       } else {
@@ -94,6 +96,8 @@ export class CompositeMetadataProvider implements IMetadataProvider {
         existing.bannerUrl = existing.bannerUrl || candidate.bannerUrl
         existing.imdbRating = existing.imdbRating ?? candidate.imdbRating
         existing.imdbVotes = existing.imdbVotes ?? candidate.imdbVotes
+        existing.externalIds = { ...candidate.externalIds, ...existing.externalIds }
+        existing.alternateTitles = Array.from(new Set([...(existing.alternateTitles || []), ...(candidate.alternateTitles || [])]))
         if ((candidate.score || 0) > (existing.score || 0)) {
           existing.score = candidate.score
         }
@@ -155,6 +159,8 @@ export class CompositeMetadataProvider implements IMetadataProvider {
           primaryDetails.awards = primaryDetails.awards ?? details.awards
           primaryDetails.overview = primaryDetails.overview || details.overview
           primaryDetails.posterUrl = primaryDetails.posterUrl || details.posterUrl
+          primaryDetails.externalIds = { ...details.externalIds, ...primaryDetails.externalIds }
+          primaryDetails.alternateTitles = Array.from(new Set([...(primaryDetails.alternateTitles || []), ...(details.alternateTitles || [])]))
         }
       }
     }

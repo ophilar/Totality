@@ -104,7 +104,7 @@ export const mediaApi = {
 
   // Movie Match Fixing
   movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
-  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult),
+  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean, artistName?: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult, artistName),
   movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, providerId, externalId),
 
@@ -279,7 +279,7 @@ export interface MediaAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean) => Promise<Array<{
+  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean, artistName?: string) => Promise<Array<{
     id: string
     provider: string
     title: string

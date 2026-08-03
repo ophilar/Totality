@@ -139,12 +139,10 @@ export function MatchFixModal({
           )
           break
         case 'artist':
-          results = await window.electronAPI.musicSearchMusicBrainzArtist(searchQuery) as MusicBrainzArtistResult[]
+          results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music')
           break
         case 'album':
-          if (artistName) {
-            results = await window.electronAPI.musicSearchMusicBrainzRelease(artistName, searchQuery) as MusicBrainzReleaseResult[]
-          }
+          if (artistName) results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, artistName)
           break
       }
 

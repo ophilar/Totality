@@ -63,4 +63,27 @@ describe('CompositeMetadataProvider - searchAndFuse', () => {
     expect(results[0].score).toBeDefined()
     expect((results[0] as any).imdbRating).toBe(8.7)
   })
+
+  it('uses any shared external identity to fuse provider results', async () => {
+    tmdb.mockSearch.mockResolvedValue([{ id: '10', provider: 'tmdb', title: 'Example Show', year: 2020, type: 'tv', externalIds: { tmdbId: '10', tvdbId: '77' } }])
+    omdb.mockSearch.mockResolvedValue([{ id: 'tt77', provider: 'omdb', title: 'Example Series', year: 2020, type: 'tv', externalIds: { imdbId: 'tt77', tvdbId: '77' }, imdbRating: 8 }])
+
+    const results = await composite.searchAndFuse({ title: 'Example Show', type: 'tv', year: 2020 })
+
+    expect(results).toHaveLength(1)
+    expect(results[0].externalIds).toMatchObject({ tmdbId: '10', imdbId: 'tt77', tvdbId: '77' })
+  })
+
+  it('honors persisted provider enablement and ordering preferences', async () => {
+    const settings = vi.fn().mockResolvedValue({ enabled: ['omdb'], order: ['omdb', 'tmdb'] })
+    composite = new CompositeMetadataProvider([tmdb, omdb], settings)
+    omdb.mockSearch.mockResolvedValue([{ id: 'tt1', provider: 'omdb', title: 'Example', year: 2020, type: 'movie' }])
+
+    const results = await composite.searchAndFuse({ title: 'Example', type: 'movie', year: 2020 })
+
+    expect(settings).toHaveBeenCalledOnce()
+    expect(tmdb.mockSearch).not.toHaveBeenCalled()
+    expect(omdb.mockSearch).toHaveBeenCalledOnce()
+    expect(results).toHaveLength(1)
+  })
 })

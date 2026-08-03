@@ -77,7 +77,7 @@ export function MusicArtistDetails({
       </button>
 
       <div className="flex gap-6 mb-6">
-        <div className="w-44 h-44 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+        <div className="w-28 h-28 sm:w-44 sm:h-44 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
           {selectedArtist.thumb_url ? (
             <img src={selectedArtist.thumb_url} alt={selectedArtist.name} className="w-full h-full object-cover" />
           ) : (

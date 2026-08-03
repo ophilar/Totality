@@ -208,12 +208,14 @@ export function registerMusicHandlers(): void {
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.FIX_ARTIST_MATCH, z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (artistId, musicbrainzId) => {
     await db.music.fixArtistMatch(artistId, musicbrainzId)
+    await db.identities.upsertIdentity({ entityType: 'artist', entityId: artistId, provider: 'musicbrainz', externalId: musicbrainzId, locked: true, lockSource: 'manual' })
     getStatsCacheService().invalidate()
     return { success: true }
   })
 
   createValidatedIpcHandler('music:fixAlbumMatch', z.tuple([PositiveIntSchema, NonEmptyStringSchema]), async (albumId, musicbrainzReleaseGroupId) => {
     await db.music.fixAlbumMatch(albumId, musicbrainzReleaseGroupId)
+    await db.identities.upsertIdentity({ entityType: 'album', entityId: albumId, provider: 'musicbrainz', externalId: musicbrainzReleaseGroupId, locked: true, lockSource: 'manual' })
     getStatsCacheService().invalidate()
     return { success: true }
   })

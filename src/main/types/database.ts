@@ -363,6 +363,7 @@ export interface SeriesCompleteness {
 
   // TMDB metadata
   tmdb_id?: string
+  tvdb_id?: string
   poster_url?: string | null | undefined
   backdrop_url?: string | null | undefined
   status?: string // "Returning Series", "Ended", "Canceled"
@@ -965,5 +966,8 @@ export interface DashboardSummary {
     collectionSort: string
     seriesSort: string
     artistSort: string
+    collectionSortOrder: 'asc' | 'desc'
+    seriesSortOrder: 'asc' | 'desc'
+    artistSortOrder: 'asc' | 'desc'
   }
 }
