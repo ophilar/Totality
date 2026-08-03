@@ -439,13 +439,9 @@ export class LiveMonitoringService {
 
             if (isMusic) {
               const albumIds = new Set<number>()
-              const tracks = []
-              for (const fp of existingFiles) {
-                const t = await db.music.getTrackByPath(fp)
-                if (t) {
-                  tracks.push(t)
-                  if (t.album_id) albumIds.add(t.album_id)
-                }
+              const tracks = await db.music.getTracksByPaths(existingFiles)
+              for (const t of tracks) {
+                if (t.album_id) albumIds.add(t.album_id)
               }
               const albumMap = new Map()
               if (albumIds.size > 0) {
@@ -463,17 +459,16 @@ export class LiveMonitoringService {
                 })
               }
             } else {
-              for (const fp of existingFiles) {
-                const it = await db.media.getItemByPath(fp)
-                if (it)
-                  changedItems.push({
-                    id: it.id!.toString(),
-                    title: it.title,
-                    type: it.type,
-                    year: it.year || undefined,
-                    posterUrl: it.poster_url || undefined,
-                    seriesTitle: it.series_title || undefined,
-                  })
+              const items = await db.media.getItemsByPaths(existingFiles)
+              for (const it of items) {
+                changedItems.push({
+                  id: it.id!.toString(),
+                  title: it.title,
+                  type: it.type,
+                  year: it.year || undefined,
+                  posterUrl: it.poster_url || undefined,
+                  seriesTitle: it.series_title || undefined,
+                })
               }
             }
           }

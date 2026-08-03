@@ -1,5 +1,13 @@
 import { eq, and, or, like, desc, asc, sql, inArray, isNull, lt } from 'drizzle-orm'
-import type { MusicArtist, MusicAlbum, MusicTrack, MusicQualityScore, ArtistCompleteness, AlbumCompleteness, MusicFilters } from '@main/types/database'
+import type {
+  MusicArtist,
+  MusicAlbum,
+  MusicTrack,
+  MusicQualityScore,
+  ArtistCompleteness,
+  AlbumCompleteness,
+  MusicFilters,
+} from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
 
@@ -13,11 +21,32 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
 
   async getTrackByPath(filePath: string): Promise<MusicTrack | null> {
     const dbPath = PathUtils.toDatabasePath(filePath)
-    const row = await this.drizzle.select()
+    const row = await this.drizzle
+      .select()
       .from(schema.musicTracks)
       .where(eq(schema.musicTracks.filePath, dbPath))
       .get()
     return row ? this.mapDrizzleToTrack(row) : null
+  }
+
+  async getTracksByPaths(filePaths: string[]): Promise<MusicTrack[]> {
+    if (filePaths.length === 0) return []
+    const dbPaths = filePaths.map((fp) => PathUtils.toDatabasePath(fp))
+    const result: MusicTrack[] = []
+    const batchSize = 500
+
+    for (let i = 0; i < dbPaths.length; i += batchSize) {
+      const batch = dbPaths.slice(i, i + batchSize)
+      const rows = await this.drizzle
+        .select()
+        .from(schema.musicTracks)
+        .where(inArray(schema.musicTracks.filePath, batch))
+        .all()
+
+      result.push(...rows.map((r) => this.mapDrizzleToTrack(r)))
+    }
+
+    return result
   }
 
   async getMusicTracksByAlbumIds(albumIds: number[]): Promise<Map<number, MusicTrack[]>> {
@@ -27,12 +56,17 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < albumIds.length; i += batchSize) {
       const batch = albumIds.slice(i, i + batchSize)
-      const rows = await this.drizzle.select()
+      const rows = await this.drizzle
+        .select()
         .from(schema.musicTracks)
         .where(inArray(schema.musicTracks.albumId, batch))
-        .orderBy(schema.musicTracks.albumId, asc(schema.musicTracks.discNumber), asc(schema.musicTracks.trackNumber))
+        .orderBy(
+          schema.musicTracks.albumId,
+          asc(schema.musicTracks.discNumber),
+          asc(schema.musicTracks.trackNumber)
+        )
         .all()
-      
+
       for (const row of rows) {
         if (row.albumId) {
           const tracks = result.get(row.albumId) || []
@@ -79,7 +113,10 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       schema.musicTracks,
       data,
       [schema.musicTracks.sourceId, schema.musicTracks.providerId],
-      { ...data, musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)` }
+      {
+        ...data,
+        musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)`,
+      }
     )
   }
 
@@ -169,12 +206,17 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     )
   }
 
-  async updateMusicAlbumArtwork(sourceIdOrAlbumId: string | number, providerIdOrThumbUrl?: string, artwork?: { thumbUrl?: string; artUrl?: string }): Promise<void> {
+  async updateMusicAlbumArtwork(
+    sourceIdOrAlbumId: string | number,
+    providerIdOrThumbUrl?: string,
+    artwork?: { thumbUrl?: string; artUrl?: string }
+  ): Promise<void> {
     if (typeof sourceIdOrAlbumId === 'number') {
       const albumId = sourceIdOrAlbumId
       const thumbUrl = providerIdOrThumbUrl as string | undefined
       if (!thumbUrl) return
-      await this.drizzle.update(schema.musicAlbums)
+      await this.drizzle
+        .update(schema.musicAlbums)
         .set({ thumbUrl, updatedAt: sql`(datetime('now'))` })
         .where(eq(schema.musicAlbums.id, albumId))
       return
@@ -188,32 +230,43 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
-    await this.drizzle.update(schema.musicAlbums)
+    await this.drizzle
+      .update(schema.musicAlbums)
       .set(data)
-      .where(and(
-        eq(schema.musicAlbums.sourceId, sourceId),
-        eq(schema.musicAlbums.providerId, providerId)
-      ))
+      .where(
+        and(
+          eq(schema.musicAlbums.sourceId, sourceId),
+          eq(schema.musicAlbums.providerId, providerId)
+        )
+      )
   }
 
-  async updateMusicArtistArtwork(sourceId: string, providerId: string, artwork: { thumbUrl?: string; artUrl?: string }): Promise<void> {
+  async updateMusicArtistArtwork(
+    sourceId: string,
+    providerId: string,
+    artwork: { thumbUrl?: string; artUrl?: string }
+  ): Promise<void> {
     const data: any = { updatedAt: sql`(datetime('now'))` }
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
-    await this.drizzle.update(schema.musicArtists)
+    await this.drizzle
+      .update(schema.musicArtists)
       .set(data)
-      .where(and(
-        eq(schema.musicArtists.sourceId, sourceId),
-        eq(schema.musicArtists.providerId, providerId)
-      ))
+      .where(
+        and(
+          eq(schema.musicArtists.sourceId, sourceId),
+          eq(schema.musicArtists.providerId, providerId)
+        )
+      )
   }
 
   async getArtists(filters?: MusicFilters): Promise<MusicArtist[]> {
     const conditions = []
     if (filters?.sourceId) conditions.push(eq(schema.musicArtists.sourceId, filters.sourceId))
     if (filters?.libraryId) conditions.push(eq(schema.musicArtists.libraryId, filters.libraryId))
-    if (filters?.searchQuery) conditions.push(like(schema.musicArtists.name, `%${filters.searchQuery}%`))
+    if (filters?.searchQuery)
+      conditions.push(like(schema.musicArtists.name, `%${filters.searchQuery}%`))
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`name NOT GLOB '[A-Za-z]*'`)
       else conditions.push(eq(sql`UPPER(SUBSTR(name, 1, 1))`, filters.alphabetFilter.toUpperCase()))
@@ -221,7 +274,11 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.mood) conditions.push(like(schema.musicArtists.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicArtists.genres, `%${filters.genre}%`))
 
-    const sortMap: any = { 'name': schema.musicArtists.sortName, 'title': schema.musicArtists.sortName, 'added_at': schema.musicArtists.createdAt }
+    const sortMap: any = {
+      name: schema.musicArtists.sortName,
+      title: schema.musicArtists.sortName,
+      added_at: schema.musicArtists.createdAt,
+    }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicArtists.sortName
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
 
@@ -239,7 +296,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const conditions = []
     if (filters?.sourceId) conditions.push(eq(schema.musicArtists.sourceId, filters.sourceId))
     if (filters?.libraryId) conditions.push(eq(schema.musicArtists.libraryId, filters.libraryId))
-    if (filters?.searchQuery) conditions.push(like(schema.musicArtists.name, `%${filters.searchQuery}%`))
+    if (filters?.searchQuery)
+      conditions.push(like(schema.musicArtists.name, `%${filters.searchQuery}%`))
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`name NOT GLOB '[A-Za-z]*'`)
       else conditions.push(eq(sql`UPPER(SUBSTR(name, 1, 1))`, filters.alphabetFilter.toUpperCase()))
@@ -252,33 +310,66 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async getArtistById(id: number): Promise<MusicArtist | null> {
-    const row = await this.drizzle.select().from(schema.musicArtists).where(eq(schema.musicArtists.id, id)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicArtists)
+      .where(eq(schema.musicArtists.id, id))
+      .get()
     return row ? this.mapDrizzleToArtists([row])[0] : null
   }
 
   async getMusicArtistByName(name: string, sourceId: string): Promise<MusicArtist | null> {
-    const row = await this.drizzle.select().from(schema.musicArtists).where(and(eq(schema.musicArtists.name, name), eq(schema.musicArtists.sourceId, sourceId))).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicArtists)
+      .where(and(eq(schema.musicArtists.name, name), eq(schema.musicArtists.sourceId, sourceId)))
+      .get()
     return row ? this.mapDrizzleToArtists([row])[0] : null
   }
 
   async getAlbums(filters?: MusicFilters): Promise<MusicAlbum[]> {
     const conditions = []
-    if (filters?.artistId && filters?.artistName) conditions.push(or(eq(schema.musicAlbums.artistId, filters.artistId), eq(schema.musicAlbums.artistName, filters.artistName)))
+    if (filters?.artistId && filters?.artistName)
+      conditions.push(
+        or(
+          eq(schema.musicAlbums.artistId, filters.artistId),
+          eq(schema.musicAlbums.artistName, filters.artistName)
+        )
+      )
     else if (filters?.artistId) conditions.push(eq(schema.musicAlbums.artistId, filters.artistId))
-    else if (filters?.artistName) conditions.push(eq(schema.musicAlbums.artistName, filters.artistName))
-    
+    else if (filters?.artistName)
+      conditions.push(eq(schema.musicAlbums.artistName, filters.artistName))
+
     if (filters?.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
     if (filters?.libraryId) conditions.push(eq(schema.musicAlbums.libraryId, filters.libraryId))
-    if (filters?.searchQuery) conditions.push(or(like(schema.musicAlbums.title, `%${filters.searchQuery}%`), like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)))
+    if (filters?.searchQuery)
+      conditions.push(
+        or(
+          like(schema.musicAlbums.title, `%${filters.searchQuery}%`),
+          like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)
+        )
+      )
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      else
+        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
-    if (filters?.excludeAlbumTypes?.length) conditions.push(or(isNull(schema.musicAlbums.albumType), sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`))
+    if (filters?.excludeAlbumTypes?.length)
+      conditions.push(
+        or(
+          isNull(schema.musicAlbums.albumType),
+          sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`
+        )
+      )
     if (filters?.mood) conditions.push(like(schema.musicAlbums.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicAlbums.genres, `%${filters.genre}%`))
 
-    const sortMap: any = { 'title': sql`COALESCE(${schema.musicAlbums.sortTitle}, ${schema.musicAlbums.title})`, 'artist': schema.musicAlbums.artistName, 'year': schema.musicAlbums.year, 'added_at': schema.musicAlbums.createdAt }
+    const sortMap: any = {
+      title: sql`COALESCE(${schema.musicAlbums.sortTitle}, ${schema.musicAlbums.title})`,
+      artist: schema.musicAlbums.artistName,
+      year: schema.musicAlbums.year,
+      added_at: schema.musicAlbums.createdAt,
+    }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicAlbums.artistName
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
 
@@ -301,12 +392,25 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.artistId) conditions.push(eq(schema.musicAlbums.artistId, filters.artistId))
     if (filters?.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
     if (filters?.libraryId) conditions.push(eq(schema.musicAlbums.libraryId, filters.libraryId))
-    if (filters?.searchQuery) conditions.push(or(like(schema.musicAlbums.title, `%${filters.searchQuery}%`), like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)))
+    if (filters?.searchQuery)
+      conditions.push(
+        or(
+          like(schema.musicAlbums.title, `%${filters.searchQuery}%`),
+          like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)
+        )
+      )
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      else
+        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
-    if (filters?.excludeAlbumTypes?.length) conditions.push(or(isNull(schema.musicAlbums.albumType), sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`))
+    if (filters?.excludeAlbumTypes?.length)
+      conditions.push(
+        or(
+          isNull(schema.musicAlbums.albumType),
+          sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`
+        )
+      )
 
     const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.musicAlbums)
     if (conditions.length > 0) query.where(and(...conditions))
@@ -315,7 +419,11 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async getAlbumById(id: number): Promise<MusicAlbum | null> {
-    const row = await this.drizzle.select().from(schema.musicAlbums).where(eq(schema.musicAlbums.id, id)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicAlbums)
+      .where(eq(schema.musicAlbums.id, id))
+      .get()
     return row ? this.mapDrizzleToAlbums([row])[0] : null
   }
 
@@ -325,41 +433,76 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      const rows = await this.drizzle.select().from(schema.musicAlbums).where(inArray(schema.musicAlbums.id, batch)).all()
+      const rows = await this.drizzle
+        .select()
+        .from(schema.musicAlbums)
+        .where(inArray(schema.musicAlbums.id, batch))
+        .all()
       result.push(...this.mapDrizzleToAlbums(rows))
     }
     return result
   }
 
   async getAlbumByName(title: string, artistId: number): Promise<MusicAlbum | null> {
-    const row = await this.drizzle.select().from(schema.musicAlbums).where(and(eq(schema.musicAlbums.title, title), eq(schema.musicAlbums.artistId, artistId))).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicAlbums)
+      .where(and(eq(schema.musicAlbums.title, title), eq(schema.musicAlbums.artistId, artistId)))
+      .get()
     return row ? this.mapDrizzleToAlbums([row])[0] : null
   }
 
   async getAlbumsByArtistName(artistName: string, limit = 500): Promise<MusicAlbum[]> {
-    const rows = await this.drizzle.select().from(schema.musicAlbums).where(eq(schema.musicAlbums.artistName, artistName)).limit(limit).all()
+    const rows = await this.drizzle
+      .select()
+      .from(schema.musicAlbums)
+      .where(eq(schema.musicAlbums.artistName, artistName))
+      .limit(limit)
+      .all()
     return this.mapDrizzleToAlbums(rows)
   }
 
   async getTracks(filters?: MusicFilters): Promise<MusicTrack[]> {
     const conditions = []
     if (filters?.albumId) conditions.push(eq(schema.musicTracks.albumId, filters.albumId))
-    if (filters?.artistId && filters?.artistName) conditions.push(or(eq(schema.musicTracks.artistId, filters.artistId), eq(schema.musicTracks.artistName, filters.artistName)))
+    if (filters?.artistId && filters?.artistName)
+      conditions.push(
+        or(
+          eq(schema.musicTracks.artistId, filters.artistId),
+          eq(schema.musicTracks.artistName, filters.artistName)
+        )
+      )
     else if (filters?.artistId) conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
-    else if (filters?.artistName) conditions.push(eq(schema.musicTracks.artistName, filters.artistName))
+    else if (filters?.artistName)
+      conditions.push(eq(schema.musicTracks.artistName, filters.artistName))
     if (filters?.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
-    if (filters?.searchQuery) conditions.push(or(like(schema.musicTracks.title, `%${filters.searchQuery}%`), like(schema.musicTracks.artistName, `%${filters.searchQuery}%`), like(schema.musicTracks.albumName, `%${filters.searchQuery}%`)))
+    if (filters?.searchQuery)
+      conditions.push(
+        or(
+          like(schema.musicTracks.title, `%${filters.searchQuery}%`),
+          like(schema.musicTracks.artistName, `%${filters.searchQuery}%`),
+          like(schema.musicTracks.albumName, `%${filters.searchQuery}%`)
+        )
+      )
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      else
+        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
     if (filters?.mood) conditions.push(like(schema.musicTracks.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicTracks.genres, `%${filters.genre}%`))
 
-    const sortMap: any = { 'title': schema.musicTracks.title, 'artist': schema.musicTracks.artistName, 'album': schema.musicTracks.albumName, 'codec': schema.musicTracks.audioCodec, 'duration': schema.musicTracks.duration, 'added_at': schema.musicTracks.createdAt }
+    const sortMap: any = {
+      title: schema.musicTracks.title,
+      artist: schema.musicTracks.artistName,
+      album: schema.musicTracks.albumName,
+      codec: schema.musicTracks.audioCodec,
+      duration: schema.musicTracks.duration,
+      added_at: schema.musicTracks.createdAt,
+    }
     const query = this.drizzle.select().from(schema.musicTracks)
     if (conditions.length > 0) query.where(and(...conditions))
-    
+
     if (filters?.sortBy && sortMap[filters.sortBy]) {
       const sortCol = sortMap[filters.sortBy]
       query.orderBy(filters.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol))
@@ -386,7 +529,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.artistId) conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
     if (filters?.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
     if (filters?.searchQuery) {
-      conditions.push(this.buildSearchFilter([schema.musicTracks.title, schema.musicTracks.artistName, schema.musicTracks.albumName], filters.searchQuery))
+      conditions.push(
+        this.buildSearchFilter(
+          [schema.musicTracks.title, schema.musicTracks.artistName, schema.musicTracks.albumName],
+          filters.searchQuery
+        )
+      )
     }
     if (filters?.alphabetFilter) {
       conditions.push(this.buildAlphabetFilter(schema.musicTracks.title, filters.alphabetFilter))
@@ -396,7 +544,11 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async getTrackById(id: number): Promise<MusicTrack | null> {
-    const row = await this.drizzle.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, id)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicTracks)
+      .where(eq(schema.musicTracks.id, id))
+      .get()
     return row ? this.mapDrizzleToTrack(row) : null
   }
 
@@ -404,8 +556,13 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     await this.drizzle.delete(schema.musicTracks).where(eq(schema.musicTracks.id, id))
   }
 
-  async updateMusicArtistCounts(artistId: number, albumCount: number, trackCount: number): Promise<void> {
-    await this.drizzle.update(schema.musicArtists)
+  async updateMusicArtistCounts(
+    artistId: number,
+    albumCount: number,
+    trackCount: number
+  ): Promise<void> {
+    await this.drizzle
+      .update(schema.musicArtists)
       .set({ albumCount, trackCount, updatedAt: sql`(datetime('now'))` })
       .where(eq(schema.musicArtists.id, artistId))
   }
@@ -415,11 +572,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < artistIds.length; i += batchSize) {
       const batch = artistIds.slice(i, i + batchSize)
-      await this.drizzle.update(schema.musicArtists)
+      await this.drizzle
+        .update(schema.musicArtists)
         .set({
           albumCount: sql`(SELECT COUNT(*) FROM music_albums WHERE artist_id = music_artists.id)`,
           trackCount: sql`(SELECT COUNT(*) FROM music_tracks WHERE artist_id = music_artists.id)`,
-          updatedAt: sql`(datetime('now'))`
+          updatedAt: sql`(datetime('now'))`,
         })
         .where(inArray(schema.musicArtists.id, batch))
     }
@@ -438,29 +596,37 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async updateMusicArtistMbid(artistId: number, musicbrainzId: string): Promise<void> {
-    await this.drizzle.update(schema.musicArtists).set({ musicbrainzId, updatedAt: sql`(datetime('now'))` }).where(eq(schema.musicArtists.id, artistId))
+    await this.drizzle
+      .update(schema.musicArtists)
+      .set({ musicbrainzId, updatedAt: sql`(datetime('now'))` })
+      .where(eq(schema.musicArtists.id, artistId))
   }
 
   async updateMusicAlbumMbid(albumId: number, musicbrainzId: string): Promise<void> {
-    await this.drizzle.update(schema.musicAlbums).set({ musicbrainzId, updatedAt: sql`(datetime('now'))` }).where(eq(schema.musicAlbums.id, albumId))
+    await this.drizzle
+      .update(schema.musicAlbums)
+      .set({ musicbrainzId, updatedAt: sql`(datetime('now'))` })
+      .where(eq(schema.musicAlbums.id, albumId))
   }
 
   async fixArtistMatch(artistId: number, musicbrainzId: string): Promise<void> {
-    await this.drizzle.update(schema.musicArtists)
-      .set({ 
-        musicbrainzId, 
-        userFixedMatch: 1, 
-        updatedAt: sql`(datetime('now'))` 
+    await this.drizzle
+      .update(schema.musicArtists)
+      .set({
+        musicbrainzId,
+        userFixedMatch: 1,
+        updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(schema.musicArtists.id, artistId))
   }
 
   async fixAlbumMatch(albumId: number, musicbrainzReleaseGroupId: string): Promise<void> {
-    await this.drizzle.update(schema.musicAlbums)
-      .set({ 
-        musicbrainzReleaseGroupId, 
-        userFixedMatch: 1, 
-        updatedAt: sql`(datetime('now'))` 
+    await this.drizzle
+      .update(schema.musicAlbums)
+      .set({
+        musicbrainzReleaseGroupId,
+        userFixedMatch: 1,
+        updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(schema.musicAlbums.id, albumId))
   }
@@ -470,7 +636,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async upsertQualityScore(score: MusicQualityScore): Promise<void> {
-    await this.drizzle.insert(schema.musicQualityScores)
+    await this.drizzle
+      .insert(schema.musicQualityScores)
       .values({
         albumId: score.album_id,
         qualityTier: score.quality_tier || 'LOSSY_MID',
@@ -483,7 +650,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
         needsUpgrade: score.needs_upgrade ? 1 : 0,
         issues: score.issues || '[]',
         createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
+        updatedAt: sql`(datetime('now'))`,
       })
       .onConflictDoUpdate({
         target: schema.musicQualityScores.albumId,
@@ -497,13 +664,17 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
           storageDebtBytes: score.storage_debt_bytes || 0,
           needsUpgrade: score.needs_upgrade ? 1 : 0,
           issues: score.issues || '[]',
-          updatedAt: sql`(datetime('now'))`
-        }
+          updatedAt: sql`(datetime('now'))`,
+        },
       })
   }
 
   async getQualityScore(albumId: number): Promise<MusicQualityScore | null> {
-    const row = await this.drizzle.select().from(schema.musicQualityScores).where(eq(schema.musicQualityScores.albumId, albumId)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicQualityScores)
+      .where(eq(schema.musicQualityScores.albumId, albumId))
+      .get()
     return row ? this.mapDrizzleToQualityScore(row) : null
   }
 
@@ -513,8 +684,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < albumIds.length; i += batchSize) {
       const batch = albumIds.slice(i, i + batchSize)
-      const rows = await this.drizzle.select().from(schema.musicQualityScores).where(inArray(schema.musicQualityScores.albumId, batch)).all()
-      rows.forEach(r => result.set(r.albumId, this.mapDrizzleToQualityScore(r)))
+      const rows = await this.drizzle
+        .select()
+        .from(schema.musicQualityScores)
+        .where(inArray(schema.musicQualityScores.albumId, batch))
+        .all()
+      rows.forEach((r) => result.set(r.albumId, this.mapDrizzleToQualityScore(r)))
     }
     return result
   }
@@ -523,20 +698,25 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const conditions = [eq(schema.musicQualityScores.needsUpgrade, 1)]
     if (sourceId) conditions.push(eq(schema.musicAlbums.sourceId, sourceId))
 
-    const query = this.drizzle.select({ album: schema.musicAlbums })
+    const query = this.drizzle
+      .select({ album: schema.musicAlbums })
       .from(schema.musicAlbums)
-      .innerJoin(schema.musicQualityScores, eq(schema.musicAlbums.id, schema.musicQualityScores.albumId))
+      .innerJoin(
+        schema.musicQualityScores,
+        eq(schema.musicAlbums.id, schema.musicQualityScores.albumId)
+      )
       .where(and(...conditions))
       .orderBy(asc(schema.musicQualityScores.tierScore))
-    
+
     if (limit) query.limit(limit)
 
     const rows = await query.all()
-    return this.mapDrizzleToAlbums(rows.map(r => r.album))
+    return this.mapDrizzleToAlbums(rows.map((r) => r.album))
   }
 
   async upsertArtistCompleteness(data: ArtistCompleteness): Promise<void> {
-    await this.drizzle.insert(schema.artistCompleteness)
+    await this.drizzle
+      .insert(schema.artistCompleteness)
       .values({
         artistName: data.artist_name,
         musicbrainzId: data.musicbrainz_id || null,
@@ -560,7 +740,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
         thumbUrl: data.thumb_url || null,
         lastSyncAt: data.last_sync_at || null,
         createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
+        updatedAt: sql`(datetime('now'))`,
       })
       .onConflictDoUpdate({
         target: schema.artistCompleteness.artistName,
@@ -584,13 +764,17 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
           artistType: data.artist_type || null,
           thumbUrl: data.thumb_url || null,
           lastSyncAt: data.last_sync_at || null,
-          updatedAt: sql`(datetime('now'))`
-        }
+          updatedAt: sql`(datetime('now'))`,
+        },
       })
   }
 
   async getArtistCompleteness(artistName: string): Promise<ArtistCompleteness | null> {
-    const row = await this.drizzle.select().from(schema.artistCompleteness).where(eq(schema.artistCompleteness.artistName, artistName)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.artistCompleteness)
+      .where(eq(schema.artistCompleteness.artistName, artistName))
+      .get()
     return row ? this.mapDrizzleToArtistCompleteness(row) : null
   }
 
@@ -675,12 +859,12 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       )
     `
 
-    const statsRow = await this.drizzle.get<any>(statsQuery) || {
+    const statsRow = (await this.drizzle.get<any>(statsQuery)) || {
       totalArtists: 0,
       completeArtists: 0,
       incompleteArtists: 0,
       totalMissingAlbums: 0,
-      averageCompleteness: 0
+      averageCompleteness: 0,
     }
 
     return {
@@ -690,14 +874,15 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
         completeArtists: Number(statsRow.completeArtists || 0),
         incompleteArtists: Number(statsRow.incompleteArtists || 0),
         totalMissingAlbums: Number(statsRow.totalMissingAlbums || 0),
-        averageCompleteness: Number(statsRow.averageCompleteness || 0)
+        averageCompleteness: Number(statsRow.averageCompleteness || 0),
       },
-      artists: artistRows.map(r => this.mapDrizzleToArtistCompleteness(r))
+      artists: artistRows.map((r) => this.mapDrizzleToArtistCompleteness(r)),
     }
   }
 
   async upsertAlbumCompleteness(data: AlbumCompleteness): Promise<void> {
-    await this.drizzle.insert(schema.albumCompleteness)
+    await this.drizzle
+      .insert(schema.albumCompleteness)
       .values({
         albumId: data.album_id,
         artistName: data.artist_name,
@@ -713,7 +898,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
         totalSize: data.total_size || 0,
         lastSyncAt: data.last_sync_at || null,
         createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
+        updatedAt: sql`(datetime('now'))`,
       })
       .onConflictDoUpdate({
         target: schema.albumCompleteness.albumId,
@@ -730,29 +915,46 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
           storageDebtBytes: data.storage_debt_bytes || 0,
           totalSize: data.total_size || 0,
           lastSyncAt: data.last_sync_at || null,
-          updatedAt: sql`(datetime('now'))`
-        }
+          updatedAt: sql`(datetime('now'))`,
+        },
       })
   }
 
   async getAlbumCompleteness(albumId: number): Promise<AlbumCompleteness | null> {
-    const row = await this.drizzle.select().from(schema.albumCompleteness).where(eq(schema.albumCompleteness.albumId, albumId)).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.albumCompleteness)
+      .where(eq(schema.albumCompleteness.albumId, albumId))
+      .get()
     return row ? this.mapDrizzleToAlbumCompleteness(row) : null
   }
 
   async getAllAlbumCompleteness(): Promise<AlbumCompleteness[]> {
-    const rows = await this.drizzle.select().from(schema.albumCompleteness).orderBy(asc(schema.albumCompleteness.artistName), asc(schema.albumCompleteness.albumTitle)).all()
-    return rows.map(r => this.mapDrizzleToAlbumCompleteness(r))
+    const rows = await this.drizzle
+      .select()
+      .from(schema.albumCompleteness)
+      .orderBy(asc(schema.albumCompleteness.artistName), asc(schema.albumCompleteness.albumTitle))
+      .all()
+    return rows.map((r) => this.mapDrizzleToAlbumCompleteness(r))
   }
 
   async getAlbumCompletenessByArtist(artistName: string): Promise<AlbumCompleteness[]> {
-    const rows = await this.drizzle.select().from(schema.albumCompleteness).where(eq(schema.albumCompleteness.artistName, artistName)).all()
-    return rows.map(r => this.mapDrizzleToAlbumCompleteness(r))
+    const rows = await this.drizzle
+      .select()
+      .from(schema.albumCompleteness)
+      .where(eq(schema.albumCompleteness.artistName, artistName))
+      .all()
+    return rows.map((r) => this.mapDrizzleToAlbumCompleteness(r))
   }
 
   async getIncompleteAlbums(): Promise<AlbumCompleteness[]> {
-    const rows = await this.drizzle.select().from(schema.albumCompleteness).where(lt(schema.albumCompleteness.completenessPercentage, 100)).orderBy(asc(schema.albumCompleteness.completenessPercentage)).all()
-    return rows.map(r => this.mapDrizzleToAlbumCompleteness(r))
+    const rows = await this.drizzle
+      .select()
+      .from(schema.albumCompleteness)
+      .where(lt(schema.albumCompleteness.completenessPercentage, 100))
+      .orderBy(asc(schema.albumCompleteness.completenessPercentage))
+      .all()
+    return rows.map((r) => this.mapDrizzleToAlbumCompleteness(r))
   }
 
   async getAlbumsByMusicbrainzIds(ids: string[]): Promise<Map<string, MusicAlbum>> {
@@ -761,14 +963,25 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      const rows = await this.drizzle.select().from(schema.musicAlbums).where(inArray(schema.musicAlbums.musicbrainzId, batch)).all()
-      rows.forEach(r => { if (r.musicbrainzId) result.set(r.musicbrainzId, this.mapDrizzleToAlbums([r])[0]) })
+      const rows = await this.drizzle
+        .select()
+        .from(schema.musicAlbums)
+        .where(inArray(schema.musicAlbums.musicbrainzId, batch))
+        .all()
+      rows.forEach((r) => {
+        if (r.musicbrainzId) result.set(r.musicbrainzId, this.mapDrizzleToAlbums([r])[0])
+      })
     }
     return result
   }
 
   async getTrackByMusicbrainzId(id: string): Promise<MusicTrack | null> {
-    const row = await this.drizzle.select().from(schema.musicTracks).where(eq(schema.musicTracks.musicbrainzId, id)).limit(1).get()
+    const row = await this.drizzle
+      .select()
+      .from(schema.musicTracks)
+      .where(eq(schema.musicTracks.musicbrainzId, id))
+      .limit(1)
+      .get()
     return row ? this.mapDrizzleToTrack(row) : null
   }
 
@@ -778,8 +991,14 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const batchSize = 500
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      const rows = await this.drizzle.select().from(schema.musicTracks).where(inArray(schema.musicTracks.musicbrainzId, batch)).all()
-      rows.forEach(r => { if (r.musicbrainzId) result.set(r.musicbrainzId, this.mapDrizzleToTrack(r)) })
+      const rows = await this.drizzle
+        .select()
+        .from(schema.musicTracks)
+        .where(inArray(schema.musicTracks.musicbrainzId, batch))
+        .all()
+      rows.forEach((r) => {
+        if (r.musicbrainzId) result.set(r.musicbrainzId, this.mapDrizzleToTrack(r))
+      })
     }
     return result
   }
@@ -788,7 +1007,11 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     await this.delete(id)
   }
 
-  async removeStaleProviderTracks(sourceId: string, libraryId: string, validProviderIds: Set<string>): Promise<number> {
+  async removeStaleProviderTracks(
+    sourceId: string,
+    libraryId: string,
+    validProviderIds: Set<string>
+  ): Promise<number> {
     const where = and(
       eq(schema.musicTracks.sourceId, sourceId),
       eq(schema.musicTracks.libraryId, libraryId)
@@ -796,65 +1019,203 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return await this.reconcileStaleItems(where, schema.musicTracks.providerId, validProviderIds)
   }
 
-  async removeStaleProviderAlbums(sourceId: string, libraryId: string, validProviderIds: Set<string>): Promise<number> {
-    const existing = await this.drizzle.select({ id: schema.musicAlbums.id, providerId: schema.musicAlbums.providerId })
+  async removeStaleProviderAlbums(
+    sourceId: string,
+    libraryId: string,
+    validProviderIds: Set<string>
+  ): Promise<number> {
+    const existing = await this.drizzle
+      .select({ id: schema.musicAlbums.id, providerId: schema.musicAlbums.providerId })
       .from(schema.musicAlbums)
-      .where(and(eq(schema.musicAlbums.sourceId, sourceId), eq(schema.musicAlbums.libraryId, libraryId)))
-    
-    const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
+      .where(
+        and(eq(schema.musicAlbums.sourceId, sourceId), eq(schema.musicAlbums.libraryId, libraryId))
+      )
+
+    const staleIds = existing.filter((t) => !validProviderIds.has(t.providerId)).map((t) => t.id)
     if (staleIds.length > 0) {
       const batchSize = 500
       for (let i = 0; i < staleIds.length; i += batchSize) {
         const batch = staleIds.slice(i, i + batchSize)
         const placeholders = batch.map(() => '?').join(',')
-        await this.db.execute({ sql: `DELETE FROM music_albums WHERE id IN (${placeholders})`, args: batch })
+        await this.db.execute({
+          sql: `DELETE FROM music_albums WHERE id IN (${placeholders})`,
+          args: batch,
+        })
       }
     }
     return staleIds.length
   }
 
-  async removeStaleProviderArtists(sourceId: string, validProviderIds: Set<string>): Promise<number> {
-    const existing = await this.drizzle.select({ id: schema.musicArtists.id, providerId: schema.musicArtists.providerId })
+  async removeStaleProviderArtists(
+    sourceId: string,
+    validProviderIds: Set<string>
+  ): Promise<number> {
+    const existing = await this.drizzle
+      .select({ id: schema.musicArtists.id, providerId: schema.musicArtists.providerId })
       .from(schema.musicArtists)
       .where(eq(schema.musicArtists.sourceId, sourceId))
-    
-    const staleIds = existing.filter(t => !validProviderIds.has(t.providerId)).map(t => t.id)
+
+    const staleIds = existing.filter((t) => !validProviderIds.has(t.providerId)).map((t) => t.id)
     if (staleIds.length > 0) {
       const batchSize = 500
       for (let i = 0; i < staleIds.length; i += batchSize) {
         const batch = staleIds.slice(i, i + batchSize)
         const placeholders = batch.map(() => '?').join(',')
-        await this.db.execute({ sql: `DELETE FROM music_artists WHERE id IN (${placeholders})`, args: batch })
+        await this.db.execute({
+          sql: `DELETE FROM music_artists WHERE id IN (${placeholders})`,
+          args: batch,
+        })
       }
     }
     return staleIds.length
   }
 
   private mapDrizzleToTrack(r: any): MusicTrack {
-    return { ...r, source_id: r.sourceId, source_type: r.sourceType, library_id: r.libraryId, provider_id: r.providerId, album_id: r.albumId, artist_id: r.artistId, album_name: r.albumName, artist_name: r.artistName, track_number: r.trackNumber, disc_number: r.discNumber, file_path: r.filePath, file_size: r.fileSize, file_mtime: r.fileMtime, audio_codec: r.audioCodec, audio_bitrate: r.audioBitrate, sample_rate: r.sampleRate, bit_depth: r.bitDepth, is_lossless: r.isLossless === 1, is_hi_res: r.isHiRes === 1, musicbrainz_id: r.musicbrainzId, added_at: r.addedAt, created_at: r.createdAt, updated_at: r.updatedAt }
+    return {
+      ...r,
+      source_id: r.sourceId,
+      source_type: r.sourceType,
+      library_id: r.libraryId,
+      provider_id: r.providerId,
+      album_id: r.albumId,
+      artist_id: r.artistId,
+      album_name: r.albumName,
+      artist_name: r.artistName,
+      track_number: r.trackNumber,
+      disc_number: r.discNumber,
+      file_path: r.filePath,
+      file_size: r.fileSize,
+      file_mtime: r.fileMtime,
+      audio_codec: r.audioCodec,
+      audio_bitrate: r.audioBitrate,
+      sample_rate: r.sampleRate,
+      bit_depth: r.bitDepth,
+      is_lossless: r.isLossless === 1,
+      is_hi_res: r.isHiRes === 1,
+      musicbrainz_id: r.musicbrainzId,
+      added_at: r.addedAt,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }
   }
 
   private mapDrizzleToTrackList(rows: any[]): MusicTrack[] {
-    return rows.map(r => this.mapDrizzleToTrack(r))
+    return rows.map((r) => this.mapDrizzleToTrack(r))
   }
 
   private mapDrizzleToArtists(rows: any[]): MusicArtist[] {
-    return rows.map(r => ({ ...r, source_id: r.sourceId, source_type: r.sourceType, library_id: r.libraryId, provider_id: r.providerId, sort_name: r.sortName, musicbrainz_id: r.musicbrainzId, thumb_url: r.thumbUrl, art_url: r.artUrl, user_fixed_match: r.userFixedMatch === 1, album_count: r.albumCount, track_count: r.trackCount, created_at: r.createdAt, updated_at: r.updatedAt }))
+    return rows.map((r) => ({
+      ...r,
+      source_id: r.sourceId,
+      source_type: r.sourceType,
+      library_id: r.libraryId,
+      provider_id: r.providerId,
+      sort_name: r.sortName,
+      musicbrainz_id: r.musicbrainzId,
+      thumb_url: r.thumbUrl,
+      art_url: r.artUrl,
+      user_fixed_match: r.userFixedMatch === 1,
+      album_count: r.albumCount,
+      track_count: r.trackCount,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }))
   }
 
   private mapDrizzleToAlbums(rows: any[]): MusicAlbum[] {
-    return rows.map(r => ({ ...r, source_id: r.sourceId, source_type: r.sourceType, library_id: r.libraryId, provider_id: r.providerId, artist_id: r.artistId, artist_name: r.artistName, sort_title: r.sortTitle, musicbrainz_id: r.musicbrainzId, musicbrainz_release_group_id: r.musicbrainzReleaseGroupId, album_type: r.albumType, track_count: r.trackCount, total_duration: r.totalDuration, total_size: r.totalSize, best_audio_codec: r.bestAudioCodec, best_audio_bitrate: r.bestAudioBitrate, best_sample_rate: r.bestSampleRate, best_bit_depth: r.bestBitDepth, avg_audio_bitrate: r.avgAudioBitrate, thumb_url: r.thumbUrl, art_url: r.artUrl, user_fixed_match: r.userFixedMatch === 1, release_date: r.releaseDate, added_at: r.addedAt, created_at: r.createdAt, updated_at: r.updatedAt }))
+    return rows.map((r) => ({
+      ...r,
+      source_id: r.sourceId,
+      source_type: r.sourceType,
+      library_id: r.libraryId,
+      provider_id: r.providerId,
+      artist_id: r.artistId,
+      artist_name: r.artistName,
+      sort_title: r.sortTitle,
+      musicbrainz_id: r.musicbrainzId,
+      musicbrainz_release_group_id: r.musicbrainzReleaseGroupId,
+      album_type: r.albumType,
+      track_count: r.trackCount,
+      total_duration: r.totalDuration,
+      total_size: r.totalSize,
+      best_audio_codec: r.bestAudioCodec,
+      best_audio_bitrate: r.bestAudioBitrate,
+      best_sample_rate: r.bestSampleRate,
+      best_bit_depth: r.bestBitDepth,
+      avg_audio_bitrate: r.avgAudioBitrate,
+      thumb_url: r.thumbUrl,
+      art_url: r.artUrl,
+      user_fixed_match: r.userFixedMatch === 1,
+      release_date: r.releaseDate,
+      added_at: r.addedAt,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }))
   }
 
   private mapDrizzleToQualityScore(r: any): MusicQualityScore {
-    return { id: r.id, album_id: r.albumId, quality_tier: r.qualityTier, tier_quality: r.tierQuality, tier_score: r.tierScore, codec_score: r.codecScore, bitrate_score: r.bitrateScore, efficiency_score: r.efficiencyScore, storage_debt_bytes: r.storageDebtBytes, needs_upgrade: r.needsUpgrade === 1, issues: r.issues, created_at: r.createdAt, updated_at: r.updatedAt }
+    return {
+      id: r.id,
+      album_id: r.albumId,
+      quality_tier: r.qualityTier,
+      tier_quality: r.tierQuality,
+      tier_score: r.tierScore,
+      codec_score: r.codecScore,
+      bitrate_score: r.bitrateScore,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      needs_upgrade: r.needsUpgrade === 1,
+      issues: r.issues,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }
   }
 
   private mapDrizzleToArtistCompleteness(r: any): ArtistCompleteness {
-    return { artist_name: r.artistName, musicbrainz_id: r.musicbrainzId || undefined, library_id: r.libraryId, total_albums: r.totalAlbums, owned_albums: r.ownedAlbums, total_singles: r.totalSingles, owned_singles: r.ownedSingles, total_eps: r.totalEps, owned_eps: r.ownedEps, missing_albums: r.missingAlbums, missing_singles: r.missingSingles, missing_eps: r.missingEps, completeness_percentage: r.completenessPercentage, efficiency_score: r.efficiencyScore, storage_debt_bytes: r.storageDebtBytes, total_size: r.totalSize, country: r.country || undefined, active_years: r.activeYears || undefined, artist_type: r.artistType || undefined, thumb_url: r.thumbUrl || undefined, last_sync_at: r.lastSyncAt || undefined, created_at: r.createdAt, updated_at: r.updatedAt }
+    return {
+      artist_name: r.artistName,
+      musicbrainz_id: r.musicbrainzId || undefined,
+      library_id: r.libraryId,
+      total_albums: r.totalAlbums,
+      owned_albums: r.ownedAlbums,
+      total_singles: r.totalSingles,
+      owned_singles: r.ownedSingles,
+      total_eps: r.totalEps,
+      owned_eps: r.ownedEps,
+      missing_albums: r.missingAlbums,
+      missing_singles: r.missingSingles,
+      missing_eps: r.missingEps,
+      completeness_percentage: r.completenessPercentage,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      total_size: r.totalSize,
+      country: r.country || undefined,
+      active_years: r.activeYears || undefined,
+      artist_type: r.artistType || undefined,
+      thumb_url: r.thumbUrl || undefined,
+      last_sync_at: r.lastSyncAt || undefined,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }
   }
 
   private mapDrizzleToAlbumCompleteness(r: any): AlbumCompleteness {
-    return { album_id: r.albumId, artist_name: r.artistName, album_title: r.albumTitle, musicbrainz_release_id: r.musicbrainzReleaseId || undefined, musicbrainz_release_group_id: r.musicbrainzReleaseGroupId || undefined, total_tracks: r.totalTracks, owned_tracks: r.ownedTracks, missing_tracks: r.missingTracks, completeness_percentage: r.completenessPercentage, efficiency_score: r.efficiencyScore, storage_debt_bytes: r.storageDebtBytes, total_size: r.totalSize, last_sync_at: r.lastSyncAt || undefined, created_at: r.createdAt, updated_at: r.updatedAt }
+    return {
+      album_id: r.albumId,
+      artist_name: r.artistName,
+      album_title: r.albumTitle,
+      musicbrainz_release_id: r.musicbrainzReleaseId || undefined,
+      musicbrainz_release_group_id: r.musicbrainzReleaseGroupId || undefined,
+      total_tracks: r.totalTracks,
+      owned_tracks: r.ownedTracks,
+      missing_tracks: r.missingTracks,
+      completeness_percentage: r.completenessPercentage,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      total_size: r.totalSize,
+      last_sync_at: r.lastSyncAt || undefined,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }
   }
 }
