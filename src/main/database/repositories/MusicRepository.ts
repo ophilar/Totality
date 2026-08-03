@@ -20,6 +20,28 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return row ? this.mapDrizzleToTrack(row) : null
   }
 
+  async getTracksByPaths(filePaths: string[]): Promise<MusicTrack[]> {
+    if (!filePaths || filePaths.length === 0) return []
+
+    const normalizedPaths = filePaths.map(p => PathUtils.toDatabasePath(p))
+    const tracks: MusicTrack[] = []
+    const batchSize = 500
+
+    for (let i = 0; i < normalizedPaths.length; i += batchSize) {
+      const batchPaths = normalizedPaths.slice(i, i + batchSize)
+      const rows = await this.drizzle.select()
+        .from(schema.musicTracks)
+        .where(inArray(schema.musicTracks.filePath, batchPaths))
+        .all()
+
+      for (const row of rows) {
+        tracks.push(this.mapDrizzleToTrack(row))
+      }
+    }
+
+    return tracks
+  }
+
   async getMusicTracksByAlbumIds(albumIds: number[]): Promise<Map<number, MusicTrack[]>> {
     const result = new Map<number, MusicTrack[]>()
     if (!albumIds || albumIds.length === 0) return result
