@@ -212,7 +212,7 @@ export function LiveEncodingTab({
               </div>
 
               {/* Metric Cards Grid */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-muted/40 border border-border/30 rounded-xl p-2.5 text-center">
                   <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-muted-foreground uppercase">
                     <Gauge className="w-3 h-3 text-primary" />

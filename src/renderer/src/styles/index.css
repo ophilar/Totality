@@ -131,6 +131,18 @@
   background: var(--sidebar-gradient);
 }
 
+/* Preserve the desktop layout while keeping auxiliary panels usable in the
+   smallest supported application window. */
+@media (max-width: 1120px) {
+  .app-side-panel {
+    width: min(20rem, calc(100vw - 2rem));
+  }
+
+  .app-main-content {
+    right: 1rem !important;
+  }
+}
+
 @layer base {
   :root {
     /* Plex Moonlight Theme - Cool blue-tinted dark mode (lightened for better contrast) */

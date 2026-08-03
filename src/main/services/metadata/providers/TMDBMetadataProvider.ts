@@ -12,7 +12,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
     if (!apiKey) return []
 
     const endpoint = query.type === 'movie' ? 'search/movie' : 'search/tv'
-    const adultParam = query.includeAdult ? '&include_adult=true' : ''
+    const adultParam = (query.includeExpanded ?? query.includeAdult) ? '&include_adult=true' : ''
     const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${query.year ? `&year=${query.year}` : ''}${adultParam}`
 
     try {
@@ -33,6 +33,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         bannerUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview,
+        externalIds: { tmdbId: String(item.id) },
         score: item.vote_average
       }))
     } catch (err) {
@@ -89,6 +90,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         bannerUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview,
+        externalIds: { tmdbId: String(item.id) },
         score: item.vote_average,
         genres: Array.isArray(item.genres) ? item.genres.map((g: any) => g.name) : [],
         totalSeasons: item.number_of_seasons,

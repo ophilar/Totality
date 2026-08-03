@@ -321,7 +321,7 @@ function AppContent() {
         />
 
         <main
-          className="fixed top-[88px] bottom-4 transition-[left,right] duration-300 ease-out"
+          className="app-main-content fixed top-[88px] bottom-4 transition-[left,right] duration-300 ease-out min-w-0"
           style={{
             left: sidebarCollapsed ? '96px' : '288px',
             right: showCompletenessPanel || showWishlistPanel || showChatPanel ? '352px' : '16px'

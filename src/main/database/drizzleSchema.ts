@@ -172,6 +172,7 @@ export const seriesCompleteness = sqliteTable('series_completeness', {
   missingEpisodes: text('missing_episodes').notNull(),
   completenessPercentage: real('completeness_percentage').notNull(),
   tmdbId: text('tmdb_id'),
+  tvdbId: text('tvdb_id'),
   posterUrl: text('poster_url'),
   backdropUrl: text('backdrop_url'),
   status: text('status'),

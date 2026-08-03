@@ -16,6 +16,9 @@ export function useDashboardData(activeSourceId: string | null) {
   const [collectionSortBy, setCollectionSortBy] = useState('completeness')
   const [seriesSortBy, setSeriesSortBy] = useState('completeness')
   const [artistSortBy, setArtistSortBy] = useState('completeness')
+  const [collectionSortOrder, setCollectionSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [seriesSortOrder, setSeriesSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [artistSortOrder, setArtistSortOrder] = useState<'asc' | 'desc'>('desc')
   const [includeEps, setIncludeEps] = useState(true)
   const [includeSingles, setIncludeSingles] = useState(true)
 
@@ -37,6 +40,9 @@ export function useDashboardData(activeSourceId: string | null) {
       setCollectionSortBy(summary.settings.collectionSort)
       setSeriesSortBy(summary.settings.seriesSort)
       setArtistSortBy(summary.settings.artistSort)
+      setCollectionSortOrder(summary.settings.collectionSortOrder)
+      setSeriesSortOrder(summary.settings.seriesSortOrder)
+      setArtistSortOrder(summary.settings.artistSortOrder)
       setIncludeEps(summary.settings.includeEps)
       setIncludeSingles(summary.settings.includeSingles)
     } catch (err) {
@@ -99,6 +105,7 @@ export function useDashboardData(activeSourceId: string | null) {
     collectionSortBy, setCollectionSortBy,
     seriesSortBy, setSeriesSortBy,
     artistSortBy, setArtistSortBy,
+    collectionSortOrder, setCollectionSortOrder, seriesSortOrder, setSeriesSortOrder, artistSortOrder, setArtistSortOrder,
     loadDashboardData,
     includeEps, includeSingles
   }

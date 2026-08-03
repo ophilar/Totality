@@ -31,6 +31,8 @@ interface LibraryContextType {
   // Sort State
   sortBy: string
   setSortBy: (sort: string) => void
+  sortOrder: 'asc' | 'desc'
+  setSortOrder: (order: 'asc' | 'desc') => void
   
   // Selection
   activeSourceId: string | null
@@ -47,6 +49,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const [gridScale, setGridScaleState] = useState(4)
   const [viewType, setViewTypeState] = useState<ViewType>('grid')
   const [sortBy, setSortBy] = useState('title')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null)
@@ -66,7 +69,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   }, [])
 
   // Persist view preferences
-  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number }>>({})
+  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortOrder?: 'asc' | 'desc' }>>({})
 
   useEffect(() => {
     window.electronAPI.getSetting('library_view_prefs').then(val => {
@@ -77,6 +80,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
           if (current) {
             setViewTypeState(current.viewType)
             setGridScaleState(current.gridScale)
+            if (current.sortOrder) setSortOrder(current.sortOrder)
           }
         } catch (e) {
           window.electronAPI.log.error('[LibraryContext]', 'Failed to parse view preferences:', e)
@@ -97,6 +101,12 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
     window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
   }, [view])
 
+  const updateSortOrder = useCallback((order: 'asc' | 'desc') => {
+    setSortOrder(order)
+    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view], sortOrder: order }
+    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
+  }, [view])
+
   const setSelectedMedia = useCallback((id: number | null, type: 'movie' | 'episode' | 'track' = 'movie') => {
     setSelectedItemId(id)
     setSelectedItemType(id ? type : null)
@@ -114,6 +124,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       selectedArtist, setSelectedArtist,
       selectedAlbum, setSelectedAlbum,
       sortBy, setSortBy,
+      sortOrder, setSortOrder: updateSortOrder,
       activeSourceId, setActiveSourceId,
       deepAnalyzeMedia
     }}>

@@ -8,6 +8,17 @@ export const IPC_CHANNELS = {
   APP: {
     GET_VERSION: 'app:getVersion',
   },
+  ARR: {
+    TEST_CONNECTION: 'arr:testConnection',
+    SEARCH_MOVIE: 'arr:searchMovie',
+    SEARCH_SERIES: 'arr:searchSeries',
+    LOOKUP_MOVIE: 'arr:lookupMovie',
+    LOOKUP_SERIES: 'arr:lookupSeries',
+    FIND_MANAGED_MOVIE: 'arr:findManagedMovie',
+    FIND_MANAGED_SERIES: 'arr:findManagedSeries',
+    GET_COMMAND: 'arr:getCommand',
+    WAIT_COMMAND: 'arr:waitCommand'
+  },
   DATABASE: {
     GET_SETTING: 'db:getSetting',
     SET_SETTING: 'db:setSetting',

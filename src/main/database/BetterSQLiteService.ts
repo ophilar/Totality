@@ -16,6 +16,7 @@ import { ExclusionRepository } from '@main/database/repositories/ExclusionReposi
 import { TaskRepository } from '@main/database/repositories/TaskRepository'
 import { DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
 import { MovieCollectionRepository } from '@main/database/repositories/MovieCollectionRepository'
+import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
 
 let serviceInstance: BetterSQLiteService | null = null
 
@@ -129,6 +130,7 @@ export class BetterSQLiteService {
   public get tasks() { return this.repos.tasks ??= new TaskRepository(this.db as any, this.drizzle) }
   public get duplicates() { return this.repos.duplicates ??= new DuplicateRepository(this.db as any, this.drizzle) }
   public get movieCollections() { return this.repos.movieCollections ??= new MovieCollectionRepository(this.db as any, this.drizzle) }
+  public get identities() { return this.repos.identities ??= new IdentityRepository(this.db as any) }
 
   // Transaction API
   public async beginBatch(): Promise<void> {

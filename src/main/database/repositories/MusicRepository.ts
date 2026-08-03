@@ -30,7 +30,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async getTracksByPaths(filePaths: string[]): Promise<MusicTrack[]> {
-    if (filePaths.length === 0) return []
+    if (!filePaths || filePaths.length === 0) return []
     const dbPaths = filePaths.map((fp) => PathUtils.toDatabasePath(fp))
     const result: MusicTrack[] = []
     const batchSize = 500

@@ -136,6 +136,41 @@ export function ServicesTab() {
   const [omdbStatus, setOmdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
   const [originalOmdb, setOriginalOmdb] = useState('')
 
+  // TVDB state
+  const [tvdbApiKey, setTvdbApiKey] = useState('')
+  const [tvdbPin, setTvdbPin] = useState('')
+  const [showTvdbKey, setShowTvdbKey] = useState(false)
+  const [showTvdbPin, setShowTvdbPin] = useState(false)
+  const [tvdbStatus, setTvdbStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [originalTvdbApiKey, setOriginalTvdbApiKey] = useState('')
+  const [originalTvdbPin, setOriginalTvdbPin] = useState('')
+
+  const [sonarrUrl, setSonarrUrl] = useState('')
+  const [sonarrKey, setSonarrKey] = useState('')
+  const [radarrUrl, setRadarrUrl] = useState('')
+  const [radarrKey, setRadarrKey] = useState('')
+  const [originalSonarrUrl, setOriginalSonarrUrl] = useState('')
+  const [originalSonarrKey, setOriginalSonarrKey] = useState('')
+  const [originalRadarrUrl, setOriginalRadarrUrl] = useState('')
+  const [originalRadarrKey, setOriginalRadarrKey] = useState('')
+  const [arrStatus, setArrStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [metadataProviderPreferences, setMetadataProviderPreferences] = useState('{"enabled":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"],"order":["tmdb","anilist","omdb","tvmaze","tvdb","musicbrainz"]}')
+  const [originalMetadataProviderPreferences, setOriginalMetadataProviderPreferences] = useState('')
+  const metadataProviders = ['tmdb', 'anilist', 'omdb', 'tvmaze', 'tvdb', 'musicbrainz']
+  const metadataProviderLabels: Record<string, string> = { tmdb: 'TMDB', anilist: 'AniList', omdb: 'OMDb', tvmaze: 'TVmaze', tvdb: 'TVDB', musicbrainz: 'MusicBrainz' }
+  const readProviderPreferences = () => {
+    try {
+      const parsed = JSON.parse(metadataProviderPreferences)
+      return {
+        enabled: metadataProviders.filter(id => parsed.enabled?.includes(id)),
+        order: metadataProviders.filter(id => parsed.order?.includes(id)).concat(metadataProviders.filter(id => !parsed.order?.includes(id)))
+      }
+    } catch {
+      return { enabled: metadataProviders, order: metadataProviders }
+    }
+  }
+  const writeProviderPreferences = (enabled: string[], order: string[]) => setMetadataProviderPreferences(JSON.stringify({ enabled, order }))
+
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
   const [ffprobeBundled, setFfprobeBundled] = useState(false)
@@ -198,6 +233,8 @@ export function ServicesTab() {
   const tmdbId = useId()
   const musicbrainzId = useId()
   const omdbId = useId()
+  const tvdbId = useId()
+  const tvdbPinId = useId()
   const toggleId = useId()
   const geminiId = useId()
   const geminiModelId = useId()
@@ -225,8 +262,10 @@ export function ServicesTab() {
     const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
     const musicbrainzChanged = musicbrainzBaseUrl !== originalMusicbrainzBaseUrl
     const omdbChanged = omdbApiKey !== originalOmdb
-    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged)
-  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb])
+    const tvdbChanged = tvdbApiKey !== originalTvdbApiKey || tvdbPin !== originalTvdbPin
+    const arrChanged = sonarrUrl !== originalSonarrUrl || sonarrKey !== originalSonarrKey || radarrUrl !== originalRadarrUrl || radarrKey !== originalRadarrKey
+    setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged || tvdbChanged || arrChanged || metadataProviderPreferences !== originalMetadataProviderPreferences)
+  }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb, tvdbApiKey, originalTvdbApiKey, tvdbPin, originalTvdbPin, sonarrUrl, sonarrKey, radarrUrl, radarrKey, originalSonarrUrl, originalSonarrKey, originalRadarrUrl, originalRadarrKey, metadataProviderPreferences, originalMetadataProviderPreferences])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
@@ -268,6 +307,25 @@ export function ServicesTab() {
       if (omdb) {
         setOmdbStatus('valid')
       }
+
+      const tvdb = allSettings.tvdb_api_key || ''
+      const tvdbPinValue = allSettings.tvdb_pin || ''
+      setTvdbApiKey(tvdb)
+      setOriginalTvdbApiKey(tvdb)
+      setTvdbPin(tvdbPinValue)
+      setOriginalTvdbPin(tvdbPinValue)
+      if (tvdb) setTvdbStatus('valid')
+      setSonarrUrl(allSettings.sonarr_url || '')
+      setSonarrKey(allSettings.sonarr_api_key || '')
+      setRadarrUrl(allSettings.radarr_url || '')
+      setRadarrKey(allSettings.radarr_api_key || '')
+      const providerPreferences = allSettings.metadata_provider_preferences || metadataProviderPreferences
+      setMetadataProviderPreferences(providerPreferences)
+      setOriginalMetadataProviderPreferences(providerPreferences)
+      setOriginalSonarrUrl(allSettings.sonarr_url || '')
+      setOriginalSonarrKey(allSettings.sonarr_api_key || '')
+      setOriginalRadarrUrl(allSettings.radarr_url || '')
+      setOriginalRadarrKey(allSettings.radarr_api_key || '')
 
       const gemini = allSettings.gemini_api_key || ''
       setGeminiApiKey(gemini)
@@ -348,6 +406,13 @@ export function ServicesTab() {
         window.electronAPI.setSetting('gemini_model', geminiModel),
         window.electronAPI.setSetting('musicbrainz_base_url', musicbrainzBaseUrl),
         window.electronAPI.setSetting('omdb_api_key', omdbApiKey),
+        window.electronAPI.setSetting('tvdb_api_key', tvdbApiKey),
+        window.electronAPI.setSetting('tvdb_pin', tvdbPin),
+        window.electronAPI.setSetting('sonarr_url', sonarrUrl),
+        window.electronAPI.setSetting('sonarr_api_key', sonarrKey),
+        window.electronAPI.setSetting('radarr_url', radarrUrl),
+        window.electronAPI.setSetting('radarr_api_key', radarrKey),
+        window.electronAPI.setSetting('metadata_provider_preferences', metadataProviderPreferences),
       ])
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
@@ -355,6 +420,13 @@ export function ServicesTab() {
       setOriginalGeminiModel(geminiModel)
       setOriginalMusicbrainzBaseUrl(musicbrainzBaseUrl)
       setOriginalOmdb(omdbApiKey)
+      setOriginalTvdbApiKey(tvdbApiKey)
+      setOriginalTvdbPin(tvdbPin)
+      setOriginalSonarrUrl(sonarrUrl)
+      setOriginalSonarrKey(sonarrKey)
+      setOriginalRadarrUrl(radarrUrl)
+      setOriginalRadarrKey(radarrKey)
+      setOriginalMetadataProviderPreferences(metadataProviderPreferences)
       setHasChanges(false)
     } catch (error) {
       window.electronAPI.log.error('[ServicesTab]', 'Failed to save settings:', error)
@@ -389,6 +461,18 @@ export function ServicesTab() {
     } catch {
       setOmdbStatus('invalid')
     }
+  }
+
+  const handleTestTvdb = async () => {
+    if (!tvdbApiKey.trim()) return
+    setTvdbStatus('testing')
+    try {
+      const response = await fetch('https://api4.thetvdb.com/v4/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ apikey: tvdbApiKey, pin: tvdbPin || undefined })
+      })
+      setTvdbStatus(response.ok ? 'valid' : 'invalid')
+    } catch { setTvdbStatus('invalid') }
   }
 
   const handleAddNfsMapping = () => {
@@ -713,6 +797,33 @@ export function ServicesTab() {
             Get an API key from{' '}
             <button type="button" onClick={() => window.electronAPI.openExternal('http://www.omdbapi.com/apikey.aspx')} className="text-primary hover:underline">omdbapi.com</button>
           </p>
+        </div>
+      </ServiceCard>
+
+
+      {/* TVDB Card */}
+      <ServiceCard
+        title="TheTVDB API"
+        description="TV metadata and external IDs; requires an API key"
+        icon={<Film className="w-5 h-5" />}
+        status={tvdbApiKey ? (tvdbStatus === 'invalid' ? 'partial' : 'configured') : 'not-configured'}
+        statusText={tvdbApiKey ? (tvdbStatus === 'invalid' ? 'Invalid credentials' : 'Configured') : 'Not configured'}
+        expanded={expandedCards.has('tvdb')}
+        onToggle={() => toggleCard('tvdb')}
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input id={tvdbId} type={showTvdbKey ? 'text' : 'password'} value={tvdbApiKey} onChange={(e) => { setTvdbApiKey(e.target.value); setTvdbStatus('idle') }} placeholder="Enter TheTVDB API key" className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary" />
+              <button type="button" onClick={() => setShowTvdbKey(!showTvdbKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground" aria-label={showTvdbKey ? 'Hide API key' : 'Show API key'}>{showTvdbKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+            </div>
+            <button onClick={handleTestTvdb} disabled={!tvdbApiKey.trim() || tvdbStatus === 'testing'} className="px-3 py-2 rounded-md bg-muted hover:bg-muted/80 disabled:opacity-50">{tvdbStatus === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> : tvdbStatus === 'valid' ? <CheckCircle className="w-4 h-4 text-green-500" /> : tvdbStatus === 'invalid' ? <XCircle className="w-4 h-4 text-red-500" /> : 'Test'}</button>
+          </div>
+          <div className="relative">
+            <input id={tvdbPinId} type={showTvdbPin ? 'text' : 'password'} value={tvdbPin} onChange={(e) => setTvdbPin(e.target.value)} placeholder="Optional subscriber PIN" className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary" />
+            <button type="button" onClick={() => setShowTvdbPin(!showTvdbPin)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground" aria-label={showTvdbPin ? 'Hide subscriber PIN' : 'Show subscriber PIN'}>{showTvdbPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+          </div>
+          <p className="text-xs text-muted-foreground">Metadata provided by TheTVDB. Attribution is required for API results.</p>
         </div>
       </ServiceCard>
 
@@ -1174,6 +1285,56 @@ export function ServicesTab() {
               No NFS mappings configured. Only needed if you use NFS shares with Kodi.
             </p>
           )}
+        </div>
+      </ServiceCard>
+
+      <ServiceCard
+        title="Sonarr / Radarr"
+        description="Optional release search and import integration"
+        icon={<Bot className="w-5 h-5" />}
+        status={sonarrUrl || radarrUrl ? (arrStatus === 'invalid' ? 'partial' : 'configured') : 'not-configured'}
+        statusText={sonarrUrl || radarrUrl ? 'Configured' : 'Not configured'}
+        expanded={expandedCards.has('arr')}
+        onToggle={() => toggleCard('arr')}
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><label className="text-xs text-muted-foreground">Sonarr URL</label><input value={sonarrUrl} onChange={(e) => setSonarrUrl(e.target.value)} placeholder="http://localhost:8989" className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Sonarr API key</label><input type="password" value={sonarrKey} onChange={(e) => setSonarrKey(e.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Radarr URL</label><input value={radarrUrl} onChange={(e) => setRadarrUrl(e.target.value)} placeholder="http://localhost:7878" className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+            <div><label className="text-xs text-muted-foreground">Radarr API key</label><input type="password" value={radarrKey} onChange={(e) => setRadarrKey(e.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={!sonarrUrl || !sonarrKey || arrStatus === 'testing'} onClick={async () => { setArrStatus('testing'); const result = await window.electronAPI.arrTestConnection('sonarr', { baseUrl: sonarrUrl, apiKey: sonarrKey }); setArrStatus(result.success ? 'valid' : 'invalid') }} className="px-3 py-2 text-sm bg-muted rounded-md disabled:opacity-50">Test Sonarr</button>
+            <button disabled={!radarrUrl || !radarrKey || arrStatus === 'testing'} onClick={async () => { setArrStatus('testing'); const result = await window.electronAPI.arrTestConnection('radarr', { baseUrl: radarrUrl, apiKey: radarrKey }); setArrStatus(result.success ? 'valid' : 'invalid') }} className="px-3 py-2 text-sm bg-muted rounded-md disabled:opacity-50">Test Radarr</button>
+          </div>
+          <p className="text-xs text-muted-foreground">Search commands require explicit confirmation from the media action menu. Totality does not choose indexers or releases.</p>
+        </div>
+      </ServiceCard>
+
+      <ServiceCard
+        title="Metadata providers"
+        description="Choose enabled providers and their fusion priority"
+        icon={<Network className="w-5 h-5" />}
+        status="configured"
+        statusText="Fusion enabled"
+        expanded={expandedCards.has('metadata-providers')}
+        onToggle={() => toggleCard('metadata-providers')}
+      >
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">All enabled providers contribute to metadata fusion. Order controls conflicting field precedence.</p>
+          {(() => {
+            const preferences = readProviderPreferences()
+            return preferences.order.map((id, index) => (
+              <div key={id} className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-2">
+                <input type="checkbox" checked={preferences.enabled.includes(id)} onChange={(e) => writeProviderPreferences(e.target.checked ? [...preferences.enabled, id] : preferences.enabled.filter(provider => provider !== id), preferences.order)} aria-label={`Enable ${metadataProviderLabels[id]}`} />
+                <span className="flex-1 text-sm">{metadataProviderLabels[id]}</span>
+                <button type="button" disabled={index === 0} onClick={() => { const order = [...preferences.order]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} up`}>↑</button>
+                <button type="button" disabled={index === preferences.order.length - 1} onClick={() => { const order = [...preferences.order]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} down`}>↓</button>
+              </div>
+            ))
+          })()}
+          <p className="text-xs text-muted-foreground">TMDB, TVDB, and OMDb use API credentials. AniList, TVmaze, and MusicBrainz do not require an API key.</p>
         </div>
       </ServiceCard>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database } from 'lucide-react'
 import { SeasonCard } from '@/components/library/tv/SeasonCard'
 import { MissingSeasonCardWithArtwork } from '@/components/library/tv/MissingSeasonCardWithArtwork'
 import { getStatusBadge, formatSeasonLabel } from '@/components/library/mediaUtils'
@@ -33,6 +33,7 @@ export function TVShowDetails({
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
   const [copiedTitle, setCopiedTitle] = useState(false)
   const [showOverview, setShowOverview] = useState<string | null>(null)
+  const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
 
   useEffect(() => {
     setShowOverviewExpanded(false)
@@ -73,6 +74,25 @@ export function TVShowDetails({
   const ownedSeasons = Array.from(selectedShowData.seasons.values()).sort((a, b) => a.seasonNumber - b.seasonNumber)
   const completenessData = seriesCompleteness.get(selectedShow)
 
+  const handleSonarrSearch = async () => {
+    if (!completenessData?.tvdb_id) return
+    const baseUrl = await window.electronAPI.getSetting('sonarr_url')
+    const apiKey = await window.electronAPI.getSetting('sonarr_api_key')
+    if (!baseUrl || !apiKey) return
+    if (!window.confirm(`Ask Sonarr to search for a better release of “${selectedShowData.title}”?`)) return
+    setArrStatus('working')
+    try {
+      const managed = await window.electronAPI.arrFindManagedSeries({ baseUrl, apiKey }, Number(completenessData.tvdb_id)) as { id?: number } | null
+      if (!managed?.id) throw new Error('This series is not managed by Sonarr')
+      const command = await window.electronAPI.arrSearchSeries({ baseUrl, apiKey }, managed.id) as { id?: number }
+      if (!command.id) throw new Error('Sonarr did not return a command ID')
+      await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
+      setArrStatus('success')
+    } catch {
+      setArrStatus('error')
+    }
+  }
+
   // Parse missing seasons from completeness data
   let missingSeasonNumbers: number[] = []
   if (completenessData?.missing_seasons) {
@@ -108,10 +128,10 @@ export function TVShowDetails({
       </button>
 
       {/* Show Header */}
-      <div className="flex gap-6 mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mb-6">
         {/* Poster */}
         {selectedShowData.poster_url && (
-          <div className="w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
+          <div className="w-28 sm:w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
             <img
               src={selectedShowData.poster_url}
               alt={selectedShowData.title}
@@ -128,7 +148,7 @@ export function TVShowDetails({
         <div className="flex-1 min-w-0">
           {/* Title */}
           <div className="flex items-center gap-1.5">
-            <h3 className="text-3xl font-bold">{selectedShowData.title}</h3>
+            <h3 className="text-2xl sm:text-3xl font-bold break-words">{selectedShowData.title}</h3>
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -155,7 +175,7 @@ export function TVShowDetails({
           </div>
 
           {/* Action buttons row */}
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3">
             <button
               onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
               className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
@@ -171,6 +191,12 @@ export function TVShowDetails({
                 title="Fix Match"
               >
                 <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            {completenessData?.tvdb_id && (
+              <button onClick={handleSonarrSearch} disabled={arrStatus === 'working'} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-muted rounded-md hover:bg-muted/80 disabled:opacity-50" title="Search in Sonarr">
+                {arrStatus === 'working' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+                {arrStatus === 'working' ? 'Searching...' : 'Search in Sonarr'}
               </button>
             )}
           </div>

@@ -54,6 +54,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       missing_episodes: schema.seriesCompleteness.missingEpisodes,
       completeness_percentage: schema.seriesCompleteness.completenessPercentage,
       tmdb_id: schema.seriesCompleteness.tmdbId,
+      tvdb_id: schema.seriesCompleteness.tvdbId,
       poster_url: schema.seriesCompleteness.posterUrl,
       backdrop_url: schema.seriesCompleteness.backdropUrl,
       status: schema.seriesCompleteness.status,
@@ -134,6 +135,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       missingEpisodes: data.missing_episodes || '[]',
       completenessPercentage: data.completeness_percentage,
       tmdbId: data.tmdb_id ?? null,
+      tvdbId: data.tvdb_id ?? null,
       posterUrl: data.poster_url ?? null,
       backdropUrl: data.backdrop_url ?? null,
       status: data.status ?? null,
@@ -150,7 +152,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       {
         ...record,
         seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
-        tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
+      tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
+        tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE COALESCE(excluded.tvdb_id, series_completeness.tvdb_id) END`,
         posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
         userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
       }
@@ -202,6 +205,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       missing_episodes: r.missingEpisodes,
       completeness_percentage: r.completenessPercentage,
       tmdb_id: r.tmdbId || undefined,
+      tvdb_id: r.tvdbId || undefined,
       poster_url: r.posterUrl || undefined,
       backdrop_url: r.backdropUrl || undefined,
       status: r.status || undefined,

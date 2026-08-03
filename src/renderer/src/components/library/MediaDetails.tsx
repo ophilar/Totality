@@ -34,6 +34,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const [loading, setLoading] = useState(true)
   const [isRescanning, setIsRescanning] = useState(false)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
+  const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
   const { addToast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -82,6 +83,30 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     if (!media || !onDismissUpgrade) return
     onDismissUpgrade(media.id!, media.title)
     onClose()
+  }
+
+  const handleRadarrSearch = async () => {
+    if (!media?.tmdb_id || !isMovie) return
+    const baseUrl = await window.electronAPI.getSetting('radarr_url')
+    const apiKey = await window.electronAPI.getSetting('radarr_api_key')
+    if (!baseUrl || !apiKey) {
+      addToast({ title: 'Radarr is not configured', type: 'error' })
+      return
+    }
+    if (!window.confirm(`Ask Radarr to search for a better release of “${media.title}”?`)) return
+    setArrStatus('working')
+    try {
+      const managed = await window.electronAPI.arrFindManagedMovie({ baseUrl, apiKey }, Number(media.tmdb_id)) as { id?: number } | null
+      if (!managed?.id) throw new Error('This movie is not managed by Radarr')
+      const command = await window.electronAPI.arrSearchMovie({ baseUrl, apiKey }, managed.id) as { id?: number }
+      if (!command.id) throw new Error('Radarr did not return a command ID')
+      await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
+      setArrStatus('success')
+      addToast({ title: 'Radarr search completed', type: 'success' })
+    } catch (error) {
+      setArrStatus('error')
+      addToast({ title: error instanceof Error ? error.message : 'Radarr search failed', type: 'error' })
+    }
   }
 
   if (loading && !media) {
@@ -405,6 +430,17 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               >
                 <Zap className="w-4 h-4" />
                 Optimize...
+              </button>
+            )}
+
+            {isMovie && media.tmdb_id && (
+              <button
+                onClick={handleRadarrSearch}
+                disabled={arrStatus === 'working'}
+                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+              >
+                {arrStatus === 'working' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                {arrStatus === 'working' ? 'Searching in Radarr...' : 'Search in Radarr'}
               </button>
             )}
 

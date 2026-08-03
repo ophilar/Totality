@@ -10,6 +10,7 @@ import { APP_CONFIG } from '@main/config'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
+import { buildTranscodingCapabilities, TranscodingCapabilities } from './TranscodingCapabilities'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -67,6 +68,7 @@ export class TranscodingService {
   private initializedPromise: Promise<void> | null = null
   private cachedHandbrakeAvailable: boolean | null = null
   private cachedHandbrakeVersion: string | null = null
+  private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
 
   constructor() {
     // Initialization is deferred until first use to allow DB to be ready
@@ -78,6 +80,7 @@ export class TranscodingService {
     this.handbrakePath = null
     this.cachedHandbrakeAvailable = null
     this.cachedHandbrakeVersion = null
+    this.capabilitiesPromise = null
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -160,6 +163,20 @@ export class TranscodingService {
       handbrake: hb,
       ffmpeg: ffmpegAvailable
     }
+  }
+
+  async getCapabilities(options: { refresh?: boolean } = {}): Promise<TranscodingCapabilities> {
+    if (this.capabilitiesPromise && !options.refresh) return this.capabilitiesPromise
+    this.capabilitiesPromise = (async () => {
+      const [availability, gpus] = await Promise.all([
+        this.checkAvailability(),
+        GpuDetector.detectGpus({ refresh: options.refresh })
+      ])
+      const capabilities = buildTranscodingCapabilities(availability, gpus)
+      getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
+      return capabilities
+    })()
+    return this.capabilitiesPromise
   }
 
 
