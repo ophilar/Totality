@@ -5,7 +5,6 @@ export interface TranscodeOptions {
   overwriteOriginal: boolean
   useGpu: boolean
   gpuId: string
-  vendor?: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Software'
   encoder: string
   crf: number
   preset: string

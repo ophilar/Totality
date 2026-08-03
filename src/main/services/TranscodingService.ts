@@ -549,7 +549,9 @@ export class TranscodingService {
       return true
 
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
+      const msg = error instanceof TranscodeError && error.stderr
+        ? `${error.message}: ${error.stderr.slice(-4000).trim()}`
+        : error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
       
       if (tempPath && existsSync(tempPath)) {

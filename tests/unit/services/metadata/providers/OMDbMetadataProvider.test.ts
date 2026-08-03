@@ -89,6 +89,7 @@ describe('OMDbMetadataProvider', () => {
         type: 'movie',
         posterUrl: 'http://poster1.jpg',
         overview: undefined,
+        externalIds: { imdbId: 'tt123' },
       })
 
       expect(result[1]).toEqual({
@@ -99,6 +100,7 @@ describe('OMDbMetadataProvider', () => {
         type: 'movie',
         posterUrl: undefined,
         overview: undefined,
+        externalIds: { imdbId: 'tt456' },
       })
 
       expect(result[2]).toEqual({
@@ -109,6 +111,7 @@ describe('OMDbMetadataProvider', () => {
         type: 'movie',
         posterUrl: undefined,
         overview: undefined,
+        externalIds: { imdbId: 'tt789' },
       })
     })
 

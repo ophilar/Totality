@@ -85,7 +85,8 @@ export function QuickPresetsTab({
 
   const applyProfile = (profile: PresetProfile) => {
     setSelectedProfileId(profile.id)
-    const isNvidia = options.vendor === 'NVIDIA' || (gpus.length > 0 && gpus[0].vendor === 'NVIDIA')
+    const selectedGpu = gpus.find(gpu => gpu.id === options.gpuId) ?? gpus[0]
+    const isNvidia = selectedGpu?.vendor === 'NVIDIA'
     const preset = isNvidia ? profile.nvencPreset : profile.cpuPreset
     
     setOptions(prev => ({

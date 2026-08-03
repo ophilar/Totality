@@ -10,6 +10,22 @@ const NON_TITLE_TOKENS = new Set([
 
 const ARTICLE_TOKENS = new Set(['a', 'an', 'the'])
 
+function levenshtein(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0]
+    row[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j]
+      row[j] = a[i - 1] === b[j - 1]
+        ? diagonal
+        : Math.min(row[j] + 1, row[j - 1] + 1, diagonal + 1)
+      diagonal = above
+    }
+  }
+  return row[b.length]
+}
+
 export function normalizeTitleForMatching(title: string): string {
   const tokens = title
     .normalize('NFD')
@@ -43,6 +59,15 @@ export function scoreTitleMatch(
   const targetTokens = new Set(target.split(' '))
   const overlap = [...targetTokens].filter(token => candidateTokens.has(token)).length
   score += targetTokens.size ? Math.round((overlap / targetTokens.size) * 25) : 0
+
+  // Give short, one-character typos a useful signal without making unrelated
+  // titles competitive. Apply this only to equal-length tokens.
+  const fuzzyOverlap = [...targetTokens].filter(token =>
+    token.length >= 4 && [...candidateTokens].some(candidate =>
+      candidate.length === token.length && levenshtein(candidate, token) === 1
+    )
+  ).length
+  score += targetTokens.size ? Math.round((fuzzyOverlap / targetTokens.size) * 12) : 0
 
   if (targetYear && candidateYear) {
     if (targetYear === candidateYear) score += 20

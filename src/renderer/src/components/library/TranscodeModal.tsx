@@ -39,7 +39,6 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     overwriteOriginal: false,
     useGpu: true,
     gpuId: '',
-    vendor: 'NVIDIA',
     encoder: '',
     crf: 20,
     preset: 'p6',
@@ -74,7 +73,6 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         ...prev,
         transcodingEngine: defaultEngine,
         gpuId: firstGpu ? firstGpu.id : '',
-        vendor: firstGpu ? (firstGpu.vendor as any) : 'NVIDIA',
         useGpu: Boolean(firstGpu)
       }))
     } catch (err) {

@@ -31,6 +31,7 @@ export function AdvancedTab({
   availability
 }: AdvancedTabProps) {
   const { addToast } = useToast()
+  const selectedGpu = gpus.find(gpu => gpu.id === options.gpuId) ?? gpus[0]
   const availableVendors = Array.from(new Set(gpus.map(gpu => gpu.vendor)))
   const hasHardwareAcceleration = availableVendors.length > 0
   const [templates, setTemplates] = useState<PresetTemplate[]>([])
@@ -245,8 +246,8 @@ export function AdvancedTab({
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GPU Vendor</label>
                 <select
-                  value={options.vendor || (gpus.length > 0 ? gpus[0].vendor : 'Software')}
-                  onChange={(e) => setOptions(prev => ({ ...prev, vendor: e.target.value as any }))}
+                  value={selectedGpu?.vendor || 'Software'}
+                  disabled
                   className="w-full bg-muted/80 border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary"
                 >
                   {availableVendors.includes('NVIDIA') && <option value="NVIDIA">NVIDIA (NVENC CUDA VRAM)</option>}
@@ -316,7 +317,7 @@ export function AdvancedTab({
             onChange={(e) => setOptions(prev => ({ ...prev, preset: e.target.value }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs font-medium outline-hidden focus:border-primary transition-all"
           >
-            {options.useGpu && options.vendor === 'NVIDIA' ? (
+            {options.useGpu && selectedGpu?.vendor === 'NVIDIA' ? (
               <>
                 <option value="p7">p7 (Highest Quality / Slowest)</option>
                 <option value="p6">p6 (High Quality - Recommended)</option>
