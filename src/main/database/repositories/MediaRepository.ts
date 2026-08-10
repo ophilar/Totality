@@ -250,6 +250,10 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       .where(eq(schema.mediaItems.id, mediaItemId))
   }
 
+  async updateActivatedPathAndStats(mediaItemId: number, newPath: string, fileSize: number, duration: number): Promise<void> {
+    await this.drizzle.update(schema.mediaItems).set({ filePath: PathUtils.toDatabasePath(newPath), fileSize, duration, updatedAt: sql`(datetime('now'))` }).where(eq(schema.mediaItems.id, mediaItemId))
+  }
+
   async getItemByPath(filePath: string): Promise<MediaItem | null> {
     const dbPath = PathUtils.toDatabasePath(filePath)
     const row = await this.drizzle

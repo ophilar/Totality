@@ -442,7 +442,7 @@ export interface MediaItemFilters {
 // ============================================================================
 
 // TV Show summary returned by GROUP BY series_title query
-export interface TVShowSummary {
+  export interface TVShowSummary {
   series_title: string
   episode_count: number
   season_count: number
@@ -450,7 +450,13 @@ export interface TVShowSummary {
   total_seasons: number  // Alias for season_count
   poster_url?: string
   source_id?: string
-  source_type?: string
+    source_type?: string
+    total_size?: number | null
+    total_recoverable_bytes?: number
+    weighted_efficiency?: number | null
+    scored_episode_count?: number
+    unscored_episode_count?: number
+    recommended_action?: string
 }
 
 export interface TVShowFilters {

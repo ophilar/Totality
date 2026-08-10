@@ -5,6 +5,7 @@ import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
 import { TVSeasonDetails } from '@/components/library/tv/TVSeasonDetails'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
+import { tvSortColumns } from '@/components/library/sortDefinitions'
 import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
@@ -38,6 +39,8 @@ export function TVShowsView({
   showsLoading,
   onLoadMoreShows,
   isAnalyzing = false
+  ,onOptimizationDryRun
+  ,onRequestOptimization
 }: {
   shows: TVShowSummary[]
   sortBy: string
@@ -67,6 +70,8 @@ export function TVShowsView({
   showsLoading: boolean
   onLoadMoreShows: () => void
   isAnalyzing?: boolean
+  onOptimizationDryRun?: (show: TVShowSummary) => void
+  onRequestOptimization?: (show: TVShowSummary) => void
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
   const { scanProgress } = useSources()
@@ -88,6 +93,17 @@ export function TVShowsView({
     })
   }, [])
 
+  const handleOptimizationDryRun = useCallback(async (show: TVShowSummary) => {
+    if (onOptimizationDryRun) return onOptimizationDryRun(show)
+    const report = await window.electronAPI.optimizationDryRun(show.series_title, show.source_id)
+    window.alert(`${show.series_title}\nRecoverable: ${report.metrics.totalRecoverableBytes} bytes\nScored: ${report.metrics.scoredEpisodeCount}\nUnscored: ${report.metrics.unscoredEpisodeCount}\nAction: ${report.action}`)
+  }, [onOptimizationDryRun])
+
+  const handleOptimizationRequest = useCallback((show: TVShowSummary) => {
+    if (onRequestOptimization) return onRequestOptimization(show)
+    window.alert(`Opt-in Arr configuration is required before requesting optimization for ${show.series_title}.`)
+  }, [onRequestOptimization])
+
   if (!selectedShow) {
     const listHeader = (
       <div className="flex items-center justify-between mb-4">
@@ -103,7 +119,7 @@ export function TVShowsView({
           )}
         </div>
         <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-          {['title', 'efficiency', 'waste'].map(s => (
+          {tvSortColumns.map(s => (
             <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
           ))}
         </div>
@@ -122,6 +138,8 @@ export function TVShowsView({
               key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
               completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
               onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
+              onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
+              onRequestOptimization={() => handleOptimizationRequest(show)}
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
               isLibraryAnalyzing={!!activeScan || isAnalyzing}
             />
@@ -131,6 +149,8 @@ export function TVShowsView({
               key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
               completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
               onAnalyzeSeries={async () => onAnalyzeSeries(show.series_title)}
+              onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
+              onRequestOptimization={() => handleOptimizationRequest(show)}
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
             />
           )}
@@ -138,8 +158,8 @@ export function TVShowsView({
             <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <span className="w-16 shrink-0">Poster</span>
               <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">Title</button>
-              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('efficiency')} aria-label="Sort TV shows by efficiency">Efficiency</button>
-              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('waste')} aria-label="Sort TV shows by waste">Waste</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by recoverable bytes">Recoverable</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('efficiency')} aria-label="Sort TV shows by weighted efficiency">Weighted efficiency</button>
               <span className="w-8 shrink-0" />
             </div>
           }

@@ -13,13 +13,15 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, isLibraryAnalyzing }: {
+export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, isLibraryAnalyzing }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => void
   onFixMatch?: (sourceId: string, folderPath?: string) => void
+  onOptimizationDryRun?: () => void
+  onRequestOptimization?: () => void
   isLibraryAnalyzing?: boolean
 }) => {
   const [showMenu, setShowMenu] = useState(false)
@@ -98,6 +100,8 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
                   Fix Match
                 </button>
               )}
+              {onOptimizationDryRun && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onOptimizationDryRun() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Dry-run optimization</button>}
+              {onRequestOptimization && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onRequestOptimization() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Request optimization</button>}
             </div>
           )}
         </div>
@@ -162,6 +166,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           <p className="text-xs text-muted-foreground mt-0.5">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
           </p>
+          <p className="text-[10px] text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${(show.total_recoverable_bytes / 1073741824).toFixed(1)} GB recoverable` : 'No recoverable storage'}</p>
         </div>
 
         {completenessData && (

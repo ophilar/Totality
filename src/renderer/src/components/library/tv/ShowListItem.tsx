@@ -1,17 +1,19 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, HardDrive } from 'lucide-react'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 
-export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: {
+export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => Promise<void>
   onFixMatch?: (sourceId: string, folderPath?: string) => void
+  onOptimizationDryRun?: () => void
+  onRequestOptimization?: () => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -88,6 +90,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
+        <p className="text-xs text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${(show.total_recoverable_bytes / 1073741824).toFixed(1)} GB recoverable` : 'No recoverable storage'} · {show.weighted_efficiency == null ? 'Unscored' : `${(show.weighted_efficiency * 100).toFixed(0)}% weighted efficiency`}</p>
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -132,6 +135,8 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
                 Fix Match
               </button>
             )}
+            {onOptimizationDryRun && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onOptimizationDryRun() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Dry-run optimization</button>}
+            {onRequestOptimization && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onRequestOptimization() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Request optimization</button>}
           </div>
         )}
       </div>

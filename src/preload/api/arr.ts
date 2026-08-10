@@ -12,5 +12,7 @@ export const arrApi = {
   arrLookupMovie: (config: ArrConfig, tmdbId: number) => ipcRenderer.invoke(IPC_CHANNELS.ARR.LOOKUP_MOVIE, config, tmdbId),
   arrLookupSeries: (config: ArrConfig, tvdbId: number) => ipcRenderer.invoke(IPC_CHANNELS.ARR.LOOKUP_SERIES, config, tvdbId),
   arrGetCommand: (config: ArrConfig, commandId: number) => ipcRenderer.invoke(IPC_CHANNELS.ARR.GET_COMMAND, config, commandId)
+  ,arrGetLanguageProfiles: (config: ArrConfig) => ipcRenderer.invoke(IPC_CHANNELS.ARR.GET_LANGUAGE_PROFILES, config)
+  ,arrGetManagedState: (config: ArrConfig, seriesId: number) => ipcRenderer.invoke(IPC_CHANNELS.ARR.GET_MANAGED_STATE, config, seriesId)
 }
 export type ArrAPI = typeof arrApi

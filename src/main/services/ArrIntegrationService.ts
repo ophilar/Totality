@@ -1,6 +1,8 @@
 export type ArrKind = 'sonarr' | 'radarr'
 
 export interface ArrConfig { baseUrl: string; apiKey: string; timeoutMs?: number }
+export interface ArrLanguageProfile { id: number; name: string; cutoff?: unknown; languages?: unknown[]; items?: unknown[] }
+export interface ArrManagedState { id: number; path?: string; profileId?: number; qualityProfileId?: number; monitored?: boolean; hasFile?: boolean }
 
 export class ArrIntegrationService {
   private readonly baseUrl: string
@@ -61,6 +63,21 @@ export class ArrIntegrationService {
       ? { name: 'SeasonSearch', seriesId, seasonNumber }
       : episodeIds?.length ? { name: 'EpisodeSearch', episodeIds } : { name: 'SeriesSearch', seriesId }
     return this.request('/api/v3/command', { method: 'POST', body: JSON.stringify(body) })
+  }
+
+  async getLanguageProfiles(): Promise<ArrLanguageProfile[]> {
+    return this.request<ArrLanguageProfile[]>('/api/v3/languageprofile')
+  }
+
+  async getManagedSeriesState(seriesId: number): Promise<ArrManagedState> {
+    return this.request<ArrManagedState>(`/api/v3/series/${encodeURIComponent(seriesId)}`)
+  }
+
+  async canPursueUpgrade(seriesId: number): Promise<{ eligible: boolean; reason?: string; state: ArrManagedState }> {
+    const state = await this.getManagedSeriesState(seriesId)
+    if (!state.monitored) return { eligible: false, reason: 'Managed series is not monitored', state }
+    if (!state.profileId && !state.qualityProfileId) return { eligible: false, reason: 'Managed series has no configured quality/language profile', state }
+    return { eligible: true, state }
   }
 
   async getCommand(commandId: number): Promise<Record<string, unknown>> {

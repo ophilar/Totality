@@ -17,4 +17,6 @@ export function registerArrHandlers() {
   createValidatedIpcHandler(IPC_CHANNELS.ARR.FIND_MANAGED_SERIES, z.tuple([configSchema, z.number().int().positive()]), async (config, tvdbId) => service('sonarr', config).findManagedSeriesByTvdbId(tvdbId))
   createValidatedIpcHandler(IPC_CHANNELS.ARR.GET_COMMAND, z.tuple([configSchema, z.number().int().positive()]), async (config, commandId) => service('sonarr', config).getCommand(commandId))
   createValidatedIpcHandler(IPC_CHANNELS.ARR.WAIT_COMMAND, z.tuple([configSchema, z.number().int().positive(), z.object({ pollIntervalMs: z.number().int().positive().max(10000).optional(), timeoutMs: z.number().int().positive().max(180000).optional() }).optional()]), async (config, commandId, options) => service('sonarr', config).waitForCommand(commandId, options))
+  createValidatedIpcHandler(IPC_CHANNELS.ARR.GET_LANGUAGE_PROFILES, z.tuple([configSchema]), async (config) => service('sonarr', config).getLanguageProfiles())
+  createValidatedIpcHandler(IPC_CHANNELS.ARR.GET_MANAGED_STATE, z.tuple([configSchema, z.number().int().positive()]), async (config, seriesId) => service('sonarr', config).getManagedSeriesState(seriesId))
 }
