@@ -10,6 +10,7 @@ import { AlbumListItem } from '@/components/library/music/AlbumListItem'
 import { MusicAlbumDetails } from '@/components/library/music/MusicAlbumDetails'
 import { MusicArtistDetails } from '@/components/library/music/MusicArtistDetails'
 import { useSources } from '@/contexts/SourceContext'
+import { calculatePosterWidth } from '@/components/library/mediaUtils'
 import type {
   MusicArtist,
   MusicAlbum,
@@ -118,7 +119,7 @@ export function MusicView({
 }) {
   const { scanProgress } = useSources()
   const activeScan = Array.from(scanProgress.values())[0]
-  const posterMinWidth = useMemo(() => 120 + gridScale * 15, [gridScale])
+  const posterMinWidth = useMemo(() => calculatePosterWidth(gridScale), [gridScale])
 
   const sortedArtists = useMemo(() => {
     const items = [...artists]

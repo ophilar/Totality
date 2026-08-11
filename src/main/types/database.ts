@@ -465,7 +465,7 @@ export interface TVShowFilters {
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'season_count' | 'storage_debt' | 'efficiency' | 'size'
+  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'size' | 'completeness'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number

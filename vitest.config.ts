@@ -31,6 +31,7 @@ export default defineConfig({
       USE_SQLJS: 'true',
     },
     setupFiles: ['./tests/setup.ts'],
+    globalSetup: ['./tests/globalSetup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
     deps: {

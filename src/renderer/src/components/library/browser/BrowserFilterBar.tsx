@@ -155,22 +155,25 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
 
           {/* View Toggles */}
           <div className="flex items-center gap-3 ml-auto">
-            {!(view === 'tv' && selectedShow) && viewType === 'grid' && (
-              <input
-                type="range" min="1" max="7" value={gridScale}
-                onChange={(e) => setGridScale(Number(e.target.value))}
-                className="w-20 h-1 bg-border/50 rounded-lg appearance-none cursor-pointer"
-              />
-            )}
             {!(view === 'tv' && selectedShow) && (
-              <div className="flex gap-1">
-                <button onClick={() => setViewType('grid')} className={`p-1.5 rounded-md ${viewType === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}>
-                  <Grid3x3 className="w-4 h-4" />
-                </button>
-                <button onClick={() => setViewType('list')} className={`p-1.5 rounded-md ${viewType === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}>
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
+              <>
+                {viewType === 'grid' && (
+                  <input
+                    type="range" min="1" max="7" value={gridScale}
+                    onChange={(e) => setGridScale(Number(e.target.value))}
+                    className="w-20 h-1 bg-border/50 rounded-lg appearance-none cursor-pointer"
+                    title="Adjust poster size"
+                  />
+                )}
+                <div className="flex gap-1">
+                  <button onClick={() => setViewType('grid')} className={`p-1.5 rounded-md ${viewType === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`} title="Grid View">
+                    <Grid3x3 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setViewType('list')} className={`p-1.5 rounded-md ${viewType === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`} title="List View">
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

@@ -245,9 +245,9 @@ export function QuickPresetsTab({
                 />
                 <span className="text-xs font-semibold">Enable GPU VRAM Pipeline</span>
               </div>
-              {gpus.length > 0 && (
+              {gpus.find(gpu => gpu.id === options.gpuId) && (
                 <span className="text-[10px] bg-primary/20 text-primary font-bold px-2 py-0.5 rounded-full">
-                  {gpus[0].vendor} ({gpus[0].name})
+                  {gpus.find(gpu => gpu.id === options.gpuId)?.vendor} ({gpus.find(gpu => gpu.id === options.gpuId)?.name})
                 </span>
               )}
             </label>

@@ -9,6 +9,8 @@ import { tvSortColumns } from '@/components/library/sortDefinitions'
 import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
+import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
+import { calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVShowsView({
@@ -38,9 +40,9 @@ export function TVShowsView({
   totalShowCount,
   showsLoading,
   onLoadMoreShows,
-  isAnalyzing = false
-  ,onOptimizationDryRun
-  ,onRequestOptimization
+  isAnalyzing = false,
+  onOptimizationDryRun,
+  onRequestOptimization
 }: {
   shows: TVShowSummary[]
   sortBy: string
@@ -74,10 +76,10 @@ export function TVShowsView({
   onRequestOptimization?: (show: TVShowSummary) => void
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
-  const { scanProgress } = useSources()
+  const { isScanning, scanProgress } = useSources()
   const activeScan = Array.from(scanProgress.values())[0]
 
-  const posterMinWidth = useMemo(() => 120 + gridScale * 15, [gridScale])
+  const posterMinWidth = useMemo(() => calculatePosterWidth(gridScale), [gridScale])
 
   const handleBack = useCallback(() => {
     if (selectedSeason !== null) onSelectSeason(null)
@@ -132,7 +134,16 @@ export function TVShowsView({
         <MediaGridView
           items={shows} totalCount={totalShowCount} viewType={viewType} loading={showsLoading} onLoadMore={onLoadMoreShows} posterMinWidth={posterMinWidth} banner={listHeader}
           scrollKey="shows"
-          emptyState={<div className="flex flex-col items-center justify-center py-20 opacity-40"><TvPlaceholder className="w-24 h-24 mb-6" /><p className="text-lg font-medium">No TV shows found</p></div>}
+          emptyState={
+            <LibraryEmptyState
+              isScanning={isScanning}
+              scanProgress={activeScan ? { phase: activeScan.phase, currentItem: activeScan.currentItem } : undefined}
+              totalCount={totalShowCount}
+              icon={TvPlaceholder}
+              title="No TV shows found"
+              description="Scan a TV show library from the sidebar to start analyzing your collection"
+            />
+          }
           renderGridItem={(show) => (
             <ShowCard
               key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}

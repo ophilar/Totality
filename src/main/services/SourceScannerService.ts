@@ -1,7 +1,6 @@
-import { LibraryType, TaskType, ProviderType } from '@main/types/database'
+import { LibraryType, ProviderType } from '@main/types/database'
 import { type BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
-import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { LoggingService, getLoggingService } from '@main/services/LoggingService'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import type {
@@ -182,24 +181,10 @@ export class SourceScannerService {
     }
   }
 
-  private async startPostScanTasks(sourceId: string, libraryId: string, library: MediaLibrary) {
+  private async startPostScanTasks(sourceId: string, libraryId: string, _library: MediaLibrary) {
     try {
-      const { getWishlistCompletionService } = await import('./WishlistCompletionService')
-      const tq = getTaskQueueService()
-      const hasTmdbKey = await this.db.config.getSetting('tmdb_api_key')
-      
-      if (library.type === LibraryType.Show || library.type === LibraryType.Mixed) {
-        tq.addTask({ type: TaskType.SeriesCompleteness, label: `Post-scan Series Analysis: ${library.name}`, sourceId, libraryId })
-      }
-      
-      if (hasTmdbKey) {
-        if (library.type === LibraryType.Movie || library.type === LibraryType.Mixed) {
-          tq.addTask({ type: TaskType.CollectionCompleteness, label: `Post-scan Collection Analysis: ${library.name}`, sourceId, libraryId })
-        }
-      }
-      getWishlistCompletionService().checkAndComplete().catch(err => {
-        this.logging.error('[SourceScannerService]', 'Post-scan wishlist check failed:', err)
-      })
+      const { getSourceManager } = await import('./SourceManager')
+      await getSourceManager().triggerPostScanAnalysis(sourceId, libraryId)
     } catch (err) {
       this.logging.error('[SourceScannerService]', 'Failed to start post-scan background tasks:', err)
     }

@@ -10,7 +10,8 @@ vi.mock('../../../src/main/database/BetterSQLiteService', () => ({
   getDatabase: () => ({
     isInitialized: true,
     config: {
-      getSetting: vi.fn().mockResolvedValue(null)
+      getSetting: vi.fn().mockResolvedValue(null),
+      setSetting: vi.fn().mockResolvedValue(undefined)
     }
   })
 }))

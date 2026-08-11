@@ -1,17 +1,8 @@
-import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Trash2, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
-import { useMenuClose } from '@/hooks/useMenuClose'
-import { providerColors } from '@/components/library/mediaUtils'
+import { useState, memo, useRef } from 'react'
+import { RefreshCw, Pencil, Trash2, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
+import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
+import { providerColors, formatBytes } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
-
-// Utility to format bytes into readable strings
-const formatBytes = (bytes: number) => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
 
 export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, isLibraryAnalyzing }: {
   show: TVShowSummary
@@ -24,31 +15,62 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   onRequestOptimization?: () => void
   isLibraryAnalyzing?: boolean
 }) => {
-  const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
-  const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
 
   const sourceType = show.source_type as ProviderType | undefined
   const sourceId = show.source_id
   const folderPath: string | undefined = undefined
 
-  const handleAnalyze = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onAnalyzeSeries) {
-      setIsAnalyzing(true)
-      await onAnalyzeSeries()
-      setIsAnalyzing(false)
-    }
+  const menuItems: MenuItem[] = []
+
+  if (onAnalyzeSeries) {
+    menuItems.push({
+      id: 'analyze',
+      label: 'Analyze Series',
+      icon: RefreshCw,
+      onClick: async () => {
+        setIsAnalyzing(true)
+        try {
+          await onAnalyzeSeries()
+        } finally {
+          setIsAnalyzing(false)
+        }
+      }
+    })
   }
 
-  const handleFixMatch = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowMenu(false)
-    if (onFixMatch && sourceId) {
-      onFixMatch(sourceId, folderPath)
-    }
+  if (onFixMatch && sourceId) {
+    menuItems.push({
+      id: 'fix-match',
+      label: 'Fix Match',
+      icon: Pencil,
+      onClick: () => {
+        onFixMatch(sourceId, folderPath)
+      }
+    })
+  }
+
+  if (onOptimizationDryRun) {
+    menuItems.push({
+      id: 'dry-run-optimization',
+      label: 'Dry-run optimization',
+      icon: HardDrive,
+      onClick: () => {
+        onOptimizationDryRun()
+      }
+    })
+  }
+
+  if (onRequestOptimization) {
+    menuItems.push({
+      id: 'request-optimization',
+      label: 'Request optimization',
+      icon: HardDrive,
+      onClick: () => {
+        onRequestOptimization()
+      }
+    })
   }
 
   return (
@@ -66,45 +88,15 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
     >
       <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* 3-dot menu button */}
-        <div ref={menuRef} className="absolute top-2 left-2 z-20">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
-            className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            {isAnalyzing ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <MoreVertical className="w-4 h-4" />
-            )}
-          </button>
-
-          {/* Dropdown menu */}
-          {showMenu && (
-            <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
-              <button
-                onClick={handleAnalyze}
-                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Analyze Series
-              </button>
-              {onFixMatch && (
-                <button
-                  onClick={handleFixMatch}
-                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Fix Match
-                </button>
-              )}
-              {onOptimizationDryRun && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onOptimizationDryRun() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Dry-run optimization</button>}
-              {onRequestOptimization && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onRequestOptimization() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Request optimization</button>}
-            </div>
-          )}
-        </div>
+        {menuItems.length > 0 && (
+          <div className="absolute top-2 left-2 z-20">
+            <ActionMenu
+              items={menuItems}
+              isWorking={isAnalyzing}
+              menuPosition="left"
+            />
+          </div>
+        )}
 
         {/* Source Badge */}
         {showSourceBadge && sourceType && (

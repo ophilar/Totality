@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, act, waitFor } from '@testing-library/react'
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { MoviesView } from '@/components/library/MoviesView'
 import { LibraryProvider } from '@/contexts/LibraryContext'
 import { SourceProvider } from '@/contexts/SourceContext'
@@ -164,6 +164,34 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
 
     expect(screen.getByText('Analyzed Movie')).toBeTruthy()
     expect(screen.queryByText('Analyzing')).toBeNull()
+  })
+
+  it('sorts movies when a sortable list column header is clicked', () => {
+    const onSortChange = vi.fn()
+
+    render(
+      <TestProviders>
+        <MoviesView
+          movies={[{ id: 3, title: 'Sortable Movie', type: 'movie' }] as any}
+          sortBy="title"
+          onSortChange={onSortChange}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="list"
+          gridScale={5}
+          getCollectionForMovie={() => undefined}
+          movieCollections={[]}
+          showSourceBadge={false}
+          totalMovieCount={1}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </TestProviders>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort movies by year' }))
+    expect(onSortChange).toHaveBeenCalledWith('year')
   })
 })
 

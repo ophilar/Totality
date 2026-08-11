@@ -28,23 +28,29 @@ export class DeduplicationService {
 
     let count = 0
 
-    // Group movies by TMDB ID within the same source
+    // Group movies by TMDB ID (or global key if cross-source scanning)
     const movieGroups = new Map<string, number[]>()
     for (const movie of allMovies) {
       if (movie.tmdb_id) {
-        const key = `${movie.source_id}:${movie.tmdb_id}`
+        const key = sourceId ? `${movie.source_id}:${movie.tmdb_id}` : `global:${movie.tmdb_id}`
         if (!movieGroups.has(key)) movieGroups.set(key, [])
         movieGroups.get(key)!.push(movie.id!)
       }
     }
 
-    // Group episodes by series TMDB ID, season, and episode within the same source
+    // Group episodes by TMDB ID/series title + season + episode
     const episodeGroups = new Map<string, number[]>()
     for (const ep of allEpisodes) {
-      if (ep.series_tmdb_id && ep.season_number != null && ep.episode_number != null) {
-        const key = `${ep.source_id}:${ep.series_tmdb_id}:S${ep.season_number}E${ep.episode_number}`
-        if (!episodeGroups.has(key)) episodeGroups.set(key, [])
-        episodeGroups.get(key)!.push(ep.id!)
+      if (ep.season_number != null && ep.episode_number != null) {
+        const seriesKey = ep.series_tmdb_id
+          ? `tmdb:${ep.series_tmdb_id}`
+          : ep.series_title ? `title:${ep.series_title.trim().toLowerCase()}` : null
+        if (seriesKey) {
+          const prefix = sourceId ? ep.source_id : 'global'
+          const key = `${prefix}:${seriesKey}:S${ep.season_number}E${ep.episode_number}`
+          if (!episodeGroups.has(key)) episodeGroups.set(key, [])
+          episodeGroups.get(key)!.push(ep.id!)
+        }
       }
     }
 
@@ -87,11 +93,10 @@ export class DeduplicationService {
         }
       }
 
-      const CHUNK_SIZE = 500
-      for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
-        const chunk = operations.slice(i, i + CHUNK_SIZE)
-        await Promise.all(chunk.map((fn) => fn()))
-      }
+      await db.duplicates.processInChunks(operations, 500, async (chunk: Array<() => Promise<unknown>>) => {
+        await Promise.all(chunk.map((fn: () => Promise<unknown>) => fn()))
+        return []
+      })
 
       await db.endBatch()
     } catch (err) {

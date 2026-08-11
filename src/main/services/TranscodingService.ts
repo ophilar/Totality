@@ -10,7 +10,8 @@ import { APP_CONFIG } from '@main/config'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
-import { buildTranscodingCapabilities, TranscodingCapabilities } from './TranscodingCapabilities'
+import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
+import { buildTranscodingCapabilities, resolveSelectedGpuId, TranscodingCapabilities } from './TranscodingCapabilities'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -33,6 +34,7 @@ export interface TranscodeOptions {
   gpuId?: string
   transcodingEngine?: 'handbrake' | 'ffmpeg'
   targetSize?: string
+  aiOptimize?: boolean
 }
 
 export interface TranscodeProgress {
@@ -53,6 +55,7 @@ export interface TranscodingParams {
   encoder?: string
   crf?: number
   preset?: string
+  sourceHdrFormat?: string
 }
 
 /**
@@ -69,6 +72,7 @@ export class TranscodingService {
   private cachedHandbrakeAvailable: boolean | null = null
   private cachedHandbrakeVersion: string | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
+  private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
 
   constructor() {
     // Initialization is deferred until first use to allow DB to be ready
@@ -81,6 +85,7 @@ export class TranscodingService {
     this.cachedHandbrakeAvailable = null
     this.cachedHandbrakeVersion = null
     this.capabilitiesPromise = null
+    this.analysisCache.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
@@ -172,10 +177,57 @@ export class TranscodingService {
         this.checkAvailability(),
         GpuDetector.detectGpus({ refresh: options.refresh })
       ])
-      const capabilities = buildTranscodingCapabilities(availability, gpus)
+      const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
+      const selectedGpuId = resolveSelectedGpuId(gpus, persistedSelection === null ? undefined : persistedSelection || null)
+      if (persistedSelection === null) {
+        await getDatabase().config.setSetting('selected_transcoding_gpu_id', selectedGpuId || '')
+      }
+      const encoderProbe = await this.probeFfmpegEncoders()
+      if (encoderProbe.failures.length > 0) {
+        getLoggingService().error('[TranscodingService]', `FFmpeg encoder verification failed: ${encoderProbe.failures.join('; ')}`)
+      }
+      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders, encoderProbe.failures)
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
       return capabilities
     })()
+    return this.capabilitiesPromise
+  }
+
+  private async probeFfmpegEncoders(): Promise<{ encoders: string[]; failures: string[] }> {
+    const ffmpegPath = getMediaFileAnalyzer().getFFmpegPath()
+    if (!ffmpegPath) return { encoders: [], failures: ['FFmpeg path is unavailable'] }
+    return new Promise(resolve => {
+      const proc = spawn(PathUtils.resolveExecutablePath(ffmpegPath), ['-hide_banner', '-encoders'])
+      let output = ''
+      proc.stdout.on('data', data => { output += data.toString() })
+      proc.stderr.on('data', data => { output += data.toString() })
+      proc.on('error', error => resolve({ encoders: [], failures: [`Failed to execute ${ffmpegPath}: ${error.message}`] }))
+      proc.on('close', code => {
+        if (code !== 0) return resolve({ encoders: [], failures: [`FFmpeg encoder probe exited with code ${code}`] })
+        const ffmpegNames = [...output.matchAll(/^\s*[A-Z.]+\s+(\S+)/gm)].map(match => match[1])
+        const aliases: Record<string, string> = {
+          hevc_nvenc: 'nvenc_h265',
+          av1_nvenc: 'nvenc_av1',
+          hevc_qsv: 'qsv_h265',
+          av1_qsv: 'qsv_av1',
+          libx265: 'x265',
+          libsvtav1: 'svt_av1',
+          libx264: 'libx264'
+        }
+        const names = ffmpegNames.map(name => aliases[name] || name)
+        getLoggingService().debug('[TranscodingService]', `FFmpeg encoder verification completed: ${names.length} encoders found`)
+        resolve({ encoders: names, failures: [] })
+      })
+    })
+  }
+
+  async setSelectedGpu(gpuId: string | null): Promise<TranscodingCapabilities> {
+    const capabilities = await this.getCapabilities()
+    if (gpuId !== null && !capabilities.gpus.some(gpu => gpu.id === gpuId)) {
+      throw new Error(`Requested GPU ID "${gpuId}" is not available.`)
+    }
+    await getDatabase().config.setSetting('selected_transcoding_gpu_id', gpuId || '')
+    this.capabilitiesPromise = Promise.resolve({ ...capabilities, selectedGpuId: gpuId })
     return this.capabilitiesPromise
   }
 
@@ -244,8 +296,13 @@ export class TranscodingService {
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
-    const analysis = await analyzer.analyzeFile(filePath)
+    let analysis = this.analysisCache.get(filePath)
+    if (!analysis) {
+      analysis = await analyzer.analyzeFile(filePath)
+      if (analysis.success) this.analysisCache.set(filePath, analysis)
+    }
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
+    validateHdrTranscode(analysis)
 
     const gemini = getGeminiService()
     const targetCodec = options.targetCodec || 'av1'
@@ -253,18 +310,19 @@ export class TranscodingService {
 
     let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
     let gpuName = ''
+    let selectedGpuIdForOptions: string | undefined
+    let capabilitiesForOptions: TranscodingCapabilities | undefined
     if (options.useGpu || options.gpuId) {
-      const gpus = await GpuDetector.detectGpus()
-      if (gpus.length === 0) {
-        throw new Error('GPU acceleration requested, but no GPUs were detected on the machine.')
+      const capabilities = await this.getCapabilities()
+      capabilitiesForOptions = capabilities
+      const selectedGpuId = options.gpuId || capabilities.selectedGpuId
+      selectedGpuIdForOptions = selectedGpuId || undefined
+      if (!selectedGpuId) {
+        throw new Error('GPU acceleration requested, but no GPU is selected. Select a verified GPU or disable GPU acceleration.')
       }
-      let matchedGpu = gpus[0]
-      if (options.gpuId) {
-        const found = gpus.find(g => g.id === options.gpuId)
-        if (!found) {
-          throw new Error(`Requested GPU ID "${options.gpuId}" is not available on the machine.`)
-        }
-        matchedGpu = found
+      const matchedGpu = capabilities.gpus.find(gpu => gpu.id === selectedGpuId)
+      if (!matchedGpu) {
+        throw new Error(`Requested GPU ID "${selectedGpuId}" is not available on the machine.`)
       }
       selectedVendor = matchedGpu.vendor
       gpuName = matchedGpu.name
@@ -291,6 +349,12 @@ export class TranscodingService {
     } else {
       expectedEncoder = targetCodec === 'hevc' ? 'x265' : 'svt_av1'
     }
+    if (capabilitiesForOptions && capabilitiesForOptions.probeFailures.length > 0) {
+      throw new Error(`FFmpeg encoder verification failed for the selected device: ${capabilitiesForOptions.probeFailures.join('; ')}`)
+    }
+    if (capabilitiesForOptions && capabilitiesForOptions.verifiedEncoders.length > 0 && !capabilitiesForOptions.verifiedEncoders.includes(expectedEncoder)) {
+      throw new Error(`The selected device cannot produce ${targetCodec.toUpperCase()} with verified FFmpeg encoder ${expectedEncoder}.`)
+    }
 
     let summary = 'AI optimized transcode'
     let videoCodec = options.encoder
@@ -299,7 +363,7 @@ export class TranscodingService {
     let expectedSizeReduction = 'e.g. 50%'
     let warnings: string[] = []
 
-    if (!hasManualOverrides) {
+    if (!hasManualOverrides && options.aiOptimize !== false) {
       if (!gemini.isConfigured()) {
         summary = 'Handbrake transcoding (AI not configured)'
       } else {
@@ -401,6 +465,7 @@ export class TranscodingService {
     const resolvedOptions: TranscodeOptions = {
       ...options,
       targetCodec,
+      gpuId: selectedGpuIdForOptions,
       encoder: videoCodec,
       crf: finalCrf,
       preset: finalPreset
@@ -431,7 +496,8 @@ export class TranscodingService {
       warnings,
       encoder: videoCodec,
       crf: finalCrf,
-      preset: finalPreset
+      preset: finalPreset,
+      sourceHdrFormat: analysis.video?.hdrFormat
     }
   }
 
@@ -468,7 +534,7 @@ export class TranscodingService {
       onProgress?.({ percent: 0, status: 'initializing' })
       
       const inputPath = PathUtils.sanitizeAbsolutePath(item.file_path)
-      const params = await this.getTranscodeParameters(inputPath, options)
+      const params = await this.getTranscodeParameters(inputPath, { ...options, aiOptimize: false })
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
       tempPath = PathUtils.sanitizeAbsolutePath(path.join(
@@ -526,6 +592,14 @@ export class TranscodingService {
       const stats = await fs.stat(tempPath)
       if (stats.size === 0) {
         throw new Error('Transcoded file is empty')
+      }
+
+      const outputAnalysis = await getMediaFileAnalyzer().analyzeFile(tempPath)
+      if (!outputAnalysis.success || !outputAnalysis.video) {
+        throw new Error(`Transcoded output verification failed: ${outputAnalysis.error || 'video stream not detected'}`)
+      }
+      if (params.sourceHdrFormat?.toLowerCase() === 'hdr10' && outputAnalysis.video.hdrFormat?.toLowerCase() !== 'hdr10') {
+        throw new Error('Transcoded output verification failed: HDR10 metadata was not preserved')
       }
 
       // Atomic replacement

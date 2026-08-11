@@ -67,7 +67,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       setGpus(detectedGpus)
       
       const defaultEngine = capabilities?.engines?.[0] || (avail.ffmpeg ? 'ffmpeg' : 'handbrake')
-      const firstGpu = detectedGpus && detectedGpus.length > 0 ? detectedGpus[0] : null
+      const firstGpu = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities?.selectedGpuId)
 
       setOptions(prev => ({
         ...prev,
@@ -122,7 +122,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     
     const timer = setTimeout(async () => {
       try {
-        const p = await window.electronAPI.getParameters(media.file_path!, options)
+        const p = await window.electronAPI.getParameters(media.file_path!, { ...options, aiOptimize: false })
         setParams(p)
       } catch (err) {
         console.error('Failed to update parameters preview:', err)
@@ -136,7 +136,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     setGenerating(true)
     setStatus('generating')
     try {
-      const p = await window.electronAPI.getParameters(media.file_path!, options)
+      const p = await window.electronAPI.getParameters(media.file_path!, { ...options, aiOptimize: true })
       setParams(p)
       
       setOptions(prev => ({
@@ -198,11 +198,11 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       onClick={status === 'encoding' ? undefined : onClose}
     >
       <div 
-        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[92vh]"
+        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 h-dvh sm:h-auto sm:max-h-[92vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="p-6 pb-4 border-b border-border/10 flex justify-between items-center bg-muted/10">
+        <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-border/10 flex justify-between items-center bg-muted/10">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
               <Zap className="w-5 h-5" />
@@ -228,7 +228,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         </div>
 
         {/* 3-Tab Wizard Header */}
-        <div className="flex border-b border-border/20 bg-muted/30 px-6 pt-3 gap-2">
+        <div className="flex border-b border-border/20 bg-muted/30 px-3 sm:px-6 pt-2 sm:pt-3 gap-1 sm:gap-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab('presets')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
@@ -270,7 +270,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         </div>
 
         {/* Modal Body with Scroll */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
           {/* Availability Warnings */}
           {!availability?.handbrake && !availability?.ffmpeg && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-4">
@@ -319,7 +319,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
 
         {/* Modal Footer Controls */}
         {status !== 'encoding' && status !== 'complete' && (
-          <div className="p-6 bg-muted/10 border-t border-border/10 flex items-center justify-between gap-3">
+          <div className="p-4 sm:p-6 bg-muted/10 border-t border-border/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <button 
               onClick={onClose}
               className="px-6 py-2.5 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all"
@@ -327,7 +327,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
               Cancel
             </button>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-3">
               <button 
                 onClick={generateParams}
                 disabled={generating || (!availability?.handbrake && !availability?.ffmpeg)}

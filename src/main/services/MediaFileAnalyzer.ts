@@ -3,8 +3,10 @@ import * as fs from 'fs'
 import * as path from 'path'
 import AdmZip from 'adm-zip'
 import * as https from 'https'
+import * as http from 'http'
+import * as crypto from 'crypto'
 import { app } from 'electron'
-import { createWriteStream, mkdirSync } from 'fs'
+import { createWriteStream, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, chmodSync } from 'fs'
 import { pipeline } from 'stream/promises'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import {
@@ -16,6 +18,8 @@ import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '@main/workers/ffprobe-worker'
 import { getLoggingService } from '@main/services/LoggingService'
 import { PathUtils } from '@main/services/utils/PathUtils'
+import { detectHdrFormat } from '@main/types/mediaContracts'
+import type { HdrFormat } from '@main/types/mediaContracts'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
 
@@ -147,7 +151,7 @@ export class MediaFileAnalyzer {
       proc.stdout.on('data', (data) => { output += data.toString() })
       proc.on('close', () => {
         const match = output.match(/ffprobe version (\S+)/)
-        resolve(match ? match[1] : 'unknown')
+        resolve(match ? (match[1].match(/^\d+(?:\.\d+){0,3}/)?.[0] || match[1]) : 'unknown')
       })
       proc.on('error', () => resolve(null))
     })
@@ -410,28 +414,92 @@ export class MediaFileAnalyzer {
   async checkForUpdate(): Promise<{ currentVersion: string | null; latestVersion: string | null; updateAvailable: boolean }> {
     const currentVersion = await this.getVersion()
     const latestVersion = await this.checkLatestVersion()
-    const updateAvailable = currentVersion && latestVersion ? latestVersion !== currentVersion : false
+    const updateAvailable = currentVersion && latestVersion ? this.compareVersions(latestVersion, currentVersion) > 0 : false
+    getLoggingService().info('[MediaFileAnalyzer]', `FFmpeg update check: current=${currentVersion || 'unavailable'}, latest=${latestVersion || 'unavailable'}, available=${updateAvailable}`)
     return { currentVersion, latestVersion, updateAvailable }
+  }
+
+  private normalizeVersion(version: string): string {
+    return version.match(/^\d+(?:\.\d+)*/)?.[0] || version
+  }
+
+  private compareVersions(a: string, b: string): number {
+    const left = this.normalizeVersion(a).split('.').map(Number)
+    const right = this.normalizeVersion(b).split('.').map(Number)
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      const difference = (left[i] || 0) - (right[i] || 0)
+      if (difference !== 0) return difference > 0 ? 1 : -1
+    }
+    return 0
   }
 
   async installFFprobe(onProgress?: (p: { stage: string; percent: number }) => void): Promise<{ success: boolean; error?: string; path?: string }> {
     const downloadInfo = this.getDownloadInfo()
-    if (!downloadInfo) return { success: false, error: 'Unsupported platform' }
+    if (!downloadInfo) {
+      const error = `FFmpeg installation is unsupported on ${process.platform}`
+      getLoggingService().error('[MediaFileAnalyzer]', error)
+      return { success: false, error }
+    }
     const ffprobeDir = path.join(app.getPath('userData'), 'ffprobe')
-    const finalPath = this.getBundledFFprobePath()
+    const tempDir = path.join(app.getPath('userData'), 'ffprobe-temp')
     try {
       mkdirSync(ffprobeDir, { recursive: true })
-      const archivePath = path.join(ffprobeDir, 'download' + (downloadInfo.isZip ? '.zip' : '.tar.xz'))
+      rmSync(tempDir, { recursive: true, force: true })
+      mkdirSync(tempDir, { recursive: true })
+      const archivePath = path.join(tempDir, 'download' + (downloadInfo.isZip ? '.zip' : '.tar.xz'))
       await this.downloadFile(downloadInfo.url, archivePath, (p) => onProgress?.({ stage: 'Downloading...', percent: Math.round(p) }))
-      // Simple extraction implementation for brevity in this refactor
       const zip = new AdmZip(archivePath)
-      zip.extractAllTo(ffprobeDir, true)
-      this.ffprobePath = finalPath
+      zip.extractAllTo(tempDir, true)
+      const findExtracted = (name: string): string | null => {
+        const visit = (dir: string): string | null => {
+          for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const candidate = path.join(dir, entry.name)
+            if (entry.isDirectory()) { const found = visit(candidate); if (found) return found }
+            else if (entry.name.toLowerCase() === `${name}.exe` || entry.name.toLowerCase() === name) return candidate
+          }
+          return null
+        }
+        return visit(tempDir)
+      }
+      const extractedProbe = findExtracted('ffprobe')
+      const extractedFfmpeg = findExtracted('ffmpeg')
+      if (!extractedProbe) throw new Error('Downloaded archive did not contain ffprobe')
+      const finalProbePath = this.getBundledFFprobePath()
+      copyFileSync(extractedProbe, finalProbePath)
+      if (extractedFfmpeg) copyFileSync(extractedFfmpeg, this.getBundledPath('ffmpeg'))
+      if (process.platform !== 'win32') {
+        chmodSync(finalProbePath, 0o755)
+        if (extractedFfmpeg) chmodSync(this.getBundledPath('ffmpeg'), 0o755)
+      }
+      const binarySize = readFileSync(finalProbePath).byteLength
+      if (binarySize < 1_000_000) throw new Error(`FFprobe binary is suspiciously small (${binarySize} bytes)`)
+      if (!await this.verifyInstalledBinary(finalProbePath, 'ffprobe')) throw new Error('Installed FFprobe failed verification')
+      getLoggingService().info('[MediaFileAnalyzer]', `FFprobe SHA-256: ${crypto.createHash('sha256').update(readFileSync(finalProbePath)).digest('hex')}`)
+      this.ffprobePath = this.getBundledFFprobePath()
+      this.ffmpegPath = extractedFfmpeg ? this.getBundledPath('ffmpeg') : this.ffmpegPath
       this.ffprobeChecked = true
-      return { success: true, path: finalPath }
+      this.cachedVersion = undefined
+      this.cachedIsBundledVersion = undefined
+      getLoggingService().info('[MediaFileAnalyzer]', `Installed FFmpeg tools: ffprobe=${this.ffprobePath}, ffmpeg=${this.ffmpegPath || 'not included'}`)
+      rmSync(tempDir, { recursive: true, force: true })
+      return { success: true, path: this.ffprobePath }
     } catch (e) {
-      return { success: false, error: getErrorMessage(e) }
+      const error = getErrorMessage(e)
+      getLoggingService().error('[MediaFileAnalyzer]', 'FFmpeg tool installation failed:', error)
+      rmSync(tempDir, { recursive: true, force: true })
+      return { success: false, error }
     }
+  }
+
+  private verifyInstalledBinary(binaryPath: string, expectedName: string): Promise<boolean> {
+    return new Promise(resolve => {
+      const proc = spawn(binaryPath, ['-version'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 })
+      let output = ''
+      proc.stdout?.on('data', data => { output += data.toString() })
+      proc.stderr?.on('data', data => { output += data.toString() })
+      proc.on('close', code => resolve(code === 0 && output.toLowerCase().includes(expectedName)))
+      proc.on('error', () => resolve(false))
+    })
   }
 
   private getDownloadInfo() {
@@ -442,13 +510,24 @@ export class MediaFileAnalyzer {
 
   private async downloadFile(url: string, dest: string, onProgress: (p: number) => void): Promise<void> {
     return new Promise((resolve, reject) => {
-      https.get(url, (res) => {
+      const request = (requestUrl: string, redirects = 0): void => {
+        if (redirects > 5) { reject(new Error('Too many redirects')); return }
+        const client = requestUrl.startsWith('https:') ? https : http
+        client.get(requestUrl, (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
+            res.resume()
+            request(new URL(res.headers.location, requestUrl).toString(), redirects + 1)
+            return
+          }
+          if (res.statusCode !== 200) { res.resume(); reject(new Error(`Download failed with status ${res.statusCode}`)); return }
         const total = parseInt(res.headers['content-length'] || '0', 10)
         let downloaded = 0
         const file = createWriteStream(dest)
         res.on('data', (c) => { downloaded += c.length; if (total) onProgress((downloaded / total) * 100) })
         pipeline(res, file).then(() => resolve()).catch(reject)
-      }).on('error', reject)
+        }).on('error', reject)
+      }
+      request(url)
     })
   }
 
@@ -730,7 +809,7 @@ export class MediaFileAnalyzer {
     }
 
     for (const stream of output.streams) {
-      if (stream.codec_type === 'video' && !result.video) {
+    if (stream.codec_type === 'video' && !result.video) {
         result.video = {
           index: stream.index,
           codec: stream.codec_name || 'unknown',
@@ -747,6 +826,8 @@ export class MediaFileAnalyzer {
             return parseFloat(stream.avg_frame_rate) || undefined
           })() : undefined,
           hdrFormat: this.detectHdrFormat(stream),
+          colorTransfer: stream.color_transfer,
+          colorPrimaries: stream.color_primaries,
           bitDepth: stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined,
           profile: stream.profile,
           colorSpace: stream.color_space,
@@ -777,23 +858,14 @@ export class MediaFileAnalyzer {
     return result
   }
 
-  private detectHdrFormat(stream: FFprobeStream): string | undefined {
-    const colorTransfer = stream.color_transfer?.toLowerCase() || ''
-    const colorPrimaries = stream.color_primaries?.toLowerCase() || ''
-    const colorSpace = stream.color_space?.toLowerCase() || ''
-
-    if (
-      (colorTransfer.includes('smpte2084') || colorTransfer.includes('pq')) &&
-      (colorPrimaries.includes('bt2020') || colorSpace.includes('bt2020'))
-    ) {
-      return 'HDR10'
-    }
-
-    if (colorTransfer.includes('arib-std-b67') || colorTransfer.includes('hlg')) {
-      return 'HLG'
-    }
-
-    return undefined
+  private detectHdrFormat(stream: FFprobeStream): HdrFormat {
+    const sideData = stream.side_data_list?.map(item => item.side_data_type.toLowerCase()) ?? []
+    return detectHdrFormat({
+      colorTransfer: stream.color_transfer,
+      colorPrimaries: stream.color_primaries,
+      colorSpace: stream.color_space,
+      sideDataTypes: sideData
+    })
   }
 
   private detectObjectAudio(stream: FFprobeStream): boolean {

@@ -5,6 +5,15 @@ import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 
+// Utility to format bytes into readable strings
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
 export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization }: {
   show: TVShowSummary
   onClick: () => void
@@ -90,7 +99,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${(show.total_recoverable_bytes / 1073741824).toFixed(1)} GB recoverable` : 'No recoverable storage'} · {show.weighted_efficiency == null ? 'Unscored' : `${(show.weighted_efficiency * 100).toFixed(0)}% weighted efficiency`}</p>
+        <p className="text-xs text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${formatBytes(show.total_recoverable_bytes)} recoverable` : 'No recoverable storage'} · {show.weighted_efficiency == null ? 'Unscored' : `${(show.weighted_efficiency * 100).toFixed(0)}% weighted efficiency`}</p>
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">

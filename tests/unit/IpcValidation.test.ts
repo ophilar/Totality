@@ -32,6 +32,7 @@ import {
   TaskDefinitionSchema,
   AddExclusionSchema,
   MonitoringConfigSchema,
+  SetSelectedGpuSchema,
 } from '@main/validation/schemas'
 
 describe('IPC Validation Schemas', () => {
@@ -394,6 +395,13 @@ describe('IPC Validation Schemas', () => {
       expect(result?.searchQuery).toBe('breaking')
     })
 
+    it('accepts recoverable and debt as valid sortBy options', () => {
+      for (const sortBy of ['recoverable', 'debt', 'completeness', 'episodes', 'storage_debt', 'efficiency', 'size']) {
+        const result = validateInput(TVShowFiltersSchema, { sortBy: sortBy as any }, 'test')
+        expect(result?.sortBy).toBe(sortBy)
+      }
+    })
+
     it('accepts undefined (optional schema)', () => {
       const result = validateInput(TVShowFiltersSchema, undefined, 'test')
       expect(result).toBeUndefined()
@@ -505,6 +513,18 @@ describe('IPC Validation Schemas', () => {
     it('accepts empty config', () => {
       const result = validateInput(MonitoringConfigSchema, {}, 'test')
       expect(result).toBeDefined()
+    })
+  })
+
+  describe('SetSelectedGpuSchema', () => {
+    it('accepts valid gpu id string and null', () => {
+      expect(validateInput(SetSelectedGpuSchema, 'gpu_0000:01:00.0', 'test')).toBe('gpu_0000:01:00.0')
+      expect(validateInput(SetSelectedGpuSchema, null, 'test')).toBeNull()
+    })
+
+    it('rejects empty strings or invalid types', () => {
+      expect(() => validateInput(SetSelectedGpuSchema, '', 'test')).toThrow('Validation failed')
+      expect(() => validateInput(SetSelectedGpuSchema, 123, 'test')).toThrow('Validation failed')
     })
   })
 

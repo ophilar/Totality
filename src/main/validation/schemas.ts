@@ -103,7 +103,7 @@ export const TVShowFiltersSchema = z.object({
   slimDown: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'season_count', 'storage_debt', 'efficiency', 'size']).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'size', 'completeness']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -397,7 +397,7 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency']).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'debt', 'completeness']).optional(),
 
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),
@@ -504,8 +504,11 @@ export const TranscodeOptionsSchema = z.object({
   customArgs: z.string().optional(),
   gpuId: z.string().optional(),
   transcodingEngine: z.enum(['handbrake', 'ffmpeg']).optional(),
-  targetSize: z.string().optional(),
+    targetSize: z.string().optional(),
+    aiOptimize: z.boolean().optional(),
 }).optional()
+
+export const SetSelectedGpuSchema = z.string().min(1).max(200).nullable()
 
 export const CheckTranscoderAvailabilitySchema = z.any().optional()
 
