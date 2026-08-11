@@ -278,6 +278,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       name: schema.musicArtists.sortName,
       title: schema.musicArtists.sortName,
       added_at: schema.musicArtists.createdAt,
+      album_count: schema.musicArtists.albumCount,
+      track_count: schema.musicArtists.trackCount,
     }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicArtists.sortName
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
@@ -369,6 +371,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       artist: schema.musicAlbums.artistName,
       year: schema.musicAlbums.year,
       added_at: schema.musicAlbums.createdAt,
+      size: schema.musicAlbums.totalSize,
+      storage_debt: schema.musicAlbums.totalSize,
     }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicAlbums.artistName
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)

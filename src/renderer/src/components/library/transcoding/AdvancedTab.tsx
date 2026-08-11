@@ -219,7 +219,6 @@ export function AdvancedTab({
           >
             <option value="av1">AV1 (Most Efficient / Next-Gen)</option>
             <option value="hevc">HEVC (H.265 / High Efficiency)</option>
-            <option value="h264">H.264 (Legacy Compatibility)</option>
           </select>
         </div>
       </div>
@@ -262,7 +261,13 @@ export function AdvancedTab({
                 <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GPU Device</label>
                 <select
                   value={options.gpuId}
-                  onChange={(e) => setOptions(prev => ({ ...prev, gpuId: e.target.value }))}
+                  onChange={(e) => {
+                    const rawVal = e.target.value
+                    const targetGpuId = (rawVal && rawVal !== 'undefined') ? rawVal : null
+                    void window.electronAPI.setSelectedGpu(targetGpuId).then(next => {
+                      setOptions(prev => ({ ...prev, gpuId: next.selectedGpuId || '', useGpu: Boolean(next.selectedGpuId) }))
+                    })
+                  }}
                   className="w-full bg-muted/80 border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary"
                 >
                   {gpus.length > 0 ? (

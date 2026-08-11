@@ -11,7 +11,7 @@ import {
   ExternalLink,
   EyeOff
 } from 'lucide-react'
-import { QualityBadges } from '@/components/library/QualityBadges'
+import { formatHdrLabel, QualityBadges } from '@/components/library/QualityBadges'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
@@ -351,10 +351,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                       <span className="font-medium">{formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}</span>
                     </div>
                   )}
-                  {media.hdr_format && (
+                  {formatHdrLabel(media.hdr_format) && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">HDR</span>
-                      <span className="font-medium text-primary">{media.hdr_format}</span>
+                      <span className="font-medium text-primary">{formatHdrLabel(media.hdr_format)}</span>
                     </div>
                   )}
                 </div>

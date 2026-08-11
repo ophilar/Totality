@@ -259,7 +259,10 @@ export function MediaBrowser({
     if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as any)
     else if (view === 'tv') setShowsFilters({ ...commonFilters } as any)
     else if (view === 'music') {
-      if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: 'name' } as any)
+      const musicSortBy = sortBy === 'title' ? 'name' : (sortBy === 'waste' ? 'storage_debt' : sortBy)
+      const validArtistSorts = ['name', 'album_count', 'track_count', 'storage_debt', 'efficiency', 'size']
+      const artistSort = validArtistSorts.includes(musicSortBy) ? musicSortBy : 'name'
+      if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: artistSort } as any)
       else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as any)
       else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as any)
     }

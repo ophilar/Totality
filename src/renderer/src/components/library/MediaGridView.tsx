@@ -149,9 +149,12 @@ export function MediaGridView<T>({
       
       {viewType === 'list' ? (
         <div className="flex-1 min-h-0 flex flex-col">
-          {listHeader}
-          <div className="flex-1 min-h-0 relative">
-            <Virtuoso
+          <div className="overflow-x-auto shrink-0">
+            <div className="min-w-[760px]">{listHeader}</div>
+          </div>
+          <div className="flex-1 min-h-0 relative overflow-x-auto">
+            <div className="min-w-[760px] h-full">
+              <Virtuoso
               ref={virtuosoRef}
               restoreStateFrom={restoredState}
               data={safeItems}
@@ -164,7 +167,8 @@ export function MediaGridView<T>({
                 </div>
               )}
               components={{ Footer }}
-            />
+              />
+            </div>
           </div>
         </div>
       ) : (

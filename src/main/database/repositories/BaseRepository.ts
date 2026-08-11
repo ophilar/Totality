@@ -1,7 +1,6 @@
 import type { Client } from '@libsql/client'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
-import { getDatabase } from '@main/database/BetterSQLiteService'
 import { eq, sql, count, desc, asc, or, like, inArray } from 'drizzle-orm'
 import { SQLiteTable } from 'drizzle-orm/sqlite-core'
 
@@ -18,9 +17,38 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     protected table: TTable
   ) {}
 
-  protected async beginBatch(): Promise<void> { await getDatabase().beginBatch() }
-  protected async endBatch(): Promise<void> { await getDatabase().endBatch() }
-  protected async rollbackBatch(): Promise<void> { await getDatabase().rollbackBatch() }
+  protected async beginBatch(): Promise<void> {
+    const { getDatabase } = await import('@main/database/BetterSQLiteService')
+    await getDatabase().beginBatch()
+  }
+  protected async endBatch(): Promise<void> {
+    const { getDatabase } = await import('@main/database/BetterSQLiteService')
+    await getDatabase().endBatch()
+  }
+  protected async rollbackBatch(): Promise<void> {
+    const { getDatabase } = await import('@main/database/BetterSQLiteService')
+    await getDatabase().rollbackBatch()
+  }
+
+  /**
+   * Processes array items in chunks of specified batch size.
+   */
+  public async processInChunks<T, R>(
+    items: T[],
+    batchSize: number,
+    fn: (chunk: T[]) => Promise<R[]>
+  ): Promise<R[]> {
+    if (!items || items.length === 0) return []
+    const results: R[] = []
+    for (let i = 0; i < items.length; i += batchSize) {
+      const chunk = items.slice(i, i + batchSize)
+      const res = await fn(chunk)
+      if (res && Array.isArray(res)) {
+        results.push(...res)
+      }
+    }
+    return results
+  }
 
   async getById(id: number): Promise<any | null> {
     const results = await this.drizzle.select().from(this.table).where(eq((this.table as any).id, id)).limit(1)

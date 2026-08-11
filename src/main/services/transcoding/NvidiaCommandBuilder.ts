@@ -1,15 +1,17 @@
 import { ITranscodeCommandBuilder } from './types'
 import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
+import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
+    const hdrArgs = buildHdrMetadataArgs(analysis)
     const args: string[] = [
       '-y',
-      '-fps_mode', 'passthrough',
       '-hwaccel', 'cuda',
       '-hwaccel_output_format', 'cuda',
-      '-i', input
+      '-i', input,
+      '-fps_mode', 'cfr'
     ]
     const codec = options.targetCodec === 'av1' ? 'av1_nvenc' : 'hevc_nvenc'
     const cq = (options.crf ?? 20).toString()
@@ -45,6 +47,8 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     if (options.preserveSubtitles) {
       args.push('-map', '0:s?', '-c:s', 'copy')
     }
+
+    args.push(...hdrArgs)
 
     args.push(output)
     return args

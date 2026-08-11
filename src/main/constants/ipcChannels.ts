@@ -17,7 +17,16 @@ export const IPC_CHANNELS = {
     FIND_MANAGED_MOVIE: 'arr:findManagedMovie',
     FIND_MANAGED_SERIES: 'arr:findManagedSeries',
     GET_COMMAND: 'arr:getCommand',
-    WAIT_COMMAND: 'arr:waitCommand'
+    WAIT_COMMAND: 'arr:waitCommand',
+    GET_LANGUAGE_PROFILES: 'arr:getLanguageProfiles',
+    GET_MANAGED_STATE: 'arr:getManagedState'
+  },
+  OPTIMIZATION: {
+    DRY_RUN: 'optimization:dryRun',
+    REQUEST_ARR_SEARCH: 'optimization:requestArrSearch',
+    GET_PENDING: 'optimization:getPending',
+    DECIDE_LANGUAGE: 'optimization:decideLanguage',
+    LOCAL_REMUX: 'optimization:localRemux'
   },
   DATABASE: {
     GET_SETTING: 'db:getSetting',

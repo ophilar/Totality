@@ -13,6 +13,17 @@ interface QualityBadgesProps {
   showEfficiency?: boolean
 }
 
+/** Keep dynamic HDR formats distinct from the base HDR10 label. */
+export function formatHdrLabel(value?: string | null): string | undefined {
+  const normalized = value?.trim().toLowerCase().replace(/[._-]/g, '')
+  if (!normalized || normalized === 'none' || normalized === 'sdr') return undefined
+  if (normalized.includes('dolbyvision') || normalized === 'dovi') return 'Dolby Vision'
+  if (normalized.includes('hdr10+ ') || normalized.includes('hdr10plus') || normalized.includes('hdr10+')) return 'HDR10+'
+  if (normalized === 'hdr10' || normalized === 'hdr') return 'HDR10'
+  if (normalized === 'hlg') return 'HLG'
+  return value?.trim()
+}
+
 export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {
   const badges: Array<{ label: string; coloredClass: string; icon?: any }> = []
 
@@ -37,12 +48,15 @@ export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: 
   }
 
   // HDR badges - use same terminology as details page
-  if (item.hdr_format === 'Dolby Vision') {
-    badges.push({ label: 'Dolby Vision', coloredClass: 'bg-purple-600/90 text-white' })
-  } else if (item.hdr_format === 'HDR10') {
-    badges.push({ label: 'HDR10', coloredClass: 'bg-orange-600/90 text-white' })
-  } else if (item.hdr_format === 'HLG') {
-    badges.push({ label: 'HLG', coloredClass: 'bg-yellow-600/90 text-white' })
+  const hdrLabel = formatHdrLabel(item.hdr_format)
+  if (hdrLabel === 'Dolby Vision') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-purple-600/90 text-white' })
+  } else if (hdrLabel === 'HDR10+') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-pink-600/90 text-white' })
+  } else if (hdrLabel === 'HDR10') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-orange-600/90 text-white' })
+  } else if (hdrLabel === 'HLG') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-yellow-600/90 text-white' })
   }
 
   // 10-bit color - show actual bit depth like details page

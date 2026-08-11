@@ -8,16 +8,32 @@ export interface TranscodingAvailability {
 export interface TranscodingCapabilities extends TranscodingAvailability {
   detectedAt: string
   gpus: GpuInfo[]
+  selectedGpuId: string | null
   vendors: Array<GpuInfo['vendor'] | 'Software'>
   encoders: string[]
+  verifiedEncoders: string[]
+  probeFailures: string[]
   engines: Array<'ffmpeg' | 'handbrake'>
 }
 
 const SOFTWARE_ENCODERS = ['svt_av1', 'x265', 'libx264']
 
+export function selectDefaultGpu(gpus: GpuInfo[]): GpuInfo | undefined {
+  return gpus.find(gpu => gpu.vendor === 'NVIDIA') ?? gpus[0]
+}
+
+export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {
+  if (persistedGpuId === null) return null
+  if (persistedGpuId && gpus.some(gpu => gpu.id === persistedGpuId)) return persistedGpuId
+  return selectDefaultGpu(gpus)?.id ?? null
+}
+
 export function buildTranscodingCapabilities(
   availability: TranscodingAvailability,
-  gpus: GpuInfo[]
+  gpus: GpuInfo[],
+  selectedGpuId: string | null = resolveSelectedGpuId(gpus),
+  verifiedEncoders: string[] = [] ,
+  probeFailures: string[] = []
 ): TranscodingCapabilities {
   const vendors: Array<GpuInfo['vendor'] | 'Software'> = []
   const encoders: string[] = []
@@ -39,8 +55,11 @@ export function buildTranscodingCapabilities(
     ...availability,
     detectedAt: new Date().toISOString(),
     gpus,
+    selectedGpuId,
     vendors,
     encoders: Array.from(new Set(encoders)),
+    verifiedEncoders: Array.from(new Set(verifiedEncoders)),
+    probeFailures,
     engines: [
       ...(availability.ffmpeg ? ['ffmpeg' as const] : []),
       ...(availability.handbrake ? ['handbrake' as const] : [])

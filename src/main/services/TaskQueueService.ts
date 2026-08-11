@@ -408,8 +408,8 @@ export class TaskQueueService {
       itemsScanned: result.analyzed,
     }
 
-    if (result.analyzed < result.totalSeries && !this.cancelRequested) {
-      throw new Error('Series analysis did not finish all series')
+    if (result.analyzed === 0 && result.totalSeries > 0 && result.errors.length > 0 && !this.cancelRequested) {
+      throw new Error(`Series analysis failed: ${result.errors[0]}`)
     }
   }
 
@@ -447,8 +447,9 @@ export class TaskQueueService {
         },
         task.sourceId
       )
+
       task.result = {
-        itemsScanned: result.artistsAnalyzed || 0,
+        itemsScanned: (result?.artistsAnalyzed || 0) + (result?.albumsAnalyzed || 0),
       }
       return
     }

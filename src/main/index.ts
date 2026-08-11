@@ -35,6 +35,7 @@ import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { getTranscodingService } from '@main/services/TranscodingService'
 import { registerMediaHandlers } from '@main/ipc/media'
 import { registerArrHandlers } from '@main/ipc/arr'
+import { registerOptimizationHandlers } from '@main/ipc/optimization'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { getLoggingService } from '@main/services/LoggingService'
@@ -306,6 +307,7 @@ app.whenReady().then(async () => {
     registerTranscodingHandlers()
     registerMediaHandlers()
     registerArrHandlers()
+    registerOptimizationHandlers()
 
     await getLiveMonitoringService().initialize()
 

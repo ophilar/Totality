@@ -5,9 +5,10 @@ import { QualityBadges } from '@/components/library/QualityBadges'
 import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { MoviePlaceholder } from '@/components/ui/MediaPlaceholders'
+import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { useSources } from '@/contexts/SourceContext'
-import { providerColors } from '@/components/library/mediaUtils'
+import { providerColors, calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 
 // Utility to format bytes into readable strings
@@ -46,8 +47,8 @@ export function MoviesView({
   isAnalyzing = false
 }: {
   movies?: MediaItem[]
-  sortBy: 'title' | 'efficiency' | 'waste' | 'size'
-  onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
+  sortBy: 'title' | 'year' | 'efficiency' | 'waste' | 'size'
+  onSortChange: (sort: 'title' | 'year' | 'efficiency' | 'waste' | 'size') => void
   slimDown: boolean
   onSelectMovie: (id: number, movie: MediaItem) => void
   onSelectCollection: (collection: MovieCollectionData) => void
@@ -76,12 +77,7 @@ export function MoviesView({
   }, [])
 
   // Map scale to minimum poster width
-  const posterMinWidth = useMemo(() => {
-    const widthMap: Record<number, number> = {
-      1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
-    }
-    return widthMap[gridScale] || widthMap[5]
-  }, [gridScale])
+  const posterMinWidth = useMemo(() => calculatePosterWidth(gridScale), [gridScale])
 
   // Group movies by collection
   const displayItems = useMemo<MovieDisplayItem[]>(() => {
@@ -118,7 +114,11 @@ export function MoviesView({
     }
 
     items.sort((a, b) => {
-      if (sortBy === 'efficiency') {
+      if (sortBy === 'year') {
+        const yearA = a.type === 'movie' ? (a.movie.year ?? 0) : 0
+        const yearB = b.type === 'movie' ? (b.movie.year ?? 0) : 0
+        if (yearA !== yearB) return yearB - yearA
+      } else if (sortBy === 'efficiency') {
         const effA = a.type === 'movie' ? (a.movie.efficiency_score ?? 100) : 100
         const effB = b.type === 'movie' ? (b.movie.efficiency_score ?? 100) : 100
         if (effA !== effB) return effA - effB
@@ -166,7 +166,15 @@ export function MoviesView({
   const listHeader = (
     <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 px-4 py-2 mb-2 border-b border-border/50 text-xs font-bold uppercase tracking-wider text-muted-foreground bg-muted/10 sticky top-0 z-10 rounded-t-lg">
       <div>Title</div>
-      <div className="text-center">Year</div>
+      <div className="text-center">
+        <button
+          onClick={() => onSortChange('year')}
+          aria-label="Sort movies by year"
+          className="hover:text-foreground transition-colors uppercase font-bold text-xs"
+        >
+          Year
+        </button>
+      </div>
       <div>Resolution</div>
       <div>Codec</div>
       <div className="text-right">Bitrate</div>
@@ -182,37 +190,14 @@ export function MoviesView({
   const activeScan = Array.from(scanProgress.values())[0]
 
   const emptyState = (
-    <div className="flex flex-col items-center justify-center text-center p-12 animate-in fade-in duration-700">
-      {isScanning ? (
-        <div className="flex flex-col items-center">
-          <div className="relative mb-6">
-            <RefreshCw className="w-16 h-16 text-primary animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Film className="w-6 h-6 text-primary/50" />
-            </div>
-          </div>
-          <p className="text-primary text-xl font-bold tracking-tight">Scan in Progress</p>
-          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
-            {activeScan ? (
-              <>
-                Found <span className="text-foreground font-semibold">{totalMovieCount}</span> items so far...
-                <br />
-                Currently <span className="text-primary font-medium">{activeScan.phase}</span>
-                {activeScan.currentItem && <span className="block mt-1 italic text-[10px] truncate max-w-[200px] mx-auto opacity-80">{activeScan.currentItem}</span>}
-              </>
-            ) : 'Discovering movies in your libraries...'}
-          </p>
-        </div>
-      ) : (
-        <>
-          <MoviePlaceholder className="w-24 h-24 text-muted-foreground/40 mb-6" />
-          <p className="text-muted-foreground text-xl font-medium">No movies found</p>
-          <p className="text-sm text-muted-foreground/70 mt-2 max-w-xs leading-relaxed">
-            Scan a movie library from the sidebar to start analyzing your collection
-          </p>
-        </>
-      )}
-    </div>
+    <LibraryEmptyState
+      isScanning={isScanning}
+      scanProgress={activeScan ? { phase: activeScan.phase, currentItem: activeScan.currentItem } : undefined}
+      totalCount={totalMovieCount}
+      icon={Film}
+      title="No movies found"
+      description="Scan a movie library from the sidebar to start analyzing your collection"
+    />
   )
 
   const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'

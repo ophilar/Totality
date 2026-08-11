@@ -8,6 +8,8 @@
 import { parentPort, workerData } from 'worker_threads'
 import { spawn } from 'child_process'
 import * as path from 'path'
+import { detectHdrFormat as detectHdrFormatFromMetadata } from '../types/mediaContracts'
+import type { HdrFormat } from '../types/mediaContracts'
 
 // Types mirrored from MediaFileAnalyzer (can't import due to worker isolation)
 interface FFprobeStream {
@@ -89,7 +91,7 @@ export interface AnalyzedVideoStream {
   colorSpace?: string
   colorTransfer?: string
   colorPrimaries?: string
-  hdrFormat?: string
+  hdrFormat?: HdrFormat
 }
 
 export interface AnalyzedAudioStream {
@@ -298,42 +300,13 @@ function extractBitDepth(stream: FFprobeStream): number | undefined {
 /**
  * Detect HDR format from stream metadata
  */
-function detectHdrFormat(stream: FFprobeStream): string | undefined {
-  const colorTransfer = stream.color_transfer?.toLowerCase() || ''
-  const colorPrimaries = stream.color_primaries?.toLowerCase() || ''
-  const colorSpace = stream.color_space?.toLowerCase() || ''
-
-  const sideData = stream.side_data_list || []
-  const hasDolbyVision = sideData.some(sd =>
-    sd.side_data_type?.toLowerCase().includes('dolby vision')
-  )
-  const hasHdr10Plus = sideData.some(sd =>
-    sd.side_data_type?.toLowerCase().includes('hdr10+') ||
-    sd.side_data_type?.toLowerCase().includes('dynamic hdr')
-  )
-  const hasMasteringDisplay = sideData.some(sd =>
-    sd.side_data_type?.toLowerCase().includes('mastering display')
-  )
-  const hasContentLight = sideData.some(sd =>
-    sd.side_data_type?.toLowerCase().includes('content light')
-  )
-
-  if (hasDolbyVision) return 'Dolby Vision'
-  if (hasHdr10Plus) return 'HDR10+'
-
-  if (
-    (colorTransfer.includes('smpte2084') || colorTransfer.includes('pq')) &&
-    (colorPrimaries.includes('bt2020') || colorSpace.includes('bt2020'))
-  ) {
-    if (hasMasteringDisplay || hasContentLight) return 'HDR10'
-    return 'PQ'
-  }
-
-  if (colorTransfer.includes('arib-std-b67') || colorTransfer.includes('hlg')) {
-    return 'HLG'
-  }
-
-  return undefined
+function detectHdrFormat(stream: FFprobeStream): HdrFormat {
+  return detectHdrFormatFromMetadata({
+    colorTransfer: stream.color_transfer,
+    colorPrimaries: stream.color_primaries,
+    colorSpace: stream.color_space,
+    sideDataTypes: stream.side_data_list?.map(item => item.side_data_type)
+  })
 }
 
 /**

@@ -7,6 +7,30 @@ import { TranscodeOptions } from '../../../src/main/services/TranscodingService'
 import { FileAnalysisResult } from '../../../src/main/services/MediaFileAnalyzer'
 
 describe('NvidiaCommandBuilder', () => {
+  it('preserves HDR10 color metadata in FFmpeg output arguments', () => {
+    const args = new NvidiaCommandBuilder().buildFFmpegArgs('input.mkv', 'output.mkv', { targetCodec: 'hevc' }, {
+      video: { hdrFormat: 'HDR10', colorSpace: 'bt2020nc', colorPrimaries: 'bt2020', colorTransfer: 'smpte2084' }
+    } as FileAnalysisResult)
+    expect(args).toEqual(expect.arrayContaining(['-colorspace', 'bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'smpte2084']))
+  })
+
+  it('rejects Dolby Vision instead of silently dropping dynamic metadata', () => {
+    expect(() => new NvidiaCommandBuilder().buildFFmpegArgs('input.mkv', 'output.mkv', { targetCodec: 'hevc' }, {
+      video: { hdrFormat: 'Dolby Vision' }
+    } as FileAnalysisResult)).toThrow(/Dolby Vision.*dynamic HDR metadata/i)
+  })
+
+  it('places fps_mode after the input because it is an output option', () => {
+    const args = new NvidiaCommandBuilder().buildFFmpegArgs(
+      'input.mkv',
+      'output.mkv',
+      { targetCodec: 'hevc', useGpu: true },
+      {} as FileAnalysisResult
+    )
+
+    expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))
+  })
+
   it('builds zero-copy CUDA VRAM NVENC HEVC arguments with -fps_mode passthrough', () => {
     const builder = new NvidiaCommandBuilder()
     const options: TranscodeOptions = {
@@ -36,7 +60,7 @@ describe('NvidiaCommandBuilder', () => {
     expect(args).toContain('-hwaccel_output_format')
     expect(args).toContain('cuda')
     expect(args).toContain('-fps_mode')
-    expect(args).toContain('passthrough')
+    expect(args).toContain('cfr')
     expect(args).toContain('-c:v')
     expect(args).toContain('hevc_nvenc')
     expect(args).toContain('-rc')
@@ -89,6 +113,17 @@ describe('NvidiaCommandBuilder', () => {
 })
 
 describe('IntelCommandBuilder', () => {
+  it('places fps_mode after the input because it is an output option', () => {
+    const args = new IntelCommandBuilder().buildFFmpegArgs(
+      'input.mkv',
+      'output.mkv',
+      { targetCodec: 'hevc', useGpu: true },
+      {} as FileAnalysisResult
+    )
+
+    expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))
+  })
+
   it('builds Intel QSV hardware acceleration arguments', () => {
     const builder = new IntelCommandBuilder()
     const options: TranscodeOptions = {
@@ -121,6 +156,17 @@ describe('IntelCommandBuilder', () => {
 })
 
 describe('SoftwareCommandBuilder', () => {
+  it('places fps_mode after the input because it is an output option', () => {
+    const args = new SoftwareCommandBuilder().buildFFmpegArgs(
+      'input.mkv',
+      'output.mkv',
+      { targetCodec: 'hevc' },
+      {} as FileAnalysisResult
+    )
+
+    expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))
+  })
+
   it('builds software encoding arguments for SVT-AV1 and x265', () => {
     const builder = new SoftwareCommandBuilder()
     const options: TranscodeOptions = {

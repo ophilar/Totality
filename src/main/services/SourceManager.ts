@@ -315,20 +315,30 @@ export class SourceManager {
   async triggerPostScanAnalysis(sourceId?: string, libraryId?: string): Promise<void> {
     const sources = sourceId ? [await this.db.sources.getSourceById(sourceId)].filter((s): s is MediaSource => s !== null) : await this.db.sources.getEnabledSources()
     const { getWishlistCompletionService } = await import('./WishlistCompletionService')
+    const tq = this.getTaskQueue()
+    const hasTmdbKey = await this.db.config.getSetting('tmdb_api_key')
+
     for (const source of sources) {
       if (!source) continue
       const libs = await this.getLibraries(source.source_id)
       const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!enabledLibraries.has(lib.id)) continue
-        if (await this.db.config.getSetting('tmdb_api_key')) {
-          if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.SeriesCompleteness, label: `Series: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-          if (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed) this.getTaskQueue().addTask({ type: TaskType.CollectionCompleteness, label: `Collection: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-        }
 
+        if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) {
+          tq.addTask({ type: TaskType.SeriesCompleteness, label: `Post-scan Series Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+        }
+        if (hasTmdbKey && (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed)) {
+          tq.addTask({ type: TaskType.CollectionCompleteness, label: `Post-scan Collection Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+        }
+        if (lib.type === LibraryType.Music) {
+          tq.addTask({ type: TaskType.MusicCompleteness, label: `Post-scan Music Analysis: ${lib.name}`, sourceId: source.source_id })
+        }
       }
     }
-    getWishlistCompletionService().checkAndComplete().catch(() => {})
+    getWishlistCompletionService().checkAndComplete().catch(err => {
+      this.logging.error('[SourceManager]', 'Post-scan wishlist check failed:', err)
+    })
   }
 
   async getAggregatedStats() { await this.initialize(); return this.db.stats.getAggregatedSourceStats() }

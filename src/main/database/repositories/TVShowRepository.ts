@@ -5,6 +5,7 @@ import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
+import { aggregateShowOptimizationMetrics } from '@main/services/ShowOptimizationMetricsService'
 
 export class TVShowRepository extends BaseRepository<typeof schema.seriesCompleteness> {
   constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
@@ -34,6 +35,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       'episodes': schema.seriesCompleteness.totalEpisodes,
       'season_count': schema.seriesCompleteness.totalSeasons,
       'storage_debt': schema.seriesCompleteness.storageDebtBytes,
+      'recoverable': schema.seriesCompleteness.storageDebtBytes,
       'debt': schema.seriesCompleteness.storageDebtBytes,
       'efficiency': schema.seriesCompleteness.efficiencyScore,
       'size': schema.seriesCompleteness.totalSize,
@@ -73,7 +75,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     if (filters?.offset) query.offset(filters.offset)
 
     const rows = await query.all()
-    return rows as unknown as TVShowSummary[]
+    const summaries: TVShowSummary[] = []
+    for (const row of rows as any[]) {
+      const episodes = await this.getEpisodes(row.series_title, row.source_id)
+      const metrics = aggregateShowOptimizationMetrics(episodes.map((episode: any) => ({ sizeBytes: episode.file_size, recoverableBytes: episode.storage_debt_bytes, efficiency: episode.efficiency_score })))
+      summaries.push({ ...row, total_size: metrics.totalSize, total_recoverable_bytes: metrics.totalRecoverableBytes, weighted_efficiency: metrics.weightedEfficiency, scored_episode_count: metrics.scoredEpisodeCount, unscored_episode_count: metrics.unscoredEpisodeCount, recommended_action: metrics.totalRecoverableBytes > 0 ? 'review-required' : 'no-optimization' } as TVShowSummary)
+    }
+    return summaries
   }
 
   async count(filters?: TVShowFilters): Promise<number> {

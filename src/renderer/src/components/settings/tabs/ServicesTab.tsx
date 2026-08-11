@@ -18,6 +18,7 @@ import {
   Bot,
   Music,
 } from 'lucide-react'
+import { TranscodingHardwareCard } from '@/components/settings/TranscodingHardwareCard'
 
 interface ServiceCardProps {
   title: string
@@ -657,6 +658,7 @@ export function ServicesTab() {
 
   return (
     <div className="p-6 space-y-5 overflow-y-auto">
+      <TranscodingHardwareCard />
       {/* Header */}
       <div className="mb-4">
         <p className="text-xs text-muted-foreground">

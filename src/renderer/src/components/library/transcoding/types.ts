@@ -1,5 +1,5 @@
 export interface TranscodeOptions {
-  targetCodec: 'av1' | 'hevc' | 'h264'
+  targetCodec: 'av1' | 'hevc'
   preserveSubtitles: boolean
   preserveAllAudio: boolean
   overwriteOriginal: boolean
@@ -11,6 +11,7 @@ export interface TranscodeOptions {
   customArgs: string
   transcodingEngine: 'handbrake' | 'ffmpeg'
   targetSize: string
+  aiOptimize?: boolean
 }
 
 export interface TranscodingParams {

@@ -88,8 +88,9 @@ export function TVShowDetails({
       if (!command.id) throw new Error('Sonarr did not return a command ID')
       await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
       setArrStatus('success')
-    } catch {
+    } catch (err: any) {
       setArrStatus('error')
+      window.alert(`Sonarr Search Failed: ${err?.message || 'Unknown error'}`)
     }
   }
 

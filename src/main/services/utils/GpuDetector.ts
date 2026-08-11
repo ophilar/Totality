@@ -1,6 +1,5 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { getDatabase } from '@main/database/BetterSQLiteService'
 
 const execAsync = promisify(exec)
 
@@ -11,40 +10,20 @@ export interface GpuInfo {
 }
 
 export class GpuDetector {
-  private static cachedGpus: GpuInfo[] | null = null
-
-  static async detectGpus(options: { refresh?: boolean } = {}): Promise<GpuInfo[]> {
-    if (GpuDetector.cachedGpus && !options.refresh) {
-      return GpuDetector.cachedGpus
-    }
-
-    // Try reading persistent cache from SQLite settings table
-    try {
-      const db = getDatabase()
-      if (db.isInitialized && !options.refresh) {
-        const cached = await db.config.getSetting('detected_gpus')
-        if (cached) {
-          const parsed = JSON.parse(cached)
-          if (Array.isArray(parsed)) {
-            GpuDetector.cachedGpus = parsed
-            return parsed
-          }
-        }
-      }
-    } catch (e) {
-      // Defer to normal hardware detection if DB is not ready or fails
-    }
-
+  static async detectGpus(_options: { refresh?: boolean } = {}): Promise<GpuInfo[]> {
     const platform = process.platform
     const gpus: GpuInfo[] = []
     
     try {
       if (platform === 'win32') {
-        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"')
-        const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean)
-        lines.forEach((name, idx) => {
+        const { stdout } = await execAsync('powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID | ConvertTo-Json -Compress"')
+        const parsed = JSON.parse(stdout) as Array<{ Name?: string; PNPDeviceID?: string }> | { Name?: string; PNPDeviceID?: string }
+        const devices = Array.isArray(parsed) ? parsed : [parsed]
+        devices.filter(device => device.Name).forEach((device, idx) => {
+          const name = device.Name!.trim()
+          const identity = device.PNPDeviceID?.trim() || `${name}-${idx}`
           gpus.push({
-            id: `win-gpu-${idx}`,
+            id: `win-${identity.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
             name,
             vendor: GpuDetector.parseVendor(name)
           })
@@ -65,13 +44,12 @@ export class GpuDetector {
       } else {
         const { stdout } = await execAsync('lspci')
         const lines = stdout.split('\n')
-        let idx = 0
         for (const line of lines) {
           if (line.includes('VGA') || line.includes('3D') || line.includes('Display')) {
-            const parts = line.split(':')
-            const name = parts[parts.length - 1].trim()
+            const address = line.split(' ')[0]
+            const name = line.slice(line.indexOf(':') + 1).trim()
             gpus.push({
-              id: `linux-gpu-${idx++}`,
+              id: `linux-${address.toLowerCase()}`,
               name,
               vendor: GpuDetector.parseVendor(name)
             })
@@ -82,22 +60,11 @@ export class GpuDetector {
       throw new Error(`GPU detection command execution failed: ${e instanceof Error ? e.message : String(e)}`)
     }
     
-    GpuDetector.cachedGpus = gpus
-
-    try {
-      const db = getDatabase()
-      if (db.isInitialized) {
-        await db.config.setSetting('detected_gpus', JSON.stringify(gpus))
-      }
-    } catch (e) {
-      // Ignore database save errors during detection fallback
-    }
-
     return gpus
   }
 
   static clearCache(): void {
-    GpuDetector.cachedGpus = null
+    // Compatibility no-op. Snapshot ownership belongs to TranscodingService.
   }
 
   private static parseVendor(name: string): 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' {

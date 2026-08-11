@@ -53,15 +53,15 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
   }
 
   return (
-    <header className="dark fixed top-4 left-4 right-4 z-100 bg-black rounded-2xl shadow-xl px-4 py-3">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
+    <header className="dark fixed top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 z-100 bg-black rounded-2xl shadow-xl px-2 sm:px-4 py-2 sm:py-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 basis-full lg:basis-auto lg:flex-1 min-w-0">
           <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
           <SearchAutocomplete {...searchProps} />
           <ScanningStatus />
         </div>
 
-        <div className="shrink-0 flex gap-1" role="tablist">
+        <div className="order-3 lg:order-none basis-full lg:basis-auto shrink-0 flex gap-1 overflow-x-auto pb-0.5" role="tablist">
           {onNavigateHome && (
             <button onClick={onNavigateHome} className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-card text-muted-foreground hover:bg-muted">
               <Home className="w-4 h-4" />
@@ -120,7 +120,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
           )}
         </div>
 
-        <div className="flex items-center justify-end flex-1 gap-2">
+        <div className="flex items-center justify-end lg:flex-1 gap-1 sm:gap-2 ml-auto">
           <button
             onClick={() => {
               const newState = !showCompletenessPanel

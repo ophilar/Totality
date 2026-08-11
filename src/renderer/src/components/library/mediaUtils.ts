@@ -67,6 +67,14 @@ export const formatSampleRate = (sampleRate?: number): string => {
 /**
  * Format file size for display
  */
+export const formatBytes = (bytes?: number): string => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
 export const formatFileSize = (bytes?: number): string => {
   if (!bytes) return '--'
   if (bytes >= 1073741824) {
@@ -198,11 +206,12 @@ export const getStatusBadge = (status?: string): { text: string; color: string }
  * Calculate poster minimum width based on grid scale
  */
 export const calculatePosterWidth = (gridScale: number): number => {
-  // Scale 1-7 maps to different poster sizes
-  // 1 = smallest (100px), 7 = largest (300px)
-  const minWidth = 100
-  const maxWidth = 300
-  return minWidth + ((gridScale - 1) / 6) * (maxWidth - minWidth)
+  // Scale 1-7 maps to clean poster sizes without dominating screen
+  // 1 = 90px, 3 = 133px (default), 4 = 155px, 7 = 220px
+  const minWidth = 90
+  const maxWidth = 220
+  const clampedScale = Math.max(1, Math.min(7, gridScale))
+  return Math.round(minWidth + ((clampedScale - 1) / 6) * (maxWidth - minWidth))
 }
 
 /**
