@@ -6,10 +6,19 @@ import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/
 import { TranscodeOptions } from '../../../src/main/services/TranscodingService'
 import { FileAnalysisResult } from '../../../src/main/services/MediaFileAnalyzer'
 
+const minimalAnalysis = {
+  success: true,
+  filePath: 'input.mkv',
+  video: { index: 0, codec: 'hevc', width: 1920, height: 1080 },
+  audioTracks: [],
+  subtitleTracks: []
+} as FileAnalysisResult
+
 describe('NvidiaCommandBuilder', () => {
   it('preserves HDR10 color metadata in FFmpeg output arguments', () => {
     const args = new NvidiaCommandBuilder().buildFFmpegArgs('input.mkv', 'output.mkv', { targetCodec: 'hevc' }, {
-      video: { hdrFormat: 'HDR10', colorSpace: 'bt2020nc', colorPrimaries: 'bt2020', colorTransfer: 'smpte2084' }
+      video: { hdrFormat: 'HDR10', colorSpace: 'bt2020nc', colorPrimaries: 'bt2020', colorTransfer: 'smpte2084' },
+      audioTracks: [], subtitleTracks: []
     } as FileAnalysisResult)
     expect(args).toEqual(expect.arrayContaining(['-colorspace', 'bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'smpte2084']))
   })
@@ -32,7 +41,7 @@ describe('NvidiaCommandBuilder', () => {
       'input.mkv',
       'output.mkv',
       { targetCodec: 'hevc', useGpu: true },
-      {} as FileAnalysisResult
+      minimalAnalysis
     )
 
     expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))
@@ -45,8 +54,7 @@ describe('NvidiaCommandBuilder', () => {
       crf: 20,
       preset: 'p6',
       useGpu: true,
-      preserveAllAudio: true,
-      preserveSubtitles: true
+      streamSelection: { audio: 'all', subtitle: 'all', defaultSubtitle: 'preserve' }
     }
     const analysis: Partial<FileAnalysisResult> = {
       filePath: 'input.mkv',
@@ -85,7 +93,23 @@ describe('NvidiaCommandBuilder', () => {
     expect(args[args.length - 1]).toBe('output.mkv')
   })
 
-  it('builds NVENC AV1 arguments and HandBrake CLI arguments', () => {
+  it('maps selected streams and assigns the requested subtitle default', () => {
+    const args = new NvidiaCommandBuilder().buildFFmpegArgs('input.mkv', 'output.mkv', {
+      targetCodec: 'hevc',
+      streamSelection: { audio: 'all', subtitle: 'all', defaultSubtitle: { language: 'heb' } }
+    }, {
+      ...minimalAnalysis,
+      audioTracks: [{ index: 1, codec: 'aac', channels: 2, isDefault: true, hasObjectAudio: false }],
+      subtitleTracks: [
+        { index: 3, codec: 'subrip', language: 'eng', isDefault: true, isForced: false },
+        { index: 4, codec: 'subrip', language: 'heb', isDefault: false, isForced: false }
+      ]
+    })
+    expect(args).toEqual(expect.arrayContaining(['-map', '0:0', '-map', '0:1', '-map', '0:3', '-map', '0:4']))
+    expect(args).toEqual(expect.arrayContaining(['-disposition:s:0', '0', '-disposition:s:1', 'default']))
+  })
+
+  it('builds NVENC AV1 arguments', () => {
     const builder = new NvidiaCommandBuilder()
     const options: TranscodeOptions = {
       targetCodec: 'av1',
@@ -118,7 +142,7 @@ describe('IntelCommandBuilder', () => {
       'input.mkv',
       'output.mkv',
       { targetCodec: 'hevc', useGpu: true },
-      {} as FileAnalysisResult
+      minimalAnalysis
     )
 
     expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))
@@ -158,7 +182,7 @@ describe('SoftwareCommandBuilder', () => {
       'input.mkv',
       'output.mkv',
       { targetCodec: 'hevc' },
-      {} as FileAnalysisResult
+      minimalAnalysis
     )
 
     expect(args.indexOf('-fps_mode')).toBeGreaterThan(args.indexOf('input.mkv'))

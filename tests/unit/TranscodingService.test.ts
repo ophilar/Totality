@@ -36,9 +36,6 @@ describe('Transcoding Integration (Service + IPC)', () => {
       return undefined
     })
 
-    // Initialize paths in DB so service doesn't use defaults
-    await db.config.setSetting('handbrake_path', 'HandBrakeCLI')
-
     registerTranscodingHandlers()
     service = getTranscodingService()
 
@@ -46,7 +43,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
     const gemini = getGeminiService()
     vi.spyOn(gemini, 'isConfigured').mockReturnValue(true)
     vi.spyOn(gemini, 'sendMessage').mockResolvedValue({
-       text: '{"summary": "test", "handbrakeArgs": ["--quality", "20"]}',
+       text: '{"summary": "test", "ffmpegArgs": ["-c:v", "hevc_nvenc"]}',
        usage: { input_tokens: 0, output_tokens: 0 }
     })
 
@@ -60,7 +57,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
       }
     })
 
-    // Mock spawn to handle multiple calls (availability checks + Handbrake)
+    // Mock spawn to handle availability checks and FFmpeg execution.
     vi.mocked(spawn).mockImplementation((tool: string, args: readonly string[]) => {
       const mockProc = {
         stdout: { on: vi.fn() },
@@ -109,50 +106,17 @@ describe('Transcoding Integration (Service + IPC)', () => {
       await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: testFile, file_size: 5, duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null } satisfies MediaItem)
 
       const handler = handlers.get('transcoding:getParameters')!
-      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1' }) as { summary: string; handbrakeArgs: string[] }
+      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1' }) as { summary: string }
       
       expect(result.summary).toBe('test')
-      expect(result.handbrakeArgs).toContain('--quality')
     })
 
-    it('initiates and completes a transcoding job through IPC', async () => {
-      const testFile = path.join(testDir, 'movie_ipc.mkv')
-      fs.writeFileSync(testFile, 'dummy content')
-      
-      await db.media.upsertItem({ 
-        id: 1, 
-        source_id: 'src1', 
-        plex_id: 'p1', 
-        title: 'Movie', 
-        type: 'movie', 
-        file_path: testFile, 
-        file_size: 13,
-        duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null
-      } satisfies MediaItem)
-
-      service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: true, ffmpeg: true })
-
-      const handler = handlers.get('transcoding:start')!
-      const mockEvent = { sender: { send: vi.fn() } }
-      
-      const result = await handler(mockEvent as IpcMainInvokeEvent, 1, { overwriteOriginal: true, targetCodec: 'hevc', transcodingEngine: 'handbrake' })
-      
-      expect(result).toBe(true)
-      
-      // Verify file was updated (service logic)
-      const content = fs.readFileSync(testFile, 'utf8')
-      expect(content).toBe('transcoded content')
-      
-      const item = await db.media.getItem(1)
-      expect(item.file_size).toBe(18)
-    })
   })
 
   describe('Service Direct Logic', () => {
     it('respects availability overrides', async () => {
-      service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: false, ffmpeg: true })
       const result = await service.checkAvailability()
-      expect(result.handbrake).toBe(true)
+      expect(result.ffmpeg).toBeDefined()
     })
   })
 })

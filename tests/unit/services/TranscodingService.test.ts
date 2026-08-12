@@ -105,8 +105,6 @@ describe('TranscodingService', () => {
       expect(params.ffmpegArgs).toContain('-hwaccel')
       expect(params.ffmpegArgs).toContain('cuda')
       expect(params.ffmpegArgs).toContain('hevc_nvenc')
-      expect(params.handbrakeArgs).toContain('--encoder')
-      expect(params.handbrakeArgs).toContain('nvenc_h265_10bit')
     })
 
     it('delegates to SoftwareCommandBuilder when useGpu is false', async () => {
@@ -127,7 +125,6 @@ describe('TranscodingService', () => {
       }))
 
       expect(params.ffmpegArgs).toContain('libsvtav1')
-      expect(params.handbrakeArgs).toContain('svt_av1_10bit')
     })
   })
 
@@ -164,28 +161,5 @@ describe('TranscodingService', () => {
       })
     })
 
-    it('runHandbrake throws TranscodeError with stderr diagnostic log on process failure', async () => {
-      const mockProc = new EventEmitter() as MockProcess
-      mockProc.stdout = new EventEmitter()
-      mockProc.stderr = new EventEmitter()
-      mockProc.kill = vi.fn()
-
-      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
-
-      const hooks = service as unknown as { runHandbrake: (...args: unknown[]) => Promise<unknown> }
-      const runPromise = hooks.runHandbrake(
-        ['--encoder', 'x265'],
-        vi.fn()
-      )
-
-      mockProc.stderr.emit('data', Buffer.from('Handbrake error: Muxing failed\n'))
-      mockProc.emit('close', 2)
-
-      await expect(runPromise).rejects.toThrow(TranscodeError)
-      await runPromise.catch((err: TranscodeError) => {
-        expect(err.exitCode).toBe(2)
-        expect(err.stderr).toContain('Handbrake error: Muxing failed')
-      })
-    })
   })
 })

@@ -34,9 +34,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
 
   const [options, setOptions] = useState<TranscodeOptions>({
     targetCodec: 'av1',
-    preserveSubtitles: true,
-    preserveAllAudio: false,
-    overwriteOriginal: false,
+    outputMode: 'copy',
     useGpu: true,
     gpuId: '',
     encoder: '',

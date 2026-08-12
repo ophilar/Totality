@@ -114,8 +114,6 @@ describe('PathUtils', () => {
       expect(paths).toContain('/usr/local/bin/ffmpeg')
       expect(paths).toContain('/opt/homebrew/bin/ffmpeg')
 
-      const handbrake = PathUtils.getPossibleExecutablePaths('HandBrakeCLI')
-      expect(handbrake).toContain('/Applications/HandBrake.app/Contents/MacOS/HandBrakeCLI')
     })
 
     it('should generate paths for linux (other)', () => {

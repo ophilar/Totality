@@ -1,10 +1,10 @@
 import { useState, memo, useRef } from 'react'
-import { RefreshCw, Pencil, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
+import { RefreshCw, Pencil, HardDrive, Tv as TvPlaceholder, Link2Off, Film } from 'lucide-react'
 import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
 import { providerColors, formatBytes } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 
-export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, isLibraryAnalyzing }: {
+export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow, isLibraryAnalyzing }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
@@ -13,6 +13,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   onFixMatch?: (sourceId: string, folderPath?: string) => void
   onOptimizationDryRun?: () => void
   onRequestOptimization?: () => void
+  onTranscodeShow?: () => void
   isLibraryAnalyzing?: boolean
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -72,6 +73,8 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
       }
     })
   }
+
+  if (onTranscodeShow) menuItems.push({ id: 'transcode-show', label: 'Transcode full show', icon: Film, onClick: onTranscodeShow })
 
   return (
     <div

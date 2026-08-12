@@ -493,9 +493,7 @@ export const LetterOffsetSchema = z.object({
 
 export const TranscodeOptionsSchema = z.object({
   targetCodec: z.enum(['av1', 'hevc']).optional(),
-  preserveSubtitles: z.boolean().optional(),
-  preserveAllAudio: z.boolean().optional(),
-  overwriteOriginal: z.boolean().optional(),
+  outputMode: z.enum(['copy', 'quarantine-replace']).optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
   useGpu: z.boolean().optional(),
   encoder: z.string().optional(),
@@ -503,7 +501,11 @@ export const TranscodeOptionsSchema = z.object({
   preset: z.string().optional(),
   customArgs: z.string().optional(),
   gpuId: z.string().optional(),
-  transcodingEngine: z.enum(['handbrake', 'ffmpeg']).optional(),
+  transcodingEngine: z.literal('ffmpeg').optional(),
+    streamSelection: z.union([
+      z.object({ audio: z.literal('all'), subtitle: z.literal('all'), defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional() }),
+      z.object({ audio: z.literal('original-and-protected'), originalLanguage: z.string().min(1), subtitle: z.literal('all'), defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional() })
+    ]).optional(),
     targetSize: z.string().optional(),
     aiOptimize: z.boolean().optional(),
 }).optional()
@@ -529,6 +531,18 @@ export const TranscodeMediaItemSchema = z.tuple([
 export const CancelTranscodeSchema = z.tuple([
   z.number().int().positive()
 ])
+
+export const PreflightShowTranscodeSchema = z.tuple([
+  z.object({
+    seriesTitle: z.string().min(1),
+    seriesIdentityKey: z.string().min(1).optional(),
+    sourceId: z.string().min(1),
+    libraryId: z.string().min(1).optional(),
+    options: TranscodeOptionsSchema.unwrap()
+  })
+])
+
+export const QueueShowTranscodeSchema = z.tuple([z.string().min(1)])
 
 function preprocessFilterKeys(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input

@@ -445,8 +445,8 @@ export interface MediaItemFilters {
 // ============================================================================
 
 // TV Show summary returned by GROUP BY series_title query
-  export interface TVShowSummary {
-  series_title: string
+export interface TVShowSummary {
+    series_title: string
   episode_count: number
   season_count: number
   total_episodes: number // Alias for episode_count
@@ -895,6 +895,7 @@ export interface QueuedTask {
   error?: string
   result?: TaskResult
   options?: unknown
+  batchId?: string
 }
 
 export interface TaskQueueState {

@@ -21,7 +21,6 @@ describe('TranscodingService (No Mocks)', () => {
     
     service = new TranscodingService({ advise: async () => ({ text: JSON.stringify({ summary: 'Fixture parameters', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
     getTranscodingService().setParameterAdvisorForTesting({ advise: async () => ({ text: JSON.stringify({ summary: 'Optimized for AV1', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
-    service.setAvailabilityOverride({ handbrake: true, ffmpeg: true })
   })
 
   afterEach(() => {
@@ -30,7 +29,7 @@ describe('TranscodingService (No Mocks)', () => {
 
   it('should check tool availability', async () => {
     const availability = await service.checkAvailability()
-    expect(availability.handbrake).toBe(true)
+    expect(availability.ffmpeg).toBe(true)
 
   })
 
@@ -60,7 +59,7 @@ describe('TranscodingService (No Mocks)', () => {
     it('should correctly expose availability via IPC', async () => {
       const handler = handlers.get('transcoding:checkAvailability')!
       const availability = await handler({})
-      expect(availability.handbrake).toBe(true)
+      expect(availability.ffmpeg).toBe(true)
     })
 
     it('should generate parameters via IPC call', async () => {

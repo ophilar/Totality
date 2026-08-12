@@ -1,5 +1,5 @@
 import { getTranscodingService } from '@main/services/TranscodingService'
-import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema } from '@main/validation/schemas'
+import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
@@ -50,6 +50,14 @@ export function registerTranscodingHandlers(): void {
 
   createValidatedIpcHandler('transcoding:cancel', CancelTranscodeSchema, async (mediaItemId) => {
     return getTranscodingService().cancelTranscode(mediaItemId)
+  })
+
+  createValidatedIpcHandler('transcoding:preflightShow', PreflightShowTranscodeSchema, async (request) => {
+    return await getTranscodingService().preflightShowTranscode(request)
+  })
+
+  createValidatedIpcHandler('transcoding:queueShow', QueueShowTranscodeSchema, async (preflightId) => {
+    return await getTranscodingService().queueShowTranscode(preflightId)
   })
 
   getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')

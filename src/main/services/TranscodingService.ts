@@ -13,6 +13,10 @@ import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
 import { buildTranscodingCapabilities, resolveSelectedGpuId, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
+import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
+import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
+import { MediaPathAuthorization } from './MediaPathAuthorization'
+import { TaskType } from '@main/types/database'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -23,9 +27,8 @@ export class TranscodeError extends Error {
 
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
-  preserveSubtitles?: boolean
-  preserveAllAudio?: boolean
-  overwriteOriginal?: boolean
+  streamSelection?: StreamSelectionPolicy
+  outputMode?: 'copy' | 'quarantine-replace'
   priority?: 'low' | 'normal' | 'high'
   useGpu?: boolean
   encoder?: string
@@ -36,6 +39,14 @@ export interface TranscodeOptions {
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
   aiOptimize?: boolean
+}
+
+export interface QueuedTranscodePayload {
+  batchId?: string
+  preflightId?: string
+  expiresAt: string
+  sourceSize: number
+  sourceMtimeMs: number
 }
 
 export interface TranscodeProgress {
@@ -49,17 +60,36 @@ export interface TranscodeProgress {
 export interface TranscodingParams {
   summary: string
   ffmpegArgs?: string[]
-  mkvmergeArgs?: string[]
   expectedSizeReduction?: string
   warnings?: string[]
   encoder?: string
   crf?: number
   preset?: string
   sourceHdrFormat?: string
+  audioTracks?: FileAnalysisResult['audioTracks']
+  subtitleTracks?: FileAnalysisResult['subtitleTracks']
 }
 
 export interface TranscodeParameterAdvisor {
   advise(request: { prompt: string; system: string }): Promise<{ text: string }>
+}
+
+export interface ShowTranscodeRequest {
+  seriesTitle: string
+  seriesIdentityKey?: string
+  sourceId: string
+  libraryId?: string
+  options: TranscodeOptions
+}
+
+export interface ShowTranscodePreflight {
+  preflightId: string
+  batchId: string
+  seriesTitle: string
+  episodeCount: number
+  compatible: boolean
+  expiresAt: string
+  episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; hdrFormat: string; sourceSize: number; sourceMtimeMs: number }>
 }
 
 class GeminiTranscodeParameterAdvisor implements TranscodeParameterAdvisor {
@@ -74,14 +104,14 @@ class GeminiTranscodeParameterAdvisor implements TranscodeParameterAdvisor {
 /**
  * TranscodingService
  *
- * Manages external transcoding tools (Handbrake CLI, MKVToolNix)
- * and uses Gemini AI to generate per-video optimized encoding parameters.
+ * Coordinates FFmpeg transcoding and optional AI parameter advice.
  */
 export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
   private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
+  private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
 
   constructor(private parameterAdvisor: TranscodeParameterAdvisor = new GeminiTranscodeParameterAdvisor()) {
     // Initialization is deferred until first use to allow DB to be ready
@@ -98,6 +128,82 @@ export class TranscodingService {
   setParameterAdvisorForTesting(advisor: TranscodeParameterAdvisor): void {
     this.parameterAdvisor = advisor
     this.analysisCache.clear()
+    this.showPreflights.clear()
+  }
+
+  async preflightShowTranscode(request: ShowTranscodeRequest): Promise<ShowTranscodePreflight> {
+    if (!request.seriesTitle.trim() || !request.sourceId.trim()) throw new Error('Show title and source ID are required')
+    const episodes = await getDatabase().tvShows.getEpisodes(request.seriesTitle, request.sourceId, request.seriesIdentityKey, request.libraryId)
+    if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const preflightId = `${batchId}_preflight`
+    const results: ShowTranscodePreflight['episodes'] = []
+    const queuedMediaIds = new Set((await (await import('./TaskQueueService')).getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
+    for (const episode of episodes) {
+      const label = `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
+      try {
+        if (!episode.id || !episode.file_path || !episode.source_id) throw new Error('Episode has no local source identity')
+        if (queuedMediaIds.has(episode.id)) throw new Error('Episode already has a queued or running transcode')
+        await this.assertAuthorizedItem(episode.id)
+        const stat = await fs.stat(episode.file_path)
+        const analysis = await getMediaFileAnalyzer().analyzeFile(episode.file_path)
+        if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
+        validateHdrTranscode(analysis)
+        buildStreamSelectionPlan(analysis, request.options)
+        results.push({ mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs })
+      } catch (error) {
+        results.push({ mediaItemId: episode.id || 0, label, compatible: false, reason: error instanceof Error ? error.message : String(error), hdrFormat: 'Unknown', sourceSize: 0, sourceMtimeMs: 0 })
+      }
+    }
+    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.every(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), episodes: results }
+    this.showPreflights.set(preflightId, { request, result })
+    await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
+    return result
+  }
+
+  async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[] }> {
+    let preflight = this.showPreflights.get(preflightId)
+    if (!preflight) {
+      const saved = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
+      if (saved) {
+        try {
+          preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
+        } catch {
+          throw new Error(`Stored show transcode preflight ${preflightId} is invalid; run preflight again`)
+        }
+      }
+    }
+    if (!preflight) throw new Error('Show transcode preflight was not found or has expired')
+    if (Date.now() > Date.parse(preflight.result.expiresAt)) {
+      await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
+      this.showPreflights.delete(preflightId)
+      throw new Error('Show transcode preflight has expired; run preflight again')
+    }
+    if (!preflight.result.compatible) throw new Error('Show transcode preflight has blocking episodes')
+    const { getTaskQueueService } = await import('./TaskQueueService')
+    const tasks = preflight.result.episodes.map(episode => ({
+      type: TaskType.Transcode,
+      label: episode.label,
+      mediaItemId: episode.mediaItemId,
+      batchId: preflight.result.batchId,
+      options: { ...preflight.request.options, queuePayload: { batchId: preflight.result.batchId, preflightId, expiresAt: preflight.result.expiresAt, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs } }
+    }))
+    await getTaskQueueService().addTasks(tasks)
+    this.showPreflights.delete(preflightId)
+    await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
+    return { batchId: preflight.result.batchId, queuedMediaItemIds: preflight.result.episodes.map(episode => episode.mediaItemId).filter((id): id is number => id > 0) }
+  }
+
+  private async assertAuthorizedItem(mediaItemId: number): Promise<void> {
+    const db = getDatabase()
+    const item = await db.media.getItemById(mediaItemId)
+    if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
+    const source = await db.sources.getSourceById(item.source_id)
+    if (!source) throw new Error('Media source was not found')
+    let config: Record<string, unknown>
+    try { config = JSON.parse(source.connection_config) as Record<string, unknown> } catch { throw new Error('Media source configuration is invalid') }
+    const roots = [config.folderPath, config.rootPath, ...(Array.isArray(config.paths) ? config.paths : [])].filter((value): value is string => typeof value === 'string' && value.length > 0)
+    new MediaPathAuthorization(roots).assertAuthorized(item.file_path)
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -339,7 +445,7 @@ export class TranscodingService {
       videoCodec = expectedEncoder
     }
 
-    // Normalize encoder names for HandBrake CLI compatibility
+    // Normalize encoder aliases returned by the parameter advisor.
     if (videoCodec === 'av1_nvenc') {
       videoCodec = 'nvenc_av1'
     }
@@ -399,13 +505,14 @@ export class TranscodingService {
     return {
       summary,
       ffmpegArgs,
-      mkvmergeArgs: [],
       expectedSizeReduction,
       warnings,
       encoder: videoCodec,
       crf: finalCrf,
       preset: finalPreset,
-      sourceHdrFormat: analysis.video?.hdrFormat
+      sourceHdrFormat: analysis.video?.hdrFormat,
+      audioTracks: analysis.audioTracks,
+      subtitleTracks: analysis.subtitleTracks
     }
   }
 
@@ -439,6 +546,11 @@ export class TranscodingService {
       onProgress?.({ percent: 0, status: 'initializing' })
       
       const inputPath = PathUtils.sanitizeAbsolutePath(item.file_path)
+      const sourceStat = await fs.stat(inputPath)
+      const queuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
+      if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || sourceStat.mtimeMs !== queuePayload.sourceMtimeMs || Date.now() > Date.parse(queuePayload.expiresAt))) {
+        throw new Error('Source file changed after show preflight')
+      }
       const params = await this.getTranscodeParameters(inputPath, { ...options, aiOptimize: false })
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
@@ -480,21 +592,30 @@ export class TranscodingService {
       if (!outputAnalysis.success || !outputAnalysis.video) {
         throw new Error(`Transcoded output verification failed: ${outputAnalysis.error || 'video stream not detected'}`)
       }
+      const expectedAudioCount = params.audioTracks?.length
+      const expectedSubtitleCount = params.subtitleTracks?.length
+      if (expectedAudioCount !== undefined && outputAnalysis.audioTracks.length !== expectedAudioCount) {
+        throw new Error(`Transcoded output verification failed: expected ${expectedAudioCount} audio streams, found ${outputAnalysis.audioTracks.length}`)
+      }
+      if (expectedSubtitleCount !== undefined && outputAnalysis.subtitleTracks.length !== expectedSubtitleCount) {
+        throw new Error(`Transcoded output verification failed: expected ${expectedSubtitleCount} subtitle streams, found ${outputAnalysis.subtitleTracks.length}`)
+      }
       if (params.sourceHdrFormat?.toLowerCase() === 'hdr10' && outputAnalysis.video.hdrFormat?.toLowerCase() !== 'hdr10') {
         throw new Error('Transcoded output verification failed: HDR10 metadata was not preserved')
       }
 
       // Atomic replacement
-      if (options.overwriteOriginal) {
+      if ((options.outputMode || 'copy') === 'quarantine-replace') {
         getLoggingService().info('[TranscodingService]', `Replacing original file: ${inputPath}`)
-        
         const finalPath = path.join(path.dirname(inputPath), path.basename(inputPath, path.extname(inputPath)) + outputExt)
-        
-        // Remove original and rename directly. Atomic moves cross-device are not supported by rename, but rename works on same device.
-        if (existsSync(inputPath)) await fs.unlink(inputPath)
-        await fs.rename(tempPath, finalPath)
-        
-        // Re-analyze the new file
+        const quarantinePath = `${inputPath}.totality-quarantine-${Date.now()}`
+        await fs.rename(inputPath, quarantinePath)
+        try {
+          await fs.rename(tempPath, finalPath)
+        } catch (error) {
+          await fs.rename(quarantinePath, inputPath)
+          throw error
+        }
         const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
         if (newAnalysis.success) {
            await db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
@@ -515,7 +636,8 @@ export class TranscodingService {
       }
 
       onProgress?.({ percent: 0, status: 'failed', error: msg })
-      return false
+      if (controller.signal.aborted) return false
+      throw error
     } finally {
       this.activeJobs.delete(mediaItemId)
     }

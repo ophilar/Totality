@@ -9,6 +9,8 @@ export const transcodingAPI = {
   getParameters: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:getParameters', mediaItemId, options) as Promise<TranscodingParams>,
   start: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:start', mediaItemId, options),
   cancel: (mediaItemId: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
+  queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
   onProgress: (callback: (progress: TranscodeProgress & { mediaItemId: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TranscodeProgress & { mediaItemId: number }) => callback(progress)
     ipcRenderer.on('transcoding:progress', listener)

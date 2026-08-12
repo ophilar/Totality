@@ -113,9 +113,6 @@ export class PathUtils {
     } else if (process.platform === 'darwin') {
       paths.push(`/usr/local/bin/${binaryName}`)
       paths.push(`/opt/homebrew/bin/${binaryName}`)
-      if (binaryName.toLowerCase().includes('handbrake')) {
-        paths.push(`/Applications/HandBrake.app/Contents/MacOS/HandBrakeCLI`)
-      }
     } else {
       paths.push(`/usr/bin/${binaryName}`)
       paths.push(`/usr/local/bin/${binaryName}`)

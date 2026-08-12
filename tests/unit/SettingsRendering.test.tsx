@@ -80,7 +80,7 @@ describe('Settings Rendering (Integrated Stack)', () => {
     })
     
     await waitFor(() => {
-        expect(screen.getByText(/Quality Thresholds/i)).toBeTruthy()
+        expect(screen.getByText(/FFmpeg encoding guidance/i)).toBeTruthy()
     })
   })
   

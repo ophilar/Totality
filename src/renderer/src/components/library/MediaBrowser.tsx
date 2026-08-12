@@ -11,6 +11,7 @@ import { TVShowsView } from '@/components/library/TVShowsView'
 import { MusicView } from '@/components/library/MusicView'
 import { WishlistView } from '@/components/library/WishlistView'
 import { DuplicatesView } from '@/components/library/DuplicatesView'
+import { ShowTranscodeModal } from '@/components/library/ShowTranscodeModal'
 import { PinEntryModal } from '@/components/library/PinEntryModal'
 import { BrowserHeader } from '@/components/library/browser/BrowserHeader'
 import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
@@ -126,6 +127,7 @@ export function MediaBrowser({
   const [showPinModal, setShowPinModal] = useState(false)
   const [collectionsOnly, setCollectionsOnly] = useState(false)
   const [selectedShowEpisodes, setSelectedShowEpisodes] = useState<MediaItem[]>([])
+  const [showTranscodeTarget, setShowTranscodeTarget] = useState<TVShowSummary | null>(null)
   const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
   const [albumTracks, setAlbumTracks] = useState<MusicTrack[]>([])
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false)
@@ -464,6 +466,7 @@ export function MediaBrowser({
                   seriesCompleteness={seriesCompleteness} onMissingItemClick={setSelectedMissingItem}
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onAnalyzeSeries={handleAnalyzeSingleSeries}
+                  onTranscodeShow={(show) => setShowTranscodeTarget(show)}
                   onFixMatch={(title: string, sId: string, fp?: string) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
                   onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                   onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
@@ -571,6 +574,7 @@ export function MediaBrowser({
           onMatchFixed={reloadMedia}
         />
       )}
+      {showTranscodeTarget && <ShowTranscodeModal show={showTranscodeTarget} onClose={() => setShowTranscodeTarget(null)} />}
     </div>
   )
 }

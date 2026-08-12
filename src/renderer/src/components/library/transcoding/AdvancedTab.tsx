@@ -369,24 +369,16 @@ export function AdvancedTab({
         {/* Streams Controls */}
         <div className="space-y-3 p-3 bg-muted/20 border border-border/30 rounded-xl">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Stream Passthrough</span>
-          <label className="flex items-center gap-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={options.preserveSubtitles}
-              onChange={(e) => setOptions(prev => ({ ...prev, preserveSubtitles: e.target.checked }))}
-              className="w-4 h-4 rounded border-border text-primary"
-            />
-            <span>Preserve all internal subtitle tracks</span>
-          </label>
-          <label className="flex items-center gap-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={options.preserveAllAudio}
-              onChange={(e) => setOptions(prev => ({ ...prev, preserveAllAudio: e.target.checked }))}
-              className="w-4 h-4 rounded border-border text-primary"
-            />
-            <span>Preserve all audio tracks & channels</span>
-          </label>
+          <p className="text-[11px] text-muted-foreground">All detected audio and subtitle streams are copied by default.</p>
+          <select value={options.streamSelection?.audio || 'all'} onChange={e => setOptions(prev => ({ ...prev, streamSelection: e.target.value === 'all' ? { audio: 'all', subtitle: 'all', defaultSubtitle: 'preserve' } : { audio: 'original-and-protected', originalLanguage: prev.streamSelection?.audio === 'original-and-protected' ? prev.streamSelection.originalLanguage : '', subtitle: 'all', defaultSubtitle: 'preserve' } }))} className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs">
+            <option value="all">Copy all audio tracks</option>
+            <option value="original-and-protected">Original language + protected tracks</option>
+          </select>
+          {options.streamSelection?.audio === 'original-and-protected' && <input value={options.streamSelection.originalLanguage} onChange={e => setOptions(prev => ({ ...prev, streamSelection: prev.streamSelection?.audio === 'original-and-protected' ? { ...prev.streamSelection, originalLanguage: e.target.value } : prev.streamSelection }))} placeholder="Original language (ISO code)" className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs" />}
+          <select value={options.streamSelection?.defaultSubtitle === 'none' ? 'none' : 'preserve'} onChange={e => setOptions(prev => ({ ...prev, streamSelection: { ...(prev.streamSelection || { audio: 'all', subtitle: 'all' }), defaultSubtitle: e.target.value as 'preserve' | 'none' } }))} className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs">
+            <option value="preserve">Preserve source subtitle default</option>
+            <option value="none">No default subtitle</option>
+          </select>
         </div>
 
         {/* File Mode */}
@@ -395,9 +387,9 @@ export function AdvancedTab({
           <div className="flex gap-2">
             <button 
               type="button"
-              onClick={() => setOptions(prev => ({ ...prev, overwriteOriginal: false }))}
+              onClick={() => setOptions(prev => ({ ...prev, outputMode: 'copy' }))}
               className={`flex-1 p-2 rounded-xl border text-xs font-bold transition-all ${
-                !options.overwriteOriginal
+                options.outputMode === 'copy'
                   ? 'bg-primary/10 border-primary text-primary'
                   : 'bg-muted border-border/50 text-muted-foreground'
               }`}
@@ -406,9 +398,9 @@ export function AdvancedTab({
             </button>
             <button 
               type="button"
-              onClick={() => setOptions(prev => ({ ...prev, overwriteOriginal: true }))}
+              onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
               className={`flex-1 p-2 rounded-xl border text-xs font-bold transition-all ${
-                options.overwriteOriginal
+                options.outputMode === 'quarantine-replace'
                   ? 'bg-orange-500/10 border-orange-500 text-orange-500'
                   : 'bg-muted border-border/50 text-muted-foreground'
               }`}

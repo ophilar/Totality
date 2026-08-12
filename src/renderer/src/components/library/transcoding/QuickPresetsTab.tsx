@@ -252,27 +252,6 @@ export function QuickPresetsTab({
           </div>
         </div>
 
-        {/* Checkboxes Row */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={options.preserveSubtitles}
-              onChange={(e) => setOptions(prev => ({ ...prev, preserveSubtitles: e.target.checked }))}
-              className="w-3.5 h-3.5 rounded border-border text-primary"
-            />
-            <span>Preserve Subtitles</span>
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={options.preserveAllAudio}
-              onChange={(e) => setOptions(prev => ({ ...prev, preserveAllAudio: e.target.checked }))}
-              className="w-3.5 h-3.5 rounded border-border text-primary"
-            />
-            <span>Preserve All Audio Tracks</span>
-          </label>
-        </div>
       </div>
 
       {/* Generated Strategy Preview Card */}

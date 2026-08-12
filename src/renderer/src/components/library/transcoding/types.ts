@@ -1,8 +1,9 @@
 export interface TranscodeOptions {
   targetCodec: 'av1' | 'hevc'
-  preserveSubtitles: boolean
-  preserveAllAudio: boolean
-  overwriteOriginal: boolean
+  outputMode: 'copy' | 'quarantine-replace'
+  streamSelection?:
+    | { audio: 'all'; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' }
+    | { audio: 'original-and-protected'; originalLanguage: string; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' }
   useGpu: boolean
   gpuId: string
   encoder: string
@@ -22,6 +23,8 @@ export interface TranscodingParams {
   encoder?: string
   crf?: number
   preset?: string
+  audioTracks?: Array<{ index: number; codec: string; language?: string; title?: string; channels: number; isDefault: boolean; hasObjectAudio: boolean }>
+  subtitleTracks?: Array<{ index: number; codec: string; language?: string; title?: string; isDefault: boolean; isForced: boolean }>
 }
 
 export interface GpuInfo {
@@ -47,8 +50,5 @@ export interface TranscodeProgress {
 }
 
 export interface Availability {
-  /** Legacy compatibility field; always false after the FFmpeg-only migration. */
-  handbrake: boolean
-  mkvtoolnix: boolean
   ffmpeg: boolean
 }

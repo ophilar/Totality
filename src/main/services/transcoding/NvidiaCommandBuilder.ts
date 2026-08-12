@@ -2,6 +2,7 @@ import { ITranscodeCommandBuilder } from './types'
 import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
+import { appendStreamMappingArgs } from './StreamSelectionPlan'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
@@ -38,15 +39,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       args.push('-vf', 'scale_cuda=format=p010le')
     }
 
-    if (options.preserveAllAudio) {
-      args.push('-c:a', 'copy')
-    } else {
-      args.push('-map', '0:v:0', '-map', '0:a:0?', '-c:a', 'copy')
-    }
-
-    if (options.preserveSubtitles) {
-      args.push('-map', '0:s?', '-c:s', 'copy')
-    }
+    appendStreamMappingArgs(args, analysis, options)
 
     args.push(...hdrArgs)
 

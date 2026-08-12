@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useId } from 'react'
-import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music, Clapperboard, Copy, Check } from 'lucide-react'
+import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music, Clapperboard } from 'lucide-react'
 
 // Default values for all quality settings
 const DEFAULT_SETTINGS = {
@@ -50,7 +50,6 @@ const DEFAULT_SETTINGS = {
   quality_efficiency_lossless_allowance: 4000,
   quality_efficiency_hdr_overhead: 1.10,
 }
-
 type SettingsState = typeof DEFAULT_SETTINGS
 type ResolutionTier = 'sd' | '720p' | '1080p' | '4k'
 
@@ -67,14 +66,12 @@ const VIDEO_THRESHOLDS: Record<ResolutionTier, { min: number; max: number; step:
   '1080p': { min: 2000, max: 30000, step: 100 },
   '4k': { min: 5000, max: 80000, step: 500 },
 }
-
 const AUDIO_THRESHOLDS: Record<ResolutionTier, { min: number; max: number; step: number }> = {
   sd: { min: 64, max: 640, step: 8 },
   '720p': { min: 64, max: 1000, step: 8 },
   '1080p': { min: 64, max: 1500, step: 8 },
   '4k': { min: 64, max: 2000, step: 8 },
 }
-
 // Expandable card component (matching ServicesTab)
 interface SettingsCardProps {
   title: string
@@ -84,7 +81,6 @@ interface SettingsCardProps {
   onToggle: () => void
   children: React.ReactNode
 }
-
 function SettingsCard({
   title,
   description,
@@ -123,7 +119,6 @@ function SettingsCard({
     </div>
   )
 }
-
 function formatEffectiveThreshold(thresholdKbps: number, multiplier: number): string {
   const neededKbps = thresholdKbps / multiplier
   if (neededKbps >= 1000) {
@@ -592,15 +587,14 @@ export function QualitySettingsTab() {
         </div>
       </SettingsCard>
 
-      {/* Handbrake Encoding Guide Card */}
       <SettingsCard
-        title="Handbrake Encoding Guide"
-        description="Recommended settings to meet quality thresholds"
+        title="FFmpeg encoding guidance"
+        description="Totality uses FFmpeg for hardware HEVC and SVT-AV1 transcoding. Audio remains stream-copied. HDR metadata is retained only when the selected encoder and source format support it."
         icon={<Clapperboard className="w-7 h-7" />}
-        expanded={expandedCards.has('handbrake')}
-        onToggle={() => toggleCard('handbrake')}
+        expanded={expandedCards.has('ffmpeg')}
+        onToggle={() => toggleCard('ffmpeg')}
       >
-        <HandbrakeGuide selectedTier={selectedTier} setSelectedTier={setSelectedTier} settings={settings} />
+        <p className="text-xs text-muted-foreground">Use HEVC NVENC or Quick Sync for fast HDR-compatible output. Use SVT-AV1 when software encoding time is acceptable and the playback client supports AV1. Totality verifies the produced streams before activation.</p>
       </SettingsCard>
 
       {/* Footer */}
@@ -811,369 +805,6 @@ function NumberInput({
         className="w-full px-3 py-1.5 bg-background border border-border/30 rounded-md text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
       />
       {hint && <p id={hintId} className="text-[10px] text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
-
-// Detailed Handbrake presets for power users - focused on HIGH quality with minimal visual loss
-const HANDBRAKE_DETAILED_PRESETS: Record<ResolutionTier, {
-  description: string
-  x264: {
-    rf: string
-    preset: string
-    tune: string
-    profile: string
-    level: string
-    extraOptions: string
-  }
-  x265: {
-    rf: string
-    preset: string
-    tune: string
-    profile: string
-    level: string
-    extraOptions: string
-  }
-  audio: {
-    primary: string
-    fallback: string
-    bitrate: string
-  }
-  notes: string[]
-}> = {
-  sd: {
-    description: 'DVD-quality content, prioritize detail preservation',
-    x264: {
-      rf: '18-19',
-      preset: 'slow',
-      tune: 'film',
-      profile: 'high',
-      level: '4.0',
-      extraOptions: 'ref=5:bframes=8:b-adapt=2:direct=auto:me=umh:subme=9:trellis=2:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60',
-    },
-    x265: {
-      rf: '20-21',
-      preset: 'slow',
-      tune: 'none',
-      profile: 'main',
-      level: '4.0',
-      extraOptions: 'ref=5:bframes=8:rd=4:psy-rd=2.0:psy-rdoq=1.0:aq-mode=3:rc-lookahead=60:deblock=-1,-1',
-    },
-    audio: {
-      primary: 'Passthrough (AC3/DTS)',
-      fallback: 'AAC 192 kbps stereo',
-      bitrate: '192+',
-    },
-    notes: [
-      'Use "film" tune for live action, "animation" for cartoons/anime',
-      'Grain preservation: add grain=1 to extra options if source is grainy',
-    ],
-  },
-  '720p': {
-    description: 'HD content, balance between quality and file size',
-    x264: {
-      rf: '17-18',
-      preset: 'slow',
-      tune: 'film',
-      profile: 'high',
-      level: '4.1',
-      extraOptions: 'ref=5:bframes=8:b-adapt=2:direct=auto:me=umh:subme=10:trellis=2:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60:aq-mode=2',
-    },
-    x265: {
-      rf: '19-20',
-      preset: 'slow',
-      tune: 'none',
-      profile: 'main10',
-      level: '4.1',
-      extraOptions: 'ref=5:bframes=8:rd=4:psy-rd=2.0:psy-rdoq=1.0:aq-mode=3:rc-lookahead=60:deblock=-1,-1:sao=0',
-    },
-    audio: {
-      primary: 'Passthrough (AC3/DTS/E-AC3)',
-      fallback: 'AAC 256 kbps or AC3 448 kbps',
-      bitrate: '320+',
-    },
-    notes: [
-      'main10 profile for x265 reduces banding in gradients',
-      'sao=0 disables sample adaptive offset for sharper output',
-    ],
-  },
-  '1080p': {
-    description: 'Full HD, maximum quality preservation for archival',
-    x264: {
-      rf: '16-17',
-      preset: 'slower',
-      tune: 'film',
-      profile: 'high',
-      level: '4.1',
-      extraOptions: 'ref=6:bframes=8:b-adapt=2:direct=auto:me=umh:subme=10:trellis=2:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60:aq-mode=3:aq-strength=0.8',
-    },
-    x265: {
-      rf: '18-19',
-      preset: 'slower',
-      tune: 'none',
-      profile: 'main10',
-      level: '5.0',
-      extraOptions: 'ref=5:bframes=8:rd=5:psy-rd=2.0:psy-rdoq=1.5:aq-mode=3:aq-strength=0.8:rc-lookahead=60:deblock=-1,-1:sao=0:selective-sao=0',
-    },
-    audio: {
-      primary: 'Passthrough (TrueHD/DTS-HD MA/Atmos)',
-      fallback: 'E-AC3 640 kbps or AAC 320 kbps',
-      bitrate: '640+',
-    },
-    notes: [
-      'Use "slower" preset for best quality-to-size ratio',
-      'For grain preservation: add grain tune or set aq-strength=1.0',
-      'For animation: use tune=animation with aq-mode=1',
-    ],
-  },
-  '4k': {
-    description: 'Ultra HD, preserve HDR and maximum detail',
-    x264: {
-      rf: '15-16',
-      preset: 'slower',
-      tune: 'film',
-      profile: 'high',
-      level: '5.1',
-      extraOptions: 'ref=4:bframes=8:b-adapt=2:direct=auto:me=umh:subme=10:trellis=2:psy-rd=1.0,0.15:deblock=0,0:rc-lookahead=60:aq-mode=3',
-    },
-    x265: {
-      rf: '17-18',
-      preset: 'slow',
-      tune: 'none',
-      profile: 'main10',
-      level: '5.1',
-      extraOptions: 'ref=4:bframes=8:rd=4:psy-rd=2.0:psy-rdoq=1.0:aq-mode=3:rc-lookahead=40:deblock=0,0:sao=0:hdr-opt=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc',
-    },
-    audio: {
-      primary: 'Passthrough (TrueHD Atmos/DTS:X)',
-      fallback: 'E-AC3 Atmos 768 kbps or TrueHD',
-      bitrate: '1000+',
-    },
-    notes: [
-      'Always use 10-bit (main10) for HDR content',
-      'hdr-opt=1 preserves HDR metadata',
-      'Keep ref frames ≤4 for 4K to avoid memory issues',
-      'For SDR 4K: remove HDR color options',
-    ],
-  },
-}
-
-// Handbrake encoding guide component
-function HandbrakeGuide({
-  selectedTier,
-  setSelectedTier,
-  settings,
-}: {
-  selectedTier: ResolutionTier
-  setSelectedTier: (tier: ResolutionTier) => void
-  settings: SettingsState
-}) {
-  const [selectedCodec, setSelectedCodec] = useState<'x264' | 'x265'>('x265')
-
-  // Get current thresholds for the selected tier
-  const videoHigh = settings[`quality_video_${selectedTier}_high` as keyof SettingsState] as number
-  const audioHigh = settings[`quality_audio_${selectedTier}_high` as keyof SettingsState] as number
-
-  // Adjust target bitrate based on codec efficiency multiplier
-  const codecMultiplier = selectedCodec === 'x265'
-    ? settings.quality_codec_h265
-    : settings.quality_codec_h264
-  const adjustedVideoHigh = Math.round(videoHigh / codecMultiplier)
-
-  const preset = HANDBRAKE_DETAILED_PRESETS[selectedTier]
-  const codecPreset = preset[selectedCodec]
-
-  const formatBitrate = (kbps: number) => {
-    if (kbps >= 1000) {
-      return `${(kbps / 1000).toFixed(1)} Mbps`
-    }
-    return `${kbps} kbps`
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Resolution Tabs */}
-      <div className="flex gap-1 bg-muted p-1 rounded-lg" role="tablist">
-        {RESOLUTION_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setSelectedTier(tab.id)}
-            role="tab"
-            aria-selected={selectedTier === tab.id}
-            className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
-              selectedTier === tab.id
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="text-xs text-muted-foreground">{preset.description}</p>
-
-      {/* Codec Selection */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setSelectedCodec('x265')}
-          className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
-            selectedCodec === 'x265'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-          }`}
-        >
-          x265/HEVC (Recommended)
-        </button>
-        <button
-          onClick={() => setSelectedCodec('x264')}
-          className={`flex-1 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
-            selectedCodec === 'x264'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-          }`}
-        >
-          x264/H.264 (Compatibility)
-        </button>
-      </div>
-
-      {/* Target Bitrate */}
-      <div className="bg-background/50 border border-border/30 rounded-lg p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-foreground">Target for HIGH Quality</span>
-          <span className="text-sm font-mono text-foreground">
-            {formatBitrate(adjustedVideoHigh)}+ video / {audioHigh}+ kbps audio
-          </span>
-        </div>
-      </div>
-
-      {/* Video Settings */}
-      <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Video Encoder Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-2 text-xs">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Encoder:</span>
-              <span className="text-foreground font-mono">{selectedCodec}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Quality (RF):</span>
-              <span className="text-foreground font-mono font-medium">{codecPreset.rf}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Preset:</span>
-              <span className="text-foreground font-mono">{codecPreset.preset}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tune:</span>
-              <span className="text-foreground font-mono">{codecPreset.tune || 'none'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Profile:</span>
-              <span className="text-foreground font-mono">{codecPreset.profile}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Level:</span>
-              <span className="text-foreground font-mono">{codecPreset.level}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Advanced Options */}
-      <ExtraOptionsCopyable extraOptions={codecPreset.extraOptions} />
-
-      {/* Audio Settings */}
-      <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Audio Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 space-y-1.5 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Primary:</span>
-            <span className="text-foreground">{preset.audio.primary}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Fallback:</span>
-            <span className="text-foreground">{preset.audio.fallback}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Min Bitrate:</span>
-            <span className="text-foreground font-mono">{preset.audio.bitrate} kbps</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Tips */}
-      <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Tips for {RESOLUTION_TABS.find(t => t.id === selectedTier)?.label}</h4>
-        <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside">
-          {preset.notes.map((note, i) => (
-            <li key={i}>{note}</li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Common Settings */}
-      <div className="space-y-2">
-        <h4 className="text-xs font-medium text-foreground">Other Settings</h4>
-        <div className="bg-background/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-          <div className="flex justify-between">
-            <span>Container:</span>
-            <span className="text-foreground">MKV (preserves all tracks/chapters)</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Framerate:</span>
-            <span className="text-foreground">Same as source (CFR)</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Anamorphic:</span>
-            <span className="text-foreground">Automatic</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Filters:</span>
-            <span className="text-foreground">None (preserve source)</span>
-          </div>
-        </div>
-      </div>
-
-      <p className="text-[10px] text-muted-foreground italic">
-        Based on HandBrake 1.10.2. Lower RF = higher quality/larger file. These settings prioritize
-        visual transparency over file size.
-      </p>
-    </div>
-  )
-}
-
-function ExtraOptionsCopyable({ extraOptions }: { extraOptions: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(extraOptions)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="space-y-2">
-      <h4 className="text-xs font-medium text-foreground">Extra Options (Advanced)</h4>
-      <div className="bg-background/50 rounded-lg p-3 flex items-start gap-2">
-        <code className="text-[10px] text-muted-foreground break-all leading-relaxed block flex-1 select-all">
-          {extraOptions}
-        </code>
-        <button
-          onClick={handleCopy}
-          className="shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-          title="Copy to clipboard"
-        >
-          {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-500" />
-          ) : (
-            <Copy className="w-3.5 h-3.5" />
-          )}
-        </button>
-      </div>
-      <p className="text-[10px] text-muted-foreground">
-        Paste into Handbrake's "Extra Options" field under the Video tab.
-      </p>
     </div>
   )
 }

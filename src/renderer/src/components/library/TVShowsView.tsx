@@ -42,7 +42,7 @@ export function TVShowsView({
   onLoadMoreShows,
   isAnalyzing = false,
   onOptimizationDryRun,
-  onRequestOptimization
+  onRequestOptimization, onTranscodeShow
 }: {
   shows: TVShowSummary[]
   sortBy: string
@@ -74,6 +74,7 @@ export function TVShowsView({
   isAnalyzing?: boolean
   onOptimizationDryRun?: (show: TVShowSummary) => void
   onRequestOptimization?: (show: TVShowSummary) => void
+  onTranscodeShow?: (show: TVShowSummary) => void
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
   const { isScanning, scanProgress } = useSources()
@@ -151,6 +152,7 @@ export function TVShowsView({
               onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
               onRequestOptimization={() => handleOptimizationRequest(show)}
+              onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
               isLibraryAnalyzing={!!activeScan || isAnalyzing}
             />
