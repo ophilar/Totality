@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SourceManager } from '@main/services/SourceManager'
-import { LibraryType } from '@main/types/database'
+import { LibraryType, ProviderType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
 
 describe('SourceManager (No Mocks)', () => {
   let manager: SourceManager
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
@@ -37,7 +37,7 @@ describe('SourceManager (No Mocks)', () => {
 
   it('should add a new local source', async () => {
     const config = {
-      sourceType: 'local' as any,
+      sourceType: ProviderType.Local,
       displayName: 'New Source',
       connectionConfig: { folderPath: tempDir.path },
     }
@@ -67,7 +67,7 @@ describe('SourceManager (No Mocks)', () => {
     fs.writeFileSync(path.join(moviesDir, 'The Matrix (1999).mkv'), 'dummy content')
 
     const source = await manager.addSource({
-      sourceType: 'local' as any,
+      sourceType: ProviderType.Local,
       displayName: 'Local Video',
       connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })
@@ -94,7 +94,7 @@ describe('SourceManager (No Mocks)', () => {
     }
 
     const source = await manager.addSource({
-      sourceType: 'local' as any,
+      sourceType: ProviderType.Local,
       displayName: 'Cancel Test',
       connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
     })

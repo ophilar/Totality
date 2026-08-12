@@ -1,5 +1,41 @@
-import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from '../IMetadataProvider'
+import {
+  IMetadataProvider,
+  MetadataSearchQuery,
+  MetadataSearchResult,
+  MediaMetadataDetails,
+  MetadataType,
+} from '../IMetadataProvider'
 import { getLoggingService } from '../../LoggingService'
+
+interface OmdbItem {
+  imdbID: string
+  Title: string
+  Year?: string
+  Poster?: string
+  Response?: string
+  Plot?: string
+  imdbRating?: string
+  imdbVotes?: string
+  Rated?: string
+  Awards?: string
+  Genre?: string
+}
+function isOmdbItem(value: unknown): value is OmdbItem {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).imdbID === 'string' &&
+    typeof (value as Record<string, unknown>).Title === 'string'
+  )
+}
+
+function isOmdbResponseFalse(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<string, unknown>).Response === 'False'
+  )
+}
 
 export class OMDbMetadataProvider implements IMetadataProvider {
   readonly providerId = 'omdb'
@@ -18,15 +54,20 @@ export class OMDbMetadataProvider implements IMetadataProvider {
     try {
       const res = await fetch(url)
       if (!res.ok) {
-        getLoggingService().error('[OMDbMetadataProvider]', `Search HTTP ${res.status} for query: ${query.title}`)
+        getLoggingService().error(
+          '[OMDbMetadataProvider]',
+          `Search HTTP ${res.status} for query: ${query.title}`
+        )
         return []
       }
-      const data = await res.json()
-      if (data.Response === 'False' || !Array.isArray(data.Search)) {
+      const data: unknown = await res.json()
+      if (!Array.isArray(data) && (typeof data !== 'object' || data === null)) return []
+      const response = data as { Response?: string; Search?: unknown[] }
+      if (response.Response === 'False' || !Array.isArray(response.Search)) {
         return []
       }
 
-      return data.Search.map((item: any) => ({
+      return response.Search.filter(isOmdbItem).map((item) => ({
         id: item.imdbID,
         provider: this.providerId,
         title: item.Title,
@@ -51,15 +92,19 @@ export class OMDbMetadataProvider implements IMetadataProvider {
     try {
       const res = await fetch(url)
       if (!res.ok) {
-        getLoggingService().error('[OMDbMetadataProvider]', `Details HTTP ${res.status} for ID: ${externalId}`)
+        getLoggingService().error(
+          '[OMDbMetadataProvider]',
+          `Details HTTP ${res.status} for ID: ${externalId}`
+        )
         return null
       }
-      const item = await res.json()
-      if (dataResponseIsFalse(item)) {
+      const item: unknown = await res.json()
+      if (isOmdbResponseFalse(item) || !isOmdbItem(item)) {
         return null
       }
 
-      const imdbScore = item.imdbRating && item.imdbRating !== 'N/A' ? parseFloat(item.imdbRating) : undefined
+      const imdbScore =
+        item.imdbRating && item.imdbRating !== 'N/A' ? parseFloat(item.imdbRating) : undefined
 
       return {
         id: item.imdbID,
@@ -78,7 +123,7 @@ export class OMDbMetadataProvider implements IMetadataProvider {
         externalIds: {
           imdbId: item.imdbID,
         },
-        raw: item,
+        raw: { ...item },
       }
     } catch (err) {
       getLoggingService().error('[OMDbMetadataProvider]', 'Details error:', err)
@@ -86,12 +131,12 @@ export class OMDbMetadataProvider implements IMetadataProvider {
     }
   }
 
-  async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
+  async findByExternalId(
+    externalId: string,
+    source: 'imdb_id' | 'tvdb_id',
+    type: MetadataType
+  ): Promise<MediaMetadataDetails | null> {
     if (source !== 'imdb_id') return null
     return this.getDetails(externalId, type)
   }
-}
-
-function dataResponseIsFalse(data: any): boolean {
-  return data.Response === 'False'
 }

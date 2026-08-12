@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
+import type { AxiosBasicCredentials } from 'axios'
 
 export interface KodiRpcClientOptions {
   host: string
@@ -17,23 +18,22 @@ export class KodiRpcClient {
     this.options = options
     const baseURL = `http://${options.host}:${options.port}`
     
-    const auth: any = {}
+    let auth: AxiosBasicCredentials | undefined
     if (options.username && options.password) {
-      auth.username = options.username
-      auth.password = options.password
+      auth = { username: options.username, password: options.password }
     }
 
     this.api = axios.create({
       baseURL,
       timeout: 30000,
-      auth: Object.keys(auth).length > 0 ? auth : undefined,
+      auth,
     })
   }
 
   getHost() { return this.options.host }
   getPort() { return this.options.port }
 
-  async call<T>(method: string, params: any = {}): Promise<T> {
+  async call<T>(method: string, params: unknown = {}): Promise<T> {
     const id = this.nextId++
     try {
       const response = await this.api.post('/jsonrpc', {
@@ -48,8 +48,11 @@ export class KodiRpcClient {
       }
 
       return response.data.result as T
-    } catch (error: any) {
-      if (error.response?.status === 401) {
+    } catch (error: unknown) {
+      const responseStatus = typeof error === 'object' && error !== null && 'response' in error
+        ? (error.response as { status?: number } | undefined)?.status
+        : undefined
+      if (responseStatus === 401) {
         throw new Error('Kodi authentication failed (401). Check username and password.')
       }
       throw error

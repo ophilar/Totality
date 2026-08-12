@@ -1,7 +1,8 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { MusicArtist, MusicAlbum, MusicTrack, MusicFilters } from '@main/types/database'
 
-export const musicApi = {
+export const musicApi: MusicAPI = {
   // ============================================================================
   // MUSIC LIBRARY
   // ============================================================================
@@ -99,16 +100,16 @@ export interface MusicAPI {
 
   // Music Data Retrieval
   musicGetArtists: (filters?: unknown) => Promise<unknown[]>
-  musicArtistList: (filters?: unknown) => Promise<unknown[]>
+  musicArtistList: (filters?: MusicFilters) => Promise<MusicArtist[]>
   musicArtistCount: (filters?: unknown) => Promise<number>
   musicGetArtist: (id: number) => Promise<unknown | null>
   musicGetAlbums: (filters?: unknown) => Promise<unknown[]>
-  musicAlbumList: (filters?: unknown) => Promise<unknown[]>
+  musicAlbumList: (filters?: MusicFilters) => Promise<MusicAlbum[]>
   musicAlbumCount: (filters?: unknown) => Promise<number>
   musicGetAlbumsByArtist: (artistId: number) => Promise<unknown[]>
   musicGetAlbum: (id: number) => Promise<unknown | null>
   musicGetTracks: (filters?: unknown) => Promise<unknown[]>
-  musicTrackList: (filters?: unknown) => Promise<unknown[]>
+  musicTrackList: (filters?: MusicFilters) => Promise<MusicTrack[]>
   musicTrackCount: (filters?: unknown) => Promise<number>
   musicGetTracksByAlbum: (albumId: number) => Promise<unknown[]>
   musicGetStats: (sourceId?: string) => Promise<{
@@ -138,7 +139,7 @@ export interface MusicAPI {
   musicSearchMusicBrainzArtist: (name: string) => Promise<unknown[]>
   musicAnalyzeArtistCompleteness: (artistId: number) => Promise<unknown>
   musicGetArtistCompleteness: (artistName: string) => Promise<unknown | null>
-  musicGetAllArtistCompleteness: (sourceId?: string) => Promise<any>
+  musicGetAllArtistCompleteness: (sourceId?: string) => Promise<unknown>
 
   // Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) => Promise<unknown | null>

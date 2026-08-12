@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('DuplicateRepository (Real DB)', () => {
   let repo: DuplicateRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

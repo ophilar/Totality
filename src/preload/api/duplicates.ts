@@ -1,11 +1,12 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { MediaDuplicate } from '@main/database/repositories/DuplicateRepository'
 
 export const duplicatesApi = {
   /**
    * Get all pending duplicate groups
    */
-  duplicatesGetPending: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DUPLICATES.GET_PENDING, sourceId),
+  duplicatesGetPending: (sourceId?: string): Promise<MediaDuplicate[]> => ipcRenderer.invoke(IPC_CHANNELS.DUPLICATES.GET_PENDING, sourceId),
 
   /**
    * Manually trigger a duplicate scan

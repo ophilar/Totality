@@ -1,5 +1,6 @@
 import { eq, and, desc, asc } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
@@ -14,7 +15,7 @@ export interface Exclusion {
 }
 
 export class ExclusionRepository extends BaseRepository<typeof schema.exclusions> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'exclusions', drizzle, schema.exclusions)
   }
 
@@ -90,10 +91,10 @@ export class ExclusionRepository extends BaseRepository<typeof schema.exclusions
     return this.mapDrizzleToExclusion(rows)
   }
 
-  private mapDrizzleToExclusion(rows: any[]): Exclusion[] {
+  private mapDrizzleToExclusion(rows: Array<typeof schema.exclusions.$inferSelect>): Exclusion[] {
     return rows.map(r => ({
       id: r.id,
-      exclusion_type: r.exclusionType as any,
+      exclusion_type: r.exclusionType as Exclusion['exclusion_type'],
       reference_id: r.referenceId || undefined,
       reference_key: r.referenceKey || undefined,
       parent_key: r.parentKey || undefined,

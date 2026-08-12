@@ -2,22 +2,23 @@
 
 import { Search, X, Film, Tv, User, Disc3, Music, CircleFadingArrowUp } from 'lucide-react'
 import { MoviePlaceholder, TvPlaceholder, EpisodePlaceholder } from '@/components/ui/MediaPlaceholders'
-import type { MediaItem, MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
+import type { GlobalSearchResults, FlattenedResult, UseGlobalSearchReturn } from '@/components/library/hooks/useGlobalSearch'
 
-interface SearchAutocompleteProps {
+
+export interface SearchAutocompleteProps {
   searchInput: string
   setSearchInput: (val: string) => void
   showSearchResults: boolean
   setShowSearchResults: (val: boolean) => void
   searchResultIndex: number
   setSearchResultIndex: (idx: number) => void
-  searchContainerRef: React.RefObject<HTMLDivElement>
-  searchInputRef: React.RefObject<HTMLInputElement>
-  globalSearchResults: any
+  searchContainerRef: UseGlobalSearchReturn['searchContainerRef']
+  searchInputRef: React.RefObject<HTMLInputElement | null>
+  globalSearchResults: GlobalSearchResults
   hasSearchResults: boolean
-  flattenedResults: any[]
-  handleSearchKeyDown: (e: React.KeyboardEvent) => void
-  handleSearchResultClick: (type: any, id: any, extra?: any) => void
+  flattenedResults?: FlattenedResult[]
+  handleSearchKeyDown: UseGlobalSearchReturn['handleSearchKeyDown']
+  handleSearchResultClick: UseGlobalSearchReturn['handleSearchResultClick']
 }
 
 export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
@@ -86,7 +87,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <Film className="w-3 h-3" />
                 Movies
               </div>
-              {movies.map((movie: MediaItem, idx: number) => (
+              {movies.map((movie, idx: number) => (
                 <button
                   key={`movie-${movie.id}`}
                   onClick={() => handleSearchResultClick('movie', movie.id)}
@@ -120,7 +121,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <Tv className="w-3 h-3" />
                 TV Shows
               </div>
-              {tvShows.map((show: any, idx: number) => (
+              {tvShows.map((show: GlobalSearchResults['tvShows'][number], idx: number) => (
                 <button
                   key={`tv-${show.id}`}
                   onClick={() => handleSearchResultClick('tv', show.id)}
@@ -150,7 +151,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <Tv className="w-3 h-3" />
                 Episodes
               </div>
-              {episodes.map((episode: MediaItem, idx: number) => (
+              {episodes.map((episode, idx: number) => (
                 <button
                   key={`episode-${episode.id}`}
                   onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
@@ -158,8 +159,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     searchResultIndex === (movies.length + tvShows.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
                 >
-                  {episode.episode_thumb_url ? (
-                    <img src={episode.episode_thumb_url} alt="" className="w-12 h-8 object-cover rounded" />
+                  {episode.thumb_url ? (
+                    <img src={episode.thumb_url} alt="" className="w-12 h-8 object-cover rounded" />
                   ) : (
                     <div className="w-12 h-8 bg-muted rounded flex items-center justify-center">
                       <EpisodePlaceholder className="w-6 h-6 text-muted-foreground" />
@@ -183,7 +184,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <User className="w-3 h-3" />
                 Artists
               </div>
-              {artists.map((artist: MusicArtist, idx: number) => (
+              {artists.map((artist, idx: number) => (
                 <button
                   key={`artist-${artist.id}`}
                   onClick={() => handleSearchResultClick('artist', artist.id)}
@@ -194,7 +195,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shrink-0 overflow-hidden">
                     {artist.thumb_url ? <img src={artist.thumb_url} alt="" className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-muted-foreground" />}
                   </div>
-                  <div className="flex-1 min-w-0 font-medium text-sm truncate">{artist.name}</div>
+                  <div className="flex-1 min-w-0 font-medium text-sm truncate">{artist.title}</div>
                 </button>
               ))}
             </div>
@@ -206,7 +207,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <Disc3 className="w-3 h-3" />
                 Albums
               </div>
-              {albums.map((album: MusicAlbum, idx: number) => (
+              {albums.map((album, idx: number) => (
                 <button
                   key={`album-${album.id}`}
                   onClick={() => handleSearchResultClick('album', album.id)}
@@ -219,7 +220,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{album.title}</div>
-                    <div className="text-xs text-muted-foreground truncate">{album.artist_name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{album.subtitle}</div>
                   </div>
                 </button>
               ))}
@@ -232,7 +233,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <Music className="w-3 h-3" />
                 Tracks
               </div>
-              {tracks.map((track: MusicTrack, idx: number) => (
+              {tracks.map((track, idx: number) => (
                 <button
                   key={`track-${track.id}`}
                   onClick={() => handleSearchResultClick('track', track.id, { album_id: track.album_id })}
@@ -243,7 +244,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   <Music className="w-4 h-4 text-muted-foreground shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{track.title}</div>
-                    <div className="text-xs text-muted-foreground truncate">{track.artist_name} — {track.album_name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{track.artist_name} — {track.album_title}</div>
                   </div>
                 </button>
               ))}

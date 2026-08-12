@@ -2,21 +2,27 @@
 
 import { Unlock, Lock, Layers, Grid3x3, List } from 'lucide-react'
 
+type MusicViewMode = 'artists' | 'albums' | 'tracks'
+type TierFilter = 'all' | '4K' | '1080p' | '720p' | 'SD'
+type QualityFilter = 'all' | 'high' | 'medium' | 'low'
+type ViewType = 'grid' | 'list'
+interface LibraryOption { id: string; name: string; isProtected?: boolean }
+
 interface BrowserFilterBarProps {
   view: string
   musicViewMode: string
-  setMusicViewMode: (val: any) => void
+  setMusicViewMode: (val: MusicViewMode) => void
   activeSourceId: string | null
   activeLibraryId: string | null
   setActiveLibraryId: (id: string | null) => void
-  currentTypeLibraries: any[]
+  currentTypeLibraries: LibraryOption[]
   isUnlocked: boolean
   setIsUnlocked: (val: boolean) => void
   setShowPinModal: (val: boolean) => void
   tierFilter: string
-  setTierFilter: (val: any) => void
+  setTierFilter: (val: TierFilter) => void
   qualityFilter: string
-  setQualityFilter: (val: any) => void
+  setQualityFilter: (val: QualityFilter) => void
   slimDown: boolean
   setSlimDown: (val: boolean) => void
   collectionsOnly: boolean
@@ -25,8 +31,8 @@ interface BrowserFilterBarProps {
   gridScale: number
   setGridScale: (val: number) => void
   viewType: string
-  setViewType: (val: any) => void
-  selectedShow: any
+  setViewType: (val: ViewType) => void
+  selectedShow: unknown
 }
 
 export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
@@ -99,7 +105,7 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Resolution</span>
                 <div className="flex gap-1">
-                  {['all', '4K', '1080p', '720p', 'SD'].map((tier) => (
+                  {(['all', '4K', '1080p', '720p', 'SD'] as const).map((tier) => (
                     <button
                       key={tier}
                       onClick={() => setTierFilter(tier)}
@@ -119,7 +125,7 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Quality</span>
                   <div className="flex gap-1">
-                    {['all', 'high', 'medium', 'low'].map((q) => (
+                    {(['all', 'high', 'medium', 'low'] as const).map((q) => (
                       <button
                         key={q}
                         onClick={() => setQualityFilter(q)}

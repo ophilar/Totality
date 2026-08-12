@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
 import type { MediaViewType, ViewType, QualityFilter } from '@/components/library/types'
 import type { MusicArtist, MusicAlbum } from '@main/types/database'
+import type { MediaDeepAnalysisResult } from '@preload/api/media'
 
 interface LibraryContextType {
   view: MediaViewType
@@ -37,7 +38,7 @@ interface LibraryContextType {
   // Selection
   activeSourceId: string | null
   setActiveSourceId: (id: string | null) => void
-  deepAnalyzeMedia: (filePath: string) => Promise<any>
+  deepAnalyzeMedia: (filePath: string) => Promise<MediaDeepAnalysisResult>
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined)

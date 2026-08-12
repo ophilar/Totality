@@ -11,7 +11,7 @@ import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
 import { calculatePosterWidth } from '@/components/library/mediaUtils'
-import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
+import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode, MissingItemPopupData } from '@/components/library/types'
 
 export function TVShowsView({
   shows,
@@ -59,7 +59,7 @@ export function TVShowsView({
   gridScale: number
   viewType: 'grid' | 'list'
   seriesCompleteness: Map<string, SeriesCompletenessData>
-  onMissingItemClick: (item: any) => void
+  onMissingItemClick: (item: MissingItemPopupData) => void
   showSourceBadge: boolean
   onAnalyzeSeries: (seriesTitle: string) => void
   onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void

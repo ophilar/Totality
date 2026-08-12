@@ -10,8 +10,10 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { StatsRepository } from '@main/database/repositories/StatsRepository'
 
+type AnalyzerHooks = { runFFprobe: (...args: never[]) => Promise<unknown> }
+
 describe('Library Issues Fixes (Deep Dive)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
@@ -49,7 +51,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
 
       // Mock ffprobe for the analyzer used by the provider
       const analyzer = (await import('@main/services/MediaFileAnalyzer')).getMediaFileAnalyzer()
-      vi.spyOn(analyzer as any, 'runFFprobe').mockResolvedValue({
+      vi.spyOn(analyzer as unknown as AnalyzerHooks, 'runFFprobe').mockResolvedValue({
         format: { format_name: 'mp3', size: '1000', duration: '180' },
         streams: [
           { codec_type: 'audio', codec_name: 'mp3', bit_rate: '128000', channels: 2, sample_rate: '44100' }
@@ -96,7 +98,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
       await manager.initialize()
       
       // Ensure the provider itself knows it's a music source for the routing logic
-      const provider = manager.getProvider(sourceId) as any
+      const provider = manager.getProvider(sourceId) as unknown as { mediaType: LibraryType } | null
       if (provider) provider.mediaType = LibraryType.Music
       
       // Create a real file so the scanner has something to do
@@ -107,7 +109,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
 
       // Mock ffprobe for the analyzer
       const analyzer = (await import('@main/services/MediaFileAnalyzer')).getMediaFileAnalyzer()
-      vi.spyOn(analyzer as any, 'runFFprobe').mockResolvedValue({
+      vi.spyOn(analyzer as unknown as AnalyzerHooks, 'runFFprobe').mockResolvedValue({
         format: { format_name: 'mp3', size: '500', duration: '200' },
         streams: [{ codec_type: 'audio', codec_name: 'mp3', bit_rate: '256000', channels: 2 }]
       })
@@ -164,7 +166,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
         title: 'Episode 1', 
         type: 'episode',
         file_path: '/dummy/ep1.mkv'
-      } as any)
+      })
 
       expect((await db.media.getItems({ type: 'episode', sourceId: 'p1' })).length).toBe(1)
 
@@ -179,7 +181,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
         title: 'Episode 1', 
         type: 'episode',
         file_path: '/dummy/ep1.mkv'
-      } as any)
+      })
       const validIds = new Set(['ep1'])
       await db.media.removeStaleProviderItems('p1', '2', 'episode', validIds)
       expect((await db.media.getItems({ type: 'episode', sourceId: 'p1' })).length).toBe(1)

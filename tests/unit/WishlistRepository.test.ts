@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('WishlistRepository (Real DB)', () => {
   let repo: WishlistRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -21,7 +21,7 @@ describe('WishlistRepository (Real DB)', () => {
       title: 'Wish Movie',
       reason: 'missing',
       priority: 5,
-    } as any
+    }
 
     const id = await repo.add(item)
     expect(id).toBeGreaterThan(0)
@@ -32,14 +32,14 @@ describe('WishlistRepository (Real DB)', () => {
   })
 
   it('should delete a wishlist item', async () => {
-    const id = await repo.add({ media_type: 'movie', title: 'To Delete' } as any)
+    const id = await repo.add({ media_type: 'movie', title: 'To Delete' })
     await repo.delete(id)
     expect(await repo.getItems()).toHaveLength(0)
   })
 
   it('should get count', async () => {
-    await repo.add({ media_type: 'movie', title: 'A' } as any)
-    await repo.add({ media_type: 'movie', title: 'B' } as any)
+    await repo.add({ media_type: 'movie', title: 'A' })
+    await repo.add({ media_type: 'movie', title: 'B' })
     expect(await repo.getCount()).toBe(2)
   })
 })

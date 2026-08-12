@@ -7,10 +7,11 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
 
 // Track registered handlers
-const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+type IpcHandler = Parameters<typeof ipcMain.handle>[1]
+const handlers = new Map<string, IpcHandler>()
 
 // Override ipcMain.handle/removeHandler to capture registrations
-vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: IpcHandler) => {
   if (handlers.has(channel)) {
     throw new Error(`Attempted to register a second handler for '${channel}'`)
   }
@@ -24,7 +25,7 @@ vi.mocked(ipcMain.removeHandler).mockImplementation((channel: string) => {
 })
 
 describe('IPC Handler Registration', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -55,20 +56,17 @@ describe('IPC Handler Registration', () => {
 
   it('db:media:getItem validates input', async () => {
     const handler = handlers.get('db:media:getItem')!
-    // @ts-ignore
-    await expect(handler({} as any, -1)).rejects.toThrow()
+    await expect(handler(undefined as never, -1)).rejects.toThrow()
   })
 
   it('db:getSetting validates input', async () => {
     const handler = handlers.get('db:getSetting')!
-    // @ts-ignore
-    await expect(handler({} as any, '')).rejects.toThrow()
+    await expect(handler(undefined as never, '')).rejects.toThrow()
   })
 
   it('db:setSetting persists value to real database', async () => {
     const handler = handlers.get('db:setSetting')!
-    // @ts-ignore
-    await handler({} as any, 'test_setting', 'test_value')
+    await handler({ sender: { send: vi.fn() } } as never, 'test_setting', 'test_value')
 
     expect(await db.config.getSetting('test_setting')).toBe('test_value')
 
@@ -76,7 +74,7 @@ describe('IPC Handler Registration', () => {
 
   it('registerListHandlers registers standard aliases', () => {
     const base = 'test:resource'
-    const schema = z.any()
+    const schema = z.unknown()
     
     registerListHandlers(
       base,

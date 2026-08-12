@@ -3,10 +3,11 @@ import type { MovieCollection } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
 export class MovieCollectionRepository extends BaseRepository<typeof schema.movieCollections> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'movie_collections', drizzle, schema.movieCollections)
   }
 
@@ -83,7 +84,7 @@ export class MovieCollectionRepository extends BaseRepository<typeof schema.movi
     )
   }
 
-  private mapDrizzleToCollection(rows: any[]): MovieCollection[] {
+  private mapDrizzleToCollection(rows: (typeof schema.movieCollections.$inferSelect)[]): MovieCollection[] {
     return rows.map(r => ({
       id: r.id,
       tmdb_collection_id: r.tmdbCollectionId,

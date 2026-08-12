@@ -65,7 +65,7 @@ export interface GlobalSearchResults {
   tracks: TrackSearchResult[]
 }
 
-interface FlattenedResult {
+export interface FlattenedResult {
   type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track'
   id: number | string
   extra?: { series_title?: string | null; album_id?: number }
@@ -86,7 +86,7 @@ interface UseGlobalSearchOptions {
   onNavigateToTrack: (albumId: number) => void
 }
 
-interface UseGlobalSearchReturn {
+export interface UseGlobalSearchReturn {
   searchInput: string
   setSearchInput: (value: string) => void
   showSearchResults: boolean

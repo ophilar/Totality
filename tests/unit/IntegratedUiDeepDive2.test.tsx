@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
@@ -14,11 +14,11 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import React from 'react'
 
 describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
     
     // Mock matchMedia for ThemeProvider
@@ -39,8 +39,8 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
   })
 
   afterEach(async () => {
@@ -66,7 +66,7 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
       seasonsMap.set(1, { seasonNumber: 1, episode_count: 7, episodes: [] })
       seasonsMap.set(2, { seasonNumber: 2, episode_count: 13, episodes: [] })
 
-      const showData: any = {
+      const showData: Record<string, unknown> = {
         title: 'Breaking Bad',
         seasons: seasonsMap
       }
@@ -152,7 +152,7 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
 
   describe('MusicAlbumDetails', () => {
     it('should render album info and tracks', async () => {
-      const album: any = {
+      const album: Record<string, unknown> = {
         id: 1,
         title: 'The Dark Side of the Moon',
         artist_name: 'Pink Floyd',
@@ -160,7 +160,7 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
         track_count: 10
       }
       
-      const tracks: any[] = [
+      const tracks: Array<Record<string, unknown>> = [
         { id: 101, title: 'Speak to Me', duration: 90, audio_codec: 'flac', bitrate: 1000 },
       ]
 

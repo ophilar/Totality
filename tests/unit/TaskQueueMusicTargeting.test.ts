@@ -4,11 +4,12 @@ import { SourceManager } from '@main/services/SourceManager'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
+import { ProviderType } from '@main/types/database'
 
 describe('TaskQueue Music Scan Targeting (No Mocks)', () => {
   let service: TaskQueueService
   let manager: SourceManager
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
@@ -31,7 +32,7 @@ describe('TaskQueue Music Scan Targeting (No Mocks)', () => {
     fs.writeFileSync(path.join(musicDir, '01 - Song.mp3'), 'dummy')
 
     const source = await manager.addSource({
-      sourceType: 'local' as any,
+      sourceType: ProviderType.Local,
       displayName: 'Local Music',
       connectionConfig: { folderPath: tempDir.path, mediaType: 'music' },
     })
@@ -44,7 +45,7 @@ describe('TaskQueue Music Scan Targeting (No Mocks)', () => {
       label: 'Scan Music',
       sourceId: source.source_id,
       libraryId: 'music' // LocalProvider music library ID
-    } as any)
+    })
 
     expect(taskId).toBeDefined()
 

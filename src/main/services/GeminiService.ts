@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
-import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
+import type { Content, FunctionDeclaration, GenerateContentResponse, Schema } from '@google/genai'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { APP_CONFIG } from '@main/config'
@@ -32,7 +32,7 @@ export interface GeminiStreamComplete {
 export interface GeminiToolDefinition {
   name: string
   description?: string
-  parameters: any
+  parameters: Schema
 }
 
 export interface RateLimitInfo {
@@ -253,7 +253,7 @@ export class GeminiService {
     messages: GeminiMessage[]
     system?: string
     tools: GeminiToolDefinition[]
-    executeTool: (name: string, input: any) => Promise<string>
+    executeTool: (name: string, input: unknown) => Promise<string>
     maxTokens?: number
     maxToolRounds?: number
   }): Promise<{ text: string; usage: { input_tokens: number; output_tokens: number } }> {
@@ -333,7 +333,7 @@ export class GeminiService {
         try {
           const resultStr = await params.executeTool(
             fc.name || '',
-            (fc.args as any) || {},
+            fc.args ?? {},
           )
           functionResponses.parts!.push({
             functionResponse: {

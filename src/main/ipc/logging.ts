@@ -10,7 +10,7 @@ export function registerLoggingHandlers(): void {
   const service = getLoggingService()
 
   createIpcHandler(IPC_CHANNELS.LOGGING.GET_ALL, async (limit?: number) => {
-    return service.getLogs(limit).map((log: any) => ({ ...log, message: Array.isArray(log.message) ? log.message.join(' ') : String(log.message) }))
+    return service.getLogs(limit).map(log => ({ ...log, message: Array.isArray(log.message) ? log.message.join(' ') : String(log.message) }))
   })
 
   createIpcHandler(IPC_CHANNELS.LOGGING.CLEAR, async () => {
@@ -34,7 +34,7 @@ export function registerLoggingHandlers(): void {
 
   createIpcHandler(IPC_CHANNELS.LOGGING.IS_VERBOSE, async () => service.isVerboseEnabled())
   createIpcHandler(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS, async () => service.getFileLoggingSettings())
-  createIpcHandler(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, async (settings: any) => {
+  createIpcHandler(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, async (settings: { enabled?: boolean; minLevel?: 'debug' | 'info' | 'warn' | 'error'; retentionDays?: number }) => {
     service.updateFileLoggingSettings(settings)
     return { success: true }
   })

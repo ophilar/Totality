@@ -1,4 +1,4 @@
-import { Sparkles, Info } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 
 export function SlimDownBanner({ className = '' }: { className?: string }) {
   return (
@@ -11,24 +11,8 @@ export function SlimDownBanner({ className = '' }: { className?: string }) {
           Space Optimization Recommendations
         </h3>
         <p className="text-sm text-muted-foreground leading-relaxed text-balance">
-          You are viewing items that are inefficiently encoded or taking up excessive space.
-          To save gigabytes per file without noticeable visual degradation:
+          These items have available disk-optimization analysis. Open an item to compare video transcoding, audio transcoding, and track removal.
         </p>
-        <ul className="text-sm space-y-1.5 text-foreground/80 mt-2 list-disc list-inside">
-          <li>
-            <strong className="text-foreground">Re-encode to AV1:</strong> It provides equivalent quality to HEVC but at 20-30% lower bitrates. Default to CRF 24 for a baseline, or use HEVC (H.265) if AV1 playback is not supported on your devices.
-          </li>
-          <li>
-            <strong className="text-foreground">Remove Unnecessary Audio:</strong> FLAC or uncompressed multi-channel audio tracks consume massive space. Keep an Opus 5.1/7.1 track and a stereo AAC track.
-          </li>
-          <li>
-            <strong className="text-foreground">Prune Subtitles:</strong> Strip out languages you don't read to slightly lower overhead.
-          </li>
-        </ul>
-        <div className="text-xs flex items-center gap-1 mt-3 bg-background/50 p-2 rounded w-fit border border-border/50">
-          <Info className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Tip: Target ~2-4 GB for 1080p, and ~8-15 GB for 4K items.</span>
-        </div>
       </div>
     </div>
   )

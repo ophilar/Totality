@@ -84,7 +84,7 @@ export class SourceScannerService {
             const { getQualityAnalyzer } = await import('./QualityAnalyzer')
             const analyzer = getQualityAnalyzer()
             const albums = await this.db.music.getMusicAlbums({ sourceId })
-            const albumIds = albums.map((a: any) => a.id).filter((id: any) => id != null)
+            const albumIds = albums.map(a => a.id).filter((id): id is number => id != null)
             const tracksByAlbum = await this.db.music.getMusicTracksByAlbumIds(albumIds)
 
             const BATCH_SIZE = 50

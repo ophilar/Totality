@@ -13,12 +13,12 @@ describe('TranscodingCapabilities', () => {
     const gpus = [{ id: 'intel', name: 'Intel UHD', vendor: 'Intel' as const }]
     expect(resolveSelectedGpuId(gpus, null)).toBeNull()
     expect(resolveSelectedGpuId(gpus, 'missing')).toBe('intel')
-    expect(buildTranscodingCapabilities({ ffmpeg: true, handbrake: false }, gpus, null).selectedGpuId).toBeNull()
+    expect(buildTranscodingCapabilities({ ffmpeg: true }, gpus, null).selectedGpuId).toBeNull()
   })
 
   it('exposes only detected hardware vendors and retains software fallback', () => {
     const capabilities = buildTranscodingCapabilities(
-      { ffmpeg: true, handbrake: false },
+      { ffmpeg: true },
       [
         { id: 'gpu-1', name: 'NVIDIA GeForce RTX', vendor: 'NVIDIA' },
         { id: 'gpu-2', name: 'Intel UHD', vendor: 'Intel' }
@@ -33,10 +33,10 @@ describe('TranscodingCapabilities', () => {
   })
 
   it('does not advertise hardware acceleration when no GPU is detected', () => {
-    const capabilities = buildTranscodingCapabilities({ ffmpeg: true, handbrake: true }, [])
+    const capabilities = buildTranscodingCapabilities({ ffmpeg: true }, [])
 
     expect(capabilities.vendors).toEqual(['Software'])
     expect(capabilities.encoders).toEqual(['svt_av1', 'x265', 'libx264'])
-    expect(capabilities.engines).toEqual(['ffmpeg', 'handbrake'])
+    expect(capabilities.engines).toEqual(['ffmpeg'])
   })
 })

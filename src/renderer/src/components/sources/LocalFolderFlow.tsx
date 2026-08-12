@@ -54,17 +54,8 @@ export function LocalFolderFlow({ onSuccess, onBack }: LocalFolderFlowProps) {
 
   // Check FFprobe availability on mount
   useEffect(() => {
-    checkFFprobe()
+    queueMicrotask(() => { void Promise.resolve().then(() => window.electronAPI.ffprobeIsAvailable()).then(setFfprobeAvailable).catch(() => setFfprobeAvailable(false)) })
   }, [])
-
-  const checkFFprobe = async () => {
-    try {
-      const available = await window.electronAPI.ffprobeIsAvailable()
-      setFfprobeAvailable(available)
-    } catch {
-      setFfprobeAvailable(false)
-    }
-  }
 
   const handleSelectFolder = async () => {
     try {

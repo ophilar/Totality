@@ -47,6 +47,8 @@ import {
   AlbumCompletenessData,
   MediaBrowserProps,
 } from '@/components/library/types'
+import type { MediaItemFilters, TVShowFilters, MusicFilters } from '@main/types/database'
+import type { MediaLibraryResponse } from '@preload/api/types'
 
 export function MediaBrowser({
   onOpenSettings,
@@ -77,7 +79,7 @@ export function MediaBrowser({
   const { sources, activeSourceId, setActiveSource, markLibraryAsNew } = useSources()
 
   useEffect(() => {
-    setContextActiveSourceId(activeSourceId)
+    queueMicrotask(() => { setContextActiveSourceId(activeSourceId) })
   }, [activeSourceId, setContextActiveSourceId])
 
   const { addToast } = useToast()
@@ -128,7 +130,7 @@ export function MediaBrowser({
   const [albumTracks, setAlbumTracks] = useState<MusicTrack[]>([])
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false)
   const [selectedAlbumCompleteness, setSelectedAlbumCompleteness] = useState<AlbumCompletenessData | null>(null)
-  const [activeSourceLibraries, setActiveSourceLibraries] = useState<any[]>([])
+  const [activeSourceLibraries, setActiveSourceLibraries] = useState<Array<MediaLibraryResponse & { isEnabled: boolean; isProtected: boolean; allowExpandedMatching: boolean; lastScanAt: string | null }>>([])
   const [detailRefreshKey, setDetailRefreshKey] = useState(0)
   const handleSortChange = useCallback((nextSort: string) => {
     if (nextSort === sortBy) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
@@ -148,7 +150,7 @@ export function MediaBrowser({
     refresh: refreshMovies,
     setItems: setMovies,
     setFilters: setMoviesFilters
-  } = usePaginatedData<MediaItem, any>({
+  } = usePaginatedData<MediaItem, MediaItemFilters>({
     fetchFn: window.electronAPI.getMediaItems,
     countFn: window.electronAPI.countMediaItems,
     pageSize: 200,
@@ -165,8 +167,8 @@ export function MediaBrowser({
     refresh: refreshShows,
     setItems: setShows,
     setFilters: setShowsFilters
-  } = usePaginatedData<TVShowSummary, any>({
-    fetchFn: window.electronAPI.getTVShows as any,
+  } = usePaginatedData<TVShowSummary, TVShowFilters>({
+    fetchFn: window.electronAPI.getTVShows,
     countFn: window.electronAPI.countTVShows,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
@@ -181,8 +183,8 @@ export function MediaBrowser({
     loadMore: loadMoreArtists,
     setItems: setArtists,
     setFilters: setArtistsFilters
-  } = usePaginatedData<MusicArtist, any>({
-    fetchFn: window.electronAPI.musicArtistList as any,
+  } = usePaginatedData<MusicArtist, MusicFilters>({
+    fetchFn: window.electronAPI.musicArtistList,
     countFn: window.electronAPI.musicArtistCount,
     pageSize: 50,
     initialFilters: { sortBy: 'name', sortOrder: 'asc' },
@@ -197,8 +199,8 @@ export function MediaBrowser({
     loadMore: loadMoreAlbums,
     setItems: setAlbums,
     setFilters: setAlbumsFilters
-  } = usePaginatedData<MusicAlbum, any>({
-    fetchFn: window.electronAPI.musicAlbumList as any,
+  } = usePaginatedData<MusicAlbum, MusicFilters>({
+    fetchFn: window.electronAPI.musicAlbumList,
     countFn: window.electronAPI.musicAlbumCount,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
@@ -213,8 +215,8 @@ export function MediaBrowser({
     loadMore: loadMoreTracks,
     setItems: setAllMusicTracks,
     setFilters: setTracksFilters
-  } = usePaginatedData<MusicTrack, any>({
-    fetchFn: window.electronAPI.musicTrackList as any,
+  } = usePaginatedData<MusicTrack, MusicFilters>({
+    fetchFn: window.electronAPI.musicTrackList,
     countFn: window.electronAPI.musicTrackCount,
     pageSize: 500,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
@@ -256,15 +258,15 @@ export function MediaBrowser({
       slimDown: slimDown || undefined
     }
 
-    if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as any)
-    else if (view === 'tv') setShowsFilters({ ...commonFilters } as any)
+    if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as MediaItemFilters)
+    else if (view === 'tv') setShowsFilters({ ...commonFilters } as TVShowFilters)
     else if (view === 'music') {
       const musicSortBy = sortBy === 'title' ? 'name' : (sortBy === 'waste' ? 'storage_debt' : sortBy)
       const validArtistSorts = ['name', 'album_count', 'track_count', 'storage_debt', 'efficiency', 'size']
       const artistSort = validArtistSorts.includes(musicSortBy) ? musicSortBy : 'name'
-      if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: artistSort } as any)
-      else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as any)
-      else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as any)
+      if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: artistSort } as MusicFilters)
+      else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as MusicFilters)
+      else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as MusicFilters)
     }
   }, [view, musicViewMode, sortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
 
@@ -299,16 +301,16 @@ export function MediaBrowser({
   // Load episodes/tracks
   useEffect(() => {
     if (selectedShow) {
-      setSelectedShowEpisodesLoading(true)
+      queueMicrotask(() => { setSelectedShowEpisodesLoading(true) })
       window.electronAPI.seriesGetEpisodes(selectedShow, activeSourceId || undefined)
         .then(eps => { setSelectedShowEpisodes(eps as MediaItem[]); setSelectedShowEpisodesLoading(false) })
         .catch(() => setSelectedShowEpisodesLoading(false))
-    } else setSelectedShowEpisodes([])
+    } else queueMicrotask(() => { setSelectedShowEpisodes([]) })
   }, [selectedShow, activeSourceId])
 
   useEffect(() => {
     if (selectedAlbum) {
-      setAlbumTracksLoading(true)
+      queueMicrotask(() => { setAlbumTracksLoading(true) })
       Promise.all([
         window.electronAPI.musicGetTracksByAlbum(selectedAlbum.id!),
         window.electronAPI.musicGetAlbumCompleteness(selectedAlbum.id!)
@@ -317,7 +319,7 @@ export function MediaBrowser({
         setSelectedAlbumCompleteness(completeness as AlbumCompletenessData)
         setAlbumTracksLoading(false)
       }).catch(() => setAlbumTracksLoading(false))
-    } else { setAlbumTracks([]); setSelectedAlbumCompleteness(null) }
+    } else queueMicrotask(() => { setAlbumTracks([]); setSelectedAlbumCompleteness(null) })
   }, [selectedAlbum])
 
   const currentTypeLibraries = useMemo(() =>
@@ -367,7 +369,7 @@ export function MediaBrowser({
 
   const loadMusicCompletenessData = useCallback(async () => {
     const res = await window.electronAPI.musicGetAllArtistCompleteness()
-    const { artists } = res as { stats: any; artists: ArtistCompletenessData[] }
+    const { artists } = res as { stats: unknown; artists: ArtistCompletenessData[] }
     const map = new Map<string, ArtistCompletenessData>()
     artists.forEach(c => map.set(c.artist_name, c))
     setArtistCompleteness(map)
@@ -388,13 +390,13 @@ export function MediaBrowser({
   })
 
   useEffect(() => {
-    loadStats(activeSourceId || undefined); loadCompletenessData(); loadMusicCompletenessData(); loadActiveSourceLibraries(); loadEpSingleSettings(); checkTmdbApiKey()
+    queueMicrotask(() => { void loadStats(activeSourceId || undefined); void loadCompletenessData(); void loadMusicCompletenessData(); void loadActiveSourceLibraries(); void loadEpSingleSettings(); void checkTmdbApiKey() })
   }, [activeSourceId, loadStats, loadCompletenessData, loadMusicCompletenessData, loadActiveSourceLibraries, loadEpSingleSettings, checkTmdbApiKey])
 
   const { matchFixModal, setMatchFixModal, selectedMissingItem, setSelectedMissingItem, handleRescanItem } = useMediaActions({ selectedMediaId, loadMedia: reloadMedia, setDetailRefreshKey })
 
   const { handleDismissUpgrade, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie, handleDismissMissingAlbum, handleDismissMissingItem } = useDismissHandlers({
-    setPaginatedMovies: setMovies as any, setSelectedShowEpisodes, seriesCompleteness, setSeriesCompleteness,
+    setPaginatedMovies: setMovies, setSelectedShowEpisodes, seriesCompleteness, setSeriesCompleteness,
     selectedCollection, setSelectedCollection, setMovieCollections, setArtistCompleteness, selectedMissingItem, setSelectedMissingItem, addToast,
   })
 
@@ -438,7 +440,7 @@ export function MediaBrowser({
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
-                  movies={movies} sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
+        movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
                   onSelectMovie={(id) => setSelectedMediaId(id)}
                   onSelectCollection={(c) => { setSelectedCollection(c); setShowCollectionModal(true) }}
                   viewType={viewType} gridScale={gridScale}
@@ -454,7 +456,7 @@ export function MediaBrowser({
             {view === 'tv' && (
               <SectionErrorBoundary title="TV Shows">
                 <TVShowsView
-                  shows={shows} sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
+        shows={shows} sortBy={sortBy} onSortChange={handleSortChange} slimDown={slimDown}
                   selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData}
                   selectedShowLoading={selectedShowEpisodesLoading} onSelectShow={setSelectedShow}
                   onSelectSeason={setSelectedSeason} onSelectEpisode={setSelectedMediaId}
@@ -474,7 +476,7 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-                  sortBy={sortBy as any} onSortChange={handleSortChange} slimDown={slimDown}
+        sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}
@@ -490,7 +492,7 @@ export function MediaBrowser({
                   gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onAnalyzeAlbum={async (id) => { await window.electronAPI.musicAnalyzeAlbumTrackCompleteness(id); loadMusicCompletenessData() }}
-                  onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id } as any) }}
+          onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id }) }}
                   onArtistCompletenessUpdated={loadMusicCompletenessData}
                   onFixArtistMatch={(id, n) => setMatchFixModal({ isOpen: true, type: 'artist', title: n, artistId: id })}
                   onFixAlbumMatch={(id, t, n) => setMatchFixModal({ isOpen: true, type: 'album', title: t, artistName: n, albumId: id })}

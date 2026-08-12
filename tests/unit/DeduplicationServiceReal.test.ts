@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('DeduplicationService (Real DB)', () => {
   let service: DeduplicationService
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -19,8 +19,8 @@ describe('DeduplicationService (Real DB)', () => {
   })
 
   it('should detect duplicates by TMDB ID', async () => {
-    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p1', resolution: '1080p' } as any)
-    const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p2', resolution: '4K' } as any)
+    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p1', resolution: '1080p' })
+    const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p2', resolution: '4K' })
 
     await service.scanForDuplicates('s1')
 
@@ -30,8 +30,8 @@ describe('DeduplicationService (Real DB)', () => {
   })
 
   it('should resolve duplicates by merging versions', async () => {
-    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p1', resolution: '1080p' } as any)
-    const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p2', resolution: '4K' } as any)
+    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p1', resolution: '1080p' })
+    const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p2', resolution: '4K' })
 
     await service.scanForDuplicates('s1')
     const duplicates = await db.duplicates.getPendingDuplicates('s1')

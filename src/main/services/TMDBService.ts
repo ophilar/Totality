@@ -19,6 +19,16 @@ import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/r
 
 import { APP_CONFIG } from '@main/config'
 
+interface MissingTmdbItem {
+  id?: number
+  title: string
+  year?: number
+  series_title?: string
+  tmdb_id?: string | null
+  imdb_id?: string | null
+  source_id: string
+}
+
 /**
  * TMDB API v3 Service with rate limiting and caching
  * Rate limit: ~40 requests per second per IP
@@ -702,7 +712,7 @@ export class TMDBService {
    * Look up TMDB IDs for media items that don't have them
    */
   async lookupMissingTMDBIds(
-    items: any[],
+    items: MissingTmdbItem[],
     type: 'movie' | 'tv',
     onProgress?: (progress: { current: number; total: number; currentItem: string; phase: string }) => void
   ): Promise<{ updated: number; failed: number }> {
@@ -739,7 +749,7 @@ export class TMDBService {
                 : await this.searchTVShow(item.series_title || item.title)
               if (res.results && res.results.length > 0) {
                 const bestMatch = type === 'movie' 
-                  ? res.results.find(r => (r as any).release_date?.startsWith(String(item.year))) || res.results[0]
+                  ? res.results.find(r => 'release_date' in r && r.release_date?.startsWith(String(item.year))) || res.results[0]
                   : res.results[0]
                 tmdbId = String(bestMatch.id)
               }

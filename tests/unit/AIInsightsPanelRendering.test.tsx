@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
@@ -68,7 +68,7 @@ describe('AIInsightsPanel Rendering', () => {
   })
 
   it('should handle streaming deltas', async () => {
-    let deltaCallback: any
+    let deltaCallback: ((event: { requestId: string | null; delta: string }) => void) | undefined
     mockElectronAPI.onAiAnalysisStreamDelta.mockImplementation((cb) => {
       deltaCallback = cb
       return () => {}
@@ -93,7 +93,7 @@ describe('AIInsightsPanel Rendering', () => {
     
     // Simulate delta with the correct requestId
     await act(async () => {
-      deltaCallback({ requestId: capturedRequestId, delta: 'Hello World' })
+    deltaCallback?.({ requestId: capturedRequestId, delta: 'Hello World' })
     })
     
     expect(screen.getByText(/Hello World/)).toBeTruthy()

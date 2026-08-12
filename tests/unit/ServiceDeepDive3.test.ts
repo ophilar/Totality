@@ -29,7 +29,7 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
       display_name: 'S1', 
       connection_config: '{}',
       is_enabled: true 
-    } as any)
+    })
   })
 
   afterEach(() => {
@@ -45,14 +45,14 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
         tmdb_id: 'tmdb1',
         reason: 'missing',
         status: 'active'
-      } as any)
+      })
 
       // 2. Add the actual movie
       await dbService.media.upsertItem({
         title: 'Missing Movie', type: 'movie', source_id: 's1', file_path: 'f1', tmdb_id: 'tmdb1', plex_id: 'p1',
         file_size: 1, duration: 1, resolution: '1080p', width: 1920, height: 1080, video_codec: 'h264', video_bitrate: 1,
         audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
-      } as any)
+      })
 
       // 3. Check and complete
       await wishlistService.checkAndComplete()
@@ -70,12 +70,12 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
         title: 'Dup Movie', type: 'movie', source_id: 's1', file_path: 'f1', tmdb_id: 'tmdb2', plex_id: 'p100',
         file_size: 1, duration: 1, resolution: '1080p', width: 1920, height: 1080, video_codec: 'h264', video_bitrate: 1,
         audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
-      } as any)
+      })
       await dbService.media.upsertItem({
         title: 'Dup Movie', type: 'movie', source_id: 's1', file_path: 'f2', tmdb_id: 'tmdb2', plex_id: 'p101',
         file_size: 1, duration: 1, resolution: '1080p', width: 1920, height: 1080, video_codec: 'h264', video_bitrate: 1,
         audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
-      } as any)
+      })
 
       const count = await dedupService.scanForDuplicates('s1')
       expect(count).toBe(1)
@@ -90,12 +90,12 @@ describe('Service Deep Dive 3 (No Mocks)', () => {
         title: 'Movie', type: 'movie', source_id: 's1', file_path: 'f10', tmdb_id: 'tmdb3', resolution: '720p', plex_id: 'p102',
         file_size: 1, duration: 1, width: 1280, height: 720, video_codec: 'h264', video_bitrate: 1,
         audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
-      } as any)
+      })
       const id2 = await dbService.media.upsertItem({
         title: 'Movie', type: 'movie', source_id: 's1', file_path: 'f11', tmdb_id: 'tmdb3', resolution: '4K', plex_id: 'p103',
         file_size: 1, duration: 1, width: 3840, height: 2160, video_codec: 'h264', video_bitrate: 1,
         audio_codec: 'aac', audio_channels: 2, audio_bitrate: 192, source_type: 'local'
-      } as any)
+      })
 
       // Ensure setting is configured to prefer highest resolution
       await dbService.config.setSetting('dup_policy_highest_res', 'true')

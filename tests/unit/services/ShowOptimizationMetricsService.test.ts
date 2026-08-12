@@ -14,4 +14,14 @@ describe('aggregateShowOptimizationMetrics', () => {
     expect(result.scoredEpisodeCount).toBe(2)
     expect(result.unscoredEpisodeCount).toBe(1)
   })
+
+  it('weights only the bytes of scored episodes', () => {
+    const result = aggregateShowOptimizationMetrics([
+      { sizeBytes: 100, recoverableBytes: 20, efficiency: 0.5 },
+      { sizeBytes: 900, recoverableBytes: null, efficiency: null },
+    ])
+
+    expect(result.weightedEfficiency).toBeCloseTo(0.5)
+    expect(result.unscoredEpisodeCount).toBe(1)
+  })
 })

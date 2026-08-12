@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   year INTEGER,
   type TEXT NOT NULL CHECK(type IN ('movie', 'episode')),
   series_title TEXT,
+  series_identity_key TEXT,
   season_number INTEGER,
   episode_number INTEGER,
 
@@ -243,6 +244,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS series_completeness (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   series_title TEXT NOT NULL,
+  series_identity_key TEXT,
 
   -- Source/library scoping
   source_id TEXT NOT NULL DEFAULT '',
@@ -744,6 +746,23 @@ CREATE TABLE IF NOT EXISTS activity_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
+
+CREATE TABLE IF NOT EXISTS media_remux_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK(status IN ('planned', 'running', 'verified', 'promoted', 'failed')),
+  source_path TEXT NOT NULL,
+  source_size INTEGER NOT NULL,
+  source_mtime_ms INTEGER NOT NULL,
+  source_sha256 TEXT NOT NULL,
+  decision_snapshot TEXT NOT NULL,
+  stream_signatures TEXT NOT NULL,
+  quarantine_path TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_media_remux_jobs_item ON media_remux_jobs(media_item_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_recorded ON task_history(recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_source ON task_history(source_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_type ON activity_log(entry_type);

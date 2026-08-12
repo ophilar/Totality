@@ -294,7 +294,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
   // Load FFprobe status when expanded (for kodi-local sources)
   useEffect(() => {
     if (expanded && isKodiLocal && ffprobeAvailable === null) {
-      loadFFprobeStatus()
+      queueMicrotask(() => { void loadFFprobeStatus() })
     }
   }, [expanded, isKodiLocal, ffprobeAvailable, loadFFprobeStatus])
 

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
-class TestRepo extends BaseRepository<any> {
+class TestRepo extends BaseRepository<SQLiteTable> {
   constructor() {
-    super({} as any, 'test', {} as any, {} as any)
+    super({} as never, 'test', {} as never, {} as SQLiteTable)
   }
   public async testChunking<T, R>(
     items: T[],

@@ -3,7 +3,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { TVShowFiltersSchema, MediaItemFiltersSchema, validateInput } from '@main/validation/schemas'
 
 describe('Found Issues Verifications (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -28,7 +28,7 @@ describe('Found Issues Verifications (No Mocks)', () => {
       file_size: 1000,
       duration: 120,
       poster_url: 'https://image.tmdb.org/t/p/w500/test.jpg'
-    } as any)
+    })
 
     await db.media.upsertQualityScore({
       media_item_id: mediaId,

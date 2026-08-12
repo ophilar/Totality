@@ -9,6 +9,7 @@ import * as path from 'path'
 import * as os from 'os'
 import * as crypto from 'crypto'
 import { APP_CONFIG } from '@main/config'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 
 export type LogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error'
 
@@ -37,7 +38,7 @@ export interface LogEntry {
 const MAX_INFO_ENTRIES = APP_CONFIG.logging.maxInfoEntries
 const MAX_IMPORTANT_ENTRIES = APP_CONFIG.logging.maxImportantEntries
 
-type DatabaseGetter = () => any
+type DatabaseGetter = () => BetterSQLiteService
 
 export class LoggingService {
   private infoLogs: LogEntry[] = []
@@ -81,7 +82,7 @@ export class LoggingService {
     }
   }
 
-  private sanitize(text: any): string {
+  private sanitize(text: unknown): string {
     if (typeof text !== 'string') return String(text)
     let result = text
     if (this.homeDir) {

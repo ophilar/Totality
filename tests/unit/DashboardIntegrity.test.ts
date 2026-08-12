@@ -3,7 +3,7 @@ import { StatsRepository } from '@main/database/repositories/StatsRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('Dashboard Integrity (Real DB)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let statsRepo: StatsRepository
 
   beforeEach(async () => {

@@ -12,7 +12,8 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     const args: string[] = [
       '-y',
       '-i', input,
-      '-fps_mode', 'passthrough',
+      '-fps_mode', 'cfr',
+      ...(options.targetCodec === 'av1' ? ['-svtav1-params', 'tune=0'] : []),
       '-c:v', codec,
       '-crf', crf,
       '-preset', options.preset || 'medium',
@@ -35,24 +36,4 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     return args
   }
 
-  buildHandbrakeArgs(_input: string, _output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
-    const encoder = options.targetCodec === 'av1' ? 'svt_av1_10bit' : 'x265_10bit'
-    const args: string[] = [
-      '--encoder', encoder,
-      '--quality', (options.crf ?? 22).toString(),
-      '--encoder-preset', options.preset || 'medium'
-    ]
-
-    if (options.preserveAllAudio) {
-      args.push('--all-audio')
-    } else {
-      args.push('--audio', '1')
-    }
-
-    if (options.preserveSubtitles) {
-      args.push('--all-subtitles')
-    }
-
-    return args
-  }
 }

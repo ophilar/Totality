@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
@@ -20,13 +20,13 @@ describe('Library UI Routing Integrity', () => {
   beforeAll(() => {
     // Provide a real-ish bridge for settings
     const settings = new Map<string, string>()
-    ;(window as any).electronAPI = {
+    Object.assign(window, { electronAPI: {
       getSetting: (key: string) => Promise.resolve(settings.get(key) || null),
       setSetting: (key: string, val: string) => {
         settings.set(key, val)
         return Promise.resolve(true)
       }
-    }
+    }})
   })
 
   it('should synchronize media view state across components via LibraryContext', async () => {

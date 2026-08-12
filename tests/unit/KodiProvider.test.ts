@@ -1,5 +1,6 @@
 import { expect, test, describe, vi } from 'vitest'
 import { KodiLocalProvider } from '@main/providers/kodi/KodiLocalProvider'
+import { ProviderType } from '@main/types/database'
 
 vi.mock('@main/database/BetterSQLiteService', () => {
     return {
@@ -31,7 +32,7 @@ vi.mock('@main/services/LoggingService', () => {
 
 describe('KodiSqlBaseProvider Music Sync', () => {
     test('scanMusicLibrary handles dbType music correctly', async () => {
-        const provider = new KodiLocalProvider({ id: 'src-1', name: 'Kodi', type: 'kodi-local' } as any)
+        const provider = new KodiLocalProvider({ sourceId: 'src-1', displayName: 'Kodi', sourceType: ProviderType.KodiLocal, connectionConfig: {} })
 
         provider['queryAll'] = vi.fn().mockImplementation(async (sql, params, dbType) => {
              expect(dbType).toBe('music')

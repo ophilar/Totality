@@ -4,6 +4,7 @@ import { ArrowUpCircle, X, HardDrive, Zap, Info, Disc3 } from 'lucide-react'
 import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { emitDismissUpgrade } from '@/utils/dismissEvents'
 import type { SeriesCompletenessData, MovieCollectionData } from '@/components/library/types'
+import type { MediaItem, MusicAlbum } from '@main/types/database'
 import { useToast } from '@/contexts/ToastContext'
 
 interface WishlistViewProps {
@@ -26,9 +27,31 @@ interface MissingItem {
   parent_tmdb_id?: string // for episodes
 }
 
+interface UpgradeItem {
+  id?: number
+  title: string
+  category: 'media' | 'music'
+  type: string
+  year?: number | null
+  poster_url?: string | null
+  thumb_url?: string | null
+  artist_name?: string | null
+  efficiency_score?: number | null
+  tier_score?: number | null
+  storage_debt_bytes?: number | null
+  quality_tier?: string | null
+  resolution?: string | null
+  video_bitrate?: number | null
+}
+interface MissingEpisode { season_number: number; episode_number: number; title?: string }
+
+function isMusicAlbum(value: unknown): value is MusicAlbum {
+  return typeof value === 'object' && value !== null && 'title' in value && typeof value.title === 'string'
+}
+
 export function WishlistView(_props: WishlistViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('upgrades')
-  const [upgrades, setUpgrades] = useState<any[]>([])
+  const [upgrades, setUpgrades] = useState<UpgradeItem[]>([])
   const [missing, setMissing] = useState<MissingItem[]>([])
   const [loading, setLoading] = useState(true)
   const { addToast } = useToast()
@@ -46,12 +69,12 @@ export function WishlistView(_props: WishlistViewProps) {
         window.electronAPI.musicGetAlbumsNeedingUpgrade(1000)
       ])
       
-      const safeMovieAndTv: any[] = Array.isArray(movieAndTvUpgrades) ? movieAndTvUpgrades : []
-      const safeMusic: any[] = Array.isArray(musicUpgrades) ? musicUpgrades : []
+      const safeMovieAndTv: MediaItem[] = Array.isArray(movieAndTvUpgrades) ? movieAndTvUpgrades : []
+      const safeMusic: MusicAlbum[] = Array.isArray(musicUpgrades) ? musicUpgrades.filter(isMusicAlbum) : []
 
       const allUpgrades = [
-        ...safeMovieAndTv.map(i => (typeof i === 'object' && i !== null ? { ...i, category: 'media' } : i)),
-        ...safeMusic.map(i => (typeof i === 'object' && i !== null ? { ...i, category: 'music', type: 'album' } : i))
+        ...safeMovieAndTv.map(i => ({ ...i, category: 'media' as const } satisfies UpgradeItem)),
+        ...safeMusic.map(i => ({ ...i, category: 'music' as const, type: 'album' as const } satisfies UpgradeItem))
       ]
       
       setUpgrades(allUpgrades)
@@ -92,7 +115,7 @@ export function WishlistView(_props: WishlistViewProps) {
       safeSeries.forEach(s => {
         try {
           const missingEpisodes = JSON.parse(s.missing_episodes || '[]')
-          missingEpisodes.forEach((ep: any) => {
+          missingEpisodes.forEach((ep: MissingEpisode) => {
             missingList.push({
               id: `episode-${s.tmdb_id}-${ep.season_number}-${ep.episode_number}`,
               title: ep.title || `Episode ${ep.episode_number}`,
@@ -119,11 +142,11 @@ export function WishlistView(_props: WishlistViewProps) {
   }, [addToast])
 
   useEffect(() => {
-    loadData()
+    queueMicrotask(() => { void loadData() })
   }, [loadData])
 
   // Handle Dismiss for Upgrades
-  const handleDismissUpgrade = async (item: any) => {
+  const handleDismissUpgrade = async (item: UpgradeItem) => {
     try {
       if (item.category === 'music') {
         await window.electronAPI.addExclusion('media_upgrade', item.id, undefined, undefined, item.title)
@@ -173,7 +196,7 @@ export function WishlistView(_props: WishlistViewProps) {
   }
 
   // Render individual upgrade row
-  const renderUpgradeRow = (_index: number, item: any) => {
+  const renderUpgradeRow = (_index: number, item: UpgradeItem) => {
     const isMusic = item.category === 'music'
     const effScore = item.efficiency_score ?? (isMusic ? item.tier_score : 0)
     const debtBytes = item.storage_debt_bytes ?? 0
@@ -182,7 +205,7 @@ export function WishlistView(_props: WishlistViewProps) {
       <div className="flex items-center gap-4 p-4 pb-2 bg-card border border-border/50 rounded-xl shadow-sm hover:border-border transition-colors group">
         <div className="flex-shrink-0 w-16 h-24 bg-muted rounded overflow-hidden">
           {(item.poster_url || item.thumb_url) ? (
-            <img src={item.poster_url || item.thumb_url} alt={item.title} className="w-full h-full object-cover" />
+            <img src={item.poster_url || item.thumb_url || undefined} alt={item.title} className="w-full h-full object-cover" />
           ) : item.type === 'movie' ? (
             <div className="w-full h-full flex items-center justify-center">
               <MoviePlaceholder className="w-8 h-8 text-muted-foreground" />

@@ -12,6 +12,7 @@ import {
   ScanResult,
   ScanOptions,
   SourceConfig,
+  ProgressCallback,
 } from '@main/providers/base/MediaProvider'
 import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
@@ -63,6 +64,8 @@ export interface KodiMusicArtist {
   description?: string
   thumbnail?: string
 }
+
+interface KodiTVShow { label?: string; title?: string; imdbnumber?: string; year?: number; plot?: string; art?: { poster?: string; fanart?: string } }
 
 export interface KodiMusicAlbum {
   albumid: number
@@ -132,8 +135,8 @@ export class KodiProvider extends BaseMediaProvider {
         serverVersion: `${result.version.major}.${result.version.minor}.${result.version.revision}`,
         latencyMs: Date.now() - startTime,
       }
-    } catch (error: any) {
-      return { success: false, error: error.message }
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) }
     }
   }
 
@@ -167,12 +170,12 @@ export class KodiProvider extends BaseMediaProvider {
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
     if (itemId.startsWith('movie-')) {
       const id = parseInt(itemId.replace('movie-', ''), 10)
-      const res = await this.rpc.call<{ movieid: number; title: string; file: string; streamdetails: any; art: any }>('VideoLibrary.GetMovieDetails', { movieid: id, properties: ['file', 'streamdetails', 'art'] })
-      return this.mapper.convertToMediaMetadata(res as any, MediaItemType.Movie)
+      const res = await this.rpc.call<KodiMovie>('VideoLibrary.GetMovieDetails', { movieid: id, properties: ['file', 'streamdetails', 'art'] })
+      return this.mapper.convertToMediaMetadata(res, MediaItemType.Movie)
     } else {
       const id = parseInt(itemId.replace('episode-', ''), 10)
-      const res = await this.rpc.call<{ episodeid: number; title: string; file: string; streamdetails: any; art: any }>('VideoLibrary.GetEpisodeDetails', { episodeid: id, properties: ['file', 'streamdetails', 'art'] })
-      return this.mapper.convertToMediaMetadata(res as any, MediaItemType.Episode)
+      const res = await this.rpc.call<KodiEpisode>('VideoLibrary.GetEpisodeDetails', { episodeid: id, properties: ['file', 'streamdetails', 'art'] })
+      return this.mapper.convertToMediaMetadata(res, MediaItemType.Episode)
     }
   }
 
@@ -203,9 +206,11 @@ export class KodiProvider extends BaseMediaProvider {
         })
 
         try {
-          const shows = (await this.rpc.call<{ tvshows: any[] }>('VideoLibrary.GetTVShows', { properties: ['art', 'imdbnumber', 'year', 'plot'] })).tvshows || []
+          const shows = (await this.rpc.call<{ tvshows: KodiTVShow[] }>('VideoLibrary.GetTVShows', { properties: ['art', 'imdbnumber', 'year', 'plot'] })).tvshows || []
           for (const show of shows) {
-            const showEpisodes = episodesByShow.get(show.label || show.title) || []
+            const showTitle = show.label || show.title
+            if (!showTitle) continue
+            const showEpisodes = episodesByShow.get(showTitle) || []
             const ownedEpisodes = showEpisodes.length
             const ownedSeasons = new Set(showEpisodes.map(e => e.season).filter(s => s !== undefined)).size
 
@@ -214,7 +219,7 @@ export class KodiProvider extends BaseMediaProvider {
             else if (show.imdbnumber && !isNaN(parseInt(show.imdbnumber))) { tmdbId = show.imdbnumber }
 
             db.tvShows.upsertCompleteness({
-              series_title: show.label || show.title,
+              series_title: showTitle,
               source_id: this.sourceId,
               library_id: libraryId,
               total_seasons: ownedSeasons,
@@ -247,8 +252,8 @@ export class KodiProvider extends BaseMediaProvider {
               mediaItem.library_id = libraryId
               
               const id = await db.media.upsertItem(mediaItem)
-              const scoredVersions = versions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion(v as any) }))
-              await db.media.syncItemVersions(id, scoredVersions as any)
+              const scoredVersions = versions.map(v => ({ ...v, media_item_id: id, ...analyzer.analyzeVersion({ ...v, media_item_id: id }) }))
+              await db.media.syncItemVersions(id, scoredVersions)
               
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
               qualityScore.media_item_id = id
@@ -271,13 +276,13 @@ export class KodiProvider extends BaseMediaProvider {
       } finally { await db.endBatch() }
 
       result.success = true
-    } catch (e: any) { result.errors.push(getErrorMessage(e)) }
+    } catch (e: unknown) { result.errors.push(getErrorMessage(e)) }
     
     result.durationMs = Date.now() - startTime
     return result
   }
 
-  async scanMusicLibrary(onProgress?: (p: any) => void): Promise<ScanResult> {
+  async scanMusicLibrary(onProgress?: ProgressCallback): Promise<ScanResult> {
     const startTime = Date.now()
     const result: ScanResult = { success: false, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
     
@@ -311,10 +316,10 @@ export class KodiProvider extends BaseMediaProvider {
             ac++; tc += trackDataList.length
           }
           await db.music.updateMusicArtistCounts(artistId, ac, tc)
-        } catch (e: any) { result.errors.push(`Artist ${artist.artist}: ${getErrorMessage(e)}`) }
+        } catch (e: unknown) { result.errors.push(`Artist ${artist.artist}: ${getErrorMessage(e)}`) }
       }
       result.success = true
-    } catch (e: any) { result.errors.push(getErrorMessage(e)) }
+    } catch (e: unknown) { result.errors.push(getErrorMessage(e)) }
     
     result.durationMs = Date.now() - startTime
     return result

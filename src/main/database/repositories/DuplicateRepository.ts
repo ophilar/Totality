@@ -1,5 +1,6 @@
 import { eq, and, sql } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
@@ -17,7 +18,7 @@ export interface MediaDuplicate {
 }
 
 export class DuplicateRepository extends BaseRepository<typeof schema.mediaItemDuplicates> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'media_item_duplicates', drizzle, schema.mediaItemDuplicates)
   }
 
@@ -67,22 +68,22 @@ export class DuplicateRepository extends BaseRepository<typeof schema.mediaItemD
   }
 
   async getById(id: number): Promise<MediaDuplicate | null> {
-    const results = await this.drizzle.select().from(this.table).where(eq((this.table as any).id, id)).limit(1)
+    const results = await this.drizzle.select().from(schema.mediaItemDuplicates).where(eq(schema.mediaItemDuplicates.id, id)).limit(1)
     return results[0] ? this.mapDrizzleToDuplicate([results[0]])[0] : null
   }
 
-  private mapDrizzleToDuplicate(rows: any[]): MediaDuplicate[] {
+  private mapDrizzleToDuplicate(rows: Array<typeof schema.mediaItemDuplicates.$inferSelect>): MediaDuplicate[] {
     return rows.map(r => ({
       id: r.id,
-      source_id: r.sourceId || r.source_id,
-      external_id: r.externalId || r.external_id,
-      external_type: (r.externalType || r.external_type) as any,
-      media_item_ids: r.mediaItemIds || r.media_item_ids,
-      status: r.status,
-      resolution_strategy: r.resolutionStrategy || r.resolution_strategy || undefined,
-      resolved_at: r.resolvedAt || r.resolved_at || undefined,
-      created_at: r.createdAt || r.created_at,
-      updated_at: r.updatedAt || r.updated_at
+      source_id: r.sourceId,
+      external_id: r.externalId,
+      external_type: r.externalType as MediaDuplicate['external_type'],
+      media_item_ids: r.mediaItemIds,
+      status: r.status as MediaDuplicate['status'],
+      resolution_strategy: r.resolutionStrategy || undefined,
+      resolved_at: r.resolvedAt || undefined,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt
     }))
   }
 }

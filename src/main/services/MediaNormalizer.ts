@@ -328,9 +328,9 @@ export function normalizeResolution(
 // HDR FORMAT NORMALIZATION
 // ============================================================================
 
-/**
- * Normalize HDR format from various sources
- */
+import { detectHdrFormat, normalizeHdrFormatValue } from '@main/types/mediaContracts'
+
+/** Normalize HDR format from provider metadata through the shared contract. */
 export function normalizeHdrFormat(
   hdrType: string | null | undefined,
   colorTrc: string | null | undefined,
@@ -338,66 +338,11 @@ export function normalizeHdrFormat(
   bitDepth: number | null | undefined,
   profile: string | null | undefined
 ): string | undefined {
-  // Check explicit HDR type first (Kodi, some Jellyfin)
-  if (hdrType) {
-    const hdrLower = hdrType.toLowerCase()
-
-    if (hdrLower.includes('dolbyvision') || hdrLower.includes('dolby vision') || hdrLower.includes('dovi')) {
-      return 'Dolby Vision'
-    }
-    if (hdrLower.includes('hdr10+') || hdrLower.includes('hdr10plus')) {
-      return 'HDR10+'
-    }
-    if (hdrLower.includes('hdr10') || hdrLower === 'hdr') {
-      return 'HDR10'
-    }
-    if (hdrLower.includes('hlg')) {
-      return 'HLG'
-    }
-  }
-
-  // Check profile for Dolby Vision
-  if (profile) {
-    const profileLower = profile.toLowerCase()
-    if (profileLower.includes('dolby vision') || profileLower.includes('dovi')) {
-      return 'Dolby Vision'
-    }
-  }
-
-  // Check color primaries and transfer characteristics (Plex style)
-  const trcLower = (colorTrc || '').toLowerCase()
-  const primariesLower = (colorPrimaries || '').toLowerCase()
-
-  // Dolby Vision detection
-  if (trcLower.includes('dovi') || primariesLower.includes('dovi')) {
-    return 'Dolby Vision'
-  }
-
-  // HDR10+ detection
-  if (trcLower.includes('hdr10+') || trcLower.includes('smpte2094')) {
-    return 'HDR10+'
-  }
-
-  // HLG detection
-  if (trcLower.includes('hlg') || trcLower === 'arib-std-b67') {
-    return 'HLG'
-  }
-
-  // HDR10 detection (BT.2020 with PQ transfer)
-  if (
-    (primariesLower.includes('bt2020') || primariesLower.includes('rec2020')) &&
-    (trcLower.includes('smpte2084') || trcLower.includes('pq') || trcLower.includes('st2084'))
-  ) {
-    return 'HDR10'
-  }
-
-  // Generic HDR detection by bit depth
-  if (bitDepth && bitDepth >= 10) {
-    if (primariesLower.includes('bt2020') || primariesLower.includes('rec2020')) {
-      return 'HDR10'
-    }
-  }
-
+  const value = normalizeHdrFormatValue(hdrType || profile || null)
+  if (value !== 'SDR') return value
+  const detected = detectHdrFormat({ colorTransfer: colorTrc || undefined, colorPrimaries: colorPrimaries || undefined })
+  if (detected !== 'SDR') return detected
+  if (bitDepth && bitDepth >= 10 && (colorPrimaries || '').toLowerCase().includes('2020')) return 'HDR10'
   return undefined
 }
 

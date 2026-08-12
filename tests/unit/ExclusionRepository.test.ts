@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('ExclusionRepository (Real DB)', () => {
   let repo: ExclusionRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

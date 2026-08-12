@@ -1,4 +1,5 @@
 import { createClient, Client } from '@libsql/client'
+import type { InValue } from '@libsql/client'
 import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import * as path from 'path'
@@ -17,8 +18,11 @@ import { TaskRepository } from '@main/database/repositories/TaskRepository'
 import { DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
 import { MovieCollectionRepository } from '@main/database/repositories/MovieCollectionRepository'
 import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
+import { MediaRemuxJobRepository } from '@main/database/repositories/MediaRemuxJobRepository'
 
 let serviceInstance: BetterSQLiteService | null = null
+type ExportRow = Record<string, unknown>
+type ExportData = Record<string, ExportRow[]>
 
 /**
  * Get the database service instance (singleton)
@@ -47,7 +51,22 @@ export class BetterSQLiteService {
   private _drizzle: LibSQLDatabase<typeof schema> | null = null
   private dbPath: string = ''
   private _transactionDepth = 0
-  private repos: Record<string, any> = {}
+  private repos: Partial<{
+    config: ConfigRepository
+    media: MediaRepository
+    music: MusicRepository
+    stats: StatsRepository
+    notifications: NotificationRepository
+    tvShows: TVShowRepository
+    sources: SourceRepository
+    wishlist: WishlistRepository
+    exclusions: ExclusionRepository
+    tasks: TaskRepository
+    duplicates: DuplicateRepository
+    movieCollections: MovieCollectionRepository
+    identities: IdentityRepository
+    mediaRemuxJobs: MediaRemuxJobRepository
+  }> = {}
   private _lock: Promise<void> = Promise.resolve()
 
   private async withLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -118,19 +137,20 @@ export class BetterSQLiteService {
   }
 
   // Repository Getters
-  public get config() { return this.repos.config ??= new ConfigRepository(this.db as any, this.drizzle) }
-  public get media() { return this.repos.media ??= new MediaRepository(this.db as any, this.drizzle) }
-  public get music() { return this.repos.music ??= new MusicRepository(this.db as any, this.drizzle) }
+  public get config() { return this.repos.config ??= new ConfigRepository(this.db, this.drizzle) }
+  public get media() { return this.repos.media ??= new MediaRepository(this.db, this.drizzle) }
+  public get music() { return this.repos.music ??= new MusicRepository(this.db, this.drizzle) }
   public get stats() { return this.repos.stats ??= new StatsRepository(this.drizzle) }
-  public get notifications() { return this.repos.notifications ??= new NotificationRepository(this.db as any, this.drizzle) }
-  public get tvShows() { return this.repos.tvShows ??= new TVShowRepository(this.db as any, this.drizzle) }
-  public get sources() { return this.repos.sources ??= new SourceRepository(this.db as any, this.drizzle) }
-  public get wishlist() { return this.repos.wishlist ??= new WishlistRepository(this.db as any, this.drizzle) }
-  public get exclusions() { return this.repos.exclusions ??= new ExclusionRepository(this.db as any, this.drizzle) }
-  public get tasks() { return this.repos.tasks ??= new TaskRepository(this.db as any, this.drizzle) }
-  public get duplicates() { return this.repos.duplicates ??= new DuplicateRepository(this.db as any, this.drizzle) }
-  public get movieCollections() { return this.repos.movieCollections ??= new MovieCollectionRepository(this.db as any, this.drizzle) }
-  public get identities() { return this.repos.identities ??= new IdentityRepository(this.db as any) }
+  public get notifications() { return this.repos.notifications ??= new NotificationRepository(this.db, this.drizzle) }
+  public get tvShows() { return this.repos.tvShows ??= new TVShowRepository(this.db, this.drizzle) }
+  public get sources() { return this.repos.sources ??= new SourceRepository(this.db, this.drizzle) }
+  public get wishlist() { return this.repos.wishlist ??= new WishlistRepository(this.db, this.drizzle) }
+  public get exclusions() { return this.repos.exclusions ??= new ExclusionRepository(this.db, this.drizzle) }
+  public get tasks() { return this.repos.tasks ??= new TaskRepository(this.db, this.drizzle) }
+  public get duplicates() { return this.repos.duplicates ??= new DuplicateRepository(this.db, this.drizzle) }
+  public get movieCollections() { return this.repos.movieCollections ??= new MovieCollectionRepository(this.db, this.drizzle) }
+  public get identities() { return this.repos.identities ??= new IdentityRepository(this.db) }
+  public get mediaRemuxJobs() { return this.repos.mediaRemuxJobs ??= new MediaRemuxJobRepository(this.db, this.drizzle) }
 
   // Transaction API
   public async beginBatch(): Promise<void> {
@@ -171,13 +191,13 @@ export class BetterSQLiteService {
   public isInTransaction(): boolean { return this._transactionDepth > 0 }
   public forceSave(): void { this._client?.execute('PRAGMA wal_checkpoint(PASSIVE)') }
 
-  public async exportData(): Promise<Record<string, any[]>> {
-    const data: Record<string, any[]> = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
+  public async exportData(): Promise<ExportData> {
+    const data: ExportData = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
     for (const t of tables) {
       try { 
         const result = await this.db.execute(`SELECT * FROM ${t}`)
-        data[t] = result.rows as any[]
+        data[t] = result.rows as ExportRow[]
       } catch {
         // Ignore errors for missing tables or query issues
       }
@@ -199,7 +219,7 @@ export class BetterSQLiteService {
     }
   }
 
-  public async importData(data: Record<string, any[]>): Promise<{ imported: number, errors: number }> {
+  public async importData(data: ExportData): Promise<{ imported: number, errors: number }> {
     let imported = 0, errors = 0
     await this.beginBatch()
     try {
@@ -223,7 +243,7 @@ export class BetterSQLiteService {
             const cols = keys.join(','), vals = keys.map(() => '?').join(',')
             await this.db.execute({
               sql: `INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${vals})`,
-              args: values as any[]
+              args: values as InValue[]
             })
             imported++
           } catch { errors++ }

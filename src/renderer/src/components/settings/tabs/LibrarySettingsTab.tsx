@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
 import {
   Music,
   Film,
@@ -144,8 +145,9 @@ export function LibrarySettingsTab() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
 
   // Protected Libraries state
-  const [sources, setSources] = useState<any[]>([])
-  const [sourceLibraries, setSourceLibraries] = useState<Record<string, any[]>>({})
+  type LibraryWithStatus = MediaLibraryResponse & { isEnabled: boolean; isProtected: boolean; allowExpandedMatching: boolean; lastScanAt: string | null; itemsScanned: number }
+  const [sources, setSources] = useState<MediaSourceResponse[]>([])
+  const [sourceLibraries, setSourceLibraries] = useState<Record<string, LibraryWithStatus[]>>({})
   const [hasPin, setHasPin] = useState(false)
   const [isChangingPin, setIsChangingPin] = useState(false)
   const [newPin, setNewPin] = useState('')
@@ -165,8 +167,8 @@ export function LibrarySettingsTab() {
       const srcList = await window.electronAPI.sourcesList()
       setSources(srcList)
       
-      const libMap: Record<string, any[]> = {}
-      await Promise.all(srcList.map(async (src: any) => {
+      const libMap: Record<string, LibraryWithStatus[]> = {}
+      await Promise.all(srcList.map(async (src) => {
         const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(src.source_id)
         libMap[src.source_id] = libs
       }))

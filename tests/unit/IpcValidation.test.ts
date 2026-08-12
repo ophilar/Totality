@@ -397,7 +397,7 @@ describe('IPC Validation Schemas', () => {
 
     it('accepts recoverable and debt as valid sortBy options', () => {
       for (const sortBy of ['recoverable', 'debt', 'completeness', 'episodes', 'storage_debt', 'efficiency', 'size']) {
-        const result = validateInput(TVShowFiltersSchema, { sortBy: sortBy as any }, 'test')
+        const result = validateInput(TVShowFiltersSchema, { sortBy }, 'test')
         expect(result?.sortBy).toBe(sortBy)
       }
     })

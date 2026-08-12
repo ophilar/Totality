@@ -4,8 +4,16 @@ import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { MediaItemType, LibraryType } from '@main/types/database'
 
+type PlexScanHooks = {
+  selectedServer: unknown
+  getLibraries: (...args: never[]) => Promise<unknown[]>
+  paginatedPlexFetch: (...args: never[]) => Promise<unknown[]>
+  getShowEpisodes: (...args: never[]) => Promise<unknown[]>
+  getItemMetadataDetailed: (...args: never[]) => Promise<unknown>
+}
+
 describe('Show-Aware Scan & Metadata Integrity', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -33,7 +41,7 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
         episode_number: 1,
         file_path: '/path/to/ep1.mkv',
         poster_url: 'provider-poster-url'
-      } as any)
+      })
 
       // 2. Run analysis without TMDB key
       await db.config.setSetting('tmdb_api_key', '')
@@ -69,7 +77,7 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
       await db.media.upsertItem({
         source_id: 's1', library_id: '2', plex_id: 'ep2', title: 'Ep 1', type: MediaItemType.Episode,
         series_title: 'Matched Show', season_number: 1, episode_number: 1, file_path: '/p2.mkv'
-      } as any)
+      })
 
       // 2. Run analysis without TMDB key (simulating offline/no key)
       await db.config.setSetting('tmdb_api_key', '')
@@ -85,13 +93,14 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
     it('should upsert show completeness stubs during initial scan', async () => {
       // 1. Mock Plex response with a show and episodes
       const provider = new PlexProvider({ sourceId: 'p1', sourceName: 'Plex', sourceType: 'plex', connectionConfig: { token: 't' } })
+      const hooks = provider as unknown as PlexScanHooks
       
       // Mock the internal fetcher to return a show
-      vi.spyOn(provider as any, 'getLibraries').mockResolvedValue([{ id: '2', name: 'TV', type: LibraryType.Show }])
-      vi.spyOn(provider as any, 'paginatedPlexFetch').mockResolvedValue([
+      vi.spyOn(hooks, 'getLibraries').mockResolvedValue([{ id: '2', name: 'TV', type: LibraryType.Show }])
+      vi.spyOn(hooks, 'paginatedPlexFetch').mockResolvedValue([
         { ratingKey: 'show1', type: 'show', title: 'Plex Show', thumb: '/thumb.jpg', Guid: [{ id: 'tmdb://999' }] }
       ])
-      vi.spyOn(provider as any, 'getShowEpisodes').mockResolvedValue([
+      vi.spyOn(hooks, 'getShowEpisodes').mockResolvedValue([
         { 
           ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
           Media: [{ 
@@ -107,7 +116,7 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
           }] 
         }
       ])
-      vi.spyOn(provider as any, 'getItemMetadataDetailed').mockResolvedValue({
+      vi.spyOn(hooks, 'getItemMetadataDetailed').mockResolvedValue({
         ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
         Media: [{ 
           id: 1, 
@@ -123,7 +132,7 @@ describe('Show-Aware Scan & Metadata Integrity', () => {
       })
 
       // Select a server (mocked)
-      ;(provider as any).selectedServer = { uri: 'http://plex:32400', accessToken: 't' }
+      hooks.selectedServer = { uri: 'http://plex:32400', accessToken: 't' }
 
       // 2. Run Scan
       await provider.scanLibrary('2')

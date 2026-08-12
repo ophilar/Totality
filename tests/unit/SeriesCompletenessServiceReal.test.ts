@@ -3,15 +3,16 @@ import { SeriesCompletenessService } from '../../src/main/services/SeriesComplet
 import { getDatabase, resetBetterSQLiteServiceForTesting } from '../../src/main/database/BetterSQLiteService'
 import { getTMDBService, resetTMDBServiceForTesting } from '../../src/main/services/TMDBService'
 import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 describe('SeriesCompletenessService (No Mocks)', () => {
-  let db: any
-  let tmdb: any
+  let db: ReturnType<typeof getDatabase>
+  let tmdb: ReturnType<typeof getTMDBService>
   let service: SeriesCompletenessService
   let server: http.Server
   let serverPort: number
 
-  const createEpisode = (overrides: any) => {
+  const createEpisode = (overrides: Record<string, unknown>) => {
     return {
       type: 'episode',
       title: overrides.title || `Episode ${overrides.episode_number || 1}`,
@@ -73,8 +74,9 @@ describe('SeriesCompletenessService (No Mocks)', () => {
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => {
-        const address = server.address() as any
-        serverPort = address.port
+        const address = server.address()
+        if (!address || typeof address === 'string') throw new Error('Test server did not expose an address')
+        serverPort = (address as AddressInfo).port
         resolve()
       })
     })

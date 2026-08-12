@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
 /**
  * KodiDatabaseSchema
  *
@@ -546,24 +547,8 @@ ORDER BY m.c07, m.c00
  * Parse HDR type from Kodi's strHdrType field
  */
 export function parseHdrType(hdrType: string | null): string {
-  if (!hdrType) return 'None'
-
-  const hdrLower = hdrType.toLowerCase()
-
-  if (hdrLower.includes('dolbyvision') || hdrLower.includes('dolby vision') || hdrLower.includes('dovi')) {
-    return 'Dolby Vision'
-  }
-  if (hdrLower.includes('hdr10+') || hdrLower.includes('hdr10plus')) {
-    return 'HDR10+'
-  }
-  if (hdrLower.includes('hdr10') || hdrLower.includes('hdr')) {
-    return 'HDR10'
-  }
-  if (hdrLower.includes('hlg')) {
-    return 'HLG'
-  }
-
-  return 'None'
+  const normalized = normalizeHdrFormatValue(hdrType)
+  return normalized === 'SDR' ? 'None' : normalized
 }
 
 /**

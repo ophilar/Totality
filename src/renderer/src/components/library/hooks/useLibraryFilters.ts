@@ -77,8 +77,8 @@ export function useLibraryFilters(searchQuery: string): UseLibraryFiltersReturn 
 
       // Slim Down filter (client-side fallback for dynamically-loaded sets like collections mixed with movies)
       if (slimDown) {
-        const effScore = (item as any).efficiency_score ?? 100
-        const debt = (item as any).storage_debt_bytes ?? 0
+        const effScore = item.efficiency_score ?? 100
+        const debt = item.storage_debt_bytes ?? 0
         if (effScore >= 60 && debt <= 5368709120) return false
       }
 

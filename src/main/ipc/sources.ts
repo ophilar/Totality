@@ -12,7 +12,7 @@ import { getSourceManager } from '@main/services/SourceManager'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getKodiLocalDiscoveryService } from '@main/services/KodiLocalDiscoveryService'
-import { getKodiMySQLConnectionService } from '@main/services/KodiMySQLConnectionService'
+import { getKodiMySQLConnectionService, type KodiMySQLConfig } from '@main/services/KodiMySQLConnectionService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { LibraryType, ProviderType } from '@main/types/database'
 import { safeSend, getWindowFromEvent } from '@main/ipc/utils/safeSend'
@@ -38,6 +38,21 @@ import {
 import { z } from 'zod'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
 import { MediaMonkeyProvider } from '@main/providers/mediamonkey/MediaMonkeyProvider'
+
+interface KodiLocalCapabilities {
+  importCollections: (onProgress?: (progress: { current: number; total: number; currentItem: string }) => void) => Promise<unknown>
+  setFFprobeAnalysis: (enabled: boolean) => void
+  isFFprobeAnalysisEnabled: () => boolean
+  isFFprobeAvailable: () => Promise<boolean>
+  getFFprobeVersion: () => Promise<string | null>
+}
+
+function getKodiLocalCapabilities(provider: unknown): KodiLocalCapabilities {
+  if (typeof provider !== 'object' || provider === null) throw new Error('Not a Kodi local source')
+  const candidate = provider as Partial<KodiLocalCapabilities>
+  if (typeof candidate.importCollections !== 'function' || typeof candidate.setFFprobeAnalysis !== 'function' || typeof candidate.isFFprobeAnalysisEnabled !== 'function' || typeof candidate.isFFprobeAvailable !== 'function' || typeof candidate.getFFprobeVersion !== 'function') throw new Error('Kodi local capabilities are unavailable')
+  return candidate as KodiLocalCapabilities
+}
 
 /**
  * Register all source-related IPC handlers
@@ -154,7 +169,7 @@ export function registerSourceHandlers(): void {
     try {
       const db = getDatabase()
       const libraries = await manager.getLibraries(sourceId)
-      const storedLibraries = await db.sources.getSourceLibraries(sourceId) as any[]
+      const storedLibraries = await db.sources.getSourceLibraries(sourceId)
       const storedMap = new Map(storedLibraries.map(l => [l.libraryId, l]))
 
       return libraries.map(lib => {
@@ -179,7 +194,7 @@ export function registerSourceHandlers(): void {
     return { success: true }
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.SET_LIBRARIES_ENABLED, z.tuple([SourceIdSchema, z.array(z.any())]), async (sourceId, libraries) => {
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.SET_LIBRARIES_ENABLED, z.tuple([SourceIdSchema, z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), enabled: z.boolean() }))]), async (sourceId, libraries) => {
     const db = getDatabase()
     await db.sources.setLibrariesEnabled(sourceId, libraries)
     return { success: true }
@@ -208,7 +223,7 @@ export function registerSourceHandlers(): void {
     } finally { flush() }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanAll', z.any().optional(), async (event: IpcMainInvokeEvent) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAll', z.unknown().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -217,7 +232,8 @@ export function registerSourceHandlers(): void {
         if (result.success && !result.cancelled) {
           const [sId, lId] = key.split(':')
           const source = await manager.getSource(sId)
-          safeSend(win, 'scan:completed', { sourceId: sId, libraryId: lId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: (result as any).isFirstScan || false })
+          const scanResult = result as typeof result & { isFirstScan?: boolean }
+          safeSend(win, 'scan:completed', { sourceId: sId, libraryId: lId, libraryName: source?.display_name || 'Library', itemsScanned: result.itemsScanned, itemsAdded: result.itemsAdded, itemsUpdated: result.itemsUpdated, isFirstScan: scanResult.isFirstScan || false })
         }
       }
       return Array.from(results.entries()).map(([key, value]) => ({ key, ...value }))
@@ -254,7 +270,7 @@ export function registerSourceHandlers(): void {
     } finally { flush() }
   })
 
-  createValidatedIpcHandlerWithEvent('sources:scanAllIncremental', z.any().optional(), async (event: IpcMainInvokeEvent) => {
+  createValidatedIpcHandlerWithEvent('sources:scanAllIncremental', z.unknown().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'sources:scanProgress', 'media')
     try {
@@ -277,7 +293,7 @@ export function registerSourceHandlers(): void {
   createIpcHandler(IPC_CHANNELS.SOURCES.GET_STATS, async (sourceId?: string) => {
     if (sourceId) {
       const db = getDatabase()
-      return await db.stats.getSourceStats(sourceId)
+      return (await db.stats.getSourceStats()).filter(source => source.sourceId === sourceId)
     }
     return await manager.getAggregatedStats()
   })
@@ -302,7 +318,7 @@ export function registerSourceHandlers(): void {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'kodi:collectionProgress', 'media')
     try {
-      return await (provider as any).importCollections(onProgress)
+      return await getKodiLocalCapabilities(provider).importCollections(onProgress)
     } finally { flush() }
   })
 
@@ -312,12 +328,13 @@ export function registerSourceHandlers(): void {
 
   createValidatedIpcHandler('kodi:testMySQLConnection', KodiMySQLTestConfigSchema, async (config) => {
     const service = getKodiMySQLConnectionService()
-    return await service.testConnection({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_', connectionTimeout: config.connectionTimeout || 10000 } as any)
+    const mysqlConfig: KodiMySQLConfig = { ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_', connectionTimeout: config.connectionTimeout || 10000 }
+    return await service.testConnection(mysqlConfig)
   })
 
   createValidatedIpcHandler('kodi:authenticateMySQL', KodiMySQLConfigSchema, async (config) => {
     const provider = new KodiMySQLProvider({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: {} })
-    const res = await provider.authenticate({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_' } as any)
+    const res = await provider.authenticate({ ...config, port: config.port || 3306, databasePrefix: config.databasePrefix || 'kodi_' })
     if (!res.success) return { success: false, error: res.error }
     const source = await manager.addSource({ sourceType: ProviderType.KodiMySQL, displayName: config.displayName, connectionConfig: provider.getConnectionConfig(), isEnabled: true })
     return { success: true, source, serverName: res.serverName, serverVersion: res.serverVersion }
@@ -342,20 +359,21 @@ export function registerSourceHandlers(): void {
   createValidatedIpcHandler('ffprobe:setEnabled', z.tuple([SourceIdSchema, z.boolean()]), async (sourceId, enabled) => {
     const provider = manager.getProvider(sourceId)
     if (provider?.providerType !== ProviderType.KodiLocal) throw new Error('Not a Kodi local source')
-    ;(provider as any).setFFprobeAnalysis(enabled)
+    getKodiLocalCapabilities(provider).setFFprobeAnalysis(enabled)
     return { success: true, enabled }
   })
 
   createValidatedIpcHandler('ffprobe:isEnabled', SourceIdSchema, async (sourceId) => {
     const provider = manager.getProvider(sourceId)
-    return provider?.providerType === ProviderType.KodiLocal ? (provider as any).isFFprobeAnalysisEnabled() : false
+    return provider?.providerType === ProviderType.KodiLocal ? getKodiLocalCapabilities(provider).isFFprobeAnalysisEnabled() : false
   })
 
   createValidatedIpcHandler('ffprobe:isAvailableForSource', SourceIdSchema, async (sourceId) => {
     const provider = manager.getProvider(sourceId)
     if (provider?.providerType !== ProviderType.KodiLocal) return { available: false, reason: 'Not a Kodi local source' }
-    const available = await (provider as any).isFFprobeAvailable()
-    const version = available ? await (provider as any).getFFprobeVersion() : null
+    const capabilities = getKodiLocalCapabilities(provider)
+    const available = await capabilities.isFFprobeAvailable()
+    const version = available ? await capabilities.getFFprobeVersion() : null
     return { available, version, reason: available ? null : 'FFprobe not found' }
   })
 
@@ -363,7 +381,7 @@ export function registerSourceHandlers(): void {
     return getMediaFileAnalyzer().canInstall()
   })
 
-  createValidatedIpcHandlerWithEvent('ffprobe:install', z.any().optional(), async (event: IpcMainInvokeEvent) => {
+  createValidatedIpcHandlerWithEvent('ffprobe:install', z.unknown().optional(), async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     return await getMediaFileAnalyzer().installFFprobe((p) => safeSend(win, 'ffprobe:installProgress', p))
   })
@@ -384,14 +402,14 @@ export function registerSourceHandlers(): void {
   // LOCAL FOLDER
   // ============================================================================
 
-  createIpcHandlerWithEvent('local:selectFolder', async (event: any) => {
+  createIpcHandlerWithEvent('local:selectFolder', async (event: IpcMainInvokeEvent) => {
     const win = getWindowFromEvent(event)
     if (!win) return { cancelled: true }
     const result = await dialog.showOpenDialog(win, { title: 'Select Media Folder', properties: ['openDirectory'], buttonLabel: 'Select Folder' })
     return result.canceled || result.filePaths.length === 0 ? { cancelled: true } : { cancelled: false, folderPath: result.filePaths[0] }
   })
 
-  createIpcHandlerWithEvent('local:selectFile', async (event: any, options?: any) => {
+  createIpcHandlerWithEvent('local:selectFile', async (event: IpcMainInvokeEvent, options?: { filters?: Electron.FileFilter[] }) => {
     const win = getWindowFromEvent(event)
     if (!win) return { cancelled: true }
     const result = await dialog.showOpenDialog(win, options || { title: 'Select File', properties: ['openFile'] })
@@ -425,7 +443,7 @@ export function registerSourceHandlers(): void {
   })
 
   createValidatedIpcHandler('local:addSourceWithLibraries', LocalFolderWithLibrariesSchema, async (config) => {
-    return await manager.addSource({ sourceType: ProviderType.Local, displayName: config.displayName, connectionConfig: { folderPath: config.folderPath, mediaType: LibraryType.Mixed, name: config.displayName, customLibraries: config.libraries as any }, isEnabled: true })
+    return await manager.addSource({ sourceType: ProviderType.Local, displayName: config.displayName, connectionConfig: { folderPath: config.folderPath, mediaType: LibraryType.Mixed, name: config.displayName, customLibraries: config.libraries }, isEnabled: true })
   })
 
   getLoggingService().info('[sources]', '[IPC] Source handlers registered')

@@ -5,8 +5,8 @@ import fs from 'node:fs'
 import {
   SourceConfig,
   MediaLibrary,
-  ProviderType,
 } from '@main/providers/base/MediaProvider'
+import { ProviderType, LibraryType } from '@main/types/database'
 import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT,
@@ -14,6 +14,9 @@ import {
 } from '@main/providers/kodi/KodiDatabaseSchema'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import type { ConnectionTestResult } from '@main/types/ipc'
+
+interface KodiCountRow { count?: number }
 
 /**
  * KodiLocalProvider
@@ -32,17 +35,18 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
   constructor(config: SourceConfig) {
     super(config)
     if (config.connectionConfig) {
-      this.databasePath = (config.connectionConfig as any).databasePath || ''
-      this.musicDatabasePath = (config.connectionConfig as any).musicDatabasePath || ''
+      const localConfig = config.connectionConfig as { databasePath?: string; musicDatabasePath?: string }
+      this.databasePath = localConfig.databasePath || ''
+      this.musicDatabasePath = localConfig.musicDatabasePath || ''
     }
   }
 
-  protected async queryAll<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
+  protected async queryAll<T>(sql: string, params: Array<string | number | null> = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
     const db = dbType === 'music' ? await this.getMusicDb() : await this.getDb()
     return db.prepare(sql).all(...params) as T[]
   }
 
-  protected async queryOne<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
+  protected async queryOne<T>(sql: string, params: Array<string | number | null> = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
     const db = dbType === 'music' ? await this.getMusicDb() : await this.getDb()
     return (db.prepare(sql).get(...params) as T) || null
   }
@@ -70,15 +74,15 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
   async getLibraries(): Promise<MediaLibrary[]> {
     const libraries: MediaLibrary[] = []
     try {
-      const movieCount = (await this.queryOne<any>(QUERY_MOVIE_COUNT))?.count || 0
-      const episodeCount = (await this.queryOne<any>(QUERY_EPISODE_COUNT))?.count || 0
+      const movieCount = (await this.queryOne<KodiCountRow>(QUERY_MOVIE_COUNT))?.count || 0
+      const episodeCount = (await this.queryOne<KodiCountRow>(QUERY_EPISODE_COUNT))?.count || 0
 
       if (movieCount > 0) libraries.push({ id: 'movies', name: 'Movies', type: 'movie', itemCount: movieCount })
       if (episodeCount > 0) libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show', itemCount: episodeCount })
       
       if (this.musicDatabasePath && fs.existsSync(this.musicDatabasePath)) {
         const mdb = await this.getMusicDb()
-        const songCount = (mdb.prepare(QUERY_MUSIC_SONG_COUNT).get() as any)?.count || 0
+        const songCount = (mdb.prepare(QUERY_MUSIC_SONG_COUNT).get() as KodiCountRow)?.count || 0
         if (songCount > 0) libraries.push({ id: 'music', name: 'Music', type: 'music', itemCount: songCount })
       }
     } catch (err) {
@@ -87,7 +91,7 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
     return libraries
   }
 
-  async testConnection(): Promise<any> {
+  async testConnection(): Promise<ConnectionTestResult> {
     try {
       await this.getDb()
       return { success: true, serverName: 'Local Kodi SQLite' }
@@ -117,7 +121,7 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
     // Stub
   }
 
-  async getCollections(): Promise<any[]> {
+  async getCollections(): Promise<never[]> {
     return []
   }
 

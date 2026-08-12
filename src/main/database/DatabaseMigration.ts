@@ -83,6 +83,7 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'media_items', 'has_object_audio', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'media_items', 'container', 'TEXT')
   await ensureColumn(db, 'media_items', 'series_tmdb_id', 'TEXT')
+  await ensureColumn(db, 'media_items', 'series_identity_key', 'TEXT')
   await ensureColumn(db, 'media_items', 'user_fixed_match', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'media_items', 'audio_tracks', 'TEXT')
   await ensureColumn(db, 'media_items', 'file_mtime', 'INTEGER')
@@ -105,6 +106,7 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'series_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'series_completeness', 'series_identity_key', 'TEXT')
 
   // Movie Collections
   await ensureColumn(db, 'movie_collections', 'source_id', "TEXT NOT NULL DEFAULT ''")
@@ -159,6 +161,7 @@ export async function runMigrations(db: Client): Promise<void> {
 
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
+  await migrateSeriesIdentity(db)
   await createIndexes(db)
   await fixMusicTrackAlbumReferences(db)
   await migrateExistingItemsToVersions(db)
@@ -166,6 +169,67 @@ export async function runMigrations(db: Client): Promise<void> {
   await backfillMediaIdentities(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
+}
+
+async function migrateSeriesIdentity(db: Client): Promise<void> {
+  const index = await db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_series_completeness_unique'")
+  if (String(index.rows[0]?.sql || '').includes('series_identity_key')) return
+
+  await db.execute('BEGIN')
+  try {
+    await db.execute(`CREATE TABLE series_completeness_identity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      series_title TEXT NOT NULL,
+      series_identity_key TEXT,
+      source_id TEXT NOT NULL DEFAULT '',
+      library_id TEXT NOT NULL DEFAULT '',
+      total_seasons INTEGER NOT NULL,
+      total_episodes INTEGER NOT NULL,
+      owned_seasons INTEGER NOT NULL,
+      owned_episodes INTEGER NOT NULL,
+      missing_seasons TEXT NOT NULL DEFAULT '[]',
+      missing_episodes TEXT NOT NULL DEFAULT '[]',
+      completeness_percentage REAL NOT NULL,
+      tmdb_id TEXT,
+      tvdb_id TEXT,
+      poster_url TEXT,
+      backdrop_url TEXT,
+      status TEXT,
+      user_fixed_match INTEGER,
+      efficiency_score INTEGER,
+      storage_debt_bytes INTEGER,
+      total_size INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`)
+    await db.execute(`INSERT INTO series_completeness_identity
+      SELECT id, series_title,
+        CASE WHEN tmdb_id IS NOT NULL AND tmdb_id <> '' THEN 'tmdb:' || tmdb_id
+             WHEN tvdb_id IS NOT NULL AND tvdb_id <> '' THEN 'tvdb:' || tvdb_id
+             ELSE 'unresolved:' || source_id || ':' || library_id || ':legacy-' || id END,
+        source_id, library_id, total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage, tmdb_id, tvdb_id,
+        poster_url, backdrop_url, status, user_fixed_match, efficiency_score,
+        storage_debt_bytes, total_size, created_at, updated_at
+      FROM series_completeness`)
+    const oldCount = await db.execute('SELECT COUNT(*) AS count FROM series_completeness')
+    const newCount = await db.execute('SELECT COUNT(*) AS count FROM series_completeness_identity')
+    if (Number(oldCount.rows[0]?.count) !== Number(newCount.rows[0]?.count)) throw new Error('Series identity migration row count validation failed')
+    const duplicate = await db.execute(`SELECT COUNT(*) AS count FROM (
+      SELECT series_identity_key, source_id, library_id FROM series_completeness_identity
+      GROUP BY series_identity_key, source_id, library_id HAVING COUNT(*) > 1
+    )`)
+    if (Number(duplicate.rows[0]?.count) !== 0) throw new Error('Series identity migration uniqueness validation failed')
+    await db.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
+    await db.execute('DROP TABLE series_completeness')
+    await db.execute('ALTER TABLE series_completeness_identity RENAME TO series_completeness')
+    await db.execute('CREATE UNIQUE INDEX idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)')
+    await db.execute(`UPDATE media_items SET series_identity_key = CASE WHEN series_tmdb_id IS NOT NULL AND series_tmdb_id <> '' THEN 'tmdb:' || series_tmdb_id ELSE series_identity_key END WHERE type = 'episode' AND series_identity_key IS NULL`)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
+  }
 }
 
 async function backfillMediaIdentities(db: Client): Promise<void> {

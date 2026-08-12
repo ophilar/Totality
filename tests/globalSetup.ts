@@ -8,7 +8,7 @@ export default function globalSetup() {
 
     await Promise.all(
       ['tests/tmp', 'test-output', 'coverage'].map((relativePath) =>
-        rm(path.join(projectRoot, relativePath), { recursive: true, force: true }),
+        rm(path.join(projectRoot, relativePath), { recursive: true, force: true, maxRetries: 8, retryDelay: 150 }),
       ),
     )
   }

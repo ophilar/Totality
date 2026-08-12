@@ -2,6 +2,7 @@ import type { GeminiToolDefinition } from '@main/services/GeminiService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { MediaItemType, WishlistStatus, WishlistMediaType, WishlistReason, MediaItem, TVShowSummary } from '@main/types/database'
+import { Type } from '@google/genai'
 
 /** Actionable item from tool results — not-owned titles the user can add to wishlist */
 export interface ActionableItem {
@@ -15,7 +16,7 @@ export interface ActionableItem {
 function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const result: Partial<T> = {}
   for (const [k, v] of Object.entries(obj)) {
-    if (v !== null && v !== undefined && v !== '') result[k as keyof T] = v as any
+    if (v !== null && v !== undefined && v !== '') result[k as keyof T] = v as T[keyof T]
   }
   return result
 }
@@ -28,9 +29,9 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
     name: 'search_library',
     description: 'Search the media library by title. Returns movies, TV shows, episodes, artists, albums, and tracks matching the query.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
-        query: { type: 'string', description: 'Search query (title, artist name, etc.)' },
+        query: { type: Type.STRING, description: 'Search query (title, artist name, etc.)' },
       },
       required: ['query'],
     },
@@ -39,14 +40,14 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
     name: 'get_media_items',
     description: 'Get movies or TV episodes from the library with optional filters.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
-        type: { type: 'string', enum: ['movie', 'episode'] },
-        quality_tier: { type: 'string', enum: ['SD', '720p', '1080p', '4K'] },
-        tier_quality: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
-        needs_upgrade: { type: 'boolean' },
-        search_query: { type: 'string' },
-        limit: { type: 'number' },
+        type: { type: Type.STRING, enum: ['movie', 'episode'] },
+        quality_tier: { type: Type.STRING, enum: ['SD', '720p', '1080p', '4K'] },
+        tier_quality: { type: Type.STRING, enum: ['LOW', 'MEDIUM', 'HIGH'] },
+        needs_upgrade: { type: Type.BOOLEAN },
+        search_query: { type: Type.STRING },
+        limit: { type: Type.NUMBER },
       },
     },
   },
@@ -99,7 +100,7 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     }
 
     case 'get_tv_shows': {
-      const shows = await db.tvShows.getTVShowSummaries(toolString(input, 'search_query'))
+      const shows = await db.tvShows.getSummaries({ searchQuery: toolString(input, 'search_query') || undefined })
       return JSON.stringify(shows.map((s: TVShowSummary & { owned_episodes?: number }) => compact({ title: s.series_title, episodes: s.total_episodes, owned: s.owned_episodes })))
     }
 
@@ -112,7 +113,7 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     }
 
     case 'get_music_stats': {
-      return JSON.stringify(await db.music.getStats())
+      return JSON.stringify(await db.stats.getMusicLibraryStats())
     }
 
     case 'get_source_list': {

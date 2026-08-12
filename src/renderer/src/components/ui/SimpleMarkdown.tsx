@@ -24,7 +24,7 @@ export function InlineMarkdown({ text }: { text: string }) {
       for (let i = 0; i < segments.length; i++) {
         if (i % 2 === 1) {
           nextParts.push(
-            React.createElement(Tag as any, { key: `fmt-${i}-${Math.random()}`, className }, segments[i]),
+            React.createElement(Tag, { key: `fmt-${i}`, className }, segments[i]),
           )
         } else if (segments[i]) {
           nextParts.push(segments[i])
@@ -103,7 +103,7 @@ export function SimpleMarkdown({ text, className = '', renderCodeBlock }: Simple
     if (headingMatch) {
       const level = headingMatch[1].length
       const content = headingMatch[2]
-      const Tag = `h${Math.min(level + 2, 6)}` as any
+      const Tag = `h${Math.min(level + 2, 6)}` as keyof React.JSX.IntrinsicElements
       elements.push(
         <Tag key={`h-${i}`} className="font-semibold mt-2 mb-1">
           <InlineMarkdown text={content} />

@@ -6,7 +6,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 describe('Database Constraint Validation (Real DB)', () => {
   let mediaRepo: MediaRepository
   let sourceRepo: SourceRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -45,9 +45,9 @@ describe('Database Constraint Validation (Real DB)', () => {
       audio_codec: 'aac',
       audio_channels: 2,
       audio_bitrate: 128
-    } as any)
+    })
 
-    const score: any = {
+    const score = {
       media_item_id: mediaId,
       quality_tier: '1080p',
       tier_quality: 'MEDIUM',
@@ -87,7 +87,7 @@ describe('Database Constraint Validation (Real DB)', () => {
       audio_codec: 'aac',
       audio_channels: 6,
       audio_bitrate: 640
-    } as any)
+    })
 
     const versions = [
       {
@@ -109,12 +109,12 @@ describe('Database Constraint Validation (Real DB)', () => {
       }
     ]
 
-    await mediaRepo.syncItemVersions(mediaId, versions as any)
+    await mediaRepo.syncItemVersions(mediaId, versions)
 
     const savedVersion = (await db.db.execute({
         sql: 'SELECT * FROM media_item_versions WHERE media_item_id = ?',
         args: [mediaId]
-    })).rows[0] as any
+    })).rows[0] as Record<string, unknown>
     expect(savedVersion).toBeDefined()
     expect(savedVersion.hdr_format).toBe('HDR10')
     expect(savedVersion.color_bit_depth).toBe(10)

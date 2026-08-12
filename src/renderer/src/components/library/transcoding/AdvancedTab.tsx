@@ -44,7 +44,7 @@ export function AdvancedTab({
     try {
       const stored = localStorage.getItem(TEMPLATES_STORAGE_KEY)
       if (stored) {
-        setTemplates(JSON.parse(stored))
+        queueMicrotask(() => { setTemplates(JSON.parse(stored)) })
       }
     } catch (e) {
       console.error('Failed to load templates:', e)
@@ -100,9 +100,7 @@ export function AdvancedTab({
 
   const copyCommand = () => {
     if (!params) return
-    const cmd = options.transcodingEngine === 'ffmpeg'
-      ? `ffmpeg ${(params.ffmpegArgs || []).join(' ')}`
-      : `HandBrakeCLI ${params.handbrakeArgs.join(' ')}`
+    const cmd = `ffmpeg ${(params.ffmpegArgs || []).join(' ')}`
     navigator.clipboard.writeText(cmd)
     addToast({ title: 'Command copied to clipboard!', type: 'success' })
   }
@@ -198,11 +196,10 @@ export function AdvancedTab({
           </label>
           <select 
             value={options.transcodingEngine}
-            onChange={(e) => setOptions(prev => ({ ...prev, transcodingEngine: e.target.value as any }))}
+            onChange={(e) => setOptions(prev => ({ ...prev, transcodingEngine: e.target.value as TranscodeOptions['transcodingEngine'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
             {availability?.ffmpeg && <option value="ffmpeg">FFmpeg (Zero-Copy VRAM Pipeline)</option>}
-            {availability?.handbrake && <option value="handbrake">HandBrake CLI</option>}
           </select>
         </div>
 
@@ -214,7 +211,7 @@ export function AdvancedTab({
           </label>
           <select 
             value={options.targetCodec}
-            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value as any }))}
+            onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value as TranscodeOptions['targetCodec'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
             <option value="av1">AV1 (Most Efficient / Next-Gen)</option>
@@ -467,11 +464,7 @@ export function AdvancedTab({
             {params.summary}
           </p>
           <div className="bg-black/40 p-2.5 rounded-xl border border-primary/10 font-mono text-[10px] text-muted-foreground break-all">
-            {options.transcodingEngine === 'ffmpeg' ? (
-              <>ffmpeg ... {(params.ffmpegArgs || []).join(' ')}</>
-            ) : (
-              <>HandBrakeCLI ... {params.handbrakeArgs.join(' ')}</>
-            )}
+            <>ffmpeg ... {(params.ffmpegArgs || []).join(' ')}</>
           </div>
         </div>
       )}

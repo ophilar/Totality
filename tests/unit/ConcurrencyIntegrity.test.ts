@@ -2,9 +2,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import { SourceManager } from '@main/services/SourceManager'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import type { ScanOptions } from '@main/providers/base/MediaProvider'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+
+type TestDatabase = Awaited<ReturnType<typeof setupTestDb>>
+type ScannerState = { activeScans: number; scanCancelled: boolean }
+type TestProvider = { scanLibrary: (id: string, options?: ScanOptions) => Promise<unknown> }
+type SourceManagerInternals = SourceManager & {
+  providers: Map<string, TestProvider>
+  getScanner: () => ScannerState
+  getLiveMonitoring: () => { sendToRenderer: (...args: unknown[]) => void }
+}
+type MonitoringInternals = ReturnType<typeof getLiveMonitoringService> & { shouldPause: () => boolean }
 
 describe('Concurrency and Scan State Integrity', () => {
-  let db: any
+  let db: TestDatabase
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
@@ -40,7 +52,8 @@ describe('Concurrency and Scan State Integrity', () => {
       await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
       await manager.initialize()
       
-      const provider = (manager as any).providers.get('s1')
+      const internals = manager as unknown as SourceManagerInternals
+      const provider = internals.providers.get('s1')
       provider.scanLibrary = async () => {
         await new Promise(resolve => setTimeout(resolve, 200))
         return { success: true, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
@@ -48,14 +61,14 @@ describe('Concurrency and Scan State Integrity', () => {
 
       const scan1 = manager.scanLibrary('s1', 'movie')
       expect(manager.isScanInProgress()).toBe(true)
-      expect((manager as any).getScanner().activeScans).toBe(1)
+      expect(internals.getScanner().activeScans).toBe(1)
       
       const scan2 = manager.scanLibrary('s1', 'tvshows')
-      expect((manager as any).getScanner().activeScans).toBe(2)
+      expect(internals.getScanner().activeScans).toBe(2)
       
       await Promise.all([scan1, scan2])
       expect(manager.isScanInProgress()).toBe(false)
-      expect((manager as any).getScanner().activeScans).toBe(0)
+      expect(internals.getScanner().activeScans).toBe(0)
     })
 
     it('should correctly track activeScans during scanAllSources', async () => {
@@ -65,11 +78,11 @@ describe('Concurrency and Scan State Integrity', () => {
 
       const promise = manager.scanAllSources()
       expect(manager.isScanInProgress()).toBe(true)
-      expect((manager as any).getScanner().activeScans).toBe(1)
+      expect((manager as unknown as SourceManagerInternals).getScanner().activeScans).toBe(1)
       
       await promise
       expect(manager.isScanInProgress()).toBe(false)
-      expect((manager as any).getScanner().activeScans).toBe(0)
+      expect((manager as unknown as SourceManagerInternals).getScanner().activeScans).toBe(0)
     })
 
     it('should send throttled library:updated events during scan', async () => {
@@ -77,11 +90,12 @@ describe('Concurrency and Scan State Integrity', () => {
       await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'L1', connection_config: JSON.stringify({ folderPath: tempDir.path }), is_enabled: 1 })
       await manager.initialize()
 
-      const monitoring = (manager as any).getLiveMonitoring()
+      const monitoring = (manager as unknown as SourceManagerInternals).getLiveMonitoring()
       const sendSpy = vi.spyOn(monitoring, 'sendToRenderer')
 
-      const provider = (manager as any).providers.get('s1')
-      provider.scanLibrary = async (_id: string, options: any) => {
+      const provider = (manager as unknown as SourceManagerInternals).providers.get('s1')
+      provider!.scanLibrary = async (_id: string, options?: ScanOptions) => {
+        if (!options?.onProgress) throw new Error('Test scan requires progress callback')
         options.onProgress({ phase: 'processing', current: 1, total: 100 })
         options.onProgress({ phase: 'processing', current: 2, total: 100 })
         await new Promise(resolve => setTimeout(resolve, 6000))
@@ -97,7 +111,7 @@ describe('Concurrency and Scan State Integrity', () => {
     it('should correctly reset scanCancelled only when ALL scans finish', async () => {
        const manager = new SourceManager({ db })
        await manager.initialize()
-       const scanner = (manager as any).getScanner()
+       const scanner = (manager as unknown as SourceManagerInternals).getScanner()
        
        scanner.activeScans = 2
        manager.stopScan()
@@ -118,16 +132,16 @@ describe('Concurrency and Scan State Integrity', () => {
       const monitoring = getLiveMonitoringService()
       const manager = (await import('../../src/main/services/SourceManager')).getSourceManager()
       await manager.initialize()
-      const scanner = (manager as any).getScanner()
+      const scanner = (manager as unknown as SourceManagerInternals).getScanner()
       
       scanner.activeScans = 0
-      expect((monitoring as any).shouldPause()).toBe(false)
+      expect((monitoring as unknown as MonitoringInternals).shouldPause()).toBe(false)
       
       scanner.activeScans = 1
-      expect((monitoring as any).shouldPause()).toBe(true)
+      expect((monitoring as unknown as MonitoringInternals).shouldPause()).toBe(true)
       
       scanner.activeScans = 0
-      expect((monitoring as any).shouldPause()).toBe(false)
+      expect((monitoring as unknown as MonitoringInternals).shouldPause()).toBe(false)
     })
   })
 })

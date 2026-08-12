@@ -54,13 +54,13 @@ export function useDashboardData(activeSourceId: string | null) {
   }, [activeSourceId])
 
   useEffect(() => {
-    loadDashboardData()
+    queueMicrotask(() => { void loadDashboardData() })
   }, [loadDashboardData])
 
   useEffect(() => {
     const cleanup = window.electronAPI.onSettingsChanged?.((data) => {
       if (['completeness_include_eps', 'completeness_include_singles', 'dashboard_upgrade_sort', 'dashboard_collection_sort', 'dashboard_series_sort', 'dashboard_artist_sort'].includes(data.key)) {
-        loadDashboardData()
+        void loadDashboardData()
       }
     })
     return () => cleanup?.()

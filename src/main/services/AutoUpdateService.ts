@@ -196,7 +196,7 @@ export class AutoUpdateService {
     // Read setting from database
     try {
       const db = getDatabase()
-      const setting = db.config.getSetting('auto_update_enabled')
+      const setting = await db.config.getSetting('auto_update_enabled')
       // Default to enabled if setting not present
       if (setting === 'false') {
         return

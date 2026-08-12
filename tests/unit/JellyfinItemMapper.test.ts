@@ -15,7 +15,7 @@ describe('JellyfinItemMapper', () => {
   
   const mapper = new JellyfinItemMapper('s1', 'jellyfin', client)
 
-  const mockJellyfinMovie: any = {
+  const mockJellyfinMovie: Parameters<JellyfinItemMapper['convertToMediaItem']>[0] = {
     Id: 'm1',
     Name: 'The Matrix',
     Type: 'Movie',

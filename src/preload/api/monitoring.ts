@@ -57,7 +57,7 @@ export const monitoringApi = {
     libraryId?: string
     artistId?: number
     mediaItemId?: number
-    options?: any
+    options?: unknown
   }) => ipcRenderer.invoke('taskQueue:addTask', definition),
   taskQueueAddTasks: (definitions: Array<{
     type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
@@ -66,7 +66,7 @@ export const monitoringApi = {
     libraryId?: string
     artistId?: number
     mediaItemId?: number
-    options?: any
+    options?: unknown
   }>) => ipcRenderer.invoke('taskQueue:addTasks', definitions),
   taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke('taskQueue:removeTask', taskId),
   taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke('taskQueue:reorderQueue', taskIds),
@@ -126,8 +126,8 @@ export const monitoringApi = {
     ipcRenderer.on('wishlist:autoCompleted', handler)
     return () => ipcRenderer.removeListener('wishlist:autoCompleted', handler)
   },
-  onLibraryUpdated: (callback: (event: any) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
+  onLibraryUpdated: (callback: (event: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
     ipcRenderer.on('library:updated', handler)
     return () => ipcRenderer.removeListener('library:updated', handler)
   },
@@ -196,7 +196,7 @@ export interface MonitoringAPI {
     libraryId?: string
     artistId?: number
     mediaItemId?: number
-    options?: any
+    options?: unknown
   }) => Promise<{ success: boolean; taskId: string }>
   taskQueueAddTasks: (definitions: Array<{
     type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
@@ -205,7 +205,7 @@ export interface MonitoringAPI {
     libraryId?: string
     artistId?: number
     mediaItemId?: number
-    options?: any
+    options?: unknown
   }>) => Promise<{ success: boolean; taskIds: string[] }>
   taskQueueRemoveTask: (taskId: string) => Promise<{ success: boolean }>
   taskQueueReorderQueue: (taskIds: string[]) => Promise<{ success: boolean }>

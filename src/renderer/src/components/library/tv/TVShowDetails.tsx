@@ -26,7 +26,7 @@ export function TVShowDetails({
   onAnalyzeSeries: (seriesTitle: string) => void
   onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
   onSelectSeason: (season: number | null) => void
-  onMissingItemClick: (item: any) => void
+  onMissingItemClick: (item: import('@/components/library/types').MissingItemPopupData) => void
   onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
   posterMinWidth: number
 }) {
@@ -36,9 +36,7 @@ export function TVShowDetails({
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
 
   useEffect(() => {
-    setShowOverviewExpanded(false)
-    setCopiedTitle(false)
-    setShowOverview(null)
+    queueMicrotask(() => { setShowOverviewExpanded(false); setCopiedTitle(false); setShowOverview(null) })
 
     if (selectedShow) {
       const completenessData = seriesCompleteness.get(selectedShow)
@@ -88,9 +86,9 @@ export function TVShowDetails({
       if (!command.id) throw new Error('Sonarr did not return a command ID')
       await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
       setArrStatus('success')
-    } catch (err: any) {
+    } catch (err: unknown) {
       setArrStatus('error')
-      window.alert(`Sonarr Search Failed: ${err?.message || 'Unknown error'}`)
+      window.alert(`Sonarr Search Failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 

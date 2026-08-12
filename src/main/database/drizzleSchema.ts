@@ -26,6 +26,7 @@ export const mediaItems = sqliteTable('media_items', {
   year: integer('year'),
   type: text('type').notNull(), // 'movie' | 'episode'
   seriesTitle: text('series_title'),
+  seriesIdentityKey: text('series_identity_key'),
   seasonNumber: integer('season_number'),
   episodeNumber: integer('episode_number'),
   filePath: text('file_path').notNull(),
@@ -162,6 +163,7 @@ export const settings = sqliteTable('settings', {
 export const seriesCompleteness = sqliteTable('series_completeness', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   seriesTitle: text('series_title').notNull(),
+  seriesIdentityKey: text('series_identity_key'),
   sourceId: text('source_id').notNull(),
   libraryId: text('library_id').notNull(),
   totalSeasons: integer('total_seasons').notNull(),
@@ -183,7 +185,7 @@ export const seriesCompleteness = sqliteTable('series_completeness', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  uniqueIdx: uniqueIndex('idx_series_completeness_unique').on(table.seriesTitle, table.sourceId, table.libraryId),
+  uniqueIdx: uniqueIndex('idx_series_completeness_unique').on(table.seriesIdentityKey, table.sourceId, table.libraryId),
 }));
 
 // --- Movie Collections ---
@@ -491,6 +493,22 @@ export const taskHistory = sqliteTable('task_history', {
   completedAt: text('completed_at'),
   durationMs: integer('duration_ms'),
   recordedAt: text('recorded_at').notNull(),
+});
+
+export const mediaRemuxJobs = sqliteTable('media_remux_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mediaItemId: integer('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  sourcePath: text('source_path').notNull(),
+  sourceSize: integer('source_size').notNull(),
+  sourceMtimeMs: integer('source_mtime_ms').notNull(),
+  sourceSha256: text('source_sha256').notNull(),
+  decisionSnapshot: text('decision_snapshot').notNull(),
+  streamSignatures: text('stream_signatures').notNull(),
+  quarantinePath: text('quarantine_path'),
+  error: text('error'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });
 
 // --- Activity Log ---

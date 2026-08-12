@@ -255,7 +255,7 @@ export class MediaTransformer {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as MediaItem,
-      versions: versions.map(v => ({ ...v, media_item_id: 0 })) as any,
+      versions: versions.map(v => ({ ...v, media_item_id: 0 })),
     }
   }
 
@@ -423,7 +423,7 @@ export class MediaTransformer {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as MediaItem,
-      versions: versions.map(v => ({ ...v, media_item_id: 0 })) as any,
+      versions: versions.map(v => ({ ...v, media_item_id: 0 })),
     }
   }
 

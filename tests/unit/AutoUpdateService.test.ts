@@ -6,16 +6,24 @@ import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { NotificationType } from '@main/types/monitoring'
+import type { BrowserWindow } from 'electron'
+
+type EventCallback = (...args: unknown[]) => void
+type TestAutoUpdater = typeof autoUpdater & {
+  __triggerEvent: (event: string, ...args: unknown[]) => void
+  __resetListeners: () => void
+}
+type TestDatabase = Awaited<ReturnType<typeof setupTestDb>>
 
 vi.mock('electron-updater', () => {
-  const listeners: Record<string, Function[]> = {}
+  const listeners: Record<string, EventCallback[]> = {}
 
   return {
     autoUpdater: {
       autoDownload: true,
       autoInstallOnAppQuit: true,
       logger: null,
-      on: vi.fn((event: string, callback: Function) => {
+      on: vi.fn((event: string, callback: EventCallback) => {
         if (!listeners[event]) {
           listeners[event] = []
         }
@@ -25,7 +33,7 @@ vi.mock('electron-updater', () => {
       downloadUpdate: vi.fn().mockResolvedValue(undefined),
       quitAndInstall: vi.fn(),
       // Helper to trigger events in tests
-      __triggerEvent: (event: string, ...args: any[]) => {
+      __triggerEvent: (event: string, ...args: unknown[]) => {
         if (listeners[event]) {
           listeners[event].forEach(cb => cb(...args))
         }
@@ -43,12 +51,12 @@ vi.mock('@main/ipc/utils/safeSend', () => ({
 
 describe('AutoUpdateService', () => {
   let service: AutoUpdateService
-  let db: any
-  let logging: any
+  let db: TestDatabase
+  let logging: ReturnType<typeof getLoggingService>
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    ;(autoUpdater as any).__resetListeners()
+    ;(autoUpdater as unknown as TestAutoUpdater).__resetListeners()
 
     db = await setupTestDb()
     logging = getLoggingService()
@@ -76,17 +84,17 @@ describe('AutoUpdateService', () => {
 
   it('should not initialize twice', () => {
     service.initialize()
-    const callCount = (autoUpdater.on as any).mock.calls.length
+    const callCount = vi.mocked(autoUpdater.on).mock.calls.length
     service.initialize()
-    expect((autoUpdater.on as any).mock.calls.length).toBe(callCount)
+    expect(vi.mocked(autoUpdater.on).mock.calls.length).toBe(callCount)
   })
 
   it('should allow setting main window', () => {
-    const mockWin = { id: 1 } as any
+    const mockWin = { id: 1 } as unknown as BrowserWindow
     service.setMainWindow(mockWin)
     service.initialize()
 
-    ;(autoUpdater as any).__triggerEvent('checking-for-update')
+    ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('checking-for-update')
     expect(safeSend).toHaveBeenCalledWith(mockWin, 'autoUpdate:stateChanged', expect.objectContaining({ status: 'checking' }))
   })
 
@@ -96,7 +104,7 @@ describe('AutoUpdateService', () => {
   })
 
   it('should handle check error', async () => {
-    ;(autoUpdater.checkForUpdates as any).mockRejectedValueOnce(new Error('Network error'))
+    vi.mocked(autoUpdater.checkForUpdates).mockRejectedValueOnce(new Error('Network error'))
     await service.checkForUpdates()
     expect(service.getState().status).toBe('error')
     expect(service.getState().error).toBe('Network error')
@@ -116,7 +124,7 @@ describe('AutoUpdateService', () => {
 
   it('should handle download error', async () => {
     app.isPackaged = true
-    ;(autoUpdater.downloadUpdate as any).mockRejectedValueOnce(new Error('Download failed'))
+    vi.mocked(autoUpdater.downloadUpdate).mockRejectedValueOnce(new Error('Download failed'))
     await service.downloadUpdate()
     expect(service.getState().status).toBe('error')
     expect(service.getState().error).toBe('Download failed')
@@ -212,12 +220,12 @@ describe('AutoUpdateService', () => {
     })
 
     it('handles checking-for-update', () => {
-      ;(autoUpdater as any).__triggerEvent('checking-for-update')
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('checking-for-update')
       expect(service.getState().status).toBe('checking')
     })
 
     it('handles update-available', async () => {
-      ;(autoUpdater as any).__triggerEvent('update-available', { version: '1.2.3', releaseNotes: 'Fixed bugs' })
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('update-available', { version: '1.2.3', releaseNotes: 'Fixed bugs' })
       const state = service.getState()
       expect(state.status).toBe('available')
       expect(state.version).toBe('1.2.3')
@@ -233,14 +241,14 @@ describe('AutoUpdateService', () => {
     })
 
     it('handles update-not-available', () => {
-      ;(autoUpdater as any).__triggerEvent('update-not-available', {})
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('update-not-available', {})
       const state = service.getState()
       expect(state.status).toBe('not-available')
       expect(state.lastChecked).toBeDefined()
     })
 
     it('handles download-progress', () => {
-      ;(autoUpdater as any).__triggerEvent('download-progress', {
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('download-progress', {
         percent: 50,
         bytesPerSecond: 1000,
         transferred: 500,
@@ -257,7 +265,7 @@ describe('AutoUpdateService', () => {
     })
 
     it('handles update-downloaded', async () => {
-      ;(autoUpdater as any).__triggerEvent('update-downloaded', { version: '1.2.3' })
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('update-downloaded', { version: '1.2.3' })
       const state = service.getState()
       expect(state.status).toBe('downloaded')
       expect(state.version).toBe('1.2.3')
@@ -271,7 +279,7 @@ describe('AutoUpdateService', () => {
     })
 
     it('handles error', () => {
-      ;(autoUpdater as any).__triggerEvent('error', new Error('Some update error'))
+      ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('error', new Error('Some update error'))
       const state = service.getState()
       expect(state.status).toBe('error')
       expect(state.error).toBe('Some update error')

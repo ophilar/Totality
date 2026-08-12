@@ -155,6 +155,7 @@ export interface MediaItem {
   year?: number | null | undefined
   type: MediaItemType
   series_title?: string | null | undefined
+  series_identity_key?: string | null | undefined
   season_number?: number | null | undefined
   episode_number?: number | null | undefined
 
@@ -213,6 +214,7 @@ export interface MediaItem {
 
   // User override flag (preserves user-selected metadata during rescans)
   user_fixed_match?: boolean
+  match_status?: import('@main/services/SeriesIdentityService').MediaMatchStatus
 
   // Multi-version support
   version_count?: number          // Cached count of versions (default 1)
@@ -343,6 +345,7 @@ export interface AppSettings {
 export interface SeriesCompleteness {
   id?: number
   series_title: string
+  series_identity_key?: string
 
   // Source/library scoping
   source_id?: string
@@ -457,6 +460,7 @@ export interface MediaItemFilters {
     scored_episode_count?: number
     unscored_episode_count?: number
     recommended_action?: string
+    match_status?: import('@main/services/SeriesIdentityService').MediaMatchStatus
 }
 
 export interface TVShowFilters {
@@ -872,7 +876,7 @@ export interface TaskResult {
   itemsAdded?: number
   itemsUpdated?: number
   itemsRemoved?: number
-  [key: string]: any
+  [key: string]: unknown
 }
 
 export interface QueuedTask {
@@ -890,7 +894,7 @@ export interface QueuedTask {
   completedAt?: string
   error?: string
   result?: TaskResult
-  options?: any
+  options?: unknown
 }
 
 export interface TaskQueueState {

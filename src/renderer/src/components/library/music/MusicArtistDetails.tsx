@@ -51,8 +51,7 @@ export function MusicArtistDetails({
   const artistMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setBioExpanded(false)
-    setCopiedTitle(false)
+    queueMicrotask(() => { setBioExpanded(false); setCopiedTitle(false) })
   }, [selectedArtist])
 
   const handleAnalyzeArtist = async (artistId: number) => {

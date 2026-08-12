@@ -7,7 +7,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 describe('Real-Time Update and Event Integrity (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
@@ -31,17 +31,17 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
     const manager = new SourceManager({ db, liveMonitoring: monitoring })
     
     // Captured events collector
-    const capturedEvents: { channel: string, data: any }[] = []
+    const capturedEvents: { channel: string, data: unknown }[] = []
     const rendererInterface = {
       isDestroyed: () => false,
       webContents: {
         isDestroyed: () => false,
-        send: (channel: string, data: any) => {
+        send: (channel: string, data: unknown) => {
           capturedEvents.push({ channel, data })
         }
       }
     }
-    monitoring.setMainWindow(rendererInterface as any)
+    monitoring.setMainWindow(rendererInterface as Parameters<typeof monitoring.setMainWindow>[0])
 
     // 3. Add source and initiate scan
     await manager.addSource({
@@ -67,17 +67,17 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
      const tq = getTaskQueueService()
      
      // Setup capture
-     const capturedEvents: { channel: string, data: any }[] = []
+     const capturedEvents: { channel: string, data: unknown }[] = []
      const rendererInterface = {
        isDestroyed: () => false,
        webContents: {
          isDestroyed: () => false,
-         send: (channel: string, data: any) => {
+         send: (channel: string, data: unknown) => {
            capturedEvents.push({ channel, data })
          }
        }
      }
-     tq.setMainWindow(rendererInterface as any)
+     tq.setMainWindow(rendererInterface as Parameters<typeof tq.setMainWindow>[0])
      
      // Manually add a simple task to the queue and wait for it
      const taskId = await tq.addTask({
@@ -98,7 +98,7 @@ describe('Real-Time Update and Event Integrity (No Mocks)', () => {
      // Verify the event was sent to the renderer
      const completionEvent = capturedEvents.find(e => e.channel === 'taskQueue:taskComplete')
      expect(completionEvent).toBeDefined()
-     expect(completionEvent?.data.id).toBe(taskId)
+     expect(completionEvent?.data).toEqual(expect.objectContaining({ id: taskId }))
   })
 })
 

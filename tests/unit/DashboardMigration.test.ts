@@ -11,7 +11,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
  * even after incremental migrations from older versions.
  */
 describe('Dashboard Migration Integration', () => {
-  let dbService: any
+  let dbService: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     dbService = await setupTestDb()

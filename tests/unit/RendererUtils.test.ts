@@ -1,10 +1,11 @@
 
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest'
 import { parseMissingMovies, parseMissingEpisodes, groupEpisodesBySeason } from '@/components/dashboard/dashboardUtils'
 import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getTrackQualityTier } from '@/components/library/mediaUtils'
+import type { MovieCollectionData, SeriesCompletenessData } from '@/components/library/types'
 
 describe('DashboardUtils (Renderer)', () => {
   describe('parseMissingMovies', () => {
@@ -12,14 +13,14 @@ describe('DashboardUtils (Renderer)', () => {
       const data = {
         missing_movies: JSON.stringify([{ title: 'Movie 1', tmdb_id: 1 }, { title: 'Movie 2' }])
       }
-      const parsed = parseMissingMovies(data as any)
+      const parsed = parseMissingMovies(data satisfies Pick<MovieCollectionData, 'missing_movies'> as MovieCollectionData)
       expect(parsed.length).toBe(2)
       expect(parsed[0].title).toBe('Movie 1')
     })
 
     it('should return empty array for invalid JSON', () => {
       const data = { missing_movies: 'invalid' }
-      expect(parseMissingMovies(data as any)).toEqual([])
+      expect(parseMissingMovies(data satisfies Pick<MovieCollectionData, 'missing_movies'> as MovieCollectionData)).toEqual([])
     })
   })
 
@@ -33,7 +34,7 @@ describe('DashboardUtils (Renderer)', () => {
         ]),
         missing_seasons: JSON.stringify([2])
       }
-      const groups = groupEpisodesBySeason(data as any)
+      const groups = groupEpisodesBySeason(data satisfies Pick<SeriesCompletenessData, 'missing_episodes' | 'missing_seasons'> as SeriesCompletenessData)
       expect(groups.length).toBe(2)
       expect(groups[0].seasonNumber).toBe(1)
       expect(groups[0].isWholeSeason).toBe(false)

@@ -4,15 +4,16 @@ import { getTMDBService, resetTMDBServiceForTesting } from '@main/services/TMDBS
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
 import path from 'node:path'
+import type { AddressInfo } from 'node:net'
 
 describe('MovieCollectionService (No Mocks)', () => {
-  let db: any
-  let tmdb: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let tmdb: ReturnType<typeof getTMDBService>
   let service: MovieCollectionService
   let server: http.Server
   let serverPort: number
 
-  const createMovie = (overrides: any) => {
+  const createMovie = (overrides: Record<string, unknown>) => {
     return {
       type: 'movie',
       file_path: `/path/to/${overrides.title || 'movie'}.mkv`,
@@ -66,8 +67,10 @@ describe('MovieCollectionService (No Mocks)', () => {
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => {
-        const address = server.address() as any
-        serverPort = address.port
+        const address = server.address()
+        if (!address || typeof address === 'string') throw new Error('Test server did not expose an address')
+        const info = address as AddressInfo
+        serverPort = info.port
         resolve()
       })
     })

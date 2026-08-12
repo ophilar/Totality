@@ -1,14 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getGeminiService, resetGeminiServiceForTesting } from '@main/services/GeminiService'
-import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { cleanupTestDb } from '@tests/TestUtils'
 
 describe('GeminiService', () => {
-  let db: any
-
   beforeEach(async () => {
     resetGeminiServiceForTesting()
     vi.clearAllMocks()
-    db = await setupTestDb()
   })
 
   afterEach(() => {
@@ -21,14 +18,19 @@ describe('GeminiService', () => {
     const generateContentMock = vi.fn()
 
     // Create a spy/mock on the client
-    vi.spyOn(service as any, 'getClient').mockReturnValue({
+    const hooks = service as unknown as {
+      getClient: () => { models: { generateContent: typeof generateContentMock } }
+      isConfigured: () => boolean
+      checkRateLimit: () => void
+    }
+    vi.spyOn(hooks, 'getClient').mockReturnValue({
       models: {
         generateContent: generateContentMock
       }
     })
 
-    vi.spyOn(service as any, 'isConfigured').mockReturnValue(true)
-    vi.spyOn(service as any, 'checkRateLimit').mockImplementation(() => {})
+    vi.spyOn(hooks, 'isConfigured').mockReturnValue(true)
+    vi.spyOn(hooks, 'checkRateLimit').mockImplementation(() => {})
 
     // Setup mock responses to create a loop
     generateContentMock.mockResolvedValue({
@@ -57,14 +59,19 @@ describe('GeminiService', () => {
 
     const generateContentMock = vi.fn()
 
-    vi.spyOn(service as any, 'getClient').mockReturnValue({
+    const hooks = service as unknown as {
+      getClient: () => { models: { generateContent: typeof generateContentMock } }
+      isConfigured: () => boolean
+      checkRateLimit: () => void
+    }
+    vi.spyOn(hooks, 'getClient').mockReturnValue({
       models: {
         generateContent: generateContentMock
       }
     })
 
-    vi.spyOn(service as any, 'isConfigured').mockReturnValue(true)
-    vi.spyOn(service as any, 'checkRateLimit').mockImplementation(() => {})
+    vi.spyOn(hooks, 'isConfigured').mockReturnValue(true)
+    vi.spyOn(hooks, 'checkRateLimit').mockImplementation(() => {})
 
     // Setup mock responses to create a non-looping sequence
     generateContentMock

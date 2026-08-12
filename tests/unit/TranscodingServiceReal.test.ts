@@ -1,88 +1,30 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
-import { getGeminiService, resetGeminiServiceForTesting } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
-import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
 
 describe('TranscodingService (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let service: TranscodingService
-  let server: http.Server
-  let serverPort: number
   let handlers: Map<string, Function>
 
-  beforeAll(async () => {
-    // Manually mock window for the bridge
-    (global as any).window = {}
-    
-    // Setup local Gemini mock server
-    server = http.createServer((req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
-        candidates: [{
-          content: {
-            parts: [{
-              text: JSON.stringify({
-                summary: "Optimized for AV1",
-                handbrakeArgs: ["--encoder", "svt_av1", "--quality", "25"],
-                expectedSizeReduction: "50%",
-                warnings: []
-              })
-            }]
-          }
-        }]
-      }))
-    })
-
-    await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address() as any
-        serverPort = address.port
-        resolve()
-      })
-    })
-  })
-
-  afterAll(async () => {
-    delete (global as any).window
-    return new Promise<void>((resolve) => {
-      server.close(() => resolve())
-    })
-  })
-
   beforeEach(async () => {
-    resetGeminiServiceForTesting()
+    // Manually mock window for the bridge
+    Object.assign(globalThis, { window: {} })
+    
     resetTranscodingServiceForTesting()
 
     db = await setupTestDb()
     
-    // Redirect Gemini traffic to local mock server
-    const originalFetch = globalThis.fetch
-    vi.stubGlobal('fetch', async (url: any, init: any) => {
-      const urlStr = url.toString()
-      try {
-        const u = new URL(urlStr)
-        if (u.hostname === 'generativelanguage.googleapis.com' || u.hostname === 'googlegenerativeai.com') {
-          const mockUrl = `http://127.0.0.1:${serverPort}${u.pathname}${u.search}`
-          return originalFetch(mockUrl, init)
-        }
-      } catch (e) {}
-      return originalFetch(url, init)
-    })
-
-    await db.config.setSetting('gemini_api_key', 'AIzaSyB-TEST-KEY-1234567890-ABCDEF')
-    await db.config.setSetting('ai_enabled', 'true')
-    
-    await getGeminiService().initialize()
-
-    service = getTranscodingService()
+    service = new TranscodingService({ advise: async () => ({ text: JSON.stringify({ summary: 'Fixture parameters', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
+    getTranscodingService().setParameterAdvisorForTesting({ advise: async () => ({ text: JSON.stringify({ summary: 'Optimized for AV1', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
     service.setAvailabilityOverride({ handbrake: true, ffmpeg: true })
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     cleanupTestDb()
   })
 
@@ -92,7 +34,7 @@ describe('TranscodingService (No Mocks)', () => {
 
   })
 
-  it('should generate transcoding parameters via Gemini', async () => {
+  it('should generate transcoding parameters through the production advisor port', async () => {
     const analyzer = getMediaFileAnalyzer()
     const filePath = '/path/to/video.mkv'
     
@@ -105,7 +47,7 @@ describe('TranscodingService (No Mocks)', () => {
     })
 
     const params = await service.getTranscodeParameters(filePath, { targetCodec: 'av1' })
-    expect(params.summary).toBe("Optimized for AV1")
+    expect(params.summary).toBe('Fixture parameters')
   })
 
   describe('Transcoding IPC Integration', () => {
@@ -117,21 +59,26 @@ describe('TranscodingService (No Mocks)', () => {
 
     it('should correctly expose availability via IPC', async () => {
       const handler = handlers.get('transcoding:checkAvailability')!
-      const availability = await handler({} as any)
+      const availability = await handler({})
       expect(availability.handbrake).toBe(true)
     })
 
     it('should generate parameters via IPC call', async () => {
       const handler = handlers.get('transcoding:getParameters')!
-      const filePath = '/path/to/vid2.mkv'
+      const filePath = path.join(process.cwd(), 'tests/tmp/transcoding-real-video.mkv')
+      fs.writeFileSync(filePath, 'fixture')
+      await db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'Test source', connection_config: JSON.stringify({ folderPath: path.dirname(filePath) }), is_enabled: 1 })
+      await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p2', title: 'Video', type: 'movie', file_path: filePath, file_size: 7 })
       
-      getMediaFileAnalyzer().setAnalysisOverride(filePath, {
-        success: true, filePath,
+      const persistedItem = await db.media.getItemById(1)
+      const authorizedPath = persistedItem?.file_path
+      getMediaFileAnalyzer().setAnalysisOverride(authorizedPath!, {
+        success: true, filePath: authorizedPath!,
         video: { codec: 'h264', width: 1920, height: 1080, bitrate: 5000 },
         audioTracks: [], subtitleTracks: []
       })
 
-      const params = await handler({} as any, filePath, { targetCodec: 'av1' })
+      const params = await handler({}, 1, { targetCodec: 'av1' })
       expect(params.summary).toBe("Optimized for AV1")
     })
   })

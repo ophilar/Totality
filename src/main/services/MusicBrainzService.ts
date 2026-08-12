@@ -32,6 +32,7 @@ import {
   MissingAlbum,
   MissingTrack,
   MusicAlbum,
+  MusicTrack,
   AlbumType,
 } from '@main/types/database'
 
@@ -66,7 +67,7 @@ const VINYL_FORMATS = [
   'Shellac', 'Acetate', 'Lathe Cut'
 ]
 
-interface MBArtist {
+export interface MBArtist {
   id: string
   name: string
   'sort-name': string
@@ -78,6 +79,9 @@ interface MBArtist {
     ended?: boolean
   }
   'release-groups'?: MBReleaseGroup[]
+  score?: number
+  disambiguation?: string
+  aliases?: Array<{ name: string }>
 }
 
 interface MBArtistSearchResult {
@@ -348,8 +352,8 @@ export class MusicBrainzService extends CancellableOperation {
           },
         })
         return response.data
-      } catch (error: any) {
-        if (error.response?.status === 404) return null
+      } catch (error: unknown) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) return null
         throw error
       }
     }, `getArtistDetails(${musicbrainzId})`)
@@ -376,8 +380,8 @@ export class MusicBrainzService extends CancellableOperation {
           },
         })
         return response.data
-      } catch (error: any) {
-        if (error.response?.status === 404) {
+      } catch (error: unknown) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
           getLoggingService().warn('[MusicBrainzService]', `Artist not found (404): ${musicbrainzId}`)
           return null
         }
@@ -488,8 +492,8 @@ export class MusicBrainzService extends CancellableOperation {
           })
           interface MBReleasesResponse { releases?: MBRelease[] }
           return (response.data as MBReleasesResponse)?.releases || []
-        } catch (error: any) {
-          if (error.response?.status === 404) {
+        } catch (error: unknown) {
+          if (axios.isAxiosError(error) && error.response?.status === 404) {
             getLoggingService().warn('[MusicBrainzService]', `Release group not found (404): ${releaseGroupId}`)
             return []
           }
@@ -787,8 +791,8 @@ export class MusicBrainzService extends CancellableOperation {
     // Calculate completeness (albums weighted more heavily)
     // Read settings for whether to include EPs and singles
     const db = getDatabase()
-    const includeEps = db.config.getSetting('completeness_include_eps') !== 'false'
-    const includeSingles = db.config.getSetting('completeness_include_singles') !== 'false'
+    const includeEps = await db.config.getSetting('completeness_include_eps') !== 'false'
+    const includeSingles = await db.config.getSetting('completeness_include_singles') !== 'false'
 
     const totalItems = discography.albums.length * 3
       + (includeEps ? discography.eps.length * 2 : 0)
@@ -964,7 +968,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     const artists = await db.music.getArtists(artistFilters)
     const allSourceAlbums = (await db.music.getAlbums(albumFilters)) as MusicAlbum[]
-    const allSourceTracks = (await db.music.getTracks(albumFilters)) as any[]
+    const allSourceTracks = await db.music.getTracks(albumFilters)
 
     // Group albums by artist_id for fast lookup
     const albumsByArtist = new Map<number, MusicAlbum[]>()
@@ -976,7 +980,7 @@ export class MusicBrainzService extends CancellableOperation {
     }
 
     // Group tracks by album_id for fast lookup
-    const tracksByAlbum = new Map<number, any[]>()
+    const tracksByAlbum = new Map<number, MusicTrack[]>()
     for (const track of allSourceTracks) {
       if (track.album_id) {
         if (!tracksByAlbum.has(track.album_id)) tracksByAlbum.set(track.album_id, [])
@@ -990,7 +994,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     if (skipRecentlyAnalyzed) {
       const allArtistCompleteness = await db.music.getAllArtistCompleteness()
-      for (const ac of allArtistCompleteness) {
+      for (const ac of allArtistCompleteness.artists) {
         if (ac.last_sync_at) {
           existingArtistCompleteness.set(ac.artist_name, ac.last_sync_at)
         }

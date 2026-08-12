@@ -1,4 +1,5 @@
 import { eq, and, or, like, desc, asc, sql, inArray, isNull, lt } from 'drizzle-orm'
+import type { AnyColumn, SQL } from 'drizzle-orm'
 import type {
   MusicArtist,
   MusicAlbum,
@@ -7,15 +8,47 @@ import type {
   ArtistCompleteness,
   AlbumCompleteness,
   MusicFilters,
+  ProviderType,
+  MusicQualityTier,
+  AlbumType,
 } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
+interface ArtistCompletenessRow {
+  artistName: string; musicbrainzId?: string | null; libraryId: string; totalAlbums: number; ownedAlbums: number;
+  totalSingles: number; ownedSingles: number; totalEps: number; ownedEps: number; missingAlbums: string;
+  missingSingles: string; missingEps: string; completenessPercentage: number; efficiencyScore?: number | null;
+  storageDebtBytes?: number | null; totalSize?: number | null; country?: string | null; activeYears?: string | null;
+  artistType?: string | null; thumbUrl?: string | null; lastSyncAt?: string | null; createdAt: string; updatedAt: string
+}
+
+type MusicTrackRow = typeof schema.musicTracks.$inferSelect
+type MusicArtistRow = typeof schema.musicArtists.$inferSelect
+type MusicAlbumRow = typeof schema.musicAlbums.$inferSelect
+type MusicQualityRow = typeof schema.musicQualityScores.$inferSelect
+interface ArtistStatsRow { totalArtists: number; completeArtists: number; incompleteArtists: number; totalMissingAlbums: number; averageCompleteness: number }
+
+type NonNullRow<T extends object> = {
+  [K in keyof T]: Exclude<T[K], null> | undefined
+}
+
+function withoutNulls<T extends object>(row: T): NonNullRow<T> {
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [key, value === null ? undefined : value])
+  ) as NonNullRow<T>
+}
+
+function requiredString(value: string | null | undefined, field: string): string {
+  if (value === null || value === undefined) throw new Error(`Music row is missing ${field}`)
+  return value
+}
 export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'music_tracks', drizzle, schema.musicTracks)
   }
 
@@ -226,7 +259,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const providerId = providerIdOrThumbUrl as string
     if (!artwork) return
 
-    const data: any = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = { updatedAt: sql`(datetime('now'))` }
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
@@ -246,7 +279,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     providerId: string,
     artwork: { thumbUrl?: string; artUrl?: string }
   ): Promise<void> {
-    const data: any = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = { updatedAt: sql`(datetime('now'))` }
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
@@ -274,7 +307,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.mood) conditions.push(like(schema.musicArtists.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicArtists.genres, `%${filters.genre}%`))
 
-    const sortMap: any = {
+    const sortMap: Record<string, AnyColumn | SQL> = {
       name: schema.musicArtists.sortName,
       title: schema.musicArtists.sortName,
       added_at: schema.musicArtists.createdAt,
@@ -366,7 +399,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.mood) conditions.push(like(schema.musicAlbums.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicAlbums.genres, `%${filters.genre}%`))
 
-    const sortMap: any = {
+    const sortMap: Record<string, AnyColumn | SQL> = {
       title: sql`COALESCE(${schema.musicAlbums.sortTitle}, ${schema.musicAlbums.title})`,
       artist: schema.musicAlbums.artistName,
       year: schema.musicAlbums.year,
@@ -496,7 +529,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     if (filters?.mood) conditions.push(like(schema.musicTracks.mood, `%${filters.mood}%`))
     if (filters?.genre) conditions.push(like(schema.musicTracks.genres, `%${filters.genre}%`))
 
-    const sortMap: any = {
+    const sortMap: Record<string, AnyColumn | SQL> = {
       title: schema.musicTracks.title,
       artist: schema.musicTracks.artistName,
       album: schema.musicTracks.albumName,
@@ -836,7 +869,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       ORDER BY ac.artist_name ASC
     `
 
-    const artistRows = await this.drizzle.all<any>(artistsQuery)
+    const artistRows = await this.drizzle.all<ArtistCompletenessRow>(artistsQuery)
 
     // Fetch aggregated summary stats directly from the database using SUM/COUNT
     const statsQuery = sql`
@@ -863,7 +896,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       )
     `
 
-    const statsRow = (await this.drizzle.get<any>(statsQuery)) || {
+    const statsRow = (await this.drizzle.get<ArtistStatsRow>(statsQuery)) || {
       totalArtists: 0,
       completeArtists: 0,
       incompleteArtists: 0,
@@ -1020,7 +1053,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       eq(schema.musicTracks.sourceId, sourceId),
       eq(schema.musicTracks.libraryId, libraryId)
     )
-    return await this.reconcileStaleItems(where, schema.musicTracks.providerId, validProviderIds)
+    return await this.reconcileStaleItems(where!, schema.musicTracks.providerId, validProviderIds)
   }
 
   async removeStaleProviderAlbums(
@@ -1074,100 +1107,111 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return staleIds.length
   }
 
-  private mapDrizzleToTrack(r: any): MusicTrack {
+  private mapDrizzleToTrack(r: MusicTrackRow): MusicTrack {
     return {
-      ...r,
+      ...withoutNulls(r),
+      title: requiredString(r.title, 'title'),
       source_id: r.sourceId,
-      source_type: r.sourceType,
-      library_id: r.libraryId,
+      source_type: r.sourceType as ProviderType,
+      library_id: r.libraryId ?? undefined,
       provider_id: r.providerId,
-      album_id: r.albumId,
-      artist_id: r.artistId,
-      album_name: r.albumName,
-      artist_name: r.artistName,
-      track_number: r.trackNumber,
-      disc_number: r.discNumber,
-      file_path: r.filePath,
-      file_size: r.fileSize,
-      file_mtime: r.fileMtime,
-      audio_codec: r.audioCodec,
-      audio_bitrate: r.audioBitrate,
-      sample_rate: r.sampleRate,
-      bit_depth: r.bitDepth,
+      album_id: r.albumId ?? undefined,
+      artist_id: r.artistId ?? undefined,
+      album_name: r.albumName ?? undefined,
+      artist_name: r.artistName ?? undefined,
+      duration: r.duration ?? undefined,
+      container: r.container ?? undefined,
+      track_number: r.trackNumber ?? undefined,
+      disc_number: r.discNumber ?? undefined,
+      file_path: r.filePath ?? undefined,
+      file_size: r.fileSize ?? undefined,
+      file_mtime: r.fileMtime ?? undefined,
+      audio_codec: r.audioCodec ?? undefined,
+      audio_bitrate: r.audioBitrate ?? undefined,
+      sample_rate: r.sampleRate ?? undefined,
+      bit_depth: r.bitDepth ?? undefined,
       is_lossless: r.isLossless === 1,
       is_hi_res: r.isHiRes === 1,
-      musicbrainz_id: r.musicbrainzId,
-      added_at: r.addedAt,
+      musicbrainz_id: r.musicbrainzId ?? undefined,
+      added_at: r.addedAt ?? undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt,
     }
   }
 
-  private mapDrizzleToTrackList(rows: any[]): MusicTrack[] {
+  private mapDrizzleToTrackList(rows: MusicTrackRow[]): MusicTrack[] {
     return rows.map((r) => this.mapDrizzleToTrack(r))
   }
 
-  private mapDrizzleToArtists(rows: any[]): MusicArtist[] {
+  private mapDrizzleToArtists(rows: MusicArtistRow[]): MusicArtist[] {
     return rows.map((r) => ({
-      ...r,
+      ...withoutNulls(r),
+      name: requiredString(r.name, 'name'),
       source_id: r.sourceId,
-      source_type: r.sourceType,
-      library_id: r.libraryId,
+      source_type: r.sourceType as ProviderType,
+      library_id: r.libraryId ?? undefined,
       provider_id: r.providerId,
-      sort_name: r.sortName,
-      musicbrainz_id: r.musicbrainzId,
-      thumb_url: r.thumbUrl,
-      art_url: r.artUrl,
+      sort_name: r.sortName ?? undefined,
+      musicbrainz_id: r.musicbrainzId ?? undefined,
+      thumb_url: r.thumbUrl ?? undefined,
+      art_url: r.artUrl ?? undefined,
+      genres: r.genres ?? undefined,
+      mood: r.mood ?? undefined,
+      country: r.country ?? undefined,
       user_fixed_match: r.userFixedMatch === 1,
-      album_count: r.albumCount,
-      track_count: r.trackCount,
+      track_count: r.trackCount ?? undefined,
+      album_count: r.albumCount ?? undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt,
     }))
   }
 
-  private mapDrizzleToAlbums(rows: any[]): MusicAlbum[] {
+  private mapDrizzleToAlbums(rows: MusicAlbumRow[]): MusicAlbum[] {
     return rows.map((r) => ({
-      ...r,
+      ...withoutNulls(r),
+      title: requiredString(r.title, 'title'),
       source_id: r.sourceId,
-      source_type: r.sourceType,
-      library_id: r.libraryId,
+      source_type: r.sourceType as ProviderType,
+      library_id: r.libraryId ?? undefined,
       provider_id: r.providerId,
-      artist_id: r.artistId,
-      artist_name: r.artistName,
-      sort_title: r.sortTitle,
-      musicbrainz_id: r.musicbrainzId,
-      musicbrainz_release_group_id: r.musicbrainzReleaseGroupId,
-      album_type: r.albumType,
-      track_count: r.trackCount,
-      total_duration: r.totalDuration,
-      total_size: r.totalSize,
-      best_audio_codec: r.bestAudioCodec,
-      best_audio_bitrate: r.bestAudioBitrate,
-      best_sample_rate: r.bestSampleRate,
-      best_bit_depth: r.bestBitDepth,
-      avg_audio_bitrate: r.avgAudioBitrate,
-      thumb_url: r.thumbUrl,
-      art_url: r.artUrl,
+      artist_id: r.artistId ?? undefined,
+      artist_name: r.artistName ?? undefined,
+      sort_title: r.sortTitle ?? undefined,
+      musicbrainz_id: r.musicbrainzId ?? undefined,
+      musicbrainz_release_group_id: r.musicbrainzReleaseGroupId ?? undefined,
+      album_type: r.albumType as AlbumType | undefined,
+      year: r.year ?? undefined,
+      genres: r.genres ?? undefined,
+      mood: r.mood ?? undefined,
+      track_count: r.trackCount ?? undefined,
+      total_duration: r.totalDuration ?? undefined,
+      total_size: r.totalSize ?? undefined,
+      best_audio_codec: r.bestAudioCodec ?? undefined,
+      best_audio_bitrate: r.bestAudioBitrate ?? undefined,
+      best_sample_rate: r.bestSampleRate ?? undefined,
+      best_bit_depth: r.bestBitDepth ?? undefined,
+      avg_audio_bitrate: r.avgAudioBitrate ?? undefined,
+      thumb_url: r.thumbUrl ?? undefined,
+      art_url: r.artUrl ?? undefined,
       user_fixed_match: r.userFixedMatch === 1,
-      release_date: r.releaseDate,
-      added_at: r.addedAt,
+      release_date: r.releaseDate ?? undefined,
+      added_at: r.addedAt ?? undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt,
     }))
   }
 
-  private mapDrizzleToQualityScore(r: any): MusicQualityScore {
+  private mapDrizzleToQualityScore(r: MusicQualityRow): MusicQualityScore {
     return {
       id: r.id,
       album_id: r.albumId,
-      quality_tier: r.qualityTier,
-      tier_quality: r.tierQuality,
+      quality_tier: r.qualityTier as MusicQualityTier,
+      tier_quality: r.tierQuality as 'LOW' | 'MEDIUM' | 'HIGH',
       tier_score: r.tierScore,
       codec_score: r.codecScore,
       bitrate_score: r.bitrateScore,
-      efficiency_score: r.efficiencyScore,
-      storage_debt_bytes: r.storageDebtBytes,
+      efficiency_score: r.efficiencyScore ?? undefined,
+      storage_debt_bytes: r.storageDebtBytes ?? undefined,
       needs_upgrade: r.needsUpgrade === 1,
       issues: r.issues,
       created_at: r.createdAt,
@@ -1175,7 +1219,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
   }
 
-  private mapDrizzleToArtistCompleteness(r: any): ArtistCompleteness {
+  private mapDrizzleToArtistCompleteness(r: ArtistCompletenessRow): ArtistCompleteness {
     return {
       artist_name: r.artistName,
       musicbrainz_id: r.musicbrainzId || undefined,
@@ -1190,9 +1234,9 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       missing_singles: r.missingSingles,
       missing_eps: r.missingEps,
       completeness_percentage: r.completenessPercentage,
-      efficiency_score: r.efficiencyScore,
-      storage_debt_bytes: r.storageDebtBytes,
-      total_size: r.totalSize,
+      efficiency_score: r.efficiencyScore ?? undefined,
+      storage_debt_bytes: r.storageDebtBytes ?? undefined,
+      total_size: r.totalSize ?? undefined,
       country: r.country || undefined,
       active_years: r.activeYears || undefined,
       artist_type: r.artistType || undefined,
@@ -1203,7 +1247,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
   }
 
-  private mapDrizzleToAlbumCompleteness(r: any): AlbumCompleteness {
+  private mapDrizzleToAlbumCompleteness(r: typeof schema.albumCompleteness.$inferSelect): AlbumCompleteness {
     return {
       album_id: r.albumId,
       artist_name: r.artistName,
@@ -1214,9 +1258,9 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       owned_tracks: r.ownedTracks,
       missing_tracks: r.missingTracks,
       completeness_percentage: r.completenessPercentage,
-      efficiency_score: r.efficiencyScore,
-      storage_debt_bytes: r.storageDebtBytes,
-      total_size: r.totalSize,
+      efficiency_score: r.efficiencyScore ?? undefined,
+      storage_debt_bytes: r.storageDebtBytes ?? undefined,
+      total_size: r.totalSize ?? undefined,
       last_sync_at: r.lastSyncAt || undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt,

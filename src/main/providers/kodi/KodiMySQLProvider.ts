@@ -3,10 +3,10 @@ import { KodiSqlBaseProvider } from '@main/providers/kodi/KodiSqlBaseProvider'
 import {
   SourceConfig,
   MediaLibrary,
-  ProviderType,
   ProviderCredentials,
   AuthResult,
 } from '@main/providers/base/MediaProvider'
+import { ProviderType, LibraryType } from '@main/types/database'
 import {
   getKodiMySQLConnectionService,
   type KodiMySQLConfig,
@@ -19,6 +19,9 @@ import {
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import type { Pool } from 'mysql2/promise'
+import type { ConnectionTestResult } from '@main/types/ipc'
+
+interface KodiCountRow { count?: number }
 
 /**
  * KodiMySQLProvider
@@ -40,7 +43,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     }
   }
 
-  protected async queryAll<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
+  protected async queryAll<T>(sql: string, params: Array<string | number | null> = [], dbType: 'video' | 'music' = 'video'): Promise<T[]> {
     const pool = dbType === 'music' ? await this.getMusicPool() : await this.getVideoPool()
     // MySQL uses ? for placeholders, same as SQLite
     // We might need to adjust some syntax if it's too SQLite-specific
@@ -48,7 +51,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     return rows as T[]
   }
 
-  protected async queryOne<T>(sql: string, params: any[] = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
+  protected async queryOne<T>(sql: string, params: Array<string | number | null> = [], dbType: 'video' | 'music' = 'video'): Promise<T | null> {
     const rows = await this.queryAll<T>(sql, params, dbType)
     return rows.length > 0 ? rows[0] : null
   }
@@ -77,8 +80,8 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     try {
       // Adjust count queries for MySQL SIGNED vs INTEGER if needed
       // Actually COUNT(*) is portable.
-      const movieCount = (await this.queryOne<any>(QUERY_MOVIE_COUNT))?.count || 0
-      const episodeCount = (await this.queryOne<any>(QUERY_EPISODE_COUNT))?.count || 0
+      const movieCount = (await this.queryOne<KodiCountRow>(QUERY_MOVIE_COUNT))?.count || 0
+      const episodeCount = (await this.queryOne<KodiCountRow>(QUERY_EPISODE_COUNT))?.count || 0
 
       if (movieCount > 0) libraries.push({ id: 'movies', name: 'Movies', type: 'movie', itemCount: movieCount })
       if (episodeCount > 0) libraries.push({ id: 'tvshows', name: 'TV Shows', type: 'show', itemCount: episodeCount })
@@ -86,7 +89,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
       if (this.mysqlConfig?.musicDatabaseName) {
         const mPool = await this.getMusicPool()
         const [rows] = await mPool.execute(QUERY_MUSIC_SONG_COUNT)
-        const songCount = (rows as any)?.[0]?.count || 0
+        const songCount = (rows as KodiCountRow[])?.[0]?.count || 0
         if (songCount > 0) libraries.push({ id: 'music', name: 'Music', type: 'music', itemCount: songCount })
       }
     } catch (err) {
@@ -102,7 +105,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
         port: credentials.port || 3306,
         username: credentials.username || '',
         password: credentials.password || '',
-        databasePrefix: (credentials as any).databasePrefix || 'kodi_',
+        databasePrefix: credentials.databasePrefix || 'kodi_',
       }
       
       const service = getKodiMySQLConnectionService()
@@ -124,7 +127,7 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     }
   }
 
-  async testConnection(): Promise<any> {
+  async testConnection(): Promise<ConnectionTestResult> {
     try {
       await this.getVideoPool()
       return { success: true, serverName: 'Kodi MySQL Server' }
@@ -142,7 +145,8 @@ export class KodiMySQLProvider extends KodiSqlBaseProvider {
     }
   }
 
-  getConnectionConfig(): any {
+  getConnectionConfig(): KodiMySQLConfig {
+    if (!this.mysqlConfig) throw new Error('Kodi MySQL connection is not configured')
     return this.mysqlConfig
   }
 }

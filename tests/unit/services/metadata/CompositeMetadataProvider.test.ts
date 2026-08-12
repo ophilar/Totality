@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { CompositeMetadataProvider } from '../../../../src/main/services/metadata/CompositeMetadataProvider'
-import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails } from '../../../../src/main/services/metadata/IMetadataProvider'
+import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from '../../../../src/main/services/metadata/IMetadataProvider'
 
 class MockProvider implements IMetadataProvider {
   providerId: string
   providerName: string
-  supportedTypes = ['movie', 'tv'] as any[]
+  supportedTypes: MetadataType[] = ['movie', 'tv']
   
   mockSearch = vi.fn()
   mockGetDetails = vi.fn()
@@ -20,7 +20,7 @@ class MockProvider implements IMetadataProvider {
     return this.mockSearch(query)
   }
   
-  async getDetails(externalId: string, type: any): Promise<MediaMetadataDetails | null> {
+  async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
     return this.mockGetDetails(externalId, type)
   }
 
@@ -61,7 +61,7 @@ describe('CompositeMetadataProvider - searchAndFuse', () => {
     expect(results).toHaveLength(1)
     expect(results[0].title).toBe('The Matrix')
     expect(results[0].score).toBeDefined()
-    expect((results[0] as any).imdbRating).toBe(8.7)
+    expect('imdbRating' in results[0] && results[0].imdbRating).toBe(8.7)
   })
 
   it('uses any shared external identity to fuse provider results', async () => {

@@ -10,10 +10,10 @@ import { APP_CONFIG } from '@main/config'
 interface QualityScoringInput {
   resolution: string | null | undefined
   video_codec: string | null | undefined
-  video_bitrate: number
-  audio_codec: string
-  audio_channels: number
-  audio_bitrate: number
+  video_bitrate: number | null | undefined
+  audio_codec: string | null | undefined
+  audio_channels: number | null | undefined
+  audio_bitrate: number | null | undefined
   has_object_audio?: boolean | null
   audio_tracks?: string | null
   hdr_format?: string | null
@@ -432,7 +432,7 @@ export class QualityAnalyzer {
    */
   async analyzeMediaItem(mediaItem: MediaItem): Promise<QualityScore> {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio } =
-      this.scoreQuality(mediaItem as any)
+      this.scoreQuality(mediaItem)
 
     // Efficiency Metrics
     const efficiencyScore = this.calculateEfficiencyScore(mediaItem, qualityTier)

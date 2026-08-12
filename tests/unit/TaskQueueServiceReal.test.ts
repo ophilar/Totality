@@ -9,7 +9,7 @@ import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/
 describe('TaskQueueService (No Mocks)', () => {
   const dbPath = path.join(__dirname, 'task-queue.db')
   let taskQueue: TaskQueueService
-  let realDbWrapper: any
+  let realDbWrapper: ReturnType<typeof getDatabase>
 
   beforeEach(async () => {
     resetBetterSQLiteServiceForTesting()

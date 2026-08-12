@@ -1,15 +1,22 @@
 import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
+import type { AnyColumn, SQL } from 'drizzle-orm'
 import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { aggregateShowOptimizationMetrics } from '@main/services/ShowOptimizationMetricsService'
+import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
+import { getMediaMatchStatus } from '@main/services/SeriesIdentityService'
+import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
 
 export class TVShowRepository extends BaseRepository<typeof schema.seriesCompleteness> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  private readonly identities: IdentityRepository
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'series_completeness', drizzle, schema.seriesCompleteness)
+    this.identities = new IdentityRepository(db)
   }
 
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
@@ -28,7 +35,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       else if (filters.completenessFilter === 'incomplete') conditions.push(sql`completeness_percentage < 100`)
     }
 
-    const sortMap: any = {
+    const sortMap: Record<string, AnyColumn | SQL> = {
       'title': schema.seriesCompleteness.seriesTitle,
       'completeness': schema.seriesCompleteness.completenessPercentage,
       'episode_count': schema.seriesCompleteness.totalEpisodes,
@@ -46,6 +53,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     const query = this.drizzle.select({
       id: schema.seriesCompleteness.id,
       series_title: schema.seriesCompleteness.seriesTitle,
+      series_identity_key: schema.seriesCompleteness.seriesIdentityKey,
       source_id: schema.seriesCompleteness.sourceId,
       library_id: schema.seriesCompleteness.libraryId,
       total_seasons: schema.seriesCompleteness.totalSeasons,
@@ -60,15 +68,16 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       poster_url: schema.seriesCompleteness.posterUrl,
       backdrop_url: schema.seriesCompleteness.backdropUrl,
       status: schema.seriesCompleteness.status,
+      user_fixed_match: schema.seriesCompleteness.userFixedMatch,
       efficiency_score: schema.seriesCompleteness.efficiencyScore,
       storage_debt_bytes: schema.seriesCompleteness.storageDebtBytes,
       total_size: schema.seriesCompleteness.totalSize,
-      current_episodes: sql<number>`(SELECT COUNT(*) FROM media_items m WHERE m.series_title = series_completeness.series_title AND m.type = 'episode' AND m.source_id = series_completeness.source_id)`
+      current_episodes: sql<number>`(SELECT COUNT(*) FROM media_items m WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND (m.series_identity_key = series_completeness.series_identity_key OR (series_completeness.series_identity_key LIKE '%:legacy-%' AND m.series_title = series_completeness.series_title)))`
     })
     .from(schema.seriesCompleteness)
 
     if (conditions.length > 0) query.where(and(...conditions))
-    query.groupBy(schema.seriesCompleteness.seriesTitle)
+    query.groupBy(schema.seriesCompleteness.seriesIdentityKey)
     query.orderBy(sortOrder)
 
     if (filters?.limit) query.limit(filters.limit)
@@ -76,10 +85,16 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
     const rows = await query.all()
     const summaries: TVShowSummary[] = []
-    for (const row of rows as any[]) {
-      const episodes = await this.getEpisodes(row.series_title, row.source_id)
-      const metrics = aggregateShowOptimizationMetrics(episodes.map((episode: any) => ({ sizeBytes: episode.file_size, recoverableBytes: episode.storage_debt_bytes, efficiency: episode.efficiency_score })))
-      summaries.push({ ...row, total_size: metrics.totalSize, total_recoverable_bytes: metrics.totalRecoverableBytes, weighted_efficiency: metrics.weightedEfficiency, scored_episode_count: metrics.scoredEpisodeCount, unscored_episode_count: metrics.unscoredEpisodeCount, recommended_action: metrics.totalRecoverableBytes > 0 ? 'review-required' : 'no-optimization' } as TVShowSummary)
+    for (const row of rows) {
+      let episodes = await this.getEpisodes(row.series_title, row.source_id, row.series_identity_key || undefined, row.library_id)
+      if (episodes.length === 0 && row.series_identity_key?.includes(':legacy-')) {
+        episodes = await this.getEpisodes(row.series_title, row.source_id, undefined, row.library_id)
+      }
+      const metrics = aggregateShowOptimizationMetrics(episodes.map((episode) => ({ sizeBytes: episode.file_size, recoverableBytes: episode.storage_debt_bytes, efficiency: episode.efficiency_score })))
+      const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
+      const identityInputs = [row.tmdb_id ? { provider: 'tmdb', externalId: String(row.tmdb_id) } : null, row.tvdb_id ? { provider: 'tvdb', externalId: String(row.tvdb_id) } : null].filter((value): value is { provider: string; externalId: string } => value !== null)
+      const conflictingEntityIds = row.id ? await this.identities.getConflictingEntityIds('series', row.id, identityInputs) : []
+      summaries.push({ ...row, poster_url: row.poster_url ?? undefined, episode_count: row.total_episodes, season_count: row.total_seasons, match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }), total_size: metrics.totalSize, total_recoverable_bytes: metrics.totalRecoverableBytes, weighted_efficiency: metrics.weightedEfficiency, scored_episode_count: metrics.scoredEpisodeCount, unscored_episode_count: metrics.unscoredEpisodeCount, recommended_action: metrics.totalRecoverableBytes > 0 ? 'review-required' : 'no-optimization' })
     }
     return summaries
   }
@@ -101,12 +116,12 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     return res?.count || 0
   }
 
-  async getEpisodes(seriesTitle: string, sourceId?: string): Promise<MediaItem[]> {
-    const conditions = [
-      eq(schema.mediaItems.seriesTitle, seriesTitle),
-      eq(schema.mediaItems.type, 'episode')
-    ]
+  async getEpisodes(seriesTitle: string, sourceId?: string, seriesIdentityKey?: string, libraryId?: string): Promise<MediaItem[]> {
+    const conditions = [eq(schema.mediaItems.type, 'episode')]
+    if (seriesIdentityKey) conditions.push(eq(schema.mediaItems.seriesIdentityKey, seriesIdentityKey))
+    else conditions.push(eq(schema.mediaItems.seriesTitle, seriesTitle))
     if (sourceId) conditions.push(eq(schema.mediaItems.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.mediaItems.libraryId, libraryId))
 
     const rows = await this.drizzle.select({
       item: schema.mediaItems,
@@ -118,7 +133,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .orderBy(asc(schema.mediaItems.seasonNumber), asc(schema.mediaItems.episodeNumber))
     .all()
 
-    return rows.map(r => toSnakeCaseMediaItem(r)) as any[]
+    return rows.map(r => toSnakeCaseMediaItem(r))
   }
 
   async getCompletenessByTitle(title: string, sourceId?: string, libraryId?: string): Promise<SeriesCompleteness | null> {
@@ -133,6 +148,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   async upsertCompleteness(data: SeriesCompleteness): Promise<number> {
     const record = {
       seriesTitle: data.series_title,
+      seriesIdentityKey: data.series_identity_key || deriveSeriesIdentityKey({ sourceId: data.source_id || '', libraryId: data.library_id || '', folderRelativePath: `legacy-${data.series_title}`, tmdbId: data.tmdb_id, tvdbId: data.tvdb_id }),
       sourceId: data.source_id || '',
       libraryId: data.library_id || '',
       totalSeasons: data.total_seasons,
@@ -156,7 +172,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     return await this.upsertWithProviderId(
       schema.seriesCompleteness,
       record,
-      [schema.seriesCompleteness.seriesTitle, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
+      [schema.seriesCompleteness.seriesIdentityKey, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
       {
         ...record,
         seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
@@ -199,10 +215,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.id, id))
   }
 
-  private mapDrizzleToCompleteness(r: any): SeriesCompleteness {
+  private mapDrizzleToCompleteness(r: typeof schema.seriesCompleteness.$inferSelect): SeriesCompleteness {
     return {
       id: r.id,
       series_title: r.seriesTitle,
+      series_identity_key: r.seriesIdentityKey ?? undefined,
       source_id: r.sourceId,
       library_id: r.libraryId,
       total_seasons: r.totalSeasons,
@@ -217,9 +234,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       poster_url: r.posterUrl || undefined,
       backdrop_url: r.backdropUrl || undefined,
       status: r.status || undefined,
-      efficiency_score: r.efficiencyScore,
-      storage_debt_bytes: r.storageDebtBytes,
-      total_size: r.totalSize,
+      efficiency_score: r.efficiencyScore ?? undefined,
+      storage_debt_bytes: r.storageDebtBytes ?? undefined,
+      total_size: r.totalSize ?? undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt
     }

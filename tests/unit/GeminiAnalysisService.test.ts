@@ -5,7 +5,7 @@ import { getGeminiService } from '@main/services/GeminiService'
 
 describe('GeminiAnalysisService', () => {
   let service: GeminiAnalysisService
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -30,7 +30,7 @@ describe('GeminiAnalysisService', () => {
       file_size: 1000000,
       video_codec: 'h264',
       resolution: '1080p',
-    } as any)
+    })
 
     // With no API key configured, it should return a descriptive error message
     // and skipped: true, rather than throwing or using a fake response.

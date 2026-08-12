@@ -1,5 +1,6 @@
 import { eq, and, sql, asc, desc, lt, countDistinct, exists, count, avg, sum } from 'drizzle-orm'
-import type { DashboardSummary, MovieCollection, SeriesCompleteness as _SeriesCompleteness, ArtistCompleteness as _ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
+import type { SQLWrapper } from 'drizzle-orm'
+import type { DashboardSummary, MovieCollection, MusicAlbum, SeriesCompleteness as _SeriesCompleteness, ArtistCompleteness as _ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -28,7 +29,7 @@ export class StatsRepository {
     const aOrder = settingsMap['dashboard_artist_sort_order'] === 'asc' ? 'asc' : 'desc'
 
     // Sort order helpers
-    const getUpgradeOrder = (item: any, q: any) => {
+    const getUpgradeOrder = (item: typeof schema.mediaItems, q: typeof schema.qualityScores) => {
       if (uSort === 'efficiency') return [asc(q.efficiencyScore), desc(q.storageDebtBytes)]
       if (uSort === 'recent') return [desc(item.createdAt)]
       if (uSort === 'title') return [asc(item.title)]
@@ -53,8 +54,8 @@ export class StatsRepository {
     }
 
     // Common conditions for library visibility
-    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
-    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
 
     // 2. Movie Upgrades
     const movieUpgradesQuery = this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
@@ -157,13 +158,17 @@ export class StatsRepository {
     ])
 
     // Mapper helper
-    const mapItem = (r: any) => toSnakeCaseMediaItem(r)
+    const mapItem = (r: unknown) => toSnakeCaseMediaItem(r)
 
     // Process Collections exclusions
     const incompleteCollections: MovieCollection[] = []
     for (const c of collectionsRows) {
       const missing = JSON.parse(c.missingMovies || '[]')
-      const filtered = missing.filter((m: any) => !collEx.some(ex => ex.reference_key === String(m.tmdb_id) && ex.parent_key === String(c.tmdbCollectionId)))
+      const filtered = missing.filter((m: unknown) => {
+        if (!m || typeof m !== 'object' || !('tmdb_id' in m)) return true
+        const tmdbId = (m as { tmdb_id: unknown }).tmdb_id
+        return !collEx.some(ex => ex.reference_key === String(tmdbId) && ex.parent_key === String(c.tmdbCollectionId))
+      })
       const owned = c.ownedMovies || 0
       const total = owned + filtered.length
       const completeness = total > 0 ? (owned / total) * 100 : 100
@@ -173,7 +178,7 @@ export class StatsRepository {
           tmdb_collection_id: c.tmdbCollectionId, collection_name: c.collectionName, source_id: c.sourceId, library_id: c.libraryId,
           total_movies: total, owned_movies: owned, missing_movies: JSON.stringify(filtered), 
           completeness_percentage: completeness, poster_url: c.posterUrl || undefined, backdrop_url: c.backdropUrl || undefined
-        } as any)
+        } as unknown as MovieCollection)
       }
     }
 
@@ -193,8 +198,8 @@ export class StatsRepository {
       .all()
 
     return {
-      movieUpgrades: movieUpgradesRows.map(mapItem) as any,
-      tvUpgrades: tvUpgradesRows.map(mapItem) as any,
+      movieUpgrades: movieUpgradesRows.map(mapItem),
+      tvUpgrades: tvUpgradesRows.map(mapItem),
       musicUpgrades: musicUpgradesRows.map(r => {
         const album = r.album
         return {
@@ -230,11 +235,11 @@ export class StatsRepository {
           efficiency_score: r.q.efficiencyScore,
           storage_debt_bytes: r.q.storageDebtBytes
         }
-      }) as any,
+      }) as unknown as MusicAlbum[],
       incompleteCollections,
-      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => ({ ...s, series_title: s.seriesTitle, source_id: s.sourceId, library_id: s.libraryId, total_seasons: s.totalSeasons, total_episodes: s.totalEpisodes, owned_seasons: s.ownedSeasons, owned_episodes: s.ownedEpisodes, missing_seasons: s.missingSeasons, missing_episodes: s.missingEpisodes, completeness_percentage: s.completenessPercentage, tmdb_id: s.tmdbId || undefined, poster_url: s.posterUrl || undefined })) as any,
-      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => ({ ...a, artist_name: a.artistName, musicbrainz_id: a.musicbrainzId || undefined, completeness_percentage: a.completenessPercentage })) as any,
-      storageWaste: storageWasteRows.map(mapItem) as any,
+      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => ({ ...s, series_title: s.seriesTitle, source_id: s.sourceId, library_id: s.libraryId, total_seasons: s.totalSeasons, total_episodes: s.totalEpisodes, owned_seasons: s.ownedSeasons, owned_episodes: s.ownedEpisodes, missing_seasons: s.missingSeasons, missing_episodes: s.missingEpisodes, completeness_percentage: s.completenessPercentage, tmdb_id: s.tmdbId || undefined, poster_url: s.posterUrl || undefined })) as unknown as _SeriesCompleteness[],
+      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => ({ ...a, artist_name: a.artistName, musicbrainz_id: a.musicbrainzId || undefined, completeness_percentage: a.completenessPercentage })) as unknown as _ArtistCompleteness[],
+      storageWaste: storageWasteRows.map(mapItem),
       settings: {
         includeEps: settingsMap['completeness_include_eps'] !== 'false',
         includeSingles: settingsMap['completeness_include_singles'] !== 'false',
@@ -253,8 +258,8 @@ export class StatsRepository {
     movieNeedsUpgradeCount: number; movieAverageQualityScore: number;
     tvNeedsUpgradeCount: number; tvAverageQualityScore: number;
   }> {
-    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
-    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
 
     const baseQuery = this.drizzle.select()
       .from(schema.mediaItems)
@@ -304,7 +309,7 @@ export class StatsRepository {
   }
 
   public async getItemsCountBySource(sourceId: string): Promise<number> {
-    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
     
     const res = await this.drizzle.select({ count: count() })
       .from(schema.mediaItems)
@@ -318,7 +323,7 @@ export class StatsRepository {
   }
 
   public async getSourceStats(): Promise<Array<{ sourceId: string, displayName: string, sourceType: string, isEnabled: boolean, itemCount: number, lastScanAt?: string }>> {
-    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
 
     const rows = await this.drizzle.select({
       sourceId: schema.mediaSources.sourceId,
@@ -421,8 +426,8 @@ export class StatsRepository {
   public async getMusicLibraryStats(sourceId?: string): Promise<{ 
     totalArtists: number; totalAlbums: number; totalTracks: number; totalSize: number; avgAudioBitrate: number 
   }> {
-    const visibilitySubquery = (sourceCol: any, libCol: any) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
-    const sourceEnabledSubquery = (sourceCol: any) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
+    const visibilitySubquery = (sourceCol: SQLWrapper, libCol: SQLWrapper) => sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = ${sourceCol} AND ls.library_id = ${libCol}) IS NOT 0`
+    const sourceEnabledSubquery = (sourceCol: SQLWrapper) => sql`(SELECT is_enabled FROM media_sources s WHERE s.source_id = ${sourceCol}) = 1`
     
     const conditions = [sourceEnabledSubquery(schema.musicArtists.sourceId), visibilitySubquery(schema.musicArtists.sourceId, schema.musicArtists.libraryId)]
     if (sourceId) conditions.push(eq(schema.musicArtists.sourceId, sourceId))

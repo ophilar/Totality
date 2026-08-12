@@ -20,6 +20,13 @@ describe('NvidiaCommandBuilder', () => {
     } as FileAnalysisResult)).toThrow(/Dolby Vision.*dynamic HDR metadata/i)
   })
 
+  it('rejects HLG until explicit output preservation is supported', () => {
+    expect(() => new SoftwareCommandBuilder().buildFFmpegArgs('in', 'out', { targetCodec: 'hevc' }, {
+      success: true,
+      video: { hdrFormat: 'HLG' }
+    } as FileAnalysisResult)).toThrow(/HLG.*not supported/i)
+  })
+
   it('places fps_mode after the input because it is an output option', () => {
     const args = new NvidiaCommandBuilder().buildFFmpegArgs(
       'input.mkv',
@@ -48,8 +55,8 @@ describe('NvidiaCommandBuilder', () => {
         codec: 'h264',
         width: 1920,
         height: 1080,
-        pix_fmt: 'yuv420p10le'
-      } as any,
+        pixelFormat: 'yuv420p10le'
+      } as FileAnalysisResult['video'],
       audioTracks: [],
       subtitleTracks: []
     }
@@ -92,8 +99,8 @@ describe('NvidiaCommandBuilder', () => {
         codec: 'h264',
         width: 3840,
         height: 2160,
-        pix_fmt: 'yuv420p'
-      } as any,
+        pixelFormat: 'yuv420p'
+      } as FileAnalysisResult['video'],
       audioTracks: [],
       subtitleTracks: []
     }
@@ -102,13 +109,6 @@ describe('NvidiaCommandBuilder', () => {
     expect(ffmpegArgs).toContain('-vf')
     expect(ffmpegArgs).toContain('scale_cuda=format=p010le')
 
-    const hbArgs = builder.buildHandbrakeArgs('input.mp4', 'output.mkv', options, analysis as FileAnalysisResult)
-    expect(hbArgs).toContain('--encoder')
-    expect(hbArgs).toContain('nvenc_av1_10bit')
-    expect(hbArgs).toContain('--quality')
-    expect(hbArgs).toContain('18')
-    expect(hbArgs).toContain('--encopts')
-    expect(hbArgs).toContain('spatial-aq=1:temporal-aq=1:b-ref-mode=middle')
   })
 })
 
@@ -133,7 +133,7 @@ describe('IntelCommandBuilder', () => {
     }
     const analysis: Partial<FileAnalysisResult> = {
       filePath: 'input.mkv',
-      video: { index: 0, codec: 'hevc', width: 1920, height: 1080 } as any,
+      video: { index: 0, codec: 'hevc', width: 1920, height: 1080 } as FileAnalysisResult['video'],
       audioTracks: [],
       subtitleTracks: []
     }
@@ -149,9 +149,6 @@ describe('IntelCommandBuilder', () => {
     expect(ffmpegArgs).toContain('-vf')
     expect(ffmpegArgs).toContain('vpp_qsv=format=p010le')
 
-    const hbArgs = builder.buildHandbrakeArgs('input.mkv', 'output.mkv', options, analysis as FileAnalysisResult)
-    expect(hbArgs).toContain('--encoder')
-    expect(hbArgs).toContain('qsv_h265_10bit')
   })
 })
 
@@ -176,7 +173,7 @@ describe('SoftwareCommandBuilder', () => {
     }
     const analysis: Partial<FileAnalysisResult> = {
       filePath: 'input.mkv',
-      video: { index: 0, codec: 'h264', width: 1920, height: 1080 } as any,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080 } as FileAnalysisResult['video'],
       audioTracks: [],
       subtitleTracks: []
     }
@@ -188,9 +185,6 @@ describe('SoftwareCommandBuilder', () => {
     expect(ffmpegArgs).toContain('-pix_fmt')
     expect(ffmpegArgs).toContain('yuv420p10le')
 
-    const hbArgs = builder.buildHandbrakeArgs('input.mkv', 'output.mkv', options, analysis as FileAnalysisResult)
-    expect(hbArgs).toContain('--encoder')
-    expect(hbArgs).toContain('svt_av1_10bit')
   })
 })
 

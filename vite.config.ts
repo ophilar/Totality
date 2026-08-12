@@ -105,10 +105,10 @@ export default defineConfig({
         if (output) {
           if (Array.isArray(output)) {
             for (const o of output) {
-              delete (o as any).freeze
+              Reflect.deleteProperty(o, 'freeze')
             }
           } else {
-            delete (output as any).freeze
+            Reflect.deleteProperty(output, 'freeze')
           }
         }
 

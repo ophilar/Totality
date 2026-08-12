@@ -59,26 +59,8 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
 
   // Auto-detect local Kodi on mount
   useEffect(() => {
-    detectLocalKodi()
+    queueMicrotask(() => { void window.electronAPI.kodiDetectLocal().then(setLocalInstallation) })
   }, [])
-
-  const detectLocalKodi = async () => {
-    try {
-      const installation = await window.electronAPI.kodiDetectLocal()
-      setLocalInstallation(installation)
-
-      if (installation && !installation.kodiRunning) {
-        // Local installation found and Kodi not running - go directly to local mode
-        setMode('local')
-      } else {
-        // No local installation or Kodi is running - show mode selection
-        setMode('select-mode')
-      }
-    } catch (err) {
-      window.electronAPI.log.error('[KodiConnectionFlow]', 'Error detecting local Kodi:', err)
-      setMode('select-mode')
-    }
-  }
 
   // Handle local connection
   const handleLocalConnect = async () => {

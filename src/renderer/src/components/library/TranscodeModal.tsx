@@ -61,12 +61,12 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       ])
       
       if (item) setMedia(item as MediaItem)
-      const avail = capabilities || { ffmpeg: false, handbrake: false }
+      const avail = capabilities || { ffmpeg: false }
       const detectedGpus = capabilities?.gpus || []
       setAvailability(avail)
       setGpus(detectedGpus)
       
-      const defaultEngine = capabilities?.engines?.[0] || (avail.ffmpeg ? 'ffmpeg' : 'handbrake')
+      const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
       const firstGpu = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities?.selectedGpuId)
 
       setOptions(prev => ({
@@ -84,11 +84,11 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   }, [mediaId, addToast])
 
   useEffect(() => {
-    loadInitialData()
+    queueMicrotask(() => { void loadInitialData() })
   }, [loadInitialData])
 
   useEffect(() => {
-    const unsub = window.electronAPI.onProgress((p: any) => {
+    const unsub = window.electronAPI.onProgress((p) => {
       if (p.mediaItemId === mediaId) {
         setProgress(p)
         if (p.status === 'encoding' || p.percent > 0) {
@@ -122,7 +122,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     
     const timer = setTimeout(async () => {
       try {
-        const p = await window.electronAPI.getParameters(media.file_path!, { ...options, aiOptimize: false })
+        const p = await window.electronAPI.getParameters(media.id!, { ...options, aiOptimize: false })
         setParams(p)
       } catch (err) {
         console.error('Failed to update parameters preview:', err)
@@ -136,7 +136,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     setGenerating(true)
     setStatus('generating')
     try {
-      const p = await window.electronAPI.getParameters(media.file_path!, { ...options, aiOptimize: true })
+      const p = await window.electronAPI.getParameters(media.id!, { ...options, aiOptimize: true })
       setParams(p)
       
       setOptions(prev => ({
@@ -148,8 +148,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       
       setStatus('idle')
       addToast({ title: 'AI Transcoding parameters updated', type: 'info' })
-    } catch (err: any) {
-      addToast({ title: `AI parameter generation failed: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      addToast({ title: `AI parameter generation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
       setStatus('idle')
     } finally {
       setGenerating(false)
@@ -165,9 +165,9 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       if (success) {
         addToast({ title: 'Transcode complete', type: 'success' })
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (status !== 'idle') {
-        addToast({ title: `Transcode failed: ${err.message}`, type: 'error' })
+        addToast({ title: `Transcode failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
         setStatus('failed')
       }
     }
@@ -176,8 +176,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const cancelTranscode = async () => {
     try {
       await window.electronAPI.cancel(mediaId)
-    } catch (err: any) {
-      addToast({ title: `Cancellation failed: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      addToast({ title: `Cancellation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
     }
   }
 
@@ -272,13 +272,13 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         {/* Modal Body with Scroll */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
           {/* Availability Warnings */}
-          {!availability?.handbrake && !availability?.ffmpeg && (
+          {!availability?.ffmpeg && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-4">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
               <div className="space-y-1">
                 <p className="text-sm font-bold text-red-400">No Transcoding Engines Available</p>
                 <p className="text-xs text-muted-foreground">
-                  Neither FFmpeg nor HandBrakeCLI was detected on your system. Please install or configure them in Settings.
+                  FFmpeg was not detected on your system. Please install or configure it in Settings.
                 </p>
               </div>
             </div>
@@ -330,7 +330,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
             <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-3">
               <button 
                 onClick={generateParams}
-                disabled={generating || (!availability?.handbrake && !availability?.ffmpeg)}
+                disabled={generating || !availability?.ffmpeg}
                 className="flex items-center gap-2 px-5 py-2.5 bg-muted/60 hover:bg-muted rounded-xl text-xs font-bold transition-all disabled:opacity-50"
               >
                 {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-primary" />}
@@ -339,7 +339,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
 
               <button 
                 onClick={startTranscode}
-                disabled={!availability?.handbrake && !availability?.ffmpeg}
+                disabled={!availability?.ffmpeg}
                 className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
               >
                 <Play className="w-4 h-4 fill-current" />

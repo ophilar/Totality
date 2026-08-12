@@ -26,7 +26,9 @@ export const IPC_CHANNELS = {
     REQUEST_ARR_SEARCH: 'optimization:requestArrSearch',
     GET_PENDING: 'optimization:getPending',
     DECIDE_LANGUAGE: 'optimization:decideLanguage',
-    LOCAL_REMUX: 'optimization:localRemux'
+    LOCAL_REMUX: 'optimization:requestLocalRemux',
+    GET_REMUX_JOB: 'optimization:getRemuxJob',
+    GET_DECISION: 'optimization:getDecision'
   },
   DATABASE: {
     GET_SETTING: 'db:getSetting',

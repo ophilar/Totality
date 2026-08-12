@@ -9,14 +9,13 @@ export interface TranscodeOptions {
   crf: number
   preset: string
   customArgs: string
-  transcodingEngine: 'handbrake' | 'ffmpeg'
+  transcodingEngine: 'ffmpeg'
   targetSize: string
   aiOptimize?: boolean
 }
 
 export interface TranscodingParams {
   summary: string
-  handbrakeArgs: string[]
   ffmpegArgs?: string[]
   expectedSizeReduction?: string
   warnings?: string[]
@@ -42,12 +41,13 @@ export interface TranscodeProgress {
   speed?: string
   eta?: string
   error?: string
-  status?: 'encoding' | 'complete' | 'failed' | 'cancelled'
+  status?: 'encoding' | 'initializing' | 'muxing' | 'verifying' | 'complete' | 'failed' | 'cancelled'
   mediaItemId?: number
   logs?: string[]
 }
 
 export interface Availability {
+  /** Legacy compatibility field; always false after the FFmpeg-only migration. */
   handbrake: boolean
   mkvtoolnix: boolean
   ffmpeg: boolean

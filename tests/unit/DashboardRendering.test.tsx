@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
@@ -13,21 +13,23 @@ import { registerWishlistHandlers } from '@main/ipc/wishlist'
 import { registerSourceHandlers } from '@main/ipc/sources'
 import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
 import React from 'react'
+import { ProviderType } from '@main/types/database'
+type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
 describe('Dashboard Rendering (Integrated Stack)', () => {
-  let db: any
+  let db: TestDb
 
   beforeEach(async () => {
     // Standardize global window for bridge
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
 
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
   })
 
   afterEach(() => {
@@ -35,7 +37,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
   })
 
   const renderDashboard = async () => {
-    let result: any
+    let result: ReturnType<typeof render> | undefined
     await act(async () => {
         result = render(
             <ToastProvider>
@@ -54,7 +56,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     // Add a source so it shows content columns
     await db.sources.upsertSource({
       source_id: 's1',
-      source_type: 'local' as any,
+      source_type: ProviderType.Local,
       display_name: 'Test Source',
       is_enabled: 1,
       connection_config: '{}'
@@ -71,7 +73,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     // Insert a source first so the dashboard shows content columns
     await db.sources.upsertSource({
       source_id: 's1',
-      source_type: 'local' as any,
+      source_type: ProviderType.Local,
       display_name: 'Test Source',
       is_enabled: 1,
       connection_config: '{}'
@@ -86,7 +88,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
       plex_id: 'p1', // Required for conflict clause
       file_path: '/path/to/movie.mkv',
       media_source_id: '1'
-    } as any)
+    } satisfies Parameters<TestDb['media']['upsertItem']>[0])
     
     await db.media.upsertQualityScore({
       media_item_id: itemId,

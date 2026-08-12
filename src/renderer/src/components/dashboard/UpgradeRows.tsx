@@ -1,7 +1,6 @@
 import React from 'react'
 import { Film, Tv, Disc3, Trash2, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
-import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import type { MediaItem } from '@/components/library/types'
 import type { MusicAlbumUpgrade } from '@/components/dashboard/types'
 
@@ -15,7 +14,7 @@ interface UpgradeRowProps {
 }
 
 export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
-  const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
+  const wasteGB = item.storage_debt_bytes != null ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : null
 
   return (
     <div className="px-2 overflow-hidden pb-1">
@@ -31,7 +30,7 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
               <Film className="w-5 h-5 text-muted-foreground/50" />
             </div>
           )}
-          {parseFloat(wasteGB) > 0.5 && (
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
             <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
               <Trash2 className="w-2.5 h-2.5 text-white" />
             </div>
@@ -44,7 +43,7 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {parseFloat(wasteGB) > 0.5 && (
+            {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
                 className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
@@ -79,13 +78,12 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
           </button>
         </div>
       </div>
-      {isExpanded && <div className="ml-13 mb-2"><ConversionRecommendation item={item} compact /></div>}
     </div>
   )
 })
 
 export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpand, onSelect, onDismiss }: UpgradeRowProps) => {
-  const wasteGB = item.storage_debt_bytes ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : '0'
+  const wasteGB = item.storage_debt_bytes != null ? (item.storage_debt_bytes / (1024 * 1024 * 1024)).toFixed(1) : null
 
   return (
     <div className="px-2 overflow-hidden pb-1">
@@ -101,7 +99,7 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
               <Tv className="w-5 h-5 text-muted-foreground/50" />
             </div>
           )}
-          {parseFloat(wasteGB) > 0.5 && (
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
             <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
               <Trash2 className="w-2.5 h-2.5 text-white" />
             </div>
@@ -116,7 +114,7 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {parseFloat(wasteGB) > 0.5 && (
+            {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
                 className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
@@ -154,7 +152,6 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
           </button>
         </div>
       </div>
-      {isExpanded && <div className="ml-13 mb-2"><ConversionRecommendation item={item} compact /></div>}
     </div>
   )
 })

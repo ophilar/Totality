@@ -22,6 +22,7 @@ vi.mock('@main/services/LoggingService', () => ({
 }))
 
 describe('MediaFileAnalyzer Deep Analysis', () => {
+  type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter }
   const analyzer = getMediaFileAnalyzer()
 
   beforeEach(() => {
@@ -36,8 +37,8 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
     `
 
     // Mock spawn for ffmpeg -version and then volumedetect
-    ;(spawn as any).mockImplementation((path: string, args: string[]) => {
-      const ee = new EventEmitter() as any
+    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
+      const ee = new EventEmitter() as MockProcess
       ee.stdout = new EventEmitter()
       ee.stderr = new EventEmitter()
       
@@ -49,7 +50,7 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
           ee.emit('close', 0)
         })
       }
-      return ee
+      return ee as unknown as ReturnType<typeof spawn>
     })
 
     const result = await analyzer.deepAnalyzeFile('test.mkv', { detectVolume: true })
@@ -68,8 +69,8 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
     }
     const mockStdoutStr = mockStdout.join('\n')
 
-    ;(spawn as any).mockImplementation((path: string, args: string[]) => {
-      const ee = new EventEmitter() as any
+    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
+      const ee = new EventEmitter() as MockProcess
       ee.stdout = new EventEmitter()
       ee.stderr = new EventEmitter()
       
@@ -81,7 +82,7 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
           ee.emit('close', 0)
         })
       }
-      return ee
+      return ee as unknown as ReturnType<typeof spawn>
     })
 
     const result = await analyzer.deepAnalyzeFile('test.mkv', { scanBitrate: true })
@@ -93,8 +94,8 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
   })
 
   it('handles FFmpeg failure loudly', async () => {
-    ;(spawn as any).mockImplementation((path: string, args: string[]) => {
-      const ee = new EventEmitter() as any
+    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
+      const ee = new EventEmitter() as MockProcess
       ee.stdout = new EventEmitter()
       ee.stderr = new EventEmitter()
       
@@ -103,7 +104,7 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
       } else {
         process.nextTick(() => ee.emit('close', 1)) // Failure
       }
-      return ee
+      return ee as unknown as ReturnType<typeof spawn>
     })
 
     await expect(analyzer.deepAnalyzeFile('test.mkv', { detectVolume: true }))

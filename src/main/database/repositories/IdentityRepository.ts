@@ -12,6 +12,23 @@ export interface IdentityInput {
   lockSource?: string
 }
 
+export interface MediaIdentityRecord {
+  entityType: IdentityEntityType
+  entityId: number
+  provider: string
+  externalId: string
+  locked: boolean
+  lockSource?: string | null
+}
+
+export interface MediaAliasRecord {
+  entityType: IdentityEntityType
+  entityId: number
+  alias: string
+  normalizedAlias: string
+  provider?: string | null
+}
+
 export class IdentityRepository {
   constructor(private readonly db: Client) {}
 
@@ -27,9 +44,16 @@ export class IdentityRepository {
     })
   }
 
-  async getIdentities(entityType: IdentityEntityType, entityId: number): Promise<any[]> {
+  async getIdentities(entityType: IdentityEntityType, entityId: number): Promise<MediaIdentityRecord[]> {
     const result = await this.db.execute({ sql: 'SELECT * FROM media_identities WHERE entity_type = ? AND entity_id = ? ORDER BY provider, external_id', args: [entityType, entityId] })
-    return result.rows.map(row => ({ ...row, entityType: row.entity_type, entityId: row.entity_id, externalId: row.external_id, locked: row.is_locked }))
+    return result.rows.map(row => ({
+      entityType,
+      entityId,
+      provider: String(row.provider),
+      externalId: String(row.external_id),
+      locked: Boolean(row.is_locked),
+      lockSource: row.lock_source == null ? null : String(row.lock_source),
+    }))
   }
 
   async addAlias(input: { entityType: IdentityEntityType; entityId: number; alias: string; provider?: string }): Promise<void> {
@@ -43,13 +67,32 @@ export class IdentityRepository {
     })
   }
 
-  async getAliases(entityType: IdentityEntityType, entityId: number): Promise<any[]> {
+  async getAliases(entityType: IdentityEntityType, entityId: number): Promise<MediaAliasRecord[]> {
     const result = await this.db.execute({ sql: 'SELECT * FROM media_aliases WHERE entity_type = ? AND entity_id = ? ORDER BY alias', args: [entityType, entityId] })
-    return result.rows.map(row => ({ ...row, entityType: row.entity_type, entityId: row.entity_id, normalizedAlias: row.normalized_alias }))
+    return result.rows.map(row => ({
+      entityType,
+      entityId,
+      alias: String(row.alias),
+      normalizedAlias: String(row.normalized_alias),
+      provider: row.provider == null ? null : String(row.provider),
+    }))
   }
 
   async isLocked(entityType: IdentityEntityType, entityId: number): Promise<boolean> {
     const result = await this.db.execute({ sql: 'SELECT 1 FROM media_identities WHERE entity_type = ? AND entity_id = ? AND is_locked = 1 LIMIT 1', args: [entityType, entityId] })
     return result.rows.length > 0
+  }
+
+  async getConflictingEntityIds(entityType: IdentityEntityType, entityId: number, identities: Array<{ provider: string; externalId: string }>): Promise<number[]> {
+    if (identities.length === 0) return []
+    const conflicts = new Set<number>()
+    for (const identity of identities) {
+      const result = await this.db.execute({
+        sql: `SELECT entity_id FROM media_identities WHERE entity_type = ? AND provider = ? AND external_id = ? AND entity_id <> ?`,
+        args: [entityType, identity.provider, identity.externalId, entityId]
+      })
+      for (const row of result.rows) conflicts.add(Number(row.entity_id))
+    }
+    return [...conflicts]
   }
 }

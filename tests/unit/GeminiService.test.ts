@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { GeminiService, RateLimitError } from '../../src/main/services/GeminiService'
 
+type GeminiInternals = GeminiService & {
+  extractRetrySeconds: (headers: unknown) => number | null
+  handleApiError: (error: unknown) => never
+  checkRateLimit: () => void
+}
+
 vi.mock('@main/database/BetterSQLiteService', () => ({
   getDatabase: vi.fn(() => ({
     config: {
@@ -33,28 +39,28 @@ describe('GeminiService', () => {
   describe('Rate Limit Parsing', () => {
     it('should extract retry-after-ms correctly', () => {
       const headers = { get: (name: string) => name === 'retry-after-ms' ? '2500' : null }
-      const result = (service as any).extractRetrySeconds(headers)
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
       expect(result).toBe(3) // Math.ceil(2500 / 1000)
     })
 
     it('should extract retry-after in seconds correctly', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '30' : null }
-      const result = (service as any).extractRetrySeconds(headers)
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
       expect(result).toBe(30)
     })
 
     it('should extract retry-after in HTTP-date format correctly', () => {
       const futureDate = new Date('2024-01-01T12:01:00Z').toUTCString()
       const headers = { get: (name: string) => name === 'retry-after' ? futureDate : null }
-      const result = (service as any).extractRetrySeconds(headers)
+      const result = (service as unknown as GeminiInternals).extractRetrySeconds(headers)
       expect(result).toBe(60) // 60 seconds diff
     })
 
     it('should return null for missing or invalid headers', () => {
-      expect((service as any).extractRetrySeconds(null)).toBeNull()
-      expect((service as any).extractRetrySeconds({})).toBeNull()
+      expect((service as unknown as GeminiInternals).extractRetrySeconds(null)).toBeNull()
+      expect((service as unknown as GeminiInternals).extractRetrySeconds({})).toBeNull()
       const headersInvalid = { get: (name: string) => name === 'retry-after' ? 'invalid' : null }
-      expect((service as any).extractRetrySeconds(headersInvalid)).toBeNull()
+      expect((service as unknown as GeminiInternals).extractRetrySeconds(headersInvalid)).toBeNull()
     })
   })
 
@@ -63,7 +69,7 @@ describe('GeminiService', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '120' : null }
       const error429 = { status: 429, headers }
 
-      expect(() => (service as any).handleApiError(error429)).toThrow(RateLimitError)
+      expect(() => (service as unknown as GeminiInternals).handleApiError(error429)).toThrow(RateLimitError)
 
       const limitInfo = service.getRateLimitInfo()
       expect(limitInfo.limited).toBe(true)
@@ -74,7 +80,7 @@ describe('GeminiService', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '10' : null }
       const error429 = { status: 429, headers }
 
-      try { (service as any).handleApiError(error429) } catch (e) {}
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
 
       expect(service.getRateLimitInfo().limited).toBe(true)
 
@@ -88,27 +94,27 @@ describe('GeminiService', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '30' : null }
       const error429 = { status: 429, headers }
 
-      try { (service as any).handleApiError(error429) } catch (e) {}
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
 
-      expect(() => (service as any).checkRateLimit()).toThrow(RateLimitError)
+      expect(() => (service as unknown as GeminiInternals).checkRateLimit()).toThrow(RateLimitError)
 
       vi.advanceTimersByTime(31000)
 
-      expect(() => (service as any).checkRateLimit()).not.toThrow()
+      expect(() => (service as unknown as GeminiInternals).checkRateLimit()).not.toThrow()
     })
 
     it('should handle fallback to 15 seconds if retry-after is missing', () => {
        const error429 = { status: 429 }
-       try { (service as any).handleApiError(error429) } catch (e) {}
+       try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
        const limitInfo = service.getRateLimitInfo()
        expect(limitInfo.retryAfterSeconds).toBe(15)
     })
 
     it('should throw RateLimitError when error message contains RESOURCE_EXHAUSTED', () => {
        const errorExhausted = new Error('Some RESOURCE_EXHAUSTED error from sdk')
-       ;(errorExhausted as any).headers = { get: (name: string) => name === 'retry-after' ? '25' : null }
+       const errorWithHeaders = Object.assign(errorExhausted, { headers: { get: (name: string) => name === 'retry-after' ? '25' : null } })
 
-       expect(() => (service as any).handleApiError(errorExhausted)).toThrow(RateLimitError)
+       expect(() => (service as unknown as GeminiInternals).handleApiError(errorWithHeaders)).toThrow(RateLimitError)
 
        const limitInfo = service.getRateLimitInfo()
        expect(limitInfo.retryAfterSeconds).toBe(25)

@@ -1,4 +1,5 @@
 import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'drizzle-orm'
+import type { AnyColumn, SQL } from 'drizzle-orm'
 import type {
   MediaItem,
   MediaItemFilters,
@@ -15,21 +16,61 @@ import { PathUtils } from '@main/services/utils/PathUtils'
 import { toSnakeCaseMediaItem, toSnakeCaseQualityScore } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
-function cleanNulls<T>(obj: T): any {
-  const result: any = {}
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      result[key] = (obj as any)[key] === null ? undefined : (obj as any)[key]
-    }
-  }
-  return result
+function cleanNulls<T extends object>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).map(([key, value]) => [key, value === null ? undefined : value])
+  ) as T
+}
+
+interface ExportWorkingCsvOptions {
+  sourceId?: string
+  type?: MediaItemType
+  needsUpgrade?: boolean
+  includeUpgrades?: boolean
+  includeMissingMovies?: boolean
+  includeMissingEpisodes?: boolean
+  includeMissingAlbums?: boolean
+}
+
+interface MediaAnalysisStats {
+  fileSize?: number
+  duration?: number
+  video?: { resolution?: string; width?: number; height?: number; codec?: string; bitrate?: number }
+  audioTracks?: Array<{ codec?: string; channels?: number; bitrate?: number }>
+}
+
+interface VersionQualityUpdate {
+  efficiency_score?: number
+  storage_debt_bytes?: number
+  quality_tier?: string
+  tier_quality?: string
+  tier_score?: number
+  bitrate_tier_score?: number
+  audio_tier_score?: number
+  overall_score?: number
+  resolution_score?: number
+  bitrate_score?: number
+  audio_score?: number
+  needs_upgrade?: boolean | number
+  is_low_quality?: boolean | number
+  issues?: string
 }
 
 export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'media_items', drizzle, schema.mediaItems)
+  }
+
+  async getItemById(id: number): Promise<MediaItem | null> {
+    const row = await this.drizzle.select({ item: schema.mediaItems, quality: schema.qualityScores })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(eq(schema.mediaItems.id, id))
+      .get()
+    return row ? toSnakeCaseMediaItem(row) as MediaItem : null
   }
 
   async getItems(
@@ -107,7 +148,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
     if (conditions.length > 0) query.where(and(...conditions))
 
-    const sortMap: any = {
+    const sortMap: Record<string, AnyColumn | SQL> = {
       title: schema.mediaItems.title,
       year: schema.mediaItems.year,
       updated_at: schema.mediaItems.updatedAt,
@@ -149,7 +190,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return res?.count || 0
   }
 
-  private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): any[] {
+  private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): SQL[] {
     const conditions = []
 
     if (!filters?.includeDisabledLibraries) {
@@ -208,7 +249,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
     }
 
-    return conditions
+    return conditions.filter((condition): condition is SQL => condition !== undefined)
   }
 
   async getItem(id: number): Promise<MediaItem | null> {
@@ -225,11 +266,11 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return row ? this.mapDrizzleToMediaItems([row])[0] : null
   }
 
-  private mapDrizzleToMediaItems(rows: any[]): MediaItem[] {
+  private mapDrizzleToMediaItems(rows: unknown[]): MediaItem[] {
     return rows.map((r) => toSnakeCaseMediaItem(r))
   }
 
-  async updatePathAndStats(mediaItemId: number, newPath: string, analysis: any): Promise<void> {
+  async updatePathAndStats(mediaItemId: number, newPath: string, analysis: MediaAnalysisStats): Promise<void> {
     const dbPath = PathUtils.toDatabasePath(newPath)
     await this.drizzle
       .update(schema.mediaItems)
@@ -317,6 +358,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       year: item.year ?? null,
       type: item.type,
       seriesTitle: item.series_title ?? null,
+      seriesIdentityKey: item.series_identity_key ?? null,
       seasonNumber: item.season_number ?? null,
       episodeNumber: item.episode_number ?? null,
       filePath: PathUtils.toDatabasePath(item.file_path || ''),
@@ -373,6 +415,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         imdbId: sql`CASE WHEN user_fixed_match = 1 THEN imdb_id ELSE COALESCE(excluded.imdb_id, imdb_id) END`,
         tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, tmdb_id) END`,
         seriesTmdbId: sql`CASE WHEN user_fixed_match = 1 THEN series_tmdb_id ELSE COALESCE(excluded.series_tmdb_id, series_tmdb_id) END`,
+        seriesIdentityKey: sql`CASE WHEN user_fixed_match = 1 THEN series_identity_key ELSE COALESCE(excluded.series_identity_key, series_identity_key) END`,
         posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, poster_url) END`,
         episodeThumbUrl: sql`CASE WHEN user_fixed_match = 1 THEN episode_thumb_url ELSE COALESCE(excluded.episode_thumb_url, episode_thumb_url) END`,
         seasonPosterUrl: sql`CASE WHEN user_fixed_match = 1 THEN season_poster_url ELSE COALESCE(excluded.season_poster_url, season_poster_url) END`,
@@ -565,7 +608,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     newSeriesTitle?: string,
     imdbId?: string
   ): Promise<number> {
-    const data: any = {
+    const data: { seriesTmdbId: string; userFixedMatch: number; updatedAt: SQL; posterUrl?: string; seriesTitle?: string; imdbId?: string } = {
       seriesTmdbId: tmdbId,
       userFixedMatch: 1,
       updatedAt: sql`(datetime('now'))`,
@@ -621,7 +664,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     year?: number,
     imdbId?: string
   ): Promise<void> {
-    const data: any = {
+    const data: { tmdbId: string; userFixedMatch: number; updatedAt: SQL; posterUrl?: string; title?: string; year?: number; imdbId?: string } = {
       tmdbId: tmdbId,
       userFixedMatch: 1,
       updatedAt: sql`(datetime('now'))`,
@@ -657,14 +700,14 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         : eq(schema.mediaItems.libraryId, libraryId),
       eq(schema.mediaItems.type, itemType)
     )
-    return await this.reconcileStaleItems(where, schema.mediaItems.plexId, validProviderIds)
+    return await this.reconcileStaleItems(where!, schema.mediaItems.plexId, validProviderIds)
   }
 
   async updateItemArtwork(
     id: number,
     artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
   ): Promise<void> {
-    const data: any = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string } = { updatedAt: sql`(datetime('now'))` }
     if (artwork.posterUrl !== undefined) data.posterUrl = artwork.posterUrl
     if (artwork.episodeThumbUrl !== undefined) data.episodeThumbUrl = artwork.episodeThumbUrl
     if (artwork.seasonPosterUrl !== undefined) data.seasonPosterUrl = artwork.seasonPosterUrl
@@ -677,7 +720,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     artwork: { posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string }
   ): Promise<void> {
     if (ids.length === 0) return
-    const data: any = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; posterUrl?: string; episodeThumbUrl?: string; seasonPosterUrl?: string } = { updatedAt: sql`(datetime('now'))` }
     if (artwork.posterUrl !== undefined) data.posterUrl = artwork.posterUrl
     if (artwork.episodeThumbUrl !== undefined) data.episodeThumbUrl = artwork.episodeThumbUrl
     if (artwork.seasonPosterUrl !== undefined) data.seasonPosterUrl = artwork.seasonPosterUrl
@@ -714,7 +757,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return result
   }
 
-  async exportWorkingCSV(options: any): Promise<string> {
+  async exportWorkingCSV(options: ExportWorkingCsvOptions): Promise<string> {
     const conditions = []
     if (options.sourceId) conditions.push(eq(schema.mediaItems.sourceId, options.sourceId))
     if (options.type) conditions.push(eq(schema.mediaItems.type, options.type))
@@ -971,7 +1014,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }))
   }
 
-  async syncItemVersions(mediaItemId: number, versions: any[]): Promise<void> {
+  async syncItemVersions(mediaItemId: number, versions: Array<Omit<MediaItemVersion, 'id' | 'media_item_id'> & { original_language?: string | null; audio_language?: string | null }>): Promise<void> {
     await this.beginBatch()
     try {
       await this.drizzle
@@ -1008,7 +1051,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }
   }
 
-  async updateMediaItemVersionQuality(id: number, score: any): Promise<void> {
+  async updateMediaItemVersionQuality(id: number, score: VersionQualityUpdate): Promise<void> {
     await this.drizzle
       .update(schema.mediaItemVersions)
       .set({
@@ -1052,7 +1095,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }
   }
 
-  async updateVersionQuality(id: number, score: any): Promise<void> {
+  async updateVersionQuality(id: number, score: VersionQualityUpdate): Promise<void> {
     await this.drizzle
       .update(schema.mediaItemVersions)
       .set({
@@ -1193,7 +1236,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           track_count: r.trackCount,
           created_at: r.createdAt,
           updated_at: r.updatedAt,
-        })
+        }) as MusicArtist
       ),
       albums: albums.map((r) =>
         cleanNulls({
@@ -1223,7 +1266,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           added_at: r.addedAt,
           created_at: r.createdAt,
           updated_at: r.updatedAt,
-        })
+        }) as MusicAlbum
       ),
       tracks: tracks.map((r) =>
         cleanNulls({
@@ -1251,7 +1294,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           added_at: r.addedAt,
           created_at: r.createdAt,
           updated_at: r.updatedAt,
-        })
+        }) as MusicTrack
       ),
     }
   }
@@ -1332,7 +1375,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return result[0]?.id || 0
   }
 
-  private mapDrizzleToQualityScores(rows: any[]): QualityScore[] {
+  private mapDrizzleToQualityScores(rows: unknown[]): QualityScore[] {
     return rows.map((r) => toSnakeCaseQualityScore(r))
   }
 }

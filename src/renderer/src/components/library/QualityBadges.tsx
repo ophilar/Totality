@@ -5,7 +5,9 @@
  */
 
 import { Trash2, HardDrive } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { MediaItem } from '@/components/library/types'
+import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
 
 interface QualityBadgesProps {
   item: MediaItem
@@ -15,17 +17,12 @@ interface QualityBadgesProps {
 
 /** Keep dynamic HDR formats distinct from the base HDR10 label. */
 export function formatHdrLabel(value?: string | null): string | undefined {
-  const normalized = value?.trim().toLowerCase().replace(/[._-]/g, '')
-  if (!normalized || normalized === 'none' || normalized === 'sdr') return undefined
-  if (normalized.includes('dolbyvision') || normalized === 'dovi') return 'Dolby Vision'
-  if (normalized.includes('hdr10+ ') || normalized.includes('hdr10plus') || normalized.includes('hdr10+')) return 'HDR10+'
-  if (normalized === 'hdr10' || normalized === 'hdr') return 'HDR10'
-  if (normalized === 'hlg') return 'HLG'
-  return value?.trim()
+  const normalized = normalizeHdrFormatValue(value)
+  return normalized === 'SDR' ? undefined : normalized
 }
 
 export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {
-  const badges: Array<{ label: string; coloredClass: string; icon?: any }> = []
+  const badges: Array<{ label: string; coloredClass: string; icon?: LucideIcon }> = []
 
   // Efficiency "Trash" badge - show if score is below threshold (60%)
   if (showEfficiency && item.efficiency_score !== undefined && item.efficiency_score > 0 && item.efficiency_score < 60) {

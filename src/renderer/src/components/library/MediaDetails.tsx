@@ -27,6 +27,8 @@ interface MediaDetailsProps {
   onDismissUpgrade?: (mediaId: number, title: string) => void
 }
 
+const LowIndicator = () => <span className="ml-1.5 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-1 rounded">LOW</span>
+
 export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismissUpgrade }: MediaDetailsProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [versions, setVersions] = useState<MediaItemVersion[]>([])
@@ -62,7 +64,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   }, [mediaId, addToast])
 
   useEffect(() => {
-    loadData()
+    let active = true
+    queueMicrotask(() => {
+      if (active) void loadData()
+    })
+    return () => { active = false }
   }, [loadData])
 
   const handleRescan = async () => {
@@ -121,6 +127,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   if (!media) return null
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
+  const displayItem: MediaItem = media
   const isMovie = media.type === 'movie'
   
   const formatDuration = (mins: number) => {
@@ -166,8 +173,6 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       default: return 'N/A'
     }
   }
-
-  const LowIndicator = () => <span className="ml-1.5 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-1 rounded">LOW</span>
 
   const isAudioBitrateRawLow = (br: number, tier: string) => {
     if (tier === 'ULTRA_PREMIUM') return br < 3000
@@ -262,7 +267,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               <div className="bg-muted/30 border border-border/50 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Overall Health</div>
-                  <QualityBadges item={(sv || media) as any} />
+                  <QualityBadges item={displayItem} />
                 </div>
                 
                 <div className="flex gap-6">
@@ -325,7 +330,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
             {/* Recommendations */}
             {(media.needs_upgrade || media.tier_quality === 'LOW' || (toSafeNumber(sv?.efficiency_score ?? media.efficiency_score) < 60)) && (
               <div className="animate-in slide-in-from-bottom-2 duration-300">
-                <ConversionRecommendation item={(sv || media) as any} />
+                <ConversionRecommendation item={displayItem} />
               </div>
             )}
 
@@ -433,7 +438,12 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </button>
             )}
 
-            {isMovie && media.tmdb_id && (
+            {media.match_status && (
+              <div className="text-xs text-muted-foreground">
+                Match: {media.match_status === 'manual' ? 'manual' : media.match_status === 'verified' ? 'verified' : media.match_status}
+              </div>
+            )}
+            {isMovie && media.tmdb_id && (media.match_status === 'unresolved' || media.match_status === 'conflicting') && (
               <button
                 onClick={handleRadarrSearch}
                 disabled={arrStatus === 'working'}

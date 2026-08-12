@@ -91,7 +91,7 @@ export class SourceManager {
     const unavailableSources: Array<{ name: string; type: string }> = []
 
     await Promise.allSettled(
-      sources.map((source: any) => this.loadSingleSource(source, unavailableSources))
+      sources.map(source => this.loadSingleSource(source, unavailableSources))
     )
 
     this.logging.info('[SourceManager]', `Initialized with ${this.providers.size} providers`)
@@ -189,7 +189,7 @@ export class SourceManager {
 
   async scanLibraryIncremental(sourceId: string, libraryId: string, onProgress?: ProgressCallback): Promise<ScanResult> {
     await this.initialize()
-    const lastScanTime = this.db.sources.getLibraryScanTime(sourceId, libraryId)
+    const lastScanTime = await this.db.sources.getLibraryScanTime(sourceId, libraryId)
     if (!lastScanTime) return this.scanLibrary(sourceId, libraryId, onProgress)
     const provider = this.providers.get(sourceId)
     if (!provider) throw new Error(`Source not found: ${sourceId}`)
@@ -200,7 +200,7 @@ export class SourceManager {
 
   async scanAllIncremental(onProgress?: AggregateProgressCallback): Promise<Map<string, ScanResult>> {
     await this.initialize()
-    const enabledSources = this.db.sources.getEnabledSources()
+    const enabledSources = await this.db.sources.getEnabledSources()
     const results = new Map<string, ScanResult>()
     for (const source of enabledSources) {
       const provider = this.providers.get(source.source_id)
@@ -211,7 +211,7 @@ export class SourceManager {
         for (const library of libraries) {
           if (library.type === LibraryType.Music) continue
           if (!enabledLibraries.has(library.id)) continue
-          const lastScanTime = this.db.sources.getLibraryScanTime(source.source_id, library.id)
+          const lastScanTime = await this.db.sources.getLibraryScanTime(source.source_id, library.id)
           const result = await provider.scanLibrary(library.id, { sinceTimestamp: lastScanTime ? new Date(lastScanTime) : undefined, onProgress: onProgress ? (p) => onProgress(source.source_id, source.display_name, p) : undefined })
           if (result.success) await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
           results.set(`${source.source_id}:${library.id}`, result)

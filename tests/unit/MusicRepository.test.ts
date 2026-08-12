@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('MusicRepository (Real DB)', () => {
   let repo: MusicRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -21,7 +21,7 @@ describe('MusicRepository (Real DB)', () => {
       source_type: 'local',
       provider_id: 'p1',
       name: 'Artist 1',
-    } as any
+    }
 
     const id = await repo.upsertArtist(artist)
     expect(id).toBeGreaterThan(0)
@@ -32,7 +32,7 @@ describe('MusicRepository (Real DB)', () => {
   })
 
   it('should upsert and retrieve an album', async () => {
-    const artistId = await repo.upsertArtist({ source_id: 's1', source_type: 'local', provider_id: 'art1', name: 'A1' } as any)
+    const artistId = await repo.upsertArtist({ source_id: 's1', source_type: 'local', provider_id: 'art1', name: 'A1' })
     
     const album = {
       source_id: 's1',
@@ -41,7 +41,7 @@ describe('MusicRepository (Real DB)', () => {
       artist_id: artistId,
       artist_name: 'A1',
       title: 'Album 1',
-    } as any
+    }
 
     const albumId = await repo.upsertAlbum(album)
     expect(albumId).toBeGreaterThan(0)
@@ -60,7 +60,7 @@ describe('MusicRepository (Real DB)', () => {
       title: 'T1',
       file_path: '/path/to/track.flac',
       audio_codec: 'flac'
-    } as any
+    }
 
     await repo.upsertTrack(track)
     

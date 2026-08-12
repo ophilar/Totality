@@ -5,12 +5,13 @@ import { LocalFolderProvider } from '@main/providers/local/LocalFolderProvider'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir, LocalIntegratedApiServer } from '@tests/TestUtils'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { getTMDBService } from '@main/services/TMDBService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 
 describe('LocalFolderProvider Integration (Real FS)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let provider: LocalFolderProvider
   let tempDir: { path: string; cleanup: () => void }
   let server: LocalIntegratedApiServer
@@ -82,7 +83,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     
     // Setup real analyzer but mock ffprobe call
     const analyzer = getMediaFileAnalyzer()
-    vi.spyOn(analyzer as any, 'runFFprobe').mockImplementation(async (filePath: string) => {
+    vi.spyOn(analyzer as unknown as { runFFprobe: (...args: never[]) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (filePath: string) => {
       return {
         format: { format_name: 'matroska', size: '1000', duration: '7200' },
         streams: [
@@ -275,8 +276,8 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const analyzer = getMediaFileAnalyzer()
     
     vi.spyOn(analyzer, 'analyzeFilesParallel').mockResolvedValue(new Map([
-      [path.join(tempDir.path, 'Short.mkv'), { success: true, duration: 30, video: { width: 1920, height: 1080, codec: 'h264' } } as any],
-      [path.join(tempDir.path, 'Long.mkv'), { success: true, duration: 7200, video: { width: 1920, height: 1080, codec: 'h264' } } as any]
+      [path.join(tempDir.path, 'Short.mkv'), { success: true, duration: 30, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult],
+      [path.join(tempDir.path, 'Long.mkv'), { success: true, duration: 7200, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult]
     ]))
 
     fs.writeFileSync(path.join(tempDir.path, 'Short.mkv'), 'short')

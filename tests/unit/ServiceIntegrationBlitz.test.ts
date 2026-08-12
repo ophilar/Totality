@@ -95,7 +95,8 @@ describe('Service Integration Blitz (No Mocks)', () => {
           connectionConfig: { plexApiUrl: server.url, token: 'test-token' }
       })
 
-      const provider = (manager as any).providers.get('p1')
+      const provider = (manager as unknown as { providers: Map<string, { setSelectedServer: (server: { machineIdentifier: string; uri: string; accessToken: string }) => void }> }).providers.get('p1')
+      if (!provider) throw new Error('Plex provider was not registered')
       provider.setSelectedServer({
           machineIdentifier: 's1',
           uri: server.url,
@@ -178,10 +179,10 @@ describe('Service Integration Blitz (No Mocks)', () => {
 
         const id1 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f1', title: 'Fight Club', type: 'movie', file_path: 'f1.mkv', tmdb_id: '550'
-        } as any)
+        })
         const id2 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f2', title: 'Fight Club', type: 'movie', file_path: 'f2.mkv', tmdb_id: '550'
-        } as any)
+        })
 
         const count = await service.scanForDuplicates()
         expect(count).toBe(1)
@@ -210,7 +211,7 @@ describe('Service Integration Blitz (No Mocks)', () => {
 
         const mediaId = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1', title: 'AI Test Movie', type: 'movie', file_path: 'ai.mkv'
-        } as any)
+        })
 
         server.setHandler('/v1beta/models', (req) => {
             return {

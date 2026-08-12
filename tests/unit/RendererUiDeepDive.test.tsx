@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react'
@@ -19,20 +19,21 @@ import { registerWishlistHandlers } from '@main/ipc/wishlist'
 import { registerGeminiHandlers } from '@main/ipc/gemini'
 import { sql } from 'drizzle-orm'
 import React from 'react'
+type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
 describe('Renderer UI Deep Dive (Integrated Stack)', () => {
-  let db: any
+  let db: TestDb
 
   beforeEach(async () => {
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
 
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
 
     registerDatabaseHandlers()
     registerSourceHandlers()
@@ -70,7 +71,7 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
       const mediaId = await db.media.upsertItem({
         source_id: 's1', library_id: 'lib1', plex_id: 'm1', title: 'Details Movie', type: 'movie', file_path: 'movie.mkv',
         resolution: '4K', video_codec: 'hevc', video_bitrate: 50000
-      } as any)
+      })
 
       await db.media.upsertQualityScore({
         media_item_id: mediaId, quality_tier: '4K', tier_quality: 'HIGH', overall_score: 95
@@ -97,7 +98,7 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
 
       const mediaId = await db.media.upsertItem({
         source_id: 's1', library_id: 'lib1', plex_id: 'u1', title: 'Bad Quality Movie', type: 'movie', file_path: 'bad.mkv'
-      } as any)
+      })
 
       await db.media.upsertQualityScore({
         media_item_id: mediaId, quality_tier: 'SD', tier_quality: 'LOW', needs_upgrade: 1
@@ -151,10 +152,10 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
         // Insert items
         const id1 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f1', title: 'Duplicate Movie', type: 'movie', file_path: 'file1.mkv'
-        } as any)
+        })
         const id2 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f2', title: 'Duplicate Movie', type: 'movie', file_path: 'file2.mkv'
-        } as any)
+        })
 
         // Insert duplicate group
         await db.duplicates.upsertDuplicate({

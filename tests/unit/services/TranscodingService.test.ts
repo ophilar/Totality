@@ -6,6 +6,8 @@ import { GpuDetector } from '../../../src/main/services/utils/GpuDetector'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
 import * as childProcess from 'child_process'
 
+type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> }
+
 vi.mock('../../../src/main/database/BetterSQLiteService', () => ({
   getDatabase: () => ({
     isInitialized: true,
@@ -131,17 +133,18 @@ describe('TranscodingService', () => {
 
   describe('Process Diagnostic Error Tracking', () => {
     it('runFFmpeg throws TranscodeError with stderr diagnostic log on process exit failure', async () => {
-      const mockProc = new EventEmitter() as any
+      const mockProc = new EventEmitter() as MockProcess
       mockProc.stdout = new EventEmitter()
       mockProc.stderr = new EventEmitter()
       mockProc.kill = vi.fn()
 
-      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc)
+      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
 
       const options: TranscodeOptions = { useGpu: false }
       const params = await service.getTranscodeParameters('input.mp4', options)
 
-      const runPromise = (service as any).runFFmpeg(
+      const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<unknown> }
+      const runPromise = hooks.runFFmpeg(
         'input.mp4',
         'output.mkv',
         params,
@@ -162,14 +165,15 @@ describe('TranscodingService', () => {
     })
 
     it('runHandbrake throws TranscodeError with stderr diagnostic log on process failure', async () => {
-      const mockProc = new EventEmitter() as any
+      const mockProc = new EventEmitter() as MockProcess
       mockProc.stdout = new EventEmitter()
       mockProc.stderr = new EventEmitter()
       mockProc.kill = vi.fn()
 
-      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc)
+      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
 
-      const runPromise = (service as any).runHandbrake(
+      const hooks = service as unknown as { runHandbrake: (...args: unknown[]) => Promise<unknown> }
+      const runPromise = hooks.runHandbrake(
         ['--encoder', 'x265'],
         vi.fn()
       )

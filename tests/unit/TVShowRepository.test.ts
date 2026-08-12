@@ -5,7 +5,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import type { MediaItem, SeriesCompleteness } from '@main/types/database'
 
 describe('TVShowRepository (Real DB)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let repo: TVShowRepository
   let mediaRepo: MediaRepository
 

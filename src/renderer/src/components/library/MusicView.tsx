@@ -21,6 +21,8 @@ import type {
   AlbumCompletenessData
 } from '@/components/library/types'
 
+type MusicSortKey = 'title' | 'efficiency' | 'waste' | 'size'
+
 export function MusicView({
   artists,
   totalArtistCount,
@@ -189,8 +191,8 @@ export function MusicView({
         )}
       </div>
       <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-        {['title', 'efficiency', 'waste', 'size'].map((s) => (
-          <button key={s} onClick={() => onSortChange(s as any)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
+        {(['title', 'efficiency', 'waste', 'size'] as const).map((s: MusicSortKey) => (
+          <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
         ))}
       </div>
     </div>

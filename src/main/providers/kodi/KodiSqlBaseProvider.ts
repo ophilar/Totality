@@ -1,6 +1,5 @@
-// @ts-nocheck
 import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, AudioStreamInfo } from '@main/providers/base/MediaProvider'
-import { ProviderType } from '@main/types/database'
+import type { MediaItem, MediaItemVersion } from '@main/types/database'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
@@ -11,11 +10,14 @@ import { KodiMappingUtils } from '@main/providers/kodi/KodiMappingUtils'
 import { 
   QUERY_MOVIES_WITH_DETAILS, 
   QUERY_EPISODES_WITH_DETAILS,
-  QUERY_MOVIE_COUNT,
-  QUERY_EPISODE_COUNT
 } from '@main/providers/kodi/KodiDatabaseSchema'
 import { hasObjectAudio } from '@main/services/MediaNormalizer'
 import { estimateAudioBitrate } from '@main/providers/utils/ProviderUtils'
+import type { KodiAudioStream, KodiMovieWithDetails, KodiEpisodeWithDetails } from '@main/providers/kodi/KodiDatabaseSchema'
+import type { KodiMusicArtistResult, KodiMusicAlbumResult, KodiMusicSongResult } from '@main/providers/kodi/KodiMusicDatabaseSchema'
+
+type KodiSqlParameter = string | number | null
+type VersionInput = Omit<MediaItemVersion, 'id' | 'media_item_id'>
 
 /**
  * Base class for Kodi SQL-based providers (Local SQLite and Remote MySQL).
@@ -28,23 +30,23 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
   /**
    * Execute a SQL query and return all rows.
    */
-  protected abstract queryAll<T>(sql: string, params?: any[], dbType?: 'video' | 'music'): Promise<T[]>
+  protected abstract queryAll<T>(sql: string, params?: KodiSqlParameter[], dbType?: 'video' | 'music'): Promise<T[]>
 
   /**
    * Execute a SQL query and return a single row.
    */
-  protected abstract queryOne<T>(sql: string, params?: any[], dbType?: 'video' | 'music'): Promise<T | null>
+  protected abstract queryOne<T>(sql: string, params?: KodiSqlParameter[], dbType?: 'video' | 'music'): Promise<T | null>
 
   /**
    * Get audio streams from streamdetails table.
    */
-  protected async getAudioStreamsMap(): Promise<Map<number, any[]>> {
+  protected async getAudioStreamsMap(): Promise<Map<number, KodiAudioStream[]>> {
     const query = `
       SELECT idFile, strAudioCodec as codec, iAudioChannels as channels, strAudioLanguage as language
       FROM streamdetails WHERE iStreamType = 1
     `
-    const streams = await this.queryAll<any>(query)
-    const map = new Map<number, any[]>()
+    const streams = await this.queryAll<KodiAudioStream>(query)
+    const map = new Map<number, KodiAudioStream[]>()
     for (const s of streams) {
       if (!map.has(s.idFile)) map.set(s.idFile, [])
       map.get(s.idFile)!.push(s)
@@ -56,14 +58,14 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
     const audioMap = await this.getAudioStreamsMap()
     
     if (libraryId === 'movies') {
-      const rows = await this.queryAll<any>(QUERY_MOVIES_WITH_DETAILS)
+      const rows = await this.queryAll<KodiMovieWithDetails>(QUERY_MOVIES_WITH_DETAILS)
       return rows.map(r => {
         const meta = KodiMappingUtils.mapMovieToMetadata(r, this.sourceId)
         this.enrichAudio(meta, audioMap.get(r.idFile))
         return meta
       })
     } else if (libraryId === 'tvshows') {
-      const rows = await this.queryAll<any>(QUERY_EPISODES_WITH_DETAILS)
+      const rows = await this.queryAll<KodiEpisodeWithDetails>(QUERY_EPISODES_WITH_DETAILS)
       return rows.map(r => {
         const meta = KodiMappingUtils.mapEpisodeToMetadata(r, this.sourceId)
         this.enrichAudio(meta, audioMap.get(r.idFile))
@@ -73,7 +75,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
     return []
   }
 
-  private enrichAudio(meta: MediaMetadata, streams?: any[]): void {
+  private enrichAudio(meta: MediaMetadata, streams?: KodiAudioStream[]): void {
     if (!streams || streams.length === 0) return
     
     const audioTracks: AudioStreamInfo[] = streams.map((s, i) => ({
@@ -185,10 +187,10 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
               scannedProviderIds.add(mediaItem.plex_id)
 
               const scoredVersions = versions.map(v => {
-                const vScore = analyzer.analyzeVersion(v as any)
+                const vScore = analyzer.analyzeVersion({ ...v, id: 0, media_item_id: id })
                 return { ...v, media_item_id: id, ...vScore }
               })
-              db.media.syncItemVersions(id, scoredVersions)
+              await db.media.syncItemVersions(id, scoredVersions)
 
               mediaItem.id = id
               const qualityScore = await analyzer.analyzeMediaItem(mediaItem)
@@ -206,11 +208,11 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
 
       if (scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
-        const existingItems = db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
+        const existingItems = await db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
         for (const item of existingItems) {
           if (!scannedProviderIds.has(item.plex_id)) {
             if (item.id) {
-              db.media.deleteItem(item.id)
+              await db.media.deleteItem(item.id)
               result.itemsRemoved++
             }
           }
@@ -248,9 +250,9 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
 
       const { QUERY_MUSIC_ARTISTS, QUERY_MUSIC_ALBUMS, QUERY_MUSIC_SONGS } = await import('@main/providers/kodi/KodiMusicDatabaseSchema')
 
-      const artists = await this.queryAll<any>(QUERY_MUSIC_ARTISTS, [], 'music')
-      const albums = await this.queryAll<any>(QUERY_MUSIC_ALBUMS, [], 'music')
-      const songs = await this.queryAll<any>(QUERY_MUSIC_SONGS, [], 'music')
+      const artists = await this.queryAll<KodiMusicArtistResult>(QUERY_MUSIC_ARTISTS, [], 'music')
+      const albums = await this.queryAll<KodiMusicAlbumResult>(QUERY_MUSIC_ALBUMS, [], 'music')
+      const songs = await this.queryAll<KodiMusicSongResult>(QUERY_MUSIC_SONGS, [], 'music')
 
       const totalItems = artists.length + albums.length + songs.length
       getLoggingService().info(`[${this.constructor.name}]`, `Scanning ${totalItems} music items...`)
@@ -287,7 +289,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
             // Find Totality artist ID for this album's Kodi artistId
             let dbArtistId: number | undefined = undefined
             if (album.artistId) {
-               const a = db.music.getArtistByProviderId(this.sourceId, String(album.artistId))
+               const a = (await db.music.getArtists({ sourceId: this.sourceId })).find(artist => artist.provider_id === String(album.artistId))
                if (a) dbArtistId = a.id
             }
 
@@ -312,7 +314,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
              let dbArtistId: number | undefined = undefined
 
              if (song.idAlbum) {
-                 const a = db.music.getAlbumByProviderId(this.sourceId, String(song.idAlbum))
+                 const a = (await db.music.getAlbums({ sourceId: this.sourceId })).find(album => album.provider_id === String(song.idAlbum))
                  if (a) {
                      dbAlbumId = a.id
                      dbArtistId = a.artist_id
@@ -346,12 +348,12 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
     return title.toLowerCase().replace(/[^a-z0-9]/g, '')
   }
 
-  protected calculateVersionScore(v: any): number {
-    const resMap: any = { '4K': 4000, '1080p': 1080, '720p': 720, 'SD': 480 }
+  protected calculateVersionScore(v: VersionInput): number {
+    const resMap: Record<string, number> = { '4K': 4000, '1080p': 1080, '720p': 720, 'SD': 480 }
     return (resMap[v.resolution] || 0) + (v.video_bitrate / 1000)
   }
 
-  protected convertMetadataToMediaItem(metadata: MediaMetadata): any {
+  protected convertMetadataToMediaItem(metadata: MediaMetadata): MediaItem {
     return {
       plex_id: metadata.itemId,
       title: metadata.title,
@@ -378,13 +380,13 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       poster_url: metadata.posterUrl,
       episode_thumb_url: metadata.episodeThumbUrl,
       season_poster_url: metadata.seasonPosterUrl,
-      summary: (metadata.rawData as any)?.plot || undefined,
+      summary: typeof metadata.rawData === 'object' && metadata.rawData !== null && 'plot' in metadata.rawData && typeof metadata.rawData.plot === 'string' ? metadata.rawData.plot : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
   }
 
-  protected convertMetadataToVersion(m: MediaMetadata): any {
+  protected convertMetadataToVersion(m: MediaMetadata): VersionInput {
     return {
       version_source: m.itemId,
       file_path: m.filePath || '',

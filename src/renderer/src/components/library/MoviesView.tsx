@@ -115,20 +115,24 @@ export function MoviesView({
 
     items.sort((a, b) => {
       if (sortBy === 'year') {
-        const yearA = a.type === 'movie' ? (a.movie.year ?? 0) : 0
-        const yearB = b.type === 'movie' ? (b.movie.year ?? 0) : 0
+        const yearA = a.type === 'movie' ? a.movie.year : undefined
+        const yearB = b.type === 'movie' ? b.movie.year : undefined
+        if (yearA == null || yearB == null) return yearA == null ? (yearB == null ? 0 : 1) : -1
         if (yearA !== yearB) return yearB - yearA
       } else if (sortBy === 'efficiency') {
-        const effA = a.type === 'movie' ? (a.movie.efficiency_score ?? 100) : 100
-        const effB = b.type === 'movie' ? (b.movie.efficiency_score ?? 100) : 100
+        const effA = a.type === 'movie' ? a.movie.efficiency_score : undefined
+        const effB = b.type === 'movie' ? b.movie.efficiency_score : undefined
+        if (effA == null || effB == null) return effA == null ? (effB == null ? 0 : 1) : -1
         if (effA !== effB) return effA - effB
       } else if (sortBy === 'waste') {
-        const wasteA = a.type === 'movie' ? (a.movie.storage_debt_bytes ?? 0) : 0
-        const wasteB = b.type === 'movie' ? (b.movie.storage_debt_bytes ?? 0) : 0
+        const wasteA = a.type === 'movie' ? a.movie.storage_debt_bytes : undefined
+        const wasteB = b.type === 'movie' ? b.movie.storage_debt_bytes : undefined
+        if (wasteA == null || wasteB == null) return wasteA == null ? (wasteB == null ? 0 : 1) : -1
         if (wasteA !== wasteB) return wasteB - wasteA
       } else if (sortBy === 'size') {
-        const sizeA = a.type === 'movie' ? (a.movie.file_size ?? 0) : 0
-        const sizeB = b.type === 'movie' ? (b.movie.file_size ?? 0) : 0
+        const sizeA = a.type === 'movie' ? a.movie.file_size : undefined
+        const sizeB = b.type === 'movie' ? b.movie.file_size : undefined
+        if (sizeA == null || sizeB == null) return sizeA == null ? (sizeB == null ? 0 : 1) : -1
         if (sizeA !== sizeB) return sizeB - sizeA
       }
 
@@ -519,16 +523,16 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="text-center text-sm text-muted-foreground">{movie.year || '-'}</div>
         <div className="text-sm text-muted-foreground">{movie.resolution || '-'}</div>
         <div className="text-sm text-muted-foreground uppercase">{movie.video_codec || '-'}</div>
-        <div className="text-right text-sm text-muted-foreground font-mono">{formatBitrate(movie.video_bitrate || 0)}</div>
-        <div className="text-right text-sm text-muted-foreground font-mono">{formatBytes(movie.file_size || 0)}</div>
+        <div className="text-right text-sm text-muted-foreground font-mono">{movie.video_bitrate != null ? formatBitrate(movie.video_bitrate) : 'Unavailable'}</div>
+        <div className="text-right text-sm text-muted-foreground font-mono">{movie.file_size != null ? formatBytes(movie.file_size) : 'Unavailable'}</div>
         <div className="text-center">
-          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${(movie.efficiency_score ?? 0) >= 85 ? 'bg-green-500/20 text-green-500' : (movie.efficiency_score ?? 0) >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
-            {(movie.efficiency_score ?? 0)}%
+          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${movie.efficiency_score == null ? 'text-muted-foreground' : movie.efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' : movie.efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
+            {movie.efficiency_score == null ? 'Unavailable' : `${movie.efficiency_score}%`}
           </div>
         </div>
         <div className="text-right">
-          <span className={`text-xs font-medium ${(movie.storage_debt_bytes ?? 0) > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
-            {(movie.storage_debt_bytes ?? 0) > 0 ? formatBytes(movie.storage_debt_bytes ?? 0) : '-'}
+          <span className={`text-xs font-medium ${movie.storage_debt_bytes == null ? 'text-muted-foreground' : movie.storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+            {movie.storage_debt_bytes == null ? 'Unavailable' : movie.storage_debt_bytes > 0 ? formatBytes(movie.storage_debt_bytes) : 'None'}
           </span>
         </div>
         <div className="relative flex justify-center">

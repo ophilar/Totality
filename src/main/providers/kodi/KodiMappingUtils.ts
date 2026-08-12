@@ -1,11 +1,11 @@
-// @ts-nocheck
 import {
   normalizeVideoCodec,
   normalizeAudioCodec,
   normalizeResolution,
 } from '@main/services/MediaNormalizer'
 import type { MediaMetadata } from '@main/providers/base/MediaProvider'
-import type { MusicArtist, MusicAlbum, MusicTrack, AlbumType } from '@main/types/database'
+import { ProviderType, MediaItemType, AlbumType } from '@main/types/database'
+import type { MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
 import {
   KodiMovieWithDetails,
   KodiEpisodeWithDetails,
@@ -63,10 +63,10 @@ export class KodiMappingUtils {
 
     return {
       providerId: sourceId,
-      providerType: 'kodi' as any,
+      providerType: ProviderType.Kodi,
       itemId: String(item.idMovie),
       title: item.title || 'Unknown Movie',
-      type: 'movie',
+      type: MediaItemType.Movie,
       year: item.year || undefined,
       duration: item.videoDuration ? item.videoDuration * 1000 : undefined,
       posterUrl: this.convertImageUrl(item.posterUrl, baseUrl),
@@ -93,10 +93,10 @@ export class KodiMappingUtils {
 
     return {
       providerId: sourceId,
-      providerType: 'kodi' as any,
+      providerType: ProviderType.Kodi,
       itemId: String(item.idEpisode),
       title: item.title || `Episode ${item.episodeNumber}`,
-      type: 'episode',
+      type: MediaItemType.Episode,
       seriesTitle: item.showTitle || 'Unknown Series',
       seasonNumber: item.seasonNumber || undefined,
       episodeNumber: item.episodeNumber || undefined,
@@ -117,10 +117,10 @@ export class KodiMappingUtils {
   /**
    * Convert Kodi Music Artist to MusicArtist
    */
-  static mapToMusicArtist(item: KodiMusicArtistResult, sourceId: string, sourceType: string, baseUrl?: string): MusicArtist {
+  static mapToMusicArtist(item: KodiMusicArtistResult, sourceId: string, sourceType: ProviderType, baseUrl?: string): MusicArtist {
     return {
       source_id: sourceId,
-      source_type: sourceType as any,
+      source_type: sourceType,
       library_id: 'music',
       provider_id: String(item.idArtist),
       name: item.strArtist,
@@ -137,20 +137,20 @@ export class KodiMappingUtils {
   /**
    * Convert Kodi Music Album to MusicAlbum
    */
-  static mapToMusicAlbum(item: KodiMusicAlbumResult, sourceId: string, sourceType: string, artistId?: number, baseUrl?: string): MusicAlbum {
+  static mapToMusicAlbum(item: KodiMusicAlbumResult, sourceId: string, sourceType: ProviderType, artistId?: number, baseUrl?: string): MusicAlbum {
     const kodiType = (item.strType || '').toLowerCase()
     let albumType: AlbumType | undefined = undefined
-    if (kodiType === 'album') albumType = 'album'
-    else if (kodiType === 'ep') albumType = 'ep'
-    else if (kodiType === 'single') albumType = 'single'
-    else if (kodiType === 'compilation') albumType = 'compilation'
-    else if (kodiType === 'live') albumType = 'live'
-    else if (kodiType === 'soundtrack') albumType = 'soundtrack'
-    else if (kodiType) albumType = 'unknown'
+    if (kodiType === 'album') albumType = AlbumType.Album
+    else if (kodiType === 'ep') albumType = AlbumType.EP
+    else if (kodiType === 'single') albumType = AlbumType.Single
+    else if (kodiType === 'compilation') albumType = AlbumType.Compilation
+    else if (kodiType === 'live') albumType = AlbumType.Live
+    else if (kodiType === 'soundtrack') albumType = AlbumType.Soundtrack
+    else if (kodiType) albumType = AlbumType.Unknown
 
     return {
       source_id: sourceId,
-      source_type: sourceType as any,
+      source_type: sourceType,
       library_id: 'music',
       provider_id: String(item.idAlbum),
       artist_id: artistId,
@@ -173,7 +173,7 @@ export class KodiMappingUtils {
   static mapToMusicTrack(
     item: KodiMusicSongResult,
     sourceId: string,
-    sourceType: string,
+    sourceType: ProviderType,
     albumId?: number,
     artistId?: number
   ): MusicTrack {
@@ -187,7 +187,7 @@ export class KodiMappingUtils {
 
     return {
       source_id: sourceId,
-      source_type: sourceType as any,
+      source_type: sourceType,
       library_id: 'music',
       provider_id: String(item.idSong),
       album_id: albumId,

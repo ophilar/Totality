@@ -9,7 +9,7 @@ import { SafeUrlSchema } from '@main/validation/schemas'
 describe('Plex Authentication (Real Logic)', () => {
   let server: http.Server
   let serverUrl: string
-  let lastRequestBody: any = null
+  let lastRequestBody: string | null = null
 
   beforeEach(async () => {
     await setupTestDb()

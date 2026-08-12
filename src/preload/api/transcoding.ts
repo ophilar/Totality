@@ -6,9 +6,7 @@ export const transcodingAPI = {
   getCapabilities: () => ipcRenderer.invoke('transcoding:getCapabilities'),
   refreshCapabilities: () => ipcRenderer.invoke('transcoding:refreshCapabilities'),
   setSelectedGpu: (gpuId: string | null) => ipcRenderer.invoke('transcoding:setSelectedGpu', gpuId),
-  handbrakeGetVersion: () => ipcRenderer.invoke('handbrake:getVersion'),
-
-  getParameters: (filePath: string, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:getParameters', filePath, options) as Promise<TranscodingParams>,
+  getParameters: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:getParameters', mediaItemId, options) as Promise<TranscodingParams>,
   start: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:start', mediaItemId, options),
   cancel: (mediaItemId: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
   onProgress: (callback: (progress: TranscodeProgress & { mediaItemId: number }) => void) => {

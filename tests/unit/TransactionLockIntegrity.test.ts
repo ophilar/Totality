@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('Transaction Lock and Yield Integrity', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

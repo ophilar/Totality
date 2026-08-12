@@ -5,10 +5,12 @@ import logoImage from '@/assets/totality_header_logo.png'
 import { SearchAutocomplete } from '@/components/library/browser/SearchAutocomplete'
 import { ScanningStatus } from '@/components/library/browser/ScanningStatus'
 import { ActivityPanel } from '@/components/ui/ActivityPanel'
+import type { MediaViewType } from '@/components/library/types'
+import type { SearchAutocompleteProps } from '@/components/library/browser/SearchAutocomplete'
 
 interface BrowserHeaderProps {
-  view: string
-  setView: (view: any) => void
+  view: MediaViewType
+  setView: (view: MediaViewType) => void
   hasMovies: boolean
   hasTV: boolean
   hasMusic: boolean
@@ -22,10 +24,10 @@ interface BrowserHeaderProps {
   setShowWishlistPanel: (val: boolean) => void
   onOpenSettings: () => void
   onNavigateHome?: () => void
-  onLibraryTabChange?: (tab: any) => void
+  onLibraryTabChange?: (tab: MediaViewType) => void
   
   // Search props
-  searchProps: any
+  searchProps: SearchAutocompleteProps
 }
 
 export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
@@ -47,7 +49,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
   onLibraryTabChange,
   searchProps
 }) => {
-  const handleTabClick = (tab: any) => {
+  const handleTabClick = (tab: MediaViewType) => {
     setView(tab)
     onLibraryTabChange?.(tab)
   }

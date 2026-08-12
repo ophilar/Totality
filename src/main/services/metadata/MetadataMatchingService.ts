@@ -13,6 +13,16 @@ export interface MatchMediaItemParams {
   includeAdult?: boolean
 }
 
+export function selectAutomaticMatch(candidates: MetadataSearchResult[], query: Pick<MatchMediaItemParams, 'title' | 'year' | 'type'>): MetadataSearchResult | null {
+  const normalizedQuery = normalizeTitleForMatching(query.title)
+  const exactTitleMatches = candidates.filter(candidate => normalizeTitleForMatching(candidate.title) === normalizedQuery && candidate.type === query.type)
+  if (query.year != null) {
+    const yearMatches = exactTitleMatches.filter(candidate => candidate.year === query.year)
+    return yearMatches.length === 1 ? yearMatches[0] : null
+  }
+  return exactTitleMatches.length === 1 ? exactTitleMatches[0] : null
+}
+
 /**
  * Unified single-path orchestrator for matching media metadata.
  * Uses CompositeMetadataProvider's fusion capability to fetch and score metadata.

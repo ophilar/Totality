@@ -132,15 +132,13 @@ export function CompletenessPanel({
 
   useEffect(() => {
     if (isOpen) {
-      loadCompletenessData()
-      loadMusicCompletenessData()
+      queueMicrotask(() => { void loadCompletenessData(); void loadMusicCompletenessData() })
     }
   }, [isOpen, loadCompletenessData, loadMusicCompletenessData])
 
   useEffect(() => {
     if (isOpen && !isAnalyzing) {
-      loadCompletenessData()
-      loadMusicCompletenessData()
+      queueMicrotask(() => { void loadCompletenessData(); void loadMusicCompletenessData() })
     }
   }, [isOpen, isAnalyzing, loadCompletenessData, loadMusicCompletenessData])
 
@@ -148,7 +146,7 @@ export function CompletenessPanel({
     if (!isOpen) return
     const cleanupSettingsChanged = window.electronAPI.onSettingsChanged?.((data: { key: string; hasValue: boolean }) => {
       if (data.key === 'completeness_include_eps' || data.key === 'completeness_include_singles') {
-        loadMusicCompletenessData()
+        void loadMusicCompletenessData()
       }
     })
     return () => cleanupSettingsChanged?.()

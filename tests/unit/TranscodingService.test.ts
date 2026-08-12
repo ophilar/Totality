@@ -8,14 +8,18 @@ import * as path from 'path'
 import { spawn } from 'child_process'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { ipcMain } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
+import type { FileAnalysisResult } from '@main/workers/ffprobe-worker'
+import type { MediaItem } from '@main/types/database'
 
 vi.mock('child_process')
 
 describe('Transcoding Integration (Service + IPC)', () => {
   let service: ReturnType<typeof getTranscodingService>
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   const testDir = path.join(process.cwd(), 'tests/tmp/transcoding_integrated_test')
-  const handlers = new Map<string, (...args: any[]) => Promise<any>>()
+  type CapturedHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>
+  const handlers = new Map<string, CapturedHandler>()
 
   beforeEach(async () => {
     vi.resetAllMocks()
@@ -27,9 +31,9 @@ describe('Transcoding Integration (Service + IPC)', () => {
     if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true })
 
     // Capture registered handlers
-    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
+    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: CapturedHandler) => {
       handlers.set(channel, handler)
-      return undefined as any
+      return undefined
     })
 
     // Initialize paths in DB so service doesn't use defaults
@@ -48,7 +52,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
 
     // Setup real analyzer but mock ffprobe call
     const analyzer = getMediaFileAnalyzer()
-    vi.spyOn(analyzer as any, 'runFFprobe').mockImplementation(async (filePath: string) => {
+    vi.spyOn(analyzer as unknown as { runFFprobe: (filePath: string) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (filePath: string) => {
       const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 1000
       return {
         format: { format_name: 'matroska', size: size.toString(), duration: '60' },
@@ -57,8 +61,8 @@ describe('Transcoding Integration (Service + IPC)', () => {
     })
 
     // Mock spawn to handle multiple calls (availability checks + Handbrake)
-    vi.mocked(spawn).mockImplementation((tool: any, args: any) => {
-      const mockProc: any = {
+    vi.mocked(spawn).mockImplementation((tool: string, args: readonly string[]) => {
+      const mockProc = {
         stdout: { on: vi.fn() },
         stderr: { on: vi.fn() },
         kill: vi.fn(),
@@ -78,7 +82,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
           }
         })
       }
-      return mockProc
+      return mockProc as unknown as ReturnType<typeof spawn>
     })
   })
 
@@ -101,9 +105,11 @@ describe('Transcoding Integration (Service + IPC)', () => {
     it('returns AI generated parameters via IPC for a real file', async () => {
       const testFile = path.join(testDir, 'input.mkv')
       fs.writeFileSync(testFile, 'dummy')
+      await db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'Test source', connection_config: JSON.stringify({ folderPath: testDir }), is_enabled: 1 })
+      await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: testFile, file_size: 5, duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null } satisfies MediaItem)
 
       const handler = handlers.get('transcoding:getParameters')!
-      const result = await handler({} as any, testFile, { targetCodec: 'av1' })
+      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1' }) as { summary: string; handbrakeArgs: string[] }
       
       expect(result.summary).toBe('test')
       expect(result.handbrakeArgs).toContain('--quality')
@@ -120,15 +126,16 @@ describe('Transcoding Integration (Service + IPC)', () => {
         title: 'Movie', 
         type: 'movie', 
         file_path: testFile, 
-        file_size: 13 
-      } as any)
+        file_size: 13,
+        duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null
+      } satisfies MediaItem)
 
       service.setAvailabilityOverride({ handbrake: true, mkvtoolnix: true, ffmpeg: true })
 
       const handler = handlers.get('transcoding:start')!
       const mockEvent = { sender: { send: vi.fn() } }
       
-      const result = await handler(mockEvent as any, 1, { overwriteOriginal: true, targetCodec: 'hevc', transcodingEngine: 'handbrake' })
+      const result = await handler(mockEvent as IpcMainInvokeEvent, 1, { overwriteOriginal: true, targetCodec: 'hevc', transcodingEngine: 'handbrake' })
       
       expect(result).toBe(true)
       

@@ -105,7 +105,19 @@ export function TroubleshootTab() {
 
   // Load initial logs
   useEffect(() => {
-    loadLogs()
+    queueMicrotask(() => {
+      void Promise.all([
+        window.electronAPI.getLogs(2000),
+        window.electronAPI.isVerboseLogging(),
+        window.electronAPI.getFileLoggingSettings(),
+      ]).then(([entries, isVerbose, fileSettings]) => {
+        setLogs(entries)
+        setVerboseEnabled(isVerbose)
+        setFileLoggingSettings(fileSettings)
+      }).catch(error => {
+        window.electronAPI.log.error('[TroubleshootTab]', 'Failed to load logs:', error)
+      }).finally(() => setIsLoading(false))
+    })
   }, [])
 
   // Subscribe to new logs
@@ -189,23 +201,6 @@ export function TroubleshootTab() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [filteredLogs, selectedIds.size, detailLogId])
-
-  const loadLogs = async () => {
-    try {
-      const [entries, isVerbose, fileSettings] = await Promise.all([
-        window.electronAPI.getLogs(2000),
-        window.electronAPI.isVerboseLogging(),
-        window.electronAPI.getFileLoggingSettings(),
-      ])
-      setLogs(entries)
-      setVerboseEnabled(isVerbose)
-      setFileLoggingSettings(fileSettings)
-    } catch (error) {
-      window.electronAPI.log.error('[TroubleshootTab]', 'Failed to load logs:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleClear = async () => {
     await window.electronAPI.clearLogs()

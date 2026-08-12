@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
@@ -9,9 +9,11 @@ import { SourceProvider } from '@/contexts/SourceContext'
 import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
+import type { MediaItem } from '@/components/library/types'
+import type { TaskQueueState } from '@main/types/database'
 
 describe('MoviesView Integrated Rendering (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -26,8 +28,8 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     const { api } = setupRealIntegratedBridge()
 
     // Explicitly capture the listener registered by SourceContext
-    let taskListener: any
-    api.onTaskQueueUpdated = (cb: any) => {
+    let taskListener: ((state: TaskQueueState) => void) | undefined
+    api.onTaskQueueUpdated = (cb: (state: TaskQueueState) => void) => {
       taskListener = cb
       return () => {}
     }
@@ -94,7 +96,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       display_name: 'Local',
       connection_config: '{}', // Fixed: connection_config is NOT NULL
       is_enabled: 1
-    } as any)
+    })
 
     const movie = {
       id: 1,
@@ -109,7 +111,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     render(
       <TestProviders>
         <MoviesView
-          movies={[movie] as any}
+          movies={[movie as MediaItem]}
           sortBy="title"
           onSortChange={() => {}}
           slimDown={false}
@@ -144,7 +146,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     render(
       <TestProviders>
         <MoviesView
-          movies={[movie] as any}
+          movies={[movie as MediaItem]}
           sortBy="title"
           onSortChange={() => {}}
           slimDown={false}
@@ -172,7 +174,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     render(
       <TestProviders>
         <MoviesView
-          movies={[{ id: 3, title: 'Sortable Movie', type: 'movie' }] as any}
+          movies={[{ id: 3, title: 'Sortable Movie', type: 'movie' } as MediaItem]}
           sortBy="title"
           onSortChange={onSortChange}
           slimDown={false}

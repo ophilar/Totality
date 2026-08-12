@@ -93,14 +93,16 @@ export function DuplicatesView() {
 
         // Load full items and recommendations for each group
         const enrichedGroups = await Promise.all(
-          pendingGroups.map(async (group: any) => {
+          pendingGroups
+            .filter((group): group is typeof group & { id: number; created_at: string } => group.id != null && group.created_at != null)
+            .map(async (group) => {
             const itemIds = JSON.parse(group.media_item_ids) as number[]
 
             // Fetch full media item records
             const items = await Promise.all(
               itemIds.map((id) => window.electronAPI.getMediaItem(id))
             )
-            const validItems = items.filter((i: any): i is MediaItem => !!i)
+            const validItems = items.filter((i): i is MediaItem => !!i)
 
             // Get recommendation
             const recommendation = await window.electronAPI.duplicatesGetRecommendation(itemIds)

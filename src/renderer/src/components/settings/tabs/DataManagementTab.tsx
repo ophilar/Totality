@@ -66,21 +66,13 @@ export function DataManagementTab() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
-    loadDbPath()
+    queueMicrotask(() => {
+      void Promise.resolve().then(() => window.electronAPI.dbGetPath()).then(setDbPath).catch((error: unknown) => {
+        window.electronAPI.log.error('[DataManagementTab]', 'Failed to load database path:', error)
+        setDbPath('Unable to load path')
+      }).finally(() => setIsLoading(false))
+    })
   }, [])
-
-  const loadDbPath = async () => {
-    setIsLoading(true)
-    try {
-      const path = await window.electronAPI.dbGetPath()
-      setDbPath(path)
-    } catch (error) {
-      window.electronAPI.log.error('[DataManagementTab]', 'Failed to load database path:', error)
-      setDbPath('Unable to load path')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleExport = async () => {
     setIsExporting(true)

@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -10,7 +10,7 @@ import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 
 describe('MediaBrowser Data Fetching (Real Integrated Bridge)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

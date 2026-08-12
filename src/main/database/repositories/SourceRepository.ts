@@ -5,10 +5,11 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { getCredentialEncryptionService } from '@main/services/CredentialEncryptionService'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
 export class SourceRepository extends BaseRepository<typeof schema.mediaSources> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'media_sources', drizzle, schema.mediaSources)
   }
 
@@ -247,7 +248,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
     await this.updateSourceScanTime(sourceId)
   }
 
-  private mapDrizzleToSources(rows: any[]): MediaSource[] {
+  private mapDrizzleToSources(rows: Array<typeof schema.mediaSources.$inferSelect>): MediaSource[] {
     const encryption = getCredentialEncryptionService()
     return rows.map(r => {
       const parsed = JSON.parse(r.connectionConfig)
@@ -257,10 +258,10 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
       return {
         id: r.id,
         source_id: r.sourceId,
-        source_type: r.sourceType as any,
+        source_type: r.sourceType as MediaSource['source_type'],
         display_name: r.displayName,
         connection_config: decryptedConfig,
-        is_enabled: r.isEnabled,
+        is_enabled: r.isEnabled === 1,
         last_connected_at: r.lastConnectedAt || undefined,
         last_scan_at: r.lastScanAt || undefined,
         created_at: r.createdAt,

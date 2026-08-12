@@ -1,13 +1,26 @@
 import type { MediaItem, QualityScore } from '@main/types/database'
+import { getMediaMatchStatus } from '@main/services/SeriesIdentityService'
+
+type MapperValue = string | number | boolean | null | undefined
+interface MapperFields { [key: string]: MapperValue | MapperFields }
+
+function asMapperFields(value: unknown): MapperFields {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Database mapper input must be an object')
+  }
+  return value as MapperFields
+}
 
 /**
  * Maps a Drizzle model or SQLite database row representing a MediaItem 
  * (plus optionally its QualityScore) to the standard snake_case contract.
  */
-export function toSnakeCaseMediaItem(r: any, q?: any): MediaItem {
-  const item = r?.item || r || {}
-  const quality = q || r?.quality || r?.q || {}
+export function toSnakeCaseMediaItem(r: unknown, q?: unknown): MediaItem {
+  const source = asMapperFields(r)
+  const item = asMapperFields(source.item || source)
+  const quality = asMapperFields(q || source.quality || source.q || {})
   
+  const canonicalIds = [item.tmdbId || item.tmdb_id, item.imdbId || item.imdb_id].filter((value): value is string => Boolean(value))
   return {
     ...item,
     id: item.id,
@@ -20,6 +33,7 @@ export function toSnakeCaseMediaItem(r: any, q?: any): MediaItem {
     plex_id: item.plexId || item.plex_id,
     sort_title: item.sortTitle || item.sort_title,
     series_title: item.seriesTitle || item.series_title,
+    series_identity_key: item.seriesIdentityKey || item.series_identity_key,
     season_number: item.seasonNumber !== undefined ? item.seasonNumber : item.season_number,
     episode_number: item.episodeNumber !== undefined ? item.episodeNumber : item.episode_number,
     file_path: item.filePath || item.file_path,
@@ -51,6 +65,7 @@ export function toSnakeCaseMediaItem(r: any, q?: any): MediaItem {
     episode_thumb_url: item.episodeThumbUrl || item.episode_thumb_url,
     season_poster_url: item.seasonPosterUrl || item.season_poster_url,
     user_fixed_match: item.userFixedMatch === 1 || item.user_fixed_match === 1 || item.userFixedMatch === true || item.user_fixed_match === true,
+    match_status: getMediaMatchStatus({ locked: item.userFixedMatch === 1 || item.user_fixed_match === 1 || item.userFixedMatch === true || item.user_fixed_match === true, canonicalIds, conflictingEntityIds: [] }),
     
     // Quality relation parameters
     quality_tier: quality.qualityTier || item.qualityTier || quality.quality_tier || item.quality_tier,
@@ -65,32 +80,33 @@ export function toSnakeCaseMediaItem(r: any, q?: any): MediaItem {
     
     created_at: item.createdAt || item.created_at,
     updated_at: item.updatedAt || item.updated_at
-  }
+  } as unknown as MediaItem
 }
 
 /**
  * Maps a Drizzle model or SQLite database row representing a QualityScore
  * to the standard snake_case contract.
  */
-export function toSnakeCaseQualityScore(r: any): QualityScore {
+export function toSnakeCaseQualityScore(r: unknown): QualityScore {
+  const row = asMapperFields(r)
   return {
-    id: r.id,
-    media_item_id: r.mediaItemId || r.media_item_id,
-    quality_tier: r.qualityTier || r.quality_tier,
-    tier_quality: r.tierQuality || r.tier_quality,
-    tier_score: r.tierScore || r.tier_score,
-    bitrate_tier_score: r.bitrateTierScore || r.bitrate_tier_score,
-    audio_tier_score: r.audioTierScore || r.audio_tier_score,
-    overall_score: r.overallScore || r.overall_score,
-    resolution_score: r.resolutionScore || r.resolution_score,
-    bitrate_score: r.bitrateScore || r.bitrate_score,
-    audio_score: r.audioScore || r.audio_score,
-    efficiency_score: r.efficiencyScore !== undefined ? r.efficiencyScore : r.efficiency_score,
-    storage_debt_bytes: r.storageDebtBytes !== undefined ? r.storageDebtBytes : r.storage_debt_bytes,
-    is_low_quality: r.isLowQuality === 1 || r.isLowQuality === true || r.is_low_quality === 1 || r.is_low_quality === true,
-    needs_upgrade: r.needsUpgrade === 1 || r.needsUpgrade === true || r.needs_upgrade === 1 || r.needs_upgrade === true,
-    issues: r.issues,
-    created_at: r.createdAt || r.created_at,
-    updated_at: r.updatedAt || r.updated_at
-  }
+    id: row.id as number,
+    media_item_id: row.mediaItemId || row.media_item_id as number,
+    quality_tier: row.qualityTier || row.quality_tier as string,
+    tier_quality: row.tierQuality || row.tier_quality as string,
+    tier_score: row.tierScore || row.tier_score as number,
+    bitrate_tier_score: row.bitrateTierScore || row.bitrate_tier_score as number,
+    audio_tier_score: row.audioTierScore || row.audio_tier_score as number,
+    overall_score: row.overallScore || row.overall_score as number,
+    resolution_score: row.resolutionScore || row.resolution_score as number,
+    bitrate_score: row.bitrateScore || row.bitrate_score as number,
+    audio_score: row.audioScore || row.audio_score as number,
+    efficiency_score: row.efficiencyScore !== undefined ? row.efficiencyScore as number : row.efficiency_score as number,
+    storage_debt_bytes: row.storageDebtBytes !== undefined ? row.storageDebtBytes as number : row.storage_debt_bytes as number,
+    is_low_quality: row.isLowQuality === 1 || row.isLowQuality === true || row.is_low_quality === 1 || row.is_low_quality === true,
+    needs_upgrade: row.needsUpgrade === 1 || row.needsUpgrade === true || row.needs_upgrade === 1 || row.needs_upgrade === true,
+    issues: row.issues as string,
+    created_at: row.createdAt || row.created_at as string,
+    updated_at: row.updatedAt || row.updated_at as string
+  } as QualityScore
 }

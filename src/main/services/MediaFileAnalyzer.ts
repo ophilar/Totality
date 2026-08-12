@@ -8,6 +8,7 @@ import * as crypto from 'crypto'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, chmodSync } from 'fs'
 import { pipeline } from 'stream/promises'
+import { execFile } from 'child_process'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import {
   normalizeVideoCodec,
@@ -212,7 +213,7 @@ export class MediaFileAnalyzer {
         const actualPath = PathUtils.resolveExecutablePath(binaryPath)
         const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
         proc.on('close', (code) => resolve(code === 0))
-        proc.on('error', (err: any) => {
+        proc.on('error', (err: NodeJS.ErrnoException) => {
           if (err.code === 'ENOENT') {
             getLoggingService().debug('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
           } else {
@@ -248,12 +249,13 @@ export class MediaFileAnalyzer {
   async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean } = {}): Promise<Partial<FileAnalysisResult>> {
     if (!await this.isAvailable()) throw new Error('FFmpeg/FFprobe not available')
     
-    const results: any = { success: true, deepAnalysis: {} }
+    const results: Partial<FileAnalysisResult> = { success: true, filePath, audioTracks: [], subtitleTracks: [], deepAnalysis: {} }
+    const deepAnalysis = results.deepAnalysis ?? (results.deepAnalysis = {})
     const startTime = Date.now()
 
     if (options.detectVolume && this.ffmpegPath) {
       const vol = await this.detectAudioVolume(filePath)
-      results.audioTracks = [{ index: 0, ...vol }] // Simplified for first track for now
+        results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }] // Simplified for first track for now
     }
 
     if (options.scanBitrate) {
@@ -261,7 +263,7 @@ export class MediaFileAnalyzer {
       results.deepAnalysis = { ...results.deepAnalysis, ...bitrate }
     }
 
-    results.deepAnalysis.scanDurationMs = Date.now() - startTime
+    deepAnalysis.scanDurationMs = Date.now() - startTime
     return results
   }
 
@@ -448,8 +450,17 @@ export class MediaFileAnalyzer {
       mkdirSync(tempDir, { recursive: true })
       const archivePath = path.join(tempDir, 'download' + (downloadInfo.isZip ? '.zip' : '.tar.xz'))
       await this.downloadFile(downloadInfo.url, archivePath, (p) => onProgress?.({ stage: 'Downloading...', percent: Math.round(p) }))
-      const zip = new AdmZip(archivePath)
-      zip.extractAllTo(tempDir, true)
+      const checksumText = await this.downloadText(downloadInfo.checksumUrl)
+      const expectedChecksum = checksumText.match(/\b[a-f0-9]{64}\b/i)?.[0]?.toLowerCase()
+      if (!expectedChecksum) throw new Error('Vendor did not provide a SHA-256 checksum for the FFmpeg archive')
+      const actualChecksum = crypto.createHash('sha256').update(readFileSync(archivePath)).digest('hex').toLowerCase()
+      if (actualChecksum !== expectedChecksum) throw new Error('FFmpeg archive SHA-256 verification failed')
+      if (downloadInfo.isZip) {
+        const zip = new AdmZip(archivePath)
+        zip.extractAllTo(tempDir, true)
+      } else {
+        await new Promise<void>((resolve, reject) => execFile('tar', ['-xJf', archivePath, '-C', tempDir], (error) => error ? reject(error) : resolve()))
+      }
       const findExtracted = (name: string): string | null => {
         const visit = (dir: string): string | null => {
           for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -502,10 +513,24 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private getDownloadInfo() {
-    if (process.platform === 'win32') return { url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip', isZip: true }
-    if (process.platform === 'darwin') return { url: 'https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip', isZip: true }
+  private getDownloadInfo(): { url: string; checksumUrl: string; isZip: boolean } | null {
+    if (process.platform === 'win32') return { url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip', checksumUrl: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256', isZip: true }
     return null
+  }
+
+  private async downloadText(url: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const request = (requestUrl: string, redirects = 0): void => {
+        if (redirects > 5) { reject(new Error('Too many redirects')); return }
+        const client = requestUrl.startsWith('https:') ? https : http
+        client.get(requestUrl, response => {
+          if ([301, 302, 303, 307, 308].includes(response.statusCode || 0) && response.headers.location) { response.resume(); request(new URL(response.headers.location, requestUrl).toString(), redirects + 1); return }
+          if (response.statusCode !== 200) { response.resume(); reject(new Error(`Checksum download failed with status ${response.statusCode}`)); return }
+          let body = ''; response.setEncoding('utf8'); response.on('data', chunk => { body += chunk }); response.on('end', () => resolve(body))
+        }).on('error', reject)
+      }
+      request(url)
+    })
   }
 
   private async downloadFile(url: string, dest: string, onProgress: (p: number) => void): Promise<void> {
@@ -797,7 +822,7 @@ export class MediaFileAnalyzer {
       result.overallBitrate = output.format.bit_rate ? Math.round(parseInt(output.format.bit_rate, 10) / 1000) : undefined
       
       if (output.format.tags) {
-        const t = output.format.tags as any
+        const t = output.format.tags
         result.embeddedMetadata = {
           title: t.title || t.TITLE,
           year: t.date ? parseInt(t.date, 10) : undefined,
@@ -841,6 +866,7 @@ export class MediaFileAnalyzer {
           isDefault: stream.disposition?.default === 1,
           hasObjectAudio: this.detectObjectAudio(stream),
           language: stream.tags?.language,
+          title: stream.tags?.title,
           profile: stream.profile,
           sampleRate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : undefined,
         })
@@ -871,7 +897,7 @@ export class MediaFileAnalyzer {
   private detectObjectAudio(stream: FFprobeStream): boolean {
     const codec = stream.codec_name?.toLowerCase() || ''
     const profile = stream.profile?.toLowerCase() || ''
-    const title = (stream.tags as any)?.title?.toLowerCase() || ''
+    const title = stream.tags?.title?.toLowerCase() || ''
 
     if (codec === 'truehd' && (profile.includes('atmos') || title.includes('atmos'))) {
       return true

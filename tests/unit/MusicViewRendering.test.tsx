@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
@@ -10,24 +10,32 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 
 import React from 'react'
+import type { ReactNode, ComponentType } from 'react'
+import type { MusicArtist, MusicAlbum } from '@/components/library/types'
+
+interface MockVirtuosoProps {
+  data?: unknown[]
+  itemContent: (index: number, item: unknown) => ReactNode
+  components?: { Footer?: ComponentType; List?: ComponentType<{ children?: ReactNode }>; Item?: ComponentType<{ children?: ReactNode }> }
+}
 
 // Mock react-virtuoso to render items in JSDOM (infrastructure mock)
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent, components }: any) => (
+  Virtuoso: ({ data, itemContent, components }: MockVirtuosoProps) => (
     <div data-testid="virtuoso-list">
-      {data?.map((item: any, index: number) => (
+      {data?.map((item, index) => (
         <div key={index}>{itemContent(index, item)}</div>
       ))}
       {components?.Footer && <components.Footer />}
     </div>
   ),
-  VirtuosoGrid: ({ data, itemContent, components }: any) => {
-    const List = components?.List || (({ children }: any) => <div>{children}</div>)
-    const Item = components?.Item || (({ children }: any) => <div>{children}</div>)
+  VirtuosoGrid: ({ data, itemContent, components }: MockVirtuosoProps) => {
+    const List = components?.List || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
+    const Item = components?.Item || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
     return (
       <div data-testid="virtuoso-grid">
         <List>
-          {data?.map((item: any, index: number) => (
+          {data?.map((item, index) => (
             <Item key={index}>{itemContent(index, item)}</Item>
           ))}
         </List>
@@ -38,13 +46,13 @@ vi.mock('react-virtuoso', () => ({
 }))
 
 describe('MusicView Rendering (Mocked Bridge)', () => {
-  let mockConfig: Record<string, any> = {}
+  let mockConfig: Record<string, string | undefined> = {}
 
   beforeEach(async () => {
     mockConfig = {}
     
     // Setup real bridge for contexts
-    ;(window as any).electronAPI = {
+    Object.assign(window, { electronAPI: {
       sourcesList: () => Promise.resolve([]),
       getSetting: (key: string) => Promise.resolve(mockConfig[key]),
       setSetting: (key: string, value: string) => {
@@ -57,7 +65,7 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
       onScanCompleted: () => () => {},
       onSettingsChanged: () => () => {},
       onWishlistAutoCompleted: () => () => {}
-    }
+    }})
   })
 
   afterEach(() => {})
@@ -72,7 +80,7 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
     { id: 11, title: 'Album Two', artist_id: 2, artist_name: 'Artist Two', provider_id: 'al2', source_id: 's1', source_type: 'local', year: 2021 }
   ]
 
-  const defaultProps: any = {
+  const defaultProps: Parameters<typeof MusicView>[0] = {
     artists: [],
     totalArtistCount: 0,
     artistsLoading: false,
@@ -124,7 +132,7 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
           <LibraryProvider>
             <SourceProvider>
               <ScrollMemoryProvider>
-                <MusicView {...defaultProps} artists={mockArtists as any} totalArtistCount={2} />
+                <MusicView {...defaultProps} artists={mockArtists as MusicArtist[]} totalArtistCount={2} />
               </ScrollMemoryProvider>
             </SourceProvider>
           </LibraryProvider>
@@ -142,7 +150,7 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
           <LibraryProvider>
             <SourceProvider>
               <ScrollMemoryProvider>
-                <MusicView {...defaultProps} musicViewMode="albums" albums={mockAlbums as any} totalAlbumCount={2} />
+                <MusicView {...defaultProps} musicViewMode="albums" albums={mockAlbums as MusicAlbum[]} totalAlbumCount={2} />
               </ScrollMemoryProvider>
             </SourceProvider>
           </LibraryProvider>
@@ -161,7 +169,7 @@ describe('MusicView Rendering (Mocked Bridge)', () => {
           <LibraryProvider>
             <SourceProvider>
               <ScrollMemoryProvider>
-                <MusicView {...defaultProps} artists={mockArtists as any} onSelectArtist={onSelectArtist} />
+                <MusicView {...defaultProps} artists={mockArtists as MusicArtist[]} onSelectArtist={onSelectArtist} />
               </ScrollMemoryProvider>
             </SourceProvider>
           </LibraryProvider>

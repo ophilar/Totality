@@ -1,7 +1,7 @@
 import { formatSeasonLabel } from '@/components/library/mediaUtils'
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
-import type { MediaItem, TVShow, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
+import type { MediaItem, TVShow, SeriesCompletenessData, MissingEpisode, MissingItemPopupData } from '@/components/library/types'
 
 export function TVSeasonDetails({
   selectedShow,
@@ -29,7 +29,7 @@ export function TVSeasonDetails({
   onDismissUpgrade?: (item: MediaItem) => void
   expandedRecommendations: Set<number>
   onToggleOptimize: (id: number) => void
-  onMissingItemClick: (item: any) => void
+  onMissingItemClick: (item: MissingItemPopupData) => void
   onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
 }) {
   const season = selectedShowData.seasons.get(selectedSeason)

@@ -12,6 +12,7 @@ import { GpuDetector } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
 import { buildTranscodingCapabilities, resolveSelectedGpuId, TranscodingCapabilities } from './TranscodingCapabilities'
+import type { FileAnalysisResult } from './MediaFileAnalyzer'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -32,7 +33,7 @@ export interface TranscodeOptions {
   preset?: string
   customArgs?: string
   gpuId?: string
-  transcodingEngine?: 'handbrake' | 'ffmpeg'
+  transcodingEngine?: 'ffmpeg'
   targetSize?: string
   aiOptimize?: boolean
 }
@@ -47,7 +48,6 @@ export interface TranscodeProgress {
 
 export interface TranscodingParams {
   summary: string
-  handbrakeArgs: string[]
   ffmpegArgs?: string[]
   mkvmergeArgs?: string[]
   expectedSizeReduction?: string
@@ -58,6 +58,19 @@ export interface TranscodingParams {
   sourceHdrFormat?: string
 }
 
+export interface TranscodeParameterAdvisor {
+  advise(request: { prompt: string; system: string }): Promise<{ text: string }>
+}
+
+class GeminiTranscodeParameterAdvisor implements TranscodeParameterAdvisor {
+  async advise(request: { prompt: string; system: string }): Promise<{ text: string }> {
+    return (await getGeminiService().sendMessage({
+      messages: [{ role: 'user', content: request.prompt }],
+      system: request.system
+    }))
+  }
+}
+
 /**
  * TranscodingService
  *
@@ -65,28 +78,26 @@ export interface TranscodingParams {
  * and uses Gemini AI to generate per-video optimized encoding parameters.
  */
 export class TranscodingService {
-  private handbrakePath: string | null = null
-  private availabilityOverride: { handbrake?: boolean } | null = null
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
-  private cachedHandbrakeAvailable: boolean | null = null
-  private cachedHandbrakeVersion: string | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
   private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
 
-  constructor() {
+  constructor(private parameterAdvisor: TranscodeParameterAdvisor = new GeminiTranscodeParameterAdvisor()) {
     // Initialization is deferred until first use to allow DB to be ready
   }
 
 
   invalidate(): void {
     this.initializedPromise = null
-    this.handbrakePath = null
-    this.cachedHandbrakeAvailable = null
-    this.cachedHandbrakeVersion = null
     this.capabilitiesPromise = null
     this.analysisCache.clear()
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
+  }
+
+  setParameterAdvisorForTesting(advisor: TranscodeParameterAdvisor): void {
+    this.parameterAdvisor = advisor
+    this.analysisCache.clear()
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -101,73 +112,22 @@ export class TranscodingService {
       throw new Error('Database not initialized. Cannot load transcoding tool paths.')
     }
 
-    const hbConfig = await db.config.getSetting('handbrake_path')
-    
-    // Find HandBrakeCLI using standard OS search paths if config is not set
-    const possibleHbPaths = PathUtils.getPossibleExecutablePaths('HandBrakeCLI', hbConfig || undefined)
-
-    // Test each possible path and use the first working one
-    for (const p of possibleHbPaths) {
-      if (await this.testTool(p, ['--version'])) {
-        this.handbrakePath = p
-        break
-      }
-    }
-    
-    // If none worked, fallback to bare command so PATH can be attempted
-    if (!this.handbrakePath) {
-      this.handbrakePath = hbConfig || (process.platform === 'win32' ? 'HandBrakeCLI.exe' : 'HandBrakeCLI')
-    }
-
-    getLoggingService().debug('[TranscodingService]', `Paths initialized - Handbrake: ${this.handbrakePath}`)
+    getLoggingService().debug('[TranscodingService]', 'FFmpeg-only transcoding paths initialized')
   }
 
   /**
    * For testing: Override tool availability
    */
-  setAvailabilityOverride(override: { handbrake?: boolean } | null): void {
-    this.availabilityOverride = override
-  }
-
   /**
    * Check which tools are available on the system
    */
-  async checkAvailability(): Promise<{ 
-    handbrake: boolean; 
-    ffmpeg: boolean;
-  }> {
+  async checkAvailability(): Promise<{ ffmpeg: boolean }> {
     await this.ensureInitialized()
 
     const analyzer = getMediaFileAnalyzer()
     const ffmpegAvailable = await analyzer.isAvailable()
 
-    if (this.availabilityOverride) {
-      return {
-        handbrake: this.availabilityOverride.handbrake ?? false,
-        ffmpeg: ffmpegAvailable
-      }
-    }
-
-    if (this.cachedHandbrakeAvailable !== null) {
-      return {
-        handbrake: this.cachedHandbrakeAvailable,
-        ffmpeg: ffmpegAvailable
-      }
-    }
-
-    const db = getDatabase()
-    const isEnabled = (await db.config.getSetting('handbrake_enabled')) !== 'false'
-    if (!isEnabled) {
-      this.cachedHandbrakeAvailable = false
-      return { handbrake: false, ffmpeg: ffmpegAvailable }
-    }
-    const hb = await this.testTool(this.handbrakePath || 'HandBrakeCLI', ['--version'])
-    this.cachedHandbrakeAvailable = hb
-
-    return { 
-      handbrake: hb,
-      ffmpeg: ffmpegAvailable
-    }
+    return { ffmpeg: ffmpegAvailable }
   }
 
   async getCapabilities(options: { refresh?: boolean } = {}): Promise<TranscodingCapabilities> {
@@ -234,52 +194,6 @@ export class TranscodingService {
 
 
   /**
-   * Get HandBrake CLI version string
-   */
-  async getVersion(): Promise<string | null> {
-    await this.ensureInitialized()
-
-    if (this.cachedHandbrakeVersion !== null) {
-      return this.cachedHandbrakeVersion
-    }
-
-    if (!this.handbrakePath) return null
-
-    const version = await new Promise<string | null>((resolve) => {
-      try {
-        const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || '')
-        const proc = spawn(actualPath, ['--version'])
-        let output = ''
-        proc.stdout.on('data', (data) => { output += data.toString() })
-        proc.stderr.on('data', (data) => { output += data.toString() })
-        proc.on('close', () => {
-          const match = output.match(/HandBrake\s+([^\s]+)/i)
-          resolve(match ? match[1] : 'unknown')
-        })
-        proc.on('error', () => resolve(null))
-      } catch (e) {
-        resolve(null)
-      }
-    })
-
-    this.cachedHandbrakeVersion = version
-    return version
-  }
-
-  private async testTool(toolPath: string, args: string[]): Promise<boolean> {
-    return new Promise((resolve) => {
-      try {
-        const actualPath = PathUtils.resolveExecutablePath(toolPath)
-        const proc = spawn(actualPath, args, { stdio: 'ignore' })
-        proc.on('close', (code) => resolve(code === 0))
-        proc.on('error', () => resolve(false))
-      } catch (e) {
-        resolve(false)
-      }
-    })
-  }
-
-  /**
    * Cancel an active transcode job
    */
   cancelTranscode(mediaItemId: number): void {
@@ -304,7 +218,6 @@ export class TranscodingService {
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
     validateHdrTranscode(analysis)
 
-    const gemini = getGeminiService()
     const targetCodec = options.targetCodec || 'av1'
     const hasManualOverrides = options.encoder && options.crf !== undefined && options.preset
 
@@ -364,8 +277,8 @@ export class TranscodingService {
     let warnings: string[] = []
 
     if (!hasManualOverrides && options.aiOptimize !== false) {
-      if (!gemini.isConfigured()) {
-        summary = 'Handbrake transcoding (AI not configured)'
+      if (this.parameterAdvisor instanceof GeminiTranscodeParameterAdvisor && !getGeminiService().isConfigured()) {
+        summary = 'FFmpeg transcoding (AI not configured)'
       } else {
         const sizeConstraint = options.targetSize === 'ai-recommended'
           ? '- Target Size: Recommend the optimal target size that preserves maximum transparent visual quality while maximizing space savings.'
@@ -373,7 +286,7 @@ export class TranscodingService {
             ? `- Target Size: The user has requested a target file size of ${options.targetSize}. Adjust the CRF value and preset parameters to try to reach or stay below this target size while maintaining acceptable quality.`
             : '- Target: Maximum space saving with transparent quality.';
 
-        const prompt = `Analyze this media file and provide optimized ${targetCodec.toUpperCase()} transcoding parameters for HandBrakeCLI.
+        const prompt = `Analyze this media file and provide optimized ${targetCodec.toUpperCase()} transcoding parameters for FFmpeg.
         
         File Analysis:
         ${JSON.stringify(analysis, null, 2)}
@@ -398,13 +311,10 @@ export class TranscodingService {
         const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
         Additional Requirement: 
         - Output must be valid JSON only. 
-        - Focus on HandBrakeCLI specifically.`
+        - Focus on FFmpeg and the selected hardware/software encoder specifically.`
 
         try {
-          const response = await gemini.sendMessage({
-            messages: [{ role: 'user', content: prompt }],
-            system: systemPrompt
-          })
+          const response = await this.parameterAdvisor.advise({ prompt, system: systemPrompt })
           const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
           const data = JSON.parse(jsonStr)
           
@@ -472,7 +382,6 @@ export class TranscodingService {
     }
 
     const builder = TranscodeCommandFactory.getBuilder(selectedVendor, resolvedOptions)
-    const handbrakeArgs = builder.buildHandbrakeArgs(filePath, '<output>', resolvedOptions, analysis)
     const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', resolvedOptions, analysis)
 
     // Add custom args if present
@@ -482,14 +391,13 @@ export class TranscodingService {
       for (const part of parts) {
         const cleaned = part.replace(/^["']|["']$/g, '').trim()
         if (cleaned && safeRegex.test(cleaned)) {
-          handbrakeArgs.push(cleaned)
+          ffmpegArgs.push(cleaned)
         }
       }
     }
 
     return {
       summary,
-      handbrakeArgs,
       ffmpegArgs,
       mkvmergeArgs: [],
       expectedSizeReduction,
@@ -518,9 +426,6 @@ export class TranscodingService {
     if (!engine) {
       throw new Error('Transcoding engine must be explicitly selected.')
     }
-    if (engine === 'handbrake' && !availability.handbrake) {
-      throw new Error('HandBrakeCLI is not available on this system.')
-    }
     if (engine === 'ffmpeg' && !availability.ffmpeg) {
       throw new Error('FFmpeg is not available on this system.')
     }
@@ -542,12 +447,8 @@ export class TranscodingService {
         `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
 
-      const useFfmpeg = engine === 'ffmpeg'
-      let success = false
-
-      if (useFfmpeg) {
-        getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
-        success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
+      getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
+      const success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
           onProgress?.({ 
             percent: p.percent, 
             fps: p.fps, 
@@ -555,25 +456,6 @@ export class TranscodingService {
             status: 'encoding' 
           })
         }, controller.signal)
-      } else {
-        getLoggingService().info('[TranscodingService]', `Starting Handbrake transcode: ${inputPath} -> ${tempPath}`)
-        getLoggingService().info('[TranscodingService]', `Using Handbrake args: ${params.handbrakeArgs.join(' ')}`)
-
-        const args = [
-          '-i', inputPath,
-          '-o', tempPath,
-          ...params.handbrakeArgs.filter((a): a is string => a !== null && a !== undefined)
-        ]
-
-        success = await this.runHandbrake(args, (p) => {
-          onProgress?.({ 
-            percent: p.percent, 
-            fps: p.fps, 
-            eta: p.eta, 
-            status: 'encoding' 
-          })
-        }, controller.signal)
-      }
 
       if (!success) {
         if (controller.signal.aborted) {
@@ -583,7 +465,7 @@ export class TranscodingService {
           onProgress?.({ percent: 0, status: 'cancelled' })
           return false
         }
-        throw new Error(useFfmpeg ? 'FFmpeg encoding failed' : 'Handbrake encoding failed')
+        throw new Error('FFmpeg encoding failed')
       }
 
       onProgress?.({ percent: 100, status: 'verifying' })
@@ -639,64 +521,12 @@ export class TranscodingService {
     }
   }
 
-  private runHandbrake(args: string[], onProgress: (p: any) => void, signal?: AbortSignal): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const actualPath = PathUtils.resolveExecutablePath(this.handbrakePath || 'HandBrakeCLI')
-      const proc = spawn(actualPath, args)
-      let stderrBuffer = ''
-      
-      if (signal) {
-        signal.addEventListener('abort', () => {
-          proc.kill()
-          resolve(false)
-        })
-      }
-
-      proc.stdout.on('data', (data) => {
-        const line = data.toString()
-        const match = line.match(/(\d+\.\d+)\s*%\s*\((\d+\.\d+)\s*fps,\s*avg\s*(\d+\.\d+)\s*fps,\s*ETA\s*([^)]+)\)/)
-        if (match) {
-          onProgress({
-            percent: parseFloat(match[1]),
-            fps: parseFloat(match[2]),
-            eta: match[4]
-          })
-        }
-      })
-
-      proc.stderr.on('data', (data) => {
-        const text = data.toString()
-        stderrBuffer += text
-        getLoggingService().verbose('[Handbrake]', text.trim())
-      })
-
-      proc.on('close', (code) => {
-        if (code === 0) {
-          resolve(true)
-        } else {
-          if (signal?.aborted) {
-            resolve(false)
-          } else {
-            const stderrSnippet = stderrBuffer.trim()
-            reject(new TranscodeError(`HandBrake process failed with exit code ${code}`, code ?? undefined, stderrSnippet))
-          }
-        }
-      })
-
-      proc.on('error', (err) => {
-        if (signal?.aborted) return resolve(false)
-        getLoggingService().error('[Handbrake]', 'Process error:', err)
-        reject(new TranscodeError(`HandBrake process execution error: ${err.message}`, undefined, stderrBuffer.trim()))
-      })
-    })
-  }
-
   private runFFmpeg(
     inputPath: string,
     outputPath: string,
     params: TranscodingParams,
     options: TranscodeOptions,
-    onProgress: (p: any) => void,
+    onProgress: (p: TranscodeProgress) => void,
     signal?: AbortSignal
   ): Promise<boolean> {
     return new Promise((resolve, reject) => {
@@ -713,7 +543,7 @@ export class TranscodingService {
         })
       } else {
         const builder = TranscodeCommandFactory.getBuilder(undefined, options)
-        args = builder.buildFFmpegArgs(inputPath, outputPath, options, {} as any)
+        args = builder.buildFFmpegArgs(inputPath, outputPath, options, {} as FileAnalysisResult)
       }
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
@@ -762,7 +592,7 @@ export class TranscodingService {
             eta = `${etaMin}m ${etaSec}s`
           }
 
-          onProgress({ percent, fps, eta })
+          onProgress({ percent, fps, eta, status: 'encoding' })
         }
       })
 

@@ -1,7 +1,8 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary } from '@main/types/database'
 
-export const mediaApi = {
+export const mediaApi: MediaAPI = {
   // Quality Analysis
   qualityAnalyzeAll: () => ipcRenderer.invoke('quality:analyzeAll'),
   qualityGetDistribution: () => ipcRenderer.invoke('quality:getDistribution'),
@@ -14,11 +15,11 @@ export const mediaApi = {
   },
 
   // Database - Media Items
-  getMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItems', filters),
+  getMediaItems: (filters?: MediaItemFilters) => ipcRenderer.invoke('db:getMediaItems', filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
   mediaList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
   mediaCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
-  getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
+  getTVShows: (filters?: TVShowFilters) => ipcRenderer.invoke('db:getTVShows', filters),
   countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
   getLibraryOverview: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sourceId),
   tvShowList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
@@ -135,13 +136,26 @@ export const mediaApi = {
   // Database - Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, exclusionType, referenceId, referenceKey, parentKey, title),
-  batchAddExclusions: (exclusions: any[]) =>
+  batchAddExclusions: (exclusions: unknown[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, exclusions),
   removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, options),
+}
+
+export interface MediaDeepAnalysisResult {
+  success: boolean
+  error?: string
+  audioTracks?: Array<{ index: number; peakVolumeDB?: number; meanVolumeDB?: number }>
+  deepAnalysis?: {
+    peakBitrate?: number
+    avgBitrate?: number
+    bitrateVariance?: number
+    isVariableBitrate?: boolean
+    scanDurationMs?: number
+  }
 }
 
 export interface MediaAPI {
@@ -161,21 +175,21 @@ export interface MediaAPI {
   onQualityAnalysisProgress: (callback: (progress: unknown) => void) => () => void
 
   // Database - Media Items
-  getMediaItems: (filters?: unknown) => Promise<any[]>
+  getMediaItems: (filters?: MediaItemFilters) => Promise<MediaItem[]>
   countMediaItems: (filters?: unknown) => Promise<number>
-  mediaList: (filters?: unknown) => Promise<any[]>
+  mediaList: (filters?: unknown) => Promise<unknown[]>
   mediaCount: (filters?: unknown) => Promise<number>
-  getTVShows: (filters?: unknown) => Promise<unknown[]>
+  getTVShows: (filters?: TVShowFilters) => Promise<TVShowSummary[]>
   countTVShows: (filters?: unknown) => Promise<number>
   getLibraryOverview: (sourceId?: string) => Promise<{
-    movies: { items: any[], total: number }
-    tvShows: { items: any[], total: number }
+    movies: { items: MediaItem[], total: number }
+    tvShows: { items: TVShowSummary[], total: number }
     music: { 
-      artists: { items: any[], total: number },
-      albums: { items: any[], total: number },
-      tracks: { items: any[], total: number }
+      artists: { items: MusicArtist[], total: number },
+      albums: { items: MusicAlbum[], total: number },
+      tracks: { items: MusicTrack[], total: number }
     }
-    stats: any
+    stats: LibraryStats
   }>
   tvShowList: (filters?: unknown) => Promise<unknown[]>
   tvShowCount: (filters?: unknown) => Promise<number>
@@ -334,7 +348,7 @@ export interface MediaAPI {
     tvNeedsUpgradeCount: number
     tvAverageQualityScore: number
   }>
-  getDashboardSummary: (sourceId?: string) => Promise<any>
+  getDashboardSummary: (sourceId?: string) => Promise<DashboardSummary>
 
   // Database - Global Search
   mediaSearch: (query: string) => Promise<{
@@ -347,22 +361,11 @@ export interface MediaAPI {
   }>
 
   // Deep Analysis
-  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) => Promise<{
-    success: boolean
-    error?: string
-    audioTracks?: Array<{ index: number; peakVolumeDB?: number; meanVolumeDB?: number }>
-    deepAnalysis?: {
-      peakBitrate?: number
-      avgBitrate?: number
-      bitrateVariance?: number
-      isVariableBitrate?: boolean
-      scanDurationMs?: number
-    }
-  }>
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) => Promise<MediaDeepAnalysisResult>
 
   // Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) => Promise<number>
-  batchAddExclusions: (exclusions: any[]) => Promise<void>
+  batchAddExclusions: (exclusions: unknown[]) => Promise<void>
   removeExclusion: (id: number) => Promise<void>
   getExclusions: (exclusionType?: string, parentKey?: string) => Promise<Array<{
     id: number; exclusion_type: string; reference_id: number | null; reference_key: string | null

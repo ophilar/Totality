@@ -5,24 +5,16 @@ import * as fs from 'fs'
 
 // Mock child_process
 vi.mock('child_process', () => ({
-  exec: (cmd: string, options: any, callback: any) => {
+  exec: (cmd: string, options: unknown, callback: (error: Error | null, result: { stdout: string }) => void) => {
     if (typeof options === 'function') callback = options
     callback(null, { stdout: 'DeviceID DriveType\nC: 3\n' })
   },
-  execFile: (cmd: string, args: any[], options: any, callback: any) => {
-    if (typeof options === 'function') callback = options
-    callback(null, { stdout: '' })
-  },
-  promisify: (fn: any) => {
-    return (...args: any[]) => new Promise((resolve) => {
-      fn(...args, (err: any, result: any) => resolve(result))
-    })
-  }
+  execFile: () => undefined
 }))
 
 // Mock fs
 vi.mock('fs', async () => {
-  const actual = await vi.importActual<any>('fs')
+  const actual = await vi.importActual<typeof import('fs')>('fs')
   return {
     ...actual,
     watch: vi.fn().mockReturnValue({
@@ -35,7 +27,7 @@ vi.mock('fs', async () => {
 
 describe('LiveMonitoringService', () => {
   let service: LiveMonitoringService
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

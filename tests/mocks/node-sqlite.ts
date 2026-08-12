@@ -13,7 +13,7 @@ class MockDatabaseSync {
   close() {}
 }
 
-let DatabaseSyncExport: any = MockDatabaseSync
+let DatabaseSyncExport: typeof MockDatabaseSync = MockDatabaseSync
 
 // Use process.env.VITEST to detect node environment but avoid Vite bundling
 if (typeof window === 'undefined') {

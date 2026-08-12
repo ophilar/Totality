@@ -3,6 +3,18 @@
  */
 
 import { vi } from 'vitest'
+import type { ComponentType, ReactNode } from 'react'
+
+interface MockVirtuosoProps {
+  totalCount: number
+  data?: unknown[]
+  itemContent: (index: number, item: unknown) => ReactNode
+  components?: {
+    Header?: ComponentType
+    Footer?: ComponentType
+    List?: ComponentType<{ style?: Record<string, string> }>
+  }
+}
 
 // Mock Electron
 vi.mock('electron', () => {
@@ -119,7 +131,7 @@ vi.mock('child_process', () => {
 vi.mock('react-virtuoso', () => {
   const React = require('react')
   return {
-    Virtuoso: ({ totalCount, data, itemContent, components }: any) => {
+    Virtuoso: ({ totalCount, data, itemContent, components }: MockVirtuosoProps) => {
       const items = []
       const count = data ? data.length : totalCount
       for (let i = 0; i < count; i++) {
@@ -131,7 +143,7 @@ vi.mock('react-virtuoso', () => {
         components?.Footer && React.createElement(components.Footer)
       ])
     },
-    VirtuosoGrid: ({ totalCount, data, itemContent, components }: any) => {
+    VirtuosoGrid: ({ totalCount, data, itemContent, components }: MockVirtuosoProps) => {
       const items = []
       const count = data ? data.length : totalCount
       for (let i = 0; i < count; i++) {
@@ -149,6 +161,19 @@ vi.mock('react-virtuoso', () => {
 
 globalThis.__TEST__ = true
 
+if (typeof window !== 'undefined' && !window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false
+  })) as typeof window.matchMedia
+}
+
 const mockElectronAPI = {
   getSetting: vi.fn().mockResolvedValue(null),
   setSetting: vi.fn().mockResolvedValue(undefined),
@@ -160,10 +185,12 @@ const mockElectronAPI = {
   getTVShows: vi.fn().mockResolvedValue([]),
   getMusicStats: vi.fn().mockResolvedValue({ totalArtists: 0, totalAlbums: 0, totalTracks: 0 }),
   getCollections: vi.fn().mockResolvedValue([]),
+  optimizationGetDecision: vi.fn().mockResolvedValue(null),
+  optimizationRequestLocalRemux: vi.fn().mockResolvedValue(undefined),
 }
 
 // Mock global electronAPI for renderer tests
-;(globalThis as any).electronAPI = mockElectronAPI
+Object.assign(globalThis, { electronAPI: mockElectronAPI })
 if (typeof window !== 'undefined') {
-  ;(window as any).electronAPI = mockElectronAPI
+  Object.assign(window, { electronAPI: mockElectronAPI })
 }

@@ -165,10 +165,10 @@ export class DeduplicationService {
       return { id: item.id!, score }
     })
 
-    scores.sort((a: any, b: any) => b.score - a.score)
+    scores.sort((a, b) => b.score - a.score)
 
     const keepId = scores[0].id
-    const discardIds = scores.slice(1).map((s: any) => s.id)
+    const discardIds = scores.slice(1).map((s) => s.id)
 
     return {
       keep: keepId!,

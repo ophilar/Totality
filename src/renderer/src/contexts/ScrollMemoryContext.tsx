@@ -1,17 +1,20 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
+import type { StateSnapshot, GridStateSnapshot } from 'react-virtuoso'
+
+type ScrollState = StateSnapshot | GridStateSnapshot
 
 interface ScrollMemoryContextType {
-  saveScrollState: (key: string, state: any) => void
-  getScrollState: (key: string) => any | undefined
+  saveScrollState: (key: string, state: ScrollState) => void
+  getScrollState: (key: string) => ScrollState | undefined
   clearScrollState: (key: string) => void
 }
 
 const ScrollMemoryContext = createContext<ScrollMemoryContextType | undefined>(undefined)
 
 export function ScrollMemoryProvider({ children }: { children: React.ReactNode }) {
-  const [scrollMap] = useState<Map<string, any>>(new Map())
+  const [scrollMap] = useState<Map<string, ScrollState>>(new Map())
 
-  const saveScrollState = useCallback((key: string, state: any) => {
+  const saveScrollState = useCallback((key: string, state: ScrollState) => {
     scrollMap.set(key, state)
   }, [scrollMap])
 

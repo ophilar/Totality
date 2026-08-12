@@ -31,9 +31,10 @@ import {
   GetExclusionsTupleSchema,
 } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getTranscodingService } from '@main/services/TranscodingService'
 import { getSourceManager } from '@main/services/SourceManager'
 import { MediaItemType } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, QualityScore } from '@main/types/database'
+import type { TMDBMovieSearchResult } from '@main/types/tmdb'
 import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 
@@ -48,11 +49,11 @@ export function registerDatabaseHandlers() {
 
 
   // Register generic list/count handlers
-  registerListHandlers('db:media', (f: any) => db.media.getItems(f), (f: any) => db.media.count(f), MediaItemFiltersSchema, {
+  registerListHandlers('db:media', f => db.media.getItems(f as MediaItemFilters), f => db.media.count(f as MediaItemFilters), MediaItemFiltersSchema, {
     listAlias: 'db:getMediaItems',
     countAlias: 'db:countMediaItems'
   })
-  registerListHandlers('db:tvshows', (f: any) => db.tvShows.getSummaries(f), (f: any) => db.tvShows.count(f), TVShowFiltersSchema, {
+  registerListHandlers('db:tvshows', f => db.tvShows.getSummaries(f), f => db.tvShows.count(f), TVShowFiltersSchema, {
     listAlias: 'db:getTVShows',
     countAlias: 'db:countTVShows'
   })
@@ -62,11 +63,11 @@ export function registerDatabaseHandlers() {
   // ============================================================================
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, TVShowFiltersSchema, async (filters) => {
-    return await db.media.count({ ...filters, type: MediaItemType.Episode } as any)
+    return await db.media.count({ ...filters, type: MediaItemType.Episode } as MediaItemFilters)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_LETTER_OFFSET, LetterOffsetSchema, async (params) => {
-    return await db.media.getLetterOffset(params.table as any, params.letter, { sourceId: params.sourceId, libraryId: params.libraryId })
+    return await db.media.getLetterOffset(params.table, params.letter, { sourceId: params.sourceId, libraryId: params.libraryId })
   })
 
   const getMediaItemHandler = async (id: number) => {
@@ -77,7 +78,7 @@ export function registerDatabaseHandlers() {
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_BY_ID, PositiveIntSchema, getMediaItemHandler)
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_UPSERT, MediaItemSchema, async (item) => {
-    return await db.media.upsertItem(item as any)
+    return await db.media.upsertItem(item as MediaItem)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, PositiveIntSchema, async (mediaItemId) => {
@@ -102,7 +103,7 @@ export function registerDatabaseHandlers() {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.UPSERT_QUALITY_SCORE, QualityScoreSchema, async (score) => {
-    return await db.media.upsertQualityScore(score as any)
+    return await db.media.upsertQualityScore(score as Partial<QualityScore>)
   })
 
   // ============================================================================
@@ -132,7 +133,6 @@ export function registerDatabaseHandlers() {
     }
 
     if (key === 'ffprobe_enabled' && value === 'true') getQualityAnalyzer().analyzeAllMediaItems().catch(() => {})
-    if (key === 'handbrake_path' || key === 'handbrake_enabled') getTranscodingService().invalidate()
 
 
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -231,7 +231,7 @@ export function registerDatabaseHandlers() {
     const tmdb = getTMDBService()
     await tmdb.initialize()
     const res = await tmdb.searchMovie(query, year, includeAdult)
-    return (res?.results || []).map((m: any) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
+    return (res?.results || []).map((m: TMDBMovieSearchResult) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
   })
 
   createValidatedIpcHandler(
@@ -241,7 +241,7 @@ export function registerDatabaseHandlers() {
       const matchingService = MetadataRegistryService.getInstance().getMatchingService()
       return await matchingService.matchMediaItem({
         title: query,
-        type: (type as any) || 'movie',
+        type: type || 'movie',
         includeAdult,
         artistName
       })
@@ -261,8 +261,8 @@ export function registerDatabaseHandlers() {
       }
 
       // Determine TMDB and IMDB IDs based on the provider and external IDs
-      let tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
-      let imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+      const tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
+      const imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
 
       if (!tmdbId) {
         throw new Error(`A TMDB ID could not be resolved for this match`)
@@ -345,10 +345,11 @@ export function registerDatabaseHandlers() {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, AddExclusionTupleSchema, async (type, refId, refKey, pKey, title) => {
-    return await db.exclusions.addExclusion({ exclusion_type: type as any, reference_id: refId, reference_key: refKey, parent_key: pKey, title })
+    const exclusion: Parameters<typeof db.exclusions.addExclusion>[0] = { exclusion_type: type as Parameters<typeof db.exclusions.addExclusion>[0]['exclusion_type'], reference_id: refId, reference_key: refKey, parent_key: pKey, title }
+    return await db.exclusions.addExclusion(exclusion)
   })
 
-  createIpcHandler(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, async (exclusions: any[]) => {
+  createIpcHandler(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, async (exclusions: Parameters<typeof db.exclusions.batchAddExclusions>[0]) => {
     return await db.exclusions.batchAddExclusions(exclusions)
   })
 

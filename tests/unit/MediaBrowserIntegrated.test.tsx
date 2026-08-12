@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
@@ -21,21 +21,22 @@ import { registerLoggingHandlers } from '@main/ipc/logging'
 import { registerMonitoringHandlers } from '@main/ipc/monitoring'
 import { ProviderType, LibraryType } from '@main/types/database'
 import React from 'react'
+type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
 describe('MediaBrowser (Integrated Stack)', () => {
-  let db: any
+  let db: TestDb
 
   beforeEach(async () => {
     // Explicitly define window on global if missing
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
 
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
 
     registerDatabaseHandlers()
     registerSourceHandlers()
@@ -55,7 +56,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
   })
 
   const renderBrowser = async () => {
-    let result: any
+    let result: ReturnType<typeof render> | undefined
     await act(async () => {
         result = render(
             <ToastProvider>
@@ -98,7 +99,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
         title: 'Integrated Test Movie',
         type: 'movie',
         file_path: 'test.mkv'
-    } as any)
+    })
 
     await renderBrowser()
 
@@ -129,11 +130,11 @@ describe('MediaBrowser (Integrated Stack)', () => {
         owned_seasons: 1,
         owned_episodes: 1,
         completeness_percentage: 100
-    } as any)
+    })
 
     await db.media.upsertItem({
         source_id: 's1', library_id: '2', plex_id: 'ep1', title: 'Ep 1', type: 'episode', series_title: 'Test Show', file_path: 'e1.mkv'
-    } as any)
+    })
 
     await renderBrowser()
     

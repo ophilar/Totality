@@ -22,15 +22,15 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-preset', preset,
       '-rc', 'vbr',
       '-cq', cq,
-      '-b:v', '0',
+      ...(options.targetCodec === 'av1'
+        ? ['-maxrate', '60M', '-bufsize', '120M', '-level', '5.2', '-tier', '0', '-bf', '0', '-b_ref_mode', 'disabled', '-rc-lookahead', '0']
+        : ['-b:v', '0', '-b_ref_mode', 'middle']),
       '-spatial-aq', '1',
-      '-temporal-aq', '1',
-      '-b_ref_mode', 'middle'
+      '-temporal-aq', '1'
     )
 
     const is10BitSource = Boolean(
       analysis?.video?.pixelFormat?.includes('10') ||
-      (analysis?.video as any)?.pix_fmt?.includes('10') ||
       analysis?.video?.bitDepth === 10
     )
 
@@ -54,25 +54,4 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     return args
   }
 
-  buildHandbrakeArgs(_input: string, _output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
-    const encoder = options.targetCodec === 'av1' ? 'nvenc_av1_10bit' : 'nvenc_h265_10bit'
-    const args: string[] = [
-      '--encoder', encoder,
-      '--quality', (options.crf ?? 20).toString(),
-      '--encoder-preset', 'quality',
-      '--encopts', 'spatial-aq=1:temporal-aq=1:b-ref-mode=middle'
-    ]
-
-    if (options.preserveAllAudio) {
-      args.push('--all-audio')
-    } else {
-      args.push('--audio', '1')
-    }
-
-    if (options.preserveSubtitles) {
-      args.push('--all-subtitles')
-    }
-
-    return args
-  }
 }

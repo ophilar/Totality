@@ -54,11 +54,20 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
 
   useEffect(() => {
     // Auto-discover on mount for both Jellyfin and Emby
-    handleDiscover()
+    queueMicrotask(() => { void (async () => {
+      setIsDiscovering(true)
+      setError(null)
+      const servers = isEmby
+        ? await window.electronAPI.embyDiscoverServers()
+        : await window.electronAPI.jellyfinDiscoverServers()
+      setDiscoveredServers(servers)
+      if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
+      setIsDiscovering(false)
+    })() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmby])
 
-  const handleDiscover = async () => {
+  async function handleDiscover() {
     setIsDiscovering(true)
     setError(null)
     try {

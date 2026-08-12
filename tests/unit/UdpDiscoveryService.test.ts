@@ -40,6 +40,7 @@ vi.mock('@main/services/LoggingService', () => {
 
 describe('UdpDiscoveryService', () => {
   let service: UdpDiscoveryService
+  type Callback = (...args: unknown[]) => void
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -63,12 +64,12 @@ describe('UdpDiscoveryService', () => {
     it('should discover Jellyfin server', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      const onCallbackMap: Record<string, Function> = {}
-      ;(mockSocket.on as any).mockImplementation((event: string, cb: Function) => {
+      const onCallbackMap: Record<string, Callback> = {}
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
         onCallbackMap[event] = cb
       })
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
@@ -103,12 +104,12 @@ describe('UdpDiscoveryService', () => {
     it('should fallback to rinfo address if Address is not provided', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      const onCallbackMap: Record<string, Function> = {}
-      ;(mockSocket.on as any).mockImplementation((event: string, cb: Function) => {
+      const onCallbackMap: Record<string, Callback> = {}
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
         onCallbackMap[event] = cb
       })
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
@@ -130,12 +131,12 @@ describe('UdpDiscoveryService', () => {
     it('should ignore duplicate IDs', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      const onCallbackMap: Record<string, Function> = {}
-      ;(mockSocket.on as any).mockImplementation((event: string, cb: Function) => {
+      const onCallbackMap: Record<string, Callback> = {}
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
         onCallbackMap[event] = cb
       })
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
@@ -159,12 +160,12 @@ describe('UdpDiscoveryService', () => {
     it('should ignore invalid JSON responses', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      const onCallbackMap: Record<string, Function> = {}
-      ;(mockSocket.on as any).mockImplementation((event: string, cb: Function) => {
+      const onCallbackMap: Record<string, Callback> = {}
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
         onCallbackMap[event] = cb
       })
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
@@ -187,12 +188,12 @@ describe('UdpDiscoveryService', () => {
     it('should handle socket errors', async () => {
        const mockSocket = dgram.createSocket('udp4')
 
-      const onCallbackMap: Record<string, Function> = {}
-      ;(mockSocket.on as any).mockImplementation((event: string, cb: Function) => {
+      const onCallbackMap: Record<string, Callback> = {}
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
         onCallbackMap[event] = cb
       })
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
@@ -210,7 +211,7 @@ describe('UdpDiscoveryService', () => {
     it('should handle socket bind exception', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
          throw new Error('Bind failed')
       })
 
@@ -225,11 +226,11 @@ describe('UdpDiscoveryService', () => {
     it('should handle send exceptions gracefully', async () => {
        const mockSocket = dgram.createSocket('udp4')
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      ;(mockSocket.send as any).mockImplementation(() => {
+      vi.mocked(mockSocket.send).mockImplementation(() => {
         throw new Error('Send failed')
       })
 
@@ -242,7 +243,7 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should handle socket creation error gracefully', async () => {
-       (dgram.createSocket as any).mockImplementationOnce(() => {
+       vi.mocked(dgram.createSocket).mockImplementationOnce(() => {
          throw new Error('Failed to create')
        })
 
@@ -253,11 +254,11 @@ describe('UdpDiscoveryService', () => {
     it('should handle setBroadcast exception gracefully', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      ;(mockSocket.setBroadcast as any).mockImplementation(() => {
+      vi.mocked(mockSocket.setBroadcast).mockImplementation(() => {
         throw new Error('setBroadcast failed')
       })
 
@@ -272,11 +273,11 @@ describe('UdpDiscoveryService', () => {
     it('should handle close exception gracefully', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      ;(mockSocket.bind as any).mockImplementation((cb: Function) => {
+      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      ;(mockSocket.close as any).mockImplementation(() => {
+      vi.mocked(mockSocket.close).mockImplementation(() => {
         throw new Error('close failed')
       })
 
@@ -291,7 +292,7 @@ describe('UdpDiscoveryService', () => {
 
   describe('testServerUrl', () => {
     it('should return server info on successful request', async () => {
-      ;(axios.get as any).mockResolvedValueOnce({
+      vi.mocked(axios.get).mockResolvedValueOnce({
         data: {
           ServerName: 'Test Server',
           Id: 'test-id-123',
@@ -314,7 +315,7 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should handle trailing slash in url', async () => {
-      ;(axios.get as any).mockResolvedValueOnce({
+      vi.mocked(axios.get).mockResolvedValueOnce({
         data: {
           ServerName: 'Test Server',
           Id: 'test-id-123',
@@ -331,7 +332,7 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should return failure info on request error', async () => {
-      ;(axios.get as any).mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Network error'))
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
@@ -349,7 +350,7 @@ describe('UdpDiscoveryService', () => {
       const errorObj = {
         toString: () => ''
       }
-      ;(axios.get as any).mockRejectedValueOnce(errorObj)
+      vi.mocked(axios.get).mockRejectedValueOnce(errorObj)
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 

@@ -3,6 +3,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 import axios, { AxiosInstance } from 'axios'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { MediaTransformer, IncompleteMetadataError } from '@main/providers/base/MediaTransformer'
 import {
@@ -36,7 +37,14 @@ import type {
   MusicArtist,
   MusicAlbum,
   MusicTrack,
+  QualityScore,
 } from '@main/types/database'
+
+type PlexMappedMedia = { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] }
+type PlexPreparedEpisode = { mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
+type PlexPreparedData =
+  | { type: 'show'; title: string; tmdbId?: string; posterUrl?: string; ownedSeasons: number; ownedEpisodes: number; episodes: PlexPreparedEpisode[] }
+  | { type: 'movie'; title: string; mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
 
 export interface PlexCollection {
   key: string
@@ -61,7 +69,8 @@ export class PlexProvider extends BaseMediaProvider {
   private musicScanCancelled = false
 
   private get plexApiUrl(): string {
-    return (this.config.connectionConfig as any)?.plexApiUrl || 'https://plex.tv/api/v2'
+    const config = this.config.connectionConfig as ProviderCredentials & { plexApiUrl?: string }
+    return config.plexApiUrl || 'https://plex.tv/api/v2'
   }
 
   constructor(config: SourceConfig) {
@@ -96,7 +105,8 @@ export class PlexProvider extends BaseMediaProvider {
   }
 
   getAuthUrl(_pinId: number, code: string): string {
-    const authBase = (this.config.connectionConfig as any)?.plexTvUrl || 'https://app.plex.tv/auth'
+    const config = this.config.connectionConfig as ProviderCredentials & { plexTvUrl?: string }
+    const authBase = config.plexTvUrl || 'https://app.plex.tv/auth'
     const params = new URLSearchParams({
       clientID: CLIENT_IDENTIFIER,
       code: code,
@@ -414,7 +424,7 @@ export class PlexProvider extends BaseMediaProvider {
           )
 
           // STEP 2: Prepare all database-ready data and perform quality analysis
-          const preparedData: any[] = []
+          const preparedData: PlexPreparedData[] = []
           const analyzer = getQualityAnalyzer()
           // Ensure thresholds are loaded once before the batch
           await analyzer.loadThresholdsFromDatabase()
@@ -463,7 +473,7 @@ export class PlexProvider extends BaseMediaProvider {
                 posterUrl: showPoster,
                 ownedSeasons,
                 ownedEpisodes,
-                episodes: episodesToSave.filter((e) => e !== null),
+                episodes: episodesToSave.filter((e): e is PlexPreparedEpisode => e !== null),
               })
             } else if (res.type === 'movie' && res.detail) {
               try {
@@ -476,6 +486,7 @@ export class PlexProvider extends BaseMediaProvider {
                 const qualityScore = await analyzer.analyzeMediaItem(result.mediaItem)
                 preparedData.push({
                   type: 'movie',
+                  title: result.mediaItem.title,
                   mapped: result,
                   qualityScore,
                   ratingKey: res.plexItem.ratingKey,
@@ -532,7 +543,7 @@ export class PlexProvider extends BaseMediaProvider {
                   total: totalItems,
                   phase: 'processing',
                   percentage: Math.round((scanned / totalItems) * 100),
-                  currentItem: data.title || data.mapped?.mediaItem.title,
+                  currentItem: data.type === 'show' ? data.title : data.mapped.mediaItem.title,
                 })
               }
             }
@@ -583,9 +594,9 @@ export class PlexProvider extends BaseMediaProvider {
   }
 
   private async saveMediaItemSync(
-    mapped: { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] },
-    qualityScore: any,
-    db: any,
+    mapped: PlexMappedMedia,
+    qualityScore: QualityScore,
+    db: BetterSQLiteService,
     libraryId: string
   ): Promise<void> {
     const mediaId = await db.media.upsertItem({

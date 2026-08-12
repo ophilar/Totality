@@ -13,7 +13,7 @@ export class PathUtils {
    * - Resolves redundant segments.
    * - Handles Windows UNC paths by preserving the leading double-slash but normalizing separators.
    */
-  static toDatabasePath(filePath: string): string {
+  static toDatabasePath(filePath: string | null | undefined): string {
     if (!filePath) return ''
     
     // First, convert all backslashes to forward slashes to ensure posix-style normalization works everywhere
@@ -37,7 +37,7 @@ export class PathUtils {
    * Normalizes a path for the current Operating System.
    * Useful when retrieving a path from the DB to perform FS operations.
    */
-  static toOsPath(filePath: string): string {
+  static toOsPath(filePath: string | null | undefined): string {
     if (!filePath) return ''
     return path.normalize(filePath)
   }

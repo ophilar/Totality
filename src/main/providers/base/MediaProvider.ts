@@ -155,6 +155,7 @@ export interface MediaMetadata {
   imdbId?: string | null
   tmdbId?: number | null
   seriesTmdbId?: number | null
+  seriesIdentityKey?: string | null
 
   // File info
   filePath?: string | null
@@ -346,7 +347,7 @@ export abstract class BaseMediaProvider implements MediaProvider {
    * Higher score = better quality.
    */
   protected calculateVersionScore(v: Partial<MediaItemVersion>): number {
-    return calculateVersionScore(v as any)
+    return calculateVersionScore(v)
   }
 
   /**

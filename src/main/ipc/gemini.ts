@@ -1,5 +1,5 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { getGeminiService, RateLimitError } from '@main/services/GeminiService'
 import { LIBRARY_TOOLS, executeTool } from '@main/services/GeminiTools'
@@ -24,12 +24,18 @@ const AiChatMessageSchema = z.object({
   }).optional(),
 })
 
+const QualityExplanationSchema = z.object({
+  title: z.string(), resolution: z.string().optional(), videoCodec: z.string().optional(), videoBitrate: z.number().optional(),
+  audioCodec: z.string().optional(), audioChannels: z.number().optional(), hdrFormat: z.string().optional(),
+  qualityTier: z.string().optional(), tierQuality: z.string().optional(), tierScore: z.number().optional()
+})
+
 function formatError(error: unknown) {
   if (error instanceof RateLimitError) return { error: error.message, rateLimited: true, retryAfterSeconds: error.retryAfterSeconds }
   return { error: error instanceof Error ? error.message : String(error) }
 }
 
-const wrapAi = (handler: any) => async (...args: any[]) => {
+const wrapAi = <TArgs extends unknown[], TResult>(handler: (...args: TArgs) => Promise<TResult>) => async (...args: TArgs): Promise<TResult> => {
   try { return await handler(...args) } catch (e) { throw formatError(e) }
 }
 
@@ -45,19 +51,19 @@ export function registerGeminiHandlers() {
     catch (e) { return { success: false, error: e instanceof Error ? e.message : 'Unknown error' } }
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.AI.SEND_MESSAGE, AiSendMessageSchema, wrapAi(async (params: any) => service.sendMessage(params)))
+  createValidatedIpcHandler(IPC_CHANNELS.AI.SEND_MESSAGE, AiSendMessageSchema, wrapAi(async params => service.sendMessage(params)))
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.STREAM_MESSAGE, AiStreamMessageSchema, wrapAi(async (event: any, params: any) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.STREAM_MESSAGE, AiStreamMessageSchema, wrapAi(async (event: IpcMainInvokeEvent, params) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const res = await service.streamMessage(params, (delta) => win?.webContents.send('ai:streamDelta', { requestId: params.requestId, delta }))
     win?.webContents.send('ai:streamComplete', { requestId: params.requestId, usage: res.usage })
     return res
   }))
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.CHAT_MESSAGE, AiChatMessageSchema, async (event: any, params: any) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.CHAT_MESSAGE, AiChatMessageSchema, async (event: IpcMainInvokeEvent, params) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
-      const messages = params.messages.map((m: any, i: number) => {
+      const messages = params.messages.map((m, i) => {
         if (params.viewContext && i === params.messages.length - 1 && m.role === 'user') {
           const ctx = params.viewContext
           const parts = [ctx.currentView === 'dashboard' ? 'Viewing: Dashboard' : `Viewing: ${ctx.libraryTab} library`]
@@ -72,7 +78,10 @@ export function registerGeminiHandlers() {
         messages, system: APP_CONFIG.ai.libraryChat, tools: LIBRARY_TOOLS, maxTokens: 4096,
         executeTool: async (name, input) => {
           win?.webContents.send('ai:toolUse', { requestId: params.requestId, toolName: name, input })
-          return await executeTool(name, input)
+          if (!input || typeof input !== 'object' || Array.isArray(input)) {
+            throw new Error(`Tool ${name} requires an object input`)
+          }
+          return await executeTool(name, input as Record<string, unknown>)
         }
       })
 
@@ -87,15 +96,16 @@ export function registerGeminiHandlers() {
       return { ...res, requestId: params.requestId }
     } catch (e) {
       const fe = formatError(e)
-      if ((fe as any).rateLimited) return fe
+      if ('rateLimited' in fe && fe.rateLimited) return fe
       throw fe
     }
   })
 
-  const registerReport = (channel: string, method: keyof ReturnType<typeof getGeminiAnalysisService>) => {
-    createValidatedIpcHandlerWithEvent(channel, z.object({ requestId: z.string() }), wrapAi(async (event: any, { requestId }: any) => {
+  type ReportMethod = 'generateQualityReport' | 'generateUpgradePriorities' | 'generateCompletenessInsights' | 'generateWishlistAdvice'
+  const registerReport = (channel: string, method: ReportMethod) => {
+    createValidatedIpcHandlerWithEvent(channel, z.object({ requestId: z.string() }), wrapAi(async (event: IpcMainInvokeEvent, { requestId }) => {
       const win = BrowserWindow.fromWebContents(event.sender)
-      const res = await (getGeminiAnalysisService()[method] as any)((delta: string) => win?.webContents.send('ai:analysisStreamDelta', { requestId, delta }))
+      const res = await getGeminiAnalysisService()[method]((delta: string) => win?.webContents.send('ai:analysisStreamDelta', { requestId, delta }))
       win?.webContents.send('ai:analysisStreamComplete', { requestId })
       return { text: res.text, requestId }
     }))
@@ -106,13 +116,13 @@ export function registerGeminiHandlers() {
   registerReport(IPC_CHANNELS.AI.COMPLETENESS_INSIGHTS, 'generateCompletenessInsights')
   registerReport(IPC_CHANNELS.AI.WISHLIST_ADVICE, 'generateWishlistAdvice')
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.COMPRESSION_ADVICE, z.object({ mediaId: z.number(), requestId: z.string() }), wrapAi(async (event: any, { mediaId, requestId }: any) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.AI.COMPRESSION_ADVICE, z.object({ mediaId: z.number(), requestId: z.string() }), wrapAi(async (event: IpcMainInvokeEvent, { mediaId, requestId }) => {
     const res = await getGeminiAnalysisService().getCompressionAdvice(mediaId)
     BrowserWindow.fromWebContents(event.sender)?.webContents.send('ai:analysisStreamComplete', { requestId })
     return { text: res.text, requestId }
   }))
 
-  createValidatedIpcHandler(IPC_CHANNELS.AI.EXPLAIN_QUALITY, z.any(), wrapAi(async (p: any) => ({ text: await service.explainQualityScore(p) })))
+  createValidatedIpcHandler(IPC_CHANNELS.AI.EXPLAIN_QUALITY, QualityExplanationSchema, wrapAi(async p => ({ text: await service.explainQualityScore(p) })))
 
   getLoggingService().info('[gemini]', 'Gemini AI IPC handlers registered')
 }

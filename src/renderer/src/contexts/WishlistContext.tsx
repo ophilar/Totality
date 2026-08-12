@@ -160,20 +160,20 @@ export function WishlistProvider({ children }: WishlistProviderProps) {
 
   // Load initial data and reload when filters change
   useEffect(() => {
-    loadWishlist()
+    queueMicrotask(() => { void loadWishlist() })
   }, [loadWishlist])
 
   // Listen for wishlist auto-completion events and refresh
   useEffect(() => {
     const cleanup = window.electronAPI.onWishlistAutoCompleted?.(() => {
-      loadWishlist()
+      void loadWishlist()
     })
     return () => cleanup?.()
   }, [loadWishlist])
 
   // Load region on mount
   useEffect(() => {
-    loadRegion()
+    queueMicrotask(() => { void loadRegion() })
   }, [loadRegion])
 
   const addItem = useCallback(async (item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>): Promise<number> => {

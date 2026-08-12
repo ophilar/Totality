@@ -159,7 +159,22 @@ export function QualitySettingsTab() {
   }
 
   useEffect(() => {
-    loadSettings()
+    queueMicrotask(() => {
+      void (async () => {
+        setIsLoading(true)
+        const allSettings = await window.electronAPI.getAllSettings()
+        const loaded: SettingsState = { ...DEFAULT_SETTINGS }
+        for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]) {
+          if (allSettings[key] !== undefined && allSettings[key] !== '') {
+            const value = parseFloat(allSettings[key])
+            if (!isNaN(value)) loaded[key] = value
+          }
+        }
+        setSettings(loaded)
+        setOriginalSettings(loaded)
+        setIsLoading(false)
+      })()
+    })
   }, [])
 
   useEffect(() => {
@@ -171,32 +186,8 @@ export function QualitySettingsTab() {
 
   useEffect(() => {
     const changed = JSON.stringify(settings) !== JSON.stringify(originalSettings)
-    setHasChanges(changed)
+    queueMicrotask(() => { setHasChanges(changed) })
   }, [settings, originalSettings])
-
-  const loadSettings = async () => {
-    setIsLoading(true)
-    try {
-      const allSettings = await window.electronAPI.getAllSettings()
-      const loaded: SettingsState = { ...DEFAULT_SETTINGS }
-
-      for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]) {
-        if (allSettings[key] !== undefined && allSettings[key] !== '') {
-          const value = parseFloat(allSettings[key])
-          if (!isNaN(value)) {
-            loaded[key] = value
-          }
-        }
-      }
-
-      setSettings(loaded)
-      setOriginalSettings(loaded)
-    } catch (error) {
-      window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to load settings:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleSave = async () => {
     setIsSaving(true)

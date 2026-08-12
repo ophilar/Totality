@@ -1,5 +1,5 @@
-import { forwardRef, ReactNode, useRef, useCallback, useLayoutEffect } from 'react'
-import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle } from 'react-virtuoso'
+import { forwardRef, ReactNode, useRef, useCallback, useLayoutEffect, HTMLAttributes } from 'react'
+import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle, StateSnapshot, GridStateSnapshot } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
 import { MediaCardSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { useScrollMemory } from '@/contexts/ScrollMemoryContext'
@@ -69,7 +69,7 @@ export function MediaGridView<T>({
   }, [scrollKey, viewType, saveScrollState])
 
   // VirtuosoGrid uses the stateChanged prop for state capture
-  const handleGridStateChanged = useCallback((state: any) => {
+  const handleGridStateChanged = useCallback((state: GridStateSnapshot) => {
     if (scrollKey && viewType === 'grid') {
       saveScrollState(scrollKey, state)
     }
@@ -156,7 +156,7 @@ export function MediaGridView<T>({
             <div className="min-w-[760px] h-full">
               <Virtuoso
               ref={virtuosoRef}
-              restoreStateFrom={restoredState}
+              restoreStateFrom={restoredState as StateSnapshot | undefined}
               data={safeItems}
               endReached={handleEndReached}
               overscan={1200}
@@ -175,14 +175,14 @@ export function MediaGridView<T>({
         <div className="flex-1 min-h-0 relative">
           <VirtuosoGrid
             ref={virtuosoGridRef}
-            restoreStateFrom={restoredState as any}
+            restoreStateFrom={restoredState as GridStateSnapshot | null | undefined}
             stateChanged={handleGridStateChanged}
             data={safeItems}
             endReached={handleEndReached}
             overscan={1500}
             style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }}
             components={{
-              List: forwardRef<HTMLDivElement, any>((props, ref) => (
+              List: forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>((props, ref) => (
                 <div
                   {...props}
                   ref={ref}

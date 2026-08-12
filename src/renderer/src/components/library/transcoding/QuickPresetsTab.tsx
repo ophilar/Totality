@@ -101,9 +101,7 @@ export function QuickPresetsTab({
 
   const copyCommand = () => {
     if (!params) return
-    const cmd = options.transcodingEngine === 'ffmpeg'
-      ? `ffmpeg ${(params.ffmpegArgs || []).join(' ')}`
-      : `HandBrakeCLI ${params.handbrakeArgs.join(' ')}`
+    const cmd = `ffmpeg ${(params.ffmpegArgs || []).join(' ')}`
     navigator.clipboard.writeText(cmd)
     addToast({ title: 'Command copied to clipboard!', type: 'success' })
   }

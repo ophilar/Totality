@@ -1,5 +1,5 @@
 import { useState, memo, useRef } from 'react'
-import { RefreshCw, Pencil, Trash2, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
+import { RefreshCw, Pencil, HardDrive, Tv as TvPlaceholder, Link2Off } from 'lucide-react'
 import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
 import { providerColors, formatBytes } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
@@ -40,7 +40,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
     })
   }
 
-  if (onFixMatch && sourceId) {
+  if (onFixMatch && sourceId && (show.match_status === 'unresolved' || show.match_status === 'conflicting')) {
     menuItems.push({
       id: 'fix-match',
       label: 'Fix Match',
@@ -87,6 +87,11 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
       }}
     >
       <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+        {show.match_status && show.match_status !== 'verified' && (
+          <div className="absolute top-2 right-2 z-10 rounded bg-black/70 px-2 py-1 text-xs text-white">
+            {show.match_status === 'manual' ? 'Manual match' : show.match_status === 'conflicting' ? 'Conflicting match' : 'Unresolved match'}
+          </div>
+        )}
         {/* 3-dot menu button */}
         {menuItems.length > 0 && (
           <div className="absolute top-2 left-2 z-20">
@@ -108,26 +113,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           </div>
         )}
 
-        {/* Efficiency Trash Badge */}
-        {completenessData && (completenessData as any).efficiency_score != null && (completenessData as any).efficiency_score < 60 && (
-          <div
-            className="absolute bottom-2 right-2"
-            title={`Low Efficiency (${(completenessData as any).efficiency_score}%). Upgrade recommended to save space.`}
-          >
-            <Trash2 className="w-6 h-6 text-orange-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
-          </div>
-        )}
-
-        {/* Storage Debt Badge */}
-        {completenessData && (completenessData as any).storage_debt_bytes != null && (completenessData as any).storage_debt_bytes > 10 * 1024 * 1024 * 1024 && (
-          <div
-            className="absolute bottom-2 right-10"
-            title={`Significant Storage Debt (${formatBytes((completenessData as any).storage_debt_bytes)}). Re-encode to save massive space.`}
-          >
-            <HardDrive className="w-6 h-6 text-blue-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
-          </div>
-        )}
-
         {show.poster_url ? (
           <img
             src={show.poster_url}
@@ -143,7 +128,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         )}
 
         {/* Analyzing Overlay */}
-        {completenessData && (completenessData as any).efficiency_score === null && isLibraryAnalyzing && (
+        {completenessData && completenessData.efficiency_score === null && isLibraryAnalyzing && (
           <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
             <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
             <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
@@ -158,7 +143,10 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           <p className="text-xs text-muted-foreground mt-0.5">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
           </p>
-          <p className="text-[10px] text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${(show.total_recoverable_bytes / 1073741824).toFixed(1)} GB recoverable` : 'No recoverable storage'}</p>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            {show.total_size == null ? 'Size unavailable' : formatBytes(show.total_size)} · {show.total_recoverable_bytes == null ? 'Recoverable space unavailable' : `${formatBytes(show.total_recoverable_bytes)} recoverable`}
+            {show.weighted_efficiency == null ? ' · Analysis incomplete' : ` · ${show.weighted_efficiency.toFixed(0)}% efficient`}
+          </p>
         </div>
 
         {completenessData && (

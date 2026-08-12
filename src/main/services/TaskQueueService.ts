@@ -22,6 +22,9 @@ import {
 } from '@main/types/database'
 import { NotificationType } from '@main/types/monitoring'
 
+interface CollectionProgress { current: number; total: number; percentage?: number; phase: string; currentItem?: string }
+interface TranscodeProgress { percent: number; status: string }
+
 export interface TaskQueueDependencies {
   db?: BetterSQLiteService
   logging?: LoggingService
@@ -254,8 +257,8 @@ export class TaskQueueService {
     return [...this.queue, ...(this.currentTask ? [this.currentTask] : []), ...this.completedTasks]
   }
 
-  getTaskHistory(): any[] { return this.completedTasks }
-  getMonitoringHistory(): any[] { return [] }
+  getTaskHistory(): QueuedTask[] { return this.completedTasks }
+  getMonitoringHistory(): unknown[] { return [] }
   async clearTaskHistory(): Promise<void> { this.completedTasks = []; await this.saveState(); this.notifyListeners() }
   clearMonitoringHistory(): void { }
 
@@ -368,7 +371,7 @@ export class TaskQueueService {
 
         // Special case: Scan tasks should also emit scan:completed
         if (prevTask.type === TaskType.LibraryScan || prevTask.type === TaskType.SourceScan || prevTask.type === TaskType.MusicScan) {
-          const res = prevTask.result as any
+          const res = prevTask.result
           if (res) {
             safeSend(this.mainWindow, 'scan:completed', {
               sourceId: prevTask.sourceId,
@@ -415,7 +418,7 @@ export class TaskQueueService {
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     const service = this.getMovieCollection()
-    const result = await service.analyzeAllCollections(task.sourceId, task.libraryId, (prog: any) => {
+    const result = await service.analyzeAllCollections(task.sourceId, task.libraryId, (prog: CollectionProgress) => {
       onProgress({
         current: prog.current,
         total: prog.total,
@@ -436,7 +439,7 @@ export class TaskQueueService {
     
     if (!task.artistId) {
       const result = await service.analyzeAllMusic(
-        (prog: any) => {
+        (prog: TaskProgress) => {
           onProgress({
             current: prog.current,
             total: prog.total,
@@ -459,10 +462,9 @@ export class TaskQueueService {
 
     // Get owned albums for this artist
     const albums = await db.music.getAlbums({ artistId: task.artistId })
-    const ownedAlbumTitles = albums.map((a: any) => a.title)
-    const ownedAlbumMbIds = albums.map((a: any) => a.musicbrainz_id).filter((id: any): id is string => !!id)
+    const ownedAlbumTitles = albums.map(a => a.title)
+    const ownedAlbumMbIds = albums.map(a => a.musicbrainz_id).filter((id): id is string => !!id)
     
-    // @ts-ignore - analyzeArtistCompleteness might have different signature than expected from grep
     const result = await service.analyzeArtistCompleteness(
       artist.name,
       artist.musicbrainz_id || undefined,
@@ -471,7 +473,7 @@ export class TaskQueueService {
     )
     
     task.result = {
-      itemsScanned: (result as any).total_albums || 0,
+      itemsScanned: result.total_albums,
     }
     
     // Set progress to complete
@@ -497,7 +499,7 @@ export class TaskQueueService {
     await service.transcode(
       task.mediaItemId,
       task.options || {},
-      (p: any) => {
+      (p: TranscodeProgress) => {
         onProgress({
           current: Math.round(p.percent),
           total: 100,

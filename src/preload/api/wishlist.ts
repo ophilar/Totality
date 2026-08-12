@@ -1,5 +1,6 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { WishlistItem } from '@main/types/database'
 
 export const wishlistApi = {
   // ============================================================================
@@ -66,10 +67,10 @@ export interface WishlistAPI {
     status?: 'active' | 'completed'
   }) => Promise<{ success: boolean }>
   wishlistRemove: (id: number) => Promise<{ success: boolean }>
-  wishlistGetAll: (filters?: unknown) => Promise<any[]>
-  wishlistList: (filters?: unknown) => Promise<any[]>
+  wishlistGetAll: (filters?: unknown) => Promise<WishlistItem[]>
+  wishlistList: (filters?: unknown) => Promise<WishlistItem[]>
   wishlistCount: (filters?: unknown) => Promise<number>
-  wishlistGetById: (id: number) => Promise<any | null>
+  wishlistGetById: (id: number) => Promise<WishlistItem | null>
   wishlistGetCount: () => Promise<number>
   wishlistGetCountsByReason: () => Promise<{ missing: number; upgrade: number; active: number; completed: number; total: number }>
   wishlistCheckExists: (tmdbId?: string, musicbrainzId?: string, mediaItemId?: number) => Promise<boolean>

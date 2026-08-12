@@ -510,10 +510,14 @@ export const TranscodeOptionsSchema = z.object({
 
 export const SetSelectedGpuSchema = z.string().min(1).max(200).nullable()
 
-export const CheckTranscoderAvailabilitySchema = z.any().optional()
+export const CheckTranscoderAvailabilitySchema = z.unknown().optional()
 
 export const GetTranscodeParamsSchema = z.tuple([
   FilePathSchema,
+  TranscodeOptionsSchema
+])
+export const GetTranscodeParamsByMediaItemSchema = z.tuple([
+  z.number().int().positive(),
   TranscodeOptionsSchema
 ])
 
@@ -526,9 +530,9 @@ export const CancelTranscodeSchema = z.tuple([
   z.number().int().positive()
 ])
 
-function preprocessFilterKeys(input: unknown): any {
+function preprocessFilterKeys(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input
-  const clone = { ...input } as any
+  const clone: Record<string, unknown> = { ...input }
   if ('tier' in clone && !('qualityTier' in clone)) {
     clone.qualityTier = clone.tier
     delete clone.tier
@@ -585,7 +589,7 @@ export const ScanItemTupleSchema = z.tuple([SourceIdSchema, z.string().nullable(
 export const PlexAuthTupleSchema = z.tuple([z.string(), z.string()])
 export const PlexSelectServerTupleSchema = z.tuple([SourceIdSchema, z.string()])
 export const SetSettingTupleSchema = z.tuple([SettingKeySchema, SettingValueSchema])
-export const TestNfsMappingTupleSchema = z.tuple([z.any(), FilePathSchema])
+export const TestNfsMappingTupleSchema = z.tuple([z.unknown(), FilePathSchema])
 export const FixMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema, NonEmptyStringSchema])
 export const AddExclusionTupleSchema = z.tuple([z.string(), PositiveIntSchema.optional(), z.string().optional(), z.string().optional(), z.string().optional()])
 export const GetExclusionsTupleSchema = z.tuple([z.string().optional(), z.string().optional()])

@@ -16,7 +16,7 @@ export class KodiItemMapper {
 
   convertToMediaMetadata(item: KodiMovie | KodiEpisode, type: MediaItemType): MediaMetadata {
     try {
-      const { mediaItem } = MediaTransformer.fromKodi(item as any, this.sourceId, type, (url) => this.client.buildImageUrl(url))
+      const { mediaItem } = MediaTransformer.fromKodi(item, this.sourceId, type, (url) => this.client.buildImageUrl(url))
       return {
         providerId: this.sourceId,
         providerType: ProviderType.Kodi,
@@ -49,7 +49,7 @@ export class KodiItemMapper {
 
   async convertToMediaItem(item: KodiMovie | KodiEpisode, type: MediaItemType): Promise<{ mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null> {
     try {
-      return MediaTransformer.fromKodi(item as any, this.sourceId, type, (url) => this.client.buildImageUrl(url))
+      return MediaTransformer.fromKodi(item, this.sourceId, type, (url) => this.client.buildImageUrl(url))
     } catch (error) {
       if (error instanceof IncompleteMetadataError) {
         getLoggingService().warn('[KodiItemMapper]', error.message)

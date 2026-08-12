@@ -11,6 +11,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { ProviderType, MediaItemType } from '@main/types/database'
 import { MediaTransformer } from '@main/providers/base/MediaTransformer'
+import type { PlexMediaItem } from '@main/types/plex'
+import type { JellyfinMediaItem } from '@main/providers/jellyfin-emby/JellyfinTypes'
 
 describe('Cross-Provider Transformation Integrity', () => {
   beforeEach(async () => {
@@ -25,7 +27,7 @@ describe('Cross-Provider Transformation Integrity', () => {
     const sourceId = 'test-source'
 
     // 1. Raw Plex Payload
-    const plexPayload = {
+    const plexPayload: PlexMediaItem = {
       ratingKey: 'plex123',
       type: 'movie',
       title: 'Interstellar',
@@ -54,7 +56,7 @@ describe('Cross-Provider Transformation Integrity', () => {
     }
 
     // 2. Raw Jellyfin Payload
-    const jellyfinPayload = {
+    const jellyfinPayload: JellyfinMediaItem = {
       Id: 'jf123',
       Name: 'Interstellar',
       Type: 'Movie',
@@ -76,8 +78,8 @@ describe('Cross-Provider Transformation Integrity', () => {
     }
 
     // 3. Transform Both
-    const plexResult = MediaTransformer.fromPlex(plexPayload as any, sourceId)
-    const jfResult = MediaTransformer.fromJellyfin(jellyfinPayload as any, sourceId, ProviderType.Jellyfin, (id) => id)
+    const plexResult = MediaTransformer.fromPlex(plexPayload, sourceId)
+    const jfResult = MediaTransformer.fromJellyfin(jellyfinPayload, sourceId, ProviderType.Jellyfin, (id) => id)
 
     // 4. Integrity Assertions
     const plex = plexResult.mediaItem
@@ -105,7 +107,7 @@ describe('Cross-Provider Transformation Integrity', () => {
     }
 
     expect(() => {
-      MediaTransformer.fromPlex(plexBroken as any, 's1')
+      MediaTransformer.fromPlex(plexBroken as unknown as Parameters<typeof MediaTransformer.fromPlex>[0], 's1')
     }).toThrow(/Missing Media/)
 
     const jfBroken = {
@@ -115,7 +117,7 @@ describe('Cross-Provider Transformation Integrity', () => {
     }
 
     expect(() => {
-      MediaTransformer.fromJellyfin(jfBroken as any, 's1', ProviderType.Jellyfin, (id) => id)
+      MediaTransformer.fromJellyfin(jfBroken as unknown as Parameters<typeof MediaTransformer.fromJellyfin>[0], 's1', ProviderType.Jellyfin, (id) => id)
     }).toThrow(/Missing MediaSources/)
   })
 })

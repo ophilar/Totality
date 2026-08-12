@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
@@ -8,7 +8,7 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 import { WishlistProvider, useWishlist } from '@/contexts/WishlistContext'
-import { LibraryType } from '@main/types/database'
+import { LibraryType, ProviderType, WishlistMediaType, WishlistReason, WishlistStatus } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerWishlistHandlers } from '@main/ipc/wishlist'
@@ -26,7 +26,7 @@ function SourceConsumer() {
 function NavConsumer() {
   const { navigateTo, pendingNavigation, canGoBack, pushNavState } = useNavigation()
   return React.createElement('div', null, 
-    React.createElement('button', { onClick: () => navigateTo({ type: LibraryType.Movie as any, id: 1 }) }, 'Nav'),
+    React.createElement('button', { onClick: () => navigateTo({ type: 'movie', id: 1 }) }, 'Nav'),
     React.createElement('button', { onClick: () => pushNavState({ view: 'library' }) }, 'Push'),
     React.createElement('span', null, `Pending: ${pendingNavigation?.id || 'none'}`),
     React.createElement('span', null, `Back: ${canGoBack}`)
@@ -46,12 +46,12 @@ function WishlistConsumer() {
   const { items, addItem } = useWishlist()
   return React.createElement('div', null,
     React.createElement('span', null, `Items: ${items.length}`),
-    React.createElement('button', { onClick: () => addItem({ title: 'New', media_type: LibraryType.Movie as any, priority: 3, reason: 'missing', status: 'active' } as any) }, 'Add')
+    React.createElement('button', { onClick: () => addItem({ title: 'New', media_type: WishlistMediaType.Movie, priority: 3, reason: WishlistReason.Missing, status: WishlistStatus.Active }) }, 'Add')
   )
 }
 
 describe('Renderer Integration (Real Bridge & DB)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -69,8 +69,8 @@ describe('Renderer Integration (Real Bridge & DB)', () => {
   it('should load sources from the real database into the React context', async () => {
     // Add source directly to real DB
     await db.sources.upsertSource({
-      source_id: 's1', 
-      source_type: 'local' as any, 
+      source_id: 's1',
+      source_type: ProviderType.Local,
       display_name: 'Real Source',
       is_enabled: 1,
       connection_config: '{}'

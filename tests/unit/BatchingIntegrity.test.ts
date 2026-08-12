@@ -6,7 +6,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { TaskType } from '@main/types/database'
 
 describe('Batching Integrity (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -28,9 +28,9 @@ describe('Batching Integrity (No Mocks)', () => {
 
       const result = await db.exclusions.getExclusions('media_upgrade')
       expect(result).toHaveLength(3)
-      expect(result.map((r: any) => r.title)).toContain('Movie 1')
-      expect(result.map((r: any) => r.title)).toContain('Movie 2')
-      expect(result.map((r: any) => r.title)).toContain('Movie 3')
+      expect(result.map(r => r.title)).toContain('Movie 1')
+      expect(result.map(r => r.title)).toContain('Movie 2')
+      expect(result.map(r => r.title)).toContain('Movie 3')
     })
 
     it('should handle large batches with chunking', async () => {

@@ -27,7 +27,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('TMDBService', () => {
   let service: TMDBService
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     vi.clearAllMocks()

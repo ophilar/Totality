@@ -5,7 +5,7 @@ import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityS
 
 describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()

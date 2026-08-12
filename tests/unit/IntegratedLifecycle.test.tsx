@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
@@ -9,6 +9,7 @@ import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
 import { MediaRepository } from '@main/database/repositories/MediaRepository'
 import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
+type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
 // Mock the heavy event listener hook to prevent background noise during tests
 vi.mock('@/components/library/hooks/useLibraryEventListeners', () => ({
@@ -16,7 +17,7 @@ vi.mock('@/components/library/hooks/useLibraryEventListeners', () => ({
 }))
 
 describe('MediaBrowser Lifecycle Integration', () => {
-  let db: any
+  let db: TestDb
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -42,7 +43,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
       display_name: 'Test Source',
       connection_config: '{}',
       is_enabled: 1
-    } as any)
+    })
     await db.sources.setLibrariesEnabled('src-1', [{ id: 'lib-1', name: 'TV', type: 'show', enabled: true }])
 
     await mediaRepo.upsertItem({
@@ -65,7 +66,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
       audio_bitrate: 128,
       width: 1920,
       height: 1080,
-    } as any)
+    })
 
     await tvRepo.upsertCompleteness({
       series_title: seriesTitle,
@@ -77,7 +78,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
       owned_episodes: 1,
       completeness_percentage: 100,
       status: 'Continuing'
-    } as any)
+    })
 
     // Ensure source context has a source so the tab appears
     api.sourcesList = vi.fn().mockResolvedValue([{
@@ -115,7 +116,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
       display_name: 'Test Source',
       connection_config: '{}',
       is_enabled: 1
-    } as any)
+    })
     await db.sources.setLibrariesEnabled('src-1', [{ id: 'lib-1', name: 'TV', type: 'show', enabled: true }])
     
     await db.media.upsertItem({
@@ -126,7 +127,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
       source_id: 'src-1',
       library_id: 'lib-1',
       file_path: '/path/slow_s2e1.mkv',
-    } as any)
+    })
     
     await tvRepo.upsertCompleteness({
       series_title: 'Slow Show',
@@ -137,10 +138,10 @@ describe('MediaBrowser Lifecycle Integration', () => {
       owned_seasons: 1,
       owned_episodes: 10,
       completeness_percentage: 100,
-    } as any)
+    })
 
     // Delay the episode fetching to see the loading state
-    let resolveEpisodes: any
+    let resolveEpisodes: ((value: unknown) => void) | undefined
     const delayedGetEpisodes = vi.fn().mockImplementation(() => new Promise(resolve => {
       resolveEpisodes = resolve
     }))

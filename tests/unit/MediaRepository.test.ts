@@ -7,7 +7,7 @@ import { MediaItem } from '@main/types/database'
 describe('MediaRepository (Real DB)', () => {
   let repo: MediaRepository
   let sourceRepo: SourceRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -36,7 +36,7 @@ describe('MediaRepository (Real DB)', () => {
     type: 'movie',
     file_path: `/path/to/${title}.mkv`,
     resolution: '1080p',
-  } as any)
+  })
 
   it('should upsert and retrieve a media item', async () => {
     const item = mockItem()

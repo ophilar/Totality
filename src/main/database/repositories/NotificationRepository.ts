@@ -1,5 +1,6 @@
 import { eq, desc, sql, inArray } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
@@ -14,7 +15,7 @@ export interface Notification {
 }
 
 export class NotificationRepository extends BaseRepository<typeof schema.notifications> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'notifications', drizzle, schema.notifications)
   }
 
@@ -101,10 +102,10 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
     return this.mapDrizzleToNotifications(rows)
   }
 
-  private mapDrizzleToNotifications(rows: any[]): Notification[] {
+  private mapDrizzleToNotifications(rows: Array<typeof schema.notifications.$inferSelect>): Notification[] {
     return rows.map((r) => ({
       id: r.id,
-      type: r.type as any,
+      type: r.type as Notification['type'],
       title: r.title,
       message: r.message,
       reference_id: r.referenceId || undefined,

@@ -56,7 +56,7 @@ describe('OS Path Resilience (No Mocks)', () => {
         title: 'Resilient Path Movie',
         type: 'movie',
         file_path: dbPath
-      } as any)
+      })
 
       // 2. Query with Windows path (should work via internal normalization)
       const foundByWin = await db.media.getItemByPath(winPath)
@@ -80,7 +80,7 @@ describe('OS Path Resilience (No Mocks)', () => {
         title: 'UNC Movie',
         type: 'movie',
         file_path: uncPath
-      } as any)
+      })
 
       // Query with normalized version
       const normalizedUnc = '//NAS/Movies/Matrix.mkv'

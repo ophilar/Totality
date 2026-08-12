@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
@@ -13,20 +13,20 @@ import { SourceProvider } from '@/contexts/SourceContext'
 import React from 'react'
 
 describe('Settings Rendering (Integrated Stack)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     // Explicitly define window for happy-dom if it's not correctly propagated
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
 
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
     // Ensure both window and global have the API
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
 
     registerDatabaseHandlers()
     registerSourceHandlers()
@@ -37,7 +37,7 @@ describe('Settings Rendering (Integrated Stack)', () => {
   })
 
   const renderSettings = async () => {
-    let result: any
+    let result: ReturnType<typeof render> | undefined
     await act(async () => {
         result = render(
             <ToastProvider>

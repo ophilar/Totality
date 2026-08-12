@@ -7,7 +7,7 @@ import { z } from 'zod'
 export function registerNotificationHandlers(): void {
   const db = getDatabase()
 
-  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.GET_ALL, async (options?: any) => {
+  createIpcHandler(IPC_CHANNELS.NOTIFICATIONS.GET_ALL, async (options?: { unreadOnly?: boolean; limit?: number }) => {
     return await db.notifications.get(options || {})
   })
 

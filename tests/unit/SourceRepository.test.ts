@@ -5,7 +5,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('SourceRepository (Real DB)', () => {
   let repo: SourceRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -51,7 +51,7 @@ describe('SourceRepository (Real DB)', () => {
 
     const retrieved = await repo.getSourceById(sourceId)
     expect(retrieved?.display_name).toBe('New Name')
-    expect(retrieved?.is_enabled).toBe(0)
+    expect(retrieved?.is_enabled).toBe(false)
   })
 
   it('should delete a source', async () => {

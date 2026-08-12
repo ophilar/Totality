@@ -21,6 +21,7 @@ import { LibraryType, ProviderType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MusicArtist, MusicAlbum, MusicTrack } from '@main/types/database'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import {
   isLosslessCodec,
@@ -31,6 +32,10 @@ import {
 export interface MediaMonkeyConfig {
   databasePath: string
 }
+
+interface MediaMonkeyArtistRow { ID: number; Artist: string; SortArtist?: string }
+interface MediaMonkeyAlbumRow { ID: number; Album: string; IDArtist: number; AlbumArtist?: string; ReleaseYear?: number; SortAlbum?: string }
+interface MediaMonkeySongRow { ID: number; SongTitle: string; IDAlbum: number; IDArtist: number; Artist: string; Album: string; TrackNumber?: number; DiscNumber?: number; SongLength?: number; SongPath?: string; FileLength?: number; Bitrate?: number; SampleRate?: number; Channels?: number; AudioCodec?: string; DateAdded?: string | number; MusicBrainzTrackID?: string; MusicBrainzArtistID?: string; MusicBrainzAlbumID?: string; Mood?: string }
 
 export class MediaMonkeyProvider extends BaseMediaProvider {
   readonly providerType: ProviderType = 'mediamonkey' as ProviderType
@@ -94,8 +99,8 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
       return {
         success: true
       }
-    } catch (error: any) {
-      return { success: false, error: `Failed to open MediaMonkey database: ${error.message}` }
+    } catch (error: unknown) {
+      return { success: false, error: `Failed to open MediaMonkey database: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
 
@@ -141,14 +146,14 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
         SELECT ID, Artist, SortArtist
         FROM Artists
         WHERE Artist != ''
-      `).all() as any[]
+      `).all() as unknown as MediaMonkeyArtistRow[]
 
       // 2. Get all Albums
       const albums = this.db.prepare(`
         SELECT ID, Album, IDArtist, AlbumArtist, ReleaseYear, SortAlbum
         FROM Albums
         WHERE Album != ''
-      `).all() as any[]
+      `).all() as unknown as MediaMonkeyAlbumRow[]
 
       // 3. Get all Songs
       const songs = this.db.prepare(`
@@ -159,7 +164,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
           MusicBrainzTrackID, MusicBrainzArtistID, MusicBrainzAlbumID,
           Mood
         FROM Songs
-      `).all() as any[]
+      `).all() as unknown as MediaMonkeySongRow[]
 
       result.itemsScanned = songs.length
       db.startBatch()
@@ -232,7 +237,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
             is_hi_res: isHiRes(song.SampleRate, 0, isLosslessCodec(audioCodec)),
             musicbrainz_id: song.MusicBrainzTrackID,
             mood: JSON.stringify(moods),
-            added_at: song.DateAdded ? new Date(song.DateAdded * 1000).toISOString() : undefined
+            added_at: song.DateAdded ? new Date(typeof song.DateAdded === 'number' ? song.DateAdded * 1000 : song.DateAdded).toISOString() : undefined
           }
 
           await musicRepo.upsertTrack(totalityTrack)
@@ -247,7 +252,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
         // 4. Update stats for artists and albums
         // Update album totals using calculateAlbumStats
         for (const [mm5AlbumId, tracks] of albumTracksMap.entries()) {
-          const stats = calculateAlbumStats(tracks as any[])
+          const stats = calculateAlbumStats(tracks)
           const totalityAlbumId = albumIdMap.get(mm5AlbumId)
           if (totalityAlbumId) {
             // Find the original album data from our local albums array to avoid another DB hit
@@ -286,9 +291,9 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
 
       result.durationMs = Date.now() - startTime
       return result
-    } catch (error: any) {
+    } catch (error: unknown) {
       getLoggingService().error('[MediaMonkeyProvider]', 'Scan failed:', error)
-      result.errors.push(error.message)
+      result.errors.push(getErrorMessage(error))
       result.durationMs = Date.now() - startTime
       return result
     }

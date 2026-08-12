@@ -100,8 +100,8 @@ export function registerSeriesHandlers() {
       throw new Error(`Could not find details for ${providerId}:${externalId}`)
     }
 
-    let tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
-    let imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+    const tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
+    const imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
 
     if (!tmdbId) {
       throw new Error(`A TMDB ID could not be resolved for this match`)

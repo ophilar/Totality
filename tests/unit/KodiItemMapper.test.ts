@@ -11,7 +11,7 @@ describe('KodiItemMapper', () => {
   
   const mapper = new KodiItemMapper('s1', client)
 
-  const mockKodiMovie: any = {
+  const mockKodiMovie: Parameters<KodiItemMapper['convertToMediaItem']>[0] = {
     movieid: 1,
     title: 'Inception',
     file: '/movies/Inception (2010).mkv',

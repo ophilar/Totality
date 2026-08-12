@@ -2,9 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
+import { ProviderType } from '@main/types/database'
+
+type PlexTestHooks = {
+  selectedServer: unknown
+  paginatedPlexFetch: (...args: never[]) => Promise<unknown[]>
+  getShowEpisodes: (...args: never[]) => Promise<unknown[]>
+  getItemMetadataDetailed: (...args: never[]) => Promise<unknown>
+}
 
 describe('PlexProvider Optimized Scan', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -17,13 +25,13 @@ describe('PlexProvider Optimized Scan', () => {
   it('should create TV show stubs with real local counts during scan', async () => {
     const provider = new PlexProvider({
       sourceId: 'p1',
-      name: 'Plex',
-      sourceType: 'plex',
+      displayName: 'Plex',
+      sourceType: ProviderType.Plex,
       connectionConfig: { uri: 'http://localhost:32400', accessToken: 'token' }
-    } as any)
+    })
 
-    // @ts-ignore
-    provider.selectedServer = { uri: 'http://localhost:32400', accessToken: 'token' }
+    const hooks = provider as unknown as PlexTestHooks
+    hooks.selectedServer = { uri: 'http://localhost:32400', accessToken: 'token' }
 
     const mockItems = [
       { ratingKey: '1', type: 'show', title: 'Test Show', Guid: [{ id: 'tmdb://123' }] }
@@ -35,9 +43,9 @@ describe('PlexProvider Optimized Scan', () => {
     ]
 
     // Patch the instance directly
-    ;(provider as any).paginatedPlexFetch = vi.fn().mockResolvedValue(mockItems)
-    ;(provider as any).getShowEpisodes = vi.fn().mockResolvedValue(mockEpisodes)
-    ;(provider as any).getItemMetadataDetailed = vi.fn().mockImplementation(async (rk: string) => {
+    hooks.paginatedPlexFetch = vi.fn().mockResolvedValue(mockItems)
+    hooks.getShowEpisodes = vi.fn().mockResolvedValue(mockEpisodes)
+    hooks.getItemMetadataDetailed = vi.fn().mockImplementation(async (rk: string) => {
       const ep = mockEpisodes.find(e => e.ratingKey === rk)
       if (!ep) return null
       return {
@@ -73,13 +81,13 @@ describe('PlexProvider Optimized Scan', () => {
   it('should yield the event loop during large scans', async () => {
     const provider = new PlexProvider({
       sourceId: 'p1',
-      name: 'Plex',
-      sourceType: 'plex',
+      displayName: 'Plex',
+      sourceType: ProviderType.Plex,
       connectionConfig: { uri: 'http://localhost:32400', accessToken: 'token' }
-    } as any)
+    })
 
-    // @ts-ignore
-    provider.selectedServer = { uri: 'http://localhost:32400', accessToken: 'token' }
+    const hooks = provider as unknown as PlexTestHooks
+    hooks.selectedServer = { uri: 'http://localhost:32400', accessToken: 'token' }
 
     // Create 100 mock items to trigger yields (BATCH_SIZE is 15)
     const mockItems = Array.from({ length: 100 }, (_, i) => ({
@@ -88,8 +96,8 @@ describe('PlexProvider Optimized Scan', () => {
       title: `Movie ${i}`
     }))
 
-    vi.spyOn(provider as any, 'paginatedPlexFetch').mockResolvedValue(mockItems)
-    vi.spyOn(provider as any, 'getItemMetadataDetailed').mockImplementation(async () => ({
+    vi.spyOn(hooks, 'paginatedPlexFetch').mockResolvedValue(mockItems)
+    vi.spyOn(hooks, 'getItemMetadataDetailed').mockImplementation(async () => ({
        Media: [{ Part: [{ size: 1000 }] }],
        Video: [{ codec: 'h264' }]
     }))

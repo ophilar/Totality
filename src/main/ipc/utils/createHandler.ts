@@ -31,13 +31,13 @@ export interface HandlerOptions {
  * If the schema is a ZodTuple, it validates the entire arguments array.
  * Otherwise, it validates the first argument (args[0]).
  */
-export function createValidatedIpcHandler<TSchema extends z.ZodSchema<any>, TReturn>(
+export function createValidatedIpcHandler<TSchema extends z.ZodSchema<unknown>, TReturn>(
   channel: string,
   schema: TSchema,
-  handler: z.infer<TSchema> extends any[] 
+  handler: z.infer<TSchema> extends unknown[]
     ? (number extends z.infer<TSchema>['length']
         ? (arg: z.infer<TSchema>) => Promise<TReturn>
-        : (...args: z.infer<TSchema>) => Promise<TReturn>)
+        : (...args: Extract<z.infer<TSchema>, unknown[]>) => Promise<TReturn>)
     : (arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
@@ -53,9 +53,9 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<any>, TRet
         : validateInput(schema, args[0], channel)
 
       if (isTuple && Array.isArray(validated)) {
-        return await (handler as any)(...validated)
+        return await (handler as unknown as (...args: unknown[]) => Promise<TReturn>)(...validated)
       } else {
-        return await (handler as any)(validated)
+        return await (handler as unknown as (arg: unknown) => Promise<TReturn>)(validated)
       }
     } catch (error) {
       const message = getErrorMessage(error)
@@ -73,13 +73,13 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<any>, TRet
 /**
  * Same as createValidatedIpcHandler but passes the Electron IpcMainInvokeEvent as the first argument.
  */
-export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<any>, TReturn>(
+export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<unknown>, TReturn>(
   channel: string,
   schema: TSchema,
-  handler: z.infer<TSchema> extends any[] 
+  handler: z.infer<TSchema> extends unknown[]
     ? (number extends z.infer<TSchema>['length']
         ? (event: IpcMainInvokeEvent, arg: z.infer<TSchema>) => Promise<TReturn>
-        : (event: IpcMainInvokeEvent, ...args: z.infer<TSchema>) => Promise<TReturn>)
+        : (event: IpcMainInvokeEvent, ...args: Extract<z.infer<TSchema>, unknown[]>) => Promise<TReturn>)
     : (event: IpcMainInvokeEvent, arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
@@ -95,9 +95,9 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<a
         : validateInput(schema, args[0], channel)
 
       if (isTuple && Array.isArray(validated)) {
-        return await (handler as any)(event, ...validated)
+        return await (handler as unknown as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<TReturn>)(event, ...validated)
       } else {
-        return await (handler as any)(event, validated)
+        return await (handler as unknown as (event: IpcMainInvokeEvent, arg: unknown) => Promise<TReturn>)(event, validated)
       }
     } catch (error) {
       const message = getErrorMessage(error)

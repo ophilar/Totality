@@ -23,7 +23,7 @@ import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { registerMediaHandlers } from '@main/ipc/media'
 
 describe('IPC Duplicate Handler Auditor', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   const registeredChannels = new Set<string>()
 
   beforeEach(async () => {
@@ -38,7 +38,7 @@ describe('IPC Duplicate Handler Auditor', () => {
         throw new Error(`Duplicate IPC handler registered: "${channel}"`)
       }
       registeredChannels.add(channel)
-      return undefined as any
+      return undefined as never
     })
   })
 

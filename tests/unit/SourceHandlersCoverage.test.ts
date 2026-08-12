@@ -6,13 +6,19 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 describe('Source Handlers Deep Coverage (No Mocks)', () => {
-  let db: any
-  let handlers: Map<string, Function>
+  type Handler = (...args: unknown[]) => Promise<unknown>
+  type Subfolder = { name: string; path: string; suggestedType: LibraryType }
+  type DetectSubfoldersResult = { subfolders: Subfolder[] }
+  type LibraryStatus = { id: string; name: string; type: LibraryType; isEnabled: boolean }
+  type TestDb = Awaited<ReturnType<typeof setupTestDb>>
+
+  let db: TestDb
+  let handlers: Map<string, Handler>
   let tempDir: { path: string; cleanup: () => void }
 
   beforeEach(async () => {
     // Manually mock window before bridge setup
-    (global as any).window = {}
+    Object.assign(globalThis, { window: {} })
     
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
@@ -23,7 +29,7 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
   })
 
   afterEach(async () => {
-    delete (global as any).window
+    Reflect.deleteProperty(globalThis, 'window')
     await cleanupTestDb()
     if (tempDir) tempDir.cleanup()
   })
@@ -44,17 +50,20 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
       fs.mkdirSync(otherDir)
       fs.writeFileSync(path.join(tempDir.path, 'file.txt'), 'content')
 
-      const result = await handler({} as any, tempDir.path)
+      const result = await handler({}, tempDir.path) as DetectSubfoldersResult
       
       expect(result.subfolders).toHaveLength(4)
       
-      const movies = result.subfolders.find((f: any) => f.name === 'My Movies')
+      const movies = result.subfolders.find(f => f.name === 'My Movies')
+      expect(movies).toBeDefined()
       expect(movies.suggestedType).toBe(LibraryType.Movie)
       
-      const shows = result.subfolders.find((f: any) => f.name === 'TV Shows')
+      const shows = result.subfolders.find(f => f.name === 'TV Shows')
+      expect(shows).toBeDefined()
       expect(shows.suggestedType).toBe(LibraryType.Show)
 
-      const music = result.subfolders.find((f: any) => f.name === 'Audio')
+      const music = result.subfolders.find(f => f.name === 'Audio')
+      expect(music).toBeDefined()
       expect(music.suggestedType).toBe(LibraryType.Music)
     })
 
@@ -63,7 +72,7 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
       fs.mkdirSync(path.join(tempDir.path, '.hidden'))
       fs.mkdirSync(path.join(tempDir.path, '@eadir'))
       
-      const result = await handler({} as any, tempDir.path)
+      const result = await handler({}, tempDir.path) as DetectSubfoldersResult
       expect(result.subfolders).toHaveLength(0)
     })
   })
@@ -84,13 +93,15 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
             { id: 'new-id', name: 'New Lib', type: LibraryType.Movie }
         ])
 
-        const result = await handler({} as any, sourceId)
+        const result = await handler({}, sourceId) as LibraryStatus[]
         expect(result).toHaveLength(2)
         
-        const existing = result.find((l: any) => l.id === 'movies-id')
+        const existing = result.find(l => l.id === 'movies-id')
+        expect(existing).toBeDefined()
         expect(existing.isEnabled).toBe(true)
 
-        const newLib = result.find((l: any) => l.id === 'new-id')
+        const newLib = result.find(l => l.id === 'new-id')
+        expect(newLib).toBeDefined()
         expect(newLib.isEnabled).toBe(true)
     })
   })

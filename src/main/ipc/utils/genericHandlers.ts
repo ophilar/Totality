@@ -1,5 +1,5 @@
 
-import { ipcMain } from 'electron'
+import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { validateInput } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
@@ -22,7 +22,7 @@ export function registerListHandlers<T, TFilters>(
 ): void {
   const log = getLoggingService()
 
-  const listHandler = async (_event: any, filters: unknown) => {
+  const listHandler = async (_event: IpcMainInvokeEvent, filters: unknown) => {
     try {
       const validFilters = validateInput(filtersSchema, filters, `${baseChannel}:list`)
       return await listFn(validFilters)
@@ -32,7 +32,7 @@ export function registerListHandlers<T, TFilters>(
     }
   }
 
-  const countHandler = async (_event: any, filters: unknown) => {
+  const countHandler = async (_event: IpcMainInvokeEvent, filters: unknown) => {
     try {
       const validFilters = validateInput(filtersSchema, filters, `${baseChannel}:count`)
       return await countFn(validFilters)
@@ -47,7 +47,7 @@ export function registerListHandlers<T, TFilters>(
   ipcMain.handle(`${baseChannel}:count`, countHandler)
 
   // Register aliases if provided
-  const registerAliases = (aliases: string | string[] | undefined, handler: any) => {
+  const registerAliases = (aliases: string | string[] | undefined, handler: (event: IpcMainInvokeEvent, filters: unknown) => Promise<unknown>) => {
     if (!aliases) return
     const list = Array.isArray(aliases) ? aliases : [aliases]
     for (const alias of list) {

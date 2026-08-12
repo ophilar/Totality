@@ -3,9 +3,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { QualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import type { MediaItem, MusicAlbum, MusicTrack } from '@main/types/database'
 
 describe('Service Deep Dive (No Mocks)', () => {
-  let dbService: any
+  let dbService: Awaited<ReturnType<typeof setupTestDb>>
   let qualityAnalyzer: QualityAnalyzer
   let seriesService: SeriesCompletenessService
 
@@ -23,7 +24,7 @@ describe('Service Deep Dive (No Mocks)', () => {
     it('should correctly score a 4K HDR movie', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
       
-      const item: any = {
+      const item: MediaItem = {
         type: 'movie',
         resolution: '4K',
         width: 3840,
@@ -45,7 +46,7 @@ describe('Service Deep Dive (No Mocks)', () => {
     it('should identify a low quality SD episode', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
       
-      const item: any = {
+      const item: MediaItem = {
         type: 'episode',
         resolution: 'SD',
         width: 640,
@@ -66,10 +67,10 @@ describe('Service Deep Dive (No Mocks)', () => {
     it('should correctly analyze Hi-Res Audio', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
       
-      const album: any = { id: 1, title: 'Hi-Res Album', avg_audio_bitrate: 5000 }
-      const tracks: any[] = [
+      const album = { id: 1, title: 'Hi-Res Album', avg_audio_bitrate: 5000 } as MusicAlbum
+      const tracks = [
         { is_hi_res: 1, sample_rate: 96000, bit_depth: 24, codec: 'flac', bitrate: 5000, is_lossless: 1 }
-      ]
+      ] as MusicTrack[]
       
       const score = qualityAnalyzer.analyzeMusicAlbum(album, tracks)
       expect(score.quality_tier).toBe('HI_RES')
@@ -78,23 +79,23 @@ describe('Service Deep Dive (No Mocks)', () => {
 
     it('should correctly identify HI_RES audio from tracks', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
-      const album: any = { id: 1, avg_audio_bitrate: 3000 }
-      const tracks: any[] = [{ is_hi_res: 1, is_lossless: 1, codec: 'flac' }]
+      const album = { id: 1, avg_audio_bitrate: 3000 } as MusicAlbum
+      const tracks = [{ is_hi_res: 1, is_lossless: 1, codec: 'flac' }] as MusicTrack[]
       
-      const tier = (qualityAnalyzer as any).determineMusicQualityTier(album, tracks)
+      const tier = (qualityAnalyzer as unknown as { determineMusicQualityTier: (album: MusicAlbum, tracks: MusicTrack[]) => string }).determineMusicQualityTier(album, tracks)
       expect(tier).toBe('HI_RES')
     })
 
     it('should identify LOSSLESS when majority of tracks are lossless', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
-      const album: any = { id: 1, avg_audio_bitrate: 1000 }
-      const tracks: any[] = [
+      const album = { id: 1, avg_audio_bitrate: 1000 } as MusicAlbum
+      const tracks = [
         { is_hi_res: 0, is_lossless: 1, codec: 'flac' },
         { is_hi_res: 0, is_lossless: 1, codec: 'flac' },
         { is_hi_res: 0, is_lossless: 0, codec: 'mp3' }
-      ]
+      ] as MusicTrack[]
       
-      const tier = (qualityAnalyzer as any).determineMusicQualityTier(album, tracks)
+      const tier = (qualityAnalyzer as unknown as { determineMusicQualityTier: (album: MusicAlbum, tracks: MusicTrack[]) => string }).determineMusicQualityTier(album, tracks)
       expect(tier).toBe('LOSSLESS')
     })
   })
@@ -110,7 +111,7 @@ describe('Service Deep Dive (No Mocks)', () => {
       const row = (await dbService.db.execute({
         sql: "SELECT * FROM series_completeness WHERE series_title = ?",
         args: ['Test Show']
-      })).rows[0] as any
+      })).rows[0]
       expect(row.completeness_percentage).toBe(50)
     })
   })

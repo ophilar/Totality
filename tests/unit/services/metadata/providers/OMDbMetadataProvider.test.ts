@@ -266,11 +266,13 @@ describe('OMDbMetadataProvider', () => {
 
     it('should call getDetails if source is imdb_id', async () => {
       // Mock getDetails on the instance
-      vi.spyOn(provider, 'getDetails').mockResolvedValueOnce({ id: 'tt123' } as any)
+      vi.spyOn(provider, 'getDetails').mockResolvedValueOnce({
+        id: 'tt123', provider: 'omdb', title: 'Test', type: 'movie', externalIds: { imdbId: 'tt123' }
+      })
 
       const result = await provider.findByExternalId('tt123', 'imdb_id', 'movie')
       expect(provider.getDetails).toHaveBeenCalledWith('tt123', 'movie')
-      expect(result).toEqual({ id: 'tt123' })
+      expect(result).toMatchObject({ id: 'tt123' })
     })
   })
 })

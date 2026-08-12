@@ -10,7 +10,7 @@ export function registerMonitoringHandlers(): void {
   createIpcHandler(IPC_CHANNELS.MONITORING.GET_CONFIG, async () => service.getConfig())
 
   createValidatedIpcHandler(IPC_CHANNELS.MONITORING.SET_CONFIG, MonitoringConfigSchema, async (config) => {
-    await service.setConfig(config as any)
+    await service.setConfig(config)
     return { success: true }
   })
 

@@ -4,7 +4,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('MovieCollectionRepository (Real DB)', () => {
   let repo: MovieCollectionRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -26,7 +26,7 @@ describe('MovieCollectionRepository (Real DB)', () => {
       library_id: 'l1'
     }
 
-    await repo.upsertCollection(col as any)
+    await repo.upsertCollection(col)
     
     const collections = await repo.getCollections('s1')
     expect(collections).toHaveLength(1)
@@ -34,8 +34,8 @@ describe('MovieCollectionRepository (Real DB)', () => {
   })
 
   it('should get incomplete collections', async () => {
-    await repo.upsertCollection({ tmdb_collection_id: 'c1', collection_name: 'Complete', completeness_percentage: 100, source_id: 's1', total_movies: 1, owned_movies: 1 } as any)
-    await repo.upsertCollection({ tmdb_collection_id: 'c2', collection_name: 'Incomplete', completeness_percentage: 50, source_id: 's1', total_movies: 2, owned_movies: 1 } as any)
+    await repo.upsertCollection({ tmdb_collection_id: 'c1', collection_name: 'Complete', completeness_percentage: 100, source_id: 's1', total_movies: 1, owned_movies: 1 })
+    await repo.upsertCollection({ tmdb_collection_id: 'c2', collection_name: 'Incomplete', completeness_percentage: 50, source_id: 's1', total_movies: 2, owned_movies: 1 })
     
     const incomplete = await repo.getIncompleteCollections('s1')
     expect(incomplete).toHaveLength(1)
@@ -43,7 +43,7 @@ describe('MovieCollectionRepository (Real DB)', () => {
   })
 
   it('should delete a collection', async () => {
-    await repo.upsertCollection({ tmdb_collection_id: 'c1', collection_name: 'A', completeness_percentage: 50, source_id: 's1', total_movies: 2, owned_movies: 1 } as any)
+    await repo.upsertCollection({ tmdb_collection_id: 'c1', collection_name: 'A', completeness_percentage: 50, source_id: 's1', total_movies: 2, owned_movies: 1 })
     
     const cols = await repo.getCollections('s1')
     await repo.deleteCollection(cols[0].id!)

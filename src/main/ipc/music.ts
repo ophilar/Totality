@@ -56,7 +56,7 @@ export function registerMusicHandlers(): void {
     } finally { flush() }
   })
 
-  createIpcHandlerWithEvent('music:scanAll', async (event: any) => {
+  createIpcHandlerWithEvent('music:scanAll', async (event) => {
     const win = getWindowFromEvent(event)
     const { onProgress, flush } = createProgressUpdater(win, 'music:scanProgress', 'music')
     try {
@@ -71,15 +71,15 @@ export function registerMusicHandlers(): void {
   // ============================================================================
 
   createValidatedIpcHandler('music:getArtist', PositiveIntSchema, async (id) => {
-    return await db.music.getArtist(id)
+    return await db.music.getArtistById(id)
   })
 
   createValidatedIpcHandler('music:getAlbum', PositiveIntSchema, async (id) => {
-    return await db.music.getAlbum(id)
+    return await db.music.getAlbumById(id)
   })
 
   createValidatedIpcHandler('music:getTrack', PositiveIntSchema, async (id) => {
-    return await db.music.getTrack(id)
+    return await db.music.getTrackById(id)
   })
 
   createValidatedIpcHandler('music:getAlbumTracks', PositiveIntSchema, async (albumId) => {
@@ -91,23 +91,23 @@ export function registerMusicHandlers(): void {
   })
 
   createValidatedIpcHandler('music:searchArtists', NonEmptyStringSchema, async (query) => {
-    return await db.music.searchArtists(query)
+    return await db.music.getArtists({ searchQuery: query })
   })
 
   createValidatedIpcHandler('music:searchAlbums', NonEmptyStringSchema, async (query) => {
-    return await db.music.searchAlbums(query)
+    return await db.music.getAlbums({ searchQuery: query })
   })
 
   createValidatedIpcHandler('music:searchTracks', NonEmptyStringSchema, async (query) => {
-    return await db.music.searchTracks(query)
+    return await db.music.getTracks({ searchQuery: query })
   })
 
   createIpcHandler('music:getGenres', async () => {
-    return await db.music.getGenres()
+    return await db.music.getTracks({ limit: 10000 })
   })
 
   createIpcHandler('music:getStats', async (sourceId?: string) => {
-    return await db.stats.getMusicStats(sourceId)
+    return await db.stats.getMusicLibraryStats(sourceId)
   })
 
   createIpcHandler('music:getAlbumsNeedingUpgrade', async (limit?: number, sourceId?: string) => {
@@ -131,7 +131,8 @@ export function registerMusicHandlers(): void {
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST, PositiveIntSchema, async (artistId) => {
     // Analysis is now handled by completeness background jobs, but we trigger a refresh
-    return await db.music.getArtistCompleteness(artistId)
+    const artist = await db.music.getArtistById(artistId)
+    return artist ? await db.music.getArtistCompleteness(artist.name) : null
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM, PositiveIntSchema, async (albumId) => {
@@ -171,7 +172,7 @@ export function registerMusicHandlers(): void {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
-    const artist = await db.music.getArtist(artistId)
+    const artist = await db.music.getArtistById(artistId)
     if (!artist) throw new Error(`Artist with ID ${artistId} not found`)
     const albums = await db.music.getAlbums({ artistId, limit: 1000 })
     const ownedTitles = albums.map((a: MusicAlbum) => a.title)
@@ -188,7 +189,7 @@ export function registerMusicHandlers(): void {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM_TRACK_COMPLETENESS, PositiveIntSchema, async (albumId) => {
-    const album = await db.music.getAlbum(albumId)
+    const album = await db.music.getAlbumById(albumId)
     if (!album) throw new Error(`Album with ID ${albumId} not found`)
     const tracks = await db.music.getTracks({ albumId, limit: 1000 })
     const ownedTrackTitles = tracks.map((t: MusicTrack) => t.title)

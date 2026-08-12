@@ -73,7 +73,7 @@ describe('StatsCacheService', () => {
 
   it('should clear cache and notify windows on invalidate', async () => {
     const mockWindow = { id: 1 } as unknown as BrowserWindow
-    ;(BrowserWindow.getAllWindows as any).mockReturnValue([mockWindow])
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow])
 
     const fetchSeries = vi.fn().mockResolvedValue({ total: 10 })
     const fetchCollection = vi.fn().mockResolvedValue({ total: 20 })

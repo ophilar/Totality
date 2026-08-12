@@ -4,6 +4,11 @@ import { SeriesCompleteness, MediaItem, MediaItemType, ProviderType } from '@mai
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { CompletenessEngine } from '@main/services/CompletenessEngine'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import type { TMDBEpisode } from '@main/types/tmdb'
+
+interface SeriesProgress { current: number; total: number; percentage: number; phase: string; currentItem: string }
+interface CompletenessEpisode { season_number: number; episode_number: number; air_date?: string; still_path?: string | null }
+type SourceRecord = Awaited<ReturnType<BetterSQLiteService['sources']['getSourceById']>>
 
 export class SeriesCompletenessService {
   private cancelRequested = false
@@ -25,7 +30,7 @@ export class SeriesCompletenessService {
     this.cancelRequested = true
   }
 
-  async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: any) => void): Promise<any> {
+  async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: SeriesProgress) => void): Promise<{ totalSeries: number; analyzed: number; complete: number; incomplete: number; errors: string[]; completed: boolean }> {
     this.cancelRequested = false
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[] }
 
@@ -43,9 +48,9 @@ export class SeriesCompletenessService {
         completenessMap.set(comp.series_title, comp)
       }
 
-      const showsToAnalyze: Array<{ series_title: string }> = [...existingShows]
+      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show: { series_title: string; series_identity_key?: string }) => ({ series_title: show.series_title, series_identity_key: show.series_identity_key }))
       for (const title of titlesFromMedia) {
-        if (!showsToAnalyze.some(s => s.series_title === title)) {
+          if (!showsToAnalyze.some(s => s.series_title === title && !s.series_identity_key)) {
           showsToAnalyze.push({ series_title: title })
         }
       }
@@ -53,11 +58,12 @@ export class SeriesCompletenessService {
       result.totalSeries = showsToAnalyze.length
 
       const allEpisodes = await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
-      const episodesBySeries = new Map<string, any[]>()
+      const episodesBySeries = new Map<string, MediaItem[]>()
       for (const ep of allEpisodes) {
-        if (ep.series_title) {
-          if (!episodesBySeries.has(ep.series_title)) episodesBySeries.set(ep.series_title, [])
-          episodesBySeries.get(ep.series_title)!.push(ep)
+          const key = ep.series_identity_key || ep.series_title
+          if (key) {
+          if (!episodesBySeries.has(key)) episodesBySeries.set(key, [])
+          episodesBySeries.get(key)!.push(ep)
         }
       }
 
@@ -66,9 +72,10 @@ export class SeriesCompletenessService {
         for (let i = 0; i < showsToAnalyze.length; i++) {
           if (this.cancelRequested) break
           const title = showsToAnalyze[i].series_title
+          const identityKey = showsToAnalyze[i].series_identity_key
           onProgress?.({ current: i + 1, total: showsToAnalyze.length, percentage: Math.round(((i + 1) / showsToAnalyze.length) * 100), phase: 'analyzing', currentItem: title })
           try {
-            const episodes = episodesBySeries.get(title) || []
+            const episodes = episodesBySeries.get(identityKey || title) || []
             const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes, {
               tmdbApiKey,
               source,
@@ -98,7 +105,7 @@ export class SeriesCompletenessService {
     providedEpisodes?: MediaItem[],
     prefetchedData?: {
       tmdbApiKey?: string | null;
-      source?: any;
+      source?: SourceRecord;
       existingCompleteness?: SeriesCompleteness | null;
       returnConstructed?: boolean;
     }
@@ -107,7 +114,7 @@ export class SeriesCompletenessService {
     if (episodes.length === 0) return null
 
     const tmdbApiKey = prefetchedData?.tmdbApiKey !== undefined ? prefetchedData.tmdbApiKey : await this.db.config.getSetting('tmdb_api_key')
-    let tmdbId = cachedTmdbId || episodes.find((e: any) => e.series_tmdb_id)?.series_tmdb_id
+    let tmdbId = cachedTmdbId || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id
     
     if (!tmdbId && tmdbApiKey && this.tmdb.isConfigured()) {
       const search = await this.tmdb.searchTVShow(seriesTitle)
@@ -121,16 +128,16 @@ export class SeriesCompletenessService {
     }
 
     const showDetails = await this.tmdb.getTVShowDetails(tmdbId)
-    const seasonNums = showDetails.seasons.filter((s: any) => s.season_number > 0).map((s: any) => s.season_number)
+    const seasonNums = showDetails.seasons.filter(s => s.season_number > 0).map(s => s.season_number)
     const fullDetails = await this.tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
     
-    const targetEpisodes: any[] = []
+    const targetEpisodes: CompletenessEpisode[] = []
     for (const sn of seasonNums) {
       const season = fullDetails[`season/${sn}`]
-      if (season) targetEpisodes.push(...season.episodes)
+      if (season) targetEpisodes.push(...season.episodes.map((episode: TMDBEpisode) => ({ season_number: episode.season_number, episode_number: episode.episode_number, air_date: episode.air_date ?? undefined, still_path: episode.still_path })))
     }
 
-    const ownedKeys = new Set(episodes.map((e: any) => `S${e.season_number}E${e.episode_number}`))
+    const ownedKeys = new Set(episodes.map(e => `S${e.season_number}E${e.episode_number}`))
     const analysis = CompletenessEngine.calculateEpisodic(targetEpisodes, ownedKeys as Set<string>)
 
     let totalSize = 0
@@ -139,7 +146,7 @@ export class SeriesCompletenessService {
     let totalEfficiencyScore = 0
 
     for (const ep of episodes) {
-      totalSize += ep.size || ep.file_size || 0
+      totalSize += ep.file_size || 0
       totalStorageDebt += ep.storage_debt_bytes || 0
       if (ep.efficiency_score !== undefined && ep.efficiency_score > 0) {
         totalEfficiencyScore += ep.efficiency_score
@@ -155,12 +162,12 @@ export class SeriesCompletenessService {
       library_id: libraryId || '',
       total_seasons: showDetails.number_of_seasons,
       total_episodes: analysis.total,
-      owned_seasons: new Set(episodes.map((e: any) => e.season_number)).size,
+      owned_seasons: new Set(episodes.map(e => e.season_number)).size,
       owned_episodes: analysis.owned,
-      missing_seasons: JSON.stringify(showDetails.seasons.filter((s: any) => s.episode_count > 0 && !episodes.some((e: any) => e.season_number === s.season_number)).map((s: any) => s.season_number)),
+      missing_seasons: JSON.stringify(showDetails.seasons.filter(s => s.episode_count > 0 && !episodes.some(e => e.season_number === s.season_number)).map(s => s.season_number)),
       missing_episodes: JSON.stringify(analysis.missing),
       completeness_percentage: analysis.percentage,
-      tmdb_id: tmdbId,
+      tmdb_id: tmdbId || undefined,
       poster_url: this.tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined,
       backdrop_url: this.tmdb.buildImageUrl(showDetails.backdrop_path, 'original') || undefined,
       status: showDetails.status,
@@ -182,8 +189,8 @@ export class SeriesCompletenessService {
       for (const ep of episodes) {
         const epData = targetEpisodes.find(te => te.season_number === ep.season_number && te.episode_number === ep.episode_number)
         await this.db.media.updateItemArtwork(ep.id!, {
-          posterUrl: result.poster_url,
-          episodeThumbUrl: epData ? this.tmdb.buildImageUrl(epData.still_path, 'w500') || undefined : undefined,
+          posterUrl: result.poster_url || undefined,
+          episodeThumbUrl: epData ? this.tmdb.buildImageUrl(epData.still_path ?? null, 'w500') || undefined : undefined,
           seasonPosterUrl: ep.season_number != null ? seasonPosterUrls.get(ep.season_number) : undefined
         })
       }
@@ -225,8 +232,8 @@ export class SeriesCompletenessService {
       missing_seasons: '[]',
       missing_episodes: '[]',
       completeness_percentage: -1, // MAGIC VALUE for unmatched/no-data
-      poster_url: fallbackPoster,
-      tmdb_id: tmdbId,
+      poster_url: fallbackPoster || undefined,
+      tmdb_id: tmdbId || undefined,
       status: existing?.status || 'Continuing',
       efficiency_score: efficiencyScore,
       storage_debt_bytes: totalStorageDebt,

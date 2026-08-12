@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
@@ -10,24 +10,32 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 
 import React from 'react'
+import type { ReactNode, ComponentType } from 'react'
+import type { TVShowSummary } from '@/components/library/types'
+
+interface MockVirtuosoProps {
+  data?: unknown[]
+  itemContent: (index: number, item: unknown) => ReactNode
+  components?: { Footer?: ComponentType; List?: ComponentType<{ children?: ReactNode }>; Item?: ComponentType<{ children?: ReactNode }> }
+}
 
 // Mock react-virtuoso to render items in JSDOM (infrastructure mock)
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent, components }: any) => (
+  Virtuoso: ({ data, itemContent, components }: MockVirtuosoProps) => (
     <div data-testid="virtuoso-list">
-      {data?.map((item: any, index: number) => (
+      {data?.map((item, index) => (
         <div key={index}>{itemContent(index, item)}</div>
       ))}
       {components?.Footer && <components.Footer />}
     </div>
   ),
-  VirtuosoGrid: ({ data, itemContent, components }: any) => {
-    const List = components?.List || (({ children }: any) => <div>{children}</div>)
-    const Item = components?.Item || (({ children }: any) => <div>{children}</div>)
+  VirtuosoGrid: ({ data, itemContent, components }: MockVirtuosoProps) => {
+    const List = components?.List || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
+    const Item = components?.Item || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
     return (
       <div data-testid="virtuoso-grid">
         <List>
-          {data?.map((item: any, index: number) => (
+          {data?.map((item, index) => (
             <Item key={index}>{itemContent(index, item)}</Item>
           ))}
         </List>
@@ -38,13 +46,13 @@ vi.mock('react-virtuoso', () => ({
 }))
 
 describe('TVShowsView Rendering (Mocked Bridge)', () => {
-  let mockConfig: Record<string, any> = {}
+  let mockConfig: Record<string, string | undefined> = {}
 
   beforeEach(async () => {
     mockConfig = {}
     
     // Setup real bridge for contexts
-    ;(window as any).electronAPI = {
+    Object.assign(window, { electronAPI: {
       sourcesList: () => Promise.resolve([]),
       getSetting: (key: string) => Promise.resolve(mockConfig[key]),
       setSetting: (key: string, value: string) => {
@@ -56,12 +64,12 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
       onSourcesScanCompleted: () => () => {},
       onScanCompleted: () => () => {},
       onSettingsChanged: () => () => {}
-    }
+    }})
   })
 
   afterEach(() => {})
 
-  const defaultProps: any = {
+  const defaultProps: Parameters<typeof TVShowsView>[0] = {
     shows: [],
     totalShowCount: 0,
     showsLoading: false,
@@ -82,7 +90,8 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
     onAnalyzeSeries: () => {},
     sortBy: 'title',
     onSortChange: () => {},
-    slimDown: false
+    slimDown: false,
+    onDismissUpgrade: () => {}
   }
 
   it('should render the TV Shows view header', async () => {
@@ -115,7 +124,7 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
           <LibraryProvider>
             <SourceProvider>
               <ScrollMemoryProvider>
-                <TVShowsView {...defaultProps} shows={shows as any} totalShowCount={1} />
+                <TVShowsView {...defaultProps} shows={shows as TVShowSummary[]} totalShowCount={1} />
               </ScrollMemoryProvider>
             </SourceProvider>
           </LibraryProvider>
@@ -144,9 +153,9 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
               <ScrollMemoryProvider>
                 <TVShowsView 
                   {...defaultProps} 
-                  shows={shows as any} 
+                  shows={shows as TVShowSummary[]}
                   totalShowCount={1} 
-                  seriesCompleteness={seriesCompleteness as any} 
+                  seriesCompleteness={seriesCompleteness}
                   isAnalyzing={true}
                 />
               </ScrollMemoryProvider>

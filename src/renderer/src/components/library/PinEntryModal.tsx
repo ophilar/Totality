@@ -23,8 +23,10 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
       // Focus input
       setTimeout(() => inputRef.current?.focus(), 100)
     } else {
-      setPin('')
-      setError(null)
+      queueMicrotask(() => {
+        setPin('')
+        setError(null)
+      })
     }
   }, [isOpen])
 

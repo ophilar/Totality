@@ -2,7 +2,6 @@ import type { GpuInfo } from './utils/GpuDetector'
 
 export interface TranscodingAvailability {
   ffmpeg: boolean
-  handbrake: boolean
 }
 
 export interface TranscodingCapabilities extends TranscodingAvailability {
@@ -13,7 +12,7 @@ export interface TranscodingCapabilities extends TranscodingAvailability {
   encoders: string[]
   verifiedEncoders: string[]
   probeFailures: string[]
-  engines: Array<'ffmpeg' | 'handbrake'>
+  engines: Array<'ffmpeg'>
 }
 
 const SOFTWARE_ENCODERS = ['svt_av1', 'x265', 'libx264']
@@ -61,8 +60,7 @@ export function buildTranscodingCapabilities(
     verifiedEncoders: Array.from(new Set(verifiedEncoders)),
     probeFailures,
     engines: [
-      ...(availability.ffmpeg ? ['ffmpeg' as const] : []),
-      ...(availability.handbrake ? ['handbrake' as const] : [])
+      ...(availability.ffmpeg ? ['ffmpeg' as const] : [])
     ]
   }
 }

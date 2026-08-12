@@ -183,14 +183,14 @@ describe('MediaConverter.convertAudioTracks', () => {
 
   it('should use array index as fallback when stream index missing', () => {
     const tracks = MediaConverter.convertAudioTracks([
-      { codec: 'aac', channels: 2, bitrate: 128 } as any,
+      { codec: 'aac', channels: 2, bitrate: 128 },
     ])
     expect(tracks[0].index).toBe(0)
   })
 
   it('should default to 2 channels when not provided', () => {
     const tracks = MediaConverter.convertAudioTracks([
-      { index: 0, codec: 'aac' } as any,
+      { index: 0, codec: 'aac' },
     ])
     expect(tracks[0].channels).toBe(2)
   })
@@ -217,7 +217,7 @@ describe('MediaConverter.convertSubtitleTracks', () => {
 
   it('should default codec to unknown', () => {
     const tracks = MediaConverter.convertSubtitleTracks([
-      { index: 0 } as any,
+      { index: 0 },
     ])
     expect(tracks[0].codec).toBe('unknown')
   })

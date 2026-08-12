@@ -1,8 +1,23 @@
 import { getTranscodingService } from '@main/services/TranscodingService'
-import { GetTranscodeParamsSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema } from '@main/validation/schemas'
+import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
+
+async function authorizedMediaPath(mediaItemId: number): Promise<string> {
+  const db = getDatabase()
+  const item = await db.media.getItemById(mediaItemId)
+  if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
+  const source = await db.sources.getSourceById(item.source_id)
+  if (!source) throw new Error('Media source was not found')
+  let config: Record<string, unknown>
+  try { config = JSON.parse(source.connection_config) as Record<string, unknown> } catch { throw new Error('Media source configuration is invalid') }
+  const roots = [config.folderPath, config.rootPath, ...(Array.isArray(config.paths) ? config.paths : [])].filter((value): value is string => typeof value === 'string' && value.length > 0)
+  new MediaPathAuthorization(roots).assertAuthorized(item.file_path)
+  return item.file_path
+}
 
 export function registerTranscodingHandlers(): void {
   createIpcHandler('transcoding:checkAvailability', async () => {
@@ -21,12 +36,9 @@ export function registerTranscodingHandlers(): void {
     return await getTranscodingService().setSelectedGpu(gpuId)
   })
 
-  createIpcHandler('handbrake:getVersion', async () => {
-    return await getTranscodingService().getVersion()
-  })
 
-
-  createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsSchema, async (filePath, options) => {
+  createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsByMediaItemSchema, async (mediaItemId, options) => {
+    const filePath = await authorizedMediaPath(mediaItemId)
     return await getTranscodingService().getTranscodeParameters(filePath, options as TranscodeOptions)
   })
 

@@ -18,8 +18,8 @@ describe('IdentityRepository (Real DB)', () => {
     await repo.addAlias({ entityType: 'artist', entityId: 7, alias: 'The Example Band', provider: 'musicbrainz' })
 
     expect(await repo.getIdentities('artist', 7)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: 'musicbrainz', externalId: 'artist-7', locked: 1 }),
-      expect.objectContaining({ provider: 'anilist', externalId: 'alias-7', locked: 0 })
+      expect.objectContaining({ provider: 'musicbrainz', externalId: 'artist-7', locked: true }),
+      expect.objectContaining({ provider: 'anilist', externalId: 'alias-7', locked: false })
     ]))
     expect(await repo.getAliases('artist', 7)).toEqual([expect.objectContaining({ alias: 'The Example Band' })])
     expect(await repo.isLocked('artist', 7)).toBe(true)

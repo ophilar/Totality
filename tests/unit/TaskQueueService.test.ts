@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { TaskQueueService } from '@main/services/TaskQueueService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { getLoggingService } from '@main/services/LoggingService'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import type { LoggingService } from '@main/services/LoggingService'
+import type { SourceManager } from '@main/services/SourceManager'
 import { QueuedTask, TaskType } from '@main/types/database'
+type TaskDefinition = Omit<QueuedTask, 'id' | 'status' | 'createdAt'>
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
-  let db: any
-  let logging: any
+  let db: BetterSQLiteService
+  let logging: LoggingService
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -16,7 +20,7 @@ describe('TaskQueueService', () => {
     
     // We still mock SourceManager for now as it involves complex provider setup,
     // but we use real DB and Logging.
-    const mockSourceManager = {
+    const mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource'> = {
       scanLibrary: vi.fn().mockResolvedValue({ success: true }),
       scanSource: vi.fn().mockResolvedValue({ success: true }),
     }
@@ -24,7 +28,7 @@ describe('TaskQueueService', () => {
     service = new TaskQueueService({
       db,
       logging,
-      sourceManager: mockSourceManager as any
+      sourceManager: mockSourceManager
     })
   })
 
@@ -41,7 +45,7 @@ describe('TaskQueueService', () => {
         libraryId: 'lib1'
       }
 
-      const taskId = await service.addTask(definition as any)
+      const taskId = await service.addTask(definition satisfies TaskDefinition)
 
       expect(taskId).toBeDefined()
       expect(taskId).toMatch(/^task_\d+_[a-z0-9]+$/)
@@ -52,9 +56,9 @@ describe('TaskQueueService', () => {
 
     it('should add multiple tasks to the queue', async () => {
       service.pauseQueue()
-      await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } as any)
-      await service.addTask({ type: TaskType.SourceScan, label: 'Task 2', sourceId: 'src1' } as any)
-      await service.addTask({ type: TaskType.SeriesCompleteness, label: 'Task 3', sourceId: 's1' } as any)
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await service.addTask({ type: TaskType.SourceScan, label: 'Task 2', sourceId: 'src1' } satisfies TaskDefinition)
+      await service.addTask({ type: TaskType.SeriesCompleteness, label: 'Task 3', sourceId: 's1' } satisfies TaskDefinition)
 
       const state = service.getQueueState()
       const totalTasks = state.queue.length + (state.currentTask ? 1 : 0)
@@ -64,7 +68,7 @@ describe('TaskQueueService', () => {
     it('should remove a queued task', async () => {
       // Pause to ensure task stays in queue and doesn't immediately start
       service.pauseQueue()
-      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Test', sourceId: 's1', libraryId: 'l1' } as any)
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
 
       const state = service.getQueueState()
       expect(state.queue.some(t => t.id === taskId)).toBe(true)
@@ -80,8 +84,8 @@ describe('TaskQueueService', () => {
     })
 
     it('should generate unique task IDs', async () => {
-      const id1 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } as any)
-      const id2 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 2', sourceId: 's1', libraryId: 'l1' } as any)
+      const id1 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      const id2 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 2', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
 
       expect(id1).not.toBe(id2)
     })
@@ -113,7 +117,7 @@ describe('TaskQueueService', () => {
   describe('persistence', () => {
     it('should persist queue state to database', async () => {
       service.pauseQueue()
-      await service.addTask({ type: TaskType.LibraryScan, label: 'Persist Test', sourceId: 's1', libraryId: 'l1' } as any)
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Persist Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
       
       const savedState = await db.config.getSetting('task_queue_state')
       expect(savedState).toBeDefined()

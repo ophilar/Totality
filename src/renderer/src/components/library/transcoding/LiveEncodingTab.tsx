@@ -45,17 +45,17 @@ export function LiveEncodingTab({
   useEffect(() => {
     if (progress) {
       if (progress.logs && progress.logs.length > 0) {
-        setLogLines(progress.logs)
+        queueMicrotask(() => { setLogLines(progress.logs || []) })
       } else if (progress.error) {
-        setLogLines(prev => [...prev, `[ERROR] ${progress.error}`])
+        queueMicrotask(() => { setLogLines(prev => [...prev, `[ERROR] ${progress.error}`]) })
       } else if (progress.fps || progress.percent) {
         const line = `[PROGRESS] ${progress.percent.toFixed(1)}% | ${progress.fps || 0} FPS | ETA: ${progress.eta || 'N/A'}`
-        setLogLines(prev => {
+        queueMicrotask(() => { setLogLines(prev => {
           if (prev.length === 0 || prev[prev.length - 1] !== line) {
             return [...prev, line]
           }
           return prev
-        })
+        }) })
       }
     }
   }, [progress])

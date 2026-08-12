@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
@@ -36,7 +36,7 @@ describe('Sidebar Rendering', () => {
       navigator: { clipboard: { writeText: vi.fn() } } 
     })
 
-    ;(useSources as any).mockReturnValue({
+    vi.mocked(useSources).mockReturnValue({
       sources: [
         { source_id: 's1', display_name: 'Local Movies', source_type: 'local' },
         { source_id: 's2', display_name: 'Plex Server', source_type: 'plex' }
@@ -109,7 +109,7 @@ describe('Sidebar Rendering', () => {
   })
 
   it('should show loading state', async () => {
-    ;(useSources as any).mockReturnValue({
+    vi.mocked(useSources).mockReturnValue({
       sources: [],
       isLoading: true,
       scanProgress: new Map(),

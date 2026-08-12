@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
@@ -13,11 +13,11 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import React from 'react'
 
 describe('Source Flows Deep Dive (Integrated Stack)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     if (typeof window === 'undefined') {
-        (global as any).window = (global as any)
+        Object.assign(globalThis, { window: globalThis })
     }
 
     // Mock matchMedia for ThemeProvider
@@ -38,8 +38,8 @@ describe('Source Flows Deep Dive (Integrated Stack)', () => {
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
-    ;(window as any).electronAPI = bridge.api
-    ;(globalThis as any).electronAPI = bridge.api
+    Object.assign(window, { electronAPI: bridge.api })
+    Object.assign(globalThis, { electronAPI: bridge.api })
   })
 
   afterEach(async () => {

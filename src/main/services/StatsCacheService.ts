@@ -2,31 +2,31 @@ import { BrowserWindow } from 'electron'
 import { safeSend } from '@main/ipc/utils/safeSend'
 
 export class StatsCacheService {
-  private seriesStats: any = null
-  private collectionStats: any = null
-  private musicCompleteness: Map<string, any> = new Map()
+  private seriesStats: unknown = null
+  private collectionStats: unknown = null
+  private musicCompleteness: Map<string, unknown> = new Map()
 
-  async getSeriesStats(fetchFn: () => Promise<any>): Promise<any> {
+  async getSeriesStats<T>(fetchFn: () => Promise<T>): Promise<T> {
     if (this.seriesStats !== null) {
-      return this.seriesStats
+      return this.seriesStats as T
     }
     const data = await fetchFn()
     this.seriesStats = data
     return data
   }
 
-  async getCollectionStats(fetchFn: () => Promise<any>): Promise<any> {
+  async getCollectionStats<T>(fetchFn: () => Promise<T>): Promise<T> {
     if (this.collectionStats !== null) {
-      return this.collectionStats
+      return this.collectionStats as T
     }
     const data = await fetchFn()
     this.collectionStats = data
     return data
   }
 
-  async getMusicCompleteness(key: string, fetchFn: () => Promise<any>): Promise<any> {
+  async getMusicCompleteness<T>(key: string, fetchFn: () => Promise<T>): Promise<T> {
     if (this.musicCompleteness.has(key)) {
-      return this.musicCompleteness.get(key)
+      return this.musicCompleteness.get(key) as T
     }
     const data = await fetchFn()
     this.musicCompleteness.set(key, data)

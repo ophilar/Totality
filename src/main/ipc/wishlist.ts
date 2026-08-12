@@ -5,7 +5,7 @@ import { promises as fs } from 'fs'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getStoreSearchService } from '@main/services/StoreSearchService'
 import { getTMDBService } from '@main/services/TMDBService'
-import type { WishlistItem } from '@main/types/database'
+import type { WishlistItem, WishlistFilters } from '@main/types/database'
 import type { StoreRegion } from '@main/services/StoreSearchService'
 import { PositiveIntSchema, WishlistItemSchema, WishlistFiltersSchema, SafeUrlSchema, StoreRegionSchema } from '@main/validation/schemas'
 import { z } from 'zod'
@@ -17,7 +17,7 @@ export function registerWishlistHandlers() {
   const db = getDatabase()
   const storeService = getStoreSearchService()
 
-  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as any), () => db.wishlist.getCount(), WishlistFiltersSchema, {
+  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as unknown as WishlistFilters), () => db.wishlist.getCount(), WishlistFiltersSchema, {
     listAlias: 'wishlist:getAll',
     countAlias: 'wishlist:getCount'
   })
@@ -30,11 +30,11 @@ export function registerWishlistHandlers() {
         item.poster_url = tmdb.buildImageUrl(details.poster_path, 'w300') ?? undefined
       } catch { /* ignore */ }
     }
-    return await db.wishlist.add(item as any)
+    return await db.wishlist.add(item as unknown as Omit<WishlistItem, 'id' | 'updated_at' | 'added_at'>)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.UPDATE, z.tuple([PositiveIntSchema, WishlistItemSchema.partial()]), async (id, updates) => {
-    await db.wishlist.update(id, updates as any)
+    await db.wishlist.update(id, updates as unknown as Partial<WishlistItem>)
     return { success: true }
   })
 
@@ -61,10 +61,10 @@ export function registerWishlistHandlers() {
         } catch { /* ignore */ }
       }
     }
-    return { success: true, added: await db.wishlist.addMany(items as any) }
+    return { success: true, added: await db.wishlist.addMany(items as unknown as Array<Omit<WishlistItem, 'id' | 'updated_at' | 'added_at'>>) }
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.GET_STORE_LINKS, WishlistItemSchema, async (item) => storeService.getStoreLinks(item as any))
+  createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.GET_STORE_LINKS, WishlistItemSchema, async (item) => storeService.getStoreLinks(item as unknown as WishlistItem))
 
   createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.OPEN_STORE_LINK, SafeUrlSchema, async (url) => {
     await shell.openExternal(url)

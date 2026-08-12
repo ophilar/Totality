@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -36,11 +36,11 @@ vi.stubGlobal('window', { electronAPI: mockElectronAPI })
 describe('AddSourceModal Rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(useSources as any).mockReturnValue({
+    vi.mocked(useSources).mockReturnValue({
       refreshSources: vi.fn(),
       supportedProviders: ['local', 'plex', 'jellyfin', 'emby', 'kodi', 'mediamonkey'],
     })
-    ;(useToast as any).mockReturnValue({
+    vi.mocked(useToast).mockReturnValue({
       addToast: vi.fn(),
     })
   })

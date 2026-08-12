@@ -104,9 +104,12 @@ export interface AnalyzedAudioStream {
   sampleRate?: number
   bitDepth?: number
   language?: string
-  title?: string
-  isDefault: boolean
-  hasObjectAudio: boolean
+    title?: string
+    isDefault: boolean
+    hasObjectAudio: boolean
+    isCommentary?: boolean
+    isAudioDescription?: boolean
+    isAccessibility?: boolean
   peakVolumeDB?: number
   meanVolumeDB?: number
   lufsLoudness?: number
@@ -440,8 +443,11 @@ function parseAudioStream(stream: FFprobeStream, durationMs?: number): AnalyzedA
     bitDepth: stream.bits_per_sample || (stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined),
     language: stream.tags?.language,
     title: stream.tags?.title,
-    isDefault: stream.disposition?.default === 1,
-    hasObjectAudio,
+      isDefault: stream.disposition?.default === 1,
+      hasObjectAudio,
+      isCommentary: stream.disposition?.comment === 1,
+      isAudioDescription: stream.disposition?.visual_impaired === 1,
+      isAccessibility: stream.disposition?.hearing_impaired === 1,
   }
 }
 

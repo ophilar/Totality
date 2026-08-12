@@ -8,7 +8,7 @@ describe('StatsRepository (Real DB)', () => {
   let repo: StatsRepository
   let mediaRepo: MediaRepository
   let sourceRepo: SourceRepository
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
@@ -44,7 +44,7 @@ describe('StatsRepository (Real DB)', () => {
       file_path: '/path/1.mkv',
       file_size: 1000,
       duration: 120
-    } as any)
+    })
 
     const movie2Id = await mediaRepo.upsertItem({
       source_id: 's1',
@@ -55,7 +55,7 @@ describe('StatsRepository (Real DB)', () => {
       file_path: '/path/2.mkv',
       file_size: 2000,
       duration: 150
-    } as any)
+    })
 
     // Add quality scores
     await mediaRepo.upsertQualityScore({
@@ -108,8 +108,8 @@ describe('StatsRepository (Real DB)', () => {
     await db.db.execute("INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, is_protected, created_at, updated_at) VALUES ('s1', 'l1', 'M1', 'movie', 1, 0, datetime('now'), datetime('now'))")
     await db.db.execute("INSERT INTO library_scans (source_id, library_id, library_name, library_type, is_enabled, is_protected, created_at, updated_at) VALUES ('s2', 'l2', 'M2', 'movie', 1, 0, datetime('now'), datetime('now'))")
 
-    await mediaRepo.upsertItem({ source_id: 's1', library_id: 'l1', type: 'movie', title: 'M1', plex_id: 'p1', file_path: '/p1.mkv', file_size: 10, duration: 10 } as any)
-    await mediaRepo.upsertItem({ source_id: 's2', library_id: 'l2', type: 'movie', title: 'M2', plex_id: 'p2', file_path: '/p2.mkv', file_size: 10, duration: 10 } as any)
+    await mediaRepo.upsertItem({ source_id: 's1', library_id: 'l1', type: 'movie', title: 'M1', plex_id: 'p1', file_path: '/p1.mkv', file_size: 10, duration: 10 })
+    await mediaRepo.upsertItem({ source_id: 's2', library_id: 'l2', type: 'movie', title: 'M2', plex_id: 'p2', file_path: '/p2.mkv', file_size: 10, duration: 10 })
 
     const statsS1 = await repo.getLibraryStats('s1')
     expect(statsS1.totalMovies).toBe(1)
@@ -148,7 +148,7 @@ describe('StatsRepository (Real DB)', () => {
       file_path: '/path/1.mkv',
       file_size: 10,
       duration: 10
-    } as any)
+    })
 
     const stats = await repo.getAggregatedSourceStats()
     
@@ -169,9 +169,9 @@ describe('StatsRepository (Real DB)', () => {
     })
 
     it('should return correct music library stats', async () => {
-      await db.music.upsertArtist({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'art1', name: 'Artist 1' } as any)
-      await db.music.upsertAlbum({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'alb1', artist_name: 'Artist 1', title: 'Album 1', total_size: 1000, avg_audio_bitrate: 320 } as any)
-      await db.music.upsertTrack({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'tr1', artist_name: 'Artist 1', title: 'Track 1', audio_codec: 'flac' } as any)
+      await db.music.upsertArtist({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'art1', name: 'Artist 1' })
+      await db.music.upsertAlbum({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'alb1', artist_name: 'Artist 1', title: 'Album 1', total_size: 1000, avg_audio_bitrate: 320 })
+      await db.music.upsertTrack({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'tr1', artist_name: 'Artist 1', title: 'Track 1', audio_codec: 'flac' })
 
       const stats = await repo.getMusicLibraryStats()
       expect(stats.totalArtists).toBe(1)
@@ -181,7 +181,7 @@ describe('StatsRepository (Real DB)', () => {
     })
 
     it('should return music quality distribution', async () => {
-      const albumId = await db.music.upsertAlbum({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'alb1', artist_name: 'Artist 1', title: 'Album 1' } as any)
+      const albumId = await db.music.upsertAlbum({ source_id: 'ms1', source_type: 'local', library_id: 'ml1', provider_id: 'alb1', artist_name: 'Artist 1', title: 'Album 1' })
       await db.music.upsertQualityScore({ album_id: albumId, quality_tier: 'LOSSLESS', tier_quality: 'HIGH', tier_score: 90, codec_score: 90, bitrate_score: 90, needs_upgrade: false, issues: '[]' })
 
       const dist = await repo.getMusicQualityDistribution()

@@ -1,5 +1,6 @@
 import { desc, sql } from 'drizzle-orm'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 
@@ -30,7 +31,7 @@ export interface ActivityLogEntry {
 }
 
 export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
-  constructor(db: any, drizzle: LibSQLDatabase<typeof schema>) {
+  constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'task_history', drizzle, schema.taskHistory)
   }
 
@@ -93,7 +94,7 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
     await this.drizzle.delete(schema.activityLog)
   }
 
-  private mapDrizzleToTaskHistory(rows: any[]): TaskHistoryEntry[] {
+  private mapDrizzleToTaskHistory(rows: Array<typeof schema.taskHistory.$inferSelect>): TaskHistoryEntry[] {
     return rows.map(r => ({
       id: r.id,
       task_id: r.taskId,
@@ -101,7 +102,7 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
       label: r.label,
       source_id: r.sourceId || undefined,
       library_id: r.libraryId || undefined,
-      status: r.status,
+      status: r.status as TaskHistoryEntry['status'],
       error: r.error || undefined,
       result: r.result || undefined,
       created_at: r.createdAt,
@@ -112,7 +113,7 @@ export class TaskRepository extends BaseRepository<typeof schema.taskHistory> {
     }))
   }
 
-  private mapDrizzleToActivityLog(rows: any[]): ActivityLogEntry[] {
+  private mapDrizzleToActivityLog(rows: Array<typeof schema.activityLog.$inferSelect>): ActivityLogEntry[] {
     return rows.map(r => ({
       id: r.id,
       entry_type: r.entryType,

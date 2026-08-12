@@ -2,9 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { MusicBrainzService, resetMusicBrainzServiceForTesting } from '@main/services/MusicBrainzService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 describe('MusicBrainzService (No Mocks)', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
   let service: MusicBrainzService
   let server: http.Server
   let serverPort: number
@@ -43,8 +44,9 @@ describe('MusicBrainzService (No Mocks)', () => {
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => {
-        const address = server.address() as any
-        serverPort = address.port
+        const address = server.address()
+        if (!address || typeof address === 'string') throw new Error('Test server did not expose an address')
+        serverPort = (address as AddressInfo).port
         resolve()
       })
     })

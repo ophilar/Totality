@@ -29,7 +29,7 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 const { executeTool } = await import('../../src/main/services/GeminiTools')
 
 describe('GeminiTools', () => {
-  let db: any
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     vi.clearAllMocks()

@@ -6,7 +6,7 @@ describe('PathUtils', () => {
   describe('toDatabasePath', () => {
     it('should return empty string if input is falsy', () => {
       expect(PathUtils.toDatabasePath('')).toBe('')
-      expect(PathUtils.toDatabasePath(null as any)).toBe('')
+      expect(PathUtils.toDatabasePath(null)).toBe('')
     })
 
     it('should convert backslashes to forward slashes', () => {
@@ -28,7 +28,7 @@ describe('PathUtils', () => {
   describe('toOsPath', () => {
     it('should return empty string if input is falsy', () => {
       expect(PathUtils.toOsPath('')).toBe('')
-      expect(PathUtils.toOsPath(null as any)).toBe('')
+      expect(PathUtils.toOsPath(null)).toBe('')
     })
 
     it('should normalize path for the current OS', () => {

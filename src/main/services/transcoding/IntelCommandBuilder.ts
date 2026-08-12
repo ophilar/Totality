@@ -16,7 +16,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
       '-hwaccel', 'qsv',
       '-hwaccel_output_format', 'qsv',
       '-i', input,
-      '-fps_mode', 'passthrough',
+      '-fps_mode', 'cfr',
       '-vf', 'vpp_qsv=format=p010le',
       '-c:v', codec,
       '-preset', options.preset || 'slow',
@@ -40,23 +40,4 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
     return args
   }
 
-  buildHandbrakeArgs(_input: string, _output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
-    const encoder = options.targetCodec === 'av1' ? 'qsv_av1' : 'qsv_h265_10bit'
-    const args: string[] = [
-      '--encoder', encoder,
-      '--quality', (options.crf ?? 20).toString()
-    ]
-
-    if (options.preserveAllAudio) {
-      args.push('--all-audio')
-    } else {
-      args.push('--audio', '1')
-    }
-
-    if (options.preserveSubtitles) {
-      args.push('--all-subtitles')
-    }
-
-    return args
-  }
 }

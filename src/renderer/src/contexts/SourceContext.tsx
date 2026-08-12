@@ -9,6 +9,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { useToast } from '@/contexts/ToastContext'
 import { LibraryType, ProviderType } from '@main/types/database'
+import type { TaskQueueState } from '@main/types/database'
 import type {
   MediaSourceResponse,
   MediaLibraryResponse,
@@ -26,6 +27,10 @@ export interface ScanProgress {
   phase: 'fetching' | 'processing' | 'analyzing' | 'saving'
   currentItem?: string
   percentage: number
+}
+
+function isScanPhase(value: string): value is ScanProgress['phase'] {
+  return value === 'fetching' || value === 'processing' || value === 'analyzing' || value === 'saving'
 }
 
 export interface SourceStats {
@@ -164,7 +169,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Use ref to avoid recreating checkAllConnections when sources change
   const sourcesRef = useRef(sources)
-  sourcesRef.current = sources
+  useEffect(() => {
+    sourcesRef.current = sources
+  }, [sources])
 
   // Check connection status for all enabled sources
   const checkAllConnections = useCallback(async () => {
@@ -197,38 +204,11 @@ export function SourceProvider({ children }: SourceProviderProps) {
     })
   }, [])
 
-  // Load sources on mount
-  useEffect(() => {
-    refreshSources()
-    loadSupportedProviders()
-    loadStats()
-
-    // Set up progress listener with optimized state updates
-    const handleProgress = (progress: ScanProgress) => {
-      setScanProgress(prev => {
-        const existing = prev.get(progress.sourceId)
-        // Skip update if no meaningful change (avoids Map recreation and re-renders)
-        if (existing &&
-            Math.floor(existing.percentage || 0) === Math.floor(progress.percentage || 0) &&
-            existing.phase === progress.phase) {
-          return prev
-        }
-        const next = new Map(prev)
-        next.set(progress.sourceId, progress)
-        return next
-      })
-    }
-
-    const cleanupProgress = window.electronAPI.onSourcesScanProgress(handleProgress as (progress: unknown) => void)
-    return () => cleanupProgress()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Check connections when sources change and periodically
   useEffect(() => {
     if (sources.length > 0) {
       // Check immediately
-      checkAllConnections()
+      queueMicrotask(() => { void checkAllConnections() })
 
       // Check every 30 seconds
       const interval = setInterval(checkAllConnections, 30000)
@@ -242,7 +222,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     if (activeSourceId === null && sources.length > 0) {
       const firstEnabled = sources.find(s => s.is_enabled)
       if (firstEnabled) {
-        setActiveSourceId(firstEnabled.source_id)
+        queueMicrotask(() => { setActiveSourceId(firstEnabled.source_id) })
       }
     }
   }, [sources, activeSourceId])
@@ -349,6 +329,26 @@ export function SourceProvider({ children }: SourceProviderProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Load sources on mount
+  useEffect(() => {
+    queueMicrotask(() => {
+      void refreshSources()
+      void loadSupportedProviders()
+      void loadStats()
+    })
+    const handleProgress = (progress: ScanProgress) => {
+      setScanProgress(prev => {
+        const existing = prev.get(progress.sourceId)
+        if (existing && Math.floor(existing.percentage || 0) === Math.floor(progress.percentage || 0) && existing.phase === progress.phase) return prev
+        const next = new Map(prev)
+        next.set(progress.sourceId, progress)
+        return next
+      })
+    }
+    const cleanupProgress = window.electronAPI.onSourcesScanProgress(handleProgress as (progress: unknown) => void)
+    return () => cleanupProgress()
+  }, [])
+
   // Refresh source data when a scan completes (updates last_scan_at)
   useEffect(() => {
     const cleanup = window.electronAPI.onScanCompleted?.(() => {
@@ -430,22 +430,24 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Subscribe to task queue for scan progress
   useEffect(() => {
-    const updateProgress = (state: any) => {
+    const updateProgress = (state: TaskQueueState) => {
       const { currentTask } = state
       if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan' || currentTask.type === 'music-scan')) {
         setIsScanning(true)
-        if (currentTask.progress) {
+        const progress = currentTask.progress
+        const phase = progress?.phase
+        if (progress && phase !== undefined && isScanPhase(phase)) {
           setScanProgress(prev => {
             const next = new Map(prev)
             next.set(currentTask.sourceId || 'global', {
               sourceId: currentTask.sourceId || 'global',
               sourceName: currentTask.label,
               libraryId: currentTask.libraryId,
-              current: currentTask.progress.current,
-              total: currentTask.progress.total,
-              phase: currentTask.progress.phase as any,
-              currentItem: currentTask.progress.currentItem,
-              percentage: currentTask.progress.percentage,
+              current: progress.current,
+              total: progress.total,
+              phase,
+              currentItem: progress.currentItem,
+              percentage: progress.percentage,
             })
             return next
           })

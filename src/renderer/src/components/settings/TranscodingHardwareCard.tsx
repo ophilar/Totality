@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Cpu, RefreshCw, AlertTriangle } from 'lucide-react'
+import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
+import type { GpuInfo } from '@main/services/utils/GpuDetector'
 
 export function TranscodingHardwareCard() {
-  const [capabilities, setCapabilities] = useState<any>(null)
+  const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +25,7 @@ export function TranscodingHardwareCard() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => { queueMicrotask(() => { void load() }) }, [])
 
   const selectGpu = async (value: string) => {
     try {
@@ -51,7 +53,7 @@ export function TranscodingHardwareCard() {
           <label className="block text-xs font-medium text-muted-foreground">Selected device</label>
           <select value={capabilities.selectedGpuId || ''} onChange={(event) => void selectGpu(event.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm">
             <option value="">Software CPU encoding</option>
-            {(capabilities.gpus || []).map((gpu: any) => <option key={gpu.id} value={gpu.id}>{gpu.name} ({gpu.vendor})</option>)}
+            {(capabilities.gpus || []).map((gpu: GpuInfo) => <option key={gpu.id} value={gpu.id}>{gpu.name} ({gpu.vendor})</option>)}
           </select>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div><span className="text-muted-foreground">Engines:</span> {capabilities.engines.join(', ') || 'none'}</div>
