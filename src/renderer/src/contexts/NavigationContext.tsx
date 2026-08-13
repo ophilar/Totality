@@ -24,9 +24,8 @@ export interface NavigationTarget {
 export interface NavigationState {
   view: 'dashboard' | 'library'
   tab?: 'movies' | 'tv' | 'music' | 'wishlist' | 'duplicates'
-  // TV drill-down
+  // TV show detail
   selectedShow?: string | null
-  selectedSeason?: number | null
   // Music drill-down
   selectedArtist?: { id: number; name: string } | null
   selectedAlbum?: { id: number; title: string } | null
@@ -38,7 +37,6 @@ function statesEqual(a: NavigationState, b: NavigationState): boolean {
   return a.view === b.view
     && a.tab === b.tab
     && (a.selectedShow ?? null) === (b.selectedShow ?? null)
-    && (a.selectedSeason ?? null) === (b.selectedSeason ?? null)
     && (a.selectedArtist?.id ?? null) === (b.selectedArtist?.id ?? null)
     && (a.selectedAlbum?.id ?? null) === (b.selectedAlbum?.id ?? null)
 }

@@ -493,7 +493,7 @@ export class PlexProvider extends BaseMediaProvider {
                 })
               } catch (e) {
                 if (e instanceof IncompleteMetadataError)
-                  getLoggingService().warn('[PlexProvider]', e.message)
+                  getLoggingService().warn('[PlexProvider]', e.message, e.diagnostics)
                 else
                   getLoggingService().error(
                     '[PlexProvider]',
@@ -704,7 +704,7 @@ export class PlexProvider extends BaseMediaProvider {
       return result
     } catch (error: unknown) {
       if (error instanceof IncompleteMetadataError) {
-        getLoggingService().warn('[PlexProvider]', error.message)
+        getLoggingService().warn('[PlexProvider]', error.message, error.diagnostics)
       } else {
         getLoggingService().error('[PlexProvider]', 'Scan failed:', error)
       }

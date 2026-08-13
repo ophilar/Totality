@@ -61,8 +61,32 @@ export interface KodiMediaItem {
   art?: Record<string, string>
 }
 
+export type IncompleteMetadataReason = 'missing_media' | 'missing_part' | 'missing_file' | 'missing_video_stream' | 'missing_audio_stream' | 'no_valid_versions'
+
+export interface IncompleteMetadataDiagnostics {
+  itemId: string
+  itemType: string
+  title: string
+  mediaCandidates: number
+  parts: number
+  files: number
+  videoStreams: number
+  audioStreams: number
+  reason: IncompleteMetadataReason
+}
+
 export class IncompleteMetadataError extends Error {
-  constructor(public providerId: string, public missingField: string, public providerType: ProviderType) {
+  constructor(public providerId: string, public missingField: string, public providerType: ProviderType, public diagnostics: IncompleteMetadataDiagnostics = {
+    itemId: providerId,
+    itemType: 'unknown',
+    title: 'unknown',
+    mediaCandidates: 0,
+    parts: 0,
+    files: 0,
+    videoStreams: 0,
+    audioStreams: 0,
+    reason: 'no_valid_versions',
+  }) {
     super(`[${providerType}] Incomplete metadata for item ${providerId}: Missing ${missingField}`)
     this.name = 'IncompleteMetadataError'
   }
@@ -102,7 +126,17 @@ export class MediaTransformer {
    */
   static fromPlex(item: PlexMediaItem, sourceId: string, serverUri?: string, accessToken?: string): { mediaItem: MediaItem, versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } {
     const allMedia = item.Media || []
-    if (allMedia.length === 0) throw new IncompleteMetadataError(item.ratingKey, 'Media', ProviderType.Plex)
+    if (allMedia.length === 0) throw new IncompleteMetadataError(item.ratingKey, 'Media', ProviderType.Plex, {
+      itemId: item.ratingKey,
+      itemType: item.type,
+      title: item.title,
+      mediaCandidates: 0,
+      parts: 0,
+      files: 0,
+      videoStreams: 0,
+      audioStreams: 0,
+      reason: 'missing_media',
+    })
 
     const versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] = []
 
@@ -186,13 +220,35 @@ export class MediaTransformer {
       })
     }
 
-    if (versions.length === 0) throw new IncompleteMetadataError(item.ratingKey, 'Valid Media Versions', ProviderType.Plex)
+    if (versions.length === 0) {
+    const diagnostics: IncompleteMetadataDiagnostics = {
+      itemId: item.ratingKey,
+      itemType: item.type,
+      title: item.title,
+      mediaCandidates: allMedia.length,
+      parts: allMedia.filter(media => (media.Part?.length || 0) > 0).length,
+      files: allMedia.reduce((count, media) => count + (media.Part?.filter(part => Boolean(part.file)).length || 0), 0),
+      videoStreams: allMedia.reduce((count, media) => count + (media.Part || []).reduce((partCount, part) => partCount + (part.Stream?.filter(stream => stream.streamType === 1).length || 0), 0), 0),
+      audioStreams: allMedia.reduce((count, media) => count + (media.Part || []).reduce((partCount, part) => partCount + (part.Stream?.filter(stream => stream.streamType === 2).length || 0), 0), 0),
+      reason: 'no_valid_versions',
+    }
+    diagnostics.reason = diagnostics.parts === 0
+      ? 'missing_part'
+      : diagnostics.files === 0
+        ? 'missing_file'
+        : diagnostics.videoStreams === 0
+          ? 'missing_video_stream'
+          : diagnostics.audioStreams === 0
+            ? 'missing_audio_stream'
+            : 'no_valid_versions'
+    throw new IncompleteMetadataError(item.ratingKey, 'Valid Media Versions', ProviderType.Plex, diagnostics)
+    }
     if (versions.length > 1) extractVersionNames(versions)
     const best = versions.reduce((a, b) => calculateVersionScore(b) > calculateVersionScore(a) ? b : a)
 
     let imdbId, tmdbId
     if (item.Guid) {
-      for (const guid of item.Guid) {
+      for (const guid of item.Guid ?? []) {
         if (guid.id.includes('imdb://')) imdbId = guid.id.replace('imdb://', '')
         else if (guid.id.includes('tmdb://')) tmdbId = guid.id.replace('tmdb://', '').split('?')[0]
       }

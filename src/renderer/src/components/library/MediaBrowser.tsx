@@ -110,7 +110,6 @@ export function MediaBrowser({
 
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
-  const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
   const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
   const [trackSortColumn, setTrackSortColumn] = useState<'title' | 'album' | 'artist' | 'codec' | 'duration'>('title')
@@ -459,9 +458,9 @@ export function MediaBrowser({
               <SectionErrorBoundary title="TV Shows">
                 <TVShowsView
         shows={shows} sortBy={sortBy} onSortChange={handleSortChange} slimDown={slimDown}
-                  selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData}
+                  selectedShow={selectedShow} selectedShowData={selectedShowData}
                   selectedShowLoading={selectedShowEpisodesLoading} onSelectShow={setSelectedShow}
-                  onSelectSeason={setSelectedSeason} onSelectEpisode={setSelectedMediaId}
+                  onSelectEpisode={setSelectedMediaId}
                   filterItem={() => true} gridScale={gridScale} viewType={viewType}
                   seriesCompleteness={seriesCompleteness} onMissingItemClick={setSelectedMissingItem}
                   showSourceBadge={!activeSourceId && sources.length > 1}

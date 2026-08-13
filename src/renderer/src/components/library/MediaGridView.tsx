@@ -1,5 +1,5 @@
 import { forwardRef, ReactNode, useRef, useCallback, useLayoutEffect, HTMLAttributes } from 'react'
-import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle, StateSnapshot, GridStateSnapshot } from 'react-virtuoso'
+import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle, GridStateSnapshot } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
 import { MediaCardSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { useScrollMemory } from '@/contexts/ScrollMemoryContext'
@@ -53,27 +53,29 @@ export function MediaGridView<T>({
   banner,
   scrollKey,
 }: MediaGridViewProps<T>) {
-  const { getScrollState, saveScrollState } = useScrollMemory()
+  const { getListScrollState, saveListScrollState, getGridScrollState, saveGridScrollState } = useScrollMemory()
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const virtuosoGridRef = useRef<VirtuosoGridHandle>(null)
 
-  const restoredState = scrollKey ? getScrollState(scrollKey) : undefined
+  const restoredListState = scrollKey && viewType === 'list' ? getListScrollState(scrollKey) : undefined
+  const restoredGridState = scrollKey && viewType === 'grid' ? getGridScrollState(scrollKey) : undefined
 
   // Persist scroll position for list view on unmount (Virtuoso has getState)
   useLayoutEffect(() => {
+    const virtuoso = virtuosoRef.current
     return () => {
       if (scrollKey && viewType === 'list') {
-        virtuosoRef.current?.getState(state => saveScrollState(scrollKey, state))
+        virtuoso?.getState(state => saveListScrollState(scrollKey, state))
       }
     }
-  }, [scrollKey, viewType, saveScrollState])
+  }, [scrollKey, viewType, saveListScrollState])
 
   // VirtuosoGrid uses the stateChanged prop for state capture
   const handleGridStateChanged = useCallback((state: GridStateSnapshot) => {
     if (scrollKey && viewType === 'grid') {
-      saveScrollState(scrollKey, state)
+      saveGridScrollState(scrollKey, state)
     }
-  }, [scrollKey, viewType, saveScrollState])
+  }, [scrollKey, viewType, saveGridScrollState])
 
   const safeItems = Array.isArray(items) ? items : []
 
@@ -101,7 +103,8 @@ export function MediaGridView<T>({
               <div
                 className="grid gap-8 p-4"
                 style={{
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))`
+                  gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`,
+                  justifyContent: 'start'
                 }}
               >
                 {[...Array(12)].map((_, i) => (
@@ -156,7 +159,7 @@ export function MediaGridView<T>({
             <div className="min-w-[760px] h-full">
               <Virtuoso
               ref={virtuosoRef}
-              restoreStateFrom={restoredState as StateSnapshot | undefined}
+              restoreStateFrom={restoredListState}
               data={safeItems}
               endReached={handleEndReached}
               overscan={1200}
@@ -175,7 +178,7 @@ export function MediaGridView<T>({
         <div className="flex-1 min-h-0 relative">
           <VirtuosoGrid
             ref={virtuosoGridRef}
-            restoreStateFrom={restoredState as GridStateSnapshot | null | undefined}
+            restoreStateFrom={restoredGridState}
             stateChanged={handleGridStateChanged}
             data={safeItems}
             endReached={handleEndReached}
@@ -190,7 +193,8 @@ export function MediaGridView<T>({
                   style={{
                     ...props.style,
                     display: 'grid',
-                    gridTemplateColumns: `repeat(auto-fill, minmax(${posterMinWidth}px, 1fr))`
+                    gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`,
+                    justifyContent: 'start'
                   }}
                 />
               )),

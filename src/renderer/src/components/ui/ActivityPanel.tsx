@@ -117,12 +117,9 @@ interface AppNotification {
   type: string
   title: string
   message: string
-  sourceId?: string
-  sourceName?: string
-  itemCount?: number
-  isRead: boolean
-  createdAt: string
-  readAt?: string
+  reference_id?: string
+  is_read: boolean
+  created_at: string
 }
 
 // ============================================================================
@@ -199,7 +196,7 @@ export function ActivityPanel() {
         window.electronAPI.notificationsGetAll({ limit: 50 }),
         window.electronAPI.notificationsGetCount(),
       ])
-      setNotifications(items as AppNotification[])
+        setNotifications(items)
       setUnreadCount(counts.unread)
     } catch { /* ignore */ }
   }, [])
@@ -602,9 +599,9 @@ export function ActivityPanel() {
                   <div
                     key={n.id}
                     className={`py-2 px-2 rounded-lg cursor-pointer transition-colors ${
-                      n.isRead ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/30'
+                      n.is_read ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/30'
                     }`}
-                    onClick={() => !n.isRead && handleMarkRead(n.id)}
+                    onClick={() => !n.is_read && handleMarkRead(n.id)}
                   >
                     <div className="flex items-start gap-2">
                       <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
@@ -613,11 +610,11 @@ export function ActivityPanel() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-medium truncate">{n.title}</span>
-                          {!n.isRead && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
+                          {!n.is_read && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
                         <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
-                          {new Date(n.createdAt).toLocaleString()}
+                            {new Date(n.created_at).toLocaleString()}
                         </span>
                       </div>
                     </div>

@@ -4,8 +4,10 @@ import type { StateSnapshot, GridStateSnapshot } from 'react-virtuoso'
 type ScrollState = StateSnapshot | GridStateSnapshot
 
 interface ScrollMemoryContextType {
-  saveScrollState: (key: string, state: ScrollState) => void
-  getScrollState: (key: string) => ScrollState | undefined
+  saveListScrollState: (key: string, state: StateSnapshot) => void
+  getListScrollState: (key: string) => StateSnapshot | undefined
+  saveGridScrollState: (key: string, state: GridStateSnapshot) => void
+  getGridScrollState: (key: string) => GridStateSnapshot | undefined
   clearScrollState: (key: string) => void
 }
 
@@ -14,12 +16,22 @@ const ScrollMemoryContext = createContext<ScrollMemoryContextType | undefined>(u
 export function ScrollMemoryProvider({ children }: { children: React.ReactNode }) {
   const [scrollMap] = useState<Map<string, ScrollState>>(new Map())
 
-  const saveScrollState = useCallback((key: string, state: ScrollState) => {
+  const saveListScrollState = useCallback((key: string, state: StateSnapshot) => {
     scrollMap.set(key, state)
   }, [scrollMap])
 
-  const getScrollState = useCallback((key: string) => {
-    return scrollMap.get(key)
+  const getListScrollState = useCallback((key: string) => {
+    const state = scrollMap.get(key)
+    return state && 'ranges' in state ? state : undefined
+  }, [scrollMap])
+
+  const saveGridScrollState = useCallback((key: string, state: GridStateSnapshot) => {
+    scrollMap.set(key, state)
+  }, [scrollMap])
+
+  const getGridScrollState = useCallback((key: string) => {
+    const state = scrollMap.get(key)
+    return state && 'item' in state ? state : undefined
   }, [scrollMap])
 
   const clearScrollState = useCallback((key: string) => {
@@ -27,7 +39,7 @@ export function ScrollMemoryProvider({ children }: { children: React.ReactNode }
   }, [scrollMap])
 
   return (
-    <ScrollMemoryContext.Provider value={{ saveScrollState, getScrollState, clearScrollState }}>
+    <ScrollMemoryContext.Provider value={{ saveListScrollState, getListScrollState, saveGridScrollState, getGridScrollState, clearScrollState }}>
       {children}
     </ScrollMemoryContext.Provider>
   )

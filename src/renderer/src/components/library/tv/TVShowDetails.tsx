@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { Virtuoso } from 'react-virtuoso'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database } from 'lucide-react'
-import { SeasonCard } from '@/components/library/tv/SeasonCard'
-import { MissingSeasonCardWithArtwork } from '@/components/library/tv/MissingSeasonCardWithArtwork'
+import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
+import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
+import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
 import { getStatusBadge, formatSeasonLabel } from '@/components/library/mediaUtils'
-import type { TVShow, TVSeason, SeriesCompletenessData, SeasonInfo } from '@/components/library/types'
+import type { MediaItem, TVShow, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVShowDetails({
   selectedShow,
@@ -13,10 +15,15 @@ export function TVShowDetails({
   onBack,
   onAnalyzeSeries,
   onFixMatch,
-  onSelectSeason,
+  filterItem,
+  onSelectEpisode,
+  onRescanEpisode,
+  onDismissUpgrade,
+  expandedRecommendations,
+  onToggleOptimize,
   onMissingItemClick,
-  onDismissMissingSeason,
-  posterMinWidth
+  onDismissMissingEpisode,
+  onDismissMissingSeason
 }: {
   selectedShow: string
   selectedShowData: TVShow | null
@@ -25,10 +32,15 @@ export function TVShowDetails({
   onBack: () => void
   onAnalyzeSeries: (seriesTitle: string) => void
   onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
-  onSelectSeason: (season: number | null) => void
+  filterItem: (item: MediaItem) => boolean
+  onSelectEpisode: (id: number) => void
+  onRescanEpisode?: (episode: MediaItem) => Promise<void>
+  onDismissUpgrade?: (item: MediaItem) => void
+  expandedRecommendations: Set<number>
+  onToggleOptimize: (id: number) => void
   onMissingItemClick: (item: import('@/components/library/types').MissingItemPopupData) => void
+  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
   onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
-  posterMinWidth: number
 }) {
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
   const [copiedTitle, setCopiedTitle] = useState(false)
@@ -45,6 +57,17 @@ export function TVShowDetails({
           .then(details => { if (details?.overview) setShowOverview(details.overview) })
           .catch(() => { /* ignore */ })
       }
+    }
+  }, [selectedShow, seriesCompleteness])
+
+  useEffect(() => {
+    const completenessData = seriesCompleteness.get(selectedShow)
+    const diagnostics = [
+      parseMissingSeasons(completenessData?.missing_seasons).diagnostic,
+      parseMissingEpisodes(completenessData?.missing_episodes).diagnostic,
+    ].filter((diagnostic): diagnostic is NonNullable<typeof diagnostic> => diagnostic !== undefined)
+    for (const diagnostic of diagnostics) {
+      window.electronAPI.log.error('TVShowDetails', diagnostic.message, { seriesTitle: selectedShow, field: diagnostic.field })
     }
   }, [selectedShow, seriesCompleteness])
 
@@ -92,24 +115,13 @@ export function TVShowDetails({
     }
   }
 
-  // Parse missing seasons from completeness data
-  let missingSeasonNumbers: number[] = []
-  if (completenessData?.missing_seasons) {
-    try {
-      missingSeasonNumbers = JSON.parse(completenessData.missing_seasons) || []
-    } catch {
-      missingSeasonNumbers = []
-    }
-  }
+  const missingSeasonsResult = parseMissingSeasons(completenessData?.missing_seasons)
+  const missingEpisodesResult = parseMissingEpisodes(completenessData?.missing_episodes)
+  const parseDiagnostics = [missingSeasonsResult.diagnostic, missingEpisodesResult.diagnostic].filter(Boolean)
 
   // Build combined list of owned and missing seasons
-  const ownedSeasonNumbers = new Set(ownedSeasons.map(s => s.seasonNumber))
-  const allSeasonItems: Array<{ type: 'owned' | 'missing'; seasonNumber: number; season?: TVSeason }> = [
-    ...ownedSeasons.map(s => ({ type: 'owned' as const, seasonNumber: s.seasonNumber, season: s })),
-    ...missingSeasonNumbers
-      .filter(num => !ownedSeasonNumbers.has(num))
-      .map(num => ({ type: 'missing' as const, seasonNumber: num }))
-  ].sort((a, b) => a.seasonNumber - b.seasonNumber)
+  const allSeasonNumbers = [...new Set([...ownedSeasons.map(s => s.seasonNumber), ...missingSeasonsResult.value])].sort((a, b) => a - b)
+  const missingEpisodes = missingEpisodesResult.value
 
   const totalSeasons = completenessData?.total_seasons || ownedSeasons.length
 
@@ -221,39 +233,46 @@ export function TVShowDetails({
         </div>
       </div>
 
-      <div
-        className="grid gap-8"
-        style={{
-          gridTemplateColumns: `repeat(auto-fill, ${posterMinWidth}px)`
-        }}
-      >
-        {allSeasonItems.map((item) => (
-          item.type === 'owned' && item.season ? (
-            <SeasonCard
-              key={item.seasonNumber}
-              season={item.season as SeasonInfo}
-              showTitle={selectedShowData.title}
-              onClick={() => onSelectSeason(item.seasonNumber)}
-            />
-          ) : (
-            <MissingSeasonCardWithArtwork
-              key={`missing-${item.seasonNumber}`}
-              seasonNumber={item.seasonNumber}
-              showTitle={selectedShowData.title}
-              tmdbId={completenessData?.tmdb_id}
-              fallbackPosterUrl={completenessData?.poster_url || selectedShowData.poster_url}
-              onClick={() => onMissingItemClick({
-                type: 'season',
-                title: formatSeasonLabel(item.seasonNumber),
-                seasonNumber: item.seasonNumber,
-                posterUrl: completenessData?.poster_url || selectedShowData.poster_url,
-                tmdbId: completenessData?.tmdb_id,
-                seriesTitle: selectedShowData.title
-              })}
-              onDismiss={onDismissMissingSeason ? () => onDismissMissingSeason(item.seasonNumber, selectedShowData.title, completenessData?.tmdb_id) : undefined}
-            />
+      <div className="min-h-[40vh]">
+        {parseDiagnostics.length > 0 && (
+          <div role="alert" className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Completeness metadata could not be read. Owned episodes remain available; missing-item data needs a fresh analysis.
+          </div>
+        )}
+        <Virtuoso
+          data={allSeasonNumbers}
+          overscan={800}
+          style={{ height: 'min(70vh, 900px)' }}
+          itemContent={(_, seasonNumber) => {
+          const season = selectedShowData.seasons.get(seasonNumber)
+          const ownedEpisodes = season?.episodes.filter(filterItem) || []
+          const ownedEpisodeNumbers = new Set(ownedEpisodes.map(e => e.episode_number))
+          const seasonMissingEpisodes = missingEpisodes.filter(ep => ep.season_number === seasonNumber && !ownedEpisodeNumbers.has(ep.episode_number))
+          const episodeItems = [
+            ...ownedEpisodes.map(episode => ({ type: 'owned' as const, episode })),
+            ...seasonMissingEpisodes.map(missing => ({ type: 'missing' as const, missing })),
+          ].sort((a, b) => (a.type === 'owned' ? a.episode.episode_number || 0 : a.missing.episode_number) - (b.type === 'owned' ? b.episode.episode_number || 0 : b.missing.episode_number))
+          return (
+            <section key={seasonNumber} aria-labelledby={`season-${seasonNumber}`}>
+              <div className="flex items-center justify-between border-b border-border/60 pb-2 mb-1">
+                <h4 id={`season-${seasonNumber}`} className="text-lg font-semibold">{formatSeasonLabel(seasonNumber)}</h4>
+                {!season && <span className="text-xs text-muted-foreground">Missing season</span>}
+                {season && <span className="text-xs text-muted-foreground">{episodeItems.length} episodes</span>}
+              </div>
+              {episodeItems.length > 0 ? (
+                <div className="divide-y divide-border/50">
+                  {episodeItems.map(item => item.type === 'owned' ? (
+                    <EpisodeRow key={item.episode.id!} episode={item.episode} onClick={() => onSelectEpisode(item.episode.id!)} onRescan={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} isExpanded={expandedRecommendations.has(item.episode.id!)} onToggleOptimize={() => onToggleOptimize(item.episode.id!)} />
+                  ) : (
+                    <MissingEpisodeRowWithArtwork key={`missing-${item.missing.season_number}-${item.missing.episode_number}`} episode={item.missing} tmdbId={completenessData?.tmdb_id} fallbackPosterUrl={season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url} onClick={() => onMissingItemClick({ type: 'episode', title: item.missing.title || `Episode ${item.missing.episode_number}`, airDate: item.missing.air_date, seasonNumber: item.missing.season_number, episodeNumber: item.missing.episode_number, posterUrl: season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url, tmdbId: completenessData?.tmdb_id, seriesTitle: selectedShowData.title })} onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShowData.title, completenessData?.tmdb_id) : undefined} />
+                  ))}
+                </div>
+              ) : <p className="py-3 text-sm text-muted-foreground">No episodes available.</p>}
+              {!season && onDismissMissingSeason && <button type="button" className="mt-2 min-h-6 text-xs text-muted-foreground underline" onClick={() => onDismissMissingSeason(seasonNumber, selectedShowData.title, completenessData?.tmdb_id)}>Dismiss missing season</button>}
+            </section>
           )
-        ))}
+          }}
+        />
       </div>
     </div>
   )

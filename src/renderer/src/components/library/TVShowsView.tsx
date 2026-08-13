@@ -3,7 +3,6 @@ import { RefreshCw, Tv } from 'lucide-react'
 import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
-import { TVSeasonDetails } from '@/components/library/tv/TVSeasonDetails'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { tvSortColumns } from '@/components/library/sortDefinitions'
 import { useSources } from '@/contexts/SourceContext'
@@ -19,11 +18,9 @@ export function TVShowsView({
   onSortChange,
   slimDown,
   selectedShow,
-  selectedSeason,
   selectedShowData,
   selectedShowLoading,
   onSelectShow,
-  onSelectSeason,
   onSelectEpisode,
   filterItem,
   gridScale,
@@ -49,11 +46,9 @@ export function TVShowsView({
   onSortChange: (sort: string) => void
   slimDown: boolean
   selectedShow: string | null
-  selectedSeason: number | null
   selectedShowData: TVShow | null
   selectedShowLoading: boolean
   onSelectShow: (seriesTitle: string | null) => void
-  onSelectSeason: (season: number | null) => void
   onSelectEpisode: (id: number) => void
   filterItem: (item: MediaItem) => boolean
   gridScale: number
@@ -82,10 +77,7 @@ export function TVShowsView({
 
   const posterMinWidth = useMemo(() => calculatePosterWidth(gridScale), [gridScale])
 
-  const handleBack = useCallback(() => {
-    if (selectedSeason !== null) onSelectSeason(null)
-    else onSelectShow(null)
-  }, [selectedSeason, onSelectSeason, onSelectShow])
+  const handleBack = useCallback(() => onSelectShow(null), [onSelectShow])
 
   const toggleRecommendation = useCallback((id: number) => {
     setExpandedRecommendations(prev => {
@@ -181,19 +173,10 @@ export function TVShowsView({
     )
   }
 
-  if (selectedShow && selectedSeason === null) {
+  if (selectedShow) {
     return (
       <div className="h-full overflow-y-auto">
-        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} onSelectSeason={onSelectSeason} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} posterMinWidth={posterMinWidth} />
-      </div>
-    )
-  }
-
-
-  if (selectedShow && selectedSeason !== null && selectedShowData) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <TVSeasonDetails selectedShow={selectedShow} selectedSeason={selectedSeason} selectedShowData={selectedShowData} seriesCompleteness={seriesCompleteness} filterItem={filterItem} onBack={handleBack} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingEpisode={onDismissMissingEpisode} />
+        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} />
       </div>
     )
   }

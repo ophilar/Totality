@@ -89,9 +89,11 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
                 seriesCompleteness={completenessMap}
                 onBack={() => {}}
                 onAnalyzeSeries={() => {}}
-                onSelectSeason={() => {}}
+                  filterItem={() => true}
+                  onSelectEpisode={() => {}}
+                  expandedRecommendations={new Set()}
+                  onToggleOptimize={() => {}}
                 onMissingItemClick={() => {}}
-                posterMinWidth={200}
             />
         )
       })

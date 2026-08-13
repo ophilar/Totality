@@ -407,13 +407,26 @@ export class TaskQueueService {
     const service = this.getSeriesCompleteness()
     const result = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress)
     
-    task.result = {
-      itemsScanned: result.analyzed,
-    }
+      task.result = {
+        itemsScanned: result.analyzed,
+        totalSeries: result.totalSeries,
+        analyzedSeries: result.analyzed,
+        failedSeries: result.errors,
+      }
 
-    if (result.analyzed === 0 && result.totalSeries > 0 && result.errors.length > 0 && !this.cancelRequested) {
-      throw new Error(`Series analysis failed: ${result.errors[0]}`)
-    }
+      if (result.analyzed === 0 && result.totalSeries > 0 && result.errors.length > 0 && !this.cancelRequested) {
+        throw new Error(`Series analysis failed: ${result.errors[0]}`)
+      }
+      if (result.analyzed > 0 && result.analyzed < result.totalSeries && result.errors.length > 0 && !this.cancelRequested) {
+        const summary = `Series analysis partially completed: ${result.analyzed}/${result.totalSeries} analyzed; ${result.errors.length} failed`
+        this.logging.warn('[TaskQueue]', summary, { totalSeries: result.totalSeries, analyzedSeries: result.analyzed, failedSeries: result.errors })
+        await this.db.notifications.addNotification({
+          type: 'info',
+          title: 'Series analysis partially completed',
+          message: summary,
+          reference_id: task.sourceId,
+        })
+      }
   }
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {

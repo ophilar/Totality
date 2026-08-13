@@ -206,12 +206,9 @@ export const getStatusBadge = (status?: string): { text: string; color: string }
  * Calculate poster minimum width based on grid scale
  */
 export const calculatePosterWidth = (gridScale: number): number => {
-  // Scale 1-7 maps to clean poster sizes without dominating screen
-  // 1 = 90px, 3 = 133px (default), 4 = 155px, 7 = 220px
-  const minWidth = 90
-  const maxWidth = 220
-  const clampedScale = Math.max(1, Math.min(7, gridScale))
-  return Math.round(minWidth + ((clampedScale - 1) / 6) * (maxWidth - minWidth))
+    const widths = [96, 112, 128, 144, 160, 176, 192]
+    const clampedScale = Math.max(1, Math.min(widths.length, Math.round(gridScale)))
+    return widths[clampedScale - 1]
 }
 
 /**
