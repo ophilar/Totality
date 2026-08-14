@@ -7,6 +7,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react'
+import type { MediaViewType } from '@/components/library/types'
 
 // Navigation target types (for navigateTo)
 export interface NavigationTarget {
@@ -23,7 +24,7 @@ export interface NavigationTarget {
 // Snapshot of the full navigation state (for history stack)
 export interface NavigationState {
   view: 'dashboard' | 'library'
-  tab?: 'movies' | 'tv' | 'music' | 'wishlist' | 'duplicates'
+  tab?: MediaViewType
   // TV show detail
   selectedShow?: string | null
   // Music drill-down

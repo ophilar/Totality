@@ -36,7 +36,9 @@ import { getTranscodingService } from '@main/services/TranscodingService'
 import { registerMediaHandlers } from '@main/ipc/media'
 import { registerArrHandlers } from '@main/ipc/arr'
 import { registerOptimizationHandlers } from '@main/ipc/optimization'
+import { registerTimelinesHandlers } from '@main/ipc/timelines'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getGeminiService } from '@main/services/GeminiService'
@@ -308,6 +310,8 @@ app.whenReady().then(async () => {
     registerMediaHandlers()
     registerArrHandlers()
     registerOptimizationHandlers()
+    registerTimelinesHandlers()
+
 
     await getLiveMonitoringService().initialize()
 

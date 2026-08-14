@@ -28,6 +28,7 @@ export async function setupTestDb() {
   return dbService
 }
 
+
 /**
  * Cleanup test database
  */
@@ -52,6 +53,7 @@ import { registerQualityHandlers } from '@main/ipc/quality'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { registerNotificationHandlers } from '@main/ipc/notifications'
 import { registerJellyfinHandlers } from '@main/ipc/jellyfin'
+import { registerTimelinesHandlers } from '@main/ipc/timelines'
 
 /**
  * Sets up a real bridge between Renderer and Main process handlers.
@@ -60,8 +62,8 @@ export function setupRealIntegratedBridge() {
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
 
   // Intercept registrations
-vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: (...args: unknown[]) => Promise<unknown>) => {
-    handlers.set(channel, handler)
+  vi.spyOn(ipcMain, 'handle').mockImplementation((channel: string, listener: unknown) => {
+    handlers.set(channel, listener as (...args: unknown[]) => Promise<unknown>)
   return undefined
   })
 
@@ -82,12 +84,11 @@ vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: (...args
   registerTranscodingHandlers()
   registerNotificationHandlers()
   registerJellyfinHandlers()
+  registerTimelinesHandlers()
 
   // Helper to invoke a handler with no fallbacks and loud errors
-const invoke = async (channel: string, ...args: unknown[]) => {
-    if (!channel) throw new Error('IPC Invoke: Channel is required')
+  const invoke = async (channel: string, ...args: unknown[]) => {
     const handler = handlers.get(channel)
-    
     if (!handler) {
       throw new Error(`IPC Invoke: No handler registered for channel "${channel}"`)
     }
@@ -229,6 +230,12 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
 
     // Metadata
     tmdbGetTVShowDetails: (id: string) => invoke('tmdb:getTVShowDetails', id),
+
+    // Timelines API
+    timelinesListRecipes: () => invoke(IPC_CHANNELS.TIMELINES.LIST_RECIPES),
+    timelinesGetRecipe: (recipeId: string) => invoke(IPC_CHANNELS.TIMELINES.GET_RECIPE, recipeId),
+    timelinesResolveTimeline: (recipeId: string, sourceId?: string) => invoke(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, recipeId, sourceId),
+    timelinesSyncPlexPlaylist: (payload: unknown) => invoke(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, payload),
 
     getAppVersion: () => invoke('app:getVersion'),
     openExternal: (url: string) => invoke('app:openExternal', url),

@@ -5,7 +5,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight, ListOrdered } from 'lucide-react'
+
 import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useNavigation } from '@/contexts/NavigationContext'
@@ -618,7 +619,23 @@ export function TopBar({
                 </button>
               )}
 
+              {/* Timelines Button */}
+              <button
+                onClick={() => onNavigateToLibrary('timelines')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                  !isDashboard && libraryTab === 'timelines'
+                    ? 'bg-white text-black'
+                    : 'text-white hover:bg-white/10'
+                }`}
+                role="tab"
+                aria-selected={!isDashboard && libraryTab === 'timelines'}
+              >
+                <ListOrdered className="w-4 h-4" />
+                <span>Timelines</span>
+              </button>
+
               {/* Auto-refresh indicator */}
+
               {isAutoRefreshing && (
                 <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-white/50" title="Checking for new content...">
                   <RefreshCw className="w-3 h-3 animate-spin" />

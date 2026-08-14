@@ -194,13 +194,10 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           eq(schema.seriesCompleteness.sourceId, record.sourceId),
           eq(schema.seriesCompleteness.libraryId, record.libraryId),
           like(schema.seriesCompleteness.seriesIdentityKey, 'unresolved:%'),
-          eq(schema.seriesCompleteness.totalSeasons, record.totalSeasons),
-          eq(schema.seriesCompleteness.totalEpisodes, record.totalEpisodes),
-          eq(schema.seriesCompleteness.ownedSeasons, record.ownedSeasons),
-          eq(schema.seriesCompleteness.ownedEpisodes, record.ownedEpisodes),
           eq(schema.seriesCompleteness.userFixedMatch, 0),
         ))
     }
+
 
     return id
   }

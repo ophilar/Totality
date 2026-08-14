@@ -16,6 +16,7 @@ export function deriveSeriesIdentityKey(input: SeriesIdentityInput): string {
 
 export function getMediaMatchStatus(input: { locked: boolean; canonicalIds: string[]; conflictingEntityIds: number[] }): MediaMatchStatus {
   if (input.locked) return 'manual'
-  if (input.conflictingEntityIds.length > 0 || input.canonicalIds.length > 1) return 'conflicting'
-  return input.canonicalIds.length === 1 ? 'verified' : 'unresolved'
+  if (input.conflictingEntityIds.length > 0) return 'conflicting'
+  return input.canonicalIds.length > 0 ? 'verified' : 'unresolved'
 }
+

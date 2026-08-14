@@ -11,11 +11,14 @@ import { TVShowsView } from '@/components/library/TVShowsView'
 import { MusicView } from '@/components/library/MusicView'
 import { WishlistView } from '@/components/library/WishlistView'
 import { DuplicatesView } from '@/components/library/DuplicatesView'
+import { TimelinesView } from '@/components/timelines/TimelinesView'
+
 import { ShowTranscodeModal } from '@/components/library/ShowTranscodeModal'
 import { PinEntryModal } from '@/components/library/PinEntryModal'
 import { BrowserHeader } from '@/components/library/browser/BrowserHeader'
 import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from '@/components/library/browser/BrowserAlphabetNav'
+
 import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -453,6 +456,7 @@ export function MediaBrowser({
                   onFixMatch={(title: string, sId: string, fp?: string) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
                   onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                   onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
+
                   onDismissMissingSeason={handleDismissMissingSeason} totalShowCount={totalShowCount}
                   totalEpisodeCount={0} showsLoading={showsLoading} onLoadMoreShows={loadMoreShows}
                   isAnalyzing={isAnalyzing}
@@ -462,14 +466,16 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-        sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
+                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}
                   albumsLoading={albumsLoading} onLoadMoreAlbums={loadMoreAlbums}
-                  albumSortColumn={albumSortColumn} albumSortDirection={albumSortDirection}
                   onAlbumSortChange={(c, d) => { setAlbumSortColumn(c); setAlbumSortDirection(d) }}
+                  albumSortColumn={albumSortColumn}
+                  albumSortDirection={albumSortDirection}
                   stats={null} selectedArtist={selectedArtist} selectedAlbum={selectedAlbum}
+
                   artistCompleteness={artistCompleteness} albumCompleteness={selectedAlbumCompleteness} allAlbumCompleteness={allAlbumCompleteness}
                   musicViewMode={musicViewMode} trackSortColumn={trackSortColumn} trackSortDirection={trackSortDirection}
                   onTrackSortChange={(c, d) => { setTrackSortColumn(c); setTrackSortDirection(d) }}
@@ -478,7 +484,7 @@ export function MediaBrowser({
                   gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onAnalyzeAlbum={async (id) => { await window.electronAPI.musicAnalyzeAlbumTrackCompleteness(id); loadMusicCompletenessData() }}
-          onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id }) }}
+                  onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id }) }}
                   onArtistCompletenessUpdated={loadMusicCompletenessData}
                   onFixArtistMatch={(id, n) => setMatchFixModal({ isOpen: true, type: 'artist', title: n, artistId: id })}
                   onFixAlbumMatch={(id, t, n) => setMatchFixModal({ isOpen: true, type: 'album', title: t, artistName: n, albumId: id })}
@@ -496,6 +502,11 @@ export function MediaBrowser({
             {view === 'duplicates' && (
               <SectionErrorBoundary title="Duplicates">
                 <DuplicatesView />
+              </SectionErrorBoundary>
+            )}
+            {view === 'timelines' && (
+              <SectionErrorBoundary title="Franchise Timelines">
+                <TimelinesView />
               </SectionErrorBoundary>
             )}
           </div>
@@ -539,6 +550,7 @@ export function MediaBrowser({
         libraries={activeSourceLibraries}
       />
       <WishlistPanel isOpen={showWishlistPanel} onClose={() => setShowWishlistPanel(false)} />
+
       {showCollectionModal && selectedCollection && <CollectionModal collection={selectedCollection} ownedMovies={ownedMoviesForSelectedCollection} onClose={() => setShowCollectionModal(false)} onMovieClick={setSelectedMediaId} onDismissCollectionMovie={handleDismissCollectionMovie} />}
       {selectedMissingItem && <MissingItemPopup {...selectedMissingItem} onClose={() => setSelectedMissingItem(null)} onDismiss={handleDismissMissingItem} />}
       {matchFixModal && (

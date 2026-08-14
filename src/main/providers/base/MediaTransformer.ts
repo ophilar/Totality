@@ -148,7 +148,7 @@ export class MediaTransformer {
       const audioStreams = part.Stream?.filter((s) => s.streamType === 2) || []
       const subtitleStreams = part.Stream?.filter((s) => s.streamType === 3) || []
 
-      if (!videoStream || audioStreams.length === 0) continue
+      if (!videoStream) continue
 
       const audioTracks: AudioTrack[] = audioStreams.map((stream, index) => ({
         index,
@@ -172,8 +172,8 @@ export class MediaTransformer {
         isForced: (stream.displayTitle || stream.title || '').toLowerCase().includes('forced'),
       }))
 
-      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0]
-      const audioStream = audioStreams[bestAudioTrack.index] || audioStreams[0]
+      const bestAudioTrack = selectBestAudioTrack(audioTracks) || audioTracks[0] || undefined
+      const audioStream = bestAudioTrack ? audioStreams[bestAudioTrack.index] : undefined
       const width = media.width || 0
       const height = media.height || 0
       const resolution = normalizeResolution(width, height)
@@ -202,9 +202,9 @@ export class MediaTransformer {
         height,
         video_codec: normalizeVideoCodec(media.videoCodec),
         video_bitrate: MediaTransformer.calculateReliableVideoBitrate(videoStream.bitrate, media.bitrate, audioTracks, 'kbps'),
-        audio_codec: normalizeAudioCodec(media.audioCodec, audioStream?.profile),
+        audio_codec: normalizeAudioCodec(media.audioCodec, audioStream?.profile) || 'None',
         audio_channels: normalizeAudioChannels(media.audioChannels, audioStream?.audioChannelLayout),
-        audio_bitrate: bestAudioTrack.bitrate,
+        audio_bitrate: bestAudioTrack?.bitrate,
         video_frame_rate: normalizeFrameRate(videoStream.frameRate),
         color_bit_depth: videoStream.bitDepth,
         hdr_format: hdrFormat,
@@ -213,7 +213,7 @@ export class MediaTransformer {
         video_level: videoStream.level,
         audio_profile: audioStream?.profile,
         audio_sample_rate: normalizeSampleRate(audioStream?.samplingRate),
-        has_object_audio: hasObjectAudio(audioStream?.codec, audioStream?.profile, audioStream?.displayTitle || audioStream?.title, audioStream?.audioChannelLayout),
+        has_object_audio: audioStream ? hasObjectAudio(audioStream.codec, audioStream.profile, audioStream.displayTitle || audioStream.title, audioStream.audioChannelLayout) : false,
         audio_tracks: JSON.stringify(audioTracks),
         subtitle_tracks: subtitleTracks.length > 0 ? JSON.stringify(subtitleTracks) : undefined,
         container: normalizeContainer(part.container || media.container),
@@ -238,9 +238,7 @@ export class MediaTransformer {
         ? 'missing_file'
         : diagnostics.videoStreams === 0
           ? 'missing_video_stream'
-          : diagnostics.audioStreams === 0
-            ? 'missing_audio_stream'
-            : 'no_valid_versions'
+          : 'no_valid_versions'
     throw new IncompleteMetadataError(item.ratingKey, 'Valid Media Versions', ProviderType.Plex, diagnostics)
     }
     if (versions.length > 1) extractVersionNames(versions)

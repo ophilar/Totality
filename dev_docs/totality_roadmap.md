@@ -27,8 +27,18 @@
 - [x] Add provider enable/disable and ordering controls for keyless and API-key providers
 - [x] Rename application-facing NSFW/adult terminology to Protected/Expanded while retaining TMDB compatibility fields
 
+## Phase 4: Franchise Timelines & Plex Playlist Sync [Completed]
+- [x] Brainstorming & Architecture Spec Approval
+- [x] Implement `ITimelineRecipeProvider` strategy (Remote Registry & Trakt Provider)
+- [x] Implement `TimelineResolutionEngine` for strict ID matching (`tmdbId`, `tvdbId`, `imdbId`)
+- [x] Implement `PlexPlaylistSyncService` with Plex API CRUD and viewed status preservation
+- [x] Build desktop UI for Timelines roadmap view, quality tags, and Sonarr/Radarr search triggers
+- [x] End-to-end Vitest and Plex playlist synchronization verification
+
+
 ## Known follow-ups
 
 - Add dedicated settings cards for future API-key providers beyond the currently supported OMDb/TVDB configuration paths.
 - Expand *arr command polling with richer progress/status history if needed.
 - TMDB's external `adult` field remains unchanged because it is part of the upstream API contract.
+
