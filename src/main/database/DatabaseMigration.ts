@@ -359,10 +359,20 @@ async function cleanupOrphanedRecords(db: Client): Promise<void> {
   try {
     await db.execute('BEGIN IMMEDIATE')
     try {
-      await db.execute('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-      await db.execute('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-      await db.execute('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-      await db.execute('COMMIT')
+        await db.execute('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+        await db.execute('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+        await db.execute('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+        await db.execute(`DELETE FROM series_completeness
+          WHERE library_id = ''
+            AND source_id <> ''
+            AND NOT EXISTS (
+              SELECT 1 FROM media_items
+              WHERE media_items.type = 'episode'
+                AND media_items.source_id = series_completeness.source_id
+                AND COALESCE(media_items.library_id, '') = ''
+                AND media_items.series_title = series_completeness.series_title
+            )`)
+        await db.execute('COMMIT')
     } catch(err) {
       await db.execute('ROLLBACK')
       throw err

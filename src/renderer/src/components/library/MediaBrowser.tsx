@@ -109,6 +109,7 @@ export function MediaBrowser({
   }, [isAutoRefreshing, onAutoRefreshChange])
 
   const [stats, setStats] = useState<LibraryStats | null>(null)
+  const [hasMusic, setHasMusic] = useState(false)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
   const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
@@ -145,7 +146,6 @@ export function MediaBrowser({
   const {
     items: movies,
     totalCount: totalMovieCount,
-    setTotalCount: setTotalMovieCount,
     loading: moviesLoading,
     loadMore: loadMoreMovies,
     refresh: refreshMovies,
@@ -156,90 +156,70 @@ export function MediaBrowser({
     countFn: window.electronAPI.countMediaItems,
     pageSize: 200,
     initialFilters: { type: 'movie', sortBy: 'title', sortOrder: 'asc' },
-    activeSourceId
+    activeSourceId,
+    enabled: view === 'movies'
   })
 
   const {
     items: shows,
     totalCount: totalShowCount,
-    setTotalCount: setTotalShowCount,
     loading: showsLoading,
     loadMore: loadMoreShows,
     refresh: refreshShows,
-    setItems: setShows,
     setFilters: setShowsFilters
   } = usePaginatedData<TVShowSummary, TVShowFilters>({
     fetchFn: window.electronAPI.getTVShows,
     countFn: window.electronAPI.countTVShows,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
-    activeSourceId
+    activeSourceId,
+    enabled: view === 'tv'
   })
 
   const {
     items: musicArtists,
     totalCount: totalArtistCount,
-    setTotalCount: setTotalArtistCount,
     loading: artistsLoading,
     loadMore: loadMoreArtists,
-    setItems: setArtists,
     setFilters: setArtistsFilters
   } = usePaginatedData<MusicArtist, MusicFilters>({
     fetchFn: window.electronAPI.musicArtistList,
     countFn: window.electronAPI.musicArtistCount,
     pageSize: 50,
     initialFilters: { sortBy: 'name', sortOrder: 'asc' },
-    activeSourceId
+    activeSourceId,
+    enabled: view === 'music' && musicViewMode === 'artists'
   })
 
   const {
     items: musicAlbums,
     totalCount: totalAlbumCount,
-    setTotalCount: setTotalAlbumCountSetter,
     loading: albumsLoading,
     loadMore: loadMoreAlbums,
-    setItems: setAlbums,
     setFilters: setAlbumsFilters
   } = usePaginatedData<MusicAlbum, MusicFilters>({
     fetchFn: window.electronAPI.musicAlbumList,
     countFn: window.electronAPI.musicAlbumCount,
     pageSize: 200,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
-    activeSourceId
+    activeSourceId,
+    enabled: view === 'music' && musicViewMode === 'albums'
   })
 
   const {
     items: allMusicTracks,
     totalCount: totalTrackCount,
-    setTotalCount: setTotalTrackCountSetter,
     loading: tracksLoading,
     loadMore: loadMoreTracks,
-    setItems: setAllMusicTracks,
     setFilters: setTracksFilters
   } = usePaginatedData<MusicTrack, MusicFilters>({
     fetchFn: window.electronAPI.musicTrackList,
     countFn: window.electronAPI.musicTrackCount,
     pageSize: 500,
     initialFilters: { sortBy: 'title', sortOrder: 'asc' },
-    activeSourceId
+    activeSourceId,
+    enabled: view === 'music' && musicViewMode === 'tracks'
   })
-
-  // Bootstrap
-  useEffect(() => {
-    let isMounted = true
-    window.electronAPI.getLibraryOverview(activeSourceId || undefined).then(data => {
-      if (!isMounted) return
-      if (data.movies) { setMovies(data.movies.items); setTotalMovieCount(data.movies.total) }
-      if (data.tvShows) { setShows(data.tvShows.items); setTotalShowCount(data.tvShows.total) }
-      if (data.music?.artists) { setArtists(data.music.artists.items); setTotalArtistCount(data.music.artists.total) }
-      if (data.music?.albums) { setAlbums(data.music.albums.items); setTotalAlbumCountSetter(data.music.albums.total) }
-      if (data.music?.tracks) { setAllMusicTracks(data.music.tracks.items); setTotalTrackCountSetter(data.music.tracks.total) }
-      if (data.stats) setStats(data.stats)
-    }).catch(err => {
-      window.electronAPI.log.error('MediaBrowser', 'Bootstrap failed:', err)
-    })
-    return () => { isMounted = false }
-  }, [activeSourceId, setMovies, setTotalMovieCount, setShows, setTotalShowCount, setArtists, setTotalArtistCount, setAlbums, setTotalAlbumCountSetter, setAllMusicTracks, setTotalTrackCountSetter])
 
   // Filters
   const [searchInput, setSearchInput] = useState('')
@@ -331,8 +311,12 @@ export function MediaBrowser({
 
   const loadStats = useCallback(async (sourceId?: string) => {
     try {
-      const libraryStats = await window.electronAPI.getLibraryStats(sourceId || undefined)
+      const [libraryStats, artistCount] = await Promise.all([
+        window.electronAPI.getLibraryStats(sourceId || undefined),
+        window.electronAPI.musicArtistCount({ sourceId: sourceId || undefined }),
+      ])
       setStats(libraryStats)
+      setHasMusic(artistCount > 0)
     } catch { /* ignore */ }
   }, [])
 
@@ -416,7 +400,7 @@ export function MediaBrowser({
     <div className="h-full flex flex-col overflow-hidden">
       {!hideHeader && (
         <BrowserHeader
-          view={view} setView={setView} hasMovies={(stats?.totalMovies ?? 0) > 0} hasTV={(stats?.totalShows ?? 0) > 0} hasMusic={musicArtists.length > 0}
+          view={view} setView={setView} hasMovies={(stats?.totalMovies ?? 0) > 0} hasTV={(stats?.totalShows ?? 0) > 0} hasMusic={hasMusic}
           wishlistCount={wishlistCount} isAutoRefreshing={isAutoRefreshing} tmdbApiKeySet={true} themeAccentColor={themeAccentColor}
           showCompletenessPanel={showCompletenessPanel} setShowCompletenessPanel={setShowCompletenessPanel}
           showWishlistPanel={showWishlistPanel} setShowWishlistPanel={setShowWishlistPanel}

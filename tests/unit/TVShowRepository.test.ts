@@ -105,6 +105,28 @@ describe('TVShowRepository (Real DB)', () => {
     expect(episodes).toHaveLength(1)
     expect(episodes[0].series_title).toBe('Breaking Bad')
   })
+
+  it('replaces an identical unresolved summary when a verified identity arrives', async () => {
+    const base = {
+      series_title: 'Andor',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 2,
+      total_episodes: 24,
+      owned_seasons: 2,
+      owned_episodes: 24,
+      completeness_percentage: 100,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    } as SeriesCompleteness
+
+    await repo.upsertCompleteness(base)
+    await repo.upsertCompleteness({ ...base, tmdb_id: '83867' })
+
+    const summaries = await repo.getSummaries()
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0].series_identity_key).toBe('tmdb:83867')
+  })
 })
 
 

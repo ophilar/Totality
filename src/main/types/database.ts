@@ -748,7 +748,7 @@ export interface MusicFilters {
   mood?: string
   genre?: string
   // Sorting
-  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency'
+  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency' | 'size' | 'album_count' | 'track_count'
   sortOrder?: 'asc' | 'desc'
   // Alphabet filter
   alphabetFilter?: string

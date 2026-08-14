@@ -169,7 +169,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       totalSize: data.total_size ?? null,
     }
 
-    return await this.upsertWithProviderId(
+    const id = await this.upsertWithProviderId(
       schema.seriesCompleteness,
       record,
       [schema.seriesCompleteness.seriesIdentityKey, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
@@ -182,6 +182,27 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
       }
     )
+
+    if (
+      !record.userFixedMatch
+      && (record.seriesIdentityKey.startsWith('tmdb:') || record.seriesIdentityKey.startsWith('tvdb:'))
+    ) {
+      await this.drizzle
+        .delete(schema.seriesCompleteness)
+        .where(and(
+          eq(schema.seriesCompleteness.seriesTitle, record.seriesTitle),
+          eq(schema.seriesCompleteness.sourceId, record.sourceId),
+          eq(schema.seriesCompleteness.libraryId, record.libraryId),
+          like(schema.seriesCompleteness.seriesIdentityKey, 'unresolved:%'),
+          eq(schema.seriesCompleteness.totalSeasons, record.totalSeasons),
+          eq(schema.seriesCompleteness.totalEpisodes, record.totalEpisodes),
+          eq(schema.seriesCompleteness.ownedSeasons, record.ownedSeasons),
+          eq(schema.seriesCompleteness.ownedEpisodes, record.ownedEpisodes),
+          eq(schema.seriesCompleteness.userFixedMatch, 0),
+        ))
+    }
+
+    return id
   }
 
   async getAllCompleteness(sourceId?: string, libraryId?: string): Promise<SeriesCompleteness[]> {

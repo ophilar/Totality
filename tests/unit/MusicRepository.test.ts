@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { MusicRepository } from '@main/database/repositories/MusicRepository'
+import { MediaRepository } from '@main/database/repositories/MediaRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('MusicRepository (Real DB)', () => {
   let repo: MusicRepository
+  let mediaRepo: MediaRepository
   let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
     repo = db.music
+    mediaRepo = db.media
   })
 
   afterEach(() => {
@@ -67,6 +70,23 @@ describe('MusicRepository (Real DB)', () => {
     const retrieved = await repo.getTrackByPath('/path/to/track.flac')
     expect(retrieved).toBeDefined()
     expect(retrieved?.title).toBe('T1')
+  })
+
+  it('persists the canonical series identity for an episode with a series TMDB id', async () => {
+    const episodeId = await mediaRepo.upsertItem({
+      source_id: 'src-1',
+      source_type: 'plex',
+      library_id: 'lib-1',
+      plex_id: 'episode-1',
+      type: 'episode',
+      title: 'Episode 1',
+      series_title: 'Andor',
+      series_tmdb_id: '83867',
+      file_path: '/path/to/episode.mkv',
+    })
+
+    const episode = await mediaRepo.getItemById(episodeId)
+    expect(episode?.series_identity_key).toBe('tmdb:83867')
   })
 })
 

@@ -13,6 +13,7 @@ import type {
 } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
+import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import { toSnakeCaseMediaItem, toSnakeCaseQualityScore } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
@@ -348,6 +349,15 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async upsertItem(item: MediaItem): Promise<number> {
+    const seriesIdentityKey = item.series_identity_key
+      ?? (item.type === 'episode' && item.series_title && item.series_tmdb_id
+          ? deriveSeriesIdentityKey({
+            sourceId: item.source_id || 'legacy',
+            libraryId: item.library_id ?? '',
+            folderRelativePath: item.series_title,
+            tmdbId: item.series_tmdb_id,
+          })
+        : null)
     const data = {
       sourceId: item.source_id || 'legacy',
       sourceType: item.source_type || 'plex',
@@ -358,7 +368,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       year: item.year ?? null,
       type: item.type,
       seriesTitle: item.series_title ?? null,
-      seriesIdentityKey: item.series_identity_key ?? null,
+      seriesIdentityKey,
       seasonNumber: item.season_number ?? null,
       episodeNumber: item.episode_number ?? null,
       filePath: PathUtils.toDatabasePath(item.file_path || ''),

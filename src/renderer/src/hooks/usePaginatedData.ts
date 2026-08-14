@@ -1,12 +1,20 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 
+function filtersEqual<T>(left: T, right: T): boolean {
+  const leftEntries = Object.entries(left as object).filter(([, value]) => value !== undefined)
+  const rightEntries = Object.entries(right as object).filter(([, value]) => value !== undefined)
+  return leftEntries.length === rightEntries.length
+    && leftEntries.every(([key, value]) => Object.is(value, (right as Record<string, unknown>)[key]))
+}
+
 interface UsePaginatedDataOptions<T, TFilters> {
   fetchFn: (filters: TFilters) => Promise<T[]>
   countFn: (filters: TFilters) => Promise<number>
   pageSize: number
   initialFilters: TFilters
   activeSourceId?: string | null
+  enabled?: boolean
 }
 
 interface UsePaginatedDataReturn<T, TFilters> {
@@ -32,6 +40,7 @@ export function usePaginatedData<T, TFilters>({
   pageSize,
   initialFilters,
   activeSourceId,
+  enabled = true,
 }: UsePaginatedDataOptions<T, TFilters>): UsePaginatedDataReturn<T, TFilters> {
   const [items, setItems] = useState<T[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -44,6 +53,7 @@ export function usePaginatedData<T, TFilters>({
   const loadingRef = useRef(false)
 
   const loadPage = useCallback(async (isReset = false) => {
+    if (!enabled) return
     // Only allow concurrent loads if it's a reset (e.g. filter change)
     if (loadingRef.current && !isReset) return
     
@@ -82,7 +92,7 @@ export function usePaginatedData<T, TFilters>({
       loadingRef.current = false
       setLoading(false)
     }
-  }, [fetchFn, countFn, pageSize, activeSourceId])
+  }, [fetchFn, countFn, pageSize, activeSourceId, enabled])
 
   const loadMore = useCallback(() => {
     if (items.length < totalCount && !loading) {
@@ -98,9 +108,11 @@ export function usePaginatedData<T, TFilters>({
   }, [loadPage])
 
   const setFilters = useCallback((newFilters: Partial<TFilters>) => {
-    filtersRef.current = { ...filtersRef.current, ...newFilters }
-    loadPage(true)
-  }, [loadPage])
+    const nextFilters = { ...filtersRef.current, ...newFilters }
+    if (filtersEqual(filtersRef.current, nextFilters)) return
+    filtersRef.current = nextFilters
+    if (enabled) loadPage(true)
+  }, [enabled, loadPage])
 
   const reset = useCallback(() => {
     setItems([])
@@ -121,16 +133,18 @@ export function usePaginatedData<T, TFilters>({
 
   // Reload when active source changes
   useEffect(() => {
+    if (!enabled) return
     // BOLT: If items were pre-loaded via bootstrap, don't trigger initial load
     if (hasInitialLoadRef.current) {
       loadPage(true)
     } else if (offsetRef.current === 0) {
       loadPage(true)
     }
-  }, [activeSourceId])
+  }, [activeSourceId, enabled, loadPage])
 
   // Subscribe to library update events
   useEffect(() => {
+    if (!enabled) return
     const unsubscribe = window.electronAPI.onLibraryUpdated?.((event) => {
       // If event has a sourceId, only refresh if it matches our active source
       // If activeSourceId is null (All Sources), we always refresh
@@ -139,7 +153,7 @@ export function usePaginatedData<T, TFilters>({
       }
     })
     return () => unsubscribe?.()
-  }, [activeSourceId, loadPage])
+  }, [activeSourceId, enabled, loadPage])
 
   return {
     items,

@@ -124,7 +124,7 @@ export const MusicFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'album', 'artist', 'codec', 'duration', 'added_at', 'name']).optional(),
+  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'size', 'album', 'artist', 'codec', 'duration', 'added_at', 'name', 'album_count', 'track_count']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   alphabetFilter: z.string().max(1).optional(),
 }).optional()
