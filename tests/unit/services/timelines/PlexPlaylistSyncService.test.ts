@@ -205,4 +205,43 @@ describe('PlexPlaylistSyncService', () => {
     )
     expect(result.playlistRatingKey).toBe('playlist-1000')
   })
+
+  it('retrieves existing playlists from Plex server', async () => {
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        MediaContainer: {
+          Metadata: [
+            {
+              ratingKey: 'p-1',
+              title: 'MCU Chronological',
+              playlistType: 'video',
+              leafCount: 32,
+              duration: 250000,
+              composite: '/thumb.jpg',
+            },
+            {
+              ratingKey: 'p-2',
+              title: 'Star Wars Complete',
+              playlistType: 'video',
+              leafCount: 11,
+              duration: 90000,
+            },
+          ],
+        },
+      },
+    })
+
+    const playlists = await service.getExistingPlaylists('http://127.0.0.1:32400', 'plex-token')
+    expect(playlists).toHaveLength(2)
+    expect(playlists[0]).toEqual({
+      ratingKey: 'p-1',
+      title: 'MCU Chronological',
+      playlistType: 'video',
+      leafCount: 32,
+      duration: 250000,
+      composite: '/thumb.jpg',
+      updatedAt: undefined,
+    })
+    expect(playlists[1].title).toBe('Star Wars Complete')
+  })
 })

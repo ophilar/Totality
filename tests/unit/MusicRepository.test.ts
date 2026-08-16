@@ -88,6 +88,38 @@ describe('MusicRepository (Real DB)', () => {
     const episode = await mediaRepo.getItemById(episodeId)
     expect(episode?.series_identity_key).toBe('tmdb:83867')
   })
+
+  it('sanitizes NaN and invalid release years on upsertAlbum', async () => {
+    const artistId = await repo.upsertArtist({ source_id: 's1', source_type: 'local', provider_id: 'art2', name: 'A2' })
+
+    const albumWithNaN = {
+      source_id: 's1',
+      source_type: 'local',
+      provider_id: 'alb-nan',
+      artist_id: artistId,
+      artist_name: 'A2',
+      title: 'Album NaN',
+      year: NaN as unknown as number,
+    }
+
+    const albumId = await repo.upsertAlbum(albumWithNaN)
+    const retrieved = await repo.getAlbumById(albumId)
+    expect(retrieved?.year).toBeUndefined()
+
+    const albumWithValidYear = {
+      source_id: 's1',
+      source_type: 'local',
+      provider_id: 'alb-valid',
+      artist_id: artistId,
+      artist_name: 'A2',
+      title: 'Album 2024',
+      year: 2024,
+    }
+
+    const validId = await repo.upsertAlbum(albumWithValidYear)
+    const validRetrieved = await repo.getAlbumById(validId)
+    expect(validRetrieved?.year).toBe(2024)
+  })
 })
 
 

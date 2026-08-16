@@ -86,10 +86,13 @@ export class IdentityRepository {
   async getConflictingEntityIds(entityType: IdentityEntityType, entityId: number, identities: Array<{ provider: string; externalId: string }>): Promise<number[]> {
     if (identities.length === 0) return []
     const conflicts = new Set<number>()
+    const tableName = entityType === 'series' ? 'series_completeness' : entityType === 'movie' ? 'media_items' : entityType === 'artist' ? 'music_artists' : 'music_albums'
     for (const identity of identities) {
       const result = await this.db.execute({
-        sql: `SELECT entity_id FROM media_identities WHERE entity_type = ? AND provider = ? AND external_id = ? AND entity_id <> ?`,
-        args: [entityType, identity.provider, identity.externalId, entityId]
+        sql: `SELECT mi.entity_id FROM media_identities mi
+              JOIN ${tableName} t ON t.id = mi.entity_id
+              WHERE mi.entity_type = ? AND mi.provider = ? AND mi.external_id = ? AND mi.entity_id <> ?`,
+        args: [entityType, identity.provider, identity.externalId, entityId ?? -1]
       })
       for (const row of result.rows) conflicts.add(Number(row.entity_id))
     }

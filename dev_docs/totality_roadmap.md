@@ -34,6 +34,10 @@
 - [x] Implement `PlexPlaylistSyncService` with Plex API CRUD and viewed status preservation
 - [x] Build desktop UI for Timelines roadmap view, quality tags, and Sonarr/Radarr search triggers
 - [x] End-to-end Vitest and Plex playlist synchronization verification
+- [x] Implement Bundled Curated Presets (Star Trek Chronology/Release, Star Wars, MCU, DCEU, Alien) for offline resilience
+- [x] Implement `WebGuideRecipeProvider` for universal internet viewing guides (IGN, startrekviewingguide.com, Rotten Tomatoes, etc.) and AI-assisted franchise generation
+- [x] Enhanced multi-source timeline importer with real-time feedback and source badges in `TimelinesView.tsx`
+
 
 
 ## Known follow-ups

@@ -24,4 +24,10 @@ describe('IdentityRepository (Real DB)', () => {
     expect(await repo.getAliases('artist', 7)).toEqual([expect.objectContaining({ alias: 'The Example Band' })])
     expect(await repo.isLocked('artist', 7)).toBe(true)
   })
+
+  it('only returns conflicting entity IDs if the entity exists in active tables', async () => {
+    await repo.upsertIdentity({ entityType: 'artist', entityId: 999, provider: 'musicbrainz', externalId: 'mb-dup-1' })
+    const orphanedConflicts = await repo.getConflictingEntityIds('artist', 888, [{ provider: 'musicbrainz', externalId: 'mb-dup-1' }])
+    expect(orphanedConflicts).toEqual([])
+  })
 })

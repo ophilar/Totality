@@ -195,6 +195,116 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sort movies by year' }))
     expect(onSortChange).toHaveBeenCalledWith('year')
   })
+
+  it('renders flat movies when groupByCollections is false even if collection exists', () => {
+    const movie1 = { id: 10, title: 'Avatar 1', type: 'movie' } as MediaItem
+    const movie2 = { id: 11, title: 'Avatar 2', type: 'movie' } as MediaItem
+    const collection = {
+      collection_name: 'Avatar Collection',
+      total_movies: 2,
+      owned_movies: 2,
+      movies: [movie1, movie2],
+    }
+
+    render(
+      <TestProviders>
+        <MoviesView
+          movies={[movie1, movie2]}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          groupByCollections={false}
+          getCollectionForMovie={() => collection}
+          movieCollections={[collection]}
+          showSourceBadge={false}
+          totalMovieCount={2}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </TestProviders>
+    )
+
+    expect(screen.getByText('Avatar 1')).toBeTruthy()
+    expect(screen.getByText('Avatar 2')).toBeTruthy()
+    expect(screen.queryByText('Avatar Collection')).toBeNull()
+  })
+
+  it('groups movies into collection cards when groupByCollections is true', () => {
+    const movie1 = { id: 20, title: 'Alien 1', type: 'movie' } as MediaItem
+    const movie2 = { id: 21, title: 'Alien 2', type: 'movie' } as MediaItem
+    const collection = {
+      collection_name: 'Alien Collection',
+      total_movies: 2,
+      owned_movies: 2,
+      movies: [movie1, movie2],
+    }
+
+    render(
+      <TestProviders>
+        <MoviesView
+          movies={[movie1, movie2]}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          groupByCollections={true}
+          getCollectionForMovie={() => collection}
+          movieCollections={[collection]}
+          showSourceBadge={false}
+          totalMovieCount={2}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </TestProviders>
+    )
+
+    expect(screen.getByText('Alien Collection')).toBeTruthy()
+  })
+
+  it('filters out non-collection movies when collectionsOnly is true', () => {
+    const movie1 = { id: 30, title: 'Iron Man', type: 'movie' } as MediaItem
+    const standaloneMovie = { id: 31, title: 'Inception', type: 'movie' } as MediaItem
+    const collection = {
+      collection_name: 'Iron Man Collection',
+      tmdb_collection_id: 'coll_iron_man',
+      total_movies: 1,
+      owned_movies: 1,
+      movies: [movie1],
+    }
+
+    render(
+      <TestProviders>
+        <MoviesView
+          movies={[movie1, standaloneMovie]}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          groupByCollections={true}
+          collectionsOnly={true}
+          getCollectionForMovie={(m) => (m.id === 30 ? collection : undefined)}
+          movieCollections={[collection]}
+          showSourceBadge={false}
+          totalMovieCount={2}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+        />
+      </TestProviders>
+    )
+
+    expect(screen.getByText('Iron Man Collection')).toBeTruthy()
+    expect(screen.queryByText('Inception')).toBeNull()
+  })
 })
 
 

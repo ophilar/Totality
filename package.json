@@ -14,10 +14,12 @@
         "electron:dev": "vite",
         "electron:build": "tsc && vite build && cross-env NODE_OPTIONS=--no-deprecation electron-builder",
         "generate-icons": "node scripts/generate-icons.js",
-        "test": "vitest",
-        "test:run": "vitest run",
+        "typecheck": "tsc --noEmit",
+        "test": "tsc --noEmit && vitest run",
+        "test:run": "tsc --noEmit && vitest run",
+        "test:watch": "vitest",
         "test:ui": "vitest --ui",
-        "test:coverage": "vitest run --coverage",
+        "test:coverage": "tsc --noEmit && vitest run --coverage",
         "release": "standard-version"
     },
     "keywords": [

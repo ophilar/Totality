@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WishlistRepository } from '@main/database/repositories/WishlistRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { WishlistMediaType, WishlistReason, WishlistStatus } from '@main/types/database'
 
 describe('WishlistRepository (Real DB)', () => {
   let repo: WishlistRepository
@@ -17,10 +18,11 @@ describe('WishlistRepository (Real DB)', () => {
 
   it('should add and retrieve a wishlist item', async () => {
     const item = {
-      media_type: 'movie',
+      media_type: WishlistMediaType.Movie,
       title: 'Wish Movie',
-      reason: 'missing',
-      priority: 5,
+      reason: WishlistReason.Missing,
+      priority: 5 as const,
+      status: WishlistStatus.Active,
     }
 
     const id = await repo.add(item)
@@ -32,17 +34,14 @@ describe('WishlistRepository (Real DB)', () => {
   })
 
   it('should delete a wishlist item', async () => {
-    const id = await repo.add({ media_type: 'movie', title: 'To Delete' })
+    const id = await repo.add({ media_type: WishlistMediaType.Movie, title: 'To Delete', reason: WishlistReason.Missing, priority: 3, status: WishlistStatus.Active })
     await repo.delete(id)
     expect(await repo.getItems()).toHaveLength(0)
   })
 
   it('should get count', async () => {
-    await repo.add({ media_type: 'movie', title: 'A' })
-    await repo.add({ media_type: 'movie', title: 'B' })
+    await repo.add({ media_type: WishlistMediaType.Movie, title: 'A', reason: WishlistReason.Missing, priority: 3, status: WishlistStatus.Active })
+    await repo.add({ media_type: WishlistMediaType.Movie, title: 'B', reason: WishlistReason.Missing, priority: 3, status: WishlistStatus.Active })
     expect(await repo.getCount()).toBe(2)
   })
 })
-
-
-

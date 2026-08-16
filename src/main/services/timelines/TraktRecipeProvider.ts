@@ -1,4 +1,5 @@
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 
 interface TraktItemResponse {
   rank: number
@@ -38,13 +39,21 @@ interface TraktItemResponse {
 }
 
 export class TraktRecipeProvider implements ITimelineRecipeProvider {
-  constructor(private readonly traktClientId?: string) {}
+  constructor(
+    private readonly traktClientId?: string,
+    private readonly cacheService: TimelineCacheService = getTimelineCacheService()
+  ) {}
 
   async listAvailableRecipes(): Promise<TimelineRecipeSummary[]> {
     return []
   }
 
   async fetchTimeline(listSlugOrUrl: string): Promise<TimelineDefinition> {
+    const cached = await this.cacheService.getRecipe(listSlugOrUrl)
+    if (cached) {
+      return cached
+    }
+
     if (!this.traktClientId) {
       throw new Error('Trakt Client ID is required to fetch Trakt lists.')
     }
@@ -63,6 +72,12 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       listSlug = parts[2]
     } else {
       throw new Error(`Invalid Trakt list format '${listSlugOrUrl}'. Expected 'username/list-slug'.`)
+    }
+
+    const canonicalId = `trakt-${username}-${listSlug}`
+    const cachedByCanonical = await this.cacheService.getRecipe(canonicalId)
+    if (cachedByCanonical) {
+      return cachedByCanonical
     }
 
     const response = await fetch(`https://api.trakt.tv/users/${username}/lists/${listSlug}/items`, {
@@ -107,11 +122,23 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
             imdbId: raw.episode.ids.imdb,
           },
         })
+      } else if (raw.type === 'show' && raw.show) {
+        items.push({
+          order: order++,
+          type: 'show',
+          title: raw.show.title,
+          seriesTitle: raw.show.title,
+          identifiers: {
+            tmdbId: raw.show.ids.tmdb,
+            tvdbId: raw.show.ids.tvdb,
+            imdbId: raw.show.ids.imdb,
+          },
+        })
       }
     }
 
-    return {
-      id: `trakt-${username}-${listSlug}`,
+    const definition: TimelineDefinition = {
+      id: canonicalId,
       franchise: 'Trakt Custom',
       name: `${username}/${listSlug}`,
       description: `Imported from Trakt.tv (${username}/${listSlug})`,
@@ -119,5 +146,12 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
       version: 1,
       items,
     }
+
+    await this.cacheService.setRecipe(canonicalId, definition)
+    if (listSlugOrUrl !== canonicalId) {
+      await this.cacheService.setRecipe(listSlugOrUrl, definition)
+    }
+
+    return definition
   }
 }

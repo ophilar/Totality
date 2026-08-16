@@ -77,7 +77,8 @@ export function MediaBrowser({
     selectedShow, setSelectedShow,
     selectedArtist, setSelectedArtist,
     selectedAlbum, setSelectedAlbum,
-    searchQuery
+    searchQuery,
+    groupByCollections, setGroupByCollections
   } = useLibrary()
 
   const { sources, activeSourceId, setActiveSource, markLibraryAsNew } = useSources()
@@ -230,9 +231,7 @@ export function MediaBrowser({
 
   useEffect(() => {
     const commonFilters = {
-      sortBy: sortBy === 'title' 
-        ? (view === 'music' ? 'name' : 'title') 
-        : (sortBy === 'waste' ? 'storage_debt' : sortBy),
+      sortBy: sortBy === 'waste' ? 'storage_debt' : sortBy,
       sortOrder,
       qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
       tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
@@ -245,12 +244,13 @@ export function MediaBrowser({
     if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as MediaItemFilters)
     else if (view === 'tv') setShowsFilters({ ...commonFilters } as TVShowFilters)
     else if (view === 'music') {
-      const musicSortBy = sortBy === 'title' ? 'name' : (sortBy === 'waste' ? 'storage_debt' : sortBy)
+      const musicSortBy = sortBy === 'waste' ? 'storage_debt' : sortBy
       const validArtistSorts = ['name', 'album_count', 'track_count', 'storage_debt', 'efficiency', 'size']
-      const artistSort = validArtistSorts.includes(musicSortBy) ? musicSortBy : 'name'
+      const artistSort = sortBy === 'title' ? 'name' : (validArtistSorts.includes(musicSortBy) ? musicSortBy : 'name')
+      const albumOrTrackSort = sortBy === 'title' ? 'title' : musicSortBy
       if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: artistSort } as MusicFilters)
-      else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters } as MusicFilters)
-      else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters } as MusicFilters)
+      else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters, sortBy: albumOrTrackSort } as MusicFilters)
+      else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters, sortBy: albumOrTrackSort } as MusicFilters)
     }
   }, [view, musicViewMode, sortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
 
@@ -419,7 +419,9 @@ export function MediaBrowser({
           currentTypeLibraries={currentTypeLibraries} isUnlocked={isUnlocked} setIsUnlocked={setIsUnlocked}
           setShowPinModal={setShowPinModal} tierFilter={tierFilter} setTierFilter={setTierFilter}
           qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} slimDown={slimDown} setSlimDown={setSlimDown}
-          collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly} hasCollections={movieCollections.length > 0}
+          collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly}
+          groupByCollections={groupByCollections} setGroupByCollections={setGroupByCollections}
+          hasCollections={movieCollections.length > 0}
           gridScale={gridScale} setGridScale={setGridScale} viewType={viewType} setViewType={setViewType} selectedShow={selectedShow}
         />
 
@@ -428,10 +430,12 @@ export function MediaBrowser({
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
-        movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
+                  movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
                   onSelectMovie={(id) => setSelectedMediaId(id)}
                   onSelectCollection={(c) => { setSelectedCollection(c); setShowCollectionModal(true) }}
                   viewType={viewType} gridScale={gridScale}
+                  groupByCollections={groupByCollections}
+                  collectionsOnly={collectionsOnly}
                   getCollectionForMovie={getCollectionForMovie} movieCollections={movieCollections}
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onFixMatch={(mediaItemId, title, year, filePath) => setMatchFixModal({ isOpen: true, type: 'movie', title, year, filePath, mediaItemId })}

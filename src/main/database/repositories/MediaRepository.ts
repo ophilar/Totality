@@ -1,4 +1,4 @@
-import { eq, and, or, like, desc, asc, sql, inArray, lt, gte, isNull } from 'drizzle-orm'
+import { eq, and, like, desc, asc, sql, inArray, isNull } from 'drizzle-orm'
 import type { AnyColumn, SQL } from 'drizzle-orm'
 import type {
   MediaItem,
@@ -77,34 +77,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   async getItems(
     filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }
   ): Promise<MediaItem[]> {
-    const conditions = []
-
-    if (!filters?.includeDisabledLibraries) {
-      // Logic for disabled libraries join handled via subquery or raw SQL snippet in Drizzle
-      conditions.push(
-        sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id) IS NOT 0`
-      )
-    }
-
-    if (filters?.type) conditions.push(eq(schema.mediaItems.type, filters.type))
-    if (filters?.sourceId) conditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
-    if (filters?.sourceType) conditions.push(eq(schema.mediaItems.sourceType, filters.sourceType))
-    if (filters?.libraryId) conditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
-
-    if (filters?.searchQuery) {
-      const q = `%${filters.searchQuery}%`
-      conditions.push(or(like(schema.mediaItems.title, q), like(schema.mediaItems.seriesTitle, q)))
-    }
-
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') {
-        conditions.push(sql`media_items.title NOT GLOB '[A-Za-z]*'`)
-      } else {
-        conditions.push(
-          eq(sql`UPPER(SUBSTR(media_items.title, 1, 1))`, filters.alphabetFilter.toUpperCase())
-        )
-      }
-    }
+    const conditions = this.buildFilters(filters)
 
     // Joining quality_scores
     const query = this.drizzle
@@ -114,38 +87,6 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       })
       .from(schema.mediaItems)
       .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
-
-    if (filters?.qualityTier)
-      conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
-    if (filters?.tierQuality)
-      conditions.push(eq(schema.qualityScores.tierQuality, filters.tierQuality))
-
-    if (filters?.efficiencyFilter) {
-      if (filters.efficiencyFilter === 'low')
-        conditions.push(lt(schema.qualityScores.efficiencyScore, 60))
-      else if (filters.efficiencyFilter === 'medium')
-        conditions.push(
-          and(
-            gte(schema.qualityScores.efficiencyScore, 60),
-            lt(schema.qualityScores.efficiencyScore, 85)
-          )
-        )
-      else if (filters.efficiencyFilter === 'high')
-        conditions.push(gte(schema.qualityScores.efficiencyScore, 85))
-    }
-
-    if (filters?.slimDown) {
-      conditions.push(
-        or(
-          lt(schema.qualityScores.efficiencyScore, 60),
-          sql`quality_scores.storage_debt_bytes > 5368709120`
-        )
-      )
-    }
-
-    if (filters?.needsUpgrade !== undefined) {
-      conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
-    }
 
     if (conditions.length > 0) query.where(and(...conditions))
 
@@ -192,11 +133,11 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): SQL[] {
-    const conditions = []
+    const conditions: SQL[] = []
 
     if (!filters?.includeDisabledLibraries) {
       conditions.push(
-        sql`(SELECT is_enabled FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id) IS NOT 0`
+        sql`NOT EXISTS (SELECT 1 FROM library_scans ls WHERE ls.source_id = media_items.source_id AND ls.library_id = media_items.library_id AND ls.is_enabled = 0)`
       )
     }
 
@@ -218,36 +159,29 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       conditions.push(this.buildAlphabetFilter(schema.mediaItems.title, filters.alphabetFilter))
     }
 
-    if (filters?.qualityTier)
-      conditions.push(eq(schema.qualityScores.qualityTier, filters.qualityTier))
-    if (filters?.tierQuality)
-      conditions.push(eq(schema.qualityScores.tierQuality, filters.tierQuality))
-
-    if (filters?.efficiencyFilter) {
-      if (filters.efficiencyFilter === 'low')
-        conditions.push(lt(schema.qualityScores.efficiencyScore, 60))
-      else if (filters.efficiencyFilter === 'medium')
-        conditions.push(
-          and(
-            gte(schema.qualityScores.efficiencyScore, 60),
-            lt(schema.qualityScores.efficiencyScore, 85)
-          )
-        )
-      else if (filters.efficiencyFilter === 'high')
-        conditions.push(gte(schema.qualityScores.efficiencyScore, 85))
-    }
-
-    if (filters?.slimDown) {
+    // Quality Tier (Resolution: 4K, 1080p, 720p, SD)
+    if (filters?.qualityTier && filters.qualityTier !== 'all') {
       conditions.push(
-        or(
-          lt(schema.qualityScores.efficiencyScore, 60),
-          sql`quality_scores.storage_debt_bytes > 5368709120`
-        )
+        sql`(UPPER(${schema.qualityScores.qualityTier}) = UPPER(${filters.qualityTier}) OR UPPER(${schema.mediaItems.resolution}) = UPPER(${filters.qualityTier}))`
       )
     }
 
-    if (filters?.needsUpgrade !== undefined) {
-      conditions.push(eq(schema.qualityScores.needsUpgrade, filters.needsUpgrade ? 1 : 0))
+    // Tier Quality (LOW, MEDIUM, HIGH)
+    if (filters?.tierQuality && filters.tierQuality !== 'all') {
+      conditions.push(
+        sql`UPPER(${schema.qualityScores.tierQuality}) = UPPER(${filters.tierQuality})`
+      )
+    }
+
+    // Slim Down
+    if (filters?.slimDown) {
+      conditions.push(
+        sql`(${schema.qualityScores.efficiencyScore} < 60 OR ${schema.qualityScores.storageDebtBytes} > 5368709120)`
+      )
+    }
+
+    if (filters?.needsUpgrade) {
+      conditions.push(eq(schema.qualityScores.needsUpgrade, 1))
     }
 
     return conditions.filter((condition): condition is SQL => condition !== undefined)

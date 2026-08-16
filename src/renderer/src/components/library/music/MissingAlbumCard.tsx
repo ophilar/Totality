@@ -44,7 +44,7 @@ export const MissingAlbumCard = memo(({ album, artistName, onDismiss }: {
       <div className="pt-2 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <h4 className="font-medium text-sm truncate text-muted-foreground">{album.title}</h4>
-          {album.year && (
+          {album.year != null && !isNaN(album.year) && (
             <p className="text-xs text-muted-foreground/70">{album.year}</p>
           )}
         </div>

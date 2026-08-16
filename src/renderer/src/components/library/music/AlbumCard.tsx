@@ -161,7 +161,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
         {showArtist && (
           <p className="text-xs text-muted-foreground truncate">{album.artist_name}</p>
         )}
-        {album.year && (
+        {album.year != null && !isNaN(album.year) && (
           <p className="text-xs text-muted-foreground">{album.year}</p>
         )}
       </div>

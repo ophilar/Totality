@@ -26,7 +26,7 @@ describe('usePaginatedData', () => {
   it('does not reload when filters only add undefined values', async () => {
     const fetchFn = vi.fn(async () => [])
     const countFn = vi.fn(async () => 0)
-    const { result } = renderHook(() => usePaginatedData({
+    const { result } = renderHook(() => usePaginatedData<{ id: number }, { sortBy: string; searchQuery?: string }>({
       fetchFn,
       countFn,
       pageSize: 50,

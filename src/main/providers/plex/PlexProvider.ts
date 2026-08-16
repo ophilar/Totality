@@ -43,7 +43,7 @@ import type {
 type PlexMappedMedia = { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] }
 type PlexPreparedEpisode = { mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
 type PlexPreparedData =
-  | { type: 'show'; title: string; tmdbId?: string; posterUrl?: string; ownedSeasons: number; ownedEpisodes: number; episodes: PlexPreparedEpisode[] }
+  | { type: 'show'; title: string; tmdbId?: string; tvdbId?: string; posterUrl?: string; ownedSeasons: number; ownedEpisodes: number; episodes: PlexPreparedEpisode[] }
   | { type: 'movie'; title: string; mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
 
 export interface PlexCollection {
@@ -440,11 +440,21 @@ export class PlexProvider extends BaseMediaProvider {
             if (res.type === 'show' && res.detailedEpisodes) {
               const { plexItem, detailedEpisodes } = res
               let showTmdbId: string | undefined
-              if (plexItem.Guid) {
-                for (const guid of plexItem.Guid) {
-                  if (guid.id.includes('tmdb://')) {
-                    showTmdbId = guid.id.replace('tmdb://', '').split('?')[0]
-                  }
+              let showTvdbId: string | undefined
+
+              const showGuids = [...(plexItem.Guid ?? [])]
+              if (plexItem.guid) showGuids.push({ id: plexItem.guid })
+
+              for (const guid of showGuids) {
+                const id = guid.id
+                if (id.includes('tmdb://')) {
+                  showTmdbId = id.split('tmdb://')[1]?.split('?')[0]
+                } else if (id.includes('themoviedb://')) {
+                  showTmdbId = id.split('themoviedb://')[1]?.split('?')[0]
+                } else if (id.includes('tvdb://')) {
+                  showTvdbId = id.split('tvdb://')[1]?.split('?')[0]
+                } else if (id.includes('thetvdb://')) {
+                  showTvdbId = id.split('thetvdb://')[1]?.split('?')[0]
                 }
               }
 
@@ -456,7 +466,7 @@ export class PlexProvider extends BaseMediaProvider {
 
               const episodesToSave = await Promise.all(
                 detailedEpisodes.map(async (detail) => {
-                  const mapped = this.convertToMediaItem(detail, showTmdbId, plexItem.titleSort)
+                  const mapped = this.convertToMediaItem(detail, showTmdbId, showTvdbId, plexItem.titleSort)
                   if (!mapped) return null
 
                   // Perform quality analysis sync/async safely before transaction
@@ -470,6 +480,7 @@ export class PlexProvider extends BaseMediaProvider {
                 type: 'show',
                 title: plexItem.title,
                 tmdbId: showTmdbId,
+                tvdbId: showTvdbId,
                 posterUrl: showPoster,
                 ownedSeasons,
                 ownedEpisodes,
@@ -686,6 +697,7 @@ export class PlexProvider extends BaseMediaProvider {
   private convertToMediaItem(
     item: PlexMediaItem,
     showTmdbId?: string,
+    showTvdbId?: string,
     showTitleSort?: string
   ): { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] } | null {
     try {
@@ -700,6 +712,13 @@ export class PlexProvider extends BaseMediaProvider {
       }
       if (showTmdbId) {
         result.mediaItem.series_tmdb_id = showTmdbId
+      }
+      if (item.type === 'episode') {
+        if (showTmdbId) {
+          result.mediaItem.series_identity_key = `tmdb:${showTmdbId}`
+        } else if (showTvdbId) {
+          result.mediaItem.series_identity_key = `tvdb:${showTvdbId}`
+        }
       }
       return result
     } catch (error: unknown) {
@@ -768,10 +787,47 @@ export class PlexProvider extends BaseMediaProvider {
       durationMs: 0,
     }
     try {
+      if (!this.selectedServer) throw new Error('No server selected')
       const db = getDatabase()
-      const artists = await this.getMusicArtists(libraryId)
+
+      if (onProgress) {
+        onProgress({
+          current: 0,
+          total: 100,
+          phase: 'fetching',
+          percentage: 10,
+          currentItem: 'Fetching music metadata from Plex in bulk...',
+        })
+      }
+
+      const allUrl = `${this.selectedServer.uri}/library/sections/${libraryId}/all`
+      const [artists, albums, tracks] = await Promise.all([
+        this.getMusicArtists(libraryId),
+        this.getMusicAlbums(libraryId),
+        this.paginatedPlexFetch<PlexMusicTrack>(allUrl, { type: 10 }),
+      ])
+
+      if (this.musicScanCancelled) {
+        result.cancelled = true
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
+      // Group tracks by album ratingKey
+      const tracksByAlbum = new Map<string, PlexMusicTrack[]>()
+      for (const track of tracks) {
+        const albumKey = track.parentRatingKey || ''
+        if (!tracksByAlbum.has(albumKey)) {
+          tracksByAlbum.set(albumKey, [])
+        }
+        tracksByAlbum.get(albumKey)!.push(track)
+      }
+
+      // Upsert all artists
+      const artistIdMap = new Map<string, number>()
       const totalArtists = artists.length
-      let processed = 0
+      let processedArtists = 0
+
       for (const plexArtist of artists) {
         if (this.musicScanCancelled) {
           result.cancelled = true
@@ -781,13 +837,46 @@ export class PlexProvider extends BaseMediaProvider {
           const artistId = await db.music.upsertArtist(
             this.convertToMusicArtist(plexArtist, libraryId)
           )
-          const albums = await this.getMusicAlbums(libraryId, plexArtist.ratingKey)
-          for (const plexAlbum of albums) {
-            const albumData = this.convertToMusicAlbum(plexAlbum, artistId, libraryId)
-            const tracks = await this.getMusicTracks(plexAlbum.ratingKey)
-            albumData.track_count = tracks.length
-            const albumId = await db.music.upsertAlbum(albumData)
-            const tracksData = tracks
+          artistIdMap.set(plexArtist.ratingKey, artistId)
+          processedArtists++
+          if (onProgress) {
+            onProgress({
+              current: processedArtists,
+              total: totalArtists,
+              phase: 'processing',
+              percentage: (processedArtists / Math.max(totalArtists, 1)) * 40,
+              currentItem: plexArtist.title,
+            })
+          }
+        } catch (err) {
+          result.errors.push(`Artist ${plexArtist.title}: ${getErrorMessage(err)}`)
+        }
+      }
+
+      if (result.cancelled) {
+        result.durationMs = Date.now() - startTime
+        return result
+      }
+
+      // Upsert all albums and their tracks
+      const totalAlbums = albums.length
+      let processedAlbums = 0
+
+      for (const plexAlbum of albums) {
+        if (this.musicScanCancelled) {
+          result.cancelled = true
+          break
+        }
+        try {
+          const artistId = plexAlbum.parentRatingKey ? (artistIdMap.get(plexAlbum.parentRatingKey) || 0) : 0
+          const albumData = this.convertToMusicAlbum(plexAlbum, artistId, libraryId)
+          const albumTracks = tracksByAlbum.get(plexAlbum.ratingKey) || []
+          albumData.track_count = albumTracks.length
+
+          const albumId = await db.music.upsertAlbum(albumData)
+
+          if (albumTracks.length > 0) {
+            const tracksData = albumTracks
               .map((plexTrack: PlexMusicTrack) =>
                 this.convertToMusicTrack(plexTrack, albumId, artistId, libraryId)
               )
@@ -803,20 +892,23 @@ export class PlexProvider extends BaseMediaProvider {
               await db.endBatch()
             }
           }
-          processed++
-          if (onProgress)
+
+          processedAlbums++
+          if (onProgress) {
             onProgress({
-              current: processed,
-              total: totalArtists,
+              current: processedAlbums,
+              total: totalAlbums,
               phase: 'processing',
-              percentage: (processed / totalArtists) * 100,
-              currentItem: plexArtist.title,
+              percentage: 40 + (processedAlbums / Math.max(totalAlbums, 1)) * 60,
+              currentItem: plexAlbum.title,
             })
+          }
         } catch (err) {
-          result.errors.push(`Artist ${plexArtist.title}: ${getErrorMessage(err)}`)
+          result.errors.push(`Album ${plexAlbum.title}: ${getErrorMessage(err)}`)
         }
       }
-      result.success = true
+
+      result.success = !result.cancelled
     } catch (err) {
       result.errors.push(getErrorMessage(err))
     }

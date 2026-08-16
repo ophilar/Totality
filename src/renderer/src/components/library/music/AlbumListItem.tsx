@@ -50,7 +50,7 @@ export const AlbumListItem = memo(({ album, onClick, showArtist = true, showSour
       {/* Info */}
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate">{album.title}</h4>
-        {album.year && (
+        {album.year != null && !isNaN(album.year) && (
           <p className="text-xs text-muted-foreground">{album.year}</p>
         )}
         <div className="mt-2 flex items-center gap-2 flex-wrap">

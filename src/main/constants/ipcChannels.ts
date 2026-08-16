@@ -232,5 +232,6 @@ export const IPC_CHANNELS = {
     GET_RECIPE: 'timelines:getRecipe',
     RESOLVE_TIMELINE: 'timelines:resolveTimeline',
     SYNC_PLEX_PLAYLIST: 'timelines:syncPlexPlaylist',
+    GET_PLEX_PLAYLISTS: 'timelines:getPlexPlaylists',
   },
 } as const

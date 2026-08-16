@@ -6,7 +6,7 @@ export interface TimelineItemIdentifiers {
 
 export interface TimelineItem {
   order: number
-  type: 'movie' | 'episode'
+  type: 'movie' | 'episode' | 'show'
   title: string
   seriesTitle?: string
   seasonNumber?: number
@@ -32,7 +32,7 @@ export interface TimelineRecipeSummary {
   franchise: string
   description: string
   totalItems: number
-  sourceType: 'preset' | 'remote' | 'trakt'
+  sourceType: 'preset' | 'remote' | 'trakt' | 'web' | 'ai'
 }
 
 export interface ITimelineRecipeProvider {

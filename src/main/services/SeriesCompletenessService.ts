@@ -48,7 +48,7 @@ export class SeriesCompletenessService {
         completenessMap.set(comp.series_title, comp)
       }
 
-      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show: { series_title: string; series_identity_key?: string }) => ({ series_title: show.series_title, series_identity_key: show.series_identity_key }))
+      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show) => ({ series_title: show.series_title, series_identity_key: show.series_identity_key ?? undefined }))
       for (const title of titlesFromMedia) {
           if (!showsToAnalyze.some(s => s.series_title === title && !s.series_identity_key)) {
           showsToAnalyze.push({ series_title: title })

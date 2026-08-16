@@ -37,7 +37,7 @@ export const MissingAlbumListItem = memo(({ album, artistName, onDismiss }: {
       {/* Info */}
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate text-muted-foreground">{album.title}</h4>
-        {album.year && (
+        {album.year != null && !isNaN(album.year) && (
           <p className="text-xs text-muted-foreground/70">{album.year}</p>
         )}
         {album.album_type !== 'album' && (

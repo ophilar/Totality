@@ -107,6 +107,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     testConnection,
     scanProgress,
     isScanning,
+    refreshLibraryTypes,
   } = useSources()
 
   const [libraries, setLibraries] = useState<LibraryWithStatus[]>([])
@@ -172,6 +173,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       setLibraries(prev => prev.map(lib =>
         lib.id === libraryId ? { ...lib, isEnabled: !currentEnabled } : lib
       ))
+      await refreshLibraryTypes()
     } catch (err) {
       window.electronAPI.log.error('[SourceCard]', 'Failed to toggle library:', err)
     } finally {

@@ -734,6 +734,17 @@ export class MusicBrainzService extends CancellableOperation {
       ...ownedAlbumMbIds,
     ])
 
+    const parseValidYear = (dateStr?: string | number | null): number | undefined => {
+      if (dateStr == null) return undefined
+      if (typeof dateStr === 'number') {
+        return isNaN(dateStr) || dateStr < 1800 || dateStr > 2100 ? undefined : Math.floor(dateStr)
+      }
+      const match = String(dateStr).match(/\b(\d{4})\b/)
+      if (!match) return undefined
+      const year = parseInt(match[1], 10)
+      return isNaN(year) || year < 1800 || year > 2100 ? undefined : year
+    }
+
     // Find missing albums
     const missingAlbums: MissingAlbum[] = []
     for (const album of discography.albums) {
@@ -744,7 +755,7 @@ export class MusicBrainzService extends CancellableOperation {
         missingAlbums.push({
           musicbrainz_id: album.id,
           title: album.title,
-          year: album['first-release-date'] ? parseInt(album['first-release-date'].substring(0, 4)) : undefined,
+          year: parseValidYear(album['first-release-date']),
           album_type: AlbumType.Album,
         })
       }
@@ -760,7 +771,7 @@ export class MusicBrainzService extends CancellableOperation {
         missingEps.push({
           musicbrainz_id: ep.id,
           title: ep.title,
-          year: ep['first-release-date'] ? parseInt(ep['first-release-date'].substring(0, 4)) : undefined,
+          year: parseValidYear(ep['first-release-date']),
           album_type: AlbumType.EP,
         })
       }
@@ -776,7 +787,7 @@ export class MusicBrainzService extends CancellableOperation {
         missingSingles.push({
           musicbrainz_id: single.id,
           title: single.title,
-          year: single['first-release-date'] ? parseInt(single['first-release-date'].substring(0, 4)) : undefined,
+          year: parseValidYear(single['first-release-date']),
           album_type: AlbumType.Single,
         })
       }

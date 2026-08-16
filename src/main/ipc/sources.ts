@@ -168,21 +168,40 @@ export function registerSourceHandlers(): void {
   createValidatedIpcHandler(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, SourceIdSchema, async (sourceId) => {
     try {
       const db = getDatabase()
-      const libraries = await manager.getLibraries(sourceId)
       const storedLibraries = await db.sources.getSourceLibraries(sourceId)
       const storedMap = new Map(storedLibraries.map(l => [l.libraryId, l]))
 
-      return libraries.map(lib => {
-        const stored = storedMap.get(lib.id)
-        return {
-          ...lib,
-          isEnabled: stored ? !!stored.isEnabled : true,
-          isProtected: stored ? !!stored.isProtected : false,
-          allowExpandedMatching: stored ? !!stored.allowExpandedMatching : false,
-          lastScanAt: stored?.lastScanAt || null,
-          itemsScanned: stored?.itemsScanned || 0,
-        }
-      })
+      let libraries: Array<{ id: string; name: string; type: string }> = []
+      try {
+        libraries = await manager.getLibraries(sourceId)
+      } catch {
+        libraries = []
+      }
+
+      if (libraries.length > 0) {
+        return libraries.map(lib => {
+          const stored = storedMap.get(lib.id)
+          return {
+            ...lib,
+            isEnabled: stored ? !!stored.isEnabled : true,
+            isProtected: stored ? !!stored.isProtected : false,
+            allowExpandedMatching: stored ? !!stored.allowExpandedMatching : false,
+            lastScanAt: stored?.lastScanAt || null,
+            itemsScanned: stored?.itemsScanned || 0,
+          }
+        })
+      }
+
+      return storedLibraries.map(stored => ({
+        id: stored.libraryId,
+        name: stored.libraryName,
+        type: stored.libraryType,
+        isEnabled: !!stored.isEnabled,
+        isProtected: !!stored.isProtected,
+        allowExpandedMatching: !!stored.allowExpandedMatching,
+        lastScanAt: stored.lastScanAt || null,
+        itemsScanned: stored.itemsScanned || 0,
+      }))
     } catch { return [] }
   })
 

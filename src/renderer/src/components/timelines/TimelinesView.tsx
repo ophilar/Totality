@@ -10,11 +10,13 @@ import {
   ExternalLink,
   Info,
   Search,
+  RefreshCw,
 } from 'lucide-react'
 import { useSources } from '@/contexts/SourceContext'
 import { useToast } from '@/contexts/ToastContext'
 import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
+import type { PlexPlaylistSummary } from '@main/services/timelines/PlexPlaylistSyncService'
 
 
 export function TimelinesView() {
@@ -24,11 +26,13 @@ export function TimelinesView() {
   const [recipes, setRecipes] = useState<TimelineRecipeSummary[]>([])
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('star-trek-chronological')
   const [selectedTimelineResult, setSelectedTimelineResult] = useState<ResolvedTimelineResult | null>(null)
+  const [existingPlaylists, setExistingPlaylists] = useState<PlexPlaylistSummary[]>([])
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false)
   const [isResolvingTimeline, setIsResolvingTimeline] = useState(false)
   const [isSyncingPlaylist, setIsSyncingPlaylist] = useState(false)
-  const [customTraktInput, setCustomTraktInput] = useState('')
-  const [isLoadingTrakt, setIsLoadingTrakt] = useState(false)
+  const [isRefreshingWeb, setIsRefreshingWeb] = useState(false)
+  const [customImportInput, setCustomImportInput] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
   const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'missing'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [customPlaylistTitle, setCustomPlaylistTitle] = useState('')
@@ -39,12 +43,34 @@ export function TimelinesView() {
     [sources]
   )
 
-  const selectedSourceId = useMemo(() => {
+  const selectedPlexSourceId = useMemo(() => {
     if (activeSourceId && plexSources.some((s) => s.source_id === activeSourceId)) {
       return activeSourceId
     }
     return plexSources[0]?.source_id
   }, [activeSourceId, plexSources])
+
+  const resolveSourceId = activeSourceId || undefined
+
+  useEffect(() => {
+    if (!selectedPlexSourceId) {
+      setExistingPlaylists([])
+      return
+    }
+    let isMounted = true
+    const fetchExistingPlaylists = async () => {
+      try {
+        const playlists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
+        if (isMounted) setExistingPlaylists(playlists)
+      } catch {
+        if (isMounted) setExistingPlaylists([])
+      }
+    }
+    void fetchExistingPlaylists()
+    return () => {
+      isMounted = false
+    }
+  }, [selectedPlexSourceId])
 
   useEffect(() => {
     let isMounted = true
@@ -86,7 +112,7 @@ export function TimelinesView() {
     const fetchResolvedTimeline = async () => {
       setIsResolvingTimeline(true)
       try {
-        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, selectedSourceId)
+        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId)
         if (!isMounted) return
         setSelectedTimelineResult(result)
         setCustomPlaylistTitle(result.timeline.name)
@@ -109,17 +135,24 @@ export function TimelinesView() {
     return () => {
       isMounted = false
     }
-  }, [selectedRecipeId, selectedSourceId, addToast])
+  }, [selectedRecipeId, resolveSourceId, addToast])
 
 
-  const handleImportTrakt = async (e: React.FormEvent) => {
+  const handleImport = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!customTraktInput.trim()) return
+    const input = customImportInput.trim()
+    if (!input) return
 
-    setIsLoadingTrakt(true)
+    setIsImporting(true)
     try {
-      const timeline = await window.electronAPI.timelinesGetRecipe(customTraktInput.trim())
+      const timeline = await window.electronAPI.timelinesGetRecipe(input)
       setSelectedRecipeId(timeline.id)
+      const sourceType: TimelineRecipeSummary['sourceType'] = input.startsWith('http')
+        ? 'web'
+        : timeline.id.startsWith('trakt-')
+        ? 'trakt'
+        : 'preset'
+
       setRecipes((prev) => [
         {
           id: timeline.id,
@@ -127,29 +160,29 @@ export function TimelinesView() {
           franchise: timeline.franchise,
           description: timeline.description,
           totalItems: timeline.items.length,
-          sourceType: 'trakt',
+          sourceType,
         },
         ...prev.filter((r) => r.id !== timeline.id),
       ])
       addToast({
         type: 'success',
-        title: 'Trakt List Imported',
-        message: `Successfully loaded Trakt timeline '${timeline.name}' (${timeline.items.length} items)`,
+        title: 'Timeline Imported',
+        message: `Successfully loaded '${timeline.name}' (${timeline.items.length} items)`,
       })
-      setCustomTraktInput('')
+      setCustomImportInput('')
     } catch (err: unknown) {
       addToast({
         type: 'error',
-        title: 'Trakt Import Failed',
-        message: `Failed to load Trakt list: ${err instanceof Error ? err.message : String(err)}`,
+        title: 'Timeline Import Failed',
+        message: `Failed to import viewing order: ${err instanceof Error ? err.message : String(err)}`,
       })
     } finally {
-      setIsLoadingTrakt(false)
+      setIsImporting(false)
     }
   }
 
   const handleSyncToPlex = async () => {
-    if (!selectedSourceId) {
+    if (!selectedPlexSourceId) {
       addToast({
         type: 'error',
         title: 'Sync Playlist',
@@ -162,7 +195,7 @@ export function TimelinesView() {
     setIsSyncingPlaylist(true)
     try {
       const result = await window.electronAPI.timelinesSyncPlexPlaylist({
-        sourceId: selectedSourceId,
+        sourceId: selectedPlexSourceId,
         recipeId: selectedRecipeId,
         playlistTitle: customPlaylistTitle.trim() || selectedTimelineResult.timeline.name,
       })
@@ -172,6 +205,14 @@ export function TimelinesView() {
         title: 'Playlist Synced',
         message: `Successfully synced playlist '${result.playlistTitle}' with ${result.matchedItemsSynced} items to Plex!`,
       })
+
+      // Refresh existing playlists so new playlist appears in dropdown immediately
+      try {
+        const updatedPlaylists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
+        setExistingPlaylists(updatedPlaylists)
+      } catch {
+        // Non-fatal
+      }
     } catch (err: unknown) {
       addToast({
         type: 'error',
@@ -180,6 +221,30 @@ export function TimelinesView() {
       })
     } finally {
       setIsSyncingPlaylist(false)
+    }
+  }
+
+  const handleRefreshFromWeb = async () => {
+    if (!selectedTimelineResult) return
+    const sourceUrl = selectedTimelineResult.timeline.sourceUrl || selectedRecipeId
+    setIsRefreshingWeb(true)
+    try {
+      const freshTimeline = await window.electronAPI.timelinesGetRecipe(sourceUrl)
+      const result = await window.electronAPI.timelinesResolveTimeline(freshTimeline.id, resolveSourceId)
+      setSelectedTimelineResult(result)
+      addToast({
+        type: 'success',
+        title: 'Timeline Refreshed',
+        message: `Successfully refreshed '${freshTimeline.name}' (${result.totalCount} items).`,
+      })
+    } catch (err: unknown) {
+      addToast({
+        type: 'error',
+        title: 'Refresh Failed',
+        message: `Failed to refresh from web: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    } finally {
+      setIsRefreshingWeb(false)
     }
   }
 
@@ -217,22 +282,22 @@ export function TimelinesView() {
             </p>
           </div>
 
-          {/* Trakt Importer & Plex Server Select */}
+          {/* Universal Importer (Web Guides, Trakt, TMDB, AI Prompts) */}
           <div className="flex items-center gap-3">
-            <form onSubmit={handleImportTrakt} className="flex items-center gap-2">
+            <form onSubmit={handleImport} className="flex items-center gap-2">
               <input
                 type="text"
-                value={customTraktInput}
-                onChange={(e) => setCustomTraktInput(e.target.value)}
-                placeholder="Trakt list: username/list-slug"
-                className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-56"
+                value={customImportInput}
+                onChange={(e) => setCustomImportInput(e.target.value)}
+                placeholder="Web Guide URL, Trakt list, TMDB, or AI Prompt..."
+                className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-72"
               />
               <button
                 type="submit"
-                disabled={isLoadingTrakt || !customTraktInput.trim()}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground flex items-center gap-1 disabled:opacity-50 transition-colors"
+                disabled={isImporting || !customImportInput.trim()}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-1 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                {isLoadingTrakt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
                 Import
               </button>
             </form>
@@ -240,7 +305,7 @@ export function TimelinesView() {
         </div>
 
         {/* Recipe Selection Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
           {isLoadingRecipes && recipes.length === 0 ? (
             <div className="col-span-full py-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -249,6 +314,15 @@ export function TimelinesView() {
           ) : (
             recipes.map((recipe) => {
               const isSelected = recipe.id === selectedRecipeId
+              const sourceBadge =
+                recipe.sourceType === 'web'
+                  ? 'Web Guide'
+                  : recipe.sourceType === 'trakt'
+                  ? 'Trakt'
+                  : recipe.sourceType === 'ai'
+                  ? 'AI Curated'
+                  : 'Curated Preset'
+
               return (
                 <button
                   key={recipe.id}
@@ -264,10 +338,13 @@ export function TimelinesView() {
                       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                         {recipe.franchise}
                       </span>
-                      <span className="text-xs text-muted-foreground font-mono">{recipe.totalItems} items</span>
+                      <span className="text-[10px] font-medium text-muted-foreground">{sourceBadge}</span>
                     </div>
                     <h3 className="text-sm font-semibold text-foreground line-clamp-1">{recipe.name}</h3>
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{recipe.description}</p>
+                  </div>
+                  <div className="mt-2 text-right">
+                    <span className="text-[11px] text-muted-foreground font-mono">{recipe.totalItems} items</span>
                   </div>
                 </button>
               )
@@ -297,6 +374,15 @@ export function TimelinesView() {
                         Source <ExternalLink className="w-3 h-3" />
                       </a>
                     )}
+                    <button
+                      onClick={handleRefreshFromWeb}
+                      disabled={isRefreshingWeb || isResolvingTimeline}
+                      title="Re-fetch and update this viewing order live from web"
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-secondary transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingWeb ? 'animate-spin text-primary' : ''}`} />
+                      <span>{isRefreshingWeb ? 'Updating...' : 'Update from Web'}</span>
+                    </button>
                   </div>
                   <p className="text-xs text-muted-foreground">{selectedTimelineResult.timeline.description}</p>
 
@@ -319,27 +405,47 @@ export function TimelinesView() {
                 </div>
 
                 {/* Playlist Sync Action Box */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3.5 rounded-xl bg-background/60 border border-border">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-muted-foreground">Plex Playlist Name</label>
-                    <input
-                      type="text"
-                      value={customPlaylistTitle}
-                      onChange={(e) => setCustomPlaylistTitle(e.target.value)}
-                      placeholder="Playlist Title"
-                      className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-60"
-                    />
-                  </div>
+                <div className="flex flex-col gap-2 p-3.5 rounded-xl bg-background/60 border border-border">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">Select or Name Plex Playlist</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={existingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : '__custom__'}
+                          onChange={(e) => {
+                            if (e.target.value !== '__custom__') {
+                              setCustomPlaylistTitle(e.target.value)
+                            }
+                          }}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-44"
+                        >
+                          <option value="__custom__">-- Create New / Custom Playlist --</option>
+                          {existingPlaylists.map((pl) => (
+                            <option key={pl.ratingKey} value={pl.title}>
+                              {pl.title} ({pl.leafCount ?? 0} items)
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={customPlaylistTitle}
+                          onChange={(e) => setCustomPlaylistTitle(e.target.value)}
+                          placeholder="Playlist Title"
+                          className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-48"
+                        />
+                      </div>
+                    </div>
 
-                  <div className="pt-4 sm:pt-0">
-                    <button
-                      onClick={handleSyncToPlex}
-                      disabled={isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0}
-                      className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
-                    >
-                      {isSyncingPlaylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      Sync to Plex Playlist
-                    </button>
+                    <div>
+                      <button
+                        onClick={handleSyncToPlex}
+                        disabled={isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
+                        className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        {isSyncingPlaylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        Sync to Plex Playlist
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

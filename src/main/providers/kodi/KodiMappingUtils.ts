@@ -78,6 +78,8 @@ export class KodiMappingUtils {
       height: item.videoHeight || undefined,
       audioCodec: normalizeAudioCodec(item.audioCodec || ''),
       audioChannels: item.audioChannels || undefined,
+      imdbId: item.imdbId || undefined,
+      tmdbId: item.tmdbId ? (isNaN(Number(item.tmdbId)) ? undefined : Number(item.tmdbId)) : undefined,
     }
   }
 
@@ -111,6 +113,11 @@ export class KodiMappingUtils {
       height: item.videoHeight || undefined,
       audioCodec: normalizeAudioCodec(item.audioCodec || ''),
       audioChannels: item.audioChannels || undefined,
+      imdbId: item.episodeImdbId || undefined,
+      tmdbId: item.episodeTmdbId ? (isNaN(Number(item.episodeTmdbId)) ? undefined : Number(item.episodeTmdbId)) : undefined,
+      tvdbId: item.episodeTvdbId ? (isNaN(Number(item.episodeTvdbId)) ? undefined : Number(item.episodeTvdbId)) : undefined,
+      seriesTmdbId: item.showTmdbId ? (isNaN(Number(item.showTmdbId)) ? undefined : Number(item.showTmdbId)) : undefined,
+      seriesIdentityKey: item.showTmdbId ? `tmdb:${item.showTmdbId}` : item.showTvdbId ? `tvdb:${item.showTvdbId}` : item.showTitle ? `title:${item.showTitle.toLowerCase()}` : undefined,
     }
   }
 

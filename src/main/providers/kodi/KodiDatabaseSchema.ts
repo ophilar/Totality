@@ -1,5 +1,8 @@
 // @ts-nocheck
 import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getLoggingService } from '@main/services/LoggingService'
+
 /**
  * KodiDatabaseSchema
  *
@@ -15,9 +18,6 @@ import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
  * - streamdetails: Video/audio codec info (iStreamType: 0=video, 1=audio, 2=subtitle)
  * - art: Artwork URLs (posters, fanart, etc.)
  */
-
-import { getDatabase } from '@main/database/BetterSQLiteService'
-import { getLoggingService } from '@main/services/LoggingService'
 
 // ============================================================================
 // NFS MOUNT MAPPINGS
@@ -275,6 +275,11 @@ export interface KodiEpisodeWithDetails {
   showTitle: string
   showSortTitle: string | null
   showImdbId: string | null
+  showTmdbId: string | null
+  showTvdbId: string | null
+  episodeImdbId: string | null
+  episodeTmdbId: string | null
+  episodeTvdbId: string | null
   showId: number
   filename: string
   filepath: string
@@ -344,6 +349,8 @@ SELECT
   idShow,
   c00 AS title,
   NULLIF(c21, '') AS imdbId,
+  (SELECT value FROM uniqueid WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS tmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS tvdbId,
   (SELECT url FROM art WHERE media_id = tvshow.idShow AND media_type = 'tvshow' AND type = 'poster' LIMIT 1) AS posterUrl
 FROM tvshow
 `
@@ -362,6 +369,11 @@ SELECT
   s.c00 AS showTitle,
   NULLIF(s.c15, '') AS showSortTitle,
   NULLIF(s.c21, '') AS showImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS showTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS showTvdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'imdb' LIMIT 1) AS episodeImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tmdb' LIMIT 1) AS episodeTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tvdb' LIMIT 1) AS episodeTvdbId,
   s.idShow AS showId,
   f.strFilename AS filename,
   p.strPath AS filepath,
@@ -448,6 +460,11 @@ SELECT
   CAST(NULLIF(e.c13, '') AS INTEGER) AS episodeNumber,
   s.c00 AS showTitle,
   NULLIF(s.c21, '') AS showImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tmdb' LIMIT 1) AS showTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = s.idShow AND media_type = 'tvshow' AND type = 'tvdb' LIMIT 1) AS showTvdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'imdb' LIMIT 1) AS episodeImdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tmdb' LIMIT 1) AS episodeTmdbId,
+  (SELECT value FROM uniqueid WHERE media_id = e.idEpisode AND media_type = 'episode' AND type = 'tvdb' LIMIT 1) AS episodeTvdbId,
   s.idShow AS showId,
   f.strFilename AS filename,
   p.strPath AS filepath,
@@ -539,10 +556,6 @@ WHERE m.idSet = ?
 ORDER BY m.c07, m.c00
 `
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
 /**
  * Parse HDR type from Kodi's strHdrType field
  */
@@ -550,7 +563,6 @@ export function parseHdrType(hdrType: string | null): string {
   const normalized = normalizeHdrFormatValue(hdrType)
   return normalized === 'SDR' ? 'None' : normalized
 }
-
 /**
  * Normalize resolution string from width/height
  */

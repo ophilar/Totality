@@ -866,9 +866,19 @@ export class LocalFolderProvider extends BaseMediaProvider {
     return result
   }
 
+  private hashCache = new Map<string, string>()
+
   private simpleHash(str: string): string {
-    let hash = 0; for (let i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash = hash & hash }
-    return Math.abs(hash).toString(36)
+    const cached = this.hashCache.get(str)
+    if (cached !== undefined) return cached
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i)
+      hash = hash & hash
+    }
+    const result = Math.abs(hash).toString(36)
+    this.hashCache.set(str, result)
+    return result
   }
 
   private convertMetadataToVersion(metadata: MediaMetadata, parsed: ParsedMovieInfo | ParsedEpisodeInfo, fileMtime: number): Omit<MediaItemVersion, 'id' | 'media_item_id'> {
@@ -887,7 +897,44 @@ export class LocalFolderProvider extends BaseMediaProvider {
     if (metadata.audioTracks?.length) { metadata.audioTracks.forEach((track, index) => audioTracks.push({ index, codec: track.codec || 'Unknown', channels: track.channels || 2, bitrate: track.bitrate || 0, language: track.language, hasObjectAudio: track.hasObjectAudio || false })) }
     else if (metadata.audioCodec) { audioTracks.push({ index: 0, codec: metadata.audioCodec, channels: metadata.audioChannels || 2, bitrate: metadata.audioBitrate || 0, hasObjectAudio: false }) }
 
-    return { plex_id: metadata.itemId, title: metadata.title, sort_title: metadata.sortTitle, year: metadata.year, type: metadata.type, series_title: metadata.seriesTitle, series_identity_key: metadata.seriesIdentityKey, season_number: metadata.seasonNumber, episode_number: metadata.episodeNumber, file_path: metadata.filePath || '', file_size: metadata.fileSize || 0, duration: metadata.duration || 0, resolution: metadata.resolution || 'SD', width: metadata.width || 0, height: metadata.height || 0, video_codec: metadata.videoCodec || '', video_bitrate: metadata.videoBitrate || 0, audio_codec: metadata.audioCodec || '', audio_channels: metadata.audioChannels || 2, audio_bitrate: metadata.audioBitrate || 0, hdr_format: metadata.hdrFormat, video_frame_rate: metadata.videoFrameRate, color_bit_depth: metadata.colorBitDepth, color_space: metadata.colorSpace, video_profile: metadata.videoProfile, audio_tracks: JSON.stringify(audioTracks), subtitle_tracks: metadata.subtitleTracks?.length ? JSON.stringify(metadata.subtitleTracks.map((t, i) => ({ index: i, codec: t.codec || 'unknown', language: t.language, title: t.title, isDefault: t.isDefault || false, isForced: t.isForced || false }))) : undefined, imdb_id: metadata.imdbId, tmdb_id: metadata.tmdbId?.toString(), poster_url: metadata.posterUrl, episode_thumb_url: metadata.episodeThumbUrl, season_poster_url: metadata.seasonPosterUrl, container: metadata.container, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    return {
+      plex_id: metadata.itemId,
+      title: metadata.title,
+      sort_title: metadata.sortTitle,
+      year: metadata.year,
+      type: metadata.type,
+      series_title: metadata.seriesTitle,
+      series_identity_key: metadata.seriesIdentityKey || (metadata.seriesTmdbId ? `tmdb:${metadata.seriesTmdbId}` : undefined),
+      series_tmdb_id: metadata.seriesTmdbId?.toString(),
+      season_number: metadata.seasonNumber,
+      episode_number: metadata.episodeNumber,
+      file_path: metadata.filePath || '',
+      file_size: metadata.fileSize || 0,
+      duration: metadata.duration || 0,
+      resolution: metadata.resolution || 'SD',
+      width: metadata.width || 0,
+      height: metadata.height || 0,
+      video_codec: metadata.videoCodec || '',
+      video_bitrate: metadata.videoBitrate || 0,
+      audio_codec: metadata.audioCodec || '',
+      audio_channels: metadata.audioChannels || 2,
+      audio_bitrate: metadata.audioBitrate || 0,
+      hdr_format: metadata.hdrFormat,
+      video_frame_rate: metadata.videoFrameRate,
+      color_bit_depth: metadata.colorBitDepth,
+      color_space: metadata.colorSpace,
+      video_profile: metadata.videoProfile,
+      audio_tracks: JSON.stringify(audioTracks),
+      subtitle_tracks: metadata.subtitleTracks?.length ? JSON.stringify(metadata.subtitleTracks.map((t, i) => ({ index: i, codec: t.codec || 'unknown', language: t.language, title: t.title, isDefault: t.isDefault || false, isForced: t.isForced || false }))) : undefined,
+      imdb_id: metadata.imdbId,
+      tmdb_id: metadata.tmdbId?.toString(),
+      poster_url: metadata.posterUrl,
+      episode_thumb_url: metadata.episodeThumbUrl,
+      season_poster_url: metadata.seasonPosterUrl,
+      container: metadata.container,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
   }
 
   private convertMediaItemToMetadata(item: MediaItem): MediaMetadata {

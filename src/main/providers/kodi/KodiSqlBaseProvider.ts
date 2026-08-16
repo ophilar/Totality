@@ -377,6 +377,8 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       hdr_format: metadata.hdrFormat || 'None',
       imdb_id: metadata.imdbId,
       tmdb_id: metadata.tmdbId?.toString(),
+      series_tmdb_id: metadata.seriesTmdbId ? String(metadata.seriesTmdbId) : undefined,
+      series_identity_key: metadata.seriesIdentityKey || (metadata.seriesTmdbId ? `tmdb:${metadata.seriesTmdbId}` : metadata.seriesTitle ? `title:${metadata.seriesTitle.toLowerCase()}` : undefined),
       poster_url: metadata.posterUrl,
       episode_thumb_url: metadata.episodeThumbUrl,
       season_poster_url: metadata.seasonPosterUrl,

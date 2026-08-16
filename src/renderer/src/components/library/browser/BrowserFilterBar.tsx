@@ -27,6 +27,8 @@ interface BrowserFilterBarProps {
   setSlimDown: (val: boolean) => void
   collectionsOnly: boolean
   setCollectionsOnly: (val: boolean) => void
+  groupByCollections?: boolean
+  setGroupByCollections?: (val: boolean) => void
   hasCollections: boolean
   gridScale: number
   setGridScale: (val: number) => void
@@ -47,6 +49,7 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
   qualityFilter, setQualityFilter,
   slimDown, setSlimDown,
   collectionsOnly, setCollectionsOnly,
+  groupByCollections = true, setGroupByCollections,
   hasCollections,
   gridScale, setGridScale,
   viewType, setViewType,
@@ -150,12 +153,47 @@ export const BrowserFilterBar: React.FC<BrowserFilterBarProps> = ({
 
             {/* Collections */}
             {view === 'movies' && hasCollections && (
-              <button
-                onClick={() => setCollectionsOnly(!collectionsOnly)}
-                className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 ${collectionsOnly ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-              >
-                <Layers className="w-3.5 h-3.5" /> Collections
-              </button>
+              <>
+                <div className="h-6 w-px bg-border/50" />
+                <div className="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/40">
+                  {setGroupByCollections && (
+                    <button
+                      onClick={() => {
+                        const nextVal = !groupByCollections
+                        setGroupByCollections(nextVal)
+                        if (!nextVal && collectionsOnly) {
+                          setCollectionsOnly(false)
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 font-medium ${
+                        groupByCollections
+                          ? 'bg-primary/20 text-primary hover:bg-primary/30'
+                          : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                      title={groupByCollections ? 'Group movie sagas into collections (Enabled)' : 'Show flat movie list (Disabled)'}
+                    >
+                      <Layers className="w-3.5 h-3.5" /> Group Collections
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const nextVal = !collectionsOnly
+                      setCollectionsOnly(nextVal)
+                      if (nextVal && setGroupByCollections && !groupByCollections) {
+                        setGroupByCollections(true)
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-xs transition-colors flex items-center gap-1.5 font-medium ${
+                      collectionsOnly
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                    title={collectionsOnly ? 'Showing only movie collections' : 'Filter to show only collection sagas'}
+                  >
+                    Collections Only
+                  </button>
+                </div>
+              </>
             )}
           </div>
 

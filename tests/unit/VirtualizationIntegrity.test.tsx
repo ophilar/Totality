@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import React, { useState } from 'react'
+import { useState } from 'react'
 
 // Mock sub-components that receive scrollElement
 const MockChild = vi.fn(({ scrollElement }: { scrollElement: HTMLElement | null }) => {

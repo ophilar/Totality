@@ -322,7 +322,6 @@ export interface QualityScore {
   // Efficiency metrics
   efficiency_score: number // 0-100 score (BPP based)
   storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
-
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
   needs_upgrade: boolean // Maps to tier_quality === 'LOW'
@@ -432,7 +431,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency'
+  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency' | 'recoverable' | 'debt' | 'completeness' | 'waste'
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -446,30 +445,49 @@ export interface MediaItemFilters {
 
 // TV Show summary returned by GROUP BY series_title query
 export interface TVShowSummary {
-    series_title: string
+  id?: number
+  series_title: string
+  series_identity_key?: string | null
+  source_id?: string
+  library_id?: string
+  source_type?: string
   episode_count: number
   season_count: number
   total_episodes: number // Alias for episode_count
   total_seasons: number  // Alias for season_count
+  owned_seasons?: number
+  owned_episodes?: number
+  missing_seasons?: string
+  missing_episodes?: string
+  completeness_percentage?: number
+  tmdb_id?: string | null
+  tvdb_id?: string | null
   poster_url?: string
-  source_id?: string
-    source_type?: string
-    total_size?: number | null
-    total_recoverable_bytes?: number
-    weighted_efficiency?: number | null
-    scored_episode_count?: number
-    unscored_episode_count?: number
-    recommended_action?: string
-    match_status?: import('@main/services/SeriesIdentityService').MediaMatchStatus
+  backdrop_url?: string | null
+  status?: string | null
+  user_fixed_match?: number | boolean | null
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  total_size?: number | null
+  current_episodes?: number
+  total_recoverable_bytes?: number
+  weighted_efficiency?: number | null
+  scored_episode_count?: number
+  unscored_episode_count?: number
+  recommended_action?: string
+  match_status?: import('@main/services/SeriesIdentityService').MediaMatchStatus
 }
 
 export interface TVShowFilters {
   slimDown?: boolean
   sourceId?: string
   libraryId?: string
+  qualityTier?: string
+  tierQuality?: string
+  completenessFilter?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'size' | 'completeness'
+  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'size' | 'completeness' | 'waste'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -736,7 +754,9 @@ export interface MusicFilters {
   artistId?: number
   artistName?: string
   albumId?: number
-  qualityTier?: MusicQualityTier
+  qualityTier?: MusicQualityTier | string
+  tierQuality?: string
+  slimDown?: boolean
   needsUpgrade?: boolean
   searchQuery?: string
   limit?: number
@@ -748,7 +768,7 @@ export interface MusicFilters {
   mood?: string
   genre?: string
   // Sorting
-  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency' | 'size' | 'album_count' | 'track_count'
+  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency' | 'size' | 'album_count' | 'track_count' | 'waste' | 'recoverable' | 'debt' | 'quality' | string
   sortOrder?: 'asc' | 'desc'
   // Alphabet filter
   alphabetFilter?: string

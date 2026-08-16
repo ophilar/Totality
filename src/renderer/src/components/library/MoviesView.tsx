@@ -44,6 +44,7 @@ export function MoviesView({
   moviesLoading,
   onLoadMoreMovies,
   collectionsOnly = false,
+  groupByCollections = true,
   isAnalyzing = false
 }: {
   movies?: MediaItem[]
@@ -64,6 +65,7 @@ export function MoviesView({
   moviesLoading: boolean
   onLoadMoreMovies: () => void
   collectionsOnly?: boolean
+  groupByCollections?: boolean
   isAnalyzing?: boolean
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
@@ -83,32 +85,39 @@ export function MoviesView({
   const displayItems = useMemo<MovieDisplayItem[]>(() => {
     const safeMovies = movies || []
     const safeCollections = movieCollections || []
-    const moviesInCollections = new Set<number>()
-    const collectionMovieMap = new Map<string, MediaItem[]>()
-
-    for (const movie of safeMovies) {
-      const collection = getCollectionForMovie(movie)
-      if (collection) {
-        moviesInCollections.add(movie.id!)
-        const existing = collectionMovieMap.get(collection.tmdb_collection_id) || []
-        existing.push(movie)
-        collectionMovieMap.set(collection.tmdb_collection_id, existing)
-      }
-    }
-
     const items: MovieDisplayItem[] = []
-    const addedCollections = new Set<string>()
-    for (const collection of safeCollections) {
-      if (collectionMovieMap.has(collection.tmdb_collection_id) && !addedCollections.has(collection.tmdb_collection_id)) {
-        items.push({ type: 'collection', collection })
-        addedCollections.add(collection.tmdb_collection_id)
-      }
-    }
 
-    if (!collectionsOnly) {
+    if (!groupByCollections) {
       for (const movie of safeMovies) {
-        if (!moviesInCollections.has(movie.id!)) {
-          items.push({ type: 'movie', movie })
+        items.push({ type: 'movie', movie })
+      }
+    } else {
+      const moviesInCollections = new Set<number>()
+      const collectionMovieMap = new Map<string, MediaItem[]>()
+
+      for (const movie of safeMovies) {
+        const collection = getCollectionForMovie(movie)
+        if (collection) {
+          moviesInCollections.add(movie.id!)
+          const existing = collectionMovieMap.get(collection.tmdb_collection_id) || []
+          existing.push(movie)
+          collectionMovieMap.set(collection.tmdb_collection_id, existing)
+        }
+      }
+
+      const addedCollections = new Set<string>()
+      for (const collection of safeCollections) {
+        if (collectionMovieMap.has(collection.tmdb_collection_id) && !addedCollections.has(collection.tmdb_collection_id)) {
+          items.push({ type: 'collection', collection })
+          addedCollections.add(collection.tmdb_collection_id)
+        }
+      }
+
+      if (!collectionsOnly) {
+        for (const movie of safeMovies) {
+          if (!moviesInCollections.has(movie.id!)) {
+            items.push({ type: 'movie', movie })
+          }
         }
       }
     }
@@ -142,7 +151,7 @@ export function MoviesView({
     })
 
     return items
-  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, sortBy])
+  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, groupByCollections, sortBy])
 
   const statsBar = (
     <div className="flex items-center justify-between pb-4 px-1">

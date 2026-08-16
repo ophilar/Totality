@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 
 function makeVersion(file_path: string, resolution = '1080p', overrides: Record<string, unknown> = {}) {

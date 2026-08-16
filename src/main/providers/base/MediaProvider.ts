@@ -60,7 +60,6 @@ export interface ProviderCredentials {
   userId?: string
 }
 
-// Authentication result
 export interface AuthResult {
   success: boolean
   error?: string
@@ -154,7 +153,9 @@ export interface MediaMetadata {
   // External IDs
   imdbId?: string | null
   tmdbId?: number | null
+  tvdbId?: number | null
   seriesTmdbId?: number | null
+  seriesTvdbId?: number | null
   seriesIdentityKey?: string | null
 
   // File info

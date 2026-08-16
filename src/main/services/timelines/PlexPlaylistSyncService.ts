@@ -19,12 +19,26 @@ export interface PlexPlaylistSyncResult {
   missingItemsCount: number
 }
 
+export interface PlexPlaylistSummary {
+  ratingKey: string
+  title: string
+  playlistType: string
+  duration?: number
+  leafCount?: number
+  composite?: string
+  updatedAt?: number
+}
+
 interface PlexPlaylistsResponse {
   MediaContainer?: {
     Metadata?: Array<{
       ratingKey: string
       title: string
       playlistType: string
+      duration?: number
+      leafCount?: number
+      composite?: string
+      updatedAt?: number
     }>
   }
 }
@@ -48,6 +62,28 @@ export class PlexPlaylistSyncService {
         Accept: 'application/json',
       },
     })
+  }
+
+  async getExistingPlaylists(serverUri: string, accessToken: string): Promise<PlexPlaylistSummary[]> {
+    const cleanBaseUri = serverUri.replace(/\/+$/, '')
+    try {
+      const response = await this.client.get<PlexPlaylistsResponse>(`${cleanBaseUri}/playlists`, {
+        headers: { 'X-Plex-Token': accessToken },
+      })
+      const list = response.data?.MediaContainer?.Metadata || []
+      return list.map((p) => ({
+        ratingKey: p.ratingKey,
+        title: p.title,
+        playlistType: p.playlistType,
+        duration: p.duration,
+        leafCount: p.leafCount,
+        composite: p.composite,
+        updatedAt: p.updatedAt,
+      }))
+    } catch (error) {
+      getLoggingService().warn('[PlexPlaylistSyncService]', 'Failed to list playlists:', error)
+      return []
+    }
   }
 
   async syncPlaylist(options: PlexPlaylistSyncOptions): Promise<PlexPlaylistSyncResult> {

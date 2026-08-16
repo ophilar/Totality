@@ -12,10 +12,7 @@ async function authorizedMediaPath(mediaItemId: number): Promise<string> {
   if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
   const source = await db.sources.getSourceById(item.source_id)
   if (!source) throw new Error('Media source was not found')
-  let config: Record<string, unknown>
-  try { config = JSON.parse(source.connection_config) as Record<string, unknown> } catch { throw new Error('Media source configuration is invalid') }
-  const roots = [config.folderPath, config.rootPath, ...(Array.isArray(config.paths) ? config.paths : [])].filter((value): value is string => typeof value === 'string' && value.length > 0)
-  new MediaPathAuthorization(roots).assertAuthorized(item.file_path)
+  MediaPathAuthorization.assertMediaAuthorized(item, source)
   return item.file_path
 }
 

@@ -27,10 +27,7 @@ export function registerOptimizationHandlers() {
     const filePath = item.file_path
     const source = await db.sources.getSourceById(item.source_id)
     if (!source) throw new Error('Media source was not found')
-    let sourceConfig: Record<string, unknown>
-    try { sourceConfig = JSON.parse(source.connection_config) as Record<string, unknown> } catch { throw new Error('Media source configuration is invalid') }
-    const configuredRoots = [sourceConfig.folderPath, sourceConfig.rootPath, ...(Array.isArray(sourceConfig.paths) ? sourceConfig.paths : [])].filter((value): value is string => typeof value === 'string' && value.length > 0)
-    new MediaPathAuthorization(configuredRoots).assertAuthorized(item.file_path)
+    MediaPathAuthorization.assertMediaAuthorized(item, source)
     const stat = await fs.stat(item.file_path)
     const sourceSha256 = await new Promise<string>((resolve, reject) => {
       const hash = crypto.createHash('sha256')
@@ -87,10 +84,7 @@ export function registerOptimizationHandlers() {
     if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
     const source = await db.sources.getSourceById(item.source_id)
     if (!source) throw new Error('Media source was not found')
-    let sourceConfig: Record<string, unknown>
-    try { sourceConfig = JSON.parse(source.connection_config) as Record<string, unknown> } catch { throw new Error('Media source configuration is invalid') }
-    const configuredRoots = [sourceConfig.folderPath, sourceConfig.rootPath, ...(Array.isArray(sourceConfig.paths) ? sourceConfig.paths : [])].filter((value): value is string => typeof value === 'string' && value.length > 0)
-    new MediaPathAuthorization(configuredRoots).assertAuthorized(item.file_path)
+    MediaPathAuthorization.assertMediaAuthorized(item, source)
     const analysis = await getMediaFileAnalyzer().analyzeFile(item.file_path)
     if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
     return buildOptimizationDecision({

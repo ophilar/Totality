@@ -15,6 +15,8 @@ interface LibraryContextType {
   setGridScale: (scale: number) => void
   viewType: ViewType
   setViewType: (type: ViewType) => void
+  groupByCollections: boolean
+  setGroupByCollections: (groupBy: boolean) => void
   
   // Detail Panel State
   selectedItemId: number | null
@@ -49,6 +51,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
   const [gridScale, setGridScaleState] = useState(4)
   const [viewType, setViewTypeState] = useState<ViewType>('grid')
+  const [groupByCollections, setGroupByCollectionsState] = useState<boolean>(true)
   const [sortBy, setSortBy] = useState('title')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
@@ -70,7 +73,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   }, [])
 
   // Persist view preferences
-  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortOrder?: 'asc' | 'desc' }>>({})
+  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortOrder?: 'asc' | 'desc', groupByCollections?: boolean }>>({})
 
   useEffect(() => {
     window.electronAPI.getSetting('library_view_prefs').then(val => {
@@ -82,6 +85,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
             setViewTypeState(current.viewType)
             setGridScaleState(current.gridScale)
             if (current.sortOrder) setSortOrder(current.sortOrder)
+            if (current.groupByCollections !== undefined) setGroupByCollectionsState(current.groupByCollections)
           }
         } catch (e) {
           window.electronAPI.log.error('[LibraryContext]', 'Failed to parse view preferences:', e)
@@ -99,6 +103,12 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const setViewType = useCallback((type: ViewType) => {
     setViewTypeState(type)
     viewPrefsRef.current[view] = { ...viewPrefsRef.current[view], viewType: type }
+    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
+  }, [view])
+
+  const setGroupByCollections = useCallback((groupBy: boolean) => {
+    setGroupByCollectionsState(groupBy)
+    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view], groupByCollections: groupBy }
     window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
   }, [view])
 
@@ -120,6 +130,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       qualityFilter, setQualityFilter,
       gridScale, setGridScale,
       viewType, setViewType,
+      groupByCollections, setGroupByCollections,
       selectedItemId, selectedItemType, setSelectedMedia,
       selectedShow, setSelectedShow,
       selectedArtist, setSelectedArtist,

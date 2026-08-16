@@ -3,7 +3,7 @@ import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/serv
 import * as dgram from 'dgram'
 import axios from 'axios'
 
-vi.mock('dgram', () => {
+const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
     on: vi.fn(),
     bind: vi.fn(),
@@ -11,6 +11,10 @@ vi.mock('dgram', () => {
     send: vi.fn(),
     close: vi.fn(),
   }
+  return { mockSocket }
+})
+
+vi.mock('dgram', () => {
   return {
     createSocket: vi.fn(() => mockSocket),
     default: {
