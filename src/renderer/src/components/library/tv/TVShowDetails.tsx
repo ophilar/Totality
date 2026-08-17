@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Virtuoso } from 'react-virtuoso'
-import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database } from 'lucide-react'
+import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database, Zap } from 'lucide-react'
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
 import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
 import { getStatusBadge, formatSeasonLabel } from '@/components/library/mediaUtils'
-import type { MediaItem, TVShow, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
+import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVShowDetails({
   selectedShow,
@@ -23,7 +23,8 @@ export function TVShowDetails({
   onToggleOptimize,
   onMissingItemClick,
   onDismissMissingEpisode,
-  onDismissMissingSeason
+  onDismissMissingSeason,
+  onTranscodeShow
 }: {
   selectedShow: string
   selectedShowData: TVShow | null
@@ -41,6 +42,7 @@ export function TVShowDetails({
   onMissingItemClick: (item: import('@/components/library/types').MissingItemPopupData) => void
   onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
   onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
+  onTranscodeShow?: (show: TVShowSummary) => void
 }) {
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
   const [copiedTitle, setCopiedTitle] = useState(false)
@@ -195,6 +197,24 @@ export function TVShowDetails({
               <RefreshCw className="w-3.5 h-3.5" />
               Analyze Series
             </button>
+            {onTranscodeShow && (
+              <button
+                onClick={() => {
+                  if (!selectedShowData) return
+                  const firstEpisode = Array.from(selectedShowData.seasons.values())[0]?.episodes[0]
+                  onTranscodeShow({
+                    series_title: selectedShowData.title,
+                    source_id: firstEpisode?.source_id || '',
+                    poster_url: selectedShowData.poster_url,
+                  } as TVShowSummary)
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/15 text-primary hover:bg-primary/25 border border-primary/30 rounded-md font-semibold transition-colors cursor-pointer"
+                title="Optimize entire TV series with hardware transcoding"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current text-primary" />
+                Optimize Series
+              </button>
+            )}
             {onFixMatch && (
               <button
                 onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}

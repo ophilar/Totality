@@ -159,7 +159,7 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
             </button>
 
             {showMenu && !isRescanning && (
-              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
                 {onToggleOptimize && (
                   <button
                     onClick={handleToggleOptimize}

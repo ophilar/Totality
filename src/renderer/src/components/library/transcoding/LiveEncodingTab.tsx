@@ -40,8 +40,9 @@ export function LiveEncodingTab({
   const [showLogs, setShowLogs] = useState(false)
   const [logLines, setLogLines] = useState<string[]>([])
   const logContainerRef = useRef<HTMLDivElement>(null)
+  const lastProgressLogTimeRef = useRef<number>(0)
 
-  // Accumulate logs when progress updates or contains log entries
+  // Accumulate logs when progress updates or contains log entries with throttling
   useEffect(() => {
     if (progress) {
       if (progress.logs && progress.logs.length > 0) {
@@ -49,13 +50,19 @@ export function LiveEncodingTab({
       } else if (progress.error) {
         queueMicrotask(() => { setLogLines(prev => [...prev, `[ERROR] ${progress.error}`]) })
       } else if (progress.fps || progress.percent) {
-        const line = `[PROGRESS] ${progress.percent.toFixed(1)}% | ${progress.fps || 0} FPS | ETA: ${progress.eta || 'N/A'}`
-        queueMicrotask(() => { setLogLines(prev => {
-          if (prev.length === 0 || prev[prev.length - 1] !== line) {
-            return [...prev, line]
-          }
-          return prev
-        }) })
+        const now = Date.now()
+        if (now - lastProgressLogTimeRef.current >= 1000) {
+          lastProgressLogTimeRef.current = now
+          const line = `[PROGRESS] ${progress.percent.toFixed(1)}% | ${progress.fps || 0} FPS | ETA: ${progress.eta || 'N/A'}`
+          queueMicrotask(() => {
+            setLogLines(prev => {
+              if (prev.length === 0 || prev[prev.length - 1] !== line) {
+                return [...prev, line]
+              }
+              return prev
+            })
+          })
+        }
       }
     }
   }, [progress])

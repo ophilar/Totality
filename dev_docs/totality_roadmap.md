@@ -40,9 +40,19 @@
 
 
 
+## Phase 5: TV Show Batch Optimization & UI Performance [Completed]
+- [x] Optimize UI responsiveness with abort-token sequence tracking and parameter debouncing in `TranscodeModal.tsx`
+- [x] Throttle high-frequency live progress logging in `LiveEncodingTab.tsx`
+- [x] Cache disk optimization decisions in `ConversionRecommendation.tsx` to eliminate redundant FFprobe invocations
+- [x] Add visible "Optimize Series" action button to `TVShowDetails.tsx` header action bar
+- [x] Modernize `ShowTranscodeModal.tsx` with glassmorphic cards, AV1/HEVC presets, and real-time preflight feedback
+- [x] Fix modal z-index layering (`z-250`) and dropdown menu clipping in `EpisodeRow.tsx`
+- [x] Full Vitest suite passing (134 test files, 1,017 tests)
+
 ## Known follow-ups
 
 - Add dedicated settings cards for future API-key providers beyond the currently supported OMDb/TVDB configuration paths.
 - Expand *arr command polling with richer progress/status history if needed.
 - TMDB's external `adult` field remains unchanged because it is part of the upstream API contract.
+
 

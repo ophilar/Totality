@@ -176,7 +176,7 @@ export function TVShowsView({
   if (selectedShow) {
     return (
       <div className="h-full overflow-y-auto">
-        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} />
+        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
       </div>
     )
   }

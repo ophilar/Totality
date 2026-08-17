@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   X, 
@@ -114,16 +114,23 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     }
   }, [mediaId, addToast])
 
+  const paramSequenceRef = useRef(0)
+
   // Dynamically update parameters preview when options change
   useEffect(() => {
     if (status === 'encoding' || status === 'generating' || !media || !media.file_path) return
     
+    const currentSeq = ++paramSequenceRef.current
     const timer = setTimeout(async () => {
       try {
         const p = await window.electronAPI.getParameters(media.id!, { ...options, aiOptimize: false })
-        setParams(p)
+        if (paramSequenceRef.current === currentSeq) {
+          setParams(p)
+        }
       } catch (err) {
-        console.error('Failed to update parameters preview:', err)
+        if (paramSequenceRef.current === currentSeq) {
+          console.error('Failed to update parameters preview:', err)
+        }
       }
     }, 300)
     return () => clearTimeout(timer)

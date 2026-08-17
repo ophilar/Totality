@@ -17,18 +17,33 @@ function MechanismRow({ label, mechanism, action, onAction }: { label: string; m
   </div>
 }
 
+const decisionCache = new Map<number, OptimizationDecision>()
+
 export function ConversionRecommendation({ item, compact = false }: { item: MediaItem; compact?: boolean }) {
-  const [decision, setDecision] = useState<OptimizationDecision | null>(null)
+  const [decision, setDecision] = useState<OptimizationDecision | null>(() => item.id ? decisionCache.get(item.id) || null : null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(() => !item.id || !decisionCache.has(item.id))
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [remuxing, setRemuxing] = useState(false)
   const [remuxError, setRemuxError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!item.id) return
+    const cached = decisionCache.get(item.id)
+    if (cached) {
+      setDecision(cached)
+      setLoading(false)
+      return
+    }
+
     let active = true
-    window.electronAPI.optimizationGetDecision(item.id!).then(value => {
-      if (active) setDecision(value as OptimizationDecision)
+    setLoading(true)
+    window.electronAPI.optimizationGetDecision(item.id).then(value => {
+      if (active) {
+        const dec = value as OptimizationDecision
+        decisionCache.set(item.id!, dec)
+        setDecision(dec)
+      }
     }).catch(reason => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason))
     }).finally(() => {
