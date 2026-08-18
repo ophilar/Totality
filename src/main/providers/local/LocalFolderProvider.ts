@@ -87,37 +87,8 @@ export interface LocalFolderConfig {
 // Minimum duration in seconds for movies (45 minutes)
 const MIN_MOVIE_DURATION_SECONDS = 45 * 60
 
-// Patterns to detect extras/featurettes in filenames
-const EXTRAS_FILENAME_PATTERNS = [
-  /\b(featurette|featurettes)\b/i,
-  /\bbehind[.\-_ ]?the[.\-_ ]?scenes?\b/i,
-  /\bdeleted[.\-_ ]?scenes?\b/i,
-  /\bgag[.\-_ ]?reel\b/i,
-  /\bbloopers?\b/i,
-  /\binterview(s|ed)?\b/i,
-  /\bmaking[.\-_ ]?of\b/i,
-  /\bshort[.\-_ ]?film\b/i,
-  /\b(trailer|teaser)\b/i,
-  /\bpromo(s)?\b/i,
-  /\bcommentary\b/i,
-  /\bbonus[.\-_ ]?(content|feature)?\b/i,
-  /\bextras?\b/i,
-  /\bbts\b/i,
-  /\bouttakes?\b/i,
-  /\bscene[.\-_ ]?\d+\b/i,
-  /\balternate[.\-_ ]?(opening|ending|cut|version|take|scene)?\b/i,
-  /\bextended[.\-_ ]?(cut|scene|version)?\b/i,
-  /[.\-_ ]scene$/i,
-  /\b(opening|closing)[.\-_ ]?credits?\b/i,
-]
-
 function isExtrasContent(filename: string): boolean {
-  const lowerFilename = filename.toLowerCase()
-  if (lowerFilename.includes('sample')) return true
-  for (const pattern of EXTRAS_FILENAME_PATTERNS) {
-    if (pattern.test(lowerFilename)) return true
-  }
-  return false
+  return getFileNameParser().isExtrasContent(filename)
 }
 
 export class LocalFolderProvider extends BaseMediaProvider {
@@ -369,12 +340,24 @@ export class LocalFolderProvider extends BaseMediaProvider {
               const epParsed = parsed as ParsedEpisodeInfo
               metadata = await this.createEpisodeMetadata(filePath, epParsed, tmdbConfigured, tmdb, seriesTmdbCache)
               
+              if (!metadata.seriesIdentityKey) {
+                const seriesFolder = parser.extractSeriesTitleFromPath(relativePath) || path.dirname(relativePath)
+                metadata.seriesIdentityKey = deriveSeriesIdentityKey({
+                  sourceId: this.sourceId,
+                  libraryId,
+                  folderRelativePath: seriesFolder,
+                  tmdbId: metadata.seriesTmdbId?.toString()
+                })
+              }
+
               // BOLT: Upsert show stub for local series
-              const seriesTitle = epParsed.seriesTitle || 'Unknown Series'
-              if (!knownSeries.has(seriesTitle)) {
-                const stats = showStats.get(seriesTitle)
+              const seriesTitle = metadata.seriesTitle || epParsed.seriesTitle || 'Unknown Series'
+              const seriesKey = metadata.seriesIdentityKey || seriesTitle
+              if (!knownSeries.has(seriesKey)) {
+                const stats = showStats.get(epParsed.seriesTitle) || showStats.get(seriesTitle)
                 await db.tvShows.upsertCompleteness({
                   series_title: seriesTitle,
+                  series_identity_key: metadata.seriesIdentityKey,
                   source_id: this.sourceId,
                   library_id: libraryId,
                   total_seasons: stats?.seasons.size || 0,
@@ -388,6 +371,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
                   poster_url: metadata.posterUrl,
                   status: 'Continuing',
                 })
+                knownSeries.add(seriesKey)
                 knownSeries.add(seriesTitle)
               }
             }
@@ -530,11 +514,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
               metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache, includeAdult)
             } else {
               metadata = await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
-              const relativeParts = relativePath.split(path.sep).filter(Boolean)
+              const seriesFolder = parser.extractSeriesTitleFromPath(relativePath) || path.dirname(relativePath)
               metadata.seriesIdentityKey = deriveSeriesIdentityKey({
                 sourceId: this.sourceId,
                 libraryId,
-                folderRelativePath: relativeParts[0] || path.dirname(relativePath),
+                folderRelativePath: seriesFolder,
                 tmdbId: metadata.seriesTmdbId?.toString()
               })
             }

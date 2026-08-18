@@ -214,8 +214,8 @@ export function AdvancedTab({
             onChange={(e) => setOptions(prev => ({ ...prev, targetCodec: e.target.value as TranscodeOptions['targetCodec'] }))}
             className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary transition-all"
           >
-            <option value="av1">AV1 (Most Efficient / Next-Gen)</option>
-            <option value="hevc">HEVC (H.265 / High Efficiency)</option>
+            <option value="av1">AV1</option>
+            <option value="hevc">HEVC (H.265)</option>
           </select>
         </div>
       </div>
@@ -227,11 +227,11 @@ export function AdvancedTab({
             <Cpu className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold">Enable GPU Acceleration (Hardware VRAM Pipeline)</span>
           </div>
-            <input
-              type="checkbox"
-              checked={options.useGpu}
-              onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
-              disabled={!hasHardwareAcceleration}
+          <input
+            type="checkbox"
+            checked={options.useGpu}
+            onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
+            disabled={!hasHardwareAcceleration}
             className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20"
           />
         </label>

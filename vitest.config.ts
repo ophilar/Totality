@@ -64,11 +64,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer/src'),
-      '@main': path.resolve(__dirname, 'src/main'),
-      '@preload': path.resolve(__dirname, 'src/preload'),
-      '@tests': path.resolve(__dirname, 'tests'),
-      'node:sqlite': path.resolve(__dirname, 'tests/mocks/node-sqlite.ts'),
+      '@': path.resolve(import.meta.dirname, 'src/renderer/src'),
+      '@main': path.resolve(import.meta.dirname, 'src/main'),
+      '@preload': path.resolve(import.meta.dirname, 'src/preload'),
+      '@tests': path.resolve(import.meta.dirname, 'tests'),
+      'node:sqlite': path.resolve(import.meta.dirname, 'tests/mocks/node-sqlite.ts'),
     },
   },
 })

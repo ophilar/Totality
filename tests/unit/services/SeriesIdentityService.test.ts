@@ -7,8 +7,9 @@ describe('SeriesIdentityService', () => {
     expect(deriveSeriesIdentityKey({ sourceId: 'plex', libraryId: 'tv', folderRelativePath: 'Shows/Office', tvdbId: '81189' })).toBe('tvdb:81189')
   })
 
-  it('keeps unmatched folders distinct', () => {
-    expect(deriveSeriesIdentityKey({ sourceId: 'plex', libraryId: 'tv', folderRelativePath: 'Shows/Office' })).toBe('unresolved:plex:tv:Shows/Office')
+  it('keeps unmatched folders distinct and normalized', () => {
+    expect(deriveSeriesIdentityKey({ sourceId: 'plex', libraryId: 'tv', folderRelativePath: 'Shows/Office' })).toBe('unresolved:plex:tv:office')
+    expect(deriveSeriesIdentityKey({ sourceId: 'plex', libraryId: 'tv', folderRelativePath: 'Shows/Parks and Rec' })).toBe('unresolved:plex:tv:parks-and-rec')
   })
 
   it('applies match status precedence', () => {

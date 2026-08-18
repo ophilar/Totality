@@ -49,10 +49,48 @@
 - [x] Fix modal z-index layering (`z-250`) and dropdown menu clipping in `EpisodeRow.tsx`
 - [x] Full Vitest suite passing (134 test files, 1,017 tests)
 
+## Phase 6: TV Show Canonical Single-Identity & Deduplication (TOT-BUG-03) [Completed]
+- [x] Audit scanner and normalize series paths by stripping season folders and release tags
+- [x] Enforce scoped DB uniqueness constraints on `(series_identity_key, source_id, library_id)`, `tvdb_id`, and `tmdb_id`
+- [x] Implement in-place conflict-free upserts in `TVShowRepository`
+- [x] Write database migration `mergeDuplicateSeriesCompleteness` to merge duplicate show clusters and repoint episodes
+- [x] Add automated regression test suite (`tests/test_tv_deduplication.py` and `tests/unit/TVShowDeduplication.test.ts`)
+- [x] Record ADR-001 in `DECISIONS.md` and update `Totality — Active Project.md` to `[test-verified]`
+
+## Phase 7: Architecture Simplification, SOLID, & SSOT Refinements (ADR-003) [Completed]
+- [x] Centralize extras and bonus detection in `FileNameParser` (SSOT) and eliminate duplicate regexes in `LocalFolderProvider`
+- [x] Implement batch identity conflict querying in `IdentityRepository` and `TVShowRepository` to eliminate $N$ DB round-trips
+- [x] Optimize `SeriesCompletenessService.analyzeAllSeries` with $O(1)$ set-based lookups and canonical identity key indexing
+- [x] Consolidate startup index enforcement in `DatabaseMigration`
+
+## Phase 8: Collection Direct Resolution, Music Filter Query Builders & Metadata Inverted Indexing (ADR-004) [Completed]
+- [x] Enable direct TMDB collection ID resolution in `MovieCollectionService.analyzeCollection`
+- [x] Consolidate album and track SQL filter generation in `MusicRepository` using single-responsibility condition builders
+- [x] Implement $O(1)$ inverted index candidate deduplication in `MetadataMatchingService`
+
+## Phase 9: Dolby Vision Profile 5 MKV-to-MP4 Remuxing & Transcoding Integration (ADR-005) [Planned]
+- [ ] Implement `DolbyVisionRemuxService` for zero-loss MKV-to-MP4 stream copy with `dvh1` tagging and faststart optimization
+- [ ] Update `HdrTranscodingPolicy` to support non-destructive Profile 5 container conversions while guarding against lossy re-encoding
+- [ ] Integrate `dovi_tool` hybrid RPU extraction/injection pipeline for downsizing/re-encoding
+- [ ] Restore `HandBrakeCLI` backend worker from git history (`commit 1707241` / `fafb9f4`) as an alternate engine strategy
+- [ ] Generate exportable HandBrake `.json` presets tuned for RTX 5070 Ti NVENC 10-bit AV1/HEVC encoding
+
+## Phase 10: UI Responsiveness, Timelines Viewport, Dolby Vision Detection & Transcoding Visibility [Completed]
+- [x] Fix Dolby Vision `"dovi"` side data detection in `mediaContracts.ts` and `MediaFileAnalyzer.ts` so DV items display purple badges instead of falling back to HDR10
+- [x] Add codec bitrate estimation helper to `AudioCodecRanker.ts` and integrate into `OptimizationDecisionService.ts` for universal audio track removal/transcoding estimates
+- [x] Refactor `TimelinesView.tsx` with a unified scrollable container and compact recipe selector to unblock viewport, timeline items, and Plex playlist sync
+- [x] Connect `ShowTranscodeModal.tsx` directly to live task queue progress via `ToastContext` and batch drawer tracking
+- [x] Fix `EpisodeRow.tsx` 3-dot dropdown z-index stacking context and align quick actions with `MediaDetails.tsx`
+- [x] Add instant `useToast()` feedback and diagnostic messages to Sonarr/Radarr test connection buttons in `ServicesTab.tsx`
+
 ## Known follow-ups
 
 - Add dedicated settings cards for future API-key providers beyond the currently supported OMDb/TVDB configuration paths.
-- Expand *arr command polling with richer progress/status history if needed.
 - TMDB's external `adult` field remains unchanged because it is part of the upstream API contract.
+
+
+
+
+
 
 

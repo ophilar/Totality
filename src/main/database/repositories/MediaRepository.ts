@@ -284,11 +284,11 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
   async upsertItem(item: MediaItem): Promise<number> {
     const seriesIdentityKey = item.series_identity_key
-      ?? (item.type === 'episode' && item.series_title && item.series_tmdb_id
+      ?? (item.type === 'episode' && (item.series_title || item.file_path)
           ? deriveSeriesIdentityKey({
             sourceId: item.source_id || 'legacy',
             libraryId: item.library_id ?? '',
-            folderRelativePath: item.series_title,
+            folderRelativePath: item.series_title || item.file_path || 'unknown',
             tmdbId: item.series_tmdb_id,
           })
         : null)
@@ -391,38 +391,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         await this.drizzle.delete(schema.mediaItems).where(eq(schema.mediaItems.id, id))
 
         if (item.type === 'episode' && item.seriesTitle) {
-          const sourceId = item.sourceId
-          const libraryId = item.libraryId || ''
-
-          // Update completeness using Drizzle sql tagged template for complexity
-          await this.drizzle
-            .update(schema.seriesCompleteness)
-            .set({
-              ownedEpisodes: sql`(SELECT COUNT(*) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode')`,
-              ownedSeasons: sql`(SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode')`,
-              completenessPercentage: sql`CASE WHEN total_episodes > 0
-                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ${item.seriesTitle} AND source_id = ${sourceId} AND library_id = ${libraryId} AND type = 'episode') AS REAL) * 100.0 / total_episodes)
-                ELSE 0 END`,
-              updatedAt: sql`(datetime('now'))`,
-            })
-            .where(
-              and(
-                eq(schema.seriesCompleteness.seriesTitle, item.seriesTitle),
-                eq(schema.seriesCompleteness.sourceId, sourceId),
-                eq(schema.seriesCompleteness.libraryId, libraryId)
-              )
-            )
-
-          await this.drizzle
-            .delete(schema.seriesCompleteness)
-            .where(
-              and(
-                eq(schema.seriesCompleteness.seriesTitle, item.seriesTitle),
-                eq(schema.seriesCompleteness.sourceId, sourceId),
-                eq(schema.seriesCompleteness.libraryId, libraryId),
-                sql`owned_episodes <= 0`
-              )
-            )
+          await this.recalculateSeriesCompleteness([item])
         }
       }
       await this.endBatch()
@@ -454,56 +423,76 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           .where(inArray(schema.mediaItemCollections.mediaItemId, ids))
         await this.drizzle.delete(schema.mediaItems).where(inArray(schema.mediaItems.id, ids))
 
-        const episodeSeriesToUpdate = new Map<
-          string,
-          { seriesTitle: string; sourceId: string; libraryId: string }
-        >()
-        for (const item of items) {
-          if (item.type === 'episode' && item.seriesTitle) {
-            const key = `${item.seriesTitle}-${item.sourceId}-${item.libraryId || ''}`
-            episodeSeriesToUpdate.set(key, {
-              seriesTitle: item.seriesTitle,
-              sourceId: item.sourceId,
-              libraryId: item.libraryId || '',
-            })
-          }
-        }
-
-        for (const series of episodeSeriesToUpdate.values()) {
-          await this.drizzle
-            .update(schema.seriesCompleteness)
-            .set({
-              ownedEpisodes: sql`(SELECT COUNT(*) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
-              ownedSeasons: sql`(SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
-              completenessPercentage: sql`CASE WHEN total_episodes > 0
-                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ${series.seriesTitle} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode') AS REAL) * 100.0 / total_episodes)
-                ELSE 0 END`,
-              updatedAt: sql`(datetime('now'))`,
-            })
-            .where(
-              and(
-                eq(schema.seriesCompleteness.seriesTitle, series.seriesTitle),
-                eq(schema.seriesCompleteness.sourceId, series.sourceId),
-                eq(schema.seriesCompleteness.libraryId, series.libraryId)
-              )
-            )
-
-          await this.drizzle
-            .delete(schema.seriesCompleteness)
-            .where(
-              and(
-                eq(schema.seriesCompleteness.seriesTitle, series.seriesTitle),
-                eq(schema.seriesCompleteness.sourceId, series.sourceId),
-                eq(schema.seriesCompleteness.libraryId, series.libraryId),
-                sql`owned_episodes <= 0`
-              )
-            )
+        const episodeItems = items.filter((it) => it.type === 'episode' && it.seriesTitle)
+        if (episodeItems.length > 0) {
+          await this.recalculateSeriesCompleteness(episodeItems)
         }
       }
       await this.endBatch()
     } catch (err) {
       await this.rollbackBatch()
       throw err
+    }
+  }
+
+  private async recalculateSeriesCompleteness(
+    items: Array<typeof schema.mediaItems.$inferSelect>
+  ): Promise<void> {
+    const seriesMap = new Map<
+      string,
+      { seriesTitle: string; seriesIdentityKey: string | null; sourceId: string; libraryId: string }
+    >()
+    for (const item of items) {
+      if (item.type === 'episode' && item.seriesTitle) {
+        const key = `${item.sourceId}:${item.libraryId || ''}:${item.seriesIdentityKey || item.seriesTitle}`
+        if (!seriesMap.has(key)) {
+          seriesMap.set(key, {
+            seriesTitle: item.seriesTitle,
+            seriesIdentityKey: item.seriesIdentityKey ?? null,
+            sourceId: item.sourceId,
+            libraryId: item.libraryId || '',
+          })
+        }
+      }
+    }
+
+    for (const series of seriesMap.values()) {
+      const matchCondition = series.seriesIdentityKey
+        ? eq(schema.seriesCompleteness.seriesIdentityKey, series.seriesIdentityKey)
+        : eq(schema.seriesCompleteness.seriesTitle, series.seriesTitle)
+
+      const epFilter = series.seriesIdentityKey
+        ? sql`series_identity_key = ${series.seriesIdentityKey}`
+        : sql`series_title = ${series.seriesTitle}`
+
+      await this.drizzle
+        .update(schema.seriesCompleteness)
+        .set({
+          ownedEpisodes: sql`(SELECT COUNT(*) FROM media_items WHERE ${epFilter} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
+          ownedSeasons: sql`(SELECT COUNT(DISTINCT season_number) FROM media_items WHERE ${epFilter} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode')`,
+          completenessPercentage: sql`CASE WHEN total_episodes > 0
+            THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE ${epFilter} AND source_id = ${series.sourceId} AND library_id = ${series.libraryId} AND type = 'episode') AS REAL) * 100.0 / total_episodes)
+            ELSE 0 END`,
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(
+          and(
+            matchCondition,
+            eq(schema.seriesCompleteness.sourceId, series.sourceId),
+            eq(schema.seriesCompleteness.libraryId, series.libraryId)
+          )
+        )
+
+      await this.drizzle
+        .delete(schema.seriesCompleteness)
+        .where(
+          and(
+            matchCondition,
+            eq(schema.seriesCompleteness.sourceId, series.sourceId),
+            eq(schema.seriesCompleteness.libraryId, series.libraryId),
+            sql`owned_episodes <= 0`
+          )
+        )
     }
   }
 

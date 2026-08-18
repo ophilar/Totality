@@ -8,6 +8,8 @@ import type { Client } from '@libsql/client'
 import { getLoggingService } from '@main/services/LoggingService'
 import { DATABASE_SCHEMA } from '@main/database/schema'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
+import { getFileNameParser } from '@main/services/FileNameParser'
 
 /**
  * Run database migrations and schema updates
@@ -161,75 +163,14 @@ export async function runMigrations(db: Client): Promise<void> {
 
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
-  await migrateSeriesIdentity(db)
   await createIndexes(db)
   await fixMusicTrackAlbumReferences(db)
   await migrateExistingItemsToVersions(db)
   await cleanupOrphanedRecords(db)
   await backfillMediaIdentities(db)
+  await mergeDuplicateSeriesCompleteness(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
-}
-
-async function migrateSeriesIdentity(db: Client): Promise<void> {
-  const index = await db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_series_completeness_unique'")
-  if (String(index.rows[0]?.sql || '').includes('series_identity_key')) return
-
-  await db.execute('BEGIN')
-  try {
-    await db.execute(`CREATE TABLE series_completeness_identity (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      series_title TEXT NOT NULL,
-      series_identity_key TEXT,
-      source_id TEXT NOT NULL DEFAULT '',
-      library_id TEXT NOT NULL DEFAULT '',
-      total_seasons INTEGER NOT NULL,
-      total_episodes INTEGER NOT NULL,
-      owned_seasons INTEGER NOT NULL,
-      owned_episodes INTEGER NOT NULL,
-      missing_seasons TEXT NOT NULL DEFAULT '[]',
-      missing_episodes TEXT NOT NULL DEFAULT '[]',
-      completeness_percentage REAL NOT NULL,
-      tmdb_id TEXT,
-      tvdb_id TEXT,
-      poster_url TEXT,
-      backdrop_url TEXT,
-      status TEXT,
-      user_fixed_match INTEGER,
-      efficiency_score INTEGER,
-      storage_debt_bytes INTEGER,
-      total_size INTEGER,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )`)
-    await db.execute(`INSERT INTO series_completeness_identity
-      SELECT id, series_title,
-        CASE WHEN tmdb_id IS NOT NULL AND tmdb_id <> '' THEN 'tmdb:' || tmdb_id
-             WHEN tvdb_id IS NOT NULL AND tvdb_id <> '' THEN 'tvdb:' || tvdb_id
-             ELSE 'unresolved:' || source_id || ':' || library_id || ':legacy-' || id END,
-        source_id, library_id, total_seasons, total_episodes, owned_seasons, owned_episodes,
-        missing_seasons, missing_episodes, completeness_percentage, tmdb_id, tvdb_id,
-        poster_url, backdrop_url, status, user_fixed_match, efficiency_score,
-        storage_debt_bytes, total_size, created_at, updated_at
-      FROM series_completeness`)
-    const oldCount = await db.execute('SELECT COUNT(*) AS count FROM series_completeness')
-    const newCount = await db.execute('SELECT COUNT(*) AS count FROM series_completeness_identity')
-    if (Number(oldCount.rows[0]?.count) !== Number(newCount.rows[0]?.count)) throw new Error('Series identity migration row count validation failed')
-    const duplicate = await db.execute(`SELECT COUNT(*) AS count FROM (
-      SELECT series_identity_key, source_id, library_id FROM series_completeness_identity
-      GROUP BY series_identity_key, source_id, library_id HAVING COUNT(*) > 1
-    )`)
-    if (Number(duplicate.rows[0]?.count) !== 0) throw new Error('Series identity migration uniqueness validation failed')
-    await db.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
-    await db.execute('DROP TABLE series_completeness')
-    await db.execute('ALTER TABLE series_completeness_identity RENAME TO series_completeness')
-    await db.execute('CREATE UNIQUE INDEX idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)')
-    await db.execute(`UPDATE media_items SET series_identity_key = CASE WHEN series_tmdb_id IS NOT NULL AND series_tmdb_id <> '' THEN 'tmdb:' || series_tmdb_id ELSE series_identity_key END WHERE type = 'episode' AND series_identity_key IS NULL`)
-    await db.execute('COMMIT')
-  } catch (error) {
-    await db.execute('ROLLBACK')
-    throw error
-  }
 }
 
 async function backfillMediaIdentities(db: Client): Promise<void> {
@@ -379,5 +320,268 @@ async function cleanupOrphanedRecords(db: Client): Promise<void> {
     }
   } catch (e) {
     getLoggingService().error('[DatabaseMigration]', 'Cleanup error: ' + getErrorMessage(e))
+  }
+}
+
+export async function mergeDuplicateSeriesCompleteness(db: Client): Promise<void> {
+  getLoggingService().debug('[DatabaseMigration]', 'Checking for duplicate TV show records...')
+  const parser = getFileNameParser()
+
+  try {
+    const allRowsResult = await db.execute('SELECT * FROM series_completeness')
+    const rows = allRowsResult.rows as unknown as Array<{
+      id: number
+      series_title: string
+      series_identity_key: string | null
+      source_id: string
+      library_id: string
+      total_seasons: number
+      total_episodes: number
+      owned_seasons: number
+      owned_episodes: number
+      missing_seasons: string
+      missing_episodes: string
+      completeness_percentage: number
+      tmdb_id: string | null
+      tvdb_id: string | null
+      poster_url: string | null
+      backdrop_url: string | null
+      status: string | null
+      user_fixed_match: number | null
+      efficiency_score: number | null
+      storage_debt_bytes: number | null
+      total_size: number | null
+      created_at: string
+      updated_at: string
+    }>
+
+    if (!rows || rows.length <= 1) {
+      await ensureSeriesUniquenessIndexes(db)
+      return
+    }
+
+    // Group by (source_id, library_id)
+    const scopedGroups = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const scope = `${row.source_id || ''}:::${row.library_id || ''}`
+      if (!scopedGroups.has(scope)) scopedGroups.set(scope, [])
+      scopedGroups.get(scope)!.push(row)
+    }
+
+    for (const [scope, scopeRows] of scopedGroups.entries()) {
+      const [sourceId, libraryId] = scope.split(':::')
+      // Cluster rows by matching tvdb_id, tmdb_id, series_identity_key, or normalizedTitle
+      const clusters: Array<typeof rows> = []
+      const visited = new Set<number>()
+
+      for (let i = 0; i < scopeRows.length; i++) {
+        const a = scopeRows[i]
+        if (visited.has(a.id)) continue
+
+        const cluster: typeof rows = [a]
+        visited.add(a.id)
+
+        const normA = parser.normalizeSeriesTitle(a.series_title)
+        const cleanA = parser.cleanSeriesTitleAndYear(a.series_title)
+
+        for (let j = i + 1; j < scopeRows.length; j++) {
+          const b = scopeRows[j]
+          if (visited.has(b.id)) continue
+
+          const normB = parser.normalizeSeriesTitle(b.series_title)
+          const cleanB = parser.cleanSeriesTitleAndYear(b.series_title)
+
+          const matchTvdb = a.tvdb_id && b.tvdb_id && a.tvdb_id === b.tvdb_id
+          const matchTmdb = a.tmdb_id && b.tmdb_id && a.tmdb_id === b.tmdb_id
+          const matchIdentityKey = a.series_identity_key && b.series_identity_key && a.series_identity_key === b.series_identity_key
+          const matchNormTitle = normA && normB && normA === normB
+          const matchCleanTitleAndYear = cleanA.title && cleanB.title && cleanA.title.toLowerCase() === cleanB.title.toLowerCase() && (cleanA.year === cleanB.year || !cleanA.year || !cleanB.year)
+
+          if (matchTvdb || matchTmdb || matchIdentityKey || (matchNormTitle && matchCleanTitleAndYear)) {
+            cluster.push(b)
+            visited.add(b.id)
+          }
+        }
+
+        if (cluster.length > 1) {
+          clusters.push(cluster)
+        }
+      }
+
+      // Merge each cluster with > 1 show
+      for (const cluster of clusters) {
+        // Priority: user_fixed_match = 1, has external ID (tmdb/tvdb), highest owned_episodes, lowest id (oldest)
+        cluster.sort((x, y) => {
+          const xFixed = (x.user_fixed_match || 0) === 1 ? 1 : 0
+          const yFixed = (y.user_fixed_match || 0) === 1 ? 1 : 0
+          if (xFixed !== yFixed) return yFixed - xFixed
+
+          const xHasExt = (x.tmdb_id || x.tvdb_id) ? 1 : 0
+          const yHasExt = (y.tmdb_id || y.tvdb_id) ? 1 : 0
+          if (xHasExt !== yHasExt) return yHasExt - xHasExt
+
+          const xEpisodes = x.owned_episodes || 0
+          const yEpisodes = y.owned_episodes || 0
+          if (xEpisodes !== yEpisodes) return yEpisodes - xEpisodes
+
+          return x.id - y.id
+        })
+
+        const primary = cluster[0]
+        const secondaryRows = cluster.slice(1)
+        const secondaryIds = secondaryRows.map(r => r.id)
+
+        // Merge attributes
+        const mergedTmdbId = primary.tmdb_id || cluster.find(r => r.tmdb_id)?.tmdb_id || null
+        const mergedTvdbId = primary.tvdb_id || cluster.find(r => r.tvdb_id)?.tvdb_id || null
+        const mergedPosterUrl = primary.poster_url ?? cluster.find(r => r.poster_url)?.poster_url ?? null
+        const mergedBackdropUrl = primary.backdrop_url ?? cluster.find(r => r.backdrop_url)?.backdrop_url ?? null
+        const mergedStatus = primary.status || cluster.find(r => r.status)?.status || 'Continuing'
+        const mergedUserFixed = cluster.some(r => r.user_fixed_match === 1) ? 1 : 0
+
+        // Compute canonical series identity key
+        const canonicalKey = deriveSeriesIdentityKey({
+          sourceId,
+          libraryId,
+          folderRelativePath: primary.series_title,
+          tmdbId: mergedTmdbId,
+          tvdbId: mergedTvdbId,
+        })
+
+        // Cleaned series title
+        const cleanTitle = parser.cleanSeriesTitleAndYear(primary.series_title).title || primary.series_title
+
+        await db.execute('BEGIN IMMEDIATE')
+        try {
+          // 1. Repoint media_items from all duplicate rows to canonical
+          for (const sec of secondaryRows) {
+            await db.execute({
+              sql: `UPDATE media_items
+                    SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
+                    WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                      AND (series_identity_key = ? OR series_title = ?)`,
+              args: [canonicalKey, cleanTitle, mergedTmdbId, sourceId, libraryId, sec.series_identity_key || '', sec.series_title]
+            })
+          }
+          await db.execute({
+            sql: `UPDATE media_items
+                  SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
+                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                    AND (series_identity_key = ? OR series_title = ?)`,
+            args: [canonicalKey, cleanTitle, mergedTmdbId, sourceId, libraryId, primary.series_identity_key || '', primary.series_title]
+          })
+
+          // 2. Repoint media_identities and media_aliases
+          for (const secId of secondaryIds) {
+            await db.execute({
+              sql: `UPDATE OR IGNORE media_identities SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await db.execute({
+              sql: `DELETE FROM media_identities WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+            await db.execute({
+              sql: `UPDATE OR IGNORE media_aliases SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await db.execute({
+              sql: `DELETE FROM media_aliases WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+          }
+
+          // 3. Compute aggregate stats from media_items for canonical row
+          const epStatsRes = await db.execute({
+            sql: `SELECT
+                    COUNT(DISTINCT season_number) as owned_seasons,
+                    COUNT(*) as owned_episodes,
+                    TOTAL(file_size) as total_size,
+                    TOTAL(storage_debt_bytes) as storage_debt_bytes,
+                    AVG(CASE WHEN efficiency_score > 0 THEN efficiency_score ELSE NULL END) as avg_efficiency
+                  FROM media_items
+                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                    AND series_identity_key = ?`,
+            args: [sourceId, libraryId, canonicalKey]
+          })
+          const epStats = epStatsRes.rows[0] as unknown as {
+            owned_seasons: number
+            owned_episodes: number
+            total_size: number
+            storage_debt_bytes: number
+            avg_efficiency: number | null
+          }
+
+          const totalEpisodes = Math.max(primary.total_episodes || 0, Number(epStats?.owned_episodes || 0))
+          const totalSeasons = Math.max(primary.total_seasons || 0, Number(epStats?.owned_seasons || 0))
+          const ownedEpisodes = Number(epStats?.owned_episodes || primary.owned_episodes || 0)
+          const ownedSeasons = Number(epStats?.owned_seasons || primary.owned_seasons || 0)
+          const completenessPct = totalEpisodes > 0 ? (ownedEpisodes / totalEpisodes) * 100 : (primary.completeness_percentage || 100)
+
+          // 4. Update primary row
+          await db.execute({
+            sql: `UPDATE series_completeness
+                  SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
+                      poster_url = ?, backdrop_url = ?, status = ?, user_fixed_match = ?,
+                      total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
+                      completeness_percentage = ?, total_size = ?, storage_debt_bytes = ?,
+                      efficiency_score = ?, updated_at = datetime('now')
+                  WHERE id = ?`,
+            args: [
+              cleanTitle,
+              canonicalKey,
+              mergedTmdbId,
+              mergedTvdbId,
+              mergedPosterUrl,
+              mergedBackdropUrl,
+              mergedStatus,
+              mergedUserFixed,
+              totalSeasons,
+              totalEpisodes,
+              ownedSeasons,
+              ownedEpisodes,
+              completenessPct,
+              Math.round(Number(epStats?.total_size || primary.total_size || 0)),
+              Math.round(Number(epStats?.storage_debt_bytes || primary.storage_debt_bytes || 0)),
+              Math.round(Number(epStats?.avg_efficiency || primary.efficiency_score || 0)),
+              primary.id
+            ]
+          })
+
+          // 5. Delete secondary rows
+          for (const secId of secondaryIds) {
+            await db.execute({
+              sql: `DELETE FROM series_completeness WHERE id = ?`,
+              args: [secId]
+            })
+          }
+
+          await db.execute('COMMIT')
+          getLoggingService().info('[DatabaseMigration]', `Merged ${cluster.length} duplicate TV show records into canonical ID ${primary.id} ("${cleanTitle}")`)
+        } catch (err) {
+          await db.execute('ROLLBACK')
+          getLoggingService().error('[DatabaseMigration]', `Failed to merge duplicate cluster for "${primary.series_title}": ${getErrorMessage(err)}`)
+        }
+      }
+    }
+  } catch (error) {
+    getLoggingService().error('[DatabaseMigration]', `Error in mergeDuplicateSeriesCompleteness: ${getErrorMessage(error)}`)
+  }
+
+  await ensureSeriesUniquenessIndexes(db)
+}
+
+async function ensureSeriesUniquenessIndexes(db: Client): Promise<void> {
+  const indexes = [
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ""',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ""'
+  ]
+  for (const idx of indexes) {
+    try {
+      await db.execute(idx)
+    } catch (e) {
+      getLoggingService().debug('[DatabaseMigration]', 'Unique index creation note: ' + getErrorMessage(e))
+    }
   }
 }

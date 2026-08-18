@@ -60,12 +60,13 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
   const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col relative ${showMenu ? 'z-50' : 'z-10'}`}>
       <div
         ref={cardRef}
         tabIndex={0}
         className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
         onClick={onClick}
+
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()

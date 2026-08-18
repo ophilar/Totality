@@ -98,4 +98,60 @@ export class IdentityRepository {
     }
     return [...conflicts]
   }
+
+  async getBatchConflictingEntityIds(
+    entityType: IdentityEntityType,
+    items: Array<{ entityId: number; identities: Array<{ provider: string; externalId: string }> }>
+  ): Promise<Map<number, number[]>> {
+    const conflictMap = new Map<number, number[]>()
+    if (items.length === 0) return conflictMap
+
+    const tableName = entityType === 'series' ? 'series_completeness' : entityType === 'movie' ? 'media_items' : entityType === 'artist' ? 'music_artists' : 'music_albums'
+    const lookupMap = new Map<string, number[]>()
+    for (const item of items) {
+      for (const id of item.identities) {
+        const key = `${id.provider}:${id.externalId}`
+        if (!lookupMap.has(key)) lookupMap.set(key, [])
+        lookupMap.get(key)!.push(item.entityId)
+      }
+    }
+
+    if (lookupMap.size === 0) return conflictMap
+
+    const whereClauses: string[] = []
+    const args: Array<string | number> = [entityType]
+    for (const key of lookupMap.keys()) {
+      const colonIdx = key.indexOf(':')
+      const provider = key.slice(0, colonIdx)
+      const externalId = key.slice(colonIdx + 1)
+      whereClauses.push('(mi.provider = ? AND mi.external_id = ?)')
+      args.push(provider, externalId)
+    }
+
+    const result = await this.db.execute({
+      sql: `SELECT mi.entity_id, mi.provider, mi.external_id
+            FROM media_identities mi
+            JOIN ${tableName} t ON t.id = mi.entity_id
+            WHERE mi.entity_type = ? AND (${whereClauses.join(' OR ')})`,
+      args
+    })
+
+    for (const row of result.rows) {
+      const entityId = Number(row.entity_id)
+      const provider = String(row.provider)
+      const externalId = String(row.external_id)
+      const key = `${provider}:${externalId}`
+      const queryingEntities = lookupMap.get(key) || []
+
+      for (const qId of queryingEntities) {
+        if (qId !== entityId) {
+          if (!conflictMap.has(qId)) conflictMap.set(qId, [])
+          const list = conflictMap.get(qId)!
+          if (!list.includes(entityId)) list.push(entityId)
+        }
+      }
+    }
+
+    return conflictMap
+  }
 }

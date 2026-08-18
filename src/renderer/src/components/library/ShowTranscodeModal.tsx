@@ -10,11 +10,13 @@ import {
   ShieldCheck, 
   Sparkles, 
   Volume2, 
-  FileCheck 
+  FileCheck
 } from 'lucide-react'
+import { useToast } from '@/contexts/ToastContext'
 import type { TVShowSummary } from './types'
 
 export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onClose: () => void }) {
+  const { addToast } = useToast()
   const [codec, setCodec] = useState<'hevc' | 'av1'>('av1')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('en')
@@ -54,14 +56,27 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       }
       const queued = await window.electronAPI.queueShow(preflight.preflightId)
       setIsSuccess(true)
-      setMessage(`Successfully queued ${queued.queuedMediaItemIds.length} episodes for background transcoding!`)
+      const count = queued.queuedMediaItemIds.length
+      setMessage(`Successfully queued ${count} episode${count === 1 ? '' : 's'} in background task queue.`)
+      addToast({
+        type: 'success',
+        title: 'Batch Transcoding Queued',
+        message: `Queued ${count} episodes of "${show.series_title}" for background optimization.`
+      })
     } catch (error) { 
-      setMessage(error instanceof Error ? error.message : String(error)) 
+      const errMsg = error instanceof Error ? error.message : String(error)
+      setMessage(errMsg) 
       setIsSuccess(false)
+      addToast({
+        type: 'error',
+        title: 'Preflight Failed',
+        message: errMsg
+      })
     } finally { 
       setBusy(false) 
     }
   }
+
 
   return createPortal(
     <div 
@@ -81,9 +96,6 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
             <div>
               <h3 className="text-lg font-bold leading-tight flex items-center gap-2">
                 Batch Optimize Series
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary">
-                  1-Command Pipeline
-                </span>
               </h3>
               <p className="text-xs text-muted-foreground truncate max-w-[380px]">{show.series_title}</p>
             </div>
@@ -116,10 +128,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-sm">AV1 (Next-Gen)</span>
-                  <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary">Max Savings</span>
+                  <span className="font-bold text-sm">AV1</span>
+                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary">High Efficiency</span>
                 </div>
-                <p className="text-xs text-muted-foreground">Up to 60-70% size reduction with supreme visual fidelity.</p>
+                <p className="text-xs text-muted-foreground">High compression efficiency with visual fidelity.</p>
               </button>
 
               <button
@@ -132,10 +144,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-sm">HEVC / H.265</span>
-                  <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">Universal</span>
+                  <span className="font-bold text-sm">HEVC (H.265)</span>
+                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">Compatibility</span>
                 </div>
-                <p className="text-xs text-muted-foreground">Broad device hardware compatibility and HDR preservation.</p>
+                <p className="text-xs text-muted-foreground">Broad device hardware decoding support.</p>
               </button>
             </div>
           </div>

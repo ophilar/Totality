@@ -186,6 +186,8 @@ export const seriesCompleteness = sqliteTable('series_completeness', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   uniqueIdx: uniqueIndex('idx_series_completeness_unique').on(table.seriesIdentityKey, table.sourceId, table.libraryId),
+  tvdbUniqueIdx: uniqueIndex('idx_series_completeness_tvdb').on(table.sourceId, table.libraryId, table.tvdbId),
+  tmdbUniqueIdx: uniqueIndex('idx_series_completeness_tmdb').on(table.sourceId, table.libraryId, table.tmdbId),
 }));
 
 // --- Movie Collections ---

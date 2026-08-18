@@ -19,6 +19,8 @@ import {
   Music,
 } from 'lucide-react'
 import { TranscodingHardwareCard } from '@/components/settings/TranscodingHardwareCard'
+import { useToast } from '@/contexts/ToastContext'
+
 
 interface ServiceCardProps {
   title: string
@@ -117,6 +119,7 @@ function ServiceCard({
 }
 
 export function ServicesTab() {
+  const { addToast } = useToast()
   // Expanded state
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
@@ -1096,7 +1099,7 @@ export function ServicesTab() {
                       <code className="flex-1 text-xs truncate text-muted-foreground" title={nfsPath}>
                         nfs://{nfsPath}
                       </code>
-                      <span className="text-muted-foreground/50">→</span>
+                      <span className="text-muted-foreground/50">ΓåÆ</span>
                       <code className="flex-1 text-xs truncate" title={localPath}>
                         {localPath}
                       </code>
@@ -1208,8 +1211,72 @@ export function ServicesTab() {
             <div><label className="text-xs text-muted-foreground">Radarr API key</label><input type="password" value={radarrKey} onChange={(e) => setRadarrKey(e.target.value)} className="w-full px-3 py-2 bg-background border border-border/30 rounded-md text-sm" /></div>
           </div>
           <div className="flex gap-2">
-            <button disabled={!sonarrUrl || !sonarrKey || arrStatus === 'testing'} onClick={async () => { setArrStatus('testing'); const result = await window.electronAPI.arrTestConnection('sonarr', { baseUrl: sonarrUrl, apiKey: sonarrKey }); setArrStatus(result.success ? 'valid' : 'invalid') }} className="px-3 py-2 text-sm bg-muted rounded-md disabled:opacity-50">Test Sonarr</button>
-            <button disabled={!radarrUrl || !radarrKey || arrStatus === 'testing'} onClick={async () => { setArrStatus('testing'); const result = await window.electronAPI.arrTestConnection('radarr', { baseUrl: radarrUrl, apiKey: radarrKey }); setArrStatus(result.success ? 'valid' : 'invalid') }} className="px-3 py-2 text-sm bg-muted rounded-md disabled:opacity-50">Test Radarr</button>
+            <button 
+              disabled={!sonarrUrl || !sonarrKey || arrStatus === 'testing'} 
+              onClick={async () => { 
+                setArrStatus('testing')
+                try {
+                  const result = await window.electronAPI.arrTestConnection('sonarr', { baseUrl: sonarrUrl, apiKey: sonarrKey })
+                  setArrStatus(result.success ? 'valid' : 'invalid')
+                  if (result.success) {
+                    addToast({
+                      type: 'success',
+                      title: 'Sonarr Connected',
+                      message: `Successfully reached Sonarr${result.version ? ` (v${result.version})` : ''}!`
+                    })
+                  } else {
+                    addToast({
+                      type: 'error',
+                      title: 'Sonarr Connection Failed',
+                      message: result.error || 'Check that Sonarr is running and API key is correct.'
+                    })
+                  }
+                } catch (err: unknown) {
+                  setArrStatus('invalid')
+                  addToast({
+                    type: 'error',
+                    title: 'Sonarr Error',
+                    message: err instanceof Error ? err.message : String(err)
+                  })
+                }
+              }} 
+              className="px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {arrStatus === 'testing' ? 'Testing Sonarr...' : 'Test Sonarr'}
+            </button>
+            <button 
+              disabled={!radarrUrl || !radarrKey || arrStatus === 'testing'} 
+              onClick={async () => { 
+                setArrStatus('testing')
+                try {
+                  const result = await window.electronAPI.arrTestConnection('radarr', { baseUrl: radarrUrl, apiKey: radarrKey })
+                  setArrStatus(result.success ? 'valid' : 'invalid')
+                  if (result.success) {
+                    addToast({
+                      type: 'success',
+                      title: 'Radarr Connected',
+                      message: `Successfully reached Radarr${result.version ? ` (v${result.version})` : ''}!`
+                    })
+                  } else {
+                    addToast({
+                      type: 'error',
+                      title: 'Radarr Connection Failed',
+                      message: result.error || 'Check that Radarr is running and API key is correct.'
+                    })
+                  }
+                } catch (err: unknown) {
+                  setArrStatus('invalid')
+                  addToast({
+                    type: 'error',
+                    title: 'Radarr Error',
+                    message: err instanceof Error ? err.message : String(err)
+                  })
+                }
+              }} 
+              className="px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-md disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {arrStatus === 'testing' ? 'Testing Radarr...' : 'Test Radarr'}
+            </button>
           </div>
           <p className="text-xs text-muted-foreground">Search commands require explicit confirmation from the media action menu. Totality does not choose indexers or releases.</p>
         </div>
@@ -1232,8 +1299,8 @@ export function ServicesTab() {
               <div key={id} className="flex items-center gap-2 rounded-md border border-border/30 px-3 py-2">
                 <input type="checkbox" checked={preferences.enabled.includes(id)} onChange={(e) => writeProviderPreferences(e.target.checked ? [...preferences.enabled, id] : preferences.enabled.filter(provider => provider !== id), preferences.order)} aria-label={`Enable ${metadataProviderLabels[id]}`} />
                 <span className="flex-1 text-sm">{metadataProviderLabels[id]}</span>
-                <button type="button" disabled={index === 0} onClick={() => { const order = [...preferences.order]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} up`}>↑</button>
-                <button type="button" disabled={index === preferences.order.length - 1} onClick={() => { const order = [...preferences.order]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} down`}>↓</button>
+                <button type="button" disabled={index === 0} onClick={() => { const order = [...preferences.order]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} up`}>Γåæ</button>
+                <button type="button" disabled={index === preferences.order.length - 1} onClick={() => { const order = [...preferences.order]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; writeProviderPreferences(preferences.enabled, order) }} className="px-2 py-1 text-xs rounded bg-muted disabled:opacity-40" aria-label={`Move ${metadataProviderLabels[id]} down`}>Γåô</button>
               </div>
             ))
           })()}

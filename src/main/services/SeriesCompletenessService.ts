@@ -45,13 +45,19 @@ export class SeriesCompletenessService {
       const allCompleteness = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
       const completenessMap = new Map<string, SeriesCompleteness>()
       for (const comp of allCompleteness) {
+        if (comp.series_identity_key) completenessMap.set(comp.series_identity_key, comp)
         completenessMap.set(comp.series_title, comp)
       }
 
-      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show) => ({ series_title: show.series_title, series_identity_key: show.series_identity_key ?? undefined }))
+      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show) => ({
+        series_title: show.series_title,
+        series_identity_key: show.series_identity_key ?? undefined,
+      }))
+      const existingTitlesSet = new Set(showsToAnalyze.map((s) => s.series_title))
       for (const title of titlesFromMedia) {
-          if (!showsToAnalyze.some(s => s.series_title === title && !s.series_identity_key)) {
+        if (!existingTitlesSet.has(title)) {
           showsToAnalyze.push({ series_title: title })
+          existingTitlesSet.add(title)
         }
       }
 
@@ -60,8 +66,8 @@ export class SeriesCompletenessService {
       const allEpisodes = await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
       const episodesBySeries = new Map<string, MediaItem[]>()
       for (const ep of allEpisodes) {
-          const key = ep.series_identity_key || ep.series_title
-          if (key) {
+        const key = ep.series_identity_key || ep.series_title
+        if (key) {
           if (!episodesBySeries.has(key)) episodesBySeries.set(key, [])
           episodesBySeries.get(key)!.push(ep)
         }
@@ -73,28 +79,39 @@ export class SeriesCompletenessService {
           if (this.cancelRequested) break
           const title = showsToAnalyze[i].series_title
           const identityKey = showsToAnalyze[i].series_identity_key
-          onProgress?.({ current: i + 1, total: showsToAnalyze.length, percentage: Math.round(((i + 1) / showsToAnalyze.length) * 100), phase: 'analyzing', currentItem: title })
+          onProgress?.({
+            current: i + 1,
+            total: showsToAnalyze.length,
+            percentage: Math.round(((i + 1) / showsToAnalyze.length) * 100),
+            phase: 'analyzing',
+            currentItem: title,
+          })
           try {
-            const episodes = episodesBySeries.get(identityKey || title) || []
+            const episodes = (identityKey ? episodesBySeries.get(identityKey) : null) || episodesBySeries.get(title) || []
+            const existing = (identityKey ? completenessMap.get(identityKey) : null) || completenessMap.get(title) || null
             const analysis = await this.analyzeSeries(title, sourceId, libraryId, undefined, episodes, {
               tmdbApiKey,
               source,
-              existingCompleteness: completenessMap.get(title) || null,
-              returnConstructed: true
+              existingCompleteness: existing,
+              returnConstructed: true,
             })
             if (analysis) {
               result.analyzed++
               if (analysis.completeness_percentage >= 100) result.complete++
               else result.incomplete++
             }
-          } catch (error) { result.errors.push(`"${title}": ${getErrorMessage(error)}`) }
+          } catch (error) {
+            result.errors.push(`"${title}": ${getErrorMessage(error)}`)
+          }
         }
-      } finally { 
-        await this.db.endBatch() 
+      } finally {
+        await this.db.endBatch()
         getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       }
       return { ...result, completed: true }
-    } catch (error) { throw error }
+    } catch (error) {
+      throw error
+    }
   }
 
   async analyzeSeries(

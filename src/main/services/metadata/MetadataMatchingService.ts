@@ -43,6 +43,8 @@ export class MetadataMatchingService {
     ].filter((query, index, all) => query.title && all.findIndex(candidate => candidate.title === query.title && candidate.year === query.year) === index)
 
     const candidates = new Map<string, MetadataSearchResult>()
+    const keyByExternalId = new Map<string, string>()
+
     for (const query of queries) {
       const searchQuery: MetadataSearchQuery = {
         title: query.title,
@@ -57,8 +59,15 @@ export class MetadataMatchingService {
       const results = await this.compositeProvider.searchAndFuse(searchQuery)
 
       for (const result of results) {
-        const resultIds = Object.values(result.externalIds || {}).filter(Boolean)
-        const sharedKey = Array.from(candidates.entries()).find(([, existing]) => resultIds.some(id => Object.values(existing.externalIds || {}).filter(Boolean).includes(id)))?.[0]
+        const resultIds = Object.values(result.externalIds || {}).filter(Boolean) as string[]
+        let sharedKey: string | undefined
+        for (const id of resultIds) {
+          if (keyByExternalId.has(id)) {
+            sharedKey = keyByExternalId.get(id)
+            break
+          }
+        }
+
         const key = sharedKey || (result.externalIds?.tmdbId
           ? `tmdb:${result.externalIds.tmdbId}`
           : result.externalIds?.tvdbId
@@ -70,6 +79,11 @@ export class MetadataMatchingService {
                 : result.externalIds?.anilistId
                   ? `anilist:${result.externalIds.anilistId}`
                   : `${normalizeTitleForMatching(result.title)}_${result.year || 'unknown'}_${result.type}`)
+
+        for (const id of resultIds) {
+          keyByExternalId.set(id, key)
+        }
+
         const existing = candidates.get(key)
         if (!existing || scoreTitleMatch(result.title, params.title, result.year, params.year) > scoreTitleMatch(existing.title, params.title, existing.year, params.year)) {
           candidates.set(key, { ...result })

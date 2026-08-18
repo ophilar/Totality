@@ -158,8 +158,6 @@ export class FileNameParser {
     /[Ss]eason\s*(\d{1,2})\s*[Ee]pisode\s*(\d{1,3})/i,
     // S01.E01 format
     /[Ss](\d{1,2})\.?[Ee](\d{1,3})/,
-    // 101 format (less reliable, only use if others don't match)
-    // /\b(\d)(\d{2})\b/,
   ]
 
   // Year pattern
@@ -242,11 +240,6 @@ export class FileNameParser {
       .replace(/\s+/g, ' ')
       .trim()
 
-    // Extract year with smart detection:
-    // 1. Prefer year in parentheses/brackets: (2019) or [2019]
-    // 2. For multiple bare years, prefer the LAST one (release year is typically last)
-    // 3. Handle numeric titles like "1917" - don't mistake title for year
-
     // First, look for year in parentheses or brackets
     const parenYearMatch = cleanName.match(/[([](19\d{2}|20\d{2})[\])]/)
     // Find ALL years in the string
@@ -257,56 +250,42 @@ export class FileNameParser {
     let charBeforeYear: string | undefined
 
     if (parenYearMatch) {
-      // Parenthesized year takes priority - this is definitely the release year
       releaseYear = parseInt(parenYearMatch[1], 10)
       yearIndex = cleanName.indexOf(parenYearMatch[0])
-      charBeforeYear = cleanName[yearIndex] // Will be '(' or '['
+      charBeforeYear = cleanName[yearIndex]
     } else if (allYears.length > 0) {
-      // No parenthesized year - use smarter selection
       if (allYears.length === 1) {
-        // Only one year found
         const match = allYears[0]
         const potentialYear = parseInt(match[1], 10)
         const idx = match.index!
 
-        // Check if this "year" is actually a numeric title (like "1917")
-        // If extracting it would leave an empty title, it's probably the title
         const titleBefore = cleanName.slice(0, idx).trim()
         if (titleBefore.length === 0 || titleBefore.match(/^[([\s]*$/)) {
-          // The "year" appears to be the title itself - don't extract it as year
-          // Title will be extracted later from the full string
+          // Year appears to be the title itself (e.g. 1917)
         } else {
           releaseYear = potentialYear
           yearIndex = idx
           charBeforeYear = cleanName[idx - 1]
         }
       } else {
-        // Multiple years - prefer the LAST one as release year
-        // e.g., "Beauty and the Beast 1991 2017" -> year=2017
         const lastMatch = allYears[allYears.length - 1]
         releaseYear = parseInt(lastMatch[1], 10)
         yearIndex = lastMatch.index!
         charBeforeYear = cleanName[yearIndex - 1]
-
-        // Special case: "1917 2019" - first is title, second is year
-        // The title is everything before the LAST year
       }
     }
 
     if (releaseYear !== undefined && yearIndex >= 0) {
       result.year = releaseYear
 
-      // Title is everything before the release year
       let titleEnd = yearIndex
-      // If year is preceded by "(" or "[", exclude the bracket from title
       if (charBeforeYear === '(' || charBeforeYear === '[') {
         titleEnd = yearIndex - 1
       }
 
       if (titleEnd > 0) {
         result.title = cleanName.slice(0, titleEnd).trim()
-        cleanName = cleanName.slice(yearIndex + 4) // Skip past the 4-digit year
-        // Also skip closing bracket if present
+        cleanName = cleanName.slice(yearIndex + 4)
         if (cleanName.startsWith(')') || cleanName.startsWith(']')) {
           cleanName = cleanName.slice(1)
         }
@@ -323,7 +302,6 @@ export class FileNameParser {
     // Extract release group (usually at the end after a dash)
     const groupMatch = cleanName.match(/[-\s]([A-Za-z0-9]+)$/)
     if (groupMatch && groupMatch[1].length >= 2 && groupMatch[1].length <= 15) {
-      // Avoid matching quality indicators as groups
       const potentialGroup = groupMatch[1]
       if (!this.isQualityIndicator(potentialGroup)) {
         result.group = potentialGroup
@@ -350,7 +328,6 @@ export class FileNameParser {
    * Parse a TV episode filename
    */
   parseEpisode(name: string, folderContext?: string): ParsedEpisodeInfo | null {
-    // Try each TV pattern
     for (const pattern of this.tvPatterns) {
       const match = name.match(pattern)
       if (match) {
@@ -361,61 +338,43 @@ export class FileNameParser {
           episodeNumber: parseInt(match[2], 10),
         }
 
-        // Check for multi-episode
         if (match[3]) {
           result.episodeNumberEnd = parseInt(match[3], 10)
         }
 
-        // Clean the name for further parsing
         const cleanName = name
           .replace(/\./g, ' ')
           .replace(/_/g, ' ')
           .replace(/\s+/g, ' ')
           .trim()
 
-        // Extract series title (everything before the episode indicator)
         const matchIndex = cleanName.search(pattern)
         if (matchIndex > 0) {
           result.seriesTitle = cleanName.slice(0, matchIndex).trim()
         }
 
-        // Try to get series title from folder context if not in filename
         if (!result.seriesTitle && folderContext) {
           result.seriesTitle = this.extractSeriesTitleFromPath(folderContext)
         }
 
-        // Extract year from series title and remove it
-        // Prefer year in parentheses: "Archer (2009)" -> title="Archer", year=2009
-        const parenYearMatch = result.seriesTitle.match(/[([](19\d{2}|20\d{2})[\])]/) // Match (2019) or [2019]
-        if (parenYearMatch) {
-          result.year = parseInt(parenYearMatch[1], 10)
-          // Remove the year (with parentheses) from title
-          result.seriesTitle = result.seriesTitle.replace(/\s*[([](19\d{2}|20\d{2})[\])]\s*/, ' ').trim()
-        } else {
-          // Check for bare year at end of title
-          const bareYearMatch = result.seriesTitle.match(/\s+(19\d{2}|20\d{2})$/)
-          if (bareYearMatch) {
-            result.year = parseInt(bareYearMatch[1], 10)
-            result.seriesTitle = result.seriesTitle.replace(/\s+(19\d{2}|20\d{2})$/, '').trim()
+        if (result.seriesTitle) {
+          const parsedSeries = this.cleanSeriesTitleAndYear(result.seriesTitle)
+          result.seriesTitle = parsedSeries.title || result.seriesTitle
+          if (parsedSeries.year && !result.year) {
+            result.year = parsedSeries.year
           }
         }
 
-        // Clean up series title
-        result.seriesTitle = this.cleanTitle(result.seriesTitle)
-
-        // Extract quality indicators
         const afterMatch = cleanName.slice(matchIndex)
         result.resolution = this.extractPattern(afterMatch, this.resolutionPatterns)
         result.source = this.extractPattern(afterMatch, this.sourcePatterns)
         result.codec = this.extractPattern(afterMatch, this.videoCodecPatterns)
         result.audioCodec = this.extractPattern(afterMatch, this.audioCodecPatterns)
 
-        // Build quality string
         result.quality = [result.resolution, result.source, result.codec]
           .filter(Boolean)
           .join(' ')
 
-        // Try to extract episode title (between episode number and quality indicators)
         const episodeTitle = this.extractEpisodeTitle(afterMatch, pattern)
         if (episodeTitle) {
           result.episodeTitle = episodeTitle
@@ -430,11 +389,6 @@ export class FileNameParser {
 
   /**
    * Parse a music filename
-   *
-   * Folder structure takes precedence for artist/album:
-   *   .../Artist/Album/track.mp3
-   *
-   * Filename parsing is used for track number and title.
    */
   parseMusic(name: string, folderContext?: string): ParsedMusicInfo {
     const result: ParsedMusicInfo = {
@@ -442,33 +396,27 @@ export class FileNameParser {
       title: name,
     }
 
-    // First, get artist and album from folder context (takes precedence)
     if (folderContext) {
       const pathParts = folderContext.split(/[/\\]/).filter(Boolean)
       if (pathParts.length >= 2) {
-        // Structure: .../Artist/Album/track.mp3
         result.artist = pathParts[pathParts.length - 2]
         result.album = pathParts[pathParts.length - 1]
       } else if (pathParts.length === 1) {
-        // Single folder - treat as artist folder with unknown album
         result.artist = pathParts[0]
       }
     }
 
-    // Clean the filename
     let cleanName = name
       .replace(/_/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
-    // Try to extract track number from start (e.g., "01 - Song Title" or "01. Song Title")
     const trackMatch = cleanName.match(/^(\d{1,3})[\s.-]+(.+)/)
     if (trackMatch) {
       result.trackNumber = parseInt(trackMatch[1], 10)
       cleanName = trackMatch[2].trim()
     }
 
-    // Try to extract disc number (e.g., "1-01" or "CD1-01")
     const discTrackMatch = cleanName.match(/^(?:CD|Disc\s*)?(\d{1,2})[-.](\d{1,3})[\s.-]+(.+)/i)
     if (discTrackMatch) {
       result.discNumber = parseInt(discTrackMatch[1], 10)
@@ -476,16 +424,11 @@ export class FileNameParser {
       cleanName = discTrackMatch[3].trim()
     }
 
-    // Parse the remaining filename for title
-    // If filename has "Artist - Title" format, only use it for title (not artist)
-    // since folder structure takes precedence for artist
     const artistTitleMatch = cleanName.match(/^(.+?)\s*[-–—]\s*(.+)$/)
     if (artistTitleMatch) {
-      // Only use the title part, ignore artist from filename if we have folder artist
       if (result.artist) {
         result.title = artistTitleMatch[2].trim()
       } else {
-        // No folder artist, use filename parsing
         result.artist = artistTitleMatch[1].trim()
         result.title = artistTitleMatch[2].trim()
       }
@@ -493,7 +436,6 @@ export class FileNameParser {
       result.title = cleanName
     }
 
-    // Try to extract year from album name
     if (result.album) {
       const yearMatch = result.album.match(this.yearPattern)
       if (yearMatch) {
@@ -510,23 +452,14 @@ export class FileNameParser {
 
   /**
    * Normalize a title for TMDB search
-   * - Removes diacritics (e.g., "Pokémon" -> "Pokemon")
-   * - Replaces punctuation with spaces (e.g., "A.I." -> "A I")
-   * - Collapses multiple spaces and trims
    */
   normalizeForSearch(title: string): string {
     return title
-      // Decompose Unicode characters (é -> e + combining accent)
       .normalize('NFD')
-      // Remove combining diacritical marks
       .replace(/[\u0300-\u036f]/g, '')
-      // Replace common punctuation with spaces
       .replace(/[.'":;!?&@#$%^*()[\]{}|\\/<>~`+=]/g, ' ')
-      // Replace dashes and underscores with spaces
       .replace(/[-_]/g, ' ')
-      // Collapse multiple spaces to single space
       .replace(/\s+/g, ' ')
-      // Trim whitespace
       .trim()
   }
 
@@ -552,7 +485,6 @@ export class FileNameParser {
   }
 
   private extractTitleBeforeQuality(text: string): string {
-    // Find the first quality indicator and return everything before it
     const allPatterns = [
       ...this.resolutionPatterns,
       ...this.sourcePatterns,
@@ -571,15 +503,146 @@ export class FileNameParser {
     return text.slice(0, earliestIndex).trim()
   }
 
-  private extractSeriesTitleFromPath(folderPath: string): string {
-    const parts = folderPath.split(/[/\\]/).filter(Boolean)
+  /**
+   * Check if a folder name is a season, specials, or extras folder
+   */
+  isSeasonOrExtrasFolder(folderName: string): boolean {
+    if (!folderName) return false
+    const name = folderName.trim()
+    const seasonPatterns = [
+      /^[Ss]eason\s*\d+$/i,
+      /^[Ss]\d{1,2}$/i,
+      /^[Ss]eason\s*\d+\s*\(?\d{4}\)?$/i,
+      /^[Ss]taffel\s*\d+$/i,
+      /^[Ss]eries\s*\d+$/i,
+      /^[Ss]aison\s*\d+$/i,
+      /^[Tt]emporada\s*\d+$/i,
+      /^[Ss]pecials?$/i,
+      /^[Ss]pecial$/i,
+      /^[Ee]xtras?$/i,
+      /^[Ff]eaturettes?$/i,
+      /^[Bb]ehind\s*the\s*scenes$/i,
+      /^[Dd]eleted\s*scenes$/i,
+      /^[Bb]onus$/i,
+      /^[Ss]0+$/i,
+    ]
+    return seasonPatterns.some((pat) => pat.test(name))
+  }
 
-    // Look for a folder that's not a season folder
+  /**
+   * Check if a filename or relative path represents extras/bonus content
+   */
+  isExtrasContent(filenameOrPath: string): boolean {
+    if (!filenameOrPath) return false
+    const lower = filenameOrPath.toLowerCase()
+    if (lower.includes('sample')) return true
+    const extrasPatterns = [
+      /\b(featurette|featurettes)\b/i,
+      /\bbehind[.\-_ ]?the[.\-_ ]?scenes?\b/i,
+      /\bdeleted[.\-_ ]?scenes?\b/i,
+      /\bgag[.\-_ ]?reel\b/i,
+      /\bbloopers?\b/i,
+      /\binterview(s|ed)?\b/i,
+      /\bmaking[.\-_ ]?of\b/i,
+      /\bshort[.\-_ ]?film\b/i,
+      /\b(trailer|teaser)\b/i,
+      /\bpromo(s)?\b/i,
+      /\bcommentary\b/i,
+      /\bbonus[.\-_ ]?(content|feature)?\b/i,
+      /\bextras?\b/i,
+      /\bbts\b/i,
+      /\bouttakes?\b/i,
+      /\bscene[.\-_ ]?\d+\b/i,
+      /\balternate[.\-_ ]?(opening|ending|cut|version|take|scene)?\b/i,
+      /\bextended[.\-_ ]?(cut|scene|version)?\b/i,
+      /[.\-_ ]scene$/i,
+      /\b(opening|closing)[.\-_ ]?credits?\b/i,
+    ]
+    return extrasPatterns.some((pattern) => pattern.test(lower))
+  }
+
+  /**
+   * Strip scene/release tags, resolutions, codecs, and group suffixes from a raw string or folder name
+   */
+  stripReleaseTags(rawText: string): string {
+    if (!rawText) return ''
+
+    let cleaned = rawText
+      .replace(/\[(?:[^\]]*\b(?:1080p|720p|2160p|4k|uhd|bluray|remux|web-?dl|webrip|hdtv|dvdrip|x264|x265|h264|hevc|av1|10bit|hdr|dts|atmos|aac|flac|proper|repack)[^\]]*)\]/gi, ' ')
+      .replace(/\[[A-Za-z0-9_.-]+\]$/g, '')
+      .replace(/\b(?:ddp|dd|e-?ac-?3|ac-?3)\s*\d*(?:\.\d+)?\b/gi, ' ')
+      .replace(/\b(?:5\.1|7\.1|2\.0|2\.1)\b/gi, ' ')
+      .replace(/\./g, ' ')
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    cleaned = cleaned
+      .replace(/\b(?:season\s*\d{1,2}|s\d{1,2})\b/gi, ' ')
+      .replace(/\b(2160p|1080p|1080i|720p|576p|480p|4k|uhd|bluray|bdrip|brrip|remux|web-?dl|webrip|web|hdtv|pdtv|dvdrip|dvd-?r|dvd|hdcam|cam|ts|screener)\b/gi, ' ')
+      .replace(/\b(x265|h\.?265|hevc|x264|h\.?264|avc|av1|vp9|vp8|xvid|divx|mpeg-?2|vc-?1|10bit|8bit|hdr10\+|hdr10|hdr|dovi|dv|sdr)\b/gi, ' ')
+      .replace(/\b(atmos|truehd|dts-?hd[\s.-]?ma|dts-?hd|dts-?x|dts|dd\+|ddp|e-?ac-?3|ac-?3|aac|flac|lpcm|mp3)\b/gi, ' ')
+      .replace(/\b(extended|director'?s?\s*cut|unrated|theatrical|imax|remastered|special\s*edition|ultimate\s*edition|collector'?s?\s*edition|proper|repack|multi(-?sub)?|dual(-?audio)?)\b/gi, ' ')
+      .replace(/-\s*[A-Za-z0-9_]+$/g, '')
+
+    return this.cleanTitle(cleaned)
+  }
+
+  /**
+   * Clean and normalize a series title and extract year if present
+   */
+  cleanSeriesTitleAndYear(raw: string): { title: string; year?: number } {
+    if (!raw) return { title: '', year: undefined }
+    let working = raw
+    let year: number | undefined
+
+    const parenYearMatch = working.match(/[([](19\d{2}|20\d{2})[\])]/)
+    if (parenYearMatch) {
+      year = parseInt(parenYearMatch[1], 10)
+      working = working.replace(/[([](19\d{2}|20\d{2})[\])]/, ' ')
+    }
+
+    let title = this.stripReleaseTags(working)
+
+    if (!year) {
+      const bareYearMatch = title.match(/\b(19\d{2}|20\d{2})\b/)
+      if (bareYearMatch) {
+        year = parseInt(bareYearMatch[1], 10)
+        title = title.replace(/\b(19\d{2}|20\d{2})\b/, ' ')
+      }
+    }
+
+    return {
+      title: this.cleanTitle(title),
+      year,
+    }
+  }
+
+  /**
+   * Generate canonical lowercased normalized series title slug for matching
+   */
+  normalizeSeriesTitle(raw: string): string {
+    const { title } = this.cleanSeriesTitleAndYear(raw)
+    return this.normalizeForSearch(title).toLowerCase()
+  }
+
+  extractSeriesTitleFromPath(folderPath: string): string {
+    const parts = folderPath.split(/[/\\]/).filter(Boolean)
+    if (parts.length === 0) return ''
+
+    if (
+      this.isVideoFile(parts[parts.length - 1]) ||
+      /\.[a-z0-9]{2,4}$/i.test(parts[parts.length - 1]) ||
+      /s\d+e\d+/i.test(parts[parts.length - 1])
+    ) {
+      parts.pop()
+    }
+
     for (let i = parts.length - 1; i >= 0; i--) {
       const part = parts[i]
-      // Skip season folders
-      if (!/^[Ss]eason\s*\d+$/i.test(part) && !/^[Ss]\d+$/i.test(part)) {
-        return part
+      if (!this.isSeasonOrExtrasFolder(part)) {
+        const { title } = this.cleanSeriesTitleAndYear(part)
+        if (title) return title
       }
     }
 
@@ -587,21 +650,28 @@ export class FileNameParser {
   }
 
   private extractEpisodeTitle(text: string, tvPattern: RegExp): string | undefined {
-    // Remove the TV pattern match and quality indicators to find episode title
-    let remaining = text.replace(tvPattern, '').trim()
+    const match = text.match(tvPattern)
+    if (!match || match.index === undefined) {
+      return undefined
+    }
 
-    // Remove leading separators
-    remaining = remaining.replace(/^[\s.\-_]+/, '')
+    const afterMatch = text.slice(match.index + match[0].length).trim()
+    if (!afterMatch) {
+      return undefined
+    }
 
-    // Find where quality indicators start
-    const allPatterns = [
+    let remaining = afterMatch.replace(/^[-.\s]+/, '')
+
+    const allQualityPatterns = [
       ...this.resolutionPatterns,
       ...this.sourcePatterns,
       ...this.videoCodecPatterns,
+      ...this.audioCodecPatterns,
+      ...this.editionPatterns,
     ]
 
     let earliestIndex = remaining.length
-    for (const [pattern] of allPatterns) {
+    for (const [pattern] of allQualityPatterns) {
       const match = remaining.match(pattern)
       if (match && match.index !== undefined && match.index < earliestIndex) {
         earliestIndex = match.index
@@ -610,7 +680,6 @@ export class FileNameParser {
 
     const title = remaining.slice(0, earliestIndex).trim()
 
-    // Only return if it looks like a real title (not empty, not just numbers/symbols)
     if (title && title.length > 2 && /[a-zA-Z]/.test(title)) {
       return this.cleanTitle(title)
     }
@@ -618,14 +687,15 @@ export class FileNameParser {
     return undefined
   }
 
-  private cleanTitle(title: string): string {
-    return title
-      // Remove leading/trailing separators (including parentheses/brackets)
-      .replace(/^[\s.\-_()[\]]+/, '')
-      .replace(/[\s.\-_()[\]]+$/, '')
-      // Replace multiple spaces with single space
+  cleanTitle(title: string): string {
+    let t = title
+      .replace(/^[\s.\-_,:;!?/\\+]+/, '')
+      .replace(/[\s.\-_,:;!?/\\+]+$/, '')
       .replace(/\s+/g, ' ')
-      // Title case (optional, might want to preserve original case)
       .trim()
+
+    if (t.startsWith(')') || t.startsWith(']')) t = t.slice(1).trim()
+    if (t.endsWith('(') || t.endsWith('[')) t = t.slice(0, -1).trim()
+    return t
   }
 }

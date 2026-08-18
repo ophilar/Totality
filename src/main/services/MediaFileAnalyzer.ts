@@ -890,7 +890,8 @@ export class MediaFileAnalyzer {
       colorTransfer: stream.color_transfer,
       colorPrimaries: stream.color_primaries,
       colorSpace: stream.color_space,
-      sideDataTypes: sideData
+      sideDataTypes: sideData,
+      profile: stream.profile
     })
   }
 

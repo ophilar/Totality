@@ -545,7 +545,7 @@ export class TranscodingService {
       const inputPath = PathUtils.sanitizeAbsolutePath(item.file_path)
       const sourceStat = await fs.stat(inputPath)
       const queuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
-      if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || sourceStat.mtimeMs !== queuePayload.sourceMtimeMs || Date.now() > Date.parse(queuePayload.expiresAt))) {
+      if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || Math.abs(sourceStat.mtimeMs - queuePayload.sourceMtimeMs) > 1000)) {
         throw new Error('Source file changed after show preflight')
       }
       const params = await this.getTranscodeParameters(inputPath, { ...options, aiOptimize: false })

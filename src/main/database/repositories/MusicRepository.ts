@@ -362,42 +362,56 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return row ? this.mapDrizzleToArtists([row])[0] : null
   }
 
-  async getAlbums(filters?: MusicFilters): Promise<MusicAlbum[]> {
-    const conditions = []
-    if (filters?.artistId && filters?.artistName)
+  private buildAlbumConditions(filters?: MusicFilters): SQL[] {
+    const conditions: SQL[] = []
+    if (!filters) return conditions
+
+    if (filters.artistId && filters.artistName) {
       conditions.push(
         or(
           eq(schema.musicAlbums.artistId, filters.artistId),
           eq(schema.musicAlbums.artistName, filters.artistName)
-        )
+        )!
       )
-    else if (filters?.artistId) conditions.push(eq(schema.musicAlbums.artistId, filters.artistId))
-    else if (filters?.artistName)
+    } else if (filters.artistId) {
+      conditions.push(eq(schema.musicAlbums.artistId, filters.artistId))
+    } else if (filters.artistName) {
       conditions.push(eq(schema.musicAlbums.artistName, filters.artistName))
+    }
 
-    if (filters?.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
-    if (filters?.libraryId) conditions.push(eq(schema.musicAlbums.libraryId, filters.libraryId))
-    if (filters?.searchQuery)
+    if (filters.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
+    if (filters.libraryId) conditions.push(eq(schema.musicAlbums.libraryId, filters.libraryId))
+    if (filters.searchQuery) {
       conditions.push(
         or(
           like(schema.musicAlbums.title, `%${filters.searchQuery}%`),
           like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)
-        )
+        )!
       )
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else
-        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
-    if (filters?.excludeAlbumTypes?.length)
+    if (filters.alphabetFilter) {
+      if (filters.alphabetFilter === '#') {
+        conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
+      } else {
+        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      }
+    }
+    if (filters.excludeAlbumTypes?.length) {
       conditions.push(
         or(
           isNull(schema.musicAlbums.albumType),
           sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`
-        )
+        )!
       )
-    if (filters?.mood) conditions.push(like(schema.musicAlbums.mood, `%${filters.mood}%`))
-    if (filters?.genre) conditions.push(like(schema.musicAlbums.genres, `%${filters.genre}%`))
+    }
+    if (filters.mood) conditions.push(like(schema.musicAlbums.mood, `%${filters.mood}%`))
+    if (filters.genre) conditions.push(like(schema.musicAlbums.genres, `%${filters.genre}%`))
+
+    return conditions
+  }
+
+  async getAlbums(filters?: MusicFilters): Promise<MusicAlbum[]> {
+    const conditions = this.buildAlbumConditions(filters)
 
     const sortMap: Record<string, AnyColumn | SQL> = {
       title: sql`COALESCE(${schema.musicAlbums.sortTitle}, ${schema.musicAlbums.title})`,
@@ -425,29 +439,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async countMusicAlbums(filters?: MusicFilters): Promise<number> {
-    const conditions = []
-    if (filters?.artistId) conditions.push(eq(schema.musicAlbums.artistId, filters.artistId))
-    if (filters?.sourceId) conditions.push(eq(schema.musicAlbums.sourceId, filters.sourceId))
-    if (filters?.libraryId) conditions.push(eq(schema.musicAlbums.libraryId, filters.libraryId))
-    if (filters?.searchQuery)
-      conditions.push(
-        or(
-          like(schema.musicAlbums.title, `%${filters.searchQuery}%`),
-          like(schema.musicAlbums.artistName, `%${filters.searchQuery}%`)
-        )
-      )
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else
-        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
-    }
-    if (filters?.excludeAlbumTypes?.length)
-      conditions.push(
-        or(
-          isNull(schema.musicAlbums.albumType),
-          sql`${schema.musicAlbums.albumType} NOT IN (${sql.join(filters.excludeAlbumTypes, sql`,`)})`
-        )
-      )
+    const conditions = this.buildAlbumConditions(filters)
 
     const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.musicAlbums)
     if (conditions.length > 0) query.where(and(...conditions))
@@ -499,35 +491,49 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     return this.mapDrizzleToAlbums(rows)
   }
 
-  async getTracks(filters?: MusicFilters): Promise<MusicTrack[]> {
-    const conditions = []
-    if (filters?.albumId) conditions.push(eq(schema.musicTracks.albumId, filters.albumId))
-    if (filters?.artistId && filters?.artistName)
+  private buildTrackConditions(filters?: MusicFilters): SQL[] {
+    const conditions: SQL[] = []
+    if (!filters) return conditions
+
+    if (filters.albumId) conditions.push(eq(schema.musicTracks.albumId, filters.albumId))
+    if (filters.artistId && filters.artistName) {
       conditions.push(
         or(
           eq(schema.musicTracks.artistId, filters.artistId),
           eq(schema.musicTracks.artistName, filters.artistName)
-        )
+        )!
       )
-    else if (filters?.artistId) conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
-    else if (filters?.artistName)
+    } else if (filters.artistId) {
+      conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
+    } else if (filters.artistName) {
       conditions.push(eq(schema.musicTracks.artistName, filters.artistName))
-    if (filters?.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
-    if (filters?.searchQuery)
+    }
+
+    if (filters.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
+    if (filters.searchQuery) {
       conditions.push(
         or(
           like(schema.musicTracks.title, `%${filters.searchQuery}%`),
           like(schema.musicTracks.artistName, `%${filters.searchQuery}%`),
           like(schema.musicTracks.albumName, `%${filters.searchQuery}%`)
-        )
+        )!
       )
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
-      else
-        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
     }
-    if (filters?.mood) conditions.push(like(schema.musicTracks.mood, `%${filters.mood}%`))
-    if (filters?.genre) conditions.push(like(schema.musicTracks.genres, `%${filters.genre}%`))
+    if (filters.alphabetFilter) {
+      if (filters.alphabetFilter === '#') {
+        conditions.push(sql`title NOT GLOB '[A-Za-z]*'`)
+      } else {
+        conditions.push(eq(sql`UPPER(SUBSTR(title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      }
+    }
+    if (filters.mood) conditions.push(like(schema.musicTracks.mood, `%${filters.mood}%`))
+    if (filters.genre) conditions.push(like(schema.musicTracks.genres, `%${filters.genre}%`))
+
+    return conditions
+  }
+
+  async getTracks(filters?: MusicFilters): Promise<MusicTrack[]> {
+    const conditions = this.buildTrackConditions(filters)
 
     const sortMap: Record<string, AnyColumn | SQL> = {
       title: schema.musicTracks.title,
@@ -561,23 +567,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async countMusicTracks(filters?: MusicFilters): Promise<number> {
-    const conditions = []
-    if (filters?.albumId) conditions.push(eq(schema.musicTracks.albumId, filters.albumId))
-    if (filters?.artistId) conditions.push(eq(schema.musicTracks.artistId, filters.artistId))
-    if (filters?.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
-    if (filters?.searchQuery) {
-      conditions.push(
-        this.buildSearchFilter(
-          [schema.musicTracks.title, schema.musicTracks.artistName, schema.musicTracks.albumName],
-          filters.searchQuery
-        )
-      )
-    }
-    if (filters?.alphabetFilter) {
-      conditions.push(this.buildAlphabetFilter(schema.musicTracks.title, filters.alphabetFilter))
-    }
-
-    return await this.countInternal(and(...conditions))
+    const conditions = this.buildTrackConditions(filters)
+    return await this.countInternal(conditions.length > 0 ? and(...conditions) : undefined)
   }
 
   async getTrackById(id: number): Promise<MusicTrack | null> {

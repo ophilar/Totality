@@ -1,3 +1,5 @@
+import { getFileNameParser } from '@main/services/FileNameParser'
+
 export type MediaMatchStatus = 'manual' | 'conflicting' | 'verified' | 'unresolved'
 
 export interface SeriesIdentityInput {
@@ -8,10 +10,19 @@ export interface SeriesIdentityInput {
   tvdbId?: string | null
 }
 
+export function normalizeSeriesPathOrTitle(pathOrTitle: string): string {
+  if (!pathOrTitle) return ''
+  const parser = getFileNameParser()
+  const extracted = parser.extractSeriesTitleFromPath(pathOrTitle)
+  return parser.normalizeSeriesTitle(extracted || pathOrTitle)
+}
+
 export function deriveSeriesIdentityKey(input: SeriesIdentityInput): string {
-  if (input.tmdbId) return `tmdb:${input.tmdbId}`
-  if (input.tvdbId) return `tvdb:${input.tvdbId}`
-  return `unresolved:${input.sourceId}:${input.libraryId}:${input.folderRelativePath.replace(/\\/g, '/')}`
+  if (input.tmdbId && String(input.tmdbId).trim() !== '') return `tmdb:${String(input.tmdbId).trim()}`
+  if (input.tvdbId && String(input.tvdbId).trim() !== '') return `tvdb:${String(input.tvdbId).trim()}`
+  const normalized = normalizeSeriesPathOrTitle(input.folderRelativePath)
+  const slug = normalized.trim().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '')
+  return `unresolved:${input.sourceId}:${input.libraryId}:${slug || 'unknown'}`
 }
 
 export function getMediaMatchStatus(input: { locked: boolean; canonicalIds: string[]; conflictingEntityIds: number[] }): MediaMatchStatus {
@@ -19,4 +30,5 @@ export function getMediaMatchStatus(input: { locked: boolean; canonicalIds: stri
   if (input.conflictingEntityIds.length > 0) return 'conflicting'
   return input.canonicalIds.length > 0 ? 'verified' : 'unresolved'
 }
+
 

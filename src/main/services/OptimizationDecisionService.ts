@@ -1,4 +1,5 @@
 import { LanguageDecisionService, type AudioTrackForDecision } from './LanguageDecisionService'
+import { AudioCodecRanker } from './AudioCodecRanker'
 
 export type OptimizationMechanismStatus = 'executable' | 'eligible-awaiting-opt-in' | 'review-required' | 'blocked' | 'unavailable'
 export type OptimizationPrimaryAction = 'remove-audio-tracks' | 'transcode-audio' | 'transcode-video' | 'review-language' | 'no-action'
@@ -55,8 +56,14 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     ? 'review-required'
     : languageDecision.removableTrackIndexes.length > 0 ? 'executable' : 'blocked'
   const trackSavings = trackRemovalStatus === 'executable' && input.durationSeconds != null
-    ? input.audioTracks.filter(track => languageDecision.removableTrackIndexes.includes(track.index)).reduce((sum, track) => sum + Math.max(0, (track.bitrate ?? 0) * 1000 / 8 * input.durationSeconds!), 0)
+    ? input.audioTracks
+        .filter(track => languageDecision.removableTrackIndexes.includes(track.index))
+        .reduce((sum, track) => {
+          const bitrateKbps = track.bitrate && track.bitrate > 0 ? track.bitrate : AudioCodecRanker.estimateBitrate(track.codec, track.channels)
+          return sum + Math.max(0, (bitrateKbps * 1000 / 8) * input.durationSeconds!)
+        }, 0)
     : null
+
   const trackRemoval: OptimizationDecisionTrackRemoval = {
     status: trackRemovalStatus,
     estimatedSavingsBytes: trackSavings,

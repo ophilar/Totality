@@ -266,9 +266,9 @@ export function TimelinesView() {
   }, [selectedTimelineResult, filterMode, searchQuery])
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background text-foreground">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background text-foreground">
       {/* Top Banner / Header */}
-      <div className="p-6 border-b border-border bg-card/40 backdrop-blur-md">
+      <div className="p-6 border-b border-border bg-card/40 backdrop-blur-md shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -355,7 +355,7 @@ export function TimelinesView() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="p-6 space-y-6">
         {selectedTimelineResult && (
           <>
             {/* Sync Control & Stats Card */}
@@ -411,15 +411,15 @@ export function TimelinesView() {
                       <label className="text-[11px] font-medium text-muted-foreground">Select or Name Plex Playlist</label>
                       <div className="flex items-center gap-2">
                         <select
-                          value={existingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : '__custom__'}
+                          value={existingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : 'custom-playlist-mode'}
                           onChange={(e) => {
-                            if (e.target.value !== '__custom__') {
+                            if (e.target.value !== 'custom-playlist-mode') {
                               setCustomPlaylistTitle(e.target.value)
                             }
                           }}
                           className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-44"
                         >
-                          <option value="__custom__">-- Create New / Custom Playlist --</option>
+                          <option value="custom-playlist-mode">-- Create New / Custom Playlist --</option>
                           {existingPlaylists.map((pl) => (
                             <option key={pl.ratingKey} value={pl.title}>
                               {pl.title} ({pl.leafCount ?? 0} items)
@@ -435,6 +435,7 @@ export function TimelinesView() {
                         />
                       </div>
                     </div>
+
 
                     <div>
                       <button

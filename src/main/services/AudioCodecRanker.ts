@@ -181,4 +181,57 @@ export class AudioCodecRanker {
 
     return false
   }
+
+  /**
+   * Estimate nominal stream bitrate in kbps based on codec standards and channel count.
+   * Provides exact mathematical calculation for uncompressed LPCM/PCM and specification-grade
+   * standard bitrates for lossless and lossy bitstreams when container tags are missing.
+   */
+  static estimateBitrate(codec: string, channels = 2, sampleRate?: number, bitDepth?: number): number {
+    const codecLower = codec.toLowerCase()
+    const ch = Math.max(1, channels)
+
+    // Uncompressed LPCM/PCM: exact mathematical bit calculation
+    if (codecLower.includes('pcm') || codecLower.includes('raw') || codecLower.includes('wav')) {
+      const sr = sampleRate && sampleRate > 0 ? sampleRate : 48000
+      const bd = bitDepth && bitDepth > 0 ? bitDepth : 16
+      return Math.round((ch * sr * bd) / 1000)
+    }
+
+    // Lossless compressed codecs
+    if (codecLower.includes('truehd') || codecLower.includes('mlp')) {
+      return ch >= 8 ? 4800 : ch >= 6 ? 3500 : 1800
+    }
+    if (codecLower.includes('dts-hd ma') || codecLower.includes('dtshd ma') || codecLower.includes('dts_hd_ma')) {
+      return ch >= 8 ? 4200 : ch >= 6 ? 3200 : 1600
+    }
+    if (codecLower.includes('flac') || codecLower.includes('alac')) {
+      return ch >= 6 ? 2800 : 900
+    }
+
+    // Near-lossless & High-lossy codecs
+    if (codecLower.includes('dts-hd') || codecLower.includes('dtshd') || codecLower.includes('dts-hra')) {
+      return ch >= 6 ? 2048 : 1024
+    }
+    if (codecLower.includes('dts')) {
+      return ch >= 6 ? 1509 : 768
+    }
+    if (codecLower.includes('eac3') || codecLower.includes('ec-3') || codecLower.includes('dd+') || codecLower.includes('ddp')) {
+      return ch >= 6 ? 768 : 384
+    }
+    if (codecLower.includes('ac3') || codecLower.includes('ac-3') || codecLower.includes('dd')) {
+      return ch >= 6 ? 640 : 384
+    }
+
+    // Standard lossy codecs
+    if (codecLower.includes('opus')) {
+      return ch >= 6 ? 384 : 160
+    }
+    if (codecLower.includes('aac') || codecLower.includes('mp3') || codecLower.includes('vorbis')) {
+      return ch >= 6 ? 448 : 256
+    }
+
+    return ch >= 6 ? 640 : 256
+  }
 }
+

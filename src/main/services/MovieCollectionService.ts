@@ -103,7 +103,7 @@ export class MovieCollectionService {
           currentIndex++
           onProgress?.({ current: currentIndex, total: collections.length, phase: 'analyzing', currentItem: c.collection_name })
           try {
-            const analysis = await this.analyzeCollection(c.collection_name, c.source_id, c.library_id)
+            const analysis = await this.analyzeCollection(c.collection_name, c.source_id, c.library_id, c.tmdb_collection_id)
             if (analysis) {
               result.analyzed++
               if (analysis.completeness_percentage >= 100) result.complete++
@@ -118,11 +118,16 @@ export class MovieCollectionService {
     } catch (error) { throw error }
   }
 
-  async analyzeCollection(name: string, sourceId = '', libraryId = ''): Promise<MovieCollection | null> {
-    const search = await this.tmdb.searchCollection(name)
-    if (!search?.results?.length) return null
+  async analyzeCollection(name: string, sourceId = '', libraryId = '', tmdbCollectionId?: string): Promise<MovieCollection | null> {
+    let collectionId = tmdbCollectionId
+    if (!collectionId) {
+      const search = await this.tmdb.searchCollection(name)
+      if (!search?.results?.length) return null
+      collectionId = String(search.results[0].id)
+    }
 
-    const details = await this.tmdb.getCollectionDetails(String(search.results[0].id))
+    const details = await this.tmdb.getCollectionDetails(collectionId)
+    if (!details?.parts) return null
     const tmdbIds = details.parts.map(p => String(p.id))
     const ownedMap = await this.db.media.getItemsByTmdbIds(tmdbIds)
 
@@ -144,7 +149,7 @@ export class MovieCollectionService {
       source_id: sourceId,
       library_id: libraryId,
       poster_url: this.tmdb.buildImageUrl(details.poster_path, 'w500') || undefined,
-      backdrop_url: this.tmdb.buildImageUrl(details.backdrop_path, 'original') || undefined
+      backdrop_url: this.tmdb.buildImageUrl(details.backdrop_path, 'original') || undefined,
     }
 
     await this.db.movieCollections.upsertCollection(result)

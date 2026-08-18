@@ -19,36 +19,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   }
 
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
-    const conditions = []
-    if (filters?.sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, filters.sourceId))
-    if (filters?.libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, filters.libraryId))
-    if (filters?.searchQuery) conditions.push(like(schema.seriesCompleteness.seriesTitle, `%${filters.searchQuery}%`))
-    
-    if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`series_title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(series_title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
-    }
-    
-    if (filters?.completenessFilter) {
-      if (filters.completenessFilter === 'complete') conditions.push(sql`completeness_percentage >= 100`)
-      else if (filters.completenessFilter === 'incomplete') conditions.push(sql`completeness_percentage < 100`)
-    }
-
-    if (filters?.slimDown) {
-      conditions.push(sql`(${schema.seriesCompleteness.efficiencyScore} < 60 OR ${schema.seriesCompleteness.storageDebtBytes} > 5368709120)`)
-    }
-
-    if (filters?.qualityTier && filters.qualityTier !== 'all') {
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND m.series_identity_key = series_completeness.series_identity_key AND (UPPER(q.quality_tier) = UPPER(${filters.qualityTier}) OR UPPER(m.resolution) = UPPER(${filters.qualityTier})))`
-      )
-    }
-
-    if (filters?.tierQuality && filters.tierQuality !== 'all') {
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND m.series_identity_key = series_completeness.series_identity_key AND UPPER(q.tier_quality) = UPPER(${filters.tierQuality}))`
-      )
-    }
+    const conditions = this.buildFilterConditions(filters)
 
     const sortMap: Record<string, AnyColumn | SQL> = {
       'title': schema.seriesCompleteness.seriesTitle,
@@ -101,19 +72,17 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     const rows = await query.all()
     const summaries: TVShowSummary[] = []
     
-    // Batch fetch conflicts in parallel if there are rows with identities
-    const seriesWithIds = rows.filter(r => r.id && (r.tmdb_id || r.tvdb_id))
-    const conflictMap = new Map<number, number[]>()
-    if (seriesWithIds.length > 0) {
-      await Promise.all(seriesWithIds.map(async (row) => {
-        const identityInputs = [
+    // Batch fetch conflicts in single query if there are rows with identities
+    const seriesWithIds = rows
+      .filter((r) => r.id && (r.tmdb_id || r.tvdb_id))
+      .map((row) => ({
+        entityId: row.id!,
+        identities: [
           row.tmdb_id ? { provider: 'tmdb', externalId: String(row.tmdb_id) } : null,
-          row.tvdb_id ? { provider: 'tvdb', externalId: String(row.tvdb_id) } : null
-        ].filter((value): value is { provider: string; externalId: string } => value !== null)
-        const conflicting = await this.identities.getConflictingEntityIds('series', row.id!, identityInputs)
-        if (conflicting.length > 0) conflictMap.set(row.id!, conflicting)
+          row.tvdb_id ? { provider: 'tvdb', externalId: String(row.tvdb_id) } : null,
+        ].filter((value): value is { provider: string; externalId: string } => value !== null),
       }))
-    }
+    const conflictMap = await this.identities.getBatchConflictingEntityIds('series', seriesWithIds)
 
     for (const row of rows) {
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
@@ -140,11 +109,19 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   }
 
   async count(filters?: TVShowFilters & { completenessFilter?: string }): Promise<number> {
-    const conditions = []
+    const conditions = this.buildFilterConditions(filters)
+    const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.seriesCompleteness)
+    if (conditions.length > 0) query.where(and(...conditions))
+    const res = await query.get()
+    return res?.count || 0
+  }
+
+  private buildFilterConditions(filters?: TVShowFilters & { completenessFilter?: string }): SQL[] {
+    const conditions: SQL[] = []
     if (filters?.sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, filters.sourceId))
     if (filters?.libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, filters.libraryId))
     if (filters?.searchQuery) conditions.push(like(schema.seriesCompleteness.seriesTitle, `%${filters.searchQuery}%`))
-    
+
     if (filters?.alphabetFilter) {
       if (filters.alphabetFilter === '#') conditions.push(sql`series_title NOT GLOB '[A-Za-z]*'`)
       else conditions.push(eq(sql`UPPER(SUBSTR(series_title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
@@ -171,10 +148,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       )
     }
 
-    const query = this.drizzle.select({ count: sql<number>`count(*)` }).from(schema.seriesCompleteness)
-    if (conditions.length > 0) query.where(and(...conditions))
-    const res = await query.get()
-    return res?.count || 0
+    return conditions
   }
 
   async getEpisodes(seriesTitle: string, sourceId?: string, seriesIdentityKey?: string, libraryId?: string): Promise<MediaItem[]> {
@@ -209,7 +183,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   async upsertCompleteness(data: SeriesCompleteness): Promise<number> {
     const record = {
       seriesTitle: data.series_title,
-      seriesIdentityKey: data.series_identity_key || deriveSeriesIdentityKey({ sourceId: data.source_id || '', libraryId: data.library_id || '', folderRelativePath: `legacy-${data.series_title}`, tmdbId: data.tmdb_id, tvdbId: data.tvdb_id }),
+      seriesIdentityKey: data.series_identity_key || deriveSeriesIdentityKey({ sourceId: data.source_id || '', libraryId: data.library_id || '', folderRelativePath: data.series_title, tmdbId: data.tmdb_id, tvdbId: data.tvdb_id }),
       sourceId: data.source_id || '',
       libraryId: data.library_id || '',
       totalSeasons: data.total_seasons,
@@ -230,19 +204,43 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       totalSize: data.total_size ?? null,
     }
 
-    const id = await this.upsertWithProviderId(
-      schema.seriesCompleteness,
-      record,
-      [schema.seriesCompleteness.seriesIdentityKey, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
-      {
+    const conditions = [
+      eq(schema.seriesCompleteness.sourceId, record.sourceId),
+      eq(schema.seriesCompleteness.libraryId, record.libraryId),
+      sql`(${schema.seriesCompleteness.seriesIdentityKey} = ${record.seriesIdentityKey}
+           OR (${record.tmdbId} IS NOT NULL AND ${record.tmdbId} <> '' AND ${schema.seriesCompleteness.tmdbId} = ${record.tmdbId})
+           OR (${record.tvdbId} IS NOT NULL AND ${record.tvdbId} <> '' AND ${schema.seriesCompleteness.tvdbId} = ${record.tvdbId}))`
+    ]
+
+    const existing = await this.drizzle.select().from(schema.seriesCompleteness).where(and(...conditions)).get()
+
+    let id: number
+    if (existing) {
+      id = existing.id
+      await this.drizzle.update(schema.seriesCompleteness).set({
         ...record,
-        seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
-      tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
-        tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE COALESCE(excluded.tvdb_id, series_completeness.tvdb_id) END`,
-        posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
-        userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
-      }
-    )
+        seriesTitle: existing.userFixedMatch === 1 ? existing.seriesTitle : record.seriesTitle,
+        tmdbId: existing.userFixedMatch === 1 ? existing.tmdbId : (record.tmdbId || existing.tmdbId),
+        tvdbId: existing.userFixedMatch === 1 ? existing.tvdbId : (record.tvdbId || existing.tvdbId),
+        posterUrl: existing.userFixedMatch === 1 ? existing.posterUrl : (record.posterUrl || existing.posterUrl),
+        userFixedMatch: existing.userFixedMatch === 1 ? 1 : record.userFixedMatch,
+        updatedAt: sql`datetime('now')`
+      }).where(eq(schema.seriesCompleteness.id, existing.id))
+    } else {
+      id = await this.upsertWithProviderId(
+        schema.seriesCompleteness,
+        record,
+        [schema.seriesCompleteness.seriesIdentityKey, schema.seriesCompleteness.sourceId, schema.seriesCompleteness.libraryId],
+        {
+          ...record,
+          seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
+          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
+          tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE COALESCE(excluded.tvdb_id, series_completeness.tvdb_id) END`,
+          posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
+          userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
+        }
+      )
+    }
 
     if (
       !record.userFixedMatch
@@ -258,7 +256,6 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           eq(schema.seriesCompleteness.userFixedMatch, 0),
         ))
     }
-
 
     return id
   }

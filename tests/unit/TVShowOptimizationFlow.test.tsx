@@ -5,7 +5,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { ShowTranscodeModal } from '@/components/library/ShowTranscodeModal'
+import { ToastProvider } from '@/contexts/ToastContext'
 import React from 'react'
+
 import type { TVShow, TVShowSummary } from '@/components/library/types'
 
 // Mock react-virtuoso
@@ -108,11 +110,15 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       episode_count: 1
     }
 
-    render(<ShowTranscodeModal show={mockSummary} onClose={handleClose} />)
+    render(
+      <ToastProvider>
+        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
+      </ToastProvider>
+    )
 
     expect(screen.getByText('Batch Optimize Series')).toBeTruthy()
-    expect(screen.getByText('AV1 (Next-Gen)')).toBeTruthy()
-    expect(screen.getByText('HEVC / H.265')).toBeTruthy()
+    expect(screen.getByText('AV1')).toBeTruthy()
+    expect(screen.getByText('HEVC (H.265)')).toBeTruthy()
 
     const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
     expect(queueButton).toBeTruthy()
