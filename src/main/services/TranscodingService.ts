@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import * as os from 'os'
 import * as fs from 'fs/promises'
 import { existsSync } from 'fs'
 import * as path from 'path'
@@ -668,6 +669,13 @@ export class TranscodingService {
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
 
       const proc = spawn(actualPath, args)
+      if (proc.pid) {
+        try {
+          os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL)
+        } catch {
+          // Ignore if OS or permissions disallow priority adjustments
+        }
+      }
       let stderrBuffer = ''
 
       if (signal) {

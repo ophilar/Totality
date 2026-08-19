@@ -1,3 +1,4 @@
+import * as os from 'os'
 import { ITranscodeCommandBuilder } from './types'
 import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
@@ -9,9 +10,14 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     const hdrArgs = buildHdrMetadataArgs(_analysis)
     const codec = options.targetCodec === 'av1' ? 'libsvtav1' : 'libx265'
     const crf = (options.crf ?? 22).toString()
+    
+    // Generic CPU reserve: leave at least 1-2 cores for UI and OS responsiveness
+    const totalCpus = os.cpus()?.length || 4
+    const softwareThreads = Math.max(1, totalCpus > 4 ? totalCpus - 2 : totalCpus - 1)
 
     const args: string[] = [
       '-y',
+      '-threads', softwareThreads.toString(),
       '-i', input,
       '-fps_mode', 'cfr',
       ...(options.targetCodec === 'av1' ? ['-svtav1-params', 'tune=0'] : []),
@@ -22,9 +28,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
     ]
 
     appendStreamMappingArgs(args, _analysis, options)
-
     args.push(...hdrArgs)
-
     args.push(output)
     return args
   }

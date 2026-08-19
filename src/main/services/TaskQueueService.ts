@@ -296,9 +296,16 @@ export class TaskQueueService {
     this.notifyListeners()
 
     const task = this.currentTask
+    let lastProgressTime = 0
+    const PROGRESS_THROTTLE_MS = 250 // Max 4 UI updates per second
+
     const onProgress = (p: TaskProgress) => {
       task.progress = p
-      this.notifyListeners()
+      const now = Date.now()
+      if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || p.percentage === 100 || p.phase === 'complete' || p.phase === 'failed') {
+        lastProgressTime = now
+        this.notifyListeners()
+      }
     }
 
     try {

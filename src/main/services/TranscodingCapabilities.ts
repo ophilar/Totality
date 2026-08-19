@@ -18,7 +18,7 @@ export interface TranscodingCapabilities extends TranscodingAvailability {
 const SOFTWARE_ENCODERS = ['svt_av1', 'x265', 'libx264']
 
 export function selectDefaultGpu(gpus: GpuInfo[]): GpuInfo | undefined {
-  return gpus.find(gpu => gpu.vendor === 'NVIDIA') ?? gpus[0]
+  return gpus.find(gpu => gpu.vendor === 'NVIDIA') ?? gpus.find(gpu => gpu.vendor === 'Intel') ?? gpus[0]
 }
 
 export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {
@@ -31,7 +31,7 @@ export function buildTranscodingCapabilities(
   availability: TranscodingAvailability,
   gpus: GpuInfo[],
   selectedGpuId: string | null = resolveSelectedGpuId(gpus),
-  verifiedEncoders: string[] = [] ,
+  verifiedEncoders: string[] = [],
   probeFailures: string[] = []
 ): TranscodingCapabilities {
   const vendors: Array<GpuInfo['vendor'] | 'Software'> = []
@@ -42,9 +42,6 @@ export function buildTranscodingCapabilities(
     vendors.push(gpu.vendor)
     if (gpu.vendor === 'NVIDIA') encoders.push('nvenc_av1', 'nvenc_h265')
     if (gpu.vendor === 'Intel') encoders.push('qsv_av1', 'qsv_h265')
-    // AMD and Apple devices remain visible in the device inventory, but are
-    // not offered as acceleration choices until their command builders are
-    // implemented and validated by the installed toolchain.
   }
 
   vendors.push('Software')
