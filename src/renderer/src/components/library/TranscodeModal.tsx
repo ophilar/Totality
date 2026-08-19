@@ -13,10 +13,8 @@ import {
 import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
 
-import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding/types'
-import { QuickPresetsTab } from './transcoding/QuickPresetsTab'
-import { AdvancedTab } from './transcoding/AdvancedTab'
-import { LiveEncodingTab } from './transcoding/LiveEncodingTab'
+import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding'
+import { QuickPresetsTab, AdvancedTab, LiveEncodingTab } from './transcoding'
 
 interface TranscodeModalProps {
   mediaId: number

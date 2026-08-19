@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   Zap, 
@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TVShowSummary } from './types'
+import type { GpuInfo } from './transcoding/types'
+import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
 
 export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onClose: () => void }) {
   const { addToast } = useToast()
@@ -21,9 +23,34 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('en')
   const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace'>('quarantine-replace')
+  const [useGpu, setUseGpu] = useState(true)
+  const [gpuId, setGpuId] = useState('')
+  const [gpus, setGpus] = useState<GpuInfo[]>([])
   const [message, setMessage] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
+  const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
+
+  useEffect(() => {
+    let isMounted = true
+    window.electronAPI.getCapabilities().then((capabilities) => {
+      if (!isMounted || !capabilities) return
+      const detectedGpus = capabilities.gpus || []
+      setGpus(detectedGpus)
+      const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId) || detectedGpus[0]
+      if (selected) {
+        setGpuId(selected.id)
+        setUseGpu(true)
+      } else {
+        setUseGpu(false)
+      }
+    }).catch(err => {
+      console.error('Failed to load GPU capabilities for show transcoding:', err)
+    })
+    return () => { isMounted = false }
+  }, [])
 
   const submit = async () => {
     if (!show.source_id || !codec || !audio || !outputMode || (audio === 'original-and-protected' && !language.trim())) {
@@ -41,7 +68,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
         options: { 
           targetCodec: codec, 
           transcodingEngine: 'ffmpeg', 
-          outputMode, 
+          outputMode,
+          useGpu,
+          gpuId: useGpu ? gpuId : undefined,
           streamSelection: audio === 'all' 
             ? { audio, subtitle: 'all', defaultSubtitle: 'preserve' } 
             : { audio, originalLanguage: language.trim().toLowerCase(), subtitle: 'all', defaultSubtitle: 'preserve' } 
@@ -198,6 +227,16 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
             )}
           </div>
+
+          {/* Canonical Transcoding Device Selector */}
+          <TranscodingDeviceSelector
+            useGpu={useGpu}
+            onUseGpuChange={handleUseGpuChange}
+            selectedGpuId={gpuId}
+            onSelectedGpuIdChange={handleGpuIdChange}
+            gpus={gpus}
+            variant="compact"
+          />
 
           {/* Output Mode */}
           <div className="space-y-2">

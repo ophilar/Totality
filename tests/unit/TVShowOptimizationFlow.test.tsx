@@ -27,6 +27,20 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       electronAPI: {
         log: { error: vi.fn(), info: vi.fn() },
         getSetting: vi.fn().mockResolvedValue(''),
+        getCapabilities: vi.fn().mockResolvedValue({
+          detectedAt: '2026-08-19T22:00:00Z',
+          ffmpeg: true,
+          gpus: [
+            { id: 'gpu-nv-1', name: 'NVIDIA GeForce RTX 5070 Ti', vendor: 'NVIDIA' }
+          ],
+          selectedGpuId: 'gpu-nv-1',
+          vendors: ['NVIDIA', 'Software'],
+          encoders: ['nvenc_av1', 'nvenc_h265', 'x265'],
+          verifiedEncoders: ['nvenc_av1', 'nvenc_h265'],
+          probeFailures: [],
+          engines: ['ffmpeg']
+        }),
+        setSelectedGpu: vi.fn().mockResolvedValue({ selectedGpuId: 'gpu-nv-1' }),
         tmdbGetTVShowDetails: vi.fn().mockResolvedValue({ overview: 'Test show overview' }),
         preflightShow: vi.fn().mockResolvedValue({
           preflightId: 'pref-123',

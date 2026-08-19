@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { 
   Sliders, 
-  Cpu, 
   Settings2, 
   Bookmark, 
   Save, 
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, PresetTemplate } from './types'
+import { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
 
 export interface AdvancedTabProps {
   options: TranscodeOptions
@@ -31,9 +31,6 @@ export function AdvancedTab({
   availability
 }: AdvancedTabProps) {
   const { addToast } = useToast()
-  const selectedGpu = gpus.find(gpu => gpu.id === options.gpuId) ?? gpus[0]
-  const availableVendors = Array.from(new Set(gpus.map(gpu => gpu.vendor)))
-  const hasHardwareAcceleration = availableVendors.length > 0
   const [templates, setTemplates] = useState<PresetTemplate[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('')
   const [newTemplateName, setNewTemplateName] = useState<string>('')
@@ -163,9 +160,9 @@ export function AdvancedTab({
             <select
               value={selectedTemplateName}
               onChange={(e) => handleLoadTemplate(e.target.value)}
-              className="flex-1 bg-background border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary transition-all"
+              className="flex-1 bg-muted/80 border border-border/50 rounded-xl px-3 py-2 text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-primary"
             >
-              <option value="">-- Load Saved Preset --</option>
+              <option value="">Select a saved template…</option>
               {templates.map(t => (
                 <option key={t.name} value={t.name}>{t.name}</option>
               ))}
@@ -186,7 +183,7 @@ export function AdvancedTab({
         )}
       </div>
 
-      {/* Grid Section 1: Engine & GPU Vendor */}
+      {/* Grid Section 1: Engine & Target Codec */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Engine Selector */}
         <div className="space-y-2">
@@ -220,244 +217,140 @@ export function AdvancedTab({
         </div>
       </div>
 
-      {/* Hardware Vendor & GPU Acceleration */}
-      <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">
-        <label className="flex items-center justify-between cursor-pointer">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold">Enable GPU Acceleration (Hardware VRAM Pipeline)</span>
-          </div>
-          <input
-            type="checkbox"
-            checked={options.useGpu}
-            onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
-            disabled={!hasHardwareAcceleration}
-            className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20"
-          />
-        </label>
-
-        {options.useGpu && (
-          <div className="space-y-3 pt-2 animate-in fade-in duration-200">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GPU Vendor</label>
-                <select
-                  value={selectedGpu?.vendor || 'Software'}
-                  disabled
-                  className="w-full bg-muted/80 border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary"
-                >
-                  {availableVendors.includes('NVIDIA') && <option value="NVIDIA">NVIDIA (NVENC CUDA VRAM)</option>}
-                  {availableVendors.includes('Intel') && <option value="Intel">Intel (QuickSync QSV)</option>}
-                  {availableVendors.includes('AMD') && <option value="AMD">AMD (AMF VCE)</option>}
-                  {availableVendors.includes('Apple') && <option value="Apple">Apple (VideoToolbox VT)</option>}
-                  <option value="Software">Software CPU Fallback</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">GPU Device</label>
-                <select
-                  value={options.gpuId}
-                  onChange={(e) => {
-                    const rawVal = e.target.value
-                    const targetGpuId = (rawVal && rawVal !== 'undefined') ? rawVal : null
-                    void window.electronAPI.setSelectedGpu(targetGpuId).then(next => {
-                      setOptions(prev => ({ ...prev, gpuId: next.selectedGpuId || '', useGpu: Boolean(next.selectedGpuId) }))
-                    })
-                  }}
-                  className="w-full bg-muted/80 border border-border/50 rounded-xl p-2 text-xs font-medium outline-hidden focus:border-primary"
-                >
-                  {gpus.length > 0 ? (
-                    gpus.map(gpu => (
-                      <option key={gpu.id} value={gpu.id}>
-                        {gpu.name} ({gpu.vendor})
-                      </option>
-                    ))
-                  ) : <option value="">Software CPU Encoding</option>}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Canonical Transcoding Device Selector */}
+      <TranscodingDeviceSelector
+        useGpu={options.useGpu}
+        onUseGpuChange={(useGpu) => setOptions(prev => ({ ...prev, useGpu }))}
+        selectedGpuId={options.gpuId}
+        onSelectedGpuIdChange={(gpuId) => setOptions(prev => ({ ...prev, gpuId, useGpu: Boolean(gpuId) }))}
+        gpus={gpus}
+        variant="expanded"
+      />
 
       {/* Quality CQ Slider with Visual Feedback */}
       <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-primary" />
-            Constant Quality (CQ / CRF Value: {options.crf})
+            Constant Quality Target (CQ / CRF: {options.crf})
           </label>
-          <div className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${qualityInfo.badgeBg} ${qualityInfo.color}`}>
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${qualityInfo.badgeBg} ${qualityInfo.color}`}>
             {qualityInfo.text}
-          </div>
+          </span>
         </div>
 
-        <div className="space-y-2 pt-1">
-          <input
-            type="range"
-            min="10"
-            max="35"
-            value={options.crf}
-            onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) || 20 }))}
-            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-            <span>10 (Max Quality)</span>
-            <span>20 (Recommended)</span>
-            <span>35 (Max Compression)</span>
-          </div>
+        <input 
+          type="range"
+          min={10}
+          max={35}
+          step={1}
+          value={options.crf}
+          onChange={(e) => setOptions(prev => ({ ...prev, crf: parseInt(e.target.value) }))}
+          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+        />
+
+        <div className="flex justify-between text-[10px] text-muted-foreground/70 font-mono">
+          <span>CQ 10 (Archival / Large)</span>
+          <span>CQ 20 (Balanced HQ)</span>
+          <span>CQ 35 (Max Compression)</span>
         </div>
       </div>
 
-      {/* Encoder Preset & Speed */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Encoder Preset / Speed</label>
-          <select 
-            value={options.preset}
-            onChange={(e) => setOptions(prev => ({ ...prev, preset: e.target.value }))}
-            className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs font-medium outline-hidden focus:border-primary transition-all"
+      {/* Preset Speed / Optimization Level */}
+      <div className="space-y-2">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+          Hardware Encoding Preset
+        </label>
+        <select 
+          value={options.preset}
+          onChange={(e) => setOptions(prev => ({ ...prev, preset: e.target.value }))}
+          className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-sm font-medium outline-hidden focus:border-primary"
+        >
+          <optgroup label="NVIDIA NVENC Presets">
+            <option value="p7">P7 (Slowest / Highest Quality)</option>
+            <option value="p6">P6 (Recommended HQ)</option>
+            <option value="p5">P5 (Medium / Balanced)</option>
+            <option value="p4">P4 (Fast)</option>
+            <option value="p3">P3 (Faster)</option>
+            <option value="p2">P2 (Very Fast)</option>
+            <option value="p1">P1 (Fastest / Lowest Quality)</option>
+          </optgroup>
+          <optgroup label="CPU Software Presets">
+            <option value="slow">Slow</option>
+            <option value="medium">Medium</option>
+            <option value="fast">Fast</option>
+            <option value="veryfast">Very Fast</option>
+          </optgroup>
+        </select>
+      </div>
+
+      {/* Output Mode Selection */}
+      <div className="space-y-2">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+          Output Mode
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'quarantine-replace'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
           >
-            {options.useGpu && selectedGpu?.vendor === 'NVIDIA' ? (
-              <>
-                <option value="p7">p7 (Highest Quality / Slowest)</option>
-                <option value="p6">p6 (High Quality - Recommended)</option>
-                <option value="p5">p5 (Medium Quality)</option>
-                <option value="p4">p4 (Default Speed)</option>
-                <option value="p3">p3 (Fast)</option>
-                <option value="p2">p2 (Faster)</option>
-                <option value="p1">p1 (Fastest / Lowest Quality)</option>
-              </>
-            ) : (
-              <>
-                <option value="ultrafast">Ultrafast</option>
-                <option value="superfast">Superfast</option>
-                <option value="veryfast">Veryfast</option>
-                <option value="faster">Faster</option>
-                <option value="fast">Fast</option>
-                <option value="medium">Medium (Recommended)</option>
-                <option value="slow">Slow</option>
-                <option value="slower">Slower</option>
-                <option value="veryslow">Veryslow</option>
-              </>
-            )}
-          </select>
-        </div>
+            <span className="text-xs font-bold text-foreground block mb-0.5">Quarantine & Replace</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">Atomic replacement after verification check.</p>
+          </button>
 
-        {/* Encoder Driver Selection */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Specific Video Encoder</label>
-          <select 
-            value={options.encoder}
-            onChange={(e) => setOptions(prev => ({ ...prev, encoder: e.target.value }))}
-            className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs font-medium outline-hidden focus:border-primary transition-all"
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'copy' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'copy'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <option value="">Auto (Recommended)</option>
-            {availableVendors.includes('NVIDIA') && <option value="nvenc_av1">AV1 NVENC (NVIDIA GPU)</option>}
-            {availableVendors.includes('Intel') && <option value="qsv_av1">AV1 QSV (Intel GPU)</option>}
-            <option value="svt_av1">SVT-AV1 10-bit (CPU)</option>
-            {availableVendors.includes('NVIDIA') && <option value="nvenc_h265">HEVC NVENC (NVIDIA GPU)</option>}
-            {availableVendors.includes('Intel') && <option value="qsv_h265">HEVC QSV (Intel GPU)</option>}
-            <option value="x265">x265 10-bit (CPU)</option>
-          </select>
+            <span className="text-xs font-bold text-foreground block mb-0.5">Create Sibling Copy</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">Outputs next to original file as a duplicate.</p>
+          </button>
         </div>
       </div>
 
-      {/* Streams & Destination Mode */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Streams Controls */}
-        <div className="space-y-3 p-3 bg-muted/20 border border-border/30 rounded-xl">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Stream Passthrough</span>
-          <p className="text-[11px] text-muted-foreground">All detected audio and subtitle streams are copied by default.</p>
-          <select value={options.streamSelection?.audio || 'all'} onChange={e => setOptions(prev => ({ ...prev, streamSelection: e.target.value === 'all' ? { audio: 'all', subtitle: 'all', defaultSubtitle: 'preserve' } : { audio: 'original-and-protected', originalLanguage: prev.streamSelection?.audio === 'original-and-protected' ? prev.streamSelection.originalLanguage : '', subtitle: 'all', defaultSubtitle: 'preserve' } }))} className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs">
-            <option value="all">Copy all audio tracks</option>
-            <option value="original-and-protected">Original language + protected tracks</option>
-          </select>
-          {options.streamSelection?.audio === 'original-and-protected' && <input value={options.streamSelection.originalLanguage} onChange={e => setOptions(prev => ({ ...prev, streamSelection: prev.streamSelection?.audio === 'original-and-protected' ? { ...prev.streamSelection, originalLanguage: e.target.value } : prev.streamSelection }))} placeholder="Original language (ISO code)" className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs" />}
-          <select value={options.streamSelection?.defaultSubtitle === 'none' ? 'none' : 'preserve'} onChange={e => setOptions(prev => ({ ...prev, streamSelection: { ...(prev.streamSelection || { audio: 'all', subtitle: 'all' }), defaultSubtitle: e.target.value as 'preserve' | 'none' } }))} className="w-full bg-muted border border-border/50 rounded-xl p-2 text-xs">
-            <option value="preserve">Preserve source subtitle default</option>
-            <option value="none">No default subtitle</option>
-          </select>
-        </div>
-
-        {/* File Mode */}
-        <div className="space-y-3 p-3 bg-muted/20 border border-border/30 rounded-xl">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Destination Output Mode</span>
-          <div className="flex gap-2">
-            <button 
-              type="button"
-              onClick={() => setOptions(prev => ({ ...prev, outputMode: 'copy' }))}
-              className={`flex-1 p-2 rounded-xl border text-xs font-bold transition-all ${
-                options.outputMode === 'copy'
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'bg-muted border-border/50 text-muted-foreground'
-              }`}
-            >
-              Create Copy
-            </button>
-            <button 
-              type="button"
-              onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
-              className={`flex-1 p-2 rounded-xl border text-xs font-bold transition-all ${
-                options.outputMode === 'quarantine-replace'
-                  ? 'bg-orange-500/10 border-orange-500 text-orange-500'
-                  : 'bg-muted border-border/50 text-muted-foreground'
-              }`}
-            >
-              Overwrite Original
-            </button>
-          </div>
-        </div>
+      {/* Custom FFmpeg Arguments */}
+      <div className="space-y-2">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+          Custom Additional FFmpeg Arguments
+        </label>
+        <input 
+          type="text"
+          placeholder="e.g. -tune hq -spatial-aq 1"
+          value={options.customArgs}
+          onChange={(e) => setOptions(prev => ({ ...prev, customArgs: e.target.value }))}
+          className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs font-mono outline-hidden focus:border-primary"
+        />
       </div>
 
-      {/* Target Size Limit & Custom Arguments */}
-      <div className="space-y-4 p-4 bg-muted/20 border border-border/40 rounded-2xl">
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Custom CLI Arguments</label>
-          <input 
-            type="text" 
-            placeholder="e.g. -spatial-aq 1 -temporal-aq 1" 
-            value={options.customArgs}
-            onChange={(e) => setOptions(prev => ({ ...prev, customArgs: e.target.value }))}
-            className="w-full bg-muted border border-border/50 rounded-xl p-2.5 text-xs outline-hidden focus:border-primary transition-all font-mono"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Target Filesize Constraint</label>
-          <input
-            type="text"
-            value={options.targetSize}
-            onChange={(e) => setOptions(prev => ({ ...prev, targetSize: e.target.value }))}
-            placeholder="e.g., ai-recommended, 500MB, 2GB"
-            className="w-full px-3 py-2 bg-muted border border-border/50 rounded-xl text-xs font-mono focus:outline-hidden focus:border-primary"
-          />
-        </div>
-      </div>
-
-      {/* Strategy Summary & Copy CLI button */}
-      {params && (
-        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
+      {/* CLI Command Live Preview */}
+      {params && params.ffmpegArgs && (
+        <div className="bg-black/40 border border-border/40 rounded-2xl p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              Generated CLI Pipeline Summary
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-primary" />
+              Live FFmpeg Command String
             </span>
             <button
               onClick={copyCommand}
-              className="flex items-center gap-1 px-2.5 py-1 bg-muted hover:bg-muted/80 text-[11px] font-bold text-muted-foreground hover:text-foreground rounded-lg border border-border/30 transition-all"
+              className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
             >
               <Copy className="w-3 h-3" />
-              Copy CLI Command
+              Copy CLI
             </button>
           </div>
-          <p className="text-xs text-foreground/90 font-medium leading-relaxed">
-            {params.summary}
-          </p>
-          <div className="bg-black/40 p-2.5 rounded-xl border border-primary/10 font-mono text-[10px] text-muted-foreground break-all">
-            <>ffmpeg ... {(params.ffmpegArgs || []).join(' ')}</>
-          </div>
+          <pre className="text-[11px] font-mono text-muted-foreground bg-muted/20 p-2.5 rounded-xl overflow-x-auto whitespace-pre-wrap break-all border border-border/20 max-h-28">
+            ffmpeg {params.ffmpegArgs.join(' ')}
+          </pre>
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-y',
       '-hwaccel', 'cuda',
       '-hwaccel_output_format', 'cuda',
+      '-extra_hw_frames', '8',
       '-i', input,
       '-fps_mode', 'cfr'
     ]

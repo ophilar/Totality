@@ -3,7 +3,6 @@ import {
   Zap, 
   Check, 
   Sparkles, 
-  Cpu, 
   Copy, 
   AlertTriangle, 
   Settings,
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import type { TranscodeOptions, TranscodingParams, GpuInfo } from './types'
+import { TranscodingDeviceSelector } from './TranscodingDeviceSelector'
 
 export interface QuickPresetsTabProps {
   options: TranscodeOptions
@@ -103,64 +103,58 @@ export function QuickPresetsTab({
     if (!params) return
     const cmd = `ffmpeg ${(params.ffmpegArgs || []).join(' ')}`
     navigator.clipboard.writeText(cmd)
-    addToast({ title: 'Command copied to clipboard!', type: 'success' })
+    addToast({ title: 'FFmpeg command copied to clipboard', type: 'success' })
   }
 
   return (
     <div className="space-y-6">
-      {/* Profile Cards Grid */}
-      <div className="space-y-2">
+      {/* 3 Main Preset Cards */}
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Select Optimization Preset Profile
-          </label>
-          <span className="text-[11px] text-muted-foreground">3 VRAM-Engineered Profiles</span>
+            Curated Archival Profiles
+          </span>
+          <span className="text-[11px] text-muted-foreground">Select a baseline optimization profile</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           {PRESET_PROFILES.map((profile) => {
             const Icon = profile.icon
             const isSelected = selectedProfileId === profile.id
-            const isRecommended = profile.highlight
 
             return (
               <div
                 key={profile.id}
                 onClick={() => applyProfile(profile)}
-                className={`relative cursor-pointer rounded-2xl p-4 border transition-all duration-200 flex flex-col justify-between group ${
+                className={`relative flex flex-col justify-between p-4 rounded-2xl border transition-all cursor-pointer select-none ${
                   isSelected
                     ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10 ring-1 ring-primary'
-                    : 'bg-muted/20 border-border/40 hover:bg-muted/40 hover:border-border'
+                    : 'bg-muted/30 border-border/40 hover:bg-muted/50 hover:border-border'
                 }`}
               >
-                {/* Header badges */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        isRecommended
-                          ? 'bg-primary text-primary-foreground'
-                          : isSelected
-                          ? 'bg-primary/20 text-primary'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {profile.badge}
-                    </span>
-                    {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      </div>
-                    )}
-                  </div>
+                {/* Header Badge */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    profile.highlight 
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'bg-muted text-muted-foreground border border-border/50'
+                  }`}>
+                    {profile.badge}
+                  </span>
+                  {isSelected && (
+                    <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </div>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <div
-                      className={`p-2 rounded-xl ${
-                        isSelected ? 'bg-primary/20 text-primary' : 'bg-muted/50 text-muted-foreground group-hover:text-foreground'
-                      }`}
-                    >
+                {/* Profile Info */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-xl ${
+                      isSelected ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                    }`}>
                       <Icon className="w-4 h-4" />
                     </div>
                     <h4 className="text-sm font-bold leading-tight">{profile.name}</h4>
@@ -227,31 +221,16 @@ export function QuickPresetsTab({
             </div>
           </div>
 
-          {/* GPU Hardware Acceleration */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-primary" />
-              Hardware Engine
-            </label>
-            <label className="flex items-center justify-between p-2 px-3 bg-muted/30 border border-border/40 rounded-xl cursor-pointer hover:bg-muted/50 transition-all">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={options.useGpu}
-                  onChange={(e) => setOptions(prev => ({ ...prev, useGpu: e.target.checked }))}
-                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20"
-                />
-                <span className="text-xs font-semibold">Enable GPU VRAM Pipeline</span>
-              </div>
-              {gpus.find(gpu => gpu.id === options.gpuId) && (
-                <span className="text-[10px] bg-primary/20 text-primary font-bold px-2 py-0.5 rounded-full">
-                  {gpus.find(gpu => gpu.id === options.gpuId)?.vendor} ({gpus.find(gpu => gpu.id === options.gpuId)?.name})
-                </span>
-              )}
-            </label>
-          </div>
+          {/* Canonical Transcoding Device Selector */}
+          <TranscodingDeviceSelector
+            useGpu={options.useGpu}
+            onUseGpuChange={(useGpu) => setOptions(prev => ({ ...prev, useGpu }))}
+            selectedGpuId={options.gpuId}
+            onSelectedGpuIdChange={(gpuId) => setOptions(prev => ({ ...prev, gpuId, useGpu: Boolean(gpuId) }))}
+            gpus={gpus}
+            variant="compact"
+          />
         </div>
-
       </div>
 
       {/* Generated Strategy Preview Card */}
