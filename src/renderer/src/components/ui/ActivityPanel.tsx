@@ -1,14 +1,5 @@
+import { TaskType } from '@main/types/database'
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
-/**
- * ActivityPanel - Task queue and monitoring activity panel
- *
- * Features:
- * - Current task progress display
- * - Queue management (reorder, remove, clear)
- * - Pause/resume queue
- * - Tabbed activity history (Tasks/Monitoring)
- */
-
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   DndContext,
@@ -38,13 +29,10 @@ import {
   Clock,
   Loader2,
   Scaling,
+  Activity,
+  Zap,
+  Gauge
 } from 'lucide-react'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-
 
 // ============================================================================
 // Component
@@ -136,6 +124,7 @@ export function ActivityPanel() {
   })
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [showTelemetry, setShowTelemetry] = useState(true)
 
   // Configure dnd-kit sensors
   const sensors = useSensors(
@@ -381,7 +370,6 @@ export function ActivityPanel() {
     }
   }
 
-
   // ============================================================================
   // Render
   // ============================================================================
@@ -433,6 +421,7 @@ export function ActivityPanel() {
         >
           <Scaling className="w-4 h-4 rotate-180" />
         </div>
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30">
           <div className="flex items-center gap-2">
@@ -466,40 +455,92 @@ export function ActivityPanel() {
         </div>
 
         {/* Current Task */}
-        {queueState.currentTask && (
-          <div className="p-4 border-b border-border/30 bg-muted/30">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">{queueState.currentTask.label}</span>
+        {queueState.currentTask && (() => {
+          const isTranscodeTask = queueState.currentTask.type === TaskType.Transcode || 
+            queueState.currentTask.label.toLowerCase().includes('transcode') || 
+            queueState.currentTask.label.toLowerCase().includes('optimize') ||
+            queueState.currentTask.progress?.fps !== undefined
+
+          return (
+            <div className="p-4 border-b border-border/30 bg-muted/30">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 min-w-0 pr-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                  <span className="text-sm font-medium truncate">{queueState.currentTask.label}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {isTranscodeTask && (
+                    <button
+                      onClick={() => setShowTelemetry(!showTelemetry)}
+                      className={`p-1.5 rounded transition-colors ${
+                        showTelemetry ? 'bg-primary/20 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                      title={showTelemetry ? 'Hide Live Telemetry' : 'Show Live Telemetry'}
+                      aria-label="Toggle Live Telemetry"
+                    >
+                      <Activity className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={handleCancelCurrent}
+                    className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400"
+                    title="Cancel Task"
+                    aria-label="Cancel Task"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={handleCancelCurrent}
-                className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400"
-                title="Cancel"
-              >
-                <XCircle className="w-4 h-4" />
-              </button>
+              {queueState.currentTask.progress && (
+                <>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${queueState.currentTask.progress.percentage}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="truncate max-w-[280px]">
+                      {queueState.currentTask.progress.currentItem ||
+                        queueState.currentTask.progress.phase}
+                    </span>
+                    <span className="font-medium shrink-0">{Math.round(queueState.currentTask.progress.percentage)}%</span>
+                  </div>
+
+                  {/* Live Transcoding Telemetry expansion */}
+                  {showTelemetry && isTranscodeTask && (
+                    <div className="mt-3 pt-3 border-t border-border/20 grid grid-cols-3 gap-2 text-center animate-in fade-in duration-200">
+                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
+                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
+                          <Gauge className="w-3 h-3 text-primary" /> Framerate
+                        </div>
+                        <div className="text-xs font-bold text-primary mt-0.5">
+                          {queueState.currentTask.progress.fps ? `${queueState.currentTask.progress.fps} FPS` : 'Encoding'}
+                        </div>
+                      </div>
+                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
+                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
+                          <Zap className="w-3 h-3 text-yellow-400" /> Speed
+                        </div>
+                        <div className="text-xs font-bold text-foreground mt-0.5">
+                          {queueState.currentTask.progress.fps ? `${(queueState.currentTask.progress.fps / 24).toFixed(1)}x` : '1.0x'}
+                        </div>
+                      </div>
+                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
+                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
+                          <Clock className="w-3 h-3 text-blue-400" /> ETA
+                        </div>
+                        <div className="text-xs font-bold text-foreground mt-0.5 truncate">
+                          {queueState.currentTask.progress.eta || 'Calculating...'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            {queueState.currentTask.progress && (
-              <>
-                <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
-                  <div
-                    className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${queueState.currentTask.progress.percentage}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {queueState.currentTask.progress.currentItem ||
-                      queueState.currentTask.progress.phase}
-                  </span>
-                  <span>{Math.round(queueState.currentTask.progress.percentage)}%</span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+          )
+        })()}
 
         {/* Queue - grows with panel resize */}
         <div className="flex-1 min-h-0 flex flex-col border-b border-border/30">

@@ -225,13 +225,23 @@ interface ArtistRowProps {
 }
 
 export const ArtistRow = React.memo(({ artist, index, isExpanded, includeEps, includeSingles, onToggleExpand, onDismiss }: ArtistRowProps) => {
-  const totalReleases = artist.total_albums
-    + (includeEps ? artist.total_eps : 0)
-    + (includeSingles ? artist.total_singles : 0)
-  const ownedReleases = artist.owned_albums
-    + (includeEps ? artist.owned_eps : 0)
-    + (includeSingles ? artist.owned_singles : 0)
+  const totalAlbums = Number(artist.total_albums || 0)
+  const ownedAlbums = Number(artist.owned_albums || 0)
+  const totalEps = Number(artist.total_eps || 0)
+  const ownedEps = Number(artist.owned_eps || 0)
+  const totalSingles = Number(artist.total_singles || 0)
+  const ownedSingles = Number(artist.owned_singles || 0)
+
+  const totalReleases = totalAlbums
+    + (includeEps ? totalEps : 0)
+    + (includeSingles ? totalSingles : 0)
+  const ownedReleases = ownedAlbums
+    + (includeEps ? ownedEps : 0)
+    + (includeSingles ? ownedSingles : 0)
   const totalMissing = totalReleases - ownedReleases
+  const completenessPercentage = Number.isFinite(artist.completeness_percentage)
+    ? Math.round(artist.completeness_percentage)
+    : (totalReleases > 0 ? Math.round((ownedReleases / totalReleases) * 100) : 100)
   const allMissing = isExpanded ? parseMissingAlbums(artist, includeEps, includeSingles) : []
 
   const groupedByType = isExpanded ? {
@@ -268,10 +278,10 @@ export const ArtistRow = React.memo(({ artist, index, isExpanded, includeEps, in
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{artist.artist_name}</div>
           <div className="text-xs text-muted-foreground">
-            {ownedReleases}/{totalReleases} releases · {Math.round(artist.completeness_percentage)}%
+            {ownedReleases}/{totalReleases} releases · {completenessPercentage}%
           </div>
           <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
-            <div className="h-full bg-primary rounded-full" style={{ width: `${artist.completeness_percentage}%` }} />
+            <div className="h-full bg-primary rounded-full" style={{ width: `${completenessPercentage}%` }} />
           </div>
         </div>
         {totalMissing > 0 && (

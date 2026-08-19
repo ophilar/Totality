@@ -552,10 +552,8 @@ export class FileNameParser {
       /\bextras?\b/i,
       /\bbts\b/i,
       /\bouttakes?\b/i,
-      /\bscene[.\-_ ]?\d+\b/i,
       /\balternate[.\-_ ]?(opening|ending|cut|version|take|scene)?\b/i,
       /\bextended[.\-_ ]?(cut|scene|version)?\b/i,
-      /[.\-_ ]scene$/i,
       /\b(opening|closing)[.\-_ ]?credits?\b/i,
     ]
     return extrasPatterns.some((pattern) => pattern.test(lower))

@@ -113,7 +113,7 @@ export function MusicArtistDetails({
 
           {artistCompleteness.has(selectedArtist.name) && (
             <p className="text-sm text-muted-foreground mt-1">
-              {artistCompleteness.get(selectedArtist.name)!.owned_albums} of {artistCompleteness.get(selectedArtist.name)!.total_albums} albums in discography
+              {artistCompleteness.get(selectedArtist.name)!.owned_albums ?? 0} of {artistCompleteness.get(selectedArtist.name)!.total_albums ?? 0} albums in discography
             </p>
           )}
 

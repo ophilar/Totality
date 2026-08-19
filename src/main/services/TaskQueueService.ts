@@ -11,7 +11,7 @@ import { getSourceManager, SourceManager } from '@main/services/SourceManager'
 import { getSeriesCompletenessService, SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getMovieCollectionService, MovieCollectionService } from '@main/services/MovieCollectionService'
 import { getMusicBrainzService, MusicBrainzService } from '@main/services/MusicBrainzService'
-import { getTranscodingService, TranscodingService } from '@main/services/TranscodingService'
+import { getTranscodingService, TranscodingService, TranscodeProgress } from '@main/services/TranscodingService'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { BrowserWindow } from 'electron'
 import { 
@@ -23,7 +23,6 @@ import {
 import { NotificationType } from '@main/types/monitoring'
 
 interface CollectionProgress { current: number; total: number; percentage?: number; phase: string; currentItem?: string }
-interface TranscodeProgress { percent: number; status: string }
 
 export interface TaskQueueDependencies {
   db?: BetterSQLiteService
@@ -518,7 +517,9 @@ export class TaskQueueService {
           total: 100,
           percentage: p.percent,
           phase: p.status,
-          currentItem: task.label
+          currentItem: task.label,
+          fps: p.fps,
+          eta: p.eta
         })
       }
     )
@@ -550,7 +551,7 @@ export class TaskQueueService {
         const state = JSON.parse(stateStr)
         this.queue = state.queue || []
         this.completedTasks = state.completedTasks || []
-        this.isPaused = state.isPaused === true // Explicitly check for true
+        this.isPaused = state.isPaused === true
         
         this.logging.info('[TaskQueue]', `State loaded: ${this.queue.length} queued, ${this.completedTasks.length} completed, isPaused=${this.isPaused}`)
         

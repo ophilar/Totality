@@ -889,6 +889,9 @@ export interface TaskProgress {
   percentage: number
   phase: string
   currentItem?: string
+  fps?: number
+  eta?: string
+  speed?: string
 }
 
 export interface TaskResult {

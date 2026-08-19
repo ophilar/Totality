@@ -81,7 +81,7 @@ export const ArtistListItem = memo(({ artist, completeness, onClick, showSourceB
         {completeness && (
           <div className="mt-2 flex items-center gap-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
-              {completeness.owned_albums}/{completeness.total_albums}
+              {completeness.owned_albums ?? 0}/{completeness.total_albums ?? 0}
             </span>
           </div>
         )}

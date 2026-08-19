@@ -120,7 +120,7 @@ export class SlidingWindowRateLimiter implements RateLimiter {
  * await fetch(...)
  */
 export class SimpleDelayRateLimiter implements RateLimiter {
-  private lastRequestTime: number = 0
+  private lastScheduledTime: number = 0
   private readonly delayMs: number
 
   /**
@@ -132,18 +132,18 @@ export class SimpleDelayRateLimiter implements RateLimiter {
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    const elapsed = now - this.lastRequestTime
-    const remainingWait = this.delayMs - elapsed
+    // Schedule slots sequentially: whichever is later, current timestamp or previous scheduled + delayMs
+    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.delayMs)
+    this.lastScheduledTime = scheduledTime
+    const waitMs = scheduledTime - now
 
-    if (remainingWait > 0) {
-      await this.delay(remainingWait)
+    if (waitMs > 0) {
+      await this.delay(waitMs)
     }
-
-    this.lastRequestTime = Date.now()
   }
 
   reset(): void {
-    this.lastRequestTime = 0
+    this.lastScheduledTime = 0
   }
 
   private delay(ms: number): Promise<void> {
@@ -154,7 +154,8 @@ export class SimpleDelayRateLimiter implements RateLimiter {
    * Get current state
    */
   getTimeSinceLastRequest(): number {
-    return Date.now() - this.lastRequestTime
+    if (this.lastScheduledTime === 0) return Infinity
+    return Date.now() - this.lastScheduledTime
   }
 }
 

@@ -265,7 +265,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
       const currentLib = libs.find(l => l.libraryId === libraryId)
-      const includeAdult = !!(currentLib?.isProtected && currentLib?.allowExpandedMatching)
+      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.isProtected && currentLib?.allowExpandedMatching) || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
       const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false'
       const ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '25', 10)
 
@@ -335,10 +335,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let metadata: MediaMetadata
             if (parsed.type === 'movie') {
-              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache, includeAdult)
+              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, movieTmdbCache, includeAdult)
             } else {
               const epParsed = parsed as ParsedEpisodeInfo
-              metadata = await this.createEpisodeMetadata(filePath, epParsed, tmdbConfigured, tmdb, seriesTmdbCache)
+              metadata = await this.createEpisodeMetadata(filePath, epParsed, tmdbConfigured, tmdb, seriesTmdbCache, includeAdult)
               
               if (!metadata.seriesIdentityKey) {
                 const seriesFolder = parser.extractSeriesTitleFromPath(relativePath) || path.dirname(relativePath)
@@ -454,7 +454,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
       const currentLib = libs.find(l => l.libraryId === libraryId)
-      const includeAdult = !!(currentLib?.isProtected && currentLib?.allowExpandedMatching)
+      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.isProtected && currentLib?.allowExpandedMatching) || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
       const scanType = (libraryType === 'movie' || libraryType === 'movies') ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, MovieMatchCacheEntry | null>()
       const seriesTmdbCache = new Map<string, SeriesMatchCacheEntry | null>()
@@ -511,9 +511,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let metadata: MediaMetadata
             if (parsed.type === 'movie') {
-              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, tmdb, movieTmdbCache, includeAdult)
+              metadata = await this.createMovieMetadata(filePath, parsed as ParsedMovieInfo, tmdbConfigured, movieTmdbCache, includeAdult)
             } else {
-              metadata = await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesTmdbCache)
+              metadata = await this.createEpisodeMetadata(filePath, parsed as ParsedEpisodeInfo, tmdbConfigured, tmdb, seriesTmdbCache, includeAdult)
               const seriesFolder = parser.extractSeriesTitleFromPath(relativePath) || path.dirname(relativePath)
               metadata.seriesIdentityKey = deriveSeriesIdentityKey({
                 sourceId: this.sourceId,
@@ -697,7 +697,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
     } catch (error) { cache.set(artistName.toLowerCase(), artistName); return artistName }
   }
 
-  private async createMovieMetadata(filePath: string, parsed: ParsedMovieInfo, fetchFromTMDB: boolean, _tmdb: ReturnType<typeof getTMDBService>, movieTmdbCache?: Map<string, MovieMatchCacheEntry | null>, _includeAdult?: boolean): Promise<MediaMetadata> {
+  private async createMovieMetadata(
+    filePath: string,
+    parsed: ParsedMovieInfo,
+    fetchFromTMDB: boolean,
+    movieTmdbCache?: Map<string, MovieMatchCacheEntry | null>,
+    includeAdult?: boolean
+  ): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
     const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.title || path.basename(filePath), type: MediaItemType.Movie, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 
@@ -714,7 +720,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
         const matches = await matchingService.matchMediaItem({
           title: normalizedTitle,
           year: parsed.year ?? undefined,
-          type: 'movie'
+          type: 'movie',
+          includeAdult,
+          includeExpanded: includeAdult
         })
         const { selectAutomaticMatch } = require('@main/services/metadata/MetadataMatchingService')
         const match = selectAutomaticMatch(matches, { title: normalizedTitle, year: parsed.year, type: 'movie' })
@@ -733,7 +741,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
     return metadata
   }
 
-  private async createEpisodeMetadata(filePath: string, parsed: ParsedEpisodeInfo, fetchFromTMDB: boolean, tmdb: ReturnType<typeof getTMDBService>, seriesTmdbCache?: Map<string, SeriesMatchCacheEntry | null>): Promise<MediaMetadata> {
+  private async createEpisodeMetadata(
+    filePath: string,
+    parsed: ParsedEpisodeInfo,
+    fetchFromTMDB: boolean,
+    tmdb: ReturnType<typeof getTMDBService>,
+    seriesTmdbCache?: Map<string, SeriesMatchCacheEntry | null>,
+    includeAdult?: boolean
+  ): Promise<MediaMetadata> {
     const stats = await fsPromises.stat(filePath)
     const metadata: MediaMetadata = { providerId: this.sourceId, providerType: this.providerType, itemId: this.generateItemId(filePath), title: parsed.episodeTitle || `Episode ${parsed.episodeNumber}`, type: MediaItemType.Episode, seriesTitle: parsed.seriesTitle || 'Unknown Series', seasonNumber: parsed.seasonNumber, episodeNumber: parsed.episodeNumber, year: parsed.year, filePath, fileSize: stats.size, resolution: parsed.resolution, videoCodec: parsed.codec }
 
@@ -746,7 +761,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
           const matchingService = MetadataRegistryService.getInstance().getMatchingService()
           const matches = await matchingService.matchMediaItem({
             title: parsed.seriesTitle,
-            type: 'tv'
+            type: 'tv',
+            includeAdult,
+            includeExpanded: includeAdult
           })
           const { selectAutomaticMatch } = require('@main/services/metadata/MetadataMatchingService')
           const series = selectAutomaticMatch(matches, { title: parsed.seriesTitle, type: 'tv' })

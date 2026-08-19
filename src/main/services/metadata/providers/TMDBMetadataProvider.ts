@@ -33,7 +33,8 @@ export class TMDBMetadataProvider implements IMetadataProvider {
 
     const endpoint = query.type === 'movie' ? 'search/movie' : 'search/tv'
     const adultParam = (query.includeExpanded ?? query.includeAdult) ? '&include_adult=true' : ''
-    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${query.year ? `&year=${query.year}` : ''}${adultParam}`
+    const yearParam = query.year ? (query.type === 'movie' ? `&year=${query.year}` : `&first_air_date_year=${query.year}`) : ''
+    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${yearParam}${adultParam}`
 
     try {
       const res = await fetch(url)

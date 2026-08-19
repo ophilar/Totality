@@ -1,14 +1,29 @@
 const NON_TITLE_TOKENS = new Set([
-  '2160p', '1080p', '720p', '576p', '480p', '4k', 'uhd', 'sd',
+  '2160p', '1080p', '720p', '576p', '480p', '4k', 'uhd', 'sd', 'hd',
   'bluray', 'brrip', 'webrip', 'webdl', 'web', 'hdtv', 'dvdrip', 'remux',
   'x264', 'x265', 'h264', 'h265', 'hevc', 'av1', 'vp9', 'avc',
   'aac', 'ac3', 'dts', 'truehd', 'atmos', 'flac', 'hdr', 'hdr10', 'dv',
   'proper', 'repack', 'limited', 'internal', 'extended', 'unrated', 'directors',
   'cut', 'remastered', 'criterion', 'multi', 'subbed', 'dubbed', 'complete',
-  'edition', 'special', 'theatrical', 'readnfo', 'sample'
+  'edition', 'special', 'theatrical', 'readnfo', 'sample', 'xxx', 'clip'
 ])
 
 const ARTICLE_TOKENS = new Set(['a', 'an', 'the'])
+
+const ROMAN_NUMERALS: Record<string, string> = {
+  'i': '1',
+  'ii': '2',
+  'iii': '3',
+  'iv': '4',
+  'v': '5',
+  'vi': '6',
+  'vii': '7',
+  'viii': '8',
+  'ix': '9',
+  'x': '10',
+  'vol': 'volume',
+  'pt': 'part'
+}
 
 function levenshtein(a: string, b: string): number {
   const row = Array.from({ length: b.length + 1 }, (_, i) => i)
@@ -27,18 +42,36 @@ function levenshtein(a: string, b: string): number {
 }
 
 export function normalizeTitleForMatching(title: string): string {
-  const tokens = title
+  const rawTokens = title
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[._:;!?&@#$%^*()[\]{}|\\/<>~`+=-]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
-    .filter(token => !/^\d{4}$/.test(token))
+
+  // Filter non-title tokens and articles, and normalize numbers/roman numerals
+  const filteredTokens = rawTokens
     .filter(token => !NON_TITLE_TOKENS.has(token))
     .filter(token => !ARTICLE_TOKENS.has(token))
+    .map(token => ROMAN_NUMERALS[token] || token)
 
-  return tokens.join(' ').trim()
+  if (filteredTokens.length === 0) return ''
+
+  // If there's only 1 token (e.g. "1984", "1917", "300", "matrix"), keep it
+  if (filteredTokens.length === 1) return filteredTokens[0]
+
+  // If multiple tokens exist:
+  // - If the first token is a 4-digit number (e.g. "2001 space odyssey", "2012"), keep it as part of the title.
+  // - Only filter out 4-digit numbers that appear in trailing positions (e.g. "inception 2010" -> "inception").
+  const resultTokens = filteredTokens.filter((token, index) => {
+    if (/^\d{4}$/.test(token)) {
+      return index === 0
+    }
+    return true
+  })
+
+  return resultTokens.join(' ').trim()
 }
 
 export function scoreTitleMatch(

@@ -110,3 +110,71 @@ export function toSnakeCaseQualityScore(r: unknown): QualityScore {
     updated_at: row.updatedAt || row.updated_at as string
   } as QualityScore
 }
+
+/**
+ * Maps a Drizzle model or SQLite database row representing ArtistCompleteness
+ * to the standard snake_case contract.
+ */
+export function toSnakeCaseArtistCompleteness(r: unknown): import('@main/types/database').ArtistCompleteness {
+  const source = asMapperFields(r)
+  const a = asMapperFields(source.artist || source)
+  return {
+    id: a.id !== undefined ? Number(a.id) : undefined,
+    artist_name: String(a.artistName || a.artist_name || ''),
+    musicbrainz_id: a.musicbrainzId ? String(a.musicbrainzId) : (a.musicbrainz_id ? String(a.musicbrainz_id) : undefined),
+    library_id: a.libraryId ? String(a.libraryId) : (a.library_id ? String(a.library_id) : undefined),
+    total_albums: Number(a.totalAlbums !== undefined ? a.totalAlbums : (a.total_albums || 0)),
+    owned_albums: Number(a.ownedAlbums !== undefined ? a.ownedAlbums : (a.owned_albums || 0)),
+    total_singles: Number(a.totalSingles !== undefined ? a.totalSingles : (a.total_singles || 0)),
+    owned_singles: Number(a.ownedSingles !== undefined ? a.ownedSingles : (a.owned_singles || 0)),
+    total_eps: Number(a.totalEps !== undefined ? a.totalEps : (a.total_eps || 0)),
+    owned_eps: Number(a.ownedEps !== undefined ? a.ownedEps : (a.owned_eps || 0)),
+    missing_albums: typeof a.missingAlbums === 'string' ? a.missingAlbums : (typeof a.missing_albums === 'string' ? a.missing_albums : '[]'),
+    missing_singles: typeof a.missingSingles === 'string' ? a.missingSingles : (typeof a.missing_singles === 'string' ? a.missing_singles : '[]'),
+    missing_eps: typeof a.missingEps === 'string' ? a.missingEps : (typeof a.missing_eps === 'string' ? a.missing_eps : '[]'),
+    completeness_percentage: Number(a.completenessPercentage !== undefined ? a.completenessPercentage : (a.completeness_percentage || 0)),
+    efficiency_score: a.efficiencyScore !== undefined ? Number(a.efficiencyScore) : (a.efficiency_score !== undefined ? Number(a.efficiency_score) : undefined),
+    storage_debt_bytes: a.storageDebtBytes !== undefined ? Number(a.storageDebtBytes) : (a.storage_debt_bytes !== undefined ? Number(a.storage_debt_bytes) : undefined),
+    total_size: a.totalSize !== undefined ? Number(a.totalSize) : (a.total_size !== undefined ? Number(a.total_size) : undefined),
+    country: a.country ? String(a.country) : undefined,
+    active_years: a.activeYears ? String(a.activeYears) : (a.active_years ? String(a.active_years) : undefined),
+    artist_type: a.artistType ? String(a.artistType) : (a.artist_type ? String(a.artist_type) : undefined),
+    thumb_url: a.thumbUrl ? String(a.thumbUrl) : (a.thumb_url ? String(a.thumb_url) : undefined),
+    last_sync_at: a.lastSyncAt ? String(a.lastSyncAt) : (a.last_sync_at ? String(a.last_sync_at) : undefined),
+    created_at: a.createdAt ? String(a.createdAt) : (a.created_at ? String(a.created_at) : undefined),
+    updated_at: a.updatedAt ? String(a.updatedAt) : (a.updated_at ? String(a.updated_at) : undefined),
+  }
+}
+
+/**
+ * Maps a Drizzle model or SQLite database row representing SeriesCompleteness
+ * to the standard snake_case contract.
+ */
+export function toSnakeCaseSeriesCompleteness(r: unknown): import('@main/types/database').SeriesCompleteness {
+  const source = asMapperFields(r)
+  const s = asMapperFields(source.series || source)
+  return {
+    id: s.id !== undefined ? Number(s.id) : undefined,
+    series_title: String(s.seriesTitle || s.series_title || ''),
+    series_identity_key: s.seriesIdentityKey ? String(s.seriesIdentityKey) : (s.series_identity_key ? String(s.series_identity_key) : undefined),
+    source_id: s.sourceId ? String(s.sourceId) : (s.source_id ? String(s.source_id) : undefined),
+    library_id: s.libraryId ? String(s.libraryId) : (s.library_id ? String(s.library_id) : undefined),
+    total_seasons: Number(s.totalSeasons !== undefined ? s.totalSeasons : (s.total_seasons || 0)),
+    total_episodes: Number(s.totalEpisodes !== undefined ? s.totalEpisodes : (s.total_episodes || 0)),
+    owned_seasons: Number(s.ownedSeasons !== undefined ? s.ownedSeasons : (s.owned_seasons || 0)),
+    owned_episodes: Number(s.ownedEpisodes !== undefined ? s.ownedEpisodes : (s.owned_episodes || 0)),
+    missing_seasons: typeof s.missingSeasons === 'string' ? s.missingSeasons : (typeof s.missing_seasons === 'string' ? s.missing_seasons : '[]'),
+    missing_episodes: typeof s.missingEpisodes === 'string' ? s.missingEpisodes : (typeof s.missing_episodes === 'string' ? s.missing_episodes : '[]'),
+    completeness_percentage: Number(s.completenessPercentage !== undefined ? s.completenessPercentage : (s.completeness_percentage || 0)),
+    efficiency_score: s.efficiencyScore !== undefined ? Number(s.efficiencyScore) : (s.efficiency_score !== undefined ? Number(s.efficiency_score) : undefined),
+    storage_debt_bytes: s.storageDebtBytes !== undefined ? Number(s.storageDebtBytes) : (s.storage_debt_bytes !== undefined ? Number(s.storage_debt_bytes) : undefined),
+    total_size: s.totalSize !== undefined ? Number(s.totalSize) : (s.total_size !== undefined ? Number(s.total_size) : undefined),
+    tmdb_id: s.tmdbId ? String(s.tmdbId) : (s.tmdb_id ? String(s.tmdb_id) : undefined),
+    tvdb_id: s.tvdbId ? String(s.tvdbId) : (s.tvdb_id ? String(s.tvdb_id) : undefined),
+    poster_url: s.posterUrl ? String(s.posterUrl) : (s.poster_url ? String(s.poster_url) : undefined),
+    backdrop_url: s.backdropUrl ? String(s.backdropUrl) : (s.backdrop_url ? String(s.backdrop_url) : undefined),
+    created_at: s.createdAt ? String(s.createdAt) : (s.created_at ? String(s.created_at) : undefined),
+    updated_at: s.updatedAt ? String(s.updatedAt) : (s.updated_at ? String(s.updated_at) : undefined),
+  }
+}
+

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MetadataMatchingService } from '../../../../src/main/services/metadata/MetadataMatchingService'
+import { MetadataMatchingService, selectAutomaticMatch } from '../../../../src/main/services/metadata/MetadataMatchingService'
 import { CompositeMetadataProvider } from '../../../../src/main/services/metadata/CompositeMetadataProvider'
 import { MetadataSearchResult } from '../../../../src/main/services/metadata/IMetadataProvider'
 
@@ -56,5 +56,45 @@ describe('MetadataMatchingService', () => {
       externalIds: { imdb_id: 'tt123456' }
     })
   })
+
+  it('selects automatic match immediately when candidate matches query externalIds', () => {
+    const candidates: MetadataSearchResult[] = [
+      { id: '100', provider: 'tmdb', title: 'Different Title', year: 2020, type: 'movie', externalIds: { imdbId: 'tt1234567' } },
+      { id: '200', provider: 'tmdb', title: 'Query Title', year: 2020, type: 'movie' }
+    ]
+    const match = selectAutomaticMatch(candidates, {
+      title: 'Query Title',
+      year: 2020,
+      type: 'movie',
+      externalIds: { imdbId: 'tt1234567' }
+    })
+    expect(match).toBeDefined()
+    expect(match?.id).toBe('100')
+  })
+
+  it('resolves directly via external IDs before heuristic search when externalIds are present', async () => {
+    const directResult = {
+      id: 'tt9999999',
+      provider: 'omdb',
+      title: 'Authoritative Title',
+      year: 2021,
+      type: 'movie' as const,
+      externalIds: { imdbId: 'tt9999999' },
+      score: 100
+    }
+    vi.spyOn(mockCompositeProvider, 'findByExternalId').mockResolvedValue(directResult)
+    vi.spyOn(mockCompositeProvider, 'searchAndFuse').mockResolvedValue([])
+
+    const results = await matchingService.matchMediaItem({
+      title: 'Some Completely Misnamed File',
+      type: 'movie',
+      externalIds: { imdbId: 'tt9999999' }
+    })
+
+    expect(mockCompositeProvider.findByExternalId).toHaveBeenCalledWith('tt9999999', 'imdb_id', 'movie')
+    expect(results.length).toBeGreaterThan(0)
+    expect(results[0]?.externalIds?.imdbId).toBe('tt9999999')
+  })
 })
+
 

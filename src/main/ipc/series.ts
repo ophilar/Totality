@@ -102,22 +102,33 @@ export function registerSeriesHandlers() {
 
     const tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
     const imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+    const tvdbId = providerId === 'tvdb' ? externalId : details.externalIds?.tvdbId || null
+    const anilistId = providerId === 'anilist' ? externalId : details.externalIds?.anilistId || null
 
-    if (!tmdbId) {
-      throw new Error(`A TMDB ID could not be resolved for this match`)
+    if (!tmdbId && !tvdbId && !imdbId && !anilistId) {
+      throw new Error(`An authoritative external ID (TMDB, TVDB, IMDb, or AniList) could not be resolved for this match`)
     }
 
     const poster = details.posterUrl || undefined
-    const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId, poster, details.title, imdbId || undefined)
-    const tvdbId = providerId === 'tvdb' ? externalId : details.externalIds?.tvdbId || null
-    if (tvdbId) {
-      const completeness = await db.tvShows.getCompletenessByTitle(title, sourceId)
-      if (completeness?.id) {
-        await db.db.execute({ sql: 'UPDATE series_completeness SET tvdb_id = ?, user_fixed_match = 1 WHERE id = ?', args: [tvdbId, completeness.id] })
-        await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'tvdb', externalId: tvdbId, locked: true, lockSource: 'manual' })
-        if (tmdbId) await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'tmdb', externalId: tmdbId, locked: true, lockSource: 'manual' })
-        if (imdbId) await db.identities.upsertIdentity({ entityType: 'series', entityId: completeness.id, provider: 'imdb', externalId: imdbId, locked: true, lockSource: 'manual' })
-        for (const alias of details.alternateTitles || []) await db.identities.addAlias({ entityType: 'series', entityId: completeness.id, alias, provider: providerId })
+    const updated = await db.media.updateSeriesMatch(title, sourceId, tmdbId || '', poster, details.title, imdbId || undefined)
+    const existingCompleteness = await db.tvShows.getCompletenessByTitle(title, sourceId)
+    if (existingCompleteness?.id) {
+      if (tvdbId) {
+        await db.db.execute({ sql: 'UPDATE series_completeness SET tvdb_id = ?, user_fixed_match = 1 WHERE id = ?', args: [tvdbId, existingCompleteness.id] })
+        await db.identities.upsertIdentity({ entityType: 'series', entityId: existingCompleteness.id, provider: 'tvdb', externalId: tvdbId, locked: true, lockSource: 'manual' })
+      }
+      if (tmdbId) {
+        await db.db.execute({ sql: 'UPDATE series_completeness SET tmdb_id = ?, user_fixed_match = 1 WHERE id = ?', args: [tmdbId, existingCompleteness.id] })
+        await db.identities.upsertIdentity({ entityType: 'series', entityId: existingCompleteness.id, provider: 'tmdb', externalId: tmdbId, locked: true, lockSource: 'manual' })
+      }
+      if (imdbId) {
+        await db.identities.upsertIdentity({ entityType: 'series', entityId: existingCompleteness.id, provider: 'imdb', externalId: imdbId, locked: true, lockSource: 'manual' })
+      }
+      if (anilistId) {
+        await db.identities.upsertIdentity({ entityType: 'series', entityId: existingCompleteness.id, provider: 'anilist', externalId: anilistId, locked: true, lockSource: 'manual' })
+      }
+      for (const alias of details.alternateTitles || []) {
+        await db.identities.addAlias({ entityType: 'series', entityId: existingCompleteness.id, alias, provider: providerId })
       }
     }
     await getDeduplicationService().scanForDuplicates(sourceId)

@@ -260,12 +260,13 @@ export function registerDatabaseHandlers() {
         throw new Error(`Could not find details for ${providerId}:${externalId}`)
       }
 
-      // Determine TMDB and IMDB IDs based on the provider and external IDs
+      // Determine TMDB, IMDB, and AniList IDs based on the provider and external IDs
       const tmdbId = providerId === 'tmdb' ? externalId : details.externalIds?.tmdbId || null
       const imdbId = providerId === 'omdb' || providerId === 'imdb' ? externalId : details.externalIds?.imdbId || null
+      const anilistId = providerId === 'anilist' ? externalId : details.externalIds?.anilistId || null
 
-      if (!tmdbId) {
-        throw new Error(`A TMDB ID could not be resolved for this match`)
+      if (!tmdbId && !imdbId && !anilistId) {
+        throw new Error(`An authoritative external ID (TMDB, IMDb, or AniList) could not be resolved for this match`)
       }
 
       const posterUrl = details.posterUrl || undefined
@@ -273,7 +274,7 @@ export function registerDatabaseHandlers() {
 
       await db.media.updateMovieMatch(
         mediaItemId,
-        tmdbId,
+        tmdbId || undefined,
         posterUrl,
         details.title,
         year,
@@ -293,7 +294,7 @@ export function registerDatabaseHandlers() {
       const win = BrowserWindow.fromWebContents(event.sender)
       win?.webContents.send('library:updated', { type: 'media' })
 
-      return { success: true, tmdbId, posterUrl, title: details.title, year }
+      return { success: true, tmdbId: tmdbId || undefined, posterUrl, title: details.title, year }
     }
   )
 

@@ -38,8 +38,6 @@
 - [x] Implement `WebGuideRecipeProvider` for universal internet viewing guides (IGN, startrekviewingguide.com, Rotten Tomatoes, etc.) and AI-assisted franchise generation
 - [x] Enhanced multi-source timeline importer with real-time feedback and source badges in `TimelinesView.tsx`
 
-
-
 ## Phase 5: TV Show Batch Optimization & UI Performance [Completed]
 - [x] Optimize UI responsiveness with abort-token sequence tracking and parameter debouncing in `TranscodeModal.tsx`
 - [x] Throttle high-frequency live progress logging in `LiveEncodingTab.tsx`
@@ -88,9 +86,26 @@
 - Add dedicated settings cards for future API-key providers beyond the currently supported OMDb/TVDB configuration paths.
 - TMDB's external `adult` field remains unchanged because it is part of the upstream API contract.
 
+## Phase 11: Title-to-ID Matching, Direct ID Precedence & NSFW Resolution [Completed]
+- [x] Implement direct external ID resolution precedence in `MetadataMatchingService` and `CompositeMetadataProvider` for Plex, Kodi, and Jellyfin sources
+- [x] Update `selectAutomaticMatch` to guarantee instant resolution on matching external IDs
+- [x] Fix numeric title normalization (*1984*, *2001*, *1917*, *300*) in `TitleMatching.ts`
+- [x] Incorporate `alternateTitles` scoring into candidate re-ranking in `MetadataMatchingService.ts`
+- [x] Pass `includeAdult` / `includeExpanded` through `LocalFolderProvider` movie and episode scanning flows
+- [x] Relax mandatory `tmdbId` constraint in `database.ts` and `series.ts` `FIX_MATCH` handlers to support pure IMDb, TVDB, and AniList matches
+- [x] Full regression verification across all unit and integration test suites (137 test files, 1,031 tests passing, 0 typecheck errors)
 
-
-
-
+## Phase 12: MusicBrainz Monotonic Rate Limiting & Adult / Scene Title Resolution [Completed]
+- [x] Refactor `SimpleDelayRateLimiter` to monotonic timestamp scheduling to eliminate concurrency race condition bursts
+- [x] Eliminate parallel bursts in `MusicBrainzService.getArtistDiscography` to maintain strict 1 req/s compliance
+- [x] Implement `isPlaceholderMusicTitle` pre-validation to intercept and skip untagged/fallback music titles
+- [x] Add circuit breaker fault tolerance in `MusicBrainzService.analyzeAllMusic` against persistent network drops
+- [x] Enhance `selectAutomaticMatch` with multi-tier Strategy Pattern (Direct ID, Exact Title + Exact/Fuzzy Year, Top Exact Title, and High Confidence Score Winner)
+- [x] Normalize Roman numerals (`II` -> `2`) and adult/scene noise tokens in `TitleMatching.ts`
+- [x] Strip studio/site prefixes during candidate query generation in `MetadataMatchingService.ts`
+- [x] Fix `isExtrasContent` false positive filtering on numbered scene titles in `FileNameParser.ts`
+- [x] Fix TV show search year parameter (`first_air_date_year`) in `TMDBMetadataProvider.ts`
+- [x] Integrate live transcoding telemetry (FPS, Speed Multiplier, ETA) directly into `ActivityPanel` for 1-click global monitoring
+- [x] Verify type safety (`tsc --noEmit`) and unit test suite passing (104 tests passing across 5 core test suites)
 
 

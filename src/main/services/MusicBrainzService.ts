@@ -15,7 +15,6 @@ import { retryWithBackoff } from '@main/services/utils/retryWithBackoff'
  * - No rate limiting but be respectful
  */
 
-import pLimit from 'p-limit'
 import axios, { AxiosInstance } from 'axios'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
@@ -108,6 +107,42 @@ export interface MusicAnalysisProgress {
 export interface MusicAnalysisOptions extends AnalysisOptions {
   /** Check if releases are available digitally - slower but more accurate (default: false) */
   filterVinylOnly?: boolean
+}
+
+/**
+ * Validates whether an artist or album name is an untagged placeholder or invalid string
+ * that should not be queried against MusicBrainz.
+ */
+export function isPlaceholderMusicTitle(text?: string | null): boolean {
+  if (!text) return true
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.length === 0) return true
+  // If string contains no alphanumeric characters (e.g. "?????", "---", "...")
+  if (!/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(trimmed)) return true
+
+  const normalized = trimmed.toLowerCase().replace(/[[\]()]/g, '').trim()
+  const placeholders = new Set([
+    'unknown album',
+    'unknown artist',
+    'unknown',
+    'various artists',
+    'various',
+    'va',
+    'title',
+    'track',
+    'untitled',
+    'album',
+    'disc',
+    'cd',
+    'unknown title',
+    'unknown performer'
+  ])
+
+  if (placeholders.has(normalized)) return true
+  if (/^track\s*\d+$/i.test(normalized)) return true
+  if (/^cd\s*\d+$/i.test(normalized)) return true
+  if (/^disc\s*\d+$/i.test(normalized)) return true
+  return false
 }
 
 export class MusicBrainzService extends CancellableOperation {
@@ -273,6 +308,10 @@ export class MusicBrainzService extends CancellableOperation {
    * Search for an artist by name
    */
   async searchArtist(name: string): Promise<MBArtist[]> {
+    if (isPlaceholderMusicTitle(name)) {
+      return []
+    }
+
     // Sanitize name: replace '&' with 'AND' for better Lucene matching if needed,
     // but first try exact name search in quotes.
     const cleanName = name.replace(/[&]/g, 'AND').replace(/[+]/g, ' ').trim()
@@ -431,25 +470,21 @@ export class MusicBrainzService extends CancellableOperation {
 
     // Only filter for digital availability if explicitly requested (slow operation)
     if (filterVinylOnly) {
-      getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (this may take a while)...`)
-
-      const limit = pLimit(5)
+      getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (sequential to respect rate limit)...`)
 
       const filterReleases = async (releases: MBReleaseGroup[]) => {
-        const results = await Promise.all(
-          releases.map(release => limit(async () => {
-            const hasDigital = await this.hasDigitalRelease(release.id)
-            return hasDigital ? release : null
-          }))
-        )
-        return results.filter((r): r is MBReleaseGroup => r !== null)
+        const results: MBReleaseGroup[] = []
+        for (const release of releases) {
+          if (this.isCancelled()) break
+          const hasDigital = await this.hasDigitalRelease(release.id)
+          if (hasDigital) results.push(release)
+        }
+        return results
       }
 
-      const [albums, eps, singles] = await Promise.all([
-        filterReleases(allAlbums),
-        filterReleases(allEps),
-        filterReleases(allSingles)
-      ])
+      const albums = await filterReleases(allAlbums)
+      const eps = await filterReleases(allEps)
+      const singles = await filterReleases(allSingles)
 
       getLoggingService().info('[MusicBrainzService]', `${albums.length}/${allAlbums.length} albums have digital releases`)
 
@@ -625,9 +660,16 @@ export class MusicBrainzService extends CancellableOperation {
     country?: string
     score: number
   }>> {
+    if (isPlaceholderMusicTitle(artistName) || isPlaceholderMusicTitle(albumTitle)) {
+      return []
+    }
+
     try {
       // Clean the album title to improve MusicBrainz matching
       const cleanedTitle = this.cleanAlbumTitleForSearch(albumTitle)
+      if (isPlaceholderMusicTitle(cleanedTitle)) {
+        return []
+      }
       if (cleanedTitle !== albumTitle) {
         getLoggingService().info('[MusicBrainzService]', `Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
       }
@@ -675,6 +717,25 @@ export class MusicBrainzService extends CancellableOperation {
     ownedAlbumMbIds: string[],
     filterVinylOnly: boolean = false
   ): Promise<ArtistCompleteness & { foundMbId?: string }> {
+    if (isPlaceholderMusicTitle(artistName)) {
+      return {
+        artist_name: artistName,
+        total_albums: 0,
+        owned_albums: ownedAlbumTitles.length,
+        total_singles: 0,
+        owned_singles: 0,
+        total_eps: 0,
+        owned_eps: 0,
+        missing_albums: '[]',
+        missing_singles: '[]',
+        missing_eps: '[]',
+        completeness_percentage: 100,
+        last_sync_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+    }
+
     let mbId = musicbrainzId
     let foundMbId: string | undefined
 
@@ -856,6 +917,10 @@ export class MusicBrainzService extends CancellableOperation {
     musicbrainzReleaseGroupId: string | undefined,
     ownedTrackTitles: string[]
   ): Promise<(AlbumCompleteness & { foundMbId?: string }) | null> {
+    if (isPlaceholderMusicTitle(artistName) || isPlaceholderMusicTitle(albumTitle)) {
+      return null
+    }
+
     getLoggingService().info('[MusicBrainzService]', `analyzeAlbumTrackCompleteness: "${artistName}" - "${albumTitle}" (mbid: ${musicbrainzReleaseGroupId || 'none'})`)
 
     let tracklist: Awaited<ReturnType<typeof this.getReleaseTracklist>> = null
@@ -1038,6 +1103,9 @@ export class MusicBrainzService extends CancellableOperation {
       skipped: 0,
     })
 
+    let consecutiveNetworkErrors = 0
+    const MAX_CONSECUTIVE_NETWORK_ERRORS = 5
+
     await db.startBatch()
     try {
       // Phase 1: Analyze artist completeness
@@ -1047,6 +1115,13 @@ export class MusicBrainzService extends CancellableOperation {
         if (this.isCancelled()) {
           getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
           return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+        }
+
+        // Check if placeholder artist
+        if (isPlaceholderMusicTitle(artist.name)) {
+          skipped++
+          currentItem++
+          continue
         }
 
         // Check if recently analyzed
@@ -1101,8 +1176,16 @@ export class MusicBrainzService extends CancellableOperation {
           }
 
           artistsAnalyzed++
+          consecutiveNetworkErrors = 0
         } catch (error) {
           getLoggingService().error('[MusicBrainzService]', `Failed to analyze artist "${artist.name}":`, error)
+          if (this.isRetryableConnectionError(error)) {
+            consecutiveNetworkErrors++
+            if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
+              getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
+              break
+            }
+          }
         }
 
         currentItem++
@@ -1115,6 +1198,13 @@ export class MusicBrainzService extends CancellableOperation {
         if (this.isCancelled()) {
           getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
           return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+        }
+
+        // Check if placeholder album or artist
+        if (isPlaceholderMusicTitle(album.title) || isPlaceholderMusicTitle(album.artist_name)) {
+          skipped++
+          currentItem++
+          continue
         }
 
         // Check if recently analyzed
@@ -1172,8 +1262,16 @@ export class MusicBrainzService extends CancellableOperation {
             }
           }
           albumsAnalyzed++
+          consecutiveNetworkErrors = 0
         } catch (error) {
           getLoggingService().error('[MusicBrainzService]', `Failed to analyze album "${album.title}":`, error)
+          if (this.isRetryableConnectionError(error)) {
+            consecutiveNetworkErrors++
+            if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
+              getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
+              break
+            }
+          }
         }
 
         currentItem++

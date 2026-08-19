@@ -26,4 +26,22 @@ describe('TitleMatching', () => {
   it('gives a small typo a positive fuzzy score without equating unrelated titles', () => {
     expect(scoreTitleMatch('Spidre-Man', 'Spider-Man')).toBeGreaterThan(scoreTitleMatch('Batman', 'Spider-Man'))
   })
+
+  it('preserves standalone 4-digit numeric titles like 1984, 2001, and 1917', () => {
+    expect(normalizeTitleForMatching('1984')).toBe('1984')
+    expect(normalizeTitleForMatching('2001: A Space Odyssey')).toBe('2001 space odyssey')
+    expect(normalizeTitleForMatching('1917')).toBe('1917')
+    expect(normalizeTitleForMatching('300')).toBe('300')
+  })
+
+  it('calculates full exact match score for numeric titles', () => {
+    const score = scoreTitleMatch('1984', '1984', 1984, 1984)
+    expect(score).toBeGreaterThanOrEqual(90)
+  })
+
+  it('strips 4-digit release years when alphabetical title tokens are present', () => {
+    expect(normalizeTitleForMatching('Inception 2010')).toBe('inception')
+    expect(normalizeTitleForMatching('The Matrix 1999')).toBe('matrix')
+  })
 })
+

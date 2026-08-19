@@ -4,7 +4,7 @@ import type { DashboardSummary, MovieCollection, MusicAlbum, SeriesCompleteness 
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
-import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
+import { toSnakeCaseMediaItem, toSnakeCaseArtistCompleteness, toSnakeCaseSeriesCompleteness } from '@main/database/utils/mappers'
 
 export class StatsRepository {
   constructor(
@@ -237,8 +237,8 @@ export class StatsRepository {
         }
       }) as unknown as MusicAlbum[],
       incompleteCollections,
-      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => ({ ...s, series_title: s.seriesTitle, source_id: s.sourceId, library_id: s.libraryId, total_seasons: s.totalSeasons, total_episodes: s.totalEpisodes, owned_seasons: s.ownedSeasons, owned_episodes: s.ownedEpisodes, missing_seasons: s.missingSeasons, missing_episodes: s.missingEpisodes, completeness_percentage: s.completenessPercentage, tmdb_id: s.tmdbId || undefined, poster_url: s.posterUrl || undefined })) as unknown as _SeriesCompleteness[],
-      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => ({ ...a, artist_name: a.artistName, musicbrainz_id: a.musicbrainzId || undefined, completeness_percentage: a.completenessPercentage })) as unknown as _ArtistCompleteness[],
+      incompleteSeries: seriesRows.filter(s => !serEx.some(ex => ex.reference_key === s.seriesTitle && ex.parent_key === s.seriesTitle)).map(s => toSnakeCaseSeriesCompleteness(s)),
+      incompleteArtists: artistsRows.filter(a => !artEx.some(ex => ex.reference_key === a.artistName && ex.parent_key === a.artistName)).map(a => toSnakeCaseArtistCompleteness(a)),
       storageWaste: storageWasteRows.map(mapItem),
       settings: {
         includeEps: settingsMap['completeness_include_eps'] !== 'false',
@@ -246,8 +246,10 @@ export class StatsRepository {
         upgradeSort: settingsMap['dashboard_upgrade_sort'] || 'quality',
         collectionSort: settingsMap['dashboard_collection_sort'] || 'completeness',
         seriesSort: settingsMap['dashboard_series_sort'] || 'completeness',
-        artistSort: settingsMap['dashboard_artist_sort'] || 'completeness'
-        , collectionSortOrder: cOrder, seriesSortOrder: sOrder, artistSortOrder: aOrder
+        artistSort: settingsMap['dashboard_artist_sort'] || 'completeness',
+        collectionSortOrder: cOrder,
+        seriesSortOrder: sOrder,
+        artistSortOrder: aOrder
       }
     }
   }

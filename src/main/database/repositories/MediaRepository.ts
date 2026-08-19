@@ -591,17 +591,17 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
   async updateMovieMatch(
     mediaItemId: number,
-    tmdbId: string,
+    tmdbId?: string,
     posterUrl?: string,
     title?: string,
     year?: number,
     imdbId?: string
   ): Promise<void> {
-    const data: { tmdbId: string; userFixedMatch: number; updatedAt: SQL; posterUrl?: string; title?: string; year?: number; imdbId?: string } = {
-      tmdbId: tmdbId,
+    const data: { tmdbId?: string; userFixedMatch: number; updatedAt: SQL; posterUrl?: string; title?: string; year?: number; imdbId?: string } = {
       userFixedMatch: 1,
       updatedAt: sql`(datetime('now'))`,
     }
+    if (tmdbId !== undefined) data.tmdbId = tmdbId
     if (posterUrl) data.posterUrl = posterUrl
     if (title) data.title = title
     if (year !== undefined) data.year = year
