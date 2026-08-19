@@ -55,8 +55,11 @@ export function selectAutomaticMatch(
       if (fuzzyYearMatch) return fuzzyYearMatch
     }
 
-    // Single exact title match or highest-scored exact match
-    return exactTitleMatches[0]
+    // Single exact title match only; if multiple matches exist without a year, it's ambiguous
+    if (exactTitleMatches.length === 1) {
+      return exactTitleMatches[0]
+    }
+    return null
   }
 
   // 3. High-Confidence Score Match (Substring/token overlap + year)

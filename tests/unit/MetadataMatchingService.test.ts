@@ -65,7 +65,7 @@ describe('MetadataMatchingService & selectAutomaticMatch', () => {
       expect(match?.id).toBe('1')
     })
 
-    it('selects top candidate when multiple exact title matches exist and query has no year', () => {
+    it('leaves ambiguous multiple exact title matches for review when query has no year', () => {
       const candidates: MetadataSearchResult[] = [
         { id: '1', provider: 'tmdb', title: 'Beauty and the Beast', year: 1991, type: 'movie', score: 85 },
         { id: '2', provider: 'tmdb', title: 'Beauty and the Beast', year: 2017, type: 'movie', score: 70 }
@@ -76,8 +76,7 @@ describe('MetadataMatchingService & selectAutomaticMatch', () => {
         type: 'movie'
       })
 
-      expect(match).toBeDefined()
-      expect(match?.id).toBe('1')
+      expect(match).toBeNull()
     })
 
     it('matches adult/scene titles with high confidence scores and clear separation', () => {
