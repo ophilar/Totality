@@ -519,6 +519,9 @@ export class TaskQueueService {
       task.mediaItemId,
       task.options || {},
       (p: TranscodeProgress) => {
+        if (this.mainWindow) {
+          safeSend(this.mainWindow, 'transcoding:progress', { mediaItemId: task.mediaItemId, ...p })
+        }
         onProgress({
           current: Math.round(p.percent),
           total: 100,

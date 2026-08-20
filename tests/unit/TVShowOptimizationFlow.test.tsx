@@ -143,5 +143,11 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       expect(window.electronAPI.preflightShow).toHaveBeenCalledTimes(1)
       expect(window.electronAPI.queueShow).toHaveBeenCalledWith('pref-123')
     })
+
+    // Verify transition to Live Series Optimization monitoring mode
+    await vi.waitFor(() => {
+      expect(screen.getByText('Live Series Optimization')).toBeTruthy()
+      expect(screen.getByText('Run in Background')).toBeTruthy()
+    })
   })
 })
