@@ -14,6 +14,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
+import { getLoggingService } from '@main/services/LoggingService'
 
 const config = z.object({ baseUrl: z.string().url(), apiKey: z.string().min(1), timeoutMs: z.number().int().positive().optional() })
 const pendingRecord = z.object({ requestedAt: z.string(), seriesId: z.number().int().positive(), commandId: z.number().int().nullable(), state: z.literal('awaiting-rescan') })
@@ -76,7 +77,16 @@ export function registerOptimizationHandlers() {
   })
   createIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_PENDING, async () => {
     const settings = await db.config.getAllSettings()
-    return Object.entries(settings).filter(([key]) => key.startsWith('optimization.pending.')).map(([key, value]) => ({ key, value: pendingRecord.parse(JSON.parse(String(value))) }))
+    return Object.entries(settings)
+      .filter(([key]) => key.startsWith('optimization.pending.'))
+      .flatMap(([key, value]) => {
+        try {
+          return [{ key, value: pendingRecord.parse(JSON.parse(String(value))) }]
+        } catch (error) {
+          getLoggingService().warn('[optimization]', `Failed to parse pending optimization record for key ${key}:`, error)
+          return []
+        }
+      })
   })
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, z.number().int().positive(), async mediaItemId => db.mediaRemuxJobs.getLatest(mediaItemId))
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_DECISION, z.number().int().positive(), async mediaItemId => {
