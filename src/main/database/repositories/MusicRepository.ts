@@ -697,6 +697,49 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       })
   }
 
+  async upsertQualityScores(scores: MusicQualityScore[]): Promise<void> {
+    if (scores.length === 0) return
+
+    const chunkSize = 500
+    for (let i = 0; i < scores.length; i += chunkSize) {
+      const chunk = scores.slice(i, i + chunkSize)
+
+      const values = chunk.map(score => ({
+        albumId: score.album_id,
+        qualityTier: score.quality_tier || 'LOSSY_MID',
+        tierQuality: score.tier_quality || 'MEDIUM',
+        tierScore: score.tier_score || 0,
+        codecScore: score.codec_score || 0,
+        bitrateScore: score.bitrate_score || 0,
+        efficiencyScore: score.efficiency_score || 0,
+        storageDebtBytes: score.storage_debt_bytes || 0,
+        needsUpgrade: score.needs_upgrade ? 1 : 0,
+        issues: score.issues || '[]',
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`,
+      }))
+
+      await this.drizzle
+        .insert(schema.musicQualityScores)
+        .values(values)
+        .onConflictDoUpdate({
+          target: schema.musicQualityScores.albumId,
+          set: {
+            qualityTier: sql`excluded.quality_tier`,
+            tierQuality: sql`excluded.tier_quality`,
+            tierScore: sql`excluded.tier_score`,
+            codecScore: sql`excluded.codec_score`,
+            bitrateScore: sql`excluded.bitrate_score`,
+            efficiencyScore: sql`excluded.efficiency_score`,
+            storageDebtBytes: sql`excluded.storage_debt_bytes`,
+            needsUpgrade: sql`excluded.needs_upgrade`,
+            issues: sql`excluded.issues`,
+            updatedAt: sql`(datetime('now'))`,
+          },
+        })
+    }
+  }
+
   async getQualityScore(albumId: number): Promise<MusicQualityScore | null> {
     const row = await this.drizzle
       .select()

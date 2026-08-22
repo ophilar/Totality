@@ -90,13 +90,16 @@ export class SourceScannerService {
             const BATCH_SIZE = 50
             for (let i = 0; i < albums.length; i += BATCH_SIZE) {
               const batch = albums.slice(i, i + BATCH_SIZE)
+              const scores = []
+              for (const album of batch) {
+                const tracks = tracksByAlbum.get(album.id!) || []
+                const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
+                scores.push(qualityScore)
+              }
+
               await this.db.beginBatch()
               try {
-                for (const album of batch) {
-                  const tracks = tracksByAlbum.get(album.id!) || []
-                  const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
-                  await this.db.music.upsertQualityScore(qualityScore)
-                }
+                await this.db.music.upsertQualityScores(scores)
               } finally {
                 await this.db.endBatch()
               }
