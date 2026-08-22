@@ -194,9 +194,14 @@ export class BetterSQLiteService {
   public async exportData(): Promise<ExportData> {
     const data: ExportData = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
+
+    const tableCheck = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    const validTables = new Set(tableCheck.rows.map(row => row.name as string))
+
     for (const t of tables) {
+      if (!validTables.has(t)) continue
       try { 
-        const result = await this.db.execute(`SELECT * FROM ${t}`)
+        const result = await this.db.execute(`SELECT * FROM "${t.replace(/"/g, '""')}"`)
         data[t] = result.rows as ExportRow[]
       } catch {
         // Ignore errors for missing tables or query issues
