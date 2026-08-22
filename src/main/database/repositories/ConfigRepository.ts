@@ -88,7 +88,12 @@ export class ConfigRepository extends BaseRepository<typeof schema.settings> {
     // Legacy plain SHA-256 check
     if (!stored.startsWith('pbkdf2$')) {
       const hashed = createHash('sha256').update(pin).digest('hex')
-      return hashed === stored
+      if (hashed === stored) {
+        // Upgrade legacy hash to PBKDF2
+        await this.setPin(pin)
+        return true
+      }
+      return false
     }
 
     const parts = stored.split('$')
