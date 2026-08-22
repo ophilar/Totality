@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import pLimit from 'p-limit'
 
 interface ProcessedItem {
   metadata: MediaMetadata
@@ -144,16 +145,19 @@ export class LocalFolderProvider extends BaseMediaProvider {
       let mediaFileCount = 0
       let directoriesProcessed = 0
 
+      const limit = pLimit(50)
       const countFiles = async (dir: string, depth = 0): Promise<void> => {
         if (depth > 10) return
-        const entries = await fsPromises.readdir(dir, { withFileTypes: true })
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            await countFiles(path.join(dir, entry.name), depth + 1)
-          } else if (parser.isMediaFile(entry.name)) {
-            mediaFileCount++
-          }
-        }
+        const entries = await limit(() => fsPromises.readdir(dir, { withFileTypes: true }))
+        await Promise.all(
+          entries.map(async (entry) => {
+            if (entry.isDirectory()) {
+              await countFiles(path.join(dir, entry.name), depth + 1)
+            } else if (parser.isMediaFile(entry.name)) {
+              mediaFileCount++
+            }
+          })
+        )
         directoriesProcessed++
         if (directoriesProcessed % 50 === 0) await new Promise(resolve => setImmediate(resolve))
       }
