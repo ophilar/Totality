@@ -25,3 +25,11 @@ export interface IPCResponse<T = unknown> {
   data?: T
   error?: string
 }
+
+/**
+ * AI Service rate limit info.
+ */
+export interface RateLimitInfo {
+  limited: boolean
+  retryAfterSeconds: number
+}

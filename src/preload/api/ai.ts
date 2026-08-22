@@ -1,5 +1,6 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { RateLimitInfo } from './types'
 
 export const aiApi = {
   // ============================================================================
@@ -97,7 +98,7 @@ export interface AiAPI {
   // AI (GEMINI)
   // ============================================================================
   aiIsConfigured: () => Promise<boolean>
-  aiGetRateLimitInfo: () => Promise<{ limited: boolean; retryAfterSeconds: number }>
+  aiGetRateLimitInfo: () => Promise<RateLimitInfo>
   aiGetAvailableModels: () => Promise<Array<{ name: string; displayName: string }>>
   aiTestApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
   aiSendMessage: (params: {

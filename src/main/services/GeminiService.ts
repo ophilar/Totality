@@ -3,6 +3,7 @@ import type { Content, FunctionDeclaration, GenerateContentResponse, Schema } fr
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { APP_CONFIG } from '@main/config'
+import type { RateLimitInfo } from '@main/types/ipc'
 
 /**
  * Google Gemini AI Service with rate limit tracking
@@ -33,11 +34,6 @@ export interface GeminiToolDefinition {
   name: string
   description?: string
   parameters: Schema
-}
-
-export interface RateLimitInfo {
-  limited: boolean
-  retryAfterSeconds: number
 }
 
 export class RateLimitError extends Error {
