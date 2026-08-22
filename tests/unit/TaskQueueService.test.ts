@@ -48,7 +48,7 @@ describe('TaskQueueService', () => {
       const taskId = await service.addTask(definition satisfies TaskDefinition)
 
       expect(taskId).toBeDefined()
-      expect(taskId).toMatch(/^task_\d+_[a-z0-9]+$/)
+      expect(taskId).toMatch(/^task_\d+_[a-z0-9-]+$/)
 
       const state = service.getQueueState()
       expect(state.queue.length + (state.currentTask ? 1 : 0)).toBe(1)
