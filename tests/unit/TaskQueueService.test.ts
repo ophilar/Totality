@@ -17,7 +17,7 @@ describe('TaskQueueService', () => {
     db = await setupTestDb()
     logging = getLoggingService()
     logging.setDatabaseGetter(() => db)
-    
+
     // We still mock SourceManager for now as it involves complex provider setup,
     // but we use real DB and Logging.
     const mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource'> = {
@@ -28,7 +28,7 @@ describe('TaskQueueService', () => {
     service = new TaskQueueService({
       db,
       logging,
-      sourceManager: mockSourceManager
+      sourceManager: mockSourceManager,
     })
   })
 
@@ -42,13 +42,13 @@ describe('TaskQueueService', () => {
         type: TaskType.LibraryScan,
         label: 'Scan All Libraries',
         sourceId: 'src1',
-        libraryId: 'lib1'
+        libraryId: 'lib1',
       }
 
       const taskId = await service.addTask(definition satisfies TaskDefinition)
 
       expect(taskId).toBeDefined()
-      expect(taskId).toMatch(/^task_\d+_[a-z0-9]+$/)
+      expect(taskId).toMatch(/^task_\d+_[a-z0-9-]+$/)
 
       const state = service.getQueueState()
       expect(state.queue.length + (state.currentTask ? 1 : 0)).toBe(1)
@@ -56,9 +56,22 @@ describe('TaskQueueService', () => {
 
     it('should add multiple tasks to the queue', async () => {
       service.pauseQueue()
-      await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
-      await service.addTask({ type: TaskType.SourceScan, label: 'Task 2', sourceId: 'src1' } satisfies TaskDefinition)
-      await service.addTask({ type: TaskType.SeriesCompleteness, label: 'Task 3', sourceId: 's1' } satisfies TaskDefinition)
+      await service.addTask({
+        type: TaskType.LibraryScan,
+        label: 'Task 1',
+        sourceId: 's1',
+        libraryId: 'l1',
+      } satisfies TaskDefinition)
+      await service.addTask({
+        type: TaskType.SourceScan,
+        label: 'Task 2',
+        sourceId: 'src1',
+      } satisfies TaskDefinition)
+      await service.addTask({
+        type: TaskType.SeriesCompleteness,
+        label: 'Task 3',
+        sourceId: 's1',
+      } satisfies TaskDefinition)
 
       const state = service.getQueueState()
       const totalTasks = state.queue.length + (state.currentTask ? 1 : 0)
@@ -68,11 +81,16 @@ describe('TaskQueueService', () => {
     it('should remove a queued task', async () => {
       // Pause to ensure task stays in queue and doesn't immediately start
       service.pauseQueue()
-      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      const taskId = await service.addTask({
+        type: TaskType.LibraryScan,
+        label: 'Test',
+        sourceId: 's1',
+        libraryId: 'l1',
+      } satisfies TaskDefinition)
 
       const state = service.getQueueState()
-      expect(state.queue.some(t => t.id === taskId)).toBe(true)
-      
+      expect(state.queue.some((t) => t.id === taskId)).toBe(true)
+
       const removed = await service.removeTask(taskId)
       expect(removed).toBe(true)
       expect(service.getQueueState().queue.length).toBe(0)
@@ -84,8 +102,18 @@ describe('TaskQueueService', () => {
     })
 
     it('should generate unique task IDs', async () => {
-      const id1 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 1', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
-      const id2 = await service.addTask({ type: TaskType.LibraryScan, label: 'Task 2', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      const id1 = await service.addTask({
+        type: TaskType.LibraryScan,
+        label: 'Task 1',
+        sourceId: 's1',
+        libraryId: 'l1',
+      } satisfies TaskDefinition)
+      const id2 = await service.addTask({
+        type: TaskType.LibraryScan,
+        label: 'Task 2',
+        sourceId: 's1',
+        libraryId: 'l1',
+      } satisfies TaskDefinition)
 
       expect(id1).not.toBe(id2)
     })
@@ -117,8 +145,13 @@ describe('TaskQueueService', () => {
   describe('persistence', () => {
     it('should persist queue state to database', async () => {
       service.pauseQueue()
-      await service.addTask({ type: TaskType.LibraryScan, label: 'Persist Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
-      
+      await service.addTask({
+        type: TaskType.LibraryScan,
+        label: 'Persist Test',
+        sourceId: 's1',
+        libraryId: 'l1',
+      } satisfies TaskDefinition)
+
       const savedState = await db.config.getSetting('task_queue_state')
       expect(savedState).toBeDefined()
       const parsed = JSON.parse(savedState!)
@@ -129,21 +162,42 @@ describe('TaskQueueService', () => {
 
   it('completes partial series analysis and records a warning notification', async () => {
     const seriesService = {
-      analyzeAllSeries: vi.fn().mockResolvedValue({ totalSeries: 2, analyzed: 1, complete: 0, incomplete: 1, errors: ['"Show B": metadata unavailable'], completed: true }),
+      analyzeAllSeries: vi
+        .fn()
+        .mockResolvedValue({
+          totalSeries: 2,
+          analyzed: 1,
+          complete: 0,
+          incomplete: 1,
+          errors: ['"Show B": metadata unavailable'],
+          completed: true,
+        }),
     }
-    const partialService = new TaskQueueService({ db, logging, seriesCompleteness: seriesService as never })
+    const partialService = new TaskQueueService({
+      db,
+      logging,
+      seriesCompleteness: seriesService as never,
+    })
     partialService.pauseQueue()
-    await partialService.addTask({ type: TaskType.SeriesCompleteness, label: 'Analyze TV Series', sourceId: 's1' })
+    await partialService.addTask({
+      type: TaskType.SeriesCompleteness,
+      label: 'Analyze TV Series',
+      sourceId: 's1',
+    })
     await partialService.resumeQueue()
-    await new Promise(resolve => setTimeout(resolve, 25))
+    await new Promise((resolve) => setTimeout(resolve, 25))
 
     const completed = partialService.getQueueState().completedTasks[0]
     expect(completed.status, completed.error).toBe('completed')
-    expect(completed.result).toMatchObject({ totalSeries: 2, analyzedSeries: 1, failedSeries: ['"Show B": metadata unavailable'] })
+    expect(completed.result).toMatchObject({
+      totalSeries: 2,
+      analyzedSeries: 1,
+      failedSeries: ['"Show B": metadata unavailable'],
+    })
     const notifications = await db.notifications.getNotifications()
-    expect(notifications[0]).toMatchObject({ type: 'info', title: 'Series analysis partially completed' })
+    expect(notifications[0]).toMatchObject({
+      type: 'info',
+      title: 'Series analysis partially completed',
+    })
   })
 })
-
-
-
