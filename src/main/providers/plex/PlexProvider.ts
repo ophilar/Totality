@@ -40,11 +40,33 @@ import type {
   QualityScore,
 } from '@main/types/database'
 
-type PlexMappedMedia = { mediaItem: MediaItem; versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[] }
-type PlexPreparedEpisode = { mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
+type PlexMappedMedia = {
+  mediaItem: MediaItem
+  versions: Omit<MediaItemVersion, 'id' | 'media_item_id'>[]
+}
+type PlexPreparedEpisode = {
+  mapped: PlexMappedMedia
+  qualityScore: QualityScore
+  ratingKey: string
+}
 type PlexPreparedData =
-  | { type: 'show'; title: string; tmdbId?: string; tvdbId?: string; posterUrl?: string; ownedSeasons: number; ownedEpisodes: number; episodes: PlexPreparedEpisode[] }
-  | { type: 'movie'; title: string; mapped: PlexMappedMedia; qualityScore: QualityScore; ratingKey: string }
+  | {
+      type: 'show'
+      title: string
+      tmdbId?: string
+      tvdbId?: string
+      posterUrl?: string
+      ownedSeasons: number
+      ownedEpisodes: number
+      episodes: PlexPreparedEpisode[]
+    }
+  | {
+      type: 'movie'
+      title: string
+      mapped: PlexMappedMedia
+      qualityScore: QualityScore
+      ratingKey: string
+    }
 
 export interface PlexCollection {
   key: string
@@ -466,7 +488,12 @@ export class PlexProvider extends BaseMediaProvider {
 
               const episodesToSave = await Promise.all(
                 detailedEpisodes.map(async (detail) => {
-                  const mapped = this.convertToMediaItem(detail, showTmdbId, showTvdbId, plexItem.titleSort)
+                  const mapped = this.convertToMediaItem(
+                    detail,
+                    showTmdbId,
+                    showTvdbId,
+                    plexItem.titleSort
+                  )
                   if (!mapped) return null
 
                   // Perform quality analysis sync/async safely before transaction
@@ -536,11 +563,12 @@ export class PlexProvider extends BaseMediaProvider {
                   status: 'Continuing',
                 })
 
-                for (const ep of data.episodes) {
+                const promises = data.episodes.map(async (ep) => {
                   validPlexIds.add(ep.ratingKey)
                   await this.saveMediaItemSync(ep.mapped, ep.qualityScore, db, libraryId)
                   result.itemsScanned++
-                }
+                })
+                await Promise.all(promises)
               } else {
                 validPlexIds.add(data.ratingKey)
                 await this.saveMediaItemSync(data.mapped, data.qualityScore, db, libraryId)
@@ -868,7 +896,9 @@ export class PlexProvider extends BaseMediaProvider {
           break
         }
         try {
-          const artistId = plexAlbum.parentRatingKey ? (artistIdMap.get(plexAlbum.parentRatingKey) || 0) : 0
+          const artistId = plexAlbum.parentRatingKey
+            ? artistIdMap.get(plexAlbum.parentRatingKey) || 0
+            : 0
           const albumData = this.convertToMusicAlbum(plexAlbum, artistId, libraryId)
           const albumTracks = tracksByAlbum.get(plexAlbum.ratingKey) || []
           albumData.track_count = albumTracks.length
