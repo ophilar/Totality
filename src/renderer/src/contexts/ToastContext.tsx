@@ -45,31 +45,34 @@ export function ToastProvider({ children }: ToastProviderProps) {
       timeoutsRef.current.delete(id)
     }
 
-    setToasts(prev => prev.filter(t => t.id !== id))
+    setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const duration = toast.duration ?? 5000
+  const addToast = useCallback(
+    (toast: Omit<Toast, 'id'>) => {
+      const id = `toast-${crypto.randomUUID()}`
+      const duration = toast.duration ?? 5000
 
-    setToasts(prev => [...prev, { ...toast, id }])
+      setToasts((prev) => [...prev, { ...toast, id }])
 
-    // Auto-dismiss after duration
-    if (duration > 0) {
-      const timeout = setTimeout(() => {
-        removeToast(id)
-      }, duration)
-      timeoutsRef.current.set(id, timeout)
-    }
+      // Auto-dismiss after duration
+      if (duration > 0) {
+        const timeout = setTimeout(() => {
+          removeToast(id)
+        }, duration)
+        timeoutsRef.current.set(id, timeout)
+      }
 
-    return id
-  }, [removeToast])
+      return id
+    },
+    [removeToast]
+  )
 
   // Cleanup timeouts on unmount
   useEffect(() => {
     const timeouts = timeoutsRef.current
     return () => {
-      timeouts.forEach(timeout => clearTimeout(timeout))
+      timeouts.forEach((timeout) => clearTimeout(timeout))
       timeouts.clear()
     }
   }, [])
