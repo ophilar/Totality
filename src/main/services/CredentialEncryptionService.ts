@@ -15,7 +15,14 @@ import { safeStorage } from 'electron'
 import { getLoggingService } from '@main/services/LoggingService'
 
 // Fields that should be encrypted in connection configs
-const SENSITIVE_CONFIG_FIELDS = ['token', 'accessToken', 'apiKey', 'password', 'Pw', 'secret']
+const SENSITIVE_CONFIG_FIELDS = [
+  'token',
+  'accessToken',
+  'apiKey',
+  'password',
+  'Pw',
+  'secret',
+]
 
 // Settings keys that should be encrypted
 const SENSITIVE_SETTINGS_KEYS = [
@@ -46,15 +53,9 @@ export class CredentialEncryptionService {
     // Check if safeStorage is available on this platform
     this.isAvailable = safeStorage.isEncryptionAvailable()
     if (!this.isAvailable) {
-      getLoggingService().warn(
-        '[CredentialEncryptionService]',
-        '[CredentialEncryption] safeStorage not available - credentials will be stored in plain text'
-      )
+      getLoggingService().warn('[CredentialEncryptionService]', '[CredentialEncryption] safeStorage not available - credentials will be stored in plain text')
     } else {
-      getLoggingService().info(
-        '[CredentialEncryptionService]',
-        '[CredentialEncryption] Encryption available using OS secure storage'
-      )
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Encryption available using OS secure storage')
     }
   }
 
@@ -79,11 +80,7 @@ export class CredentialEncryptionService {
       // Convert to base64 for storage
       return ENCRYPTED_PREFIX + encrypted.toString('base64')
     } catch (error) {
-      getLoggingService().error(
-        '[CredentialEncryptionService]',
-        '[CredentialEncryption] Failed to encrypt value:',
-        error
-      )
+      getLoggingService().error('[CredentialEncryptionService]', '[CredentialEncryption] Failed to encrypt value:', error)
       return value
     }
   }
@@ -107,11 +104,7 @@ export class CredentialEncryptionService {
       const encryptedBuffer = Buffer.from(encryptedBase64, 'base64')
       return safeStorage.decryptString(encryptedBuffer)
     } catch (error) {
-      getLoggingService().error(
-        '[CredentialEncryption]',
-        'Failed to decrypt value — credential must be re-entered:',
-        error
-      )
+      getLoggingService().error('[CredentialEncryption]', 'Failed to decrypt value — credential must be re-entered:', error)
       // Track that a decryption failure occurred so callers can notify the user
       this.lastDecryptionFailed = true
       // Return empty string on failure to force re-authentication,
@@ -209,9 +202,7 @@ export class CredentialEncryptionService {
    * Call this during app initialization to encrypt any existing unencrypted credentials
    */
   async migrateCredentials(
-    getMediaSources: () =>
-      | Promise<Array<{ source_id: string; connection_config: string }>>
-      | Array<{ source_id: string; connection_config: string }>,
+    getMediaSources: () => Promise<Array<{ source_id: string; connection_config: string }>> | Array<{ source_id: string; connection_config: string }>,
     updateMediaSource: (sourceId: string, connectionConfig: string) => Promise<void>,
     getSettings: () => Promise<Record<string, string>> | Record<string, string>,
     setSetting: (key: string, value: string) => Promise<void>
@@ -220,25 +211,24 @@ export class CredentialEncryptionService {
     let settingsEncrypted = 0
 
     if (!this.isAvailable) {
-      getLoggingService().info(
-        '[CredentialEncryptionService]',
-        '[CredentialEncryption] Skipping migration - encryption not available'
-      )
+      getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Skipping migration - encryption not available')
       return { sourcesEncrypted, settingsEncrypted }
     }
 
-    getLoggingService().info(
-      '[CredentialEncryptionService]',
-      '[CredentialEncryption] Starting credential migration...'
-    )
+    getLoggingService().info('[CredentialEncryptionService]', '[CredentialEncryption] Starting credential migration...')
 
     // Migrate media source credentials
     const sources = await getMediaSources()
     for (const source of sources) {
       try {
-        const config = JSON.parse(source.connection_config)
+        let config: Record<string, unknown>
+        try {
+          config = JSON.parse(source.connection_config) as Record<string, unknown>
+        } catch (parseError) {
+          getLoggingService().error('[CredentialEncryption]', `Failed to parse config for source ${source.source_id}:`, parseError)
+          continue
+        }
 
-        // Ensure config is a valid object before accessing fields
         if (!config || typeof config !== 'object') {
           continue
         }
@@ -247,11 +237,7 @@ export class CredentialEncryptionService {
 
         // Check if any sensitive field is unencrypted
         for (const field of SENSITIVE_CONFIG_FIELDS) {
-          if (
-            typeof config[field] === 'string' &&
-            config[field] &&
-            !this.isEncrypted(config[field])
-          ) {
+          if (typeof config[field] === 'string' && config[field] && !this.isEncrypted(config[field])) {
             needsUpdate = true
             break
           }
@@ -261,17 +247,10 @@ export class CredentialEncryptionService {
           const encrypted = this.encryptConnectionConfig(config)
           await updateMediaSource(source.source_id, JSON.stringify(encrypted))
           sourcesEncrypted++
-          getLoggingService().info(
-            '[CredentialEncryption]',
-            `Encrypted credentials for source: ${source.source_id}`
-          )
+          getLoggingService().info('[CredentialEncryption]', `Encrypted credentials for source: ${source.source_id}`)
         }
       } catch (error) {
-        getLoggingService().error(
-          '[CredentialEncryption]',
-          `Failed to migrate source ${source.source_id}:`,
-          error
-        )
+        getLoggingService().error('[CredentialEncryption]', `Failed to migrate source ${source.source_id}:`, error)
       }
     }
 
@@ -286,19 +265,12 @@ export class CredentialEncryptionService {
           settingsEncrypted++
           getLoggingService().info('[CredentialEncryption]', `Encrypted setting: ${key}`)
         } catch (error) {
-          getLoggingService().error(
-            '[CredentialEncryption]',
-            `Failed to migrate setting ${key}:`,
-            error
-          )
+          getLoggingService().error('[CredentialEncryption]', `Failed to migrate setting ${key}:`, error)
         }
       }
     }
 
-    getLoggingService().info(
-      '[CredentialEncryption]',
-      `Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`
-    )
+    getLoggingService().info('[CredentialEncryption]', `Migration complete: ${sourcesEncrypted} sources, ${settingsEncrypted} settings encrypted`)
     return { sourcesEncrypted, settingsEncrypted }
   }
 }
