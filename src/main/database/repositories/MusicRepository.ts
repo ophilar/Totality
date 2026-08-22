@@ -584,6 +584,18 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     await this.drizzle.delete(schema.musicTracks).where(eq(schema.musicTracks.id, id))
   }
 
+  async deleteMusicTracks(ids: number[]): Promise<void> {
+    if (!ids || ids.length === 0) return
+
+    const chunkSize = 500
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      await this.drizzle
+        .delete(schema.musicTracks)
+        .where(inArray(schema.musicTracks.id, chunk))
+    }
+  }
+
   async updateMusicArtistCounts(
     artistId: number,
     albumCount: number,
