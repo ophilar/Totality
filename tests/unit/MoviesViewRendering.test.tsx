@@ -94,7 +94,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       source_id: 'src-1',
       source_type: 'local',
       display_name: 'Local',
-      connection_config: '{}', // Fixed: connection_config is NOT NULL
+      connection_config: '{}', // connection_config is NOT NULL
       is_enabled: 1
     })
 
