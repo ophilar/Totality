@@ -67,6 +67,27 @@ export class IdentityRepository {
     })
   }
 
+  async batchAddAliases(inputs: { entityType: IdentityEntityType; entityId: number; alias: string; provider?: string }[]): Promise<void> {
+    const statements = []
+    for (const input of inputs) {
+      const alias = input.alias.trim()
+      if (!alias) continue
+      statements.push({
+        sql: `INSERT INTO media_aliases (entity_type, entity_id, alias, normalized_alias, provider)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(entity_type, entity_id, normalized_alias) DO UPDATE SET alias = excluded.alias, provider = COALESCE(excluded.provider, media_aliases.provider)`,
+        args: [input.entityType, input.entityId, alias, normalizeTitleForMatching(alias), input.provider || null]
+      })
+    }
+
+    if (statements.length === 0) return
+
+    const CHUNK_SIZE = 500
+    for (let i = 0; i < statements.length; i += CHUNK_SIZE) {
+      await this.db.batch(statements.slice(i, i + CHUNK_SIZE), 'write')
+    }
+  }
+
   async getAliases(entityType: IdentityEntityType, entityId: number): Promise<MediaAliasRecord[]> {
     const result = await this.db.execute({ sql: 'SELECT * FROM media_aliases WHERE entity_type = ? AND entity_id = ? ORDER BY alias', args: [entityType, entityId] })
     return result.rows.map(row => ({

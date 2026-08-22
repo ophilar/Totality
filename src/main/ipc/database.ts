@@ -284,7 +284,8 @@ export function registerDatabaseHandlers() {
       for (const [provider, value] of Object.entries(identityIds)) {
         if (value) await db.identities.upsertIdentity({ entityType: 'movie', entityId: mediaItemId, provider, externalId: String(value), locked: true, lockSource: 'manual' })
       }
-      for (const alias of details.alternateTitles || []) await db.identities.addAlias({ entityType: 'movie', entityId: mediaItemId, alias, provider: providerId })
+      const aliasesToInsert = (details.alternateTitles || []).map(alias => ({ entityType: 'movie' as const, entityId: mediaItemId, alias, provider: providerId }))
+      await db.identities.batchAddAliases(aliasesToInsert)
 
       const item = await db.media.getItem(mediaItemId)
       if (item?.source_id) {

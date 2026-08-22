@@ -30,4 +30,20 @@ describe('IdentityRepository (Real DB)', () => {
     const orphanedConflicts = await repo.getConflictingEntityIds('artist', 888, [{ provider: 'musicbrainz', externalId: 'mb-dup-1' }])
     expect(orphanedConflicts).toEqual([])
   })
+
+  it('adds multiple aliases efficiently using batchAddAliases', async () => {
+    const inputs = [
+      { entityType: 'movie' as const, entityId: 42, alias: 'Alien 1', provider: 'tmdb' },
+      { entityType: 'movie' as const, entityId: 42, alias: 'Alien 1 (Director Cut)', provider: 'tmdb' },
+      { entityType: 'movie' as const, entityId: 42, alias: '   ', provider: 'tmdb' }, // Empty strings should be ignored
+    ]
+    await repo.batchAddAliases(inputs)
+
+    const aliases = await repo.getAliases('movie', 42)
+    expect(aliases).toHaveLength(2)
+    expect(aliases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ alias: 'Alien 1' }),
+      expect.objectContaining({ alias: 'Alien 1 (Director Cut)' })
+    ]))
+  })
 })
