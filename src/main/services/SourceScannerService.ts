@@ -129,38 +129,46 @@ export class SourceScannerService {
       const results = new Map<string, ScanResult>()
       const enabledSources = await this.db.sources.getEnabledSources()
 
-      for (const source of enabledSources) {
-        if (this.scanCancelled) break
-        const provider = this.providers.get(source.source_id)
-        if (!provider) continue
+      await Promise.all(
+        enabledSources.map(async (source) => {
+          if (this.scanCancelled) return
+          const provider = this.providers.get(source.source_id)
+          if (!provider) return
 
-        if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) continue
-
-        try {
-          const libraries = await provider.getLibraries()
-          const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
-          for (const library of libraries) {
-            if (this.scanCancelled) break
-            if (library.type === LibraryType.Music) continue
-            if (!enabledLibraries.has(library.id)) continue
-
-            const result = await provider.scanLibrary(library.id, {
-              onProgress: (progress) => {
-                if (this.scanCancelled) throw new Error('Scan cancelled by user')
-                if (onProgress) onProgress(source.source_id, source.display_name, progress)
-              }
-            })
-            results.set(`${source.source_id}:${library.id}`, result)
-            if (result.success) {
-              await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
-              await this.startPostScanTasks(source.source_id, library.id, library)
-            }
+          if (
+            provider.providerType === ProviderType.Plex &&
+            !(provider as PlexProvider).hasSelectedServer()
+          ) {
+            return
           }
-        } catch (error) {
-          if (this.scanCancelled) break
-          this.logging.error('[SourceScannerService]', `Failed to scan source ${source.source_id}:`, error)
-        }
-      }
+
+          try {
+            const libraries = await provider.getLibraries()
+            const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
+            for (const library of libraries) {
+              if (this.scanCancelled) break
+              if (library.type === LibraryType.Music) continue
+              if (!enabledLibraries.has(library.id)) continue
+
+              const result = await provider.scanLibrary(library.id, {
+                onProgress: (progress) => {
+                  if (this.scanCancelled) throw new Error('Scan cancelled by user')
+                  if (onProgress) onProgress(source.source_id, source.display_name, progress)
+                }
+              })
+              results.set(`${source.source_id}:${library.id}`, result)
+              if (result.success) {
+                await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
+                await this.startPostScanTasks(source.source_id, library.id, library)
+              }
+            }
+          } catch (error) {
+            if (this.scanCancelled) return
+            this.logging.error('[SourceScannerService]', `Failed to scan source ${source.source_id}:`, error)
+          }
+        })
+      )
+
       return results
     } finally {
       this.activeScans--
