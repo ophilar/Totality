@@ -306,7 +306,8 @@ export class KodiProvider extends BaseMediaProvider {
             const trackDataList = songs.map(s => this.mapper.convertToMusicTrack(s, albumId, artistId, 'music')).filter(Boolean) as MusicTrack[]
             await db.startBatch()
             try {
-              for (const t of trackDataList) { await db.music.upsertTrack(t); result.itemsScanned++ }
+              await db.music.bulkUpsertTracks(trackDataList)
+              result.itemsScanned += trackDataList.length
             } finally {
               await db.endBatch()
             }
