@@ -21,6 +21,7 @@ import {
   TaskProgress 
 } from '@main/types/database'
 import { NotificationType } from '@main/types/monitoring'
+import { randomUUID } from 'crypto'
 
 interface CollectionProgress { current: number; total: number; percentage?: number; phase: string; currentItem?: string }
 
@@ -106,7 +107,7 @@ export class TaskQueueService {
   async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
     const task: QueuedTask = {
       ...definition,
-      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `task_${Date.now()}_${randomUUID()}`,
       status: TaskStatus.Queued,
       createdAt: new Date().toISOString(),
     }
@@ -132,7 +133,7 @@ export class TaskQueueService {
     for (const definition of definitions) {
       const task: QueuedTask = {
         ...definition,
-        id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${ids.length}`,
+        id: `task_${Date.now()}_${randomUUID()}`,
         status: TaskStatus.Queued,
         createdAt: now,
       }
