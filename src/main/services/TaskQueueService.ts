@@ -2,6 +2,7 @@
  * TaskQueueService - Manages background task queue for scans and analysis
  */
 
+import { randomUUID } from 'crypto'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import { getStatsCacheService } from '@main/services/StatsCacheService'
@@ -106,7 +107,7 @@ export class TaskQueueService {
   async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
     const task: QueuedTask = {
       ...definition,
-      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `task_${Date.now()}_${randomUUID()}`,
       status: TaskStatus.Queued,
       createdAt: new Date().toISOString(),
     }
@@ -132,7 +133,7 @@ export class TaskQueueService {
     for (const definition of definitions) {
       const task: QueuedTask = {
         ...definition,
-        id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${ids.length}`,
+        id: `task_${Date.now()}_${randomUUID()}_${ids.length}`,
         status: TaskStatus.Queued,
         createdAt: now,
       }
