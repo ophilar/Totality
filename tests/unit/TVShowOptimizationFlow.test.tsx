@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { ShowTranscodeModal } from '@/components/library/ShowTranscodeModal'
 import { ToastProvider } from '@/contexts/ToastContext'
@@ -137,7 +137,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
     expect(queueButton).toBeTruthy()
 
-    fireEvent.click(queueButton)
+    await act(async () => {
+      fireEvent.click(queueButton)
+    })
 
     await vi.waitFor(() => {
       expect(window.electronAPI.preflightShow).toHaveBeenCalledTimes(1)
