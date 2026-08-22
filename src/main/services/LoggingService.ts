@@ -67,7 +67,11 @@ export class LoggingService {
   private currentLogDate = ''
 
   private static readonly LEVEL_PRIORITY: Record<LogLevel, number> = {
-    verbose: 0, debug: 1, info: 2, warn: 3, error: 4,
+    verbose: 0,
+    debug: 1,
+    info: 2,
+    warn: 3,
+    error: 4,
   }
   private static readonly FLUSH_INTERVAL_MS = APP_CONFIG.logging.flushIntervalMs
   private static readonly FLUSH_BUFFER_SIZE = APP_CONFIG.logging.flushBufferSize
@@ -98,15 +102,16 @@ export class LoggingService {
     result = result.replace(/ENC:[A-Za-z0-9+/=]{8,}/g, 'ENC:***')
 
     // Handle Authorization headers (Basic/Bearer)
-    result = result.replace(/(Authorization:\s*)(Basic|Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi, '$1$2 ***')
+    result = result.replace(
+      /(Authorization:\s*)(Basic|Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi,
+      '$1$2 ***'
+    )
 
     // Handle generic key-value secrets in URLs, JSON, or logs
     // Catches: api_key=..., "password": "...", Pw: ..., etc.
-    const secretKeys = 'api[_-]?key|apikey|api[_-]?token|access[_-]?token|secret|password|pass|pw|X-Emby-Token'
-    const secretRegex = new RegExp(
-      `(${secretKeys})([\\s"']*[:=][\\s"']*)[^"&\\s'\\r\\n]{4,}`,
-      'gi'
-    )
+    const secretKeys =
+      'api[_-]?key|apikey|api[_-]?token|access[_-]?token|secret|password|pass|pw|X-Emby-Token'
+    const secretRegex = new RegExp(`(${secretKeys})([\\s"']*[:=][\\s"']*)[^"&\\s'\\r\\n]{4,}`, 'gi')
     result = result.replace(secretRegex, '$1$2***')
 
     return result
@@ -126,11 +131,26 @@ export class LoggingService {
   }
 
   private interceptConsole(): void {
-    console.log = (...args: unknown[]) => { this.originalConsole.log(...args); this.captureLog('info', args) }
-    console.warn = (...args: unknown[]) => { this.originalConsole.warn(...args); this.captureLog('warn', args) }
-    console.error = (...args: unknown[]) => { this.originalConsole.error(...args); this.captureLog('error', args) }
-    console.info = (...args: unknown[]) => { this.originalConsole.info(...args); this.captureLog('info', args) }
-    console.debug = (...args: unknown[]) => { this.originalConsole.debug(...args); this.captureLog('debug', args) }
+    console.log = (...args: unknown[]) => {
+      this.originalConsole.log(...args)
+      this.captureLog('info', args)
+    }
+    console.warn = (...args: unknown[]) => {
+      this.originalConsole.warn(...args)
+      this.captureLog('warn', args)
+    }
+    console.error = (...args: unknown[]) => {
+      this.originalConsole.error(...args)
+      this.captureLog('error', args)
+    }
+    console.info = (...args: unknown[]) => {
+      this.originalConsole.info(...args)
+      this.captureLog('info', args)
+    }
+    console.debug = (...args: unknown[]) => {
+      this.originalConsole.debug(...args)
+      this.captureLog('debug', args)
+    }
   }
 
   private captureLog(level: LogLevel, args: unknown[]): void {
@@ -144,28 +164,38 @@ export class LoggingService {
 
   private formatDetails(args: unknown[]): string | undefined {
     if (args.length === 0) return undefined
-    return args.map((arg) => {
-      if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
-      try { return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg) } catch { return String(arg) }
-    }).join('\n\n')
+    return args
+      .map((arg) => {
+        if (arg instanceof Error)
+          return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
+        try {
+          return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        } catch {
+          return String(arg)
+        }
+      })
+      .join('\n\n')
   }
 
   private addEntry(level: LogLevel, source: string, message: unknown, details?: string): void {
     const formattedMessage = typeof message === 'string' ? message : String(message)
     const entry: LogEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      level, source,
+      level,
+      source,
       message: this.sanitize(formattedMessage),
       details: details ? this.sanitize(details) : undefined,
     }
 
     if (level === 'warn' || level === 'error') {
       this.importantLogs.push(entry)
-      if (this.importantLogs.length > MAX_IMPORTANT_ENTRIES) this.importantLogs = this.importantLogs.slice(-MAX_IMPORTANT_ENTRIES)
+      if (this.importantLogs.length > MAX_IMPORTANT_ENTRIES)
+        this.importantLogs = this.importantLogs.slice(-MAX_IMPORTANT_ENTRIES)
     } else {
       this.infoLogs.push(entry)
-      if (this.infoLogs.length > MAX_INFO_ENTRIES) this.infoLogs = this.infoLogs.slice(-MAX_INFO_ENTRIES)
+      if (this.infoLogs.length > MAX_INFO_ENTRIES)
+        this.infoLogs = this.infoLogs.slice(-MAX_INFO_ENTRIES)
     }
 
     if (this.mainWindow) safeSend(this.mainWindow, 'logs:new', entry)
@@ -173,7 +203,9 @@ export class LoggingService {
   }
 
   private get logs(): LogEntry[] {
-    return [...this.infoLogs, ...this.importantLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    return [...this.infoLogs, ...this.importantLogs].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    )
   }
 
   getLogs(limit?: number): LogEntry[] {
@@ -194,17 +226,39 @@ export class LoggingService {
     }
   }
 
-  isVerboseEnabled(): boolean { return this.verboseEnabled }
+  isVerboseEnabled(): boolean {
+    return this.verboseEnabled
+  }
 
-  debug(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('debug', s, m, this.formatDetails(d)) }
-  verbose(s: string, m: unknown, ...d: unknown[]): void { if (this.verboseEnabled) this.addEntry('verbose', s, m, this.formatDetails(d)) }
-  info(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('info', s, m, this.formatDetails(d)) }
-  warn(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('warn', s, m, this.formatDetails(d)) }
-  error(s: string, m: unknown, ...d: unknown[]): void { this.addEntry('error', s, m, this.formatDetails(d)) }
+  debug(s: string, m: unknown, ...d: unknown[]): void {
+    this.addEntry('debug', s, m, this.formatDetails(d))
+  }
+  verbose(s: string, m: unknown, ...d: unknown[]): void {
+    if (this.verboseEnabled) this.addEntry('verbose', s, m, this.formatDetails(d))
+  }
+  info(s: string, m: unknown, ...d: unknown[]): void {
+    this.addEntry('info', s, m, this.formatDetails(d))
+  }
+  warn(s: string, m: unknown, ...d: unknown[]): void {
+    this.addEntry('warn', s, m, this.formatDetails(d))
+  }
+  error(s: string, m: unknown, ...d: unknown[]): void {
+    this.addEntry('error', s, m, this.formatDetails(d))
+  }
 
-  getSessionInfo() { return { sessionId: this.sessionId, startedAt: this.startedAt.toISOString(), uptimeMs: Date.now() - this.startedAt.getTime() } }
+  getSessionInfo() {
+    return {
+      sessionId: this.sessionId,
+      startedAt: this.startedAt.toISOString(),
+      uptimeMs: Date.now() - this.startedAt.getTime(),
+    }
+  }
 
-  async exportLogs(filePath: string, sourceInfo?: SourceInfo[], diagnostics?: DiagnosticInfo): Promise<void> {
+  async exportLogs(
+    filePath: string,
+    sourceInfo?: SourceInfo[],
+    diagnostics?: DiagnosticInfo
+  ): Promise<void> {
     const exportData = {
       exportedAt: new Date().toISOString(),
       ...this.getSessionInfo(),
@@ -240,14 +294,19 @@ export class LoggingService {
     const verbose = await db.config.getSetting('verbose_logging_enabled')
 
     if (enabled !== null) this.fileLoggingEnabled = enabled !== 'false'
-    if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY) this.fileLoggingMinLevel = minLevel as LogLevel
+    if (minLevel && minLevel in LoggingService.LEVEL_PRIORITY)
+      this.fileLoggingMinLevel = minLevel as LogLevel
     if (retention) this.logRetentionDays = parseInt(retention, 10) || 7
     if (verbose === 'true') this.verboseEnabled = true
   }
 
   private appendToFileBuffer(entry: LogEntry): void {
     if (!this.fileLoggingEnabled || !this.logDir) return
-    if (LoggingService.LEVEL_PRIORITY[entry.level] < LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]) return
+    if (
+      LoggingService.LEVEL_PRIORITY[entry.level] <
+      LoggingService.LEVEL_PRIORITY[this.fileLoggingMinLevel]
+    )
+      return
     let line = `${entry.timestamp} [${entry.level.toUpperCase().padEnd(7)}] ${entry.source} ${entry.message}`
     if (entry.details) line += `\n  ${entry.details.replace(/\n/g, '\n  ')}`
     this.writeBuffer.push(line + '\n')
@@ -261,43 +320,68 @@ export class LoggingService {
     try {
       const today = new Date().toISOString().split('T')[0]
       const logFile = path.join(this.logDir, `totality-${today}.log`)
-      if (today !== this.currentLogDate) { this.currentLogDate = today; this.rotateLogFiles().catch(() => {}) }
+      if (today !== this.currentLogDate) {
+        this.currentLogDate = today
+        this.rotateLogFiles().catch(() => {})
+      }
       await fs.appendFile(logFile, lines.join(''), 'utf-8')
     } catch (err) {
       this.originalConsole.error('[LoggingService] Failed to write log file:', err)
-    } finally { this.isWriting = false }
+    } finally {
+      this.isWriting = false
+    }
   }
 
   private async rotateLogFiles(): Promise<void> {
     try {
       const files = await fs.readdir(this.logDir)
-      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - this.logRetentionDays)
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - this.logRetentionDays)
       for (const file of files) {
         if (!file.startsWith('totality-') || !file.endsWith('.log')) continue
         const fileDate = new Date(file.replace('totality-', '').replace('.log', '') + 'T00:00:00Z')
-        if (!isNaN(fileDate.getTime()) && fileDate < cutoff) await fs.unlink(path.join(this.logDir, file))
+        if (!isNaN(fileDate.getTime()) && fileDate < cutoff)
+          await fs.unlink(path.join(this.logDir, file))
       }
-    } catch (err) { this.originalConsole.error('[LoggingService] Failed to rotate log files:', err) }
+    } catch (err) {
+      this.originalConsole.error('[LoggingService] Failed to rotate log files:', err)
+    }
   }
 
   async shutdown(): Promise<void> {
-    if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null }
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer)
+      this.flushTimer = null
+    }
     await this.flushBuffer()
   }
 
-  async updateFileLoggingSettings(settings: { enabled?: boolean, minLevel?: LogLevel, retentionDays?: number }): Promise<void> {
+  async updateFileLoggingSettings(settings: {
+    enabled?: boolean
+    minLevel?: LogLevel
+    retentionDays?: number
+  }): Promise<void> {
     if (settings.enabled !== undefined) this.fileLoggingEnabled = settings.enabled
     if (settings.minLevel !== undefined) this.fileLoggingMinLevel = settings.minLevel
     if (settings.retentionDays !== undefined) this.logRetentionDays = settings.retentionDays
     if (this.dbGetter) {
       const db = this.dbGetter()
-      if (settings.enabled !== undefined) await db.config.setSetting('file_logging_enabled', String(settings.enabled))
-      if (settings.minLevel !== undefined) await db.config.setSetting('file_logging_min_level', settings.minLevel)
-      if (settings.retentionDays !== undefined) await db.config.setSetting('log_retention_days', String(settings.retentionDays))
+      if (settings.enabled !== undefined)
+        await db.config.setSetting('file_logging_enabled', String(settings.enabled))
+      if (settings.minLevel !== undefined)
+        await db.config.setSetting('file_logging_min_level', settings.minLevel)
+      if (settings.retentionDays !== undefined)
+        await db.config.setSetting('log_retention_days', String(settings.retentionDays))
     }
   }
 
-  getFileLoggingSettings() { return { enabled: this.fileLoggingEnabled, minLevel: this.fileLoggingMinLevel, retentionDays: this.logRetentionDays } }
+  getFileLoggingSettings() {
+    return {
+      enabled: this.fileLoggingEnabled,
+      minLevel: this.fileLoggingMinLevel,
+      retentionDays: this.logRetentionDays,
+    }
+  }
 }
 
 let loggingService: LoggingService | null = null
