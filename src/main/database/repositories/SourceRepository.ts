@@ -16,13 +16,14 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   async getSources(type?: string): Promise<MediaSource[]> {
     const query = this.drizzle.select().from(schema.mediaSources)
     if (type) query.where(eq(schema.mediaSources.sourceType, type))
-    
+
     const rows = await query.all()
     return this.mapDrizzleToSources(rows)
   }
 
   async getSourceById(sourceId: string): Promise<MediaSource | null> {
-    const row = await this.drizzle.select()
+    const row = await this.drizzle
+      .select()
       .from(schema.mediaSources)
       .where(eq(schema.mediaSources.sourceId, sourceId))
       .get()
@@ -43,29 +44,25 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
       isEnabled: source.is_enabled ? 1 : 0,
     }
 
-    await this.upsertWithProviderId(
-      schema.mediaSources,
-      data,
-      [schema.mediaSources.sourceId],
-      data
-    )
+    await this.upsertWithProviderId(schema.mediaSources, data, [schema.mediaSources.sourceId], data)
   }
 
   async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
-    await this.drizzle.update(schema.mediaSources)
+    await this.drizzle
+      .update(schema.mediaSources)
       .set({ isEnabled: enabled ? 1 : 0, updatedAt: sql`(datetime('now'))` })
       .where(eq(schema.mediaSources.sourceId, sourceId))
   }
 
   async updateSourceScanTime(sourceId: string): Promise<void> {
-    await this.drizzle.update(schema.mediaSources)
+    await this.drizzle
+      .update(schema.mediaSources)
       .set({ lastScanAt: sql`(datetime('now'))`, updatedAt: sql`(datetime('now'))` })
       .where(eq(schema.mediaSources.sourceId, sourceId))
   }
 
   async deleteSource(sourceId: string): Promise<void> {
-    await this.drizzle.delete(schema.mediaSources)
-      .where(eq(schema.mediaSources.sourceId, sourceId))
+    await this.drizzle.delete(schema.mediaSources).where(eq(schema.mediaSources.sourceId, sourceId))
   }
 
   // ============================================================================
@@ -73,63 +70,78 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   // ============================================================================
 
   async getSourceLibraries(sourceId: string): Promise<SourceLibrary[]> {
-    const rows = await this.drizzle.select({
-      libraryId: schema.libraryScans.libraryId,
-      libraryName: schema.libraryScans.libraryName,
-      libraryType: schema.libraryScans.libraryType,
-      isEnabled: schema.libraryScans.isEnabled,
-      isProtected: schema.libraryScans.isProtected,
-      allowExpandedMatching: schema.libraryScans.allowExpandedMatching,
-      lastScanAt: schema.libraryScans.lastScanAt,
-      itemsScanned: schema.libraryScans.itemsScanned
-    })
-    .from(schema.libraryScans)
-    .where(eq(schema.libraryScans.sourceId, sourceId))
-    .all()
-    
+    const rows = await this.drizzle
+      .select({
+        libraryId: schema.libraryScans.libraryId,
+        libraryName: schema.libraryScans.libraryName,
+        libraryType: schema.libraryScans.libraryType,
+        isEnabled: schema.libraryScans.isEnabled,
+        isProtected: schema.libraryScans.isProtected,
+        allowExpandedMatching: schema.libraryScans.allowExpandedMatching,
+        lastScanAt: schema.libraryScans.lastScanAt,
+        itemsScanned: schema.libraryScans.itemsScanned,
+      })
+      .from(schema.libraryScans)
+      .where(eq(schema.libraryScans.sourceId, sourceId))
+      .all()
+
     return rows
   }
 
   async getEnabledLibraryIds(sourceId: string): Promise<string[]> {
-    const rows = await this.drizzle.select({ libraryId: schema.libraryScans.libraryId })
+    const rows = await this.drizzle
+      .select({ libraryId: schema.libraryScans.libraryId })
       .from(schema.libraryScans)
       .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.isEnabled, 1)))
       .all()
-    return rows.map(r => r.libraryId)
+    return rows.map((r) => r.libraryId)
   }
 
   async toggleLibrary(sourceId: string, libraryId: string, enabled: boolean): Promise<void> {
-    await this.drizzle.update(schema.libraryScans)
+    await this.drizzle
+      .update(schema.libraryScans)
       .set({ isEnabled: enabled ? 1 : 0, updatedAt: sql`(datetime('now'))` })
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+      .where(
+        and(
+          eq(schema.libraryScans.sourceId, sourceId),
+          eq(schema.libraryScans.libraryId, libraryId)
+        )
+      )
   }
 
-  async setLibrariesEnabled(sourceId: string, libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>): Promise<void> {
+  async setLibrariesEnabled(
+    sourceId: string,
+    libraries: Array<{ id: string; name: string; type: string; enabled: boolean }>
+  ): Promise<void> {
+    if (libraries.length === 0) return
+
     await this.beginBatch()
     try {
-      for (const lib of libraries) {
-        const existing = await this.drizzle.select({ id: schema.libraryScans.id })
-          .from(schema.libraryScans)
-          .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, lib.id)))
-          .get()
+      const chunkSize = 100
+      for (let i = 0; i < libraries.length; i += chunkSize) {
+        const chunk = libraries.slice(i, i + chunkSize)
+        const values = chunk.map((lib) => ({
+          sourceId,
+          libraryId: lib.id,
+          libraryName: lib.name,
+          libraryType: lib.type,
+          isEnabled: lib.enabled ? 1 : 0,
+          isProtected: 0,
+          allowExpandedMatching: 0,
+          createdAt: sql`(datetime('now'))`,
+          updatedAt: sql`(datetime('now'))`,
+        }))
 
-        if (existing) {
-          await this.drizzle.update(schema.libraryScans)
-            .set({ isEnabled: lib.enabled ? 1 : 0, updatedAt: sql`(datetime('now'))` })
-            .where(eq(schema.libraryScans.id, existing.id))
-        } else {
-          await this.drizzle.insert(schema.libraryScans).values({
-            sourceId,
-            libraryId: lib.id,
-            libraryName: lib.name,
-            libraryType: lib.type,
-            isEnabled: lib.enabled ? 1 : 0,
-            isProtected: 0, // Explicitly provide 0 instead of relying on default
-            allowExpandedMatching: 0,
-            createdAt: sql`(datetime('now'))`,
-            updatedAt: sql`(datetime('now'))`
+        await this.drizzle
+          .insert(schema.libraryScans)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [schema.libraryScans.sourceId, schema.libraryScans.libraryId],
+            set: {
+              isEnabled: sql`excluded.is_enabled`,
+              updatedAt: sql`(datetime('now'))`,
+            },
           })
-        }
       }
       await this.endBatch()
     } catch (err) {
@@ -139,12 +151,17 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   }
 
   async getEnabledSources(): Promise<MediaSource[]> {
-    const rows = await this.drizzle.select().from(schema.mediaSources).where(eq(schema.mediaSources.isEnabled, 1)).all()
+    const rows = await this.drizzle
+      .select()
+      .from(schema.mediaSources)
+      .where(eq(schema.mediaSources.isEnabled, 1))
+      .all()
     return this.mapDrizzleToSources(rows)
   }
 
   async updateSourceConnectionTime(sourceId: string): Promise<void> {
-    await this.drizzle.update(schema.mediaSources)
+    await this.drizzle
+      .update(schema.mediaSources)
       .set({ lastConnectedAt: sql`(datetime('now'))`, updatedAt: sql`(datetime('now'))` })
       .where(eq(schema.mediaSources.sourceId, sourceId))
   }
@@ -154,38 +171,54 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   }
 
   async getEnabledLibraries(sourceId: string): Promise<Set<string>> {
-    const rows = await this.drizzle.select({ libraryId: schema.libraryScans.libraryId })
+    const rows = await this.drizzle
+      .select({ libraryId: schema.libraryScans.libraryId })
       .from(schema.libraryScans)
       .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.isEnabled, 1)))
       .all()
-    return new Set(rows.map(r => r.libraryId))
+    return new Set(rows.map((r) => r.libraryId))
   }
 
   async isLibraryEnabled(sourceId: string, libraryId: string): Promise<boolean> {
-    const row = await this.drizzle.select({ isEnabled: schema.libraryScans.isEnabled })
+    const row = await this.drizzle
+      .select({ isEnabled: schema.libraryScans.isEnabled })
       .from(schema.libraryScans)
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+      .where(
+        and(
+          eq(schema.libraryScans.sourceId, sourceId),
+          eq(schema.libraryScans.libraryId, libraryId)
+        )
+      )
       .get()
     return row?.isEnabled === 1
   }
 
   async getLibraryScanTime(sourceId: string, libraryId: string): Promise<string | null> {
-    const row = await this.drizzle.select({ lastScanAt: schema.libraryScans.lastScanAt })
+    const row = await this.drizzle
+      .select({ lastScanAt: schema.libraryScans.lastScanAt })
       .from(schema.libraryScans)
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+      .where(
+        and(
+          eq(schema.libraryScans.sourceId, sourceId),
+          eq(schema.libraryScans.libraryId, libraryId)
+        )
+      )
       .get()
     return row?.lastScanAt || null
   }
 
-  async getLibraryScanTimes(sourceId: string): Promise<Map<string, { lastScanAt: string | null; itemsScanned: number }>> {
-    const rows = await this.drizzle.select({
-      libraryId: schema.libraryScans.libraryId,
-      lastScanAt: schema.libraryScans.lastScanAt,
-      itemsScanned: schema.libraryScans.itemsScanned
-    })
-    .from(schema.libraryScans)
-    .where(eq(schema.libraryScans.sourceId, sourceId))
-    .all()
+  async getLibraryScanTimes(
+    sourceId: string
+  ): Promise<Map<string, { lastScanAt: string | null; itemsScanned: number }>> {
+    const rows = await this.drizzle
+      .select({
+        libraryId: schema.libraryScans.libraryId,
+        lastScanAt: schema.libraryScans.lastScanAt,
+        itemsScanned: schema.libraryScans.itemsScanned,
+      })
+      .from(schema.libraryScans)
+      .where(eq(schema.libraryScans.sourceId, sourceId))
+      .all()
 
     const map = new Map()
     for (const row of rows) {
@@ -200,17 +233,24 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   private async upsertLibraryScanToggle(
     sourceId: string,
     libraryId: string,
-    updates: { isProtected?: number, allowExpandedMatching?: number },
+    updates: { isProtected?: number; allowExpandedMatching?: number },
     fallbackName: string,
     fallbackType: string
   ): Promise<void> {
-    const existing = await this.drizzle.select({ id: schema.libraryScans.id })
+    const existing = await this.drizzle
+      .select({ id: schema.libraryScans.id })
       .from(schema.libraryScans)
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
+      .where(
+        and(
+          eq(schema.libraryScans.sourceId, sourceId),
+          eq(schema.libraryScans.libraryId, libraryId)
+        )
+      )
       .get()
 
     if (existing) {
-      await this.drizzle.update(schema.libraryScans)
+      await this.drizzle
+        .update(schema.libraryScans)
         .set({ ...updates, updatedAt: sql`(datetime('now'))` })
         .where(eq(schema.libraryScans.id, existing.id))
     } else {
@@ -223,34 +263,64 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
         isProtected: updates.isProtected ?? 0,
         allowExpandedMatching: updates.allowExpandedMatching ?? 0,
         createdAt: sql`(datetime('now'))`,
-        updatedAt: sql`(datetime('now'))`
+        updatedAt: sql`(datetime('now'))`,
       })
     }
   }
 
-  async setLibraryProtected(sourceId: string, libraryId: string, isProtected: boolean, fallbackName: string, fallbackType: string): Promise<void> {
-    await this.upsertLibraryScanToggle(sourceId, libraryId, { isProtected: isProtected ? 1 : 0 }, fallbackName, fallbackType)
+  async setLibraryProtected(
+    sourceId: string,
+    libraryId: string,
+    isProtected: boolean,
+    fallbackName: string,
+    fallbackType: string
+  ): Promise<void> {
+    await this.upsertLibraryScanToggle(
+      sourceId,
+      libraryId,
+      { isProtected: isProtected ? 1 : 0 },
+      fallbackName,
+      fallbackType
+    )
   }
 
-  async setLibraryAllowExpandedMatching(sourceId: string, libraryId: string, allowExpandedMatching: boolean, fallbackName: string, fallbackType: string): Promise<void> {
-    await this.upsertLibraryScanToggle(sourceId, libraryId, { allowExpandedMatching: allowExpandedMatching ? 1 : 0 }, fallbackName, fallbackType)
+  async setLibraryAllowExpandedMatching(
+    sourceId: string,
+    libraryId: string,
+    allowExpandedMatching: boolean,
+    fallbackName: string,
+    fallbackType: string
+  ): Promise<void> {
+    await this.upsertLibraryScanToggle(
+      sourceId,
+      libraryId,
+      { allowExpandedMatching: allowExpandedMatching ? 1 : 0 },
+      fallbackName,
+      fallbackType
+    )
   }
 
   async updateLibraryScanStats(sourceId: string, libraryId: string, items: number): Promise<void> {
-    await this.drizzle.update(schema.libraryScans)
-      .set({ 
-        lastScanAt: sql`(datetime('now'))`, 
-        itemsScanned: items, 
-        updatedAt: sql`(datetime('now'))` 
+    await this.drizzle
+      .update(schema.libraryScans)
+      .set({
+        lastScanAt: sql`(datetime('now'))`,
+        itemsScanned: items,
+        updatedAt: sql`(datetime('now'))`,
       })
-      .where(and(eq(schema.libraryScans.sourceId, sourceId), eq(schema.libraryScans.libraryId, libraryId)))
-    
+      .where(
+        and(
+          eq(schema.libraryScans.sourceId, sourceId),
+          eq(schema.libraryScans.libraryId, libraryId)
+        )
+      )
+
     await this.updateSourceScanTime(sourceId)
   }
 
   private mapDrizzleToSources(rows: Array<typeof schema.mediaSources.$inferSelect>): MediaSource[] {
     const encryption = getCredentialEncryptionService()
-    return rows.map(r => {
+    return rows.map((r) => {
       const parsed = JSON.parse(r.connectionConfig)
       const decrypted = encryption.decryptConnectionConfig(parsed)
       const decryptedConfig = JSON.stringify(decrypted)
@@ -265,7 +335,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
         last_connected_at: r.lastConnectedAt || undefined,
         last_scan_at: r.lastScanAt || undefined,
         created_at: r.createdAt,
-        updated_at: r.updatedAt
+        updated_at: r.updatedAt,
       }
     })
   }
