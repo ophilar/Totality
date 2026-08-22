@@ -141,4 +141,42 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
       .returning({ id: (table as T & { id: SQLiteColumn }).id })
     return Number(result[0]?.id ?? 0)
   }
+
+  protected async bulkUpsertWithProviderId<T extends SQLiteTable>(
+    table: T,
+    items: unknown[],
+    uniqueConstraint: unknown[],
+    updateFields: unknown
+  ): Promise<number> {
+    if (!items || items.length === 0) return 0
+    const now = new Date().toISOString()
+
+    const insertDataList = items.map((data) => {
+      if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+        throw new TypeError('Repository upsert data must be an object')
+      }
+      return { ...(data as Omit<InferInsertModel<T>, 'createdAt' | 'updatedAt'>), createdAt: now, updatedAt: now }
+    })
+
+    if (typeof updateFields !== 'object' || updateFields === null || Array.isArray(updateFields)) {
+      throw new TypeError('Repository update fields must be an object')
+    }
+
+    const conflictTarget = uniqueConstraint as SQLiteColumn[]
+    const updateData = { ...(updateFields as Partial<Omit<InferInsertModel<T>, 'createdAt' | 'updatedAt'>>), updatedAt: now }
+
+    const batchSize = 500
+    let totalUpserted = 0
+
+    for (let i = 0; i < insertDataList.length; i += batchSize) {
+      const batch = insertDataList.slice(i, i + batchSize)
+      const result = await this.drizzle.insert(table)
+        .values(batch as InferInsertModel<T>[])
+        .onConflictDoUpdate({ target: conflictTarget, set: updateData })
+        .returning({ id: (table as T & { id: SQLiteColumn }).id })
+      totalUpserted += result.length
+    }
+
+    return totalUpserted
+  }
 }

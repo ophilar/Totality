@@ -884,9 +884,7 @@ export class PlexProvider extends BaseMediaProvider {
 
             await db.startBatch()
             try {
-              for (const trackData of tracksData) {
-                await db.music.upsertTrack(trackData)
-              }
+              await db.music.upsertTracks(tracksData)
               result.itemsScanned += tracksData.length
             } finally {
               await db.endBatch()
