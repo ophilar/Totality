@@ -87,12 +87,23 @@ export class IdentityRepository {
     if (identities.length === 0) return []
     const conflicts = new Set<number>()
     const tableName = entityType === 'series' ? 'series_completeness' : entityType === 'movie' ? 'media_items' : entityType === 'artist' ? 'music_artists' : 'music_albums'
-    for (const identity of identities) {
+
+    const chunkSize = 300
+    for (let i = 0; i < identities.length; i += chunkSize) {
+      const chunk = identities.slice(i, i + chunkSize)
+      const whereClauses: string[] = []
+      const args: Array<string | number> = [entityType, entityId ?? -1]
+
+      for (const identity of chunk) {
+        whereClauses.push('(mi.provider = ? AND mi.external_id = ?)')
+        args.push(identity.provider, identity.externalId)
+      }
+
       const result = await this.db.execute({
         sql: `SELECT mi.entity_id FROM media_identities mi
               JOIN ${tableName} t ON t.id = mi.entity_id
-              WHERE mi.entity_type = ? AND mi.provider = ? AND mi.external_id = ? AND mi.entity_id <> ?`,
-        args: [entityType, identity.provider, identity.externalId, entityId ?? -1]
+              WHERE mi.entity_type = ? AND mi.entity_id <> ? AND (${whereClauses.join(' OR ')})`,
+        args
       })
       for (const row of result.rows) conflicts.add(Number(row.entity_id))
     }
