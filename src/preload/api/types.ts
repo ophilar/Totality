@@ -1,7 +1,7 @@
 import { LibraryType, ProviderType } from '@main/types/database'
 export { LibraryType, ProviderType }
 export type { TaskQueueState, QueuedTask, TaskType, TaskStatus, TaskProgress } from '@main/types/database'
-export type { ConnectionTestResult } from '@main/types/ipc'
+export type { ConnectionTestResult, RateLimitInfo } from '@main/types/ipc'
 
 // Type definitions for multi-source support
 export interface MediaSourceResponse {
