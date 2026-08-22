@@ -304,11 +304,10 @@ export class KodiProvider extends BaseMediaProvider {
             const songs = (await this.rpc.call<{ songs: KodiMusicSong[] }>('AudioLibrary.GetSongs', { filter: { albumid: album.albumid }, properties: ['artistid', 'artist', 'displayartist', 'albumid', 'album', 'track', 'disc', 'duration', 'file', 'audio_codec', 'samplerate', 'bitdepth', 'musicbrainztrackid'] })).songs || []
             
             const trackDataList = songs.map(s => this.mapper.convertToMusicTrack(s, albumId, artistId, 'music')).filter(Boolean) as MusicTrack[]
-            await db.startBatch()
-            try {
-              for (const t of trackDataList) { await db.music.upsertTrack(t); result.itemsScanned++ }
-            } finally {
-              await db.endBatch()
+
+            if (trackDataList.length > 0) {
+              await db.music.upsertTracks(trackDataList)
+              result.itemsScanned += trackDataList.length
             }
             
             const stats = calculateAlbumStats(trackDataList)

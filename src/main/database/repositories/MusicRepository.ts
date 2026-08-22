@@ -153,6 +153,83 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     )
   }
 
+  async upsertTracks(tracks: MusicTrack[]): Promise<void> {
+    if (!tracks.length) return
+
+    const now = new Date().toISOString()
+    const allData = tracks.map((track) => ({
+      sourceId: track.source_id,
+      sourceType: track.source_type,
+      libraryId: track.library_id || '',
+      providerId: track.provider_id,
+      albumId: track.album_id ?? null,
+      artistId: track.artist_id ?? null,
+      albumName: track.album_name ?? null,
+      artistName: track.artist_name,
+      title: track.title,
+      trackNumber: track.track_number ?? null,
+      discNumber: track.disc_number ?? 1,
+      duration: track.duration ?? null,
+      filePath: PathUtils.toDatabasePath(track.file_path || ''),
+      fileSize: track.file_size ?? null,
+      container: track.container ?? null,
+      fileMtime: track.file_mtime ?? null,
+      audioCodec: track.audio_codec,
+      audioBitrate: track.audio_bitrate ?? null,
+      sampleRate: track.sample_rate ?? null,
+      bitDepth: track.bit_depth ?? null,
+      channels: track.channels ?? 2,
+      isLossless: track.is_lossless ? 1 : 0,
+      isHiRes: track.is_hi_res ? 1 : 0,
+      musicbrainzId: track.musicbrainz_id ?? null,
+      genres: track.genres ?? null,
+      mood: track.mood ?? null,
+      addedAt: track.added_at ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }))
+
+    // SQLite max variables is 999. We have 31 columns.
+    // 999 / 31 ≈ 32 items per batch
+    const BATCH_SIZE = 30
+    for (let i = 0; i < allData.length; i += BATCH_SIZE) {
+      const batch = allData.slice(i, i + BATCH_SIZE)
+      await this.drizzle.insert(schema.musicTracks)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [schema.musicTracks.sourceId, schema.musicTracks.providerId],
+          set: {
+            sourceType: sql`excluded.source_type`,
+            libraryId: sql`excluded.library_id`,
+            albumId: sql`excluded.album_id`,
+            artistId: sql`excluded.artist_id`,
+            albumName: sql`excluded.album_name`,
+            artistName: sql`excluded.artist_name`,
+            title: sql`excluded.title`,
+            trackNumber: sql`excluded.track_number`,
+            discNumber: sql`excluded.disc_number`,
+            duration: sql`excluded.duration`,
+            filePath: sql`excluded.file_path`,
+            fileSize: sql`excluded.file_size`,
+            container: sql`excluded.container`,
+            fileMtime: sql`excluded.file_mtime`,
+            audioCodec: sql`excluded.audio_codec`,
+            audioBitrate: sql`excluded.audio_bitrate`,
+            sampleRate: sql`excluded.sample_rate`,
+            bitDepth: sql`excluded.bit_depth`,
+            channels: sql`excluded.channels`,
+            isLossless: sql`excluded.is_lossless`,
+            isHiRes: sql`excluded.is_hi_res`,
+            genres: sql`excluded.genres`,
+            mood: sql`excluded.mood`,
+            addedAt: sql`excluded.added_at`,
+            musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)`,
+            updatedAt: now,
+          },
+        })
+    }
+  }
+
   async upsertArtist(artist: MusicArtist): Promise<number> {
     const data = {
       sourceId: artist.source_id,
