@@ -193,13 +193,15 @@ export class LiveMonitoringService {
     const db = getDatabase()
     const sources = await db.sources.getEnabledSources()
 
-    for (const source of sources) {
-      await this.startMonitoringSource(
-        source.source_id,
-        source.source_type as ProviderType,
-        source.connection_config
+    await Promise.all(
+      sources.map((source) =>
+        this.startMonitoringSource(
+          source.source_id,
+          source.source_type as ProviderType,
+          source.connection_config
+        )
       )
-    }
+    )
 
     this.sendStatusUpdate()
   }
