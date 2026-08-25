@@ -78,29 +78,63 @@ export class TimelineResolutionEngine {
     let matchedCount = 0
 
     for (const item of timeline.items) {
-      const match = await this.findLocalMatch(item, sourceId)
-      if (match) {
-        matchedCount++
-        resolvedItems.push({
-          ...item,
-          status: 'matched',
-          matchedMediaItem: {
-            id: match.id,
-            plexId: match.plexId,
-            sourceId: match.sourceId,
-            sourceType: match.sourceType,
-            title: match.title,
-            filePath: match.filePath,
-            resolution: match.resolution,
-            videoCodec: match.videoCodec,
-            duration: match.duration,
-          },
-        })
+      if (item.type === 'show') {
+        const showEpisodes = await this.findAllShowMatches(item, sourceId)
+        if (showEpisodes.length > 0) {
+          matchedCount++
+          for (const ep of showEpisodes) {
+            resolvedItems.push({
+              ...item,
+              type: 'episode',
+              seasonNumber: ep.seasonNumber ?? undefined,
+              episodeNumber: ep.episodeNumber ?? undefined,
+              title: ep.title || item.title,
+              seriesTitle: item.seriesTitle || item.title || ep.seriesTitle || undefined,
+              status: 'matched',
+              matchedMediaItem: {
+                id: ep.id,
+                plexId: ep.plexId,
+                sourceId: ep.sourceId,
+                sourceType: ep.sourceType,
+                title: ep.title,
+                filePath: ep.filePath,
+                resolution: ep.resolution,
+                videoCodec: ep.videoCodec,
+                duration: ep.duration,
+              },
+            })
+          }
+        } else {
+          resolvedItems.push({
+            ...item,
+            status: 'missing',
+          })
+        }
       } else {
-        resolvedItems.push({
-          ...item,
-          status: 'missing',
-        })
+        const match = await this.findLocalMatch(item, sourceId)
+        if (match) {
+          matchedCount++
+          resolvedItems.push({
+            ...item,
+            status: 'matched',
+            matchedMediaItem: {
+              id: match.id,
+              plexId: match.plexId,
+              sourceId: match.sourceId,
+              sourceType: match.sourceType,
+              title: match.title,
+              filePath: match.filePath,
+              resolution: match.resolution,
+              videoCodec: match.videoCodec,
+              duration: match.duration,
+            },
+          })
+        } else {
+          resolvedItems.push({
+            ...item,
+            status: 'missing',
+          })
+        }
       }
     }
 
@@ -368,10 +402,23 @@ export class TimelineResolutionEngine {
     return null
   }
 
-  private async findShowMatch(item: TimelineItem, sourceId?: string): Promise<typeof schema.mediaItems.$inferSelect | null> {
-    const { tmdbId, tvdbId, imdbId } = item.identifiers
+  private parseSeasonRange(title: string): { startSeason?: number; endSeason?: number } {
+    const match = title.match(/seasons?\s+(\d+)\s*[-–—]\s*(\d+)/i)
+    if (match) {
+      return { startSeason: parseInt(match[1], 10), endSeason: parseInt(match[2], 10) }
+    }
+    const single = title.match(/season\s+(\d+)/i)
+    if (single) {
+      const s = parseInt(single[1], 10)
+      return { startSeason: s, endSeason: s }
+    }
+    return {}
+  }
 
-    // Tier 1: Match by show external ID on series_tmdb_id, series_identity_key, etc.
+  private async findAllShowMatches(item: TimelineItem, sourceId?: string): Promise<Array<typeof schema.mediaItems.$inferSelect>> {
+    const { tmdbId, tvdbId, imdbId } = item.identifiers
+    const { startSeason, endSeason } = this.parseSeasonRange(item.title)
+
     const idConditions = []
     if (tmdbId) {
       idConditions.push(eq(schema.mediaItems.seriesTmdbId, String(tmdbId)))
@@ -384,6 +431,16 @@ export class TimelineResolutionEngine {
       idConditions.push(eq(schema.mediaItems.imdbId, imdbId))
     }
 
+    const filterEpisodes = (rows: Array<typeof schema.mediaItems.$inferSelect>) => {
+      let filtered = rows
+      if (startSeason !== undefined && endSeason !== undefined) {
+        filtered = filtered.filter(ep => ep.seasonNumber !== null && ep.seasonNumber >= startSeason && ep.seasonNumber <= endSeason)
+      } else if (startSeason !== undefined) {
+        filtered = filtered.filter(ep => ep.seasonNumber === startSeason)
+      }
+      return filtered.sort((a, b) => ((a.seasonNumber ?? 0) - (b.seasonNumber ?? 0)) || ((a.episodeNumber ?? 0) - (b.episodeNumber ?? 0)))
+    }
+
     if (idConditions.length > 0) {
       const showWhere = and(eq(schema.mediaItems.type, 'episode'), or(...idConditions))
       if (sourceId) {
@@ -391,15 +448,13 @@ export class TimelineResolutionEngine {
           .select()
           .from(schema.mediaItems)
           .where(and(eq(schema.mediaItems.sourceId, sourceId), showWhere))
-          .limit(1)
-        if (resSource[0]) return resSource[0]
+        if (resSource.length > 0) return filterEpisodes(resSource)
       }
       const resGlobal = await this.db
         .select()
         .from(schema.mediaItems)
         .where(showWhere)
-        .limit(1)
-      if (resGlobal[0]) return resGlobal[0]
+      if (resGlobal.length > 0) return filterEpisodes(resGlobal)
     }
 
     // Tier 2: Match by normalized Series Title
@@ -410,15 +465,25 @@ export class TimelineResolutionEngine {
         .from(schema.mediaItems)
         .where(eq(schema.mediaItems.type, 'episode'))
 
-      for (const candidate of candidates) {
-        const candSeriesNorm = candidate.seriesTitle ? normalizeMediaTitle(candidate.seriesTitle) : ''
-        if (candSeriesNorm === targetSeriesNorm || (candSeriesNorm.length > 4 && (candSeriesNorm.includes(targetSeriesNorm) || targetSeriesNorm.includes(candSeriesNorm)))) {
-          return candidate
+      const matched = candidates.filter(cand => {
+        const candSeriesNorm = cand.seriesTitle ? normalizeMediaTitle(cand.seriesTitle) : ''
+        return candSeriesNorm === targetSeriesNorm || (candSeriesNorm.length > 4 && (candSeriesNorm.includes(targetSeriesNorm) || targetSeriesNorm.includes(candSeriesNorm)))
+      })
+      if (matched.length > 0) {
+        if (sourceId) {
+          const resSource = matched.filter(cand => cand.sourceId === sourceId)
+          if (resSource.length > 0) return filterEpisodes(resSource)
         }
+        return filterEpisodes(matched)
       }
     }
 
-    return null
+    return []
+  }
+
+  private async findShowMatch(item: TimelineItem, sourceId?: string): Promise<typeof schema.mediaItems.$inferSelect | null> {
+    const all = await this.findAllShowMatches(item, sourceId)
+    return all[0] || null
   }
 }
 

@@ -1,5 +1,5 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, HardDrive } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, HardDrive, Zap } from 'lucide-react'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
@@ -14,7 +14,7 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization }: {
+export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
@@ -23,6 +23,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
   onFixMatch?: (sourceId: string, folderPath?: string) => void
   onOptimizationDryRun?: () => void
   onRequestOptimization?: () => void
+  onTranscodeShow?: () => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -142,6 +143,19 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Fix Match
+              </button>
+            )}
+            {onTranscodeShow && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowMenu(false)
+                  onTranscodeShow()
+                }}
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 text-primary font-medium"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                Optimize Series
               </button>
             )}
             {onOptimizationDryRun && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onOptimizationDryRun() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Dry-run optimization</button>}

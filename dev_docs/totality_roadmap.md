@@ -108,4 +108,13 @@
 - [x] Integrate live transcoding telemetry (FPS, Speed Multiplier, ETA) directly into `ActivityPanel` for 1-click global monitoring
 - [x] Verify type safety (`tsc --noEmit`) and unit test suite passing (104 tests passing across 5 core test suites)
 
+## Phase 13: Storage Safety Guardrails, Quarantine Integrity & Timeline Franchise Sync [Completed]
+- [x] Retain original source video extension (`.mp4`, `.avi`, `.mkv`, `.ts`, `.webm`) on quarantine backup files in `TranscodingService.ts` to ensure backups remain fully playable.
+- [x] Implement intelligent bitrate ceiling in `NvidiaCommandBuilder.ts` based on source stream bitrate / duration to prevent NVENC VBR file size inflation on low-bitrate sources.
+- [x] Add size check in `TranscodingService.ts` aborting replacement if transcoded output exceeds source file size in `quarantine-replace` mode.
+- [x] Expand `type: 'show'` timeline items into constituent chronological episodes in `TimelineResolutionEngine.ts` with season range parsing for Star Trek franchise watch orders and Plex playlist sync.
+- [x] Throttle FFmpeg progress updates in `TranscodingService.ts` to 250ms (4 Hz) to eliminate IPC bottleneck and UI sluggishness.
+- [x] Wire "Optimize Series" action button into `ShowListItem.tsx` and standardize modal z-index hierarchy (`z-50`).
+- [x] Full regression test suite passing (139 test files, 1,052/1,052 tests passing).
+
 

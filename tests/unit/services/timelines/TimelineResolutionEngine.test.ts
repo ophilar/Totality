@@ -568,4 +568,80 @@ describe('TimelineResolutionEngine', () => {
     expect(result.items[0].matchedMediaItem?.plexId).toBe('mcu-1001')
     expect(result.items[1].matchedMediaItem?.plexId).toBe('mcu-2001')
   })
+
+  it('expands full show timeline items into all constituent episodes in sequential order', async () => {
+    await db.media.upsertItem({
+      source_id: 'src-plex',
+      source_type: 'plex',
+      plex_id: 'ent-101',
+      title: 'Broken Bow',
+      series_title: 'Star Trek: Enterprise',
+      type: 'episode',
+      season_number: 1,
+      episode_number: 1,
+      series_identity_key: 'tmdb:1478',
+      file_path: 'D:/TV/Star Trek Enterprise/S01E01.mkv',
+      resolution: '1080p',
+      video_codec: 'h264',
+      duration: 5400,
+    } as never)
+
+    await db.media.upsertItem({
+      source_id: 'src-plex',
+      source_type: 'plex',
+      plex_id: 'ent-102',
+      title: 'Fight or Flight',
+      series_title: 'Star Trek: Enterprise',
+      type: 'episode',
+      season_number: 1,
+      episode_number: 2,
+      series_identity_key: 'tmdb:1478',
+      file_path: 'D:/TV/Star Trek Enterprise/S01E02.mkv',
+      resolution: '1080p',
+      video_codec: 'h264',
+      duration: 2600,
+    } as never)
+
+    await db.media.upsertItem({
+      source_id: 'src-plex',
+      source_type: 'plex',
+      plex_id: 'ent-201',
+      title: 'Shockwave: Part 2',
+      series_title: 'Star Trek: Enterprise',
+      type: 'episode',
+      season_number: 2,
+      episode_number: 1,
+      series_identity_key: 'tmdb:1478',
+      file_path: 'D:/TV/Star Trek Enterprise/S02E01.mkv',
+      resolution: '1080p',
+      video_codec: 'h264',
+      duration: 2600,
+    } as never)
+
+    const timeline: TimelineDefinition = {
+      id: 'star-trek-show-expansion',
+      franchise: 'Star Trek',
+      name: 'Star Trek Show Test',
+      description: 'Testing full show expansion',
+      version: 1,
+      items: [
+        {
+          order: 1,
+          type: 'show',
+          title: 'Star Trek: Enterprise',
+          seriesTitle: 'Star Trek: Enterprise',
+          identifiers: { tmdbId: 1478, tvdbId: 75711 },
+        },
+      ],
+    }
+
+    const result = await engine.resolveTimeline(timeline)
+    expect(result.totalCount).toBe(1)
+    expect(result.matchedCount).toBe(1)
+    expect(result.items.length).toBe(3)
+    expect(result.items.every((i) => i.type === 'episode')).toBe(true)
+    expect(result.items[0].matchedMediaItem?.plexId).toBe('ent-101')
+    expect(result.items[1].matchedMediaItem?.plexId).toBe('ent-102')
+    expect(result.items[2].matchedMediaItem?.plexId).toBe('ent-201')
+  })
 })

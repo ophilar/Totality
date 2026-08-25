@@ -157,6 +157,7 @@ export function TVShowsView({
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
               onRequestOptimization={() => handleOptimizationRequest(show)}
               onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
+              onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
             />
           )}
           listHeader={

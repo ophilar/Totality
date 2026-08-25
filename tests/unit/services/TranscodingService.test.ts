@@ -5,6 +5,7 @@ import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/
 import { GpuDetector } from '../../../src/main/services/utils/GpuDetector'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
 import * as childProcess from 'child_process'
+import * as path from 'path'
 
 type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> }
 
@@ -171,9 +172,25 @@ describe('TranscodingService', () => {
         sourceMtimeMs: 12345678
       }
 
-      // Verify that the payload structure is valid and retains source integrity
       expect(Date.now() > Date.parse(expiredPayload.expiresAt)).toBe(true)
       expect(expiredPayload.sourceSize).toBe(5000)
+    })
+
+    it('preserves any video file extension (.mp4, .avi, .mkv, .ts) for quarantine backup files', () => {
+      const testCases = [
+        { input: '/media/video.mp4', expectedExt: '.mp4' },
+        { input: '/media/movie.avi', expectedExt: '.avi' },
+        { input: '/media/episode.mkv', expectedExt: '.mkv' },
+        { input: '/media/stream.ts', expectedExt: '.ts' }
+      ]
+
+      for (const tc of testCases) {
+        const origExt = path.extname(tc.input)
+        const origBase = path.basename(tc.input, origExt)
+        const quarantinePath = path.join(path.dirname(tc.input), `${origBase}.quarantine-123456789${origExt}`)
+        expect(quarantinePath.endsWith(tc.expectedExt)).toBe(true)
+        expect(path.extname(quarantinePath)).toBe(tc.expectedExt)
+      }
     })
   })
 })

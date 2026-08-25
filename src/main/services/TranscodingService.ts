@@ -602,11 +602,18 @@ export class TranscodingService {
         throw new Error('Transcoded output verification failed: HDR10 metadata was not preserved')
       }
 
+      // Guard against size inflation: if transcoded result is larger than source, abort replacement
+      if ((options.outputMode || 'copy') === 'quarantine-replace' && stats.size > sourceStat.size) {
+        throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
+      }
+
       // Atomic replacement
       if ((options.outputMode || 'copy') === 'quarantine-replace') {
         getLoggingService().info('[TranscodingService]', `Replacing original file: ${inputPath}`)
-        const finalPath = path.join(path.dirname(inputPath), path.basename(inputPath, path.extname(inputPath)) + outputExt)
-        const quarantinePath = `${inputPath}.totality-quarantine-${Date.now()}`
+        const origExt = path.extname(inputPath)
+        const origBase = path.basename(inputPath, origExt)
+        const finalPath = path.join(path.dirname(inputPath), origBase + outputExt)
+        const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.quarantine-${Date.now()}${origExt}`)
         await fs.rename(inputPath, quarantinePath)
         try {
           await fs.rename(tempPath, finalPath)
@@ -687,6 +694,7 @@ export class TranscodingService {
 
       // Parse FFmpeg progress
       let durationSeconds = 0
+      let lastProgressTime = 0
       proc.stderr.on('data', (data) => {
         const line = data.toString()
         stderrBuffer += line
@@ -706,6 +714,10 @@ export class TranscodingService {
         const speedMatch = line.match(/speed=\s*(\d+(\.\d+)?)x/)
         
         if (timeMatch && durationSeconds > 0) {
+          const now = Date.now()
+          if (now - lastProgressTime < 250) return
+          lastProgressTime = now
+
           const currentTime = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseFloat(timeMatch[3])
           const percent = Math.min(99.9, (currentTime / durationSeconds) * 100)
           const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0
