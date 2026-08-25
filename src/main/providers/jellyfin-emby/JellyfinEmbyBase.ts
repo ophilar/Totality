@@ -441,10 +441,9 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
     try {
       const db = getDatabase()
       const scannedAlbumIds = new Set<string>()
-      const processAlbum = async (jellyfinAlbum: JellyfinMusicAlbum, artistId: number | undefined, artistName?: string) => {
+      const processAlbum = async (jellyfinAlbum: JellyfinMusicAlbum, tracks: JellyfinMusicTrack[], artistId: number | undefined, artistName?: string) => {
         const albumData = this.mapper.convertToMusicAlbum(jellyfinAlbum, artistId, libraryId)
         if (artistName && !albumData.artist_name) albumData.artist_name = artistName
-        const tracks = await this.getMusicTracks(jellyfinAlbum.Id)
         if (!albumData.thumb_url && tracks.length > 0 && tracks[0].ImageTags?.Primary) albumData.thumb_url = this.client.buildImageUrl(tracks[0].Id, 'Primary', tracks[0].ImageTags.Primary)
         const trackDataList = tracks.map(t => this.mapper.convertToMusicTrack(t, undefined, artistId, libraryId)).filter(Boolean) as MusicTrack[]
         const stats = calculateAlbumStats(trackDataList)
@@ -453,22 +452,37 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         scannedAlbumIds.add(jellyfinAlbum.Id)
 
         await db.beginBatch()
-        await Promise.all(trackDataList.map(async (t) => {
+        for (const t of trackDataList) {
           t.album_id = albumId
           await db.music.upsertTrack(t)
-        }))
+        }
         await db.endBatch()
         result.itemsScanned += trackDataList.length
       }
 
       const artists = await this.getMusicArtists(libraryId)
+      const chunkSize = 5
       for (const [idx, artist] of artists.entries()) {
         if (this.musicScanCancelled) { result.cancelled = true; break }
         try {
           const artistId = await db.music.upsertArtist(this.mapper.convertToMusicArtist(artist, libraryId))
           const albums = await this.getMusicAlbums(libraryId, artist.Id)
           let [tc, ac] = [0, 0]
-          for (const album of albums) { await processAlbum(album, artistId); ac++; tc += (album.ChildCount || 0) }
+
+          for (let i = 0; i < albums.length; i += chunkSize) {
+            if (this.musicScanCancelled) { result.cancelled = true; break }
+            const chunk = albums.slice(i, i + chunkSize)
+            const chunkTracks = await Promise.all(chunk.map(a => this.getMusicTracks(a.Id).catch(e => {
+              result.errors.push(`Album tracks ${a.Name}: ${getErrorMessage(e)}`)
+              return []
+            })))
+
+            for (let j = 0; j < chunk.length; j++) {
+              await processAlbum(chunk[j], chunkTracks[j], artistId)
+              ac++
+              tc += (chunk[j].ChildCount || 0)
+            }
+          }
           await db.music.updateMusicArtistCounts(artistId, ac, tc)
           if (onProgress) onProgress({ current: idx + 1, total: artists.length, phase: 'processing', currentItem: artist.Name, percentage: ((idx + 1) / artists.length) * 50 })
         } catch (e: unknown) { result.errors.push(`Artist ${artist.Name}: ${getErrorMessage(e)}`) }
@@ -477,12 +491,24 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
       if (!result.cancelled) {
         const allAlbums = await this.getMusicAlbums(libraryId)
         const unprocessed = allAlbums.filter(a => !scannedAlbumIds.has(a.Id))
-        for (const [idx, album] of unprocessed.entries()) {
+        for (let i = 0; i < unprocessed.length; i += chunkSize) {
           if (this.musicScanCancelled) { result.cancelled = true; break }
-          try {
-            await processAlbum(album, undefined, album.AlbumArtist || album.AlbumArtists?.[0]?.Name || 'Various Artists')
-            if (onProgress) onProgress({ current: idx + 1, total: unprocessed.length, phase: 'processing', currentItem: album.Name, percentage: 50 + ((idx + 1) / unprocessed.length) * 50 })
-          } catch (e: unknown) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
+          const chunk = unprocessed.slice(i, i + chunkSize)
+          const chunkTracks = await Promise.all(chunk.map(a => this.getMusicTracks(a.Id).catch(e => {
+            result.errors.push(`Album tracks ${a.Name}: ${getErrorMessage(e)}`)
+            return []
+          })))
+
+          for (let j = 0; j < chunk.length; j++) {
+            const album = chunk[j]
+            try {
+              await processAlbum(album, chunkTracks[j], undefined, album.AlbumArtist || album.AlbumArtists?.[0]?.Name || 'Various Artists')
+            } catch (e: unknown) { result.errors.push(`Album ${album.Name}: ${getErrorMessage(e)}`) }
+          }
+          if (onProgress) {
+            const currentIdx = Math.min(i + chunkSize, unprocessed.length)
+            onProgress({ current: currentIdx, total: unprocessed.length, phase: 'processing', currentItem: chunk[chunk.length - 1].Name, percentage: 50 + (currentIdx / unprocessed.length) * 50 })
+          }
         }
       }
       result.success = true

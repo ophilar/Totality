@@ -221,7 +221,18 @@ export class CredentialEncryptionService {
     const sources = await getMediaSources()
     for (const source of sources) {
       try {
-        const config = JSON.parse(source.connection_config)
+        let config: Record<string, unknown>
+        try {
+          config = JSON.parse(source.connection_config) as Record<string, unknown>
+        } catch (parseError) {
+          getLoggingService().error('[CredentialEncryption]', `Failed to parse config for source ${source.source_id}:`, parseError)
+          continue
+        }
+
+        if (!config || typeof config !== 'object') {
+          continue
+        }
+
         let needsUpdate = false
 
         // Check if any sensitive field is unencrypted

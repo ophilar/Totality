@@ -127,9 +127,8 @@ export function registerSeriesHandlers() {
       if (anilistId) {
         await db.identities.upsertIdentity({ entityType: 'series', entityId: existingCompleteness.id, provider: 'anilist', externalId: anilistId, locked: true, lockSource: 'manual' })
       }
-      for (const alias of details.alternateTitles || []) {
-        await db.identities.addAlias({ entityType: 'series', entityId: existingCompleteness.id, alias, provider: providerId })
-      }
+      const aliasesToInsert = (details.alternateTitles || []).map(alias => ({ entityType: 'series' as const, entityId: existingCompleteness.id as number, alias, provider: providerId }))
+      await db.identities.batchAddAliases(aliasesToInsert)
     }
     await getDeduplicationService().scanForDuplicates(sourceId)
     const completeness = await service.analyzeSeries(details.title, sourceId)

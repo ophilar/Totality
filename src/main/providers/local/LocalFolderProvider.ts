@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import pLimit from 'p-limit'
 
 interface ProcessedItem {
   metadata: MediaMetadata
@@ -144,16 +145,19 @@ export class LocalFolderProvider extends BaseMediaProvider {
       let mediaFileCount = 0
       let directoriesProcessed = 0
 
+      const limit = pLimit(50)
       const countFiles = async (dir: string, depth = 0): Promise<void> => {
         if (depth > 10) return
-        const entries = await fsPromises.readdir(dir, { withFileTypes: true })
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            await countFiles(path.join(dir, entry.name), depth + 1)
-          } else if (parser.isMediaFile(entry.name)) {
-            mediaFileCount++
-          }
-        }
+        const entries = await limit(() => fsPromises.readdir(dir, { withFileTypes: true }))
+        await Promise.all(
+          entries.map(async (entry) => {
+            if (entry.isDirectory()) {
+              await countFiles(path.join(dir, entry.name), depth + 1)
+            } else if (parser.isMediaFile(entry.name)) {
+              mediaFileCount++
+            }
+          })
+        )
         directoriesProcessed++
         if (directoriesProcessed % 50 === 0) await new Promise(resolve => setImmediate(resolve))
       }
@@ -1029,12 +1033,21 @@ export class LocalFolderProvider extends BaseMediaProvider {
       await this.updateAlbumStats(db, albumMap)
       onProgress?.({ current: totalFiles, total: totalFiles, phase: 'saving', currentItem: 'Reconciling deletions...', percentage: 100 })
       const existingTracks = await db.music.getTracks({ sourceId: this.sourceId })
+      const idsToDelete: number[] = [];
       for (const track of existingTracks) {
         if (track.file_path && !scannedFilePaths.has(track.file_path)) {
           if (!fs.existsSync(track.file_path)) {
-            if (track.id) { await db.music.deleteMusicTrack(track.id); result.itemsRemoved++; if (track.artist_name) artistMap.set(track.artist_name.toLowerCase(), track.artist_id!); if (track.artist_name && track.album_name) albumMap.set(`${track.artist_name.toLowerCase()}|${track.album_name.toLowerCase()}`, track.album_id!) }
+            if (track.id) {
+              idsToDelete.push(track.id);
+              result.itemsRemoved++;
+              if (track.artist_name) artistMap.set(track.artist_name.toLowerCase(), track.artist_id!);
+              if (track.artist_name && track.album_name) albumMap.set(`${track.artist_name.toLowerCase()}|${track.album_name.toLowerCase()}`, track.album_id!);
+            }
           }
         }
+      }
+      if (idsToDelete.length > 0) {
+        await db.music.deleteMusicTracks(idsToDelete);
       }
       await this.updateArtistStats(db, artistMap); await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true; result.durationMs = Date.now() - startTime; return result

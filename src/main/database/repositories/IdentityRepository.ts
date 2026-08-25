@@ -67,6 +67,27 @@ export class IdentityRepository {
     })
   }
 
+  async batchAddAliases(inputs: { entityType: IdentityEntityType; entityId: number; alias: string; provider?: string }[]): Promise<void> {
+    const statements = []
+    for (const input of inputs) {
+      const alias = input.alias.trim()
+      if (!alias) continue
+      statements.push({
+        sql: `INSERT INTO media_aliases (entity_type, entity_id, alias, normalized_alias, provider)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(entity_type, entity_id, normalized_alias) DO UPDATE SET alias = excluded.alias, provider = COALESCE(excluded.provider, media_aliases.provider)`,
+        args: [input.entityType, input.entityId, alias, normalizeTitleForMatching(alias), input.provider || null]
+      })
+    }
+
+    if (statements.length === 0) return
+
+    const CHUNK_SIZE = 500
+    for (let i = 0; i < statements.length; i += CHUNK_SIZE) {
+      await this.db.batch(statements.slice(i, i + CHUNK_SIZE), 'write')
+    }
+  }
+
   async getAliases(entityType: IdentityEntityType, entityId: number): Promise<MediaAliasRecord[]> {
     const result = await this.db.execute({ sql: 'SELECT * FROM media_aliases WHERE entity_type = ? AND entity_id = ? ORDER BY alias', args: [entityType, entityId] })
     return result.rows.map(row => ({
@@ -87,12 +108,23 @@ export class IdentityRepository {
     if (identities.length === 0) return []
     const conflicts = new Set<number>()
     const tableName = entityType === 'series' ? 'series_completeness' : entityType === 'movie' ? 'media_items' : entityType === 'artist' ? 'music_artists' : 'music_albums'
-    for (const identity of identities) {
+
+    const chunkSize = 300
+    for (let i = 0; i < identities.length; i += chunkSize) {
+      const chunk = identities.slice(i, i + chunkSize)
+      const whereClauses: string[] = []
+      const args: Array<string | number> = [entityType, entityId ?? -1]
+
+      for (const identity of chunk) {
+        whereClauses.push('(mi.provider = ? AND mi.external_id = ?)')
+        args.push(identity.provider, identity.externalId)
+      }
+
       const result = await this.db.execute({
         sql: `SELECT mi.entity_id FROM media_identities mi
               JOIN ${tableName} t ON t.id = mi.entity_id
-              WHERE mi.entity_type = ? AND mi.provider = ? AND mi.external_id = ? AND mi.entity_id <> ?`,
-        args: [entityType, identity.provider, identity.externalId, entityId ?? -1]
+              WHERE mi.entity_type = ? AND mi.entity_id <> ? AND (${whereClauses.join(' OR ')})`,
+        args
       })
       for (const row of result.rows) conflicts.add(Number(row.entity_id))
     }

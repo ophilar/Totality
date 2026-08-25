@@ -20,18 +20,42 @@ import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
 interface ArtistCompletenessRow {
-  artistName: string; musicbrainzId?: string | null; libraryId: string; totalAlbums: number; ownedAlbums: number;
-  totalSingles: number; ownedSingles: number; totalEps: number; ownedEps: number; missingAlbums: string;
-  missingSingles: string; missingEps: string; completenessPercentage: number; efficiencyScore?: number | null;
-  storageDebtBytes?: number | null; totalSize?: number | null; country?: string | null; activeYears?: string | null;
-  artistType?: string | null; thumbUrl?: string | null; lastSyncAt?: string | null; createdAt: string; updatedAt: string
+  artistName: string
+  musicbrainzId?: string | null
+  libraryId: string
+  totalAlbums: number
+  ownedAlbums: number
+  totalSingles: number
+  ownedSingles: number
+  totalEps: number
+  ownedEps: number
+  missingAlbums: string
+  missingSingles: string
+  missingEps: string
+  completenessPercentage: number
+  efficiencyScore?: number | null
+  storageDebtBytes?: number | null
+  totalSize?: number | null
+  country?: string | null
+  activeYears?: string | null
+  artistType?: string | null
+  thumbUrl?: string | null
+  lastSyncAt?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 type MusicTrackRow = typeof schema.musicTracks.$inferSelect
 type MusicArtistRow = typeof schema.musicArtists.$inferSelect
 type MusicAlbumRow = typeof schema.musicAlbums.$inferSelect
 type MusicQualityRow = typeof schema.musicQualityScores.$inferSelect
-interface ArtistStatsRow { totalArtists: number; completeArtists: number; incompleteArtists: number; totalMissingAlbums: number; averageCompleteness: number }
+interface ArtistStatsRow {
+  totalArtists: number
+  completeArtists: number
+  incompleteArtists: number
+  totalMissingAlbums: number
+  averageCompleteness: number
+}
 
 type NonNullRow<T extends object> = {
   [K in keyof T]: Exclude<T[K], null> | undefined
@@ -153,6 +177,156 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     )
   }
 
+  async upsertTracks(tracks: MusicTrack[]): Promise<number> {
+    if (!tracks || tracks.length === 0) return 0
+    const dataList = tracks.map((track) => ({
+      sourceId: track.source_id,
+      sourceType: track.source_type,
+      libraryId: track.library_id || '',
+      providerId: track.provider_id,
+      albumId: track.album_id ?? null,
+      artistId: track.artist_id ?? null,
+      albumName: track.album_name ?? null,
+      artistName: track.artist_name,
+      title: track.title,
+      trackNumber: track.track_number ?? null,
+      discNumber: track.disc_number ?? 1,
+      duration: track.duration ?? null,
+      filePath: PathUtils.toDatabasePath(track.file_path || ''),
+      fileSize: track.file_size ?? null,
+      container: track.container ?? null,
+      fileMtime: track.file_mtime ?? null,
+      audioCodec: track.audio_codec,
+      audioBitrate: track.audio_bitrate ?? null,
+      sampleRate: track.sample_rate ?? null,
+      bitDepth: track.bit_depth ?? null,
+      channels: track.channels ?? 2,
+      isLossless: track.is_lossless ? 1 : 0,
+      isHiRes: track.is_hi_res ? 1 : 0,
+      musicbrainzId: track.musicbrainz_id ?? null,
+      genres: track.genres ?? null,
+      mood: track.mood ?? null,
+      addedAt: track.added_at ?? null,
+    }))
+
+    const updateFields = {
+      sourceId: sql`excluded.source_id`,
+      sourceType: sql`excluded.source_type`,
+      libraryId: sql`excluded.library_id`,
+      providerId: sql`excluded.provider_id`,
+      albumId: sql`excluded.album_id`,
+      artistId: sql`excluded.artist_id`,
+      albumName: sql`excluded.album_name`,
+      artistName: sql`excluded.artist_name`,
+      title: sql`excluded.title`,
+      trackNumber: sql`excluded.track_number`,
+      discNumber: sql`excluded.disc_number`,
+      duration: sql`excluded.duration`,
+      filePath: sql`excluded.file_path`,
+      fileSize: sql`excluded.file_size`,
+      container: sql`excluded.container`,
+      fileMtime: sql`excluded.file_mtime`,
+      audioCodec: sql`excluded.audio_codec`,
+      audioBitrate: sql`excluded.audio_bitrate`,
+      sampleRate: sql`excluded.sample_rate`,
+      bitDepth: sql`excluded.bit_depth`,
+      channels: sql`excluded.channels`,
+      isLossless: sql`excluded.is_lossless`,
+      isHiRes: sql`excluded.is_hi_res`,
+      musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)`,
+      genres: sql`excluded.genres`,
+      mood: sql`excluded.mood`,
+      addedAt: sql`excluded.added_at`,
+    }
+
+    return await this.bulkUpsertWithProviderId(
+      schema.musicTracks,
+      dataList,
+      [schema.musicTracks.sourceId, schema.musicTracks.providerId],
+      updateFields
+    )
+  }
+
+  async bulkUpsertTracks(tracks: MusicTrack[]): Promise<number> {
+    if (!tracks.length) return 0
+
+
+    const trackDataList = tracks.map((track) => ({
+      sourceId: track.source_id,
+      sourceType: track.source_type,
+      libraryId: track.library_id || '',
+      providerId: track.provider_id,
+      albumId: track.album_id ?? null,
+      artistId: track.artist_id ?? null,
+      albumName: track.album_name ?? null,
+      artistName: track.artist_name,
+      title: track.title,
+      trackNumber: track.track_number ?? null,
+      discNumber: track.disc_number ?? 1,
+      duration: track.duration ?? null,
+      filePath: PathUtils.toDatabasePath(track.file_path || ''),
+      fileSize: track.file_size ?? null,
+      container: track.container ?? null,
+      fileMtime: track.file_mtime ?? null,
+      audioCodec: track.audio_codec,
+      audioBitrate: track.audio_bitrate ?? null,
+      sampleRate: track.sample_rate ?? null,
+      bitDepth: track.bit_depth ?? null,
+      channels: track.channels ?? 2,
+      isLossless: track.is_lossless ? 1 : 0,
+      isHiRes: track.is_hi_res ? 1 : 0,
+      musicbrainzId: track.musicbrainz_id ?? null,
+      genres: track.genres ?? null,
+      mood: track.mood ?? null,
+      addedAt: track.added_at ?? null,
+      createdAt: sql`(datetime('now'))` as unknown as string,
+      updatedAt: sql`(datetime('now'))` as unknown as string,
+    }))
+
+    const chunkSize = 200
+    let insertedCount = 0
+
+    for (let i = 0; i < trackDataList.length; i += chunkSize) {
+      const batch = trackDataList.slice(i, i + chunkSize)
+      await this.drizzle
+        .insert(schema.musicTracks)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [schema.musicTracks.sourceId, schema.musicTracks.providerId],
+          set: {
+            libraryId: sql`excluded.library_id`,
+            albumId: sql`excluded.album_id`,
+            artistId: sql`excluded.artist_id`,
+            albumName: sql`excluded.album_name`,
+            artistName: sql`excluded.artist_name`,
+            title: sql`excluded.title`,
+            trackNumber: sql`excluded.track_number`,
+            discNumber: sql`excluded.disc_number`,
+            duration: sql`excluded.duration`,
+            filePath: sql`excluded.file_path`,
+            fileSize: sql`excluded.file_size`,
+            container: sql`excluded.container`,
+            fileMtime: sql`excluded.file_mtime`,
+            audioCodec: sql`excluded.audio_codec`,
+            audioBitrate: sql`excluded.audio_bitrate`,
+            sampleRate: sql`excluded.sample_rate`,
+            bitDepth: sql`excluded.bit_depth`,
+            channels: sql`excluded.channels`,
+            isLossless: sql`excluded.is_lossless`,
+            isHiRes: sql`excluded.is_hi_res`,
+            genres: sql`excluded.genres`,
+            mood: sql`excluded.mood`,
+            addedAt: sql`excluded.added_at`,
+            musicbrainzId: sql`COALESCE(excluded.musicbrainz_id, music_tracks.musicbrainz_id)`,
+            updatedAt: sql`(datetime('now'))`,
+          },
+        })
+      insertedCount += batch.length
+    }
+
+    return insertedCount
+  }
+
   async upsertArtist(artist: MusicArtist): Promise<number> {
     const data = {
       sourceId: artist.source_id,
@@ -199,7 +373,10 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       artistName: album.artist_name,
       title: album.title,
       sortTitle: album.sort_title || null,
-      year: (album.year != null && !isNaN(album.year) && album.year >= 1800 && album.year <= 2100) ? Math.floor(album.year) : null,
+      year:
+        album.year != null && !isNaN(album.year) && album.year >= 1800 && album.year <= 2100
+          ? Math.floor(album.year)
+          : null,
       musicbrainzId: album.musicbrainz_id || null,
       musicbrainzReleaseGroupId: album.musicbrainz_release_group_id || null,
       genres: album.genres || null,
@@ -259,7 +436,9 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const providerId = providerIdOrThumbUrl as string
     if (!artwork) return
 
-    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = {
+      updatedAt: sql`(datetime('now'))`,
+    }
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
@@ -279,7 +458,9 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     providerId: string,
     artwork: { thumbUrl?: string; artUrl?: string }
   ): Promise<void> {
-    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = { updatedAt: sql`(datetime('now'))` }
+    const data: { updatedAt: SQL; thumbUrl?: string; artUrl?: string } = {
+      updatedAt: sql`(datetime('now'))`,
+    }
     if (artwork.thumbUrl !== undefined) data.thumbUrl = artwork.thumbUrl
     if (artwork.artUrl !== undefined) data.artUrl = artwork.artUrl
 
@@ -584,6 +765,17 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     await this.drizzle.delete(schema.musicTracks).where(eq(schema.musicTracks.id, id))
   }
 
+  async deleteMusicTracks(ids: number[]): Promise<void> {
+    if (!ids || ids.length === 0) return
+    const chunkSize = 500
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      await this.drizzle
+        .delete(schema.musicTracks)
+        .where(inArray(schema.musicTracks.id, chunk))
+    }
+  }
+
   async updateMusicArtistCounts(
     artistId: number,
     albumCount: number,
@@ -695,6 +887,49 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
           updatedAt: sql`(datetime('now'))`,
         },
       })
+  }
+
+  async upsertQualityScores(scores: MusicQualityScore[]): Promise<void> {
+    if (scores.length === 0) return
+
+    const chunkSize = 500
+    for (let i = 0; i < scores.length; i += chunkSize) {
+      const chunk = scores.slice(i, i + chunkSize)
+
+      const values = chunk.map(score => ({
+        albumId: score.album_id,
+        qualityTier: score.quality_tier || 'LOSSY_MID',
+        tierQuality: score.tier_quality || 'MEDIUM',
+        tierScore: score.tier_score || 0,
+        codecScore: score.codec_score || 0,
+        bitrateScore: score.bitrate_score || 0,
+        efficiencyScore: score.efficiency_score || 0,
+        storageDebtBytes: score.storage_debt_bytes || 0,
+        needsUpgrade: score.needs_upgrade ? 1 : 0,
+        issues: score.issues || '[]',
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`,
+      }))
+
+      await this.drizzle
+        .insert(schema.musicQualityScores)
+        .values(values)
+        .onConflictDoUpdate({
+          target: schema.musicQualityScores.albumId,
+          set: {
+            qualityTier: sql`excluded.quality_tier`,
+            tierQuality: sql`excluded.tier_quality`,
+            tierScore: sql`excluded.tier_score`,
+            codecScore: sql`excluded.codec_score`,
+            bitrateScore: sql`excluded.bitrate_score`,
+            efficiencyScore: sql`excluded.efficiency_score`,
+            storageDebtBytes: sql`excluded.storage_debt_bytes`,
+            needsUpgrade: sql`excluded.needs_upgrade`,
+            issues: sql`excluded.issues`,
+            updatedAt: sql`(datetime('now'))`,
+          },
+        })
+    }
   }
 
   async getQualityScore(albumId: number): Promise<MusicQualityScore | null> {
@@ -1171,7 +1406,10 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       musicbrainz_id: r.musicbrainzId ?? undefined,
       musicbrainz_release_group_id: r.musicbrainzReleaseGroupId ?? undefined,
       album_type: r.albumType as AlbumType | undefined,
-      year: (r.year != null && !isNaN(r.year) && r.year >= 1800 && r.year <= 2100) ? Math.floor(r.year) : undefined,
+      year:
+        r.year != null && !isNaN(r.year) && r.year >= 1800 && r.year <= 2100
+          ? Math.floor(r.year)
+          : undefined,
       genres: r.genres ?? undefined,
       mood: r.mood ?? undefined,
       track_count: r.trackCount ?? undefined,
@@ -1238,7 +1476,9 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
   }
 
-  private mapDrizzleToAlbumCompleteness(r: typeof schema.albumCompleteness.$inferSelect): AlbumCompleteness {
+  private mapDrizzleToAlbumCompleteness(
+    r: typeof schema.albumCompleteness.$inferSelect
+  ): AlbumCompleteness {
     return {
       album_id: r.albumId,
       artist_name: r.artistName,

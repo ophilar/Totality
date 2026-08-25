@@ -43,6 +43,41 @@ describe('ConfigRepository (Real DB)', () => {
     expect(all['a']).toBe('1')
     expect(all['b']).toBe('2')
   })
+
+  it('should verify legacy sha256 pin and upgrade it to pbkdf2', async () => {
+    const crypto = await import('node:crypto')
+    const pin = '1234'
+    const legacyHash = crypto.createHash('sha256').update(pin).digest('hex')
+
+    // Set legacy PIN hash directly
+    await repo.setSetting('app_pin_hash', legacyHash)
+
+    // Verify it works (should auto-upgrade)
+    const result = await repo.verifyPin(pin)
+    expect(result).toBe(true)
+
+    // Check if it was upgraded
+    const newHash = await repo.getSetting('app_pin_hash')
+    expect(newHash).not.toBeNull()
+    expect(newHash?.startsWith('pbkdf2$')).toBe(true)
+  })
+
+  it('should return false for incorrect legacy pin and not upgrade it', async () => {
+    const crypto = await import('node:crypto')
+    const pin = '1234'
+    const legacyHash = crypto.createHash('sha256').update(pin).digest('hex')
+
+    // Set legacy PIN hash directly
+    await repo.setSetting('app_pin_hash', legacyHash)
+
+    // Verify with wrong pin
+    const result = await repo.verifyPin('wrong')
+    expect(result).toBe(false)
+
+    // Check it wasn't upgraded
+    const currentHash = await repo.getSetting('app_pin_hash')
+    expect(currentHash).toBe(legacyHash)
+  })
 })
 
 

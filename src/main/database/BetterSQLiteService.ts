@@ -196,7 +196,7 @@ export class BetterSQLiteService {
     const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
     for (const t of tables) {
       try { 
-        const result = await this.db.execute(`SELECT * FROM ${t}`)
+        const result = await this.db.execute(`SELECT * FROM "${t.replace(/"/g, '""')}"`)
         data[t] = result.rows as ExportRow[]
       } catch {
         // Ignore errors for missing tables or query issues
@@ -211,7 +211,7 @@ export class BetterSQLiteService {
     
     await this.beginBatch()
     try {
-      for (const t of tables) await this._client?.execute(`DELETE FROM ${t}`)
+      for (const t of tables) await this._client?.execute(`DELETE FROM "${t.replace(/"/g, '""')}"`)
       await this.endBatch()
     } catch (e) {
       await this.rollbackBatch()
@@ -229,7 +229,7 @@ export class BetterSQLiteService {
       for (const [table, rows] of Object.entries(data)) {
         if (table === '_meta' || !Array.isArray(rows) || !validTables.has(table)) continue
 
-        const colCheck = await this.db.execute(`PRAGMA table_info("${table}")`)
+        const colCheck = await this.db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
         const validCols = new Set(colCheck.rows.map(row => row.name as string))
 
         for (const row of rows) {
@@ -240,9 +240,10 @@ export class BetterSQLiteService {
             const keys = validEntries.map(([key]) => key)
             const values = validEntries.map(([, val]) => val)
 
-            const cols = keys.join(','), vals = keys.map(() => '?').join(',')
+            const cols = keys.map(k => '"' + k.replace(/"/g, '""') + '"').join(',')
+            const vals = keys.map(() => '?').join(',')
             await this.db.execute({
-              sql: `INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${vals})`,
+              sql: `INSERT OR REPLACE INTO "${table.replace(/"/g, '""')}" (${cols}) VALUES (${vals})`,
               args: values as InValue[]
             })
             imported++
