@@ -1,12 +1,16 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { MatchFixModal } from '@/components/library/MatchFixModal'
 import React from 'react'
 
 describe('MatchFixModal Series Disambiguation Indicators', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     Object.assign(window, {
       electronAPI: {
@@ -170,16 +174,16 @@ describe('MatchFixModal Series Disambiguation Indicators', () => {
       expect(screen.getAllByText(/Expansive Drama/).length).toBeGreaterThanOrEqual(2)
     })
 
-    const showMoreButton = screen.getByRole('button', { name: /show more/i })
+    const showMoreButton = screen.getByText('Show more')
     expect(showMoreButton).toBeTruthy()
 
     // Expand
     fireEvent.click(showMoreButton)
-    expect(screen.getByRole('button', { name: /show less/i })).toBeTruthy()
+    expect(screen.getByText('Show less')).toBeTruthy()
 
     // Collapse
-    fireEvent.click(screen.getByRole('button', { name: /show less/i }))
-    expect(screen.getByRole('button', { name: /show more/i })).toBeTruthy()
+    fireEvent.click(screen.getByText('Show less'))
+    expect(screen.getByText('Show more')).toBeTruthy()
   })
 
   it('applies the selected match correctly with provider and id', async () => {
