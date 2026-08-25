@@ -84,6 +84,8 @@ export const mediaApi: MediaAPI = {
   seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('series:getIncomplete', sourceId),
   seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
   seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesTitle, sourceId),
+  seriesGetAudioLanguages: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getAudioLanguages', seriesTitle, sourceId),
+  mediaGetFileAudioLanguages: (mediaItemId: number) => ipcRenderer.invoke('media:getFileAudioLanguages', mediaItemId),
   seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
   seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) =>
     ipcRenderer.invoke('series:getSeasonDetails', tmdbId, seasonNumber),
@@ -257,6 +259,8 @@ export interface MediaAPI {
     averageCompleteness: number
   }>
   seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => Promise<unknown[]>
+  seriesGetAudioLanguages: (seriesTitle: string, sourceId?: string) => Promise<string[]>
+  mediaGetFileAudioLanguages: (mediaItemId: number) => Promise<string[]>
   seriesDelete: (id: number) => Promise<boolean>
   seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) => Promise<{
     overview: string | null

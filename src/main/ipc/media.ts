@@ -30,5 +30,29 @@ export function registerMediaHandlers(): void {
     })
   })
 
+  createValidatedIpcHandler('media:getFileAudioLanguages', z.number().int().positive(), async (mediaItemId) => {
+    const { getDatabase } = await import('@main/database/BetterSQLiteService')
+    const db = getDatabase()
+    const item = await db.media.getById(mediaItemId)
+    if (!item) return []
+    const languages = new Set<string>()
+    if (item.audio_tracks) {
+      try {
+        const tracks = JSON.parse(item.audio_tracks) as Array<{ language?: string; lang?: string }>
+        if (Array.isArray(tracks)) {
+          for (const track of tracks) {
+            const lang = (track.language || track.lang || '').trim().toLowerCase()
+            if (lang) languages.add(lang)
+          }
+        }
+      } catch { /* ignore parse error */ }
+    }
+    if (item.audio_language) {
+      const lang = item.audio_language.trim().toLowerCase()
+      if (lang) languages.add(lang)
+    }
+    return Array.from(languages)
+  })
+
   getLoggingService().info('[media]', 'Media IPC handlers registered')
 }

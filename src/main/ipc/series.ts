@@ -53,6 +53,33 @@ export function registerSeriesHandlers() {
     return await db.tvShows.getEpisodes(title, sourceId)
   })
 
+  createValidatedIpcHandler('series:getAudioLanguages', SeriesGetEpisodesTupleSchema, async (title, sourceId) => {
+    const episodes = await db.tvShows.getEpisodes(title, sourceId)
+    const languages = new Set<string>()
+    for (const ep of episodes) {
+      if (ep.audio_tracks) {
+        try {
+          const tracks = JSON.parse(ep.audio_tracks) as Array<{ language?: string; lang?: string }>
+          if (Array.isArray(tracks)) {
+            for (const track of tracks) {
+              const lang = (track.language || track.lang || '').trim().toLowerCase()
+              if (lang) {
+                languages.add(lang)
+              }
+            }
+          }
+        } catch { /* ignore parse error */ }
+      }
+      if (ep.audio_language) {
+        const lang = ep.audio_language.trim().toLowerCase()
+        if (lang) {
+          languages.add(lang)
+        }
+      }
+    }
+    return Array.from(languages)
+  })
+
   createValidatedIpcHandler('series:delete', PositiveIntSchema, async (id) => {
     await db.tvShows.deleteCompleteness(id)
     getStatsCacheService().invalidate()

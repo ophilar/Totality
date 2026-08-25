@@ -4,7 +4,7 @@ import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database, Zap }
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
 import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
-import { getStatusBadge, formatSeasonLabel } from '@/components/library/mediaUtils'
+import { getStatusBadge, formatSeasonLabel, formatLanguage } from '@/components/library/mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 
 export function TVShowDetails({
@@ -31,7 +31,7 @@ export function TVShowDetails({
   selectedShowLoading: boolean
   seriesCompleteness: Map<string, SeriesCompletenessData>
   onBack: () => void
-  onAnalyzeSeries: (seriesTitle: string) => void
+  onAnalyzeSeries: (seriesTitle: string) => Promise<void> | void
   onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
   filterItem: (item: MediaItem) => boolean
   onSelectEpisode: (id: number) => void
@@ -44,19 +44,27 @@ export function TVShowDetails({
   onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
   onTranscodeShow?: (show: TVShowSummary) => void
 }) {
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
   const [copiedTitle, setCopiedTitle] = useState(false)
   const [showOverview, setShowOverview] = useState<string | null>(null)
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  const [audioLanguages, setAudioLanguages] = useState<string[]>([])
 
   useEffect(() => {
-    queueMicrotask(() => { setShowOverviewExpanded(false); setCopiedTitle(false); setShowOverview(null) })
+    queueMicrotask(() => { setShowOverviewExpanded(false); setCopiedTitle(false); setShowOverview(null); setAudioLanguages([]) })
 
     if (selectedShow) {
       const completenessData = seriesCompleteness.get(selectedShow)
       if (completenessData?.tmdb_id) {
         window.electronAPI.tmdbGetTVShowDetails(completenessData.tmdb_id)
           .then(details => { if (details?.overview) setShowOverview(details.overview) })
+          .catch(() => { /* ignore */ })
+      }
+
+      if (window.electronAPI.seriesGetAudioLanguages) {
+        window.electronAPI.seriesGetAudioLanguages(selectedShow)
+          .then(langs => { if (Array.isArray(langs) && langs.length > 0) setAudioLanguages(langs) })
           .catch(() => { /* ignore */ })
       }
     }
@@ -96,6 +104,7 @@ export function TVShowDetails({
 
   const ownedSeasons = Array.from(selectedShowData.seasons.values()).sort((a, b) => a.seasonNumber - b.seasonNumber)
   const completenessData = seriesCompleteness.get(selectedShow)
+  const firstEpisode = ownedSeasons[0]?.episodes[0]
 
   const handleSonarrSearch = async () => {
     if (!completenessData?.tvdb_id) return
@@ -177,8 +186,20 @@ export function TVShowDetails({
           </div>
 
           {/* Metadata line */}
-          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground flex-wrap">
             <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
+            {firstEpisode?.original_language && (
+              <>
+                <span>•</span>
+                <span>Original: {formatLanguage(firstEpisode.original_language)}</span>
+              </>
+            )}
+            {audioLanguages.length > 0 && (
+              <>
+                <span>•</span>
+                <span>Audio: {audioLanguages.map(l => formatLanguage(l)).join(', ')}</span>
+              </>
+            )}
             {completenessData?.status && (
               <>
                 <span>•</span>
@@ -190,12 +211,21 @@ export function TVShowDetails({
           {/* Action buttons row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3">
             <button
-              onClick={() => selectedShow && onAnalyzeSeries(selectedShow)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              onClick={async () => {
+                if (!selectedShow || isAnalyzing) return
+                setIsAnalyzing(true)
+                try {
+                  await onAnalyzeSeries(selectedShow)
+                } finally {
+                  setIsAnalyzing(false)
+                }
+              }}
+              disabled={isAnalyzing}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 cursor-pointer"
               title="Analyze Series"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Analyze Series
+              <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+              {isAnalyzing ? 'Analyzing...' : 'Analyze Series'}
             </button>
             {onTranscodeShow && (
               <button
@@ -206,6 +236,7 @@ export function TVShowDetails({
                     series_title: selectedShowData.title,
                     source_id: firstEpisode?.source_id || '',
                     poster_url: selectedShowData.poster_url,
+                    original_language: firstEpisode?.original_language
                   } as TVShowSummary)
                 }}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/15 text-primary hover:bg-primary/25 border border-primary/30 rounded-md font-semibold transition-colors cursor-pointer"

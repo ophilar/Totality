@@ -86,6 +86,39 @@ export const formatFileSize = (bytes?: number): string => {
   return `${(bytes / 1024).toFixed(0)} KB`
 }
 
+/**
+ * Format ISO language code (e.g. "ja", "en", "fra") to friendly human-readable name (e.g. "Japanese", "English", "French")
+ */
+const languageDisplayNames = typeof Intl !== 'undefined' && Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'language' }) : null
+
+export const formatLanguage = (code?: string | null): string => {
+  if (!code) return 'Unknown'
+  const normalized = code.trim().toLowerCase().split(/[-_]/)[0]
+  if (normalized === 'und' || normalized === 'undetermined') return 'Undetermined / Untagged'
+  try {
+    return languageDisplayNames?.of(normalized) || code.toUpperCase()
+  } catch {
+    return code.toUpperCase()
+  }
+}
+
+/**
+ * Compare two language codes to see if they refer to the same language
+ * (handles 2-letter vs 3-letter ISO codes, e.g. 'ja' and 'jpn')
+ */
+export const isSameLanguage = (codeA?: string | null, codeB?: string | null): boolean => {
+  if (!codeA || !codeB) return false
+  const a = codeA.trim().toLowerCase().split(/[-_]/)[0]
+  const b = codeB.trim().toLowerCase().split(/[-_]/)[0]
+  if (a === b) return true
+  const nameA = formatLanguage(a)
+  const nameB = formatLanguage(b)
+  if (nameA !== 'Unknown' && nameA !== 'Undetermined / Untagged' && nameA === nameB) {
+    return true
+  }
+  return false
+}
+
 // ============================================================================
 // Quality Assessment Functions
 // ============================================================================
@@ -172,6 +205,41 @@ export const getQualityTierBgColor = (tier: 'ultra' | 'high' | 'medium' | 'low' 
       return 'bg-red-500/20'
     default:
       return 'bg-muted/30'
+  }
+}
+
+/**
+ * Check if a track is high resolution (24-bit or >48kHz)
+ */
+export const isHighResTrack = (bitDepth?: number, sampleRate?: number): boolean => {
+  return (bitDepth !== undefined && bitDepth >= 24) || (sampleRate !== undefined && sampleRate > 48000)
+}
+
+/**
+ * Get badge text for audio quality
+ */
+export const getAudioQualityBadge = (
+  codec?: string,
+  bitDepth?: number,
+  sampleRate?: number,
+  bitrate?: number
+): { text: string; color: string; bgColor: string } | null => {
+  const tier = getTrackQualityTier(codec, bitDepth, sampleRate, bitrate)
+  if (!tier) return null
+
+  let text = 'STANDARD'
+  if (tier === 'ultra') {
+    text = 'HI-RES'
+  } else if (tier === 'high') {
+    text = 'LOSSLESS'
+  } else if (tier === 'medium') {
+    text = 'HQ'
+  }
+
+  return {
+    text,
+    color: getQualityTierColor(tier),
+    bgColor: getQualityTierBgColor(tier)
   }
 }
 

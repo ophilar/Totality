@@ -20,18 +20,27 @@ import {
   ListOrdered
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
-import type { TVShowSummary } from './types'
+import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
+import { formatLanguage, isSameLanguage } from './mediaUtils'
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
 import { TaskType } from '@main/types/database'
+
+const CANONICAL_LANGUAGE_CODES = ['ja', 'en', 'fr', 'de', 'es', 'it', 'ko', 'zh', 'ru', 'pt', 'nl', 'pl', 'sv', 'no', 'da', 'fi', 'hi', 'ar']
+const LANGUAGE_OPTIONS = CANONICAL_LANGUAGE_CODES.map(code => ({
+  code,
+  label: `${formatLanguage(code)} (${code})`
+}))
 
 export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onClose: () => void }) {
   const { addToast } = useToast()
   const [mode, setMode] = useState<'config' | 'monitoring'>('config')
   const [codec, setCodec] = useState<'hevc' | 'av1'>('av1')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
-  const [language, setLanguage] = useState('en')
+  const [language, setLanguage] = useState('')
+  const [detectedLanguages, setDetectedLanguages] = useState<string[]>([])
+  const [providerLanguage, setProviderLanguage] = useState<string>('')
   const [outputMode, setOutputMode] = useState<'copy' | 'quarantine-replace'>('quarantine-replace')
   const [useGpu, setUseGpu] = useState(true)
   const [gpuId, setGpuId] = useState('')
@@ -50,6 +59,73 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
   const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
+
+  // Auto-detect available audio languages and provider original language from series metadata / episodes
+  useEffect(() => {
+    let isMounted = true
+    async function loadLanguages() {
+      if (!show.series_title) return
+      let provLang = (show as TVShowSummary & { original_language?: string }).original_language || ''
+      let fileLangs: string[] = []
+
+      try {
+        if (window.electronAPI.seriesGetAudioLanguages) {
+          const res = await window.electronAPI.seriesGetAudioLanguages(show.series_title, show.source_id)
+          if (Array.isArray(res)) {
+            fileLangs = res
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get series audio languages:', err)
+      }
+
+      try {
+        if ((!provLang || fileLangs.length === 0) && window.electronAPI.seriesGetEpisodes) {
+          const episodes = await window.electronAPI.seriesGetEpisodes(show.series_title, show.source_id)
+          if (Array.isArray(episodes) && episodes.length > 0) {
+            const detected = (episodes as MediaItem[]).find(e => e.original_language)?.original_language
+            if (detected && !provLang) provLang = detected
+            if (fileLangs.length === 0) {
+              const extracted = new Set<string>()
+              for (const ep of episodes as MediaItem[]) {
+                if (ep.audio_tracks) {
+                  try {
+                    const tracks = JSON.parse(ep.audio_tracks) as Array<{ language?: string; lang?: string }>
+                    for (const t of tracks) {
+                      const l = (t.language || t.lang || '').trim().toLowerCase()
+                      if (l) extracted.add(l)
+                    }
+                  } catch { /* ignore */ }
+                }
+                if (ep.audio_language) {
+                  const l = ep.audio_language.trim().toLowerCase()
+                  if (l) extracted.add(l)
+                }
+              }
+              fileLangs = Array.from(extracted)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch episodes for original language detection:', err)
+      }
+
+      if (!isMounted) return
+
+      setDetectedLanguages(fileLangs)
+      setProviderLanguage(provLang)
+
+      if (provLang) {
+        const matchingFileCode = fileLangs.find(code => isSameLanguage(code, provLang))
+        setLanguage(matchingFileCode || provLang.toLowerCase())
+      } else if (fileLangs.length > 0) {
+        setLanguage(fileLangs[0])
+      }
+    }
+
+    loadLanguages()
+    return () => { isMounted = false }
+  }, [show.series_title, show.source_id])
 
   useEffect(() => {
     let isMounted = true
@@ -283,15 +359,54 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
 
               {audio === 'original-and-protected' && (
-                <div className="mt-2 flex items-center gap-2">
-                  <label className="text-xs text-muted-foreground shrink-0">Original Language:</label>
-                  <input 
-                    type="text"
-                    value={language} 
-                    onChange={e => setLanguage(e.target.value)} 
-                    placeholder="e.g. en, ja, fr, es" 
-                    className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-28" 
-                  />
+                <div className="mt-3 flex items-center gap-2">
+                  <label htmlFor="show-original-language-select" className="text-xs text-muted-foreground shrink-0 font-medium">Original Language:</label>
+                  <select
+                    id="show-original-language-select"
+                    aria-label="Original Language"
+                    value={language}
+                    onChange={e => setLanguage(e.target.value)}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  >
+                    {!language && <option value="">Select language...</option>}
+                    {detectedLanguages.length > 0 && (
+                      <optgroup label="Available in files">
+                        {detectedLanguages.map(code => {
+                          const isDefault = providerLanguage && isSameLanguage(code, providerLanguage)
+                          const label = code === 'und'
+                            ? 'Undetermined / Untagged (und)'
+                            : isDefault
+                              ? `${formatLanguage(code)} (${code}) (Provider Default: ${formatLanguage(providerLanguage)})`
+                              : `${formatLanguage(code)} (${code})`
+                          return (
+                            <option key={`detected-${code}`} value={code}>
+                              {label}
+                            </option>
+                          )
+                        })}
+                      </optgroup>
+                    )}
+                    <optgroup label={detectedLanguages.length > 0 ? "All Languages" : "Languages"}>
+                      {language && !LANGUAGE_OPTIONS.some(opt => opt.code === language) && !detectedLanguages.includes(language) && (
+                        <option value={language}>
+                          {providerLanguage && isSameLanguage(language, providerLanguage)
+                            ? `${formatLanguage(language)} (${language}) (Provider Default: ${formatLanguage(providerLanguage)})`
+                            : `${formatLanguage(language)} (${language})`}
+                        </option>
+                      )}
+                      {LANGUAGE_OPTIONS.map(opt => {
+                        const isDefault = providerLanguage && isSameLanguage(opt.code, providerLanguage)
+                        const label = isDefault
+                          ? `${formatLanguage(opt.code)} (${opt.code}) (Provider Default: ${formatLanguage(providerLanguage)})`
+                          : opt.label
+                        return (
+                          <option key={`all-${opt.code}`} value={opt.code}>
+                            {label}
+                          </option>
+                        )
+                      })}
+                    </optgroup>
+                  </select>
                 </div>
               )}
             </div>
