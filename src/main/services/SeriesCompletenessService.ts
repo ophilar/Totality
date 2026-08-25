@@ -1,6 +1,6 @@
 import { getDatabase, BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import { getTMDBService, TMDBService } from '@main/services/TMDBService'
-import { SeriesCompleteness, MediaItem, MediaItemType, ProviderType } from '@main/types/database'
+import { SeriesCompleteness, MediaItem, MediaItemType } from '@main/types/database'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { CompletenessEngine } from '@main/services/CompletenessEngine'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'

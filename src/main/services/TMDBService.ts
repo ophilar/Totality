@@ -325,7 +325,7 @@ export class TMDBService {
   async getTVShowWithSeasons(
     tmdbId: string,
     seasonNumbers: number[]
-  ): Promise<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails; external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } }> {
+  ): Promise<TMDBTVShowDetails & { external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } } & Record<string, any>> {
     // TMDB limits append_to_response to 20 items
     const MAX_APPEND = 20
     const seasonsToAppend = seasonNumbers.slice(0, MAX_APPEND - 1)
@@ -335,7 +335,7 @@ export class TMDBService {
     const appendParam = appendItems.join(',')
 
     const result = await this.request<
-      TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails; external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } }
+      TMDBTVShowDetails & { external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } } & Record<string, any>
     >(`/tv/${tmdbId}`, { append_to_response: appendParam })
 
     return result
