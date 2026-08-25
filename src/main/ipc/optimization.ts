@@ -4,7 +4,7 @@ import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/cre
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { ArrIntegrationService } from '@main/services/ArrIntegrationService'
 import { LanguageDecisionService } from '@main/services/LanguageDecisionService'
-import { aggregateShowOptimizationMetrics, calculateDryRunMetrics } from '@main/services/ShowOptimizationMetricsService'
+import { calculateDryRunMetrics } from '@main/services/ShowOptimizationMetricsService'
 import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { spawn } from 'node:child_process'
