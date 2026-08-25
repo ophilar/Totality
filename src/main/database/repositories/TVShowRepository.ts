@@ -99,7 +99,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }),
         total_size: row.total_size || 0,
         total_recoverable_bytes: totalRecoverable,
-        weighted_efficiency: row.efficiency_score || 0,
+        weighted_efficiency: row.efficiency_score ?? null,
         scored_episode_count: ownedCount,
         unscored_episode_count: Math.max(0, totalCount - ownedCount),
         recommended_action: totalRecoverable > 0 ? 'review-required' : 'no-optimization'
@@ -285,6 +285,55 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       .all()
     
     return rows.map(r => this.mapDrizzleToCompleteness(r))
+  }
+
+  async updateEpisodeMetadata(
+    id: number,
+    metadata: {
+      title?: string
+      year?: number
+      summary?: string
+      posterUrl?: string
+      episodeThumbUrl?: string
+      seasonPosterUrl?: string
+      seriesTmdbId?: string
+      tmdbId?: string
+      imdbId?: string
+    }
+  ): Promise<void> {
+    const data: Record<string, unknown> = { updatedAt: sql`(datetime('now'))` }
+    if (metadata.title !== undefined) data.title = metadata.title
+    if (metadata.year !== undefined) data.year = metadata.year
+    if (metadata.summary !== undefined) data.summary = metadata.summary
+    if (metadata.posterUrl !== undefined) data.posterUrl = metadata.posterUrl
+    if (metadata.episodeThumbUrl !== undefined) data.episodeThumbUrl = metadata.episodeThumbUrl
+    if (metadata.seasonPosterUrl !== undefined) data.seasonPosterUrl = metadata.seasonPosterUrl
+    if (metadata.seriesTmdbId !== undefined) data.seriesTmdbId = metadata.seriesTmdbId
+    if (metadata.tmdbId !== undefined) data.tmdbId = metadata.tmdbId
+    if (metadata.imdbId !== undefined) data.imdbId = metadata.imdbId
+
+    await this.drizzle.update(schema.mediaItems).set(data).where(eq(schema.mediaItems.id, id))
+  }
+
+  async updateBatchEpisodeMetadata(
+    updates: Array<{
+      id: number
+      metadata: {
+        title?: string
+        year?: number
+        summary?: string
+        posterUrl?: string
+        episodeThumbUrl?: string
+        seasonPosterUrl?: string
+        seriesTmdbId?: string
+        tmdbId?: string
+        imdbId?: string
+      }
+    }>
+  ): Promise<void> {
+    for (const update of updates) {
+      await this.updateEpisodeMetadata(update.id, update.metadata)
+    }
   }
 
   async deleteCompleteness(id: number): Promise<void> {

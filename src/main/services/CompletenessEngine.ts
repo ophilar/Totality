@@ -52,7 +52,7 @@ export class CompletenessEngine {
    * Calculate completeness for an episodic set (e.g. TV Series).
    */
   static calculateEpisodic(
-    targetEpisodes: Array<{ season_number: number; episode_number: number; air_date?: string }>,
+    targetEpisodes: Array<{ season_number: number; episode_number: number; title?: string; name?: string; air_date?: string }>,
     ownedKeys: Set<string>, // e.g. "S1E1"
     cutoffDate = new Date()
   ): CompletenessResult<MissingEpisode> {
@@ -69,6 +69,7 @@ export class CompletenessEngine {
     }).map(ep => ({
       season_number: ep.season_number,
       episode_number: ep.episode_number,
+      title: ep.title || ep.name,
       air_date: ep.air_date
     }))
 

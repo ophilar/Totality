@@ -322,20 +322,30 @@ export class TMDBService {
    * Uses append_to_response to fetch up to 20 seasons at once
    * This is MUCH faster than calling getSeasonDetails for each season
    */
-  async getTVShowWithSeasons(tmdbId: string, seasonNumbers: number[]): Promise<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails }> {
+  async getTVShowWithSeasons(
+    tmdbId: string,
+    seasonNumbers: number[]
+  ): Promise<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails; external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } }> {
     // TMDB limits append_to_response to 20 items
     const MAX_APPEND = 20
-    const seasonsToAppend = seasonNumbers.slice(0, MAX_APPEND)
+    const seasonsToAppend = seasonNumbers.slice(0, MAX_APPEND - 1)
 
-    // Build append_to_response parameter: season/1,season/2,season/3,...
-    const appendParam = seasonsToAppend.map(n => `season/${n}`).join(',')
+    // Build append_to_response parameter: external_ids,season/1,season/2,season/3,...
+    const appendItems = ['external_ids', ...seasonsToAppend.map(n => `season/${n}`)]
+    const appendParam = appendItems.join(',')
 
-    const result = await this.request<TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails }>(
-      `/tv/${tmdbId}`,
-      { append_to_response: appendParam }
-    )
+    const result = await this.request<
+      TMDBTVShowDetails & { [key: string]: TMDBSeasonDetails; external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null; id?: number } }
+    >(`/tv/${tmdbId}`, { append_to_response: appendParam })
 
     return result
+  }
+
+  /**
+   * Get TV show external IDs (TVDB, IMDB, etc.)
+   */
+  async getTVShowExternalIds(tmdbId: string): Promise<{ imdb_id?: string | null; tvdb_id?: number | string | null; id?: number }> {
+    return await this.request<{ imdb_id?: string | null; tvdb_id?: number | string | null; id?: number }>(`/tv/${tmdbId}/external_ids`)
   }
 
   /**
