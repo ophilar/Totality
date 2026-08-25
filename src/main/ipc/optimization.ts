@@ -99,7 +99,7 @@ export function registerOptimizationHandlers() {
     if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
-      durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
+      durationSeconds: analysis.duration == null ? undefined : (analysis.duration > 10000 ? analysis.duration / 1000 : analysis.duration),
       fileSize: analysis.fileSize || 0,
       videoStorageDebtBytes: item.storage_debt_bytes,
       audioTranscodeSavingsBytes: null,

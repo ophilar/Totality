@@ -76,9 +76,26 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     confidence: languageDecision.confidence,
     evidenceSources: languageDecision.evidenceSources,
   }
-  const audioSavings = nonNegative(input.audioTranscodeSavingsBytes)
+  const computedAudioSavings = input.durationSeconds != null && input.audioTracks.length > 0
+    ? input.audioTracks.reduce((sum, track) => {
+        const tier = AudioCodecRanker.getTier(track.codec, track.hasObjectAudio)
+        const currentBitrateKbps = track.bitrate && track.bitrate > 0 ? track.bitrate : AudioCodecRanker.estimateBitrate(track.codec, track.channels)
+        const targetBitrateKbps = track.channels >= 6 ? 640 : 256
+        if (currentBitrateKbps > targetBitrateKbps && (tier >= AudioCodecRanker.TIER_LOSSLESS || currentBitrateKbps >= 1500)) {
+          const savingsPerSecBytes = ((currentBitrateKbps - targetBitrateKbps) * 1000) / 8
+          return sum + Math.round(savingsPerSecBytes * input.durationSeconds!)
+        }
+        return sum
+      }, 0)
+    : null
+
+  const audioSavings = nonNegative(input.audioTranscodeSavingsBytes ?? (computedAudioSavings && computedAudioSavings > 0 ? computedAudioSavings : null))
   const videoSavings = nonNegative(input.videoStorageDebtBytes)
-  const audioTranscode: OptimizationDecisionMechanism = { status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable', estimatedSavingsBytes: audioSavings, reason: audioSavings != null && audioSavings > 0 ? 'Existing audio transcode analysis found recoverable space' : 'Audio transcode estimate is unavailable' }
+  const audioTranscode: OptimizationDecisionMechanism = { 
+    status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable', 
+    estimatedSavingsBytes: audioSavings, 
+    reason: audioSavings != null && audioSavings > 0 ? 'Transcoding high-bitrate or lossless audio to efficient surround format will save space' : 'Audio streams are already efficient' 
+  }
   const videoTranscode: OptimizationDecisionMechanism = { status: videoSavings != null && videoSavings > 0 ? 'executable' : 'unavailable', estimatedSavingsBytes: videoSavings, reason: videoSavings != null && videoSavings > 0 ? 'Existing video storage analysis found recoverable space' : 'Video transcode estimate is unavailable' }
   const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : videoTranscode.status === 'executable' ? 'transcode-video' : 'no-action'
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }

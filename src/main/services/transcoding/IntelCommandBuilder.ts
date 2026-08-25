@@ -4,11 +4,14 @@ import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
 
+
 export class IntelCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
     const hdrArgs = buildHdrMetadataArgs(_analysis)
     const codec = options.targetCodec === 'av1' ? 'av1_qsv' : 'hevc_qsv'
     const quality = (options.crf ?? 20).toString()
+
+    const sourceBitrate = _analysis?.video?.bitrate || _analysis?.overallBitrate || (_analysis?.duration && _analysis?.fileSize ? Math.round((_analysis.fileSize * 8) / _analysis.duration) : undefined)
 
     const args: string[] = [
       '-y',
@@ -22,13 +25,12 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
       '-c:v', codec,
       '-preset', options.preset || 'slow',
       '-global_quality', quality,
+      ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}`, '-bufsize', `${sourceBitrate * 2}`] : []),
       '-look_ahead', '1'
     ]
 
     appendStreamMappingArgs(args, _analysis, options)
-
     args.push(...hdrArgs)
-
     args.push(output)
     return args
   }

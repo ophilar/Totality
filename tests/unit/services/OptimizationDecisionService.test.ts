@@ -55,4 +55,21 @@ describe('buildOptimizationDecision', () => {
     expect(result.trackRemoval.removableTrackIndexes).toEqual([])
     expect(result.primaryAction).toBe('transcode-video')
   })
+
+  it('suggests audio transcoding and computes savings for lossless TrueHD/DTS-HD audio', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 50_000_000,
+      durationSeconds: 3600, // 1 hour
+      videoStorageDebtBytes: 0,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [
+        { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrate: 4800, isDefault: true, hasObjectAudio: false, reliableTag: true },
+      ],
+    })
+
+    expect(result.audioTranscode.status).toBe('executable')
+    expect(result.audioTranscode.estimatedSavingsBytes).toBeGreaterThan(0)
+    expect(result.primaryAction).toBe('transcode-audio')
+  })
 })
