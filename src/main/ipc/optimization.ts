@@ -4,7 +4,7 @@ import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/cre
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { ArrIntegrationService } from '@main/services/ArrIntegrationService'
 import { LanguageDecisionService } from '@main/services/LanguageDecisionService'
-import { aggregateShowOptimizationMetrics } from '@main/services/ShowOptimizationMetricsService'
+import { aggregateShowOptimizationMetrics, calculateDryRunMetrics } from '@main/services/ShowOptimizationMetricsService'
 import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { spawn } from 'node:child_process'
@@ -59,8 +59,74 @@ export function registerOptimizationHandlers() {
   })
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.DRY_RUN, z.tuple([z.string(), z.string().optional()]), async (title, sourceId) => {
     const episodes = await db.tvShows.getEpisodes(title, sourceId)
-    const metrics = aggregateShowOptimizationMetrics(episodes.map(episode => ({ sizeBytes: episode.file_size ?? undefined, recoverableBytes: episode.storage_debt_bytes ?? undefined, efficiency: episode.efficiency_score ?? undefined })))
-    return { title, metrics, action: metrics.totalRecoverableBytes > 0 ? 'review-required' : 'no-optimization', optInRequired: true }
+    const analyzer = getMediaFileAnalyzer()
+    const analyzerAvailable = await analyzer.isAvailable()
+
+    const episodeMetrics = await Promise.all(
+      episodes.map(async (episode) => {
+        let audioStreams: import('@main/services/ShowOptimizationMetricsService').TrackStreamInfo[] | undefined = undefined
+        let durationSeconds = episode.duration ? (episode.duration > 10000 ? episode.duration / 1000 : episode.duration) : undefined
+
+        if (episode.file_path && analyzerAvailable) {
+          try {
+            const analysis = await analyzer.analyzeFile(episode.file_path)
+            if (analysis.success && analysis.audioTracks.length > 0) {
+              audioStreams = analysis.audioTracks.map((t) => ({
+                index: t.index,
+                codec: t.codec,
+                codec_name: t.codec,
+                language: t.language,
+                title: t.title,
+                channels: t.channels,
+                bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
+                bitrate: t.bitrate ? t.bitrate * 1000 : undefined,
+                isCommentary: t.isCommentary,
+                isAudioDescription: t.isAudioDescription,
+                isAccessibility: t.isAccessibility,
+                reliableTag: Boolean(t.language),
+              }))
+              if (analysis.duration) {
+                durationSeconds = analysis.duration > 10000 ? analysis.duration / 1000 : analysis.duration
+              }
+            }
+          } catch {
+            // Keep fallback database values
+          }
+        }
+
+        return {
+          sizeBytes: episode.file_size ?? undefined,
+          recoverableBytes: episode.storage_debt_bytes ?? undefined,
+          efficiency: episode.efficiency_score ?? undefined,
+          audioStreams,
+          durationSeconds,
+        }
+      })
+    )
+
+    const originalLanguage = episodes[0]?.original_language ?? undefined
+    const dryRunResult = calculateDryRunMetrics(episodeMetrics, originalLanguage)
+
+    return {
+      title,
+      totalBytes: dryRunResult.totalBytes,
+      recoverableBytes: dryRunResult.recoverableBytes,
+      percentageSavings: dryRunResult.percentageSavings,
+      totalEpisodes: dryRunResult.totalEpisodes,
+      scoredEpisodes: dryRunResult.scoredEpisodes,
+      unscoredEpisodes: dryRunResult.unscoredEpisodes,
+      weightedEfficiency: dryRunResult.weightedEfficiency,
+      trackDecisions: dryRunResult.trackDecisions,
+      metrics: {
+        totalSize: dryRunResult.totalBytes,
+        totalRecoverableBytes: dryRunResult.recoverableBytes,
+        weightedEfficiency: dryRunResult.weightedEfficiency,
+        scoredEpisodeCount: dryRunResult.scoredEpisodes,
+        unscoredEpisodeCount: dryRunResult.unscoredEpisodes,
+      },
+      action: dryRunResult.recoverableBytes > 0 ? 'review-required' : 'no-optimization',
+      optInRequired: true,
+    }
   })
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.REQUEST_ARR_SEARCH, z.tuple([z.number().int().positive(), z.boolean()]), async (seriesId, optIn) => {
     if (!optIn) throw new Error('Opt-in is required before requesting an Arr search')

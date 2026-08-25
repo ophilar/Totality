@@ -9,6 +9,34 @@ export interface AudioTrackForDecision {
   isAudioDescription?: boolean
   isAccessibility?: boolean
   reliableTag?: boolean
+  disposition?: {
+    default?: number
+    forced?: number
+    comment?: number
+    visual_impaired?: number
+    hearing_impaired?: number
+    [key: string]: unknown
+  }
+  tags?: {
+    language?: string
+    title?: string
+    [key: string]: unknown
+  } | null
+}
+
+export interface AudioDecisionConfig {
+  retainCommentary?: boolean
+  retainAudioDescription?: boolean
+  retainAccessibility?: boolean
+}
+
+export interface AudioStreamDecision {
+  action: AudioTrackAction
+  decision: AudioTrackAction
+  rationale: string
+  reason: string
+  originalLanguage: string | null
+  streamLanguage: string | null
 }
 
 export interface LanguageDecision {
@@ -22,14 +50,114 @@ export interface LanguageDecision {
   reason: string
 }
 
-const LANGUAGE_ALIASES: Record<string, string> = { eng: 'en', deu: 'de', ger: 'de', fra: 'fr', fre: 'fr', spa: 'es', ita: 'it', jpn: 'ja', kor: 'ko', zho: 'zh', chi: 'zh', rus: 'ru' }
+const LANGUAGE_ALIASES: Record<string, string> = {
+  eng: 'en',
+  deu: 'de',
+  ger: 'de',
+  fra: 'fr',
+  fre: 'fr',
+  spa: 'es',
+  ita: 'it',
+  jpn: 'ja',
+  kor: 'ko',
+  zho: 'zh',
+  chi: 'zh',
+  rus: 'ru',
+}
+
 const normalize = (language?: string | null) => {
   const value = language?.trim().toLowerCase().split(/[-_]/)[0] || null
   return value ? LANGUAGE_ALIASES[value] || value : null
 }
+
 const protectedTitle = /commentary|comment|audio description|descriptive|accessib|narration/i
 
 export class LanguageDecisionService {
+  /**
+   * Decide retention vs removal for a single audio stream:
+   * - Retain: matches original language, or is commentary, audio description, or accessibility.
+   * - Remove: unwanted dubbed audio in a different language than original.
+   * - Review-required: missing/unknown language or original language metadata.
+   */
+  decideAudioStream(
+    stream: {
+      index?: number
+      language?: string | null
+      title?: string | null
+      isCommentary?: boolean
+      isAudioDescription?: boolean
+      isAccessibility?: boolean
+      reliableTag?: boolean
+      disposition?: {
+        comment?: number
+        visual_impaired?: number
+        hearing_impaired?: number
+        [key: string]: unknown
+      }
+      tags?: {
+        language?: string
+        title?: string
+        [key: string]: unknown
+      } | null
+    },
+    originalLanguage?: string | null,
+    config?: AudioDecisionConfig
+  ): AudioStreamDecision {
+    const rawLanguage = stream.language ?? stream.tags?.language ?? null
+    const normLang = normalize(rawLanguage)
+    const normOrig = normalize(originalLanguage)
+
+    const isCommentary =
+      stream.isCommentary === true ||
+      stream.disposition?.comment === 1 ||
+      /commentary|comment/i.test(stream.title ?? stream.tags?.title ?? '')
+    const isAudioDescription =
+      stream.isAudioDescription === true ||
+      stream.disposition?.visual_impaired === 1 ||
+      /audio description|descriptive/i.test(stream.title ?? stream.tags?.title ?? '')
+    const isAccessibility =
+      stream.isAccessibility === true ||
+      stream.disposition?.hearing_impaired === 1 ||
+      /accessib|hearing impaired|narration/i.test(stream.title ?? stream.tags?.title ?? '')
+
+    const retainCommentary = config?.retainCommentary ?? true
+    const retainAudioDesc = config?.retainAudioDescription ?? true
+    const retainAccess = config?.retainAccessibility ?? true
+
+    if (isCommentary && retainCommentary) {
+      const rationale = 'Commentary track retained for extras/accessibility'
+      return { action: 'retain', decision: 'retain', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    if (isAudioDescription && retainAudioDesc) {
+      const rationale = 'Audio description track retained for accessibility'
+      return { action: 'retain', decision: 'retain', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    if (isAccessibility && retainAccess) {
+      const rationale = 'Accessibility track retained'
+      return { action: 'retain', decision: 'retain', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    if (!normOrig) {
+      const rationale = 'Original language metadata is unknown'
+      return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    if (!normLang) {
+      const rationale = 'Missing or unreliable language tag requires review'
+      return { action: 'review-required', decision: 'review-required', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    if (normLang === normOrig) {
+      const rationale = `Matches original language (${originalLanguage || normOrig})`
+      return { action: 'retain', decision: 'retain', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+    }
+
+    const rationale = `Unwanted dubbed audio track (${rawLanguage || normLang}) different from original language (${originalLanguage || normOrig})`
+    return { action: 'remove', decision: 'remove', rationale, reason: rationale, originalLanguage: normOrig, streamLanguage: normLang }
+  }
+
   decide(originalLanguage: string | null | undefined, tracks: AudioTrackForDecision[], metadataAgreesWithTags = true): LanguageDecision {
     const original = normalize(originalLanguage)
     const evidenceSources = original ? ['matched-original-language-metadata'] : []
@@ -49,3 +177,4 @@ export class LanguageDecisionService {
     return { originalLanguage: original, evidenceSources: [...new Set(evidenceSources)], confidence: status === 'approved' ? 'high' : 'none', status, retainedTrackIndexes: retained, removableTrackIndexes: removable, reviewRequiredTrackIndexes: review, reason: status === 'approved' ? 'Metadata and reliable embedded audio tags agree' : 'One or more audio tracks have unknown or unreliable language evidence' }
   }
 }
+
