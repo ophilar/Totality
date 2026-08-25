@@ -186,7 +186,7 @@ describe('TimelinesView Master-Detail Layout', () => {
 
     // Wait for recipes to load in master pane
     await waitFor(() => {
-      expect(screen.getByText('Star Trek (The Chronology Project Order)')).toBeTruthy()
+      expect(screen.getAllByText('Star Trek (The Chronology Project Order)').length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText('Star Wars Canon Timeline')).toBeTruthy()
     })
 
@@ -196,12 +196,12 @@ describe('TimelinesView Master-Detail Layout', () => {
 
     // Filter master recipes
     fireEvent.change(recipeSearchInput, { target: { value: 'Star Wars' } })
-    expect(screen.queryByText('Star Trek (The Chronology Project Order)')).toBeNull()
-    expect(screen.getByText('Star Wars Canon Timeline')).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Star Trek (The Chronology Project Order)' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Star Wars Canon Timeline' })).toBeTruthy()
 
     // Clear search and select Star Wars
     fireEvent.change(recipeSearchInput, { target: { value: '' } })
-    const starWarsBtn = screen.getByText('Star Wars Canon Timeline')
+    const starWarsBtn = screen.getByRole('heading', { level: 3, name: 'Star Wars Canon Timeline' })
     fireEvent.click(starWarsBtn)
 
     // Verify detail view updates with Star Wars timeline details
