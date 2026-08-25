@@ -33,7 +33,7 @@ export function registerMediaHandlers(): void {
   createValidatedIpcHandler('media:getFileAudioLanguages', z.number().int().positive(), async (mediaItemId) => {
     const { getDatabase } = await import('@main/database/BetterSQLiteService')
     const db = getDatabase()
-    const item = await db.media.getById(mediaItemId)
+    const item = (await db.media.getById(mediaItemId)) as import('@main/types/database').MediaItem | null
     if (!item) return []
     const languages = new Set<string>()
     if (item.audio_tracks) {

@@ -231,13 +231,20 @@ export function TVShowDetails({
               <button
                 onClick={() => {
                   if (!selectedShowData) return
-                  const firstEpisode = Array.from(selectedShowData.seasons.values())[0]?.episodes[0]
+                  const allSeasons = Array.from(selectedShowData.seasons.values())
+                  const firstEpisode = allSeasons[0]?.episodes[0]
+                  const totalEpisodes = allSeasons.reduce((sum, s) => sum + s.episodes.length, 0)
+                  const totalSeasons = selectedShowData.seasons.size
                   onTranscodeShow({
                     series_title: selectedShowData.title,
                     source_id: firstEpisode?.source_id || '',
                     poster_url: selectedShowData.poster_url,
-                    original_language: firstEpisode?.original_language
-                  } as TVShowSummary)
+                    original_language: firstEpisode?.original_language || null,
+                    season_count: totalSeasons,
+                    episode_count: totalEpisodes,
+                    total_seasons: totalSeasons,
+                    total_episodes: totalEpisodes,
+                  })
                 }}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/15 text-primary hover:bg-primary/25 border border-primary/30 rounded-md font-semibold transition-colors cursor-pointer"
                 title="Optimize entire TV series with hardware transcoding"

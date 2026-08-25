@@ -464,6 +464,7 @@ export interface TVShowSummary {
   tvdb_id?: string | null
   poster_url?: string
   backdrop_url?: string | null
+  original_language?: string | null
   status?: string | null
   user_fixed_match?: number | boolean | null
   efficiency_score?: number | null

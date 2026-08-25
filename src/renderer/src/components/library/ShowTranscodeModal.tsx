@@ -386,7 +386,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                         })}
                       </optgroup>
                     )}
-                    <optgroup label={detectedLanguages.length > 0 ? "All Languages" : "Languages"}>
+                    <optgroup label={detectedLanguages.length > 0 ? "Other Languages" : "Languages"}>
                       {language && !LANGUAGE_OPTIONS.some(opt => opt.code === language) && !detectedLanguages.includes(language) && (
                         <option value={language}>
                           {providerLanguage && isSameLanguage(language, providerLanguage)
@@ -394,7 +394,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                             : `${formatLanguage(language)} (${language})`}
                         </option>
                       )}
-                      {LANGUAGE_OPTIONS.map(opt => {
+                      {LANGUAGE_OPTIONS.filter(opt => !detectedLanguages.some(dl => isSameLanguage(dl, opt.code))).map(opt => {
                         const isDefault = providerLanguage && isSameLanguage(opt.code, providerLanguage)
                         const label = isDefault
                           ? `${formatLanguage(opt.code)} (${opt.code}) (Provider Default: ${formatLanguage(providerLanguage)})`
