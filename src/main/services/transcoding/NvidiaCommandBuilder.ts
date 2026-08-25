@@ -27,8 +27,8 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-rc', 'vbr',
       '-cq', cq,
       ...(options.targetCodec === 'av1'
-        ? ['-maxrate', sourceBitrate ? `${Math.min(60000000, Math.round(sourceBitrate * 0.9))}` : '60M', '-bufsize', sourceBitrate ? `${Math.min(120000000, Math.round(sourceBitrate * 1.8))}` : '120M', '-level', '5.2', '-tier', '0', '-bf', '0', '-b_ref_mode', 'disabled', '-rc-lookahead', '0']
-        : (sourceBitrate ? ['-b:v', '0', '-maxrate', `${Math.round(sourceBitrate * 0.9)}`, '-bufsize', `${Math.round(sourceBitrate * 1.8)}`, '-b_ref_mode', 'middle'] : ['-b:v', '0', '-b_ref_mode', 'middle'])),
+        ? ['-maxrate', sourceBitrate ? `${Math.min(60000000, sourceBitrate)}` : '60M', '-bufsize', sourceBitrate ? `${Math.min(120000000, sourceBitrate * 2)}` : '120M', '-level', '5.2', '-tier', '0', '-bf', '0', '-b_ref_mode', 'disabled', '-rc-lookahead', '0']
+        : (sourceBitrate ? ['-b:v', '0', '-maxrate', `${sourceBitrate}`, '-bufsize', `${sourceBitrate * 2}`, '-b_ref_mode', 'middle'] : ['-b:v', '0', '-b_ref_mode', 'middle'])),
       '-spatial-aq', '1',
       '-temporal-aq', '1'
     )

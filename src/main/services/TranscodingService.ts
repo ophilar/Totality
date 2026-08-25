@@ -694,7 +694,7 @@ export class TranscodingService {
 
       // Parse FFmpeg progress
       let durationSeconds = 0
-      let lastProgressTime = 0
+      let lastReportedSecond = -1
       proc.stderr.on('data', (data) => {
         const line = data.toString()
         stderrBuffer += line
@@ -714,11 +714,11 @@ export class TranscodingService {
         const speedMatch = line.match(/speed=\s*(\d+(\.\d+)?)x/)
         
         if (timeMatch && durationSeconds > 0) {
-          const now = Date.now()
-          if (now - lastProgressTime < 250) return
-          lastProgressTime = now
-
           const currentTime = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseFloat(timeMatch[3])
+          const currentSecond = Math.floor(currentTime)
+          if (currentSecond === lastReportedSecond) return
+          lastReportedSecond = currentSecond
+
           const percent = Math.min(99.9, (currentTime / durationSeconds) * 100)
           const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0
           const speed = speedMatch ? parseFloat(speedMatch[1]) : 1
