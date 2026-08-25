@@ -1,7 +1,20 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from '../IMetadataProvider'
 
 interface TVDBConfig { apiKey: string; pin?: string }
-interface TVDBSearchItem { id?: number; name?: string; year?: string; image_url?: string; overview?: string; first_air_time?: string; aliases?: string[]; remoteIds?: Array<{ type?: number; id?: string }> }
+interface TVDBSearchItem {
+  id?: number
+  name?: string
+  year?: string
+  image_url?: string
+  overview?: string
+  first_air_time?: string
+  aliases?: string[]
+  remoteIds?: Array<{ type?: number; id?: string }>
+  country?: string
+  network?: string
+  status?: string
+  primary_language?: string
+}
 
 export class TVDBMetadataProvider implements IMetadataProvider {
   readonly providerId = 'tvdb'
@@ -51,6 +64,11 @@ export class TVDBMetadataProvider implements IMetadataProvider {
       type: 'tv',
       posterUrl: item.image_url || undefined,
       overview: item.overview || undefined,
+      firstAirDate: item.first_air_time || undefined,
+      network: item.network || undefined,
+      country: item.country || undefined,
+      status: item.status || undefined,
+      originalLanguage: item.primary_language || undefined,
       externalIds: { tvdbId: id, imdbId, tmdbId },
       alternateTitles: item.aliases || []
     }

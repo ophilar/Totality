@@ -303,6 +303,19 @@ export interface MediaAPI {
     bannerUrl?: string
     overview?: string
     score?: number
+    network?: string
+    status?: string
+    country?: string
+    originalLanguage?: string
+    firstAirDate?: string
+    releaseDate?: string
+    externalIds?: {
+      imdbId?: string
+      tvdbId?: string
+      tmdbId?: string
+      anilistId?: string
+      musicBrainzId?: string
+    }
   }>>
   movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) => Promise<{
     success: boolean
@@ -362,8 +375,6 @@ export interface MediaAPI {
 
   // Deep Analysis
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) => Promise<MediaDeepAnalysisResult>
-
-  // Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) => Promise<number>
   batchAddExclusions: (exclusions: unknown[]) => Promise<void>
   removeExclusion: (id: number) => Promise<void>

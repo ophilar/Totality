@@ -13,6 +13,19 @@ interface MetadataSearchResult {
   bannerUrl?: string
   overview?: string
   score?: number
+  network?: string
+  status?: string
+  country?: string
+  originalLanguage?: string
+  firstAirDate?: string
+  releaseDate?: string
+  externalIds?: {
+    tmdbId?: number | string
+    tvdbId?: number | string
+    imdbId?: string
+    anilistId?: number | string
+    musicBrainzId?: string
+  }
 }
 
 interface MusicBrainzArtistResult {
@@ -70,6 +83,7 @@ export function MatchFixModal({
   const [isFixing, setIsFixing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
+  const [expandedOverviews, setExpandedOverviews] = useState<Record<number, boolean>>({})
   const modalRef = useRef<HTMLDivElement>(null!)
 
   // Focus trap
@@ -86,6 +100,7 @@ export function MatchFixModal({
       setSelectedResult(null)
       setError(null)
       setIncludeExpanded(false)
+      setExpandedOverviews({})
 
       async function checkExpandedMatching() {
         if (type === 'movie' && mediaItemId) {
@@ -125,6 +140,7 @@ export function MatchFixModal({
     setIsSearching(true)
     setError(null)
     setSearchResults([])
+    setExpandedOverviews({})
 
     try {
       let results: SearchResult[] = []
@@ -218,6 +234,14 @@ export function MatchFixModal({
     }
   }
 
+  const toggleExpandOverview = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpandedOverviews((prev) => ({
+      ...prev,
+      [index]: !prev[index]
+    }))
+  }
+
   const getTypeLabel = () => {
     switch (type) {
       case 'series': return 'TV Show'
@@ -234,6 +258,12 @@ export function MatchFixModal({
   }
 
   const getResultYear = (result: SearchResult): string | null => {
+    if ('firstAirDate' in result && result.firstAirDate) {
+      return result.firstAirDate
+    }
+    if ('releaseDate' in result && result.releaseDate) {
+      return result.releaseDate
+    }
     if ('year' in result && result.year) {
       return result.year.toString()
     }
@@ -261,7 +291,7 @@ export function MatchFixModal({
     if ('disambiguation' in result && result.disambiguation) {
       return result.disambiguation
     }
-    if ('country' in result && result.country) {
+    if ('country' in result && result.country && !('firstAirDate' in result || 'provider' in result)) {
       return result.country
     }
     if ('artist_credit' in result && result.artist_credit) {
@@ -349,16 +379,26 @@ export function MatchFixModal({
             {searchResults.map((result, index) => {
               const isSelected = selectedResult === result
               const title = getResultTitle(result)
-              const year = getResultYear(result)
+              const dateOrYear = getResultYear(result)
               const score = getResultScore(result)
               const poster = getResultPoster(result)
               const subtitle = getResultSubtitle(result)
+              const isMetadataResult = 'provider' in result
+              const metaResult = isMetadataResult ? (result as MetadataSearchResult) : null
 
               return (
-                <button
+                <div
                   key={index}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedResult(result)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedResult(result)
+                    }
+                  }}
+                  className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors cursor-pointer ${
                     isSelected
                       ? 'bg-primary/20 border-2 border-primary'
                       : 'bg-muted/30 hover:bg-muted/50 border-2 border-transparent'
@@ -388,11 +428,11 @@ export function MatchFixModal({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                      {year && (
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">
+                      {dateOrYear && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {year}
+                          {dateOrYear}
                         </span>
                       )}
                       {score > 0 && (
@@ -401,18 +441,79 @@ export function MatchFixModal({
                           {score.toFixed(1)}
                         </span>
                       )}
+                      {metaResult?.network && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-medium text-secondary-foreground">
+                          {metaResult.network}
+                        </span>
+                      )}
+                      {metaResult?.country && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-medium text-secondary-foreground">
+                          {metaResult.country}
+                        </span>
+                      )}
+                      {metaResult?.status && (
+                        <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-medium text-muted-foreground border border-border/40">
+                          {metaResult.status}
+                        </span>
+                      )}
+                      {metaResult?.originalLanguage && (
+                        <span className="px-1.5 py-0.5 rounded bg-secondary/60 text-[10px] uppercase text-muted-foreground">
+                          {metaResult.originalLanguage}
+                        </span>
+                      )}
                       {subtitle && (
-                        <span className="truncate">{subtitle}</span>
+                        <span className="truncate text-xs">{subtitle}</span>
                       )}
                     </div>
 
+                    {metaResult?.externalIds && Object.values(metaResult.externalIds).some(Boolean) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {metaResult.externalIds.tmdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            TMDB: {metaResult.externalIds.tmdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.tvdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            TVDB: {metaResult.externalIds.tvdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.imdbId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            IMDb: {metaResult.externalIds.imdbId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.anilistId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            AniList: {metaResult.externalIds.anilistId}
+                          </span>
+                        )}
+                        {metaResult.externalIds.musicBrainzId && (
+                          <span className="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[10px] text-muted-foreground border border-border/30">
+                            MusicBrainz: {metaResult.externalIds.musicBrainzId}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {'overview' in result && result.overview && (
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                        {result.overview}
-                      </p>
+                      <div className="mt-1.5">
+                        <p className={`text-xs text-muted-foreground ${expandedOverviews[index] ? '' : 'line-clamp-2'}`}>
+                          {result.overview}
+                        </p>
+                        {result.overview.length > 80 && (
+                          <button
+                            type="button"
+                            onClick={(e) => toggleExpandOverview(index, e)}
+                            className="inline-block text-[10px] text-primary hover:underline mt-0.5 font-medium cursor-pointer"
+                          >
+                            {expandedOverviews[index] ? 'Show less' : 'Show more'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                </button>
+                </div>
               )
             })}
           </div>

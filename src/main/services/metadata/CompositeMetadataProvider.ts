@@ -96,6 +96,12 @@ export class CompositeMetadataProvider implements IMetadataProvider {
         existing.bannerUrl = existing.bannerUrl || candidate.bannerUrl
         existing.imdbRating = existing.imdbRating ?? candidate.imdbRating
         existing.imdbVotes = existing.imdbVotes ?? candidate.imdbVotes
+        existing.network = existing.network || candidate.network
+        existing.status = existing.status || candidate.status
+        existing.country = existing.country || candidate.country
+        existing.originalLanguage = existing.originalLanguage || candidate.originalLanguage
+        existing.firstAirDate = existing.firstAirDate || candidate.firstAirDate
+        existing.releaseDate = existing.releaseDate || candidate.releaseDate
         existing.externalIds = { ...candidate.externalIds, ...existing.externalIds }
         existing.alternateTitles = Array.from(new Set([...(existing.alternateTitles || []), ...(candidate.alternateTitles || [])]))
         if ((candidate.score || 0) > (existing.score || 0)) {
@@ -157,6 +163,12 @@ export class CompositeMetadataProvider implements IMetadataProvider {
           primaryDetails.imdbVotes = primaryDetails.imdbVotes ?? details.imdbVotes
           primaryDetails.contentRating = primaryDetails.contentRating ?? details.contentRating
           primaryDetails.awards = primaryDetails.awards ?? details.awards
+          primaryDetails.network = primaryDetails.network || details.network
+          primaryDetails.status = primaryDetails.status || details.status
+          primaryDetails.country = primaryDetails.country || details.country
+          primaryDetails.originalLanguage = primaryDetails.originalLanguage || details.originalLanguage
+          primaryDetails.firstAirDate = primaryDetails.firstAirDate || details.firstAirDate
+          primaryDetails.releaseDate = primaryDetails.releaseDate || details.releaseDate
           primaryDetails.overview = primaryDetails.overview || details.overview
           primaryDetails.posterUrl = primaryDetails.posterUrl || details.posterUrl
           primaryDetails.externalIds = { ...details.externalIds, ...primaryDetails.externalIds }

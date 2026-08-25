@@ -129,6 +129,12 @@ export class MetadataMatchingService {
         if (!existing.overview && result.overview) existing.overview = result.overview
         if (!existing.posterUrl && result.posterUrl) existing.posterUrl = result.posterUrl
         if (!existing.bannerUrl && result.bannerUrl) existing.bannerUrl = result.bannerUrl
+        if (!existing.network && result.network) existing.network = result.network
+        if (!existing.status && result.status) existing.status = result.status
+        if (!existing.country && result.country) existing.country = result.country
+        if (!existing.originalLanguage && result.originalLanguage) existing.originalLanguage = result.originalLanguage
+        if (!existing.firstAirDate && result.firstAirDate) existing.firstAirDate = result.firstAirDate
+        if (!existing.releaseDate && result.releaseDate) existing.releaseDate = result.releaseDate
         if (result.externalIds || existing.externalIds) {
           existing.externalIds = { ...result.externalIds, ...existing.externalIds }
         }

@@ -7,6 +7,10 @@ interface TVMazeShow {
   image?: { medium?: string; original?: string } | null
   summary?: string | null
   rating?: { average?: number | null }
+  status?: string | null
+  language?: string | null
+  network?: { name?: string; country?: { code?: string; name?: string } } | null
+  webChannel?: { name?: string; country?: { code?: string; name?: string } } | null
   externals?: { imdb?: string | null; thetvdb?: number | null; tvrage?: number | null }
 }
 
@@ -51,6 +55,11 @@ export class TVMazeMetadataProvider implements IMetadataProvider {
       posterUrl: show.image?.original || show.image?.medium || undefined,
       overview: show.summary?.replace(/<[^>]+>/g, '').trim() || undefined,
       score: show.rating?.average ?? undefined,
+      firstAirDate: show.premiered || undefined,
+      network: show.network?.name || show.webChannel?.name || undefined,
+      country: show.network?.country?.code || show.webChannel?.country?.code || undefined,
+      status: show.status || undefined,
+      originalLanguage: show.language || undefined,
       externalIds: {
         imdbId: show.externals?.imdb || undefined,
         tvdbId: show.externals?.thetvdb ? String(show.externals.thetvdb) : undefined

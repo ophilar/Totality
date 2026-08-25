@@ -26,6 +26,12 @@ export interface MetadataSearchResult {
   imdbRating?: number
   imdbVotes?: string
   score?: number
+  network?: string
+  status?: string
+  country?: string
+  originalLanguage?: string
+  firstAirDate?: string
+  releaseDate?: string
   externalIds?: {
     imdbId?: string
     tvdbId?: string

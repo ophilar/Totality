@@ -14,6 +14,12 @@ interface TmdbItem {
   number_of_seasons?: number
   number_of_episodes?: number
   belongs_to_collection?: { id?: number; name?: string } | null
+  origin_country?: string[]
+  original_language?: string
+  status?: string
+  networks?: Array<{ id?: number; name?: string }>
+  production_companies?: Array<{ id?: number; name?: string }>
+  production_countries?: Array<{ iso_3166_1?: string; name?: string }>
 }
 
 function isTmdbItem(value: unknown): value is TmdbItem {
@@ -54,6 +60,11 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         bannerUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview,
+        firstAirDate: item.first_air_date,
+        releaseDate: item.release_date,
+        country: Array.isArray(item.origin_country) && item.origin_country.length > 0 ? item.origin_country[0] : undefined,
+        originalLanguage: item.original_language,
+        status: item.status,
         externalIds: { tmdbId: String(item.id) },
         score: item.vote_average
       }))
