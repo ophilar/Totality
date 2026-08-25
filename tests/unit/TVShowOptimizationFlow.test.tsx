@@ -42,6 +42,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
         }),
         setSelectedGpu: vi.fn().mockResolvedValue({ selectedGpuId: 'gpu-nv-1' }),
         tmdbGetTVShowDetails: vi.fn().mockResolvedValue({ overview: 'Test show overview' }),
+        seriesGetEpisodes: vi.fn().mockResolvedValue([
+          { id: 101, title: 'Episode 1', original_language: 'ja' }
+        ]),
         preflightShow: vi.fn().mockResolvedValue({
           preflightId: 'pref-123',
           batchId: 'batch-123',
@@ -133,6 +136,13 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     expect(screen.getByText('Batch Optimize Series')).toBeTruthy()
     expect(screen.getByText('AV1')).toBeTruthy()
     expect(screen.getByText('HEVC (H.265)')).toBeTruthy()
+
+    // Verify original language dropdown
+    await vi.waitFor(() => {
+      const languageSelect = screen.getByRole('combobox', { name: /original language/i }) as HTMLSelectElement
+      expect(languageSelect).toBeTruthy()
+      expect(languageSelect.value).toBe('ja')
+    })
 
     const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
     expect(queueButton).toBeTruthy()

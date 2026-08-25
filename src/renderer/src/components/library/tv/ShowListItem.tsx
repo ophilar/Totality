@@ -100,7 +100,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">{show.total_recoverable_bytes ? `${formatBytes(show.total_recoverable_bytes)} recoverable` : 'No recoverable storage'} · {show.weighted_efficiency == null ? 'Unscored' : `${(show.weighted_efficiency * 100).toFixed(0)}% weighted efficiency`}</p>
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -110,8 +109,32 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         )}
       </div>
 
+      {/* Recoverable */}
+      <div className="w-32 text-left shrink-0">
+        <span className={`text-xs font-medium ${show.total_recoverable_bytes && show.total_recoverable_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+          {show.total_recoverable_bytes && show.total_recoverable_bytes > 0 ? formatBytes(show.total_recoverable_bytes) : 'None'}
+        </span>
+      </div>
+
+      {/* Weighted Efficiency */}
+      <div className="w-32 text-left shrink-0">
+        {show.weighted_efficiency == null || show.weighted_efficiency === 0 ? (
+          <span className="text-xs text-muted-foreground">Unscored</span>
+        ) : (
+          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+            show.weighted_efficiency >= 85
+              ? 'bg-green-500/20 text-green-500'
+              : show.weighted_efficiency >= 60
+              ? 'bg-yellow-500/20 text-yellow-500'
+              : 'bg-red-500/20 text-red-500'
+          }`}>
+            {Math.round(show.weighted_efficiency)}%
+          </div>
+        )}
+      </div>
+
       {/* 3-dot menu */}
-      <div ref={menuRef} className="relative shrink-0">
+      <div ref={menuRef} className="w-8 shrink-0 flex justify-center relative">
         <button
           onClick={(e) => {
             e.stopPropagation()
