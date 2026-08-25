@@ -18,7 +18,6 @@ import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRe
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
 import type { PlexPlaylistSummary } from '@main/services/timelines/PlexPlaylistSyncService'
 
-
 export function TimelinesView() {
   const { sources, activeSourceId } = useSources()
   const { addToast } = useToast()
@@ -33,6 +32,7 @@ export function TimelinesView() {
   const [isRefreshingWeb, setIsRefreshingWeb] = useState(false)
   const [customImportInput, setCustomImportInput] = useState('')
   const [isImporting, setIsImporting] = useState(false)
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState('')
   const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'missing'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [customPlaylistTitle, setCustomPlaylistTitle] = useState('')
@@ -136,7 +136,6 @@ export function TimelinesView() {
       isMounted = false
     }
   }, [selectedRecipeId, resolveSourceId, addToast])
-
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -248,6 +247,16 @@ export function TimelinesView() {
     }
   }
 
+  const filteredRecipes = useMemo(() => {
+    if (!recipeSearchQuery.trim()) return recipes
+    const q = recipeSearchQuery.toLowerCase()
+    return recipes.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.franchise.toLowerCase().includes(q) ||
+        (r.description && r.description.toLowerCase().includes(q))
+    )
+  }, [recipes, recipeSearchQuery])
 
   const displayedItems = useMemo(() => {
     if (!selectedTimelineResult) return []
@@ -266,53 +275,45 @@ export function TimelinesView() {
   }, [selectedTimelineResult, filterMode, searchQuery])
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background text-foreground">
-      {/* Top Banner / Header */}
-      <div className="p-6 border-b border-border bg-card/40 backdrop-blur-md shrink-0">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <ListOrdered className="w-6 h-6" />
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight">Franchise Timelines & Playlists</h1>
+    <div className="flex flex-row h-full overflow-hidden bg-background text-foreground">
+      {/* Left Column / Master List Pane */}
+      <div className="w-80 sm:w-88 border-r border-border flex flex-col shrink-0 bg-card/30">
+        {/* Header & Master Search */}
+        <div className="p-4 border-b border-border space-y-3 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <ListOrdered className="w-5 h-5" />
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              Curated chronological and air-date franchise orders with 1-click Plex playlist synchronization.
-            </p>
+            <div>
+              <h1 className="text-base font-bold tracking-tight">Franchise Timelines & Playlists</h1>
+              <p className="text-xs text-muted-foreground">Curated franchise viewing orders</p>
+            </div>
           </div>
-
-          {/* Universal Importer (Web Guides, Trakt, TMDB, AI Prompts) */}
-          <div className="flex items-center gap-3">
-            <form onSubmit={handleImport} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={customImportInput}
-                onChange={(e) => setCustomImportInput(e.target.value)}
-                placeholder="Web Guide URL, Trakt list, TMDB, or AI Prompt..."
-                className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-72"
-              />
-              <button
-                type="submit"
-                disabled={isImporting || !customImportInput.trim()}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-1 disabled:opacity-50 transition-colors cursor-pointer"
-              >
-                {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                Import
-              </button>
-            </form>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={recipeSearchQuery}
+              onChange={(e) => setRecipeSearchQuery(e.target.value)}
+              placeholder="Search recipes or franchise..."
+              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
         </div>
 
-        {/* Recipe Selection Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
+        {/* Scrollable Master Recipe List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {isLoadingRecipes && recipes.length === 0 ? (
-            <div className="col-span-full py-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <span>Loading franchise timeline recipes...</span>
+              <span>Loading recipes...</span>
+            </div>
+          ) : filteredRecipes.length === 0 ? (
+            <div className="py-8 text-center text-xs text-muted-foreground">
+              No matching timeline recipes found.
             </div>
           ) : (
-            recipes.map((recipe) => {
+            filteredRecipes.map((recipe) => {
               const isSelected = recipe.id === selectedRecipeId
               const sourceBadge =
                 recipe.sourceType === 'web'
@@ -327,24 +328,26 @@ export function TimelinesView() {
                 <button
                   key={recipe.id}
                   onClick={() => setSelectedRecipeId(recipe.id)}
-                  className={`p-3.5 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                  className={`w-full p-3 rounded-xl text-left border transition-all flex flex-col justify-between cursor-pointer ${
                     isSelected
-                      ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20'
+                      ? 'border-primary bg-primary/5 shadow-xs ring-1 ring-primary/20'
                       : 'border-border bg-card/60 hover:border-border/80 hover:bg-card'
                   }`}
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
                       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                         {recipe.franchise}
                       </span>
                       <span className="text-[10px] font-medium text-muted-foreground">{sourceBadge}</span>
                     </div>
-                    <h3 className="text-sm font-semibold text-foreground line-clamp-1">{recipe.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{recipe.description}</p>
+                    <h3 className="text-xs font-semibold text-foreground line-clamp-1">{recipe.name}</h3>
+                    {recipe.description && (
+                      <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{recipe.description}</p>
+                    )}
                   </div>
                   <div className="mt-2 text-right">
-                    <span className="text-[11px] text-muted-foreground font-mono">{recipe.totalItems} items</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{recipe.totalItems} items</span>
                   </div>
                 </button>
               )
@@ -352,17 +355,42 @@ export function TimelinesView() {
           )}
         </div>
 
+        {/* Universal Importer Footer */}
+        <div className="p-3 border-t border-border bg-card/50 shrink-0">
+          <form onSubmit={handleImport} className="space-y-2">
+            <input
+              type="text"
+              value={customImportInput}
+              onChange={(e) => setCustomImportInput(e.target.value)}
+              placeholder="Web Guide URL, Trakt, or AI..."
+              className="w-full px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              type="submit"
+              disabled={isImporting || !customImportInput.trim()}
+              className="w-full py-1.5 px-3 text-xs font-medium rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center gap-1 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+              Import Recipe
+            </button>
+          </form>
+        </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="p-6 space-y-6">
-        {selectedTimelineResult && (
+      {/* Right Column / Detail View Area */}
+      <div className="flex-1 flex flex-col h-full overflow-y-auto p-6 space-y-6">
+        {isResolvingTimeline && !selectedTimelineResult ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <p className="text-xs">Resolving timeline against local library...</p>
+          </div>
+        ) : selectedTimelineResult ? (
           <>
             {/* Sync Control & Stats Card */}
-            <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-sm">
+            <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-xs">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div className="space-y-2 flex-1">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-bold">{selectedTimelineResult.timeline.name}</h2>
                     {selectedTimelineResult.timeline.sourceUrl && (
                       <a
@@ -436,12 +464,11 @@ export function TimelinesView() {
                       </div>
                     </div>
 
-
                     <div>
                       <button
                         onClick={handleSyncToPlex}
                         disabled={isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
-                        className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                        className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
                       >
                         {isSyncingPlaylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         Sync to Plex Playlist
@@ -466,7 +493,7 @@ export function TimelinesView() {
               <div className="flex items-center gap-1.5 p-1 bg-secondary/50 rounded-xl border border-border w-fit">
                 <button
                   onClick={() => setFilterMode('all')}
-                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                     filterMode === 'all' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -474,7 +501,7 @@ export function TimelinesView() {
                 </button>
                 <button
                   onClick={() => setFilterMode('matched')}
-                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                     filterMode === 'matched'
                       ? 'bg-background shadow-xs text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
@@ -484,7 +511,7 @@ export function TimelinesView() {
                 </button>
                 <button
                   onClick={() => setFilterMode('missing')}
-                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                  className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                     filterMode === 'missing'
                       ? 'bg-background shadow-xs text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
@@ -590,6 +617,10 @@ export function TimelinesView() {
               </div>
             </div>
           </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-xs">
+            Select a timeline recipe from the left column to view details.
+          </div>
         )}
       </div>
     </div>
