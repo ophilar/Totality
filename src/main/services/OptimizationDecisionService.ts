@@ -1,5 +1,6 @@
 import { LanguageDecisionService, type AudioTrackForDecision } from './LanguageDecisionService'
 import { AudioCodecRanker } from './AudioCodecRanker'
+import { APP_CONFIG } from '@main/config'
 
 export type OptimizationMechanismStatus = 'executable' | 'eligible-awaiting-opt-in' | 'review-required' | 'blocked' | 'unavailable'
 export type OptimizationPrimaryAction = 'remove-audio-tracks' | 'transcode-audio' | 'transcode-video' | 'review-language' | 'no-action'
@@ -80,8 +81,8 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     ? input.audioTracks.reduce((sum, track) => {
         const tier = AudioCodecRanker.getTier(track.codec, track.hasObjectAudio)
         const currentBitrateKbps = track.bitrate && track.bitrate > 0 ? track.bitrate : AudioCodecRanker.estimateBitrate(track.codec, track.channels)
-        const targetBitrateKbps = track.channels >= 6 ? 640 : 256
-        if (currentBitrateKbps > targetBitrateKbps && (tier >= AudioCodecRanker.TIER_LOSSLESS || currentBitrateKbps >= 1500)) {
+        const targetBitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
+        if (currentBitrateKbps > targetBitrateKbps && (tier >= AudioCodecRanker.TIER_LOSSLESS || currentBitrateKbps >= APP_CONFIG.transcoding.audioHeavyBitrateThresholdKbps)) {
           const savingsPerSecBytes = ((currentBitrateKbps - targetBitrateKbps) * 1000) / 8
           return sum + Math.round(savingsPerSecBytes * input.durationSeconds!)
         }

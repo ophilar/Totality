@@ -4,12 +4,13 @@ import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
+import { APP_CONFIG } from '@main/config'
 
 export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
     const hdrArgs = buildHdrMetadataArgs(_analysis)
     const codec = options.targetCodec === 'av1' ? 'libsvtav1' : 'libx265'
-    const crf = (options.crf ?? 22).toString()
+    const crf = (options.crf ?? APP_CONFIG.transcoding.defaultSoftwareCrf).toString()
     
     // Generic CPU reserve: leave at least 1-2 cores for UI and OS responsiveness
     const totalCpus = os.cpus()?.length || 4
@@ -25,7 +26,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
       ...(options.targetCodec === 'av1' ? ['-svtav1-params', 'tune=0'] : []),
       '-c:v', codec,
       '-crf', crf,
-      '-preset', options.preset || 'medium',
+      '-preset', options.preset || APP_CONFIG.transcoding.defaultSoftwarePreset,
       ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}`, '-bufsize', `${sourceBitrate * 2}`] : []),
       '-pix_fmt', 'yuv420p10le'
     ]

@@ -31,6 +31,7 @@ export const APP_CONFIG = {
   },
   gemini: defaults.gemini,
   quality: defaults.quality,
+  transcoding: defaults.transcoding,
   ai: aiPrompts
 }
 

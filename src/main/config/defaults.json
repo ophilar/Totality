@@ -135,5 +135,18 @@
     "losslessAudioAllowance": 4000,
     "hdrOverheadMultiplier": 1.10,
     "videoWeight": 0.7
+  },
+  "transcoding": {
+    "defaultCrf": 20,
+    "defaultPreset": "p6",
+    "defaultSoftwarePreset": "medium",
+    "defaultSoftwareCrf": 22,
+    "defaultIntelPreset": "slow",
+    "defaultIntelQuality": 20,
+    "maxBitrateFallback": 60000000,
+    "maxBufsizeFallback": 120000000,
+    "audioSurroundTargetBitrateKbps": 640,
+    "audioStereoTargetBitrateKbps": 256,
+    "audioHeavyBitrateThresholdKbps": 1500
   }
 }
