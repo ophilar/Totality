@@ -8,10 +8,11 @@ import { TranscodeOptions } from '../TranscodingService'
 export class TranscodeCommandFactory {
   static resolveOutputMode(
     requestedOutputMode: TranscodeOptions['outputMode'] | null | undefined,
-    encoder: string | undefined
+    encoder: string | undefined,
+    hasCustomArgs = false
   ): NonNullable<TranscodeOptions['outputMode']> {
     const outputMode = requestedOutputMode || 'quarantine-replace'
-    return encoder === 'copy'
+    return encoder === 'copy' && !hasCustomArgs
       ? outputMode
       : outputMode === 'copy' ? 'copy' : 'quarantine-replace'
   }

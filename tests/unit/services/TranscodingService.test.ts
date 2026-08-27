@@ -438,6 +438,27 @@ describe('TranscodingService', () => {
   })
 
   describe('replacement activation', () => {
+    it('quarantines a remux with custom FFmpeg arguments instead of directly replacing the source', async () => {
+      const inputPath = 'C:\\media\\episode.mkv'
+      mockDbInstance.media.getItem.mockResolvedValueOnce({ id: 99, file_path: inputPath })
+      vi.mocked(fsPromises.stat).mockResolvedValue({ size: 4000, mtimeMs: 12345678 } as never)
+      vi.spyOn(service as never, 'runFFmpeg').mockResolvedValue(true)
+
+      await service.transcode(99, {
+        transcodingEngine: 'ffmpeg',
+        optimizationMode: 'remux_only',
+        outputMode: 'replace',
+        customArgs: '-c:v libx264',
+        useGpu: false
+      })
+
+      expect(fsPromises.rename).toHaveBeenCalledWith(
+        inputPath,
+        expect.stringContaining('.quarantine-')
+      )
+      expect(fsPromises.copyFile).toHaveBeenCalled()
+    })
+
     it('moves a verified temporary output onto the original instead of copying it', async () => {
       const inputPath = 'C:\\media\\episode.mkv'
       mockDbInstance.media.getItem.mockResolvedValueOnce({ id: 99, file_path: inputPath })

@@ -17,3 +17,9 @@
 ## Scope
 
 Only Task 2 source, regression test, and this report are staged. Existing untracked plan artifacts are intentionally excluded.
+
+## Follow-up hardening
+
+- Review found that remux `customArgs` are appended after the generated `-c:v copy` argument and could override it with a lossy codec.
+- Direct replacement now requires both the `copy` encoder and no custom FFmpeg arguments; otherwise the service resolves `replace` to `quarantine-replace`.
+- Regression coverage verifies the resolver and the service activation path for `customArgs: '-c:v libx264'`.

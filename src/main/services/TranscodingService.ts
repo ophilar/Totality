@@ -746,7 +746,11 @@ export class TranscodingService {
 
       const configuredDefaultOutputMode = (await db.config.getSetting('transcoding_default_output_mode')) as 'copy' | 'quarantine-replace' | 'replace' | null
       const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
-      const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(requestedOutputMode, params.encoder)
+      const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(
+        requestedOutputMode,
+        params.encoder,
+        Boolean(options.customArgs?.trim())
+      )
 
       // Guard against size inflation for replacement modes: if transcoded result is larger than source, abort replacement
       if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
