@@ -1,6 +1,6 @@
 import { eq, and, sql, asc, desc, lt, countDistinct, exists, count, avg, sum } from 'drizzle-orm'
 import type { SQLWrapper } from 'drizzle-orm'
-import type { DashboardSummary, MovieCollection, MusicAlbum, SeriesCompleteness as _SeriesCompleteness, ArtistCompleteness as _ArtistCompleteness, MusicCompletenessStats } from '@main/types/database'
+import type { DashboardSummary, MovieCollection, MusicAlbum, MusicCompletenessStats } from '@main/types/database'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'

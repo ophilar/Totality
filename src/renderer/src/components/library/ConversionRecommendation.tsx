@@ -29,20 +29,23 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
 
   useEffect(() => {
     if (!item.id) return
-    const cached = decisionCache.get(item.id)
-    if (cached) {
-      setDecision(cached)
-      setLoading(false)
-      return
-    }
-
+    const mediaId = item.id
     let active = true
-    setLoading(true)
-    window.electronAPI.optimizationGetDecision(item.id).then(value => {
+    void Promise.resolve().then(async () => {
+      const cached = decisionCache.get(mediaId)
+      if (cached) return cached
       if (active) {
-        const dec = value as OptimizationDecision
-        decisionCache.set(item.id!, dec)
-        setDecision(dec)
+        setDecision(null)
+        setError(null)
+        setLoading(true)
+      }
+      const value = await window.electronAPI.optimizationGetDecision(mediaId)
+      const decision = value as OptimizationDecision
+      decisionCache.set(mediaId, decision)
+      return decision
+    }).then(decision => {
+      if (active) {
+        setDecision(decision)
       }
     }).catch(reason => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason))

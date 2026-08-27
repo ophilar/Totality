@@ -6,7 +6,7 @@ import {
   ProviderCredentials,
   AuthResult,
 } from '@main/providers/base/MediaProvider'
-import { ProviderType, LibraryType } from '@main/types/database'
+import { ProviderType } from '@main/types/database'
 import {
   getKodiMySQLConnectionService,
   type KodiMySQLConfig,

@@ -73,11 +73,6 @@ export function TVShowDetails({
   const missingEpisodesStr = completenessData?.missing_episodes
 
   useEffect(() => {
-    setShowOverviewExpanded(false)
-    setCopiedTitle(false)
-    setShowOverview(null)
-    setAudioLanguages([])
-
     if (selectedShow) {
       if (tmdbId) {
         window.electronAPI.tmdbGetTVShowDetails(tmdbId)

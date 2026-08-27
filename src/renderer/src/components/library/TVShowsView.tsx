@@ -81,7 +81,7 @@ export function TVShowsView({
   onTranscodeShow?: (show: TVShowSummary) => void
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
-  const [dryRunReport, setDryRunReport] = useState<{ show: TVShowSummary; report: any } | null>(null)
+  const [dryRunReport, setDryRunReport] = useState<{ show: TVShowSummary; report: Awaited<ReturnType<typeof window.electronAPI.optimizationDryRun>> } | null>(null)
   const { isScanning, scanProgress } = useSources()
   const activeScan = Array.from(scanProgress.values())[0]
 
@@ -267,7 +267,7 @@ export function TVShowsView({
   if (selectedShow) {
     return (
       <div className="h-full overflow-y-auto">
-        <TVShowDetails selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
+        <TVShowDetails key={`${selectedShow}:${seriesCompleteness.get(selectedShow)?.tmdb_id ?? ''}`} selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
       </div>
     )
   }

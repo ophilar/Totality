@@ -51,10 +51,10 @@ export function TimelinesView() {
   }, [activeSourceId, plexSources])
 
   const resolveSourceId = activeSourceId || undefined
+  const visibleExistingPlaylists = selectedPlexSourceId ? existingPlaylists : []
 
   useEffect(() => {
     if (!selectedPlexSourceId) {
-      setExistingPlaylists([])
       return
     }
     let isMounted = true
@@ -454,7 +454,7 @@ export function TimelinesView() {
                       <label className="text-[11px] font-medium text-muted-foreground">Select or Name Plex Playlist</label>
                       <div className="flex items-center gap-2">
                         <select
-                          value={existingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : 'custom-playlist-mode'}
+                          value={visibleExistingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : 'custom-playlist-mode'}
                           onChange={(e) => {
                             if (e.target.value !== 'custom-playlist-mode') {
                               setCustomPlaylistTitle(e.target.value)
@@ -463,7 +463,7 @@ export function TimelinesView() {
                           className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-44"
                         >
                           <option value="custom-playlist-mode">-- Create New / Custom Playlist --</option>
-                          {existingPlaylists.map((pl) => (
+                          {visibleExistingPlaylists.map((pl) => (
                             <option key={pl.ratingKey} value={pl.title}>
                               {pl.title} ({pl.leafCount ?? 0} items)
                             </option>

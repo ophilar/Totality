@@ -414,27 +414,25 @@ export class GeminiService {
   ): Promise<number> {
     if (!this.isConfigured() || candidates.length <= 1) return 0
 
-    try {
-      this.checkRateLimit()
-      const client = this.getClient()
+    this.checkRateLimit()
+    const client = this.getClient()
 
-      const candidateList = candidates.map((c, i) =>
-        `${i + 1}. "${c.title}" (${c.year || 'unknown year'})${c.overview ? ` — ${c.overview.slice(0, 100)}` : ''}`
-      ).join('\n')
+    const candidateList = candidates.map((c, i) =>
+      `${i + 1}. "${c.title}" (${c.year || 'unknown year'})${c.overview ? ` — ${c.overview.slice(0, 100)}` : ''}`
+    ).join('\n')
 
-      const response = await client.models.generateContent({
+    const response = await client.models.generateContent({
         model: GeminiService.FAST_MODEL,
         contents: `A media file named "${filename}"${year ? ` (year: ${year})` : ''} matched multiple TMDB results. Which is the best match? Reply with ONLY the number.\n\n${candidateList}`,
         config: {
           maxOutputTokens: 20,
         },
-      })
+    })
 
-      const text = (response.text || '').trim()
-      const num = parseInt(text, 10)
-      if (num >= 1 && num <= candidates.length) return num - 1
-      return 0
-    } catch (error) { throw error }
+    const text = (response.text || '').trim()
+    const num = parseInt(text, 10)
+    if (num >= 1 && num <= candidates.length) return num - 1
+    return 0
   }
 
   /**

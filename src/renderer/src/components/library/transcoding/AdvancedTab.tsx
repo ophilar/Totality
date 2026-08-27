@@ -62,7 +62,7 @@ export function AdvancedTab({
     const existingIndex = templates.findIndex(t => t.name.toLowerCase() === name.toLowerCase())
     const newTemplate: PresetTemplate = { name, options: { ...options } }
     
-    let updated: PresetTemplate[] = []
+    let updated: PresetTemplate[]
     if (existingIndex >= 0) {
       updated = [...templates]
       updated[existingIndex] = newTemplate

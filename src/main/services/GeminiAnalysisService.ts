@@ -252,15 +252,11 @@ export class GeminiAnalysisService {
       `## Incomplete TV Series (${incompleteSeries.length} total, showing up to 30)`,
       JSON.stringify(
         incompleteSeries.slice(0, 30).map(s => {
-          let missingCount = 0
-          let missingSample: string[] = []
-          try {
-            const parsed = JSON.parse((s.missing_episodes as string) || '[]')
-            missingCount = parsed.length
-            missingSample = parsed.slice(0, 5).map((e: { season_number: number; episode_number: number }) =>
-              `S${e.season_number}E${e.episode_number}`,
-            )
-          } catch (e) { throw e; }
+          const parsed = JSON.parse((s.missing_episodes as string) || '[]')
+          const missingCount = parsed.length
+          const missingSample = parsed.slice(0, 5).map((e: { season_number: number; episode_number: number }) =>
+            `S${e.season_number}E${e.episode_number}`,
+          )
           return compact({
             series_title: s.series_title,
             total_episodes: s.total_episodes,
@@ -276,15 +272,11 @@ export class GeminiAnalysisService {
       `## Incomplete Movie Collections (${incompleteCollections.length} total, showing up to 30)`,
       JSON.stringify(
         incompleteCollections.slice(0, 30).map(c => {
-          let missingCount = 0
-          let missingSample: string[] = []
-          try {
-            const parsed = JSON.parse((c.missing_movies as string) || '[]')
-            missingCount = parsed.length
-            missingSample = parsed.slice(0, 5).map((m: { title: string; year?: number }) =>
-              m.year ? `${m.title} (${m.year})` : `${m.title}`,
-            )
-          } catch (e) { throw e; }
+          const parsed = JSON.parse((c.missing_movies as string) || '[]')
+          const missingCount = parsed.length
+          const missingSample = parsed.slice(0, 5).map((m: { title: string; year?: number }) =>
+            m.year ? `${m.title} (${m.year})` : `${m.title}`,
+          )
           return compact({
             collection_name: c.collection_name,
             total_movies: c.total_movies,

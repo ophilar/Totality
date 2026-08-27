@@ -194,14 +194,12 @@ export class AutoUpdateService {
 
   private async autoCheckIfEnabled(): Promise<void> {
     // Read setting from database
-    try {
-      const db = getDatabase()
-      const setting = await db.config.getSetting('auto_update_enabled')
-      // Default to enabled if setting not present
-      if (setting === 'false') {
-        return
-      }
-    } catch (error) { throw error }
+    const db = getDatabase()
+    const setting = await db.config.getSetting('auto_update_enabled')
+    // Default to enabled if setting not present
+    if (setting === 'false') {
+      return
+    }
 
     await this.checkForUpdates()
   }

@@ -38,8 +38,7 @@ export class MovieCollectionService {
     const apiKey = await this.db.config.getSetting('tmdb_api_key')
     if (!apiKey) return { ...result, skipped: true, completed: true }
 
-    try {
-      await this.tmdb.initialize()
+    await this.tmdb.initialize()
       
       const allMovies = await this.db.media.getItems({ type: MediaItemType.Movie, sourceId, libraryId, includeDisabledLibraries: true })
       
@@ -126,8 +125,7 @@ export class MovieCollectionService {
       
       getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       
-      return { ...result, completed: true }
-    } catch (error) { throw error }
+    return { ...result, completed: true }
   }
 
   async analyzeCollection(name: string, sourceId = '', libraryId = '', tmdbCollectionId?: string): Promise<MovieCollection | null> {

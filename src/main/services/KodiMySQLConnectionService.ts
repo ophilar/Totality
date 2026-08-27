@@ -176,11 +176,7 @@ class KodiMySQLConnectionService {
       }
     } catch (error: unknown) {
       if (connection) {
-        try {
-          await connection.end()
-        } catch (error) {
-          throw error
-        }
+        await connection.end()
       }
 
       // Sanitize error message (don't expose passwords)

@@ -657,10 +657,8 @@ export class LocalFolderProvider extends BaseMediaProvider {
           } else if (parser.isVideoFile(entry.name)) {
             if (isExtrasContent(entry.name)) continue
             if (sinceTimestamp) {
-              try {
-                const stat = await fsPromises.stat(fullPath)
-                if (stat.mtime < sinceTimestamp) { skippedUnchanged++; continue }
-              } catch (error) { throw error }
+              const stat = await fsPromises.stat(fullPath)
+              if (stat.mtime < sinceTimestamp) { skippedUnchanged++; continue }
             }
             files.push({ filePath: fullPath, relativePath: path.relative(rootDir, fullPath) })
           }
@@ -674,17 +672,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
   }
 
   private async isTMDBConfigured(): Promise<boolean> {
-    try {
-      const db = getDatabase(); const apiKey = await db.config.getSetting('tmdb_api_key')
-      return !!apiKey && apiKey.length > 0
-    } catch (error) { throw error }
+    const db = getDatabase(); const apiKey = await db.config.getSetting('tmdb_api_key')
+    return !!apiKey && apiKey.length > 0
   }
 
   private async isMusicBrainzNameCorrectionEnabled(): Promise<boolean> {
-    try {
-      const db = getDatabase(); const setting = await db.config.getSetting('musicbrainz_name_correction')
-      return setting !== 'false'
-    } catch (error) { throw error }
+    const db = getDatabase(); const setting = await db.config.getSetting('musicbrainz_name_correction')
+    return setting !== 'false'
   }
 
   private async lookupCanonicalArtistName(artistName: string, cache: Map<string, string>): Promise<string> {
@@ -944,7 +938,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private convertMediaItemToMetadata(item: MediaItem): MediaMetadata {
     let audioTracks: AudioStreamInfo[] = []
-    if (item.audio_tracks) { try { audioTracks = (JSON.parse(item.audio_tracks) as AudioTrack[]).map(t => ({ codec: t.codec, channels: t.channels, bitrate: t.bitrate, language: t.language, title: t.title, isDefault: t.isDefault, hasObjectAudio: t.hasObjectAudio, index: t.index })) } catch (e) { throw e } }
+    if (item.audio_tracks) { audioTracks = (JSON.parse(item.audio_tracks) as AudioTrack[]).map(t => ({ codec: t.codec, channels: t.channels, bitrate: t.bitrate, language: t.language, title: t.title, isDefault: t.isDefault, hasObjectAudio: t.hasObjectAudio, index: t.index })) }
     return { providerId: this.sourceId, providerType: ProviderType.Local, itemId: item.plex_id || '', title: item.title, type: item.type, year: item.year, seriesTitle: item.series_title, seasonNumber: item.season_number, episodeNumber: item.episode_number, imdbId: item.imdb_id, tmdbId: item.tmdb_id ? parseInt(item.tmdb_id, 10) : undefined, seriesTmdbId: item.series_tmdb_id ? parseInt(item.series_tmdb_id, 10) : undefined, filePath: item.file_path, fileSize: item.file_size, duration: item.duration, container: item.container, resolution: item.resolution, width: item.width, height: item.height, videoCodec: item.video_codec, videoBitrate: item.video_bitrate, videoFrameRate: item.video_frame_rate, colorBitDepth: item.color_bit_depth, hdrFormat: item.hdr_format, colorSpace: item.color_space, videoProfile: item.video_profile, audioCodec: item.audio_codec, audioChannels: item.audio_channels, audioBitrate: item.audio_bitrate, audioSampleRate: item.audio_sample_rate, hasObjectAudio: item.has_object_audio, audioTracks, posterUrl: item.poster_url, episodeThumbUrl: item.episode_thumb_url, seasonPosterUrl: item.season_poster_url }
   }
 
@@ -1101,11 +1095,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   private async findFolderArtwork(folderPath: string): Promise<string | null> {
     const artworkFilenames = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.jpeg', 'folder.png', 'front.Front.jpeg', 'front.png', 'album.jpg', 'album.jpeg', 'album.png', 'albumart.jpg', 'albumart.jpeg', 'albumart.png', 'artwork.jpg', 'artwork.jpeg', 'artwork.png']
-    try {
-      const files = fs.readdirSync(folderPath), lowerFiles = files.map(f => f.toLowerCase())
-      for (const name of artworkFilenames) { const idx = lowerFiles.indexOf(name); if (idx !== -1) return path.join(folderPath, files[idx]) }
-      return null
-    } catch (e) { throw e }
+    const files = fs.readdirSync(folderPath), lowerFiles = files.map(f => f.toLowerCase())
+    for (const name of artworkFilenames) { const idx = lowerFiles.indexOf(name); if (idx !== -1) return path.join(folderPath, files[idx]) }
+    return null
   }
 
   private async updateArtistStats(db: ReturnType<typeof getDatabase>, artistMap: Map<string, number>): Promise<void> {

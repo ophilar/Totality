@@ -72,20 +72,26 @@ export function registerOptimizationHandlers() {
           try {
             const parsedTracks = JSON.parse(episode.audio_tracks)
             if (Array.isArray(parsedTracks) && parsedTracks.length > 0) {
-              audioStreams = parsedTracks.map((t: any, idx: number) => ({
-                index: typeof t.index === 'number' ? t.index : idx,
-                codec: t.codec || t.codec_name || 'unknown',
-                codec_name: t.codec || t.codec_name || 'unknown',
-                language: t.language || t.lang || null,
-                title: t.title || null,
-                channels: typeof t.channels === 'number' ? t.channels : (t.channelLayout ? parseInt(String(t.channelLayout), 10) || 2 : 2),
-                bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
-                bitrate: t.bitrate ? t.bitrate * 1000 : undefined,
-                isCommentary: Boolean(t.isCommentary),
-                isAudioDescription: Boolean(t.isAudioDescription),
-                isAccessibility: Boolean(t.isAccessibility),
-                reliableTag: Boolean(t.language || t.lang),
-              }))
+              audioStreams = parsedTracks.map((value: unknown, idx: number) => {
+                const track = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+                const codec = typeof track.codec === 'string' ? track.codec : typeof track.codec_name === 'string' ? track.codec_name : 'unknown'
+                const bitrate = typeof track.bitrate === 'number' ? track.bitrate * 1000 : undefined
+                const channelLayout = typeof track.channelLayout === 'string' ? track.channelLayout : undefined
+                return {
+                  index: typeof track.index === 'number' ? track.index : idx,
+                  codec,
+                  codec_name: codec,
+                  language: typeof track.language === 'string' ? track.language : typeof track.lang === 'string' ? track.lang : null,
+                  title: typeof track.title === 'string' ? track.title : null,
+                  channels: typeof track.channels === 'number' ? track.channels : (channelLayout ? parseInt(channelLayout, 10) || 2 : 2),
+                  bit_rate: bitrate,
+                  bitrate,
+                  isCommentary: Boolean(track.isCommentary),
+                  isAudioDescription: Boolean(track.isAudioDescription),
+                  isAccessibility: Boolean(track.isAccessibility),
+                  reliableTag: typeof track.language === 'string' || typeof track.lang === 'string',
+                }
+              })
             }
           } catch {
             // fallback to probe

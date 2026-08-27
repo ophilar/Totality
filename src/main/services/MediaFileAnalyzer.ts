@@ -558,8 +558,7 @@ export class MediaFileAnalyzer {
 
   async uninstallFFprobe(): Promise<boolean> {
     const p = this.getBundledFFprobePath()
-    try { if (fs.existsSync(p)) fs.unlinkSync(p); this.ffprobePath = null; this.ffprobeChecked = false; return true }
-    catch (error) { throw error }
+    if (fs.existsSync(p)) fs.unlinkSync(p); this.ffprobePath = null; this.ffprobeChecked = false; return true
   }
 
   async isBundledVersion(): Promise<boolean> {

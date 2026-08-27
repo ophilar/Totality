@@ -6,7 +6,7 @@ import {
   SourceConfig,
   MediaLibrary,
 } from '@main/providers/base/MediaProvider'
-import { ProviderType, LibraryType } from '@main/types/database'
+import { ProviderType } from '@main/types/database'
 import {
   QUERY_MOVIE_COUNT,
   QUERY_EPISODE_COUNT,
@@ -117,7 +117,7 @@ export class KodiLocalProvider extends KodiSqlBaseProvider {
     // Basic implementation for KodiLocal
   }
 
-  async importCollections(onProgress?: (progress: { current: number; total: number; currentItem: string }) => void): Promise<void> {
+  async importCollections(_onProgress?: (progress: { current: number; total: number; currentItem: string }) => void): Promise<void> {
     // Stub
   }
 

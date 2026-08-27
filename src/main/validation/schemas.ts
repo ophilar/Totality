@@ -445,10 +445,8 @@ export const WishlistItemSchema = z.object({
  */
 export const SafeUrlSchema = z.string().url().refine(
   (url) => {
-    try {
-      const parsed = new URL(url)
-      return ['http:', 'https:'].includes(parsed.protocol)
-    } catch (error) { throw error }
+    const parsed = new URL(url)
+    return ['http:', 'https:'].includes(parsed.protocol)
   },
   { message: 'URL must use http or https protocol' }
 )

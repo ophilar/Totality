@@ -51,8 +51,7 @@ export class SeriesCompletenessService {
     const tmdbApiKey = await this.db.config.getSetting('tmdb_api_key')
     const source = await this.db.sources.getSourceById(sourceId || '')
 
-    try {
-      if (tmdbApiKey) await this.tmdb.initialize()
+    if (tmdbApiKey) await this.tmdb.initialize()
       const existingShows = await this.db.tvShows.getSummaries({ sourceId, libraryId })
       const titlesFromMedia = await this.db.media.getUniqueSeriesTitles({ sourceId, libraryId })
       
@@ -136,10 +135,7 @@ export class SeriesCompletenessService {
         await this.db.tvShows.mergeDuplicateShows(sourceId, libraryId)
         getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       }
-      return { ...result, completed: true }
-    } catch (error) {
-      throw error
-    }
+    return { ...result, completed: true }
   }
 
   async analyzeSeries(
