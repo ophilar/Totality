@@ -357,19 +357,82 @@ async function migrateStaleTimelineRecipes(db: Client): Promise<void> {
     const rows = await db.execute("SELECT key, value FROM settings WHERE key LIKE 'timeline_recipe:%' OR key LIKE 'timeline_manifest:%'")
     for (const row of rows.rows) {
       const key = String(row.key)
-      const raw = String(row.value)
+      const raw = typeof row.value === 'string' ? row.value : String(row.value ?? '')
       try {
         const parsed = JSON.parse(raw)
-        if (parsed?.data && (!parsed.data.version || parsed.data.version < 2)) {
-          await db.execute({ sql: 'DELETE FROM settings WHERE key = ?', args: [key] })
-        } else if (key.startsWith('timeline_manifest:')) {
-          await db.execute({ sql: 'DELETE FROM settings WHERE key = ?', args: [key] })
+
+        if (key.startsWith('timeline_recipe:')) {
+          const recipe = parseTimelineRecipeCache(parsed)
+          if (recipe.version === 2) continue
+          if (recipe.version === 1) {
+            const migrated = { ...recipe.envelope, data: { ...recipe.data, version: 2 } }
+            await db.execute({ sql: 'UPDATE settings SET value = ? WHERE key = ?', args: [JSON.stringify(migrated), key] })
+            continue
+          }
+          warnTimelineCache(key, `unsupported recipe version ${String(recipe.version)}`)
+          continue
         }
-      } catch {
-        await db.execute({ sql: 'DELETE FROM settings WHERE key = ?', args: [key] })
+
+        const manifest = parseTimelineManifestCache(parsed)
+        if (manifest) continue
+        warnTimelineCache(key, 'unsupported manifest payload')
+      } catch (error) {
+        warnTimelineCache(key, `malformed JSON or cache payload: ${getErrorMessage(error)}`)
       }
     }
   } catch (err) {
     getLoggingService().debug('[DatabaseMigration]', 'Timeline cache migration note: ' + getErrorMessage(err))
   }
+}
+
+interface TimelineCacheEnvelope {
+  data: unknown
+  timestamp: number
+  expiresAt: number
+}
+
+function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnvelope; data: Record<string, unknown>; version: number } {
+  if (!isTimelineCacheEnvelope(value) || !isRecord(value.data)) {
+    throw new Error('recipe envelope is missing data, timestamp, or expiresAt')
+  }
+  const recipe = value.data
+  if (typeof recipe.id !== 'string' || typeof recipe.franchise !== 'string' || typeof recipe.name !== 'string' ||
+      typeof recipe.description !== 'string' || !Array.isArray(recipe.items)) {
+    throw new Error('recipe data is missing required fields')
+  }
+  if (!recipe.items.every(isTimelineItem)) throw new Error('recipe items are malformed')
+  if (typeof recipe.version !== 'number' || !Number.isInteger(recipe.version)) {
+    return { envelope: value, data: recipe, version: 1 }
+  }
+  return { envelope: value, data: recipe, version: recipe.version }
+}
+
+function parseTimelineManifestCache(value: unknown): TimelineCacheEnvelope | null {
+  if (!isTimelineCacheEnvelope(value) || !Array.isArray(value.data) || !value.data.every(isTimelineSummary)) return null
+  return value
+}
+
+function isTimelineCacheEnvelope(value: unknown): value is TimelineCacheEnvelope {
+  return isRecord(value) && typeof value.timestamp === 'number' && Number.isFinite(value.timestamp) &&
+    typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt) && 'data' in value
+}
+
+function isTimelineItem(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return typeof value.order === 'number' && typeof value.type === 'string' &&
+    typeof value.title === 'string' && isRecord(value.identifiers)
+}
+
+function isTimelineSummary(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return typeof value.id === 'string' && typeof value.name === 'string' && typeof value.franchise === 'string' &&
+    typeof value.description === 'string' && typeof value.totalItems === 'number' && typeof value.sourceType === 'string'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function warnTimelineCache(key: string, reason: string): void {
+  getLoggingService().warn('[DatabaseMigration]', `Retained timeline cache '${key}': ${reason}`)
 }
