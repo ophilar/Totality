@@ -222,7 +222,9 @@ describe('MatchFixModal Series Disambiguation Indicators', () => {
 
     // Click candidate card (the match in the search result card)
     const cardTitle = screen.getAllByText('Game of Thrones').find((el) => el.closest('.cursor-pointer'))
-    const cardElement = cardTitle?.closest('[role="button"]')!
+    expect(cardTitle).toBeDefined()
+    const cardElement = cardTitle?.closest('[role="button"]')
+    expect(cardElement).not.toBeNull()
     fireEvent.click(cardElement)
 
     // Apply match

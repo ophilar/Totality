@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'events'
 import { TranscodingService, TranscodeError, TranscodeOptions } from '../../../src/main/services/TranscodingService'
 import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/TranscodeCommandFactory'
-import { GpuDetector } from '../../../src/main/services/utils/GpuDetector'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
 import * as childProcess from 'child_process'
 import * as fsPromises from 'fs/promises'
@@ -344,19 +343,19 @@ describe('TranscodingService', () => {
             { index: 3, codec: 'eac3', channels: 6, bitrate: 640, language: 'fr', title: 'French' },
             { index: 4, codec: 'eac3', channels: 6, bitrate: 640, language: 'es', title: 'Spanish' }
           ])
-        } as any
+        } as unknown as Parameters<typeof mockDbInstance.media.upsertItem>[0]
       ])
 
       mockDbInstance.media.getItemById.mockResolvedValueOnce({
         id: 10,
         source_id: 'src1',
         file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv'
-      } as any)
+      } as unknown as Awaited<ReturnType<typeof mockDbInstance.media.getItemById>>)
 
       vi.mocked(fsPromises.stat).mockResolvedValueOnce({
         size: 4 * 1024 * 1024 * 1024,
         mtimeMs: 12345678
-      } as any)
+      } as unknown as Awaited<ReturnType<typeof fsPromises.stat>>)
 
       const preflight = await service.preflightShowTranscode({
         seriesTitle: 'Star Trek Strange New Worlds',

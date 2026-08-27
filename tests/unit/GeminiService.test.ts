@@ -80,7 +80,7 @@ describe('GeminiService', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '10' : null }
       const error429 = { status: 429, headers }
 
-      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
 
       expect(service.getRateLimitInfo().limited).toBe(true)
 
@@ -94,7 +94,7 @@ describe('GeminiService', () => {
       const headers = { get: (name: string) => name === 'retry-after' ? '30' : null }
       const error429 = { status: 429, headers }
 
-      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
+      try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
 
       expect(() => (service as unknown as GeminiInternals).checkRateLimit()).toThrow(RateLimitError)
 
@@ -105,7 +105,7 @@ describe('GeminiService', () => {
 
     it('should handle fallback to 15 seconds if retry-after is missing', () => {
        const error429 = { status: 429 }
-       try { (service as unknown as GeminiInternals).handleApiError(error429) } catch (e) {}
+       try { (service as unknown as GeminiInternals).handleApiError(error429) } catch { /* expected rate-limit exception */ }
        const limitInfo = service.getRateLimitInfo()
        expect(limitInfo.retryAfterSeconds).toBe(15)
     })

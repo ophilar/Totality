@@ -11,7 +11,7 @@ describe('Bootstrap Integrity', () => {
     vi.clearAllMocks()
     resetBetterSQLiteServiceForTesting()
     if (fs.existsSync(testDbPath)) {
-      try { fs.unlinkSync(testDbPath) } catch {}
+      try { fs.unlinkSync(testDbPath) } catch { /* already absent */ }
     }
     const dir = path.dirname(testDbPath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -43,6 +43,6 @@ describe('Bootstrap Integrity', () => {
     const mockDirname = process.platform === 'win32' ? 'C:\\Projects\\Totality\\src\\main' : '/Projects/Totality/src/main'
     const preloadPath = path.join(mockDirname, '../preload/index.cjs')
     expect(preloadPath).not.toContain('@preload')
-    expect(preloadPath).toMatch(/[\\\/]preload[\\\/]index\.cjs$/)
+    expect(preloadPath).toMatch(/[\\/]preload[\\/]index\.cjs$/)
   })
 })

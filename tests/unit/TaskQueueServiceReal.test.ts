@@ -14,7 +14,7 @@ describe('TaskQueueService (No Mocks)', () => {
   beforeEach(async () => {
     resetBetterSQLiteServiceForTesting()
     if (fs.existsSync(dbPath)) {
-      try { fs.unlinkSync(dbPath) } catch {}
+      try { fs.unlinkSync(dbPath) } catch { /* already absent */ }
     }
     
     // We need a real DB wrapper
@@ -32,7 +32,7 @@ describe('TaskQueueService (No Mocks)', () => {
   afterEach(async () => {
     realDbWrapper?.close()
     if (fs.existsSync(dbPath)) {
-      try { fs.unlinkSync(dbPath) } catch (e) {}
+      try { fs.unlinkSync(dbPath) } catch { /* already absent */ }
     }
   })
 

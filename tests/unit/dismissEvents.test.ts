@@ -24,9 +24,9 @@ describe('dismissEvents', () => {
     originalAddEventListener = window.addEventListener
     originalRemoveEventListener = window.removeEventListener
 
-    window.dispatchEvent = mockDispatchEvent as any
-    window.addEventListener = mockAddEventListener as any
-    window.removeEventListener = mockRemoveEventListener as any
+    window.dispatchEvent = mockDispatchEvent as unknown as typeof window.dispatchEvent
+    window.addEventListener = mockAddEventListener as unknown as typeof window.addEventListener
+    window.removeEventListener = mockRemoveEventListener as unknown as typeof window.removeEventListener
   })
 
   afterEach(() => {
@@ -84,8 +84,8 @@ describe('dismissEvents', () => {
       const payload = { mediaId: 456 }
 
       // Simulate event firing
-      const mockEvent = { detail: payload }
-      listener(mockEvent as any)
+      const mockEvent = new CustomEvent('totality:dismiss-upgrade', { detail: payload })
+      listener(mockEvent)
 
       expect(handler).toHaveBeenCalledTimes(1)
       expect(handler).toHaveBeenCalledWith(payload)
@@ -115,8 +115,8 @@ describe('dismissEvents', () => {
       const payload = { collectionId: 'c2', tmdbId: 't2' }
 
       // Simulate event firing
-      const mockEvent = { detail: payload }
-      listener(mockEvent as any)
+      const mockEvent = new CustomEvent('totality:dismiss-collection-movie', { detail: payload })
+      listener(mockEvent)
 
       expect(handler).toHaveBeenCalledTimes(1)
       expect(handler).toHaveBeenCalledWith(payload)

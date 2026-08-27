@@ -9,7 +9,7 @@ import path from 'node:path'
 describe('TranscodingService (No Mocks)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
   let service: TranscodingService
-  let handlers: Map<string, Function>
+  let handlers: Map<string, (...args: unknown[]) => unknown>
 
   beforeEach(async () => {
     // Manually mock window for the bridge
