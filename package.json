@@ -2,7 +2,7 @@
     "name": "totality",
     "version": "0.5.0",
     "type": "module",
-    "description": "Analyze media library quality and recommend upgrades",
+    "description": "Analyze media library quality and safely optimize media",
     "main": "dist-electron/main/index.cjs",
     "scripts": {
         "postinstall": "electron-builder install-app-deps",

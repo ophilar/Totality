@@ -185,7 +185,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                       const l = (t.language || t.lang || '').trim().toLowerCase()
                       if (l) extracted.add(l)
                     }
-                  } catch { /* ignore */ }
+                  } catch (error) {
+                    window.electronAPI.log.error('ShowTranscodeModal', 'Failed to parse episode audio tracks for language detection', error)
+                  }
                 }
                 if (ep.audio_language) {
                   const l = ep.audio_language.trim().toLowerCase()
@@ -417,28 +419,36 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       } else {
         await window.electronAPI.taskQueuePause()
       }
-    } catch { /* ignore */ }
+    } catch (error) {
+      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to change transcode queue pause state', error)
+    }
   }
 
   const handleCancelCurrent = async () => {
     try {
       await window.electronAPI.taskQueueCancelCurrent()
       addToast({ title: 'Cancelled current episode encoding', type: 'info' })
-    } catch { /* ignore */ }
+    } catch (error) {
+      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to cancel current transcode task', error)
+    }
   }
 
   const handleClearQueue = async () => {
     try {
       await window.electronAPI.taskQueueClearQueue()
       addToast({ title: 'Cleared all transcoding tasks from queue', type: 'info' })
-    } catch { /* ignore */ }
+    } catch (error) {
+      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to clear transcode queue', error)
+    }
   }
 
   const handleRemoveTask = async (taskId: string) => {
     try {
       await window.electronAPI.taskQueueRemoveTask(taskId)
       addToast({ title: 'Removed task from queue', type: 'info' })
-    } catch { /* ignore */ }
+    } catch (error) {
+      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to remove transcode task from queue', error)
+    }
   }
 
   // Filter tasks belonging to transcoding
@@ -661,7 +671,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                     )}
                     <optgroup label={detectedLanguages.length > 0 ? "Other Languages" : "Languages"}>
                       {language && !LANGUAGE_OPTIONS.some(opt => opt.code === language) && !detectedLanguages.includes(language) && (
-                        <option value={language}>
+                        <option key={`selected-${language}`} value={language}>
                           {providerLanguage && isSameLanguage(language, providerLanguage)
                             ? `${formatLanguage(language)} (${language}) (Provider Default: ${formatLanguage(providerLanguage)})`
                             : `${formatLanguage(language)} (${language})`}

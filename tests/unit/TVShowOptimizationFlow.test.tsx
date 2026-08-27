@@ -1,12 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { ShowTranscodeModal } from '@/components/library/ShowTranscodeModal'
 import { ToastProvider } from '@/contexts/ToastContext'
-import React from 'react'
+import React, { act } from 'react'
 
 import type { TVShow, TVShowSummary } from '@/components/library/types'
 
@@ -59,6 +59,21 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       }
     })
   })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function renderShowTranscodeModal(show: TVShowSummary, onClose: () => void) {
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <ShowTranscodeModal show={show} onClose={onClose} />
+        </ToastProvider>
+      )
+      await Promise.resolve()
+    })
+  }
 
   const mockShowData: TVShow = {
     title: 'Star Trek: Strange New Worlds',
@@ -127,11 +142,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       episode_count: 1
     }
 
-    render(
-      <ToastProvider>
-        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
-      </ToastProvider>
-    )
+    await renderShowTranscodeModal(mockSummary, handleClose)
 
     expect(screen.getByText('Batch Optimize Series')).toBeTruthy()
     expect(screen.getByText('AV1')).toBeTruthy()
@@ -147,7 +158,10 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
     expect(queueButton).toBeTruthy()
 
-    fireEvent.click(queueButton)
+    await act(async () => {
+      fireEvent.click(queueButton)
+      await Promise.resolve()
+    })
 
     await vi.waitFor(() => {
       expect(window.electronAPI.preflightShow).toHaveBeenCalledTimes(1)
@@ -170,11 +184,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       episode_count: 1
     }
 
-    render(
-      <ToastProvider>
-        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
-      </ToastProvider>
-    )
+    await renderShowTranscodeModal(mockSummary, handleClose)
 
     // Wait for language to be auto-detected
     await vi.waitFor(() => {
@@ -189,7 +199,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     // Select Remux Only mode
     const remuxButton = screen.getByRole('button', { name: /Audio & Subs Prune/i })
-    fireEvent.click(remuxButton)
+    await act(async () => {
+      fireEvent.click(remuxButton)
+    })
 
     // Codec and GPU selection should be bypassed in remux only mode
     expect(screen.queryByText('Target Video Codec')).toBeNull()
@@ -200,10 +212,15 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     // Add preset tag for Japanese
     const jpnPreset = screen.getByRole('button', { name: /^jpn/i })
-    fireEvent.click(jpnPreset)
+    await act(async () => {
+      fireEvent.click(jpnPreset)
+    })
 
     const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
-    fireEvent.click(queueButton)
+    await act(async () => {
+      fireEvent.click(queueButton)
+      await Promise.resolve()
+    })
 
     await vi.waitFor(() => {
       expect(window.electronAPI.preflightShow).toHaveBeenCalledWith(
@@ -267,11 +284,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       episode_count: 3
     }
 
-    render(
-      <ToastProvider>
-        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
-      </ToastProvider>
-    )
+    await renderShowTranscodeModal(mockSummary, handleClose)
 
     // Wait for language to be auto-detected
     await vi.waitFor(() => {
@@ -282,7 +295,10 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     // Click Preview Plan
     const previewButton = screen.getByRole('button', { name: /preview plan/i })
     expect(previewButton).toBeTruthy()
-    fireEvent.click(previewButton)
+    await act(async () => {
+      fireEvent.click(previewButton)
+      await Promise.resolve()
+    })
 
     // Verify transition to Preview Plan screen
     await vi.waitFor(() => {
@@ -306,7 +322,10 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     // Click Queue All Episodes
     const queueEpisodesButton = screen.getByRole('button', { name: /queue all episodes \(3\)/i })
     expect(queueEpisodesButton).toBeTruthy()
-    fireEvent.click(queueEpisodesButton)
+    await act(async () => {
+      fireEvent.click(queueEpisodesButton)
+      await Promise.resolve()
+    })
 
     await vi.waitFor(() => {
       expect(window.electronAPI.queueShow).toHaveBeenCalledWith('pref-preview-1')

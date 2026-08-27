@@ -149,6 +149,11 @@
 - [x] Full TypeScript typecheck and Vitest regression verification (148 test files, 1,131 tests passing)
 - [x] Canonical fine-grained episode interleaving for Star Trek (TNG S6/DS9 S1, TNG S7/DS9 S2, DS9/VOY) and isolated curated presets in RemoteRegistryRecipeProvider
 
+## Phase 19: Media Safety and Timeline Hardening [Completed]
+- [x] Preserve timeline cache records during versioned migration and log invalid payloads instead of deleting them.
+- [x] Enforce quarantine replacement for lossy transcodes; direct replacement is limited to verified stream-copy/remux work.
+- [x] Persist the latest task queue state before renderer notification so reconnecting renderers read the authoritative state.
+- [x] Report ShowTranscodeModal failures through application logging and remove renderer list-key warnings.
 
 
 
