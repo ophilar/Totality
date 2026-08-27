@@ -79,6 +79,9 @@ export interface ShowDryRunResult {
   unscoredEpisodes: number
   weightedEfficiency: number | null
   trackDecisions: TrackDecision[]
+  videoDebtBytes?: number
+  audioTranscodeSavingsBytes?: number
+  totalCombinedSavingsBytes?: number
 }
 
 /**
@@ -154,6 +157,7 @@ export function calculateDryRunMetrics(
   const languageService = new LanguageDecisionService()
   let totalBytes = 0
   let totalRecoverableBytes = 0
+  let videoDebtBytes = 0
   let scoredSize = 0
   let weightedNumerator = 0
   let totalEfficiency = 0
@@ -163,6 +167,10 @@ export function calculateDryRunMetrics(
   for (const episode of episodes) {
     const size = Math.max(0, episode.sizeBytes ?? 0)
     totalBytes += size
+
+    if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
+      videoDebtBytes += Math.max(0, episode.recoverableBytes)
+    }
 
     const hasAudioStreams = Boolean(episode.audioStreams && episode.audioStreams.length > 0)
     let episodeRecoverable = 0
@@ -204,9 +212,6 @@ export function calculateDryRunMetrics(
       }
       totalRecoverableBytes += episodeRecoverable
     } else {
-      if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
-        totalRecoverableBytes += Math.max(0, episode.recoverableBytes)
-      }
       if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
         scoredEpisodeCount++
         weightedNumerator += episode.efficiency * size
@@ -221,6 +226,7 @@ export function calculateDryRunMetrics(
     ? (scoredSize > 0 ? weightedNumerator / scoredSize : totalEfficiency / scoredEpisodeCount)
     : null
   const percentageSavings = totalBytes > 0 ? (totalRecoverableBytes / totalBytes) * 100 : 0
+  const totalCombinedSavingsBytes = totalRecoverableBytes + videoDebtBytes
 
   return {
     totalBytes,
@@ -231,6 +237,7 @@ export function calculateDryRunMetrics(
     unscoredEpisodes: unscoredEpisodeCount,
     weightedEfficiency,
     trackDecisions,
+    videoDebtBytes,
+    totalCombinedSavingsBytes,
   }
 }
-

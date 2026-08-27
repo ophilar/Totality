@@ -239,5 +239,15 @@ describe('RealDryRunOptimizationCalculations', () => {
       expect(result.weightedEfficiency).toBeNull()
       expect(result.trackDecisions).toEqual([])
     })
+
+    it('does not double-count video debt for episodes without audio streams', () => {
+      const result = calculateDryRunMetrics([
+        { sizeBytes: 2_000_000_000, recoverableBytes: 300_000_000, audioStreams: [] },
+      ], 'en')
+
+      expect(result.recoverableBytes).toBe(0)
+      expect(result.videoDebtBytes).toBe(300_000_000)
+      expect(result.totalCombinedSavingsBytes).toBe(300_000_000)
+    })
   })
 })

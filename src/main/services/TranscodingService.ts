@@ -17,7 +17,10 @@ import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
 import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
 import { MediaPathAuthorization } from './MediaPathAuthorization'
-import { TaskType } from '@main/types/database'
+import { TaskType, MediaItem } from '@main/types/database'
+import { getQualityAnalyzer } from './QualityAnalyzer'
+import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
+import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -29,7 +32,8 @@ export class TranscodeError extends Error {
 export interface TranscodeOptions {
   targetCodec?: 'av1' | 'hevc'
   streamSelection?: StreamSelectionPolicy
-  outputMode?: 'copy' | 'quarantine-replace'
+  outputMode?: 'copy' | 'quarantine-replace' | 'replace'
+  tempDirectory?: string
   priority?: 'low' | 'normal' | 'high'
   useGpu?: boolean
   encoder?: string
@@ -40,6 +44,7 @@ export interface TranscodeOptions {
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
   aiOptimize?: boolean
+  optimizationMode?: 'smart' | 'remux_only' | 'transcode'
 }
 
 export interface QueuedTranscodePayload {
@@ -54,6 +59,7 @@ export interface TranscodeProgress {
   percent: number
   fps?: number
   eta?: string
+  speed?: string
   status: 'initializing' | 'encoding' | 'muxing' | 'verifying' | 'complete' | 'failed' | 'cancelled'
   error?: string
 }
@@ -67,6 +73,8 @@ export interface TranscodingParams {
   crf?: number
   preset?: string
   sourceHdrFormat?: string
+  expectedAudioCount?: number
+  expectedSubtitleCount?: number
   audioTracks?: FileAnalysisResult['audioTracks']
   subtitleTracks?: FileAnalysisResult['subtitleTracks']
 }
@@ -90,7 +98,18 @@ export interface ShowTranscodePreflight {
   episodeCount: number
   compatible: boolean
   expiresAt: string
-  episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; hdrFormat: string; sourceSize: number; sourceMtimeMs: number }>
+  episodes: Array<{
+    mediaItemId: number
+    label: string
+    compatible: boolean
+    reason?: string
+    hdrFormat: string
+    sourceSize: number
+    sourceMtimeMs: number
+    recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+    sourceTier?: MediaSourceTier
+    adviceReason?: string
+  }>
 }
 
 class GeminiTranscodeParameterAdvisor implements TranscodeParameterAdvisor {
@@ -126,6 +145,29 @@ export class TranscodingService {
     getLoggingService().debug('[TranscodingService]', 'TranscodingService invalidated caches')
   }
 
+  cancelTranscode(mediaItemId?: number): boolean {
+    if (mediaItemId && this.activeJobs.has(mediaItemId)) {
+      const controller = this.activeJobs.get(mediaItemId)
+      controller?.abort()
+      this.activeJobs.delete(mediaItemId)
+      getLoggingService().info('[TranscodingService]', `Cancelled transcode job for media item ${mediaItemId}`)
+      return true
+    }
+    if (this.activeJobs.size > 0) {
+      this.abortAll()
+      return true
+    }
+    return false
+  }
+
+  abortAll(): void {
+    for (const [id, controller] of this.activeJobs.entries()) {
+      controller.abort()
+      getLoggingService().info('[TranscodingService]', `Aborted transcode job for media item ${id}`)
+    }
+    this.activeJobs.clear()
+  }
+
   setParameterAdvisorForTesting(advisor: TranscodeParameterAdvisor): void {
     this.parameterAdvisor = advisor
     this.analysisCache.clear()
@@ -138,9 +180,9 @@ export class TranscodingService {
     if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = `${batchId}_preflight`
-    const results: ShowTranscodePreflight['episodes'] = []
     const queuedMediaIds = new Set((await (await import('./TaskQueueService')).getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
-    for (const episode of episodes) {
+
+    const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
       const label = `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
       try {
         if (!episode.id || !episode.file_path || !episode.source_id) throw new Error('Episode has no local source identity')
@@ -149,13 +191,41 @@ export class TranscodingService {
         const stat = await fs.stat(episode.file_path)
         const analysis = await getMediaFileAnalyzer().analyzeFile(episode.file_path)
         if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
-        validateHdrTranscode(analysis)
         buildStreamSelectionPlan(analysis, request.options)
-        results.push({ mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs })
+        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
+        return {
+          mediaItemId: episode.id,
+          label,
+          compatible: true,
+          hdrFormat: analysis.video.hdrFormat || 'SDR',
+          sourceSize: stat.size,
+          sourceMtimeMs: stat.mtimeMs,
+          recommendedAction: advice.action,
+          sourceTier: advice.sourceTier,
+          adviceReason: advice.reason
+        }
       } catch (error) {
-        results.push({ mediaItemId: episode.id || 0, label, compatible: false, reason: error instanceof Error ? error.message : String(error), hdrFormat: 'Unknown', sourceSize: 0, sourceMtimeMs: 0 })
+        return {
+          mediaItemId: episode.id || 0,
+          label,
+          compatible: false,
+          reason: error instanceof Error ? error.message : String(error),
+          hdrFormat: 'Unknown',
+          sourceSize: 0,
+          sourceMtimeMs: 0
+        }
       }
     }
+
+    // Parallel preflight processing in concurrency batches of 8
+    const CONCURRENCY = 8
+    const results: ShowTranscodePreflight['episodes'] = []
+    for (let i = 0; i < episodes.length; i += CONCURRENCY) {
+      const chunk = episodes.slice(i, i + CONCURRENCY)
+      const chunkResults = await Promise.all(chunk.map(ep => processEpisode(ep)))
+      results.push(...chunkResults)
+    }
+
     const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.every(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), episodes: results }
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
@@ -182,17 +252,20 @@ export class TranscodingService {
     }
     if (!preflight.result.compatible) throw new Error('Show transcode preflight has blocking episodes')
     const { getTaskQueueService } = await import('./TaskQueueService')
-    const tasks = preflight.result.episodes.map(episode => ({
+    const queueableEpisodes = preflight.result.episodes.filter(
+      episode => episode.recommendedAction !== 'already_optimized'
+    )
+    const tasks = queueableEpisodes.map(episode => ({
       type: TaskType.Transcode,
       label: episode.label,
       mediaItemId: episode.mediaItemId,
       batchId: preflight.result.batchId,
       options: { ...preflight.request.options, queuePayload: { batchId: preflight.result.batchId, preflightId, expiresAt: preflight.result.expiresAt, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs } }
     }))
-    await getTaskQueueService().addTasks(tasks)
+    if (tasks.length > 0) await getTaskQueueService().addTasks(tasks)
     this.showPreflights.delete(preflightId)
     await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
-    return { batchId: preflight.result.batchId, queuedMediaItemIds: preflight.result.episodes.map(episode => episode.mediaItemId).filter((id): id is number => id > 0) }
+    return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId).filter((id): id is number => id > 0) }
   }
 
   private async assertAuthorizedItem(mediaItemId: number): Promise<void> {
@@ -297,17 +370,6 @@ export class TranscodingService {
 
 
 
-  /**
-   * Cancel an active transcode job
-   */
-  cancelTranscode(mediaItemId: number): void {
-    const controller = this.activeJobs.get(mediaItemId)
-    if (controller) {
-      controller.abort()
-      this.activeJobs.delete(mediaItemId)
-      getLoggingService().info('[TranscodingService]', `Cancelled transcode for item ${mediaItemId}`)
-    }
-  }
 
   /**
    * Get optimized transcoding parameters from Gemini
@@ -320,19 +382,85 @@ export class TranscodingService {
       if (analysis.success) this.analysisCache.set(filePath, analysis)
     }
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
-    validateHdrTranscode(analysis)
+    let effectiveOptions: TranscodeOptions = { ...options }
 
-    const targetCodec = options.targetCodec || 'av1'
-    const hasManualOverrides = options.encoder && options.crf !== undefined && options.preset
+    if (effectiveOptions.optimizationMode === 'smart') {
+      let itemForAdvice: Partial<MediaItem> | null = null
+      try {
+        const db = getDatabase()
+        if (db.isInitialized) {
+          itemForAdvice = await db.media.getItemByPath(filePath)
+        }
+      } catch {
+        // Fall back to synthetic item if DB is uninitialized or in unit test
+      }
+      const itemToAnalyze: Partial<MediaItem> = itemForAdvice || {
+        file_path: filePath,
+        file_size: analysis.fileSize,
+        duration: analysis.duration,
+        video_codec: analysis.video?.codec,
+        video_bitrate: analysis.video?.bitrate,
+        resolution: analysis.video ? `${analysis.video.width}x${analysis.video.height}` : undefined,
+        height: analysis.video?.height
+      }
+      const advice = getQualityAnalyzer().getOptimizationAdvice(itemToAnalyze as MediaItem, analysis)
+      if (advice.action === 'stream_pruning') {
+        const originalLanguage = itemToAnalyze.original_language
+        if (!originalLanguage) {
+          throw new Error('Smart stream pruning requires verified original-language metadata')
+        }
+        effectiveOptions.optimizationMode = 'remux_only'
+        effectiveOptions.streamSelection = {
+          audio: 'original-and-protected',
+          originalLanguage,
+          subtitle: 'all',
+        }
+      }
+    }
+
+    if (effectiveOptions.optimizationMode === 'remux_only' || effectiveOptions.encoder === 'remux' || effectiveOptions.encoder === 'copy') {
+      const plan = buildStreamSelectionPlan(analysis, effectiveOptions)
+      const builder = new StreamRemuxCommandBuilder()
+      const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', effectiveOptions, analysis)
+      if (effectiveOptions.customArgs) {
+        const parts = effectiveOptions.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
+        const safeRegex = /^[a-zA-Z0-9\-_+=/\\:,.*"'\s]+$/
+        const outputIndex = ffmpegArgs.length - 1
+        const safeParts: string[] = []
+        for (const part of parts) {
+          const cleaned = part.replace(/^["']|["']$/g, '').trim()
+          if (cleaned && safeRegex.test(cleaned)) {
+            safeParts.push(cleaned)
+          }
+        }
+        ffmpegArgs.splice(outputIndex, 0, ...safeParts)
+      }
+      return {
+        summary: 'Lossless container stream remuxing (copy video)',
+        ffmpegArgs,
+        expectedSizeReduction: 'Stream pruning only',
+        warnings: [],
+        encoder: 'copy',
+        sourceHdrFormat: analysis.video?.hdrFormat,
+        expectedAudioCount: plan.audioStreamIndexes.length,
+        expectedSubtitleCount: plan.subtitleStreamIndexes.length,
+        audioTracks: analysis.audioTracks,
+        subtitleTracks: analysis.subtitleTracks
+      }
+    }
+
+    validateHdrTranscode(analysis)
+    const targetCodec = effectiveOptions.targetCodec || 'av1'
+    const hasManualOverrides = effectiveOptions.encoder && effectiveOptions.crf !== undefined && effectiveOptions.preset
 
     let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
     let gpuName = ''
     let selectedGpuIdForOptions: string | undefined
     let capabilitiesForOptions: TranscodingCapabilities | undefined
-    if (options.useGpu || options.gpuId) {
+    if (effectiveOptions.useGpu || effectiveOptions.gpuId) {
       const capabilities = await this.getCapabilities()
       capabilitiesForOptions = capabilities
-      const selectedGpuId = options.gpuId || capabilities.selectedGpuId
+      const selectedGpuId = effectiveOptions.gpuId || capabilities.selectedGpuId
       selectedGpuIdForOptions = selectedGpuId || undefined
       if (!selectedGpuId) {
         throw new Error('GPU acceleration requested, but no GPU is selected. Select a verified GPU or disable GPU acceleration.')
@@ -349,7 +477,7 @@ export class TranscodingService {
     }
 
     let expectedEncoder = ''
-    if (options.useGpu || options.gpuId) {
+    if (effectiveOptions.useGpu || effectiveOptions.gpuId) {
       if (targetCodec === 'av1') {
         if (selectedVendor === 'NVIDIA') expectedEncoder = 'nvenc_av1'
         else if (selectedVendor === 'Intel') expectedEncoder = 'qsv_av1'
@@ -477,7 +605,7 @@ export class TranscodingService {
       : 'fast'
 
     const resolvedOptions: TranscodeOptions = {
-      ...options,
+      ...effectiveOptions,
       targetCodec,
       gpuId: selectedGpuIdForOptions,
       encoder: videoCodec,
@@ -489,8 +617,8 @@ export class TranscodingService {
     const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', resolvedOptions, analysis)
 
     // Add custom args if present
-    if (options.customArgs) {
-      const parts = options.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
+    if (effectiveOptions.customArgs) {
+      const parts = effectiveOptions.customArgs.match(/"[^"]*"|'[^']*'|\S+/g) || []
       const safeRegex = /^[a-zA-Z0-9\-_+=/\\:,.*"'\s]+$/
       for (const part of parts) {
         const cleaned = part.replace(/^["']|["']$/g, '').trim()
@@ -499,6 +627,10 @@ export class TranscodingService {
         }
       }
     }
+
+    const plan = buildStreamSelectionPlan(analysis, resolvedOptions)
+    const expectedAudioCount = plan.audioStreamIndexes.length
+    const expectedSubtitleCount = plan.subtitleStreamIndexes.length
 
     return {
       summary,
@@ -509,6 +641,8 @@ export class TranscodingService {
       crf: finalCrf,
       preset: finalPreset,
       sourceHdrFormat: analysis.video?.hdrFormat,
+      expectedAudioCount,
+      expectedSubtitleCount,
       audioTracks: analysis.audioTracks,
       subtitleTracks: analysis.subtitleTracks
     }
@@ -552,9 +686,17 @@ export class TranscodingService {
       const params = await this.getTranscodeParameters(inputPath, { ...options, aiOptimize: false })
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
+      let tempBaseDir = path.dirname(inputPath)
+      const configuredTempDir = options.tempDirectory || (await db.config.getSetting('transcoding_temp_directory'))
+      if (configuredTempDir && typeof configuredTempDir === 'string' && configuredTempDir.trim() !== '') {
+        const sanitizedTemp = PathUtils.sanitizeAbsolutePath(configuredTempDir.trim())
+        if (existsSync(sanitizedTemp)) {
+          tempBaseDir = sanitizedTemp
+        }
+      }
       tempPath = PathUtils.sanitizeAbsolutePath(path.join(
-        path.dirname(inputPath),
-        `.totality_tmp_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
+        tempBaseDir,
+        `.totality_tmp_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
@@ -590,8 +732,8 @@ export class TranscodingService {
       if (!outputAnalysis.success || !outputAnalysis.video) {
         throw new Error(`Transcoded output verification failed: ${outputAnalysis.error || 'video stream not detected'}`)
       }
-      const expectedAudioCount = params.audioTracks?.length
-      const expectedSubtitleCount = params.subtitleTracks?.length
+      const expectedAudioCount = params.expectedAudioCount !== undefined ? params.expectedAudioCount : params.audioTracks?.length
+      const expectedSubtitleCount = params.expectedSubtitleCount !== undefined ? params.expectedSubtitleCount : params.subtitleTracks?.length
       if (expectedAudioCount !== undefined && outputAnalysis.audioTracks.length !== expectedAudioCount) {
         throw new Error(`Transcoded output verification failed: expected ${expectedAudioCount} audio streams, found ${outputAnalysis.audioTracks.length}`)
       }
@@ -602,28 +744,58 @@ export class TranscodingService {
         throw new Error('Transcoded output verification failed: HDR10 metadata was not preserved')
       }
 
-      // Guard against size inflation: if transcoded result is larger than source, abort replacement
-      if ((options.outputMode || 'copy') === 'quarantine-replace' && stats.size > sourceStat.size) {
+      const configuredDefaultOutputMode = (await db.config.getSetting('transcoding_default_output_mode')) as 'copy' | 'quarantine-replace' | 'replace' | null
+      const isStreamCopy = params.encoder === 'copy' || options.optimizationMode === 'remux_only'
+      const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
+      const effectiveOutputMode = isStreamCopy
+        ? (requestedOutputMode || 'replace')
+        : (requestedOutputMode === 'copy' ? 'copy' : 'quarantine-replace')
+
+      // Guard against size inflation for replacement modes: if transcoded result is larger than source, abort replacement
+      if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
         throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
       }
 
-      // Atomic replacement
-      if ((options.outputMode || 'copy') === 'quarantine-replace') {
-        getLoggingService().info('[TranscodingService]', `Replacing original file: ${inputPath}`)
-        const origExt = path.extname(inputPath)
-        const origBase = path.basename(inputPath, origExt)
-        const finalPath = path.join(path.dirname(inputPath), origBase + outputExt)
+      const origExt = path.extname(inputPath)
+      const origBase = path.basename(inputPath, origExt)
+      const targetSamePath = path.join(path.dirname(inputPath), origBase + outputExt)
+
+      if (effectiveOutputMode === 'replace') {
+        getLoggingService().info('[TranscodingService]', `Directly replacing original file: ${inputPath}`)
+        if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
+          await fs.rename(tempPath, targetSamePath)
+        }
+        if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(inputPath)) {
+          await fs.unlink(inputPath)
+        }
+        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(targetSamePath)
+        if (newAnalysis.success) {
+          await db.media.updatePathAndStats(mediaItemId, targetSamePath, newAnalysis)
+        }
+      } else if (effectiveOutputMode === 'quarantine-replace') {
+        getLoggingService().info('[TranscodingService]', `Replacing with quarantine backup: ${inputPath}`)
         const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.quarantine-${Date.now()}${origExt}`)
         await fs.rename(inputPath, quarantinePath)
         try {
-          await fs.rename(tempPath, finalPath)
+          if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
+            await fs.copyFile(tempPath, targetSamePath)
+            await fs.unlink(tempPath)
+          }
         } catch (error) {
           await fs.rename(quarantinePath, inputPath)
           throw error
         }
-        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(finalPath)
+        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(targetSamePath)
         if (newAnalysis.success) {
-           await db.media.updatePathAndStats(mediaItemId, finalPath, newAnalysis)
+          await db.media.updatePathAndStats(mediaItemId, targetSamePath, newAnalysis)
+        }
+      } else {
+        // Sibling copy
+        const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
+        getLoggingService().info('[TranscodingService]', `Saving transcoded sibling copy: ${copyPath}`)
+        if (path.resolve(tempPath) !== path.resolve(copyPath)) {
+          await fs.copyFile(tempPath, copyPath)
+          await fs.unlink(tempPath)
         }
       }
 
@@ -687,8 +859,11 @@ export class TranscodingService {
 
       if (signal) {
         signal.addEventListener('abort', () => {
-          proc.kill()
-          resolve(false)
+          if (process.platform === 'win32' && proc.pid) {
+            spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'])
+          } else {
+            proc.kill('SIGKILL')
+          }
         })
       }
 
@@ -698,40 +873,47 @@ export class TranscodingService {
       proc.stderr.on('data', (data) => {
         const line = data.toString()
         stderrBuffer += line
-        getLoggingService().verbose('[FFmpeg]', line.trim())
 
         // Extract duration first time
         if (durationSeconds === 0) {
-          const durMatch = line.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/)
+          const durMatch = line.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
           if (durMatch) {
             durationSeconds = parseInt(durMatch[1], 10) * 3600 + parseInt(durMatch[2], 10) * 60 + parseFloat(durMatch[3])
           }
         }
 
-        // Parse time and speed
-        const timeMatch = line.match(/time=\s*(\d+):(\d+):(\d+\.\d+)/)
-        const fpsMatch = line.match(/fps=\s*(\d+(\.\d+)?)/)
-        const speedMatch = line.match(/speed=\s*(\d+(\.\d+)?)x/)
+        // Parse time, fps, and speed
+        const timeMatch = line.match(/time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+        const fpsMatch = line.match(/fps=\s*(\d+(?:\.\d+)?)/)
+        const speedMatch = line.match(/speed=\s*(\d+(?:\.\d+)?)x/)
         
         if (timeMatch && durationSeconds > 0) {
           const currentTime = parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseFloat(timeMatch[3])
           const currentSecond = Math.floor(currentTime)
-          if (currentSecond === lastReportedSecond) return
+
+          // Handle stream synchronization jump backwards when video encoding begins after audio stream pre-copy
+          if (lastReportedSecond !== -1 && currentSecond < lastReportedSecond - 5) {
+            lastReportedSecond = currentSecond
+          } else if (currentSecond === lastReportedSecond) {
+            return
+          }
           lastReportedSecond = currentSecond
 
-          const percent = Math.min(99.9, (currentTime / durationSeconds) * 100)
+          const percent = Math.min(99.9, Math.max(0, (currentTime / durationSeconds) * 100))
           const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0
-          const speed = speedMatch ? parseFloat(speedMatch[1]) : 1
+          const speed = speedMatch ? parseFloat(speedMatch[1]) : 0
+          const speedStr = speed > 0 ? `${speed.toFixed(1)}x` : (fps > 0 ? `${(fps / 24).toFixed(1)}x` : '1.0x')
           
-          let eta = 'unknown'
-          if (speed > 0 && fps > 0) {
-            const remainingSec = (durationSeconds - currentTime) / speed
+          let eta = 'calculating...'
+          const effectiveSpeed = speed > 0 ? speed : (fps > 0 ? fps / 24 : 0)
+          if (effectiveSpeed > 0 && durationSeconds > currentTime) {
+            const remainingSec = (durationSeconds - currentTime) / effectiveSpeed
             const etaMin = Math.floor(remainingSec / 60)
             const etaSec = Math.floor(remainingSec % 60)
-            eta = `${etaMin}m ${etaSec}s`
+            eta = etaMin > 0 ? `${etaMin}m ${etaSec}s` : `${etaSec}s`
           }
 
-          onProgress({ percent, fps, eta, status: 'encoding' })
+          onProgress({ percent, fps, eta, speed: speedStr, status: 'encoding' })
         }
       })
 

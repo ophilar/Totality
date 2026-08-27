@@ -15,6 +15,7 @@ import crypto from 'node:crypto'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getTMDBService } from '@main/services/TMDBService'
 
 const config = z.object({ baseUrl: z.string().url(), apiKey: z.string().min(1), timeoutMs: z.number().int().positive().optional() })
 const pendingRecord = z.object({ requestedAt: z.string(), seriesId: z.number().int().positive(), commandId: z.number().int().nullable(), state: z.literal('awaiting-rescan') })
@@ -67,7 +68,31 @@ export function registerOptimizationHandlers() {
         let audioStreams: import('@main/services/ShowOptimizationMetricsService').TrackStreamInfo[] | undefined = undefined
         let durationSeconds = episode.duration ? (episode.duration > 10000 ? episode.duration / 1000 : episode.duration) : undefined
 
-        if (episode.file_path && analyzerAvailable) {
+        if (episode.audio_tracks) {
+          try {
+            const parsedTracks = JSON.parse(episode.audio_tracks)
+            if (Array.isArray(parsedTracks) && parsedTracks.length > 0) {
+              audioStreams = parsedTracks.map((t: any, idx: number) => ({
+                index: typeof t.index === 'number' ? t.index : idx,
+                codec: t.codec || t.codec_name || 'unknown',
+                codec_name: t.codec || t.codec_name || 'unknown',
+                language: t.language || t.lang || null,
+                title: t.title || null,
+                channels: typeof t.channels === 'number' ? t.channels : (t.channelLayout ? parseInt(String(t.channelLayout), 10) || 2 : 2),
+                bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
+                bitrate: t.bitrate ? t.bitrate * 1000 : undefined,
+                isCommentary: Boolean(t.isCommentary),
+                isAudioDescription: Boolean(t.isAudioDescription),
+                isAccessibility: Boolean(t.isAccessibility),
+                reliableTag: Boolean(t.language || t.lang),
+              }))
+            }
+          } catch {
+            // fallback to probe
+          }
+        }
+
+        if (!audioStreams && episode.file_path && analyzerAvailable) {
           try {
             const analysis = await analyzer.analyzeFile(episode.file_path)
             if (analysis.success && analysis.audioTracks.length > 0) {
@@ -104,13 +129,37 @@ export function registerOptimizationHandlers() {
       })
     )
 
-    const originalLanguage = episodes[0]?.original_language ?? undefined
+    let originalLanguage = episodes.find(e => e.original_language)?.original_language ?? undefined
+    if (!originalLanguage && title) {
+      try {
+        const comp = await db.tvShows.getCompletenessByTitle(title, episodes[0]?.source_id || '', episodes[0]?.library_id || '')
+        if (comp?.tmdb_id) {
+          const tmdbService = getTMDBService()
+          const showDetails = await tmdbService.getTVShowDetails(comp.tmdb_id)
+          if (showDetails?.original_language) {
+            originalLanguage = showDetails.original_language
+          }
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    }
     const dryRunResult = calculateDryRunMetrics(episodeMetrics, originalLanguage)
+    const audioAction = dryRunResult.trackDecisions.some(track => track.decision === 'review-required')
+      ? 'review-required'
+      : dryRunResult.recoverableBytes > 0 ? 'stream-pruning' : 'no-action'
+    const videoAction = dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0
+      ? 'transcode-video'
+      : 'no-action'
 
     return {
       title,
       totalBytes: dryRunResult.totalBytes,
       recoverableBytes: dryRunResult.recoverableBytes,
+      videoDebtBytes: dryRunResult.videoDebtBytes,
+      totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+      audioAction,
+      videoAction,
       percentageSavings: dryRunResult.percentageSavings,
       totalEpisodes: dryRunResult.totalEpisodes,
       scoredEpisodes: dryRunResult.scoredEpisodes,
@@ -120,11 +169,17 @@ export function registerOptimizationHandlers() {
       metrics: {
         totalSize: dryRunResult.totalBytes,
         totalRecoverableBytes: dryRunResult.recoverableBytes,
+        videoDebtBytes: dryRunResult.videoDebtBytes,
+        totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+        audioAction,
+        videoAction,
         weightedEfficiency: dryRunResult.weightedEfficiency,
         scoredEpisodeCount: dryRunResult.scoredEpisodes,
         unscoredEpisodeCount: dryRunResult.unscoredEpisodes,
       },
-      action: dryRunResult.recoverableBytes > 0 ? 'review-required' : 'no-optimization',
+      action: dryRunResult.recoverableBytes > 0
+        ? 'review-required'
+        : (dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0 ? 'transcode-video' : 'no-optimization'),
       optInRequired: true,
     }
   })

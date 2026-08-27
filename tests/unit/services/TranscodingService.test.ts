@@ -5,18 +5,45 @@ import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/
 import { GpuDetector } from '../../../src/main/services/utils/GpuDetector'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
 import * as childProcess from 'child_process'
+import * as fsPromises from 'fs/promises'
 import * as path from 'path'
+
+vi.mock('fs/promises', () => ({
+  stat: vi.fn().mockResolvedValue({ size: 4000, mtimeMs: 12345678 }),
+  rename: vi.fn().mockResolvedValue(undefined),
+  copyFile: vi.fn().mockResolvedValue(undefined),
+  unlink: vi.fn().mockResolvedValue(undefined)
+}))
 
 type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> }
 
+const mockDbInstance = {
+  isInitialized: true,
+  config: {
+    getSetting: vi.fn().mockResolvedValue(null),
+    setSetting: vi.fn().mockResolvedValue(undefined),
+    deleteSetting: vi.fn().mockResolvedValue(undefined)
+  },
+  tvShows: {
+    getEpisodes: vi.fn().mockResolvedValue([])
+  },
+  sources: {
+    getSourceById: vi.fn().mockResolvedValue({
+      source_id: 'src1',
+      source_type: 'local',
+      connection_config: JSON.stringify({ folderPath: '/media' })
+    })
+  },
+  media: {
+    getItemById: vi.fn().mockResolvedValue(null),
+    getItemByPath: vi.fn().mockResolvedValue(null),
+    getItem: vi.fn().mockResolvedValue(null),
+    updatePathAndStats: vi.fn().mockResolvedValue(undefined)
+  }
+}
+
 vi.mock('../../../src/main/database/BetterSQLiteService', () => ({
-  getDatabase: () => ({
-    isInitialized: true,
-    config: {
-      getSetting: vi.fn().mockResolvedValue(null),
-      setSetting: vi.fn().mockResolvedValue(undefined)
-    }
-  })
+  getDatabase: () => mockDbInstance
 }))
 
 vi.mock('../../../src/main/services/LoggingService', () => ({
@@ -36,24 +63,26 @@ vi.mock('../../../src/main/services/GeminiService', () => ({
   })
 }))
 
+const mockAnalyzerInstance = {
+  analyzeFile: vi.fn().mockResolvedValue({
+    success: true,
+    filePath: 'input.mp4',
+    video: {
+      index: 0,
+      codec: 'h264',
+      width: 1920,
+      height: 1080,
+      pix_fmt: 'yuv420p10le'
+    },
+    audioTracks: [],
+    subtitleTracks: []
+  }),
+  isAvailable: vi.fn().mockResolvedValue(true),
+  getFFmpegPath: vi.fn().mockReturnValue('ffmpeg')
+}
+
 vi.mock('../../../src/main/services/MediaFileAnalyzer', () => ({
-  getMediaFileAnalyzer: () => ({
-    analyzeFile: vi.fn().mockResolvedValue({
-      success: true,
-      filePath: 'input.mp4',
-      video: {
-        index: 0,
-        codec: 'h264',
-        width: 1920,
-        height: 1080,
-        pix_fmt: 'yuv420p10le'
-      },
-      audioTracks: [],
-      subtitleTracks: []
-    }),
-    isAvailable: vi.fn().mockResolvedValue(true),
-    getFFmpegPath: vi.fn().mockReturnValue('ffmpeg')
-  })
+  getMediaFileAnalyzer: () => mockAnalyzerInstance
 }))
 
 vi.mock('../../../src/main/services/utils/GpuDetector', () => ({
@@ -62,6 +91,13 @@ vi.mock('../../../src/main/services/utils/GpuDetector', () => ({
       { id: 'gpu-0', name: 'NVIDIA GeForce RTX 4090', vendor: 'NVIDIA' }
     ])
   }
+}))
+
+vi.mock('../../../src/main/services/TaskQueueService', () => ({
+  getTaskQueueService: () => ({
+    getTasks: vi.fn().mockResolvedValue([]),
+    addTasks: vi.fn().mockResolvedValue([])
+  })
 }))
 
 describe('TranscodeError', () => {
@@ -127,6 +163,213 @@ describe('TranscodingService', () => {
 
       expect(params.ffmpegArgs).toContain('libsvtav1')
     })
+
+    it('uses StreamRemuxCommandBuilder with -c:v copy when optimizationMode is remux_only', async () => {
+      const options: TranscodeOptions = {
+        optimizationMode: 'remux_only'
+      }
+
+      const params = await service.getTranscodeParameters('input.mp4', options)
+      expect(params.encoder).toBe('copy')
+      expect(params.ffmpegArgs).toContain('-c:v')
+      expect(params.ffmpegArgs).toContain('copy')
+    })
+
+    it('allows dynamic HDR stream-copy remux without allowing video re-encode', async () => {
+      const analyzer = getMediaFileAnalyzer()
+      vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
+        success: true,
+        filePath: '/media/dv.mkv',
+        video: {
+          index: 0,
+          codec: 'hevc',
+          width: 3840,
+          height: 2160,
+          hdrFormat: 'Dolby Vision',
+        },
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+
+      const params = await service.getTranscodeParameters('/media/dv.mkv', { optimizationMode: 'remux_only' })
+      expect(params.encoder).toBe('copy')
+      expect(params.ffmpegArgs).toContain('copy')
+    })
+
+    it('keeps validated custom remux arguments before the output path', async () => {
+      const params = await service.getTranscodeParameters('input.mp4', {
+        optimizationMode: 'remux_only',
+        customArgs: '-avoid_negative_ts make_zero',
+      })
+      expect(params.ffmpegArgs?.at(-1)).toBe('<output>')
+      expect(params.ffmpegArgs).toContain('-avoid_negative_ts')
+    })
+
+    it('routes smart mode to remux_only when source is WEB-DL with foreign audio bloat', async () => {
+      const analyzer = getMediaFileAnalyzer()
+      vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
+        success: true,
+        filePath: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+        duration: 45 * 60 * 1000,
+        fileSize: 3 * 1024 * 1024 * 1024,
+        video: {
+          index: 0,
+          codec: 'h264',
+          width: 1920,
+          height: 1080,
+          bitrate: 5000
+        },
+        audioTracks: [
+          { index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', isDefault: true, hasObjectAudio: false },
+          { index: 2, codec: 'eac3', channels: 6, bitrate: 640, language: 'de', isDefault: false, hasObjectAudio: false },
+          { index: 3, codec: 'eac3', channels: 6, bitrate: 640, language: 'fr', isDefault: false, hasObjectAudio: false }
+        ],
+        subtitleTracks: []
+      })
+
+      const options: TranscodeOptions = {
+        optimizationMode: 'smart'
+      }
+
+      mockDbInstance.media.getItemByPath.mockResolvedValueOnce({
+        file_path: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+        original_language: 'en',
+        video_codec: 'h264',
+        video_bitrate: 5000,
+        resolution: '1080p',
+        height: 1080,
+        file_size: 3 * 1024 * 1024 * 1024,
+        duration: 45 * 60 * 1000,
+        audio_tracks: JSON.stringify([
+          { index: 1, language: 'en', bitrate: 640 },
+          { index: 2, language: 'de', bitrate: 640 },
+          { index: 3, language: 'fr', bitrate: 640 },
+        ]),
+      })
+
+      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
+      expect(params.encoder).toBe('copy')
+      expect(params.ffmpegArgs).toContain('-c:v')
+      expect(params.ffmpegArgs).toContain('copy')
+    })
+
+    it('routes smart mode to video encoder when source is a high-bitrate Remux', async () => {
+      const analyzer = getMediaFileAnalyzer()
+      vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
+        success: true,
+        filePath: '/media/Show.S01E01.1080p.Remux.mkv',
+        duration: 45 * 60 * 1000,
+        fileSize: 15 * 1024 * 1024 * 1024,
+        video: {
+          index: 0,
+          codec: 'h264',
+          width: 1920,
+          height: 1080,
+          bitrate: 35000
+        },
+        audioTracks: [
+          { index: 1, codec: 'dts-hd ma', channels: 6, bitrate: 3500, language: 'en', isDefault: true, hasObjectAudio: false }
+        ],
+        subtitleTracks: []
+      })
+
+      const options: TranscodeOptions = {
+        optimizationMode: 'smart',
+        useGpu: true,
+        targetCodec: 'hevc'
+      }
+
+      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.Remux.mkv', options)
+      expect(params.encoder).toBe('nvenc_h265')
+      expect(params.ffmpegArgs).toContain('hevc_nvenc')
+    })
+
+    it('forces video transcode when user specifies optimizationMode transcode on a WEB-DL', async () => {
+      const analyzer = getMediaFileAnalyzer()
+      vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
+        success: true,
+        filePath: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+        duration: 45 * 60 * 1000,
+        fileSize: 3 * 1024 * 1024 * 1024,
+        video: {
+          index: 0,
+          codec: 'h264',
+          width: 1920,
+          height: 1080,
+          bitrate: 5000
+        },
+        audioTracks: [
+          { index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', isDefault: true, hasObjectAudio: false },
+          { index: 2, codec: 'eac3', channels: 6, bitrate: 640, language: 'de', isDefault: false, hasObjectAudio: false }
+        ],
+        subtitleTracks: []
+      })
+
+      const options: TranscodeOptions = {
+        optimizationMode: 'transcode',
+        useGpu: true,
+        targetCodec: 'hevc'
+      }
+
+      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
+      expect(params.encoder).toBe('nvenc_h265')
+      expect(params.ffmpegArgs).toContain('hevc_nvenc')
+    })
+  })
+
+  describe('preflightShowTranscode Advisory', () => {
+    it('populates recommendedAction, sourceTier, and adviceReason in preflight episode items', async () => {
+      mockDbInstance.tvShows.getEpisodes.mockResolvedValueOnce([
+        {
+          id: 10,
+          source_id: 'src1',
+          plex_id: 'p10',
+          title: 'Strange New Worlds S01E01',
+          season_number: 1,
+          episode_number: 1,
+          type: 'episode',
+          file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+          file_size: 4 * 1024 * 1024 * 1024,
+          duration: 50 * 60 * 1000,
+          resolution: '1080p',
+          video_codec: 'h264',
+          video_bitrate: 6000,
+          audio_codec: 'eac3',
+          audio_channels: 6,
+          audio_bitrate: 640,
+          original_language: 'en',
+          audio_tracks: JSON.stringify([
+            { index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', title: 'English' },
+            { index: 2, codec: 'eac3', channels: 6, bitrate: 640, language: 'de', title: 'German' },
+            { index: 3, codec: 'eac3', channels: 6, bitrate: 640, language: 'fr', title: 'French' },
+            { index: 4, codec: 'eac3', channels: 6, bitrate: 640, language: 'es', title: 'Spanish' }
+          ])
+        } as any
+      ])
+
+      mockDbInstance.media.getItemById.mockResolvedValueOnce({
+        id: 10,
+        source_id: 'src1',
+        file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv'
+      } as any)
+
+      vi.mocked(fsPromises.stat).mockResolvedValueOnce({
+        size: 4 * 1024 * 1024 * 1024,
+        mtimeMs: 12345678
+      } as any)
+
+      const preflight = await service.preflightShowTranscode({
+        seriesTitle: 'Star Trek Strange New Worlds',
+        sourceId: 'src1',
+        options: { optimizationMode: 'smart' }
+      })
+
+      expect(preflight.compatible).toBe(true)
+      expect(preflight.episodes.length).toBe(1)
+      expect(preflight.episodes[0].recommendedAction).toBe('stream_pruning')
+      expect(preflight.episodes[0].sourceTier).toBe('WEB-DL')
+      expect(preflight.episodes[0].adviceReason).toBeDefined()
+    })
   })
 
   describe('Process Diagnostic Error Tracking', () => {
@@ -191,6 +434,87 @@ describe('TranscodingService', () => {
         expect(quarantinePath.endsWith(tc.expectedExt)).toBe(true)
         expect(path.extname(quarantinePath)).toBe(tc.expectedExt)
       }
+    })
+  })
+
+  describe('replacement activation', () => {
+    it('moves a verified temporary output onto the original instead of copying it', async () => {
+      const inputPath = 'C:\\media\\episode.mkv'
+      mockDbInstance.media.getItem.mockResolvedValueOnce({ id: 99, file_path: inputPath })
+      vi.mocked(fsPromises.stat).mockResolvedValue({ size: 4000, mtimeMs: 12345678 } as never)
+      vi.spyOn(service as never, 'runFFmpeg').mockResolvedValue(true)
+
+      await service.transcode(99, {
+        transcodingEngine: 'ffmpeg',
+        optimizationMode: 'remux_only',
+        outputMode: 'replace',
+        useGpu: false
+      })
+
+      expect(fsPromises.rename).toHaveBeenCalledWith(
+        expect.stringContaining('.totality_tmp_'),
+        inputPath
+      )
+      expect(fsPromises.copyFile).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('cancellation', () => {
+    it('waits for FFmpeg to exit before reporting an aborted job as finished', async () => {
+      const mockProc = new EventEmitter() as MockProcess
+      mockProc.stdout = new EventEmitter()
+      mockProc.stderr = new EventEmitter()
+      mockProc.kill = vi.fn()
+      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
+      const controller = new AbortController()
+      const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<boolean> }
+      const runPromise = hooks.runFFmpeg(
+        'input.mkv',
+        'output.mkv',
+        { ffmpegArgs: ['-i', '<input>', '<output>'] },
+        {},
+        vi.fn(),
+        controller.signal
+      )
+      let settled = false
+      void runPromise.then(() => { settled = true })
+
+      controller.abort()
+      await Promise.resolve()
+
+      expect(settled).toBe(false)
+      mockProc.emit('close', 1)
+      await expect(runPromise).resolves.toBe(false)
+    })
+  })
+
+  describe('show queue optimization filter', () => {
+    it('does not queue episodes that preflight classifies as already optimized', async () => {
+      const preflightId = 'preflight-skip-optimized'
+      const internal = service as unknown as { showPreflights: Map<string, unknown> }
+      internal.showPreflights.set(preflightId, {
+        request: {
+          seriesTitle: 'Example Show',
+          sourceId: 'src1',
+          options: { transcodingEngine: 'ffmpeg', optimizationMode: 'smart' }
+        },
+        result: {
+          preflightId,
+          batchId: 'batch-skip-optimized',
+          seriesTitle: 'Example Show',
+          episodeCount: 2,
+          compatible: true,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          episodes: [
+            { mediaItemId: 1, label: 'E01', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'already_optimized' },
+            { mediaItemId: 2, label: 'E02', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'stream_pruning' }
+          ]
+        }
+      })
+
+      const result = await service.queueShowTranscode(preflightId)
+
+      expect(result.queuedMediaItemIds).toEqual([2])
     })
   })
 })

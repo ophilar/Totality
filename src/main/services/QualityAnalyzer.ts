@@ -2,6 +2,16 @@ import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '@main/types/database'
 import { APP_CONFIG } from '@main/config'
+import { TrashSourceClassifier, MediaSourceTier } from '@main/services/transcoding/TrashSourceClassifier'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { normalizeLanguage } from '@main/constants/languages'
+
+export interface OptimizationAdvice {
+  action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+  sourceTier: MediaSourceTier
+  reason: string
+  estimatedSavingsBytes: number
+}
 
 /**
  * Shared input shape for quality scoring.
@@ -11,6 +21,8 @@ interface QualityScoringInput {
   resolution: string | null | undefined
   video_codec: string | null | undefined
   video_bitrate: number | null | undefined
+  file_size?: number | null | undefined
+  duration?: number | null | undefined
   audio_codec: string | null | undefined
   audio_channels: number | null | undefined
   audio_bitrate: number | null | undefined
@@ -21,9 +33,6 @@ interface QualityScoringInput {
   height?: number | null
 }
 
-/**
- * Lightweight quality result for version scoring.
- */
 export interface VersionQualityResult {
   quality_tier: string
   tier_quality: string
@@ -221,7 +230,9 @@ export class QualityAnalyzer {
       }
 
       return dubBitrate
-    } catch (error) { throw error }
+    } catch {
+      return 0
+    }
   }
 
   /**
@@ -401,13 +412,15 @@ export class QualityAnalyzer {
   } {
     const qualityTier = this.classifyTier(input.resolution || 'SD', input.height || 0)
     const codecEfficiency = this.getCodecEfficiency(input.video_codec || '')
-    const effectiveBitrate = (input.video_bitrate || 0) * codecEfficiency
+    // Container size includes audio, subtitles, and attachments. It is not a
+    // verified video-stream bitrate and must not influence visual scoring.
+    const inputBitrate = input.video_bitrate || 0
+    const effectiveBitrate = (inputBitrate || 0) * codecEfficiency
 
     const bestAudio = this.getBestAudioTrack(input)
     const bitrateTierScore = this.calculateVideoTierScore(effectiveBitrate, qualityTier)
     const audioTierScore = this.calculateAudioTierScore(bestAudio, qualityTier)
     const tierScore = Math.round(bitrateTierScore * this.videoWeight + audioTierScore * (1 - this.videoWeight))
-    // Derive tier quality from weighted score, not from worst-of video/audio
     const tierQuality: TierQuality = tierScore >= 75 ? 'HIGH' : tierScore >= 50 ? 'MEDIUM' : 'LOW'
     return { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio }
   }
@@ -442,14 +455,16 @@ export class QualityAnalyzer {
     const issues: string[] = []
     const { medium: mediumThreshold } = this.videoThresholds[qualityTier]
 
+    const hasExplicitBitrate = (mediaItem.video_bitrate !== undefined && mediaItem.video_bitrate !== null && mediaItem.video_bitrate > 0)
+    const itemBitrate = mediaItem.video_bitrate || 0
     const codecEfficiency = this.getCodecEfficiency(mediaItem.video_codec || '')
-    if (effectiveBitrate < mediumThreshold && (mediaItem.video_bitrate || 0) > 0) {
+    if (!hasExplicitBitrate) {
+      issues.push(`Bitrate unknown for ${qualityTier}`)
+    } else if (effectiveBitrate < mediumThreshold && itemBitrate > 0) {
       const codecName = codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
       issues.push(
-        `Low bitrate for ${qualityTier}: ${this.formatBitrate(mediaItem.video_bitrate || 0)}${codecName}`
+        `Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`
       )
-    } else if ((mediaItem.video_bitrate || 0) === 0) {
-      issues.push(`Bitrate unknown for ${qualityTier}`)
     }
 
     if (storageDebtBytes > 2 * 1024 * 1024 * 1024) { // > 2GB debt
@@ -753,6 +768,155 @@ const distribution = {
     }
     return 'Blu-ray'
   }
+
+  /**
+   * Calculate dub bloat bytes from secondary audio tracks (non-original language tracks) and subtitle tracks.
+   */
+  calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number {
+    const durationSec = analysis?.duration
+      ? analysis.duration / 1000
+      : (item.duration ? item.duration / 1000 : 0)
+
+    if (durationSec <= 0) return 0
+
+    const normalizedOrig = normalizeLanguage(item.original_language)
+    if (!normalizedOrig || normalizedOrig === 'und') return 0
+
+    let dubBitrateKbps = 0
+
+    if (analysis && analysis.audioTracks && analysis.audioTracks.length > 0) {
+      for (const track of analysis.audioTracks) {
+        if (track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio) {
+          continue
+        }
+        if (track.language) {
+          const normalizedLang = normalizeLanguage(track.language)
+          if (normalizedLang !== normalizedOrig && normalizedLang !== 'und' && normalizedLang !== 'unk') {
+            dubBitrateKbps += track.bitrate || (track.channels ? track.channels * 64 : 192)
+          }
+        }
+      }
+    } else if (item.audio_tracks) {
+      try {
+        const tracks: AudioTrack[] = JSON.parse(item.audio_tracks)
+        if (Array.isArray(tracks)) {
+          for (const track of tracks) {
+            if (track.title?.toLowerCase().includes('commentary')) continue
+            if (track.language) {
+            const normalizedLang = normalizeLanguage(track.language)
+              if (normalizedLang !== normalizedOrig && normalizedLang !== 'und' && normalizedLang !== 'unk') {
+                dubBitrateKbps += track.bitrate || (track.channels ? track.channels * 64 : 192)
+              }
+            }
+          }
+        }
+      } catch {
+        // Malformed track metadata is not evidence for removal.
+        dubBitrateKbps = 0
+      }
+    }
+
+    const audioBloatBytes = (dubBitrateKbps * 1000 * durationSec) / 8
+
+    let subBloatBytes = 0
+    if (analysis?.subtitleTracks && analysis.subtitleTracks.length > 0) {
+      const foreignSubs = analysis.subtitleTracks.filter(sub => {
+        if (sub.isForced) return false
+        if (!sub.language) return false
+        const normalizedLang = normalizeLanguage(sub.language)
+        return normalizedLang !== normalizedOrig && normalizedLang !== 'und'
+      })
+      for (const sub of foreignSubs) {
+        const isBitmap = sub.codec.toLowerCase().includes('pgs') || sub.codec.toLowerCase().includes('dvd')
+        subBloatBytes += isBitmap ? 20 * 1024 * 1024 : 100 * 1024
+      }
+    }
+
+    return Math.round(audioBloatBytes + subBloatBytes)
+  }
+
+  /**
+   * Generates TRaSH-aligned actionable optimization recommendations.
+   */
+  getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult): OptimizationAdvice {
+    const sourceTier = TrashSourceClassifier.classify(
+      item.file_path || '',
+      item.video_bitrate || analysis?.video?.bitrate || undefined,
+      item.video_codec || analysis?.video?.codec || undefined
+    )
+
+    const tier = this.classifyTier(
+      item.resolution || (analysis?.video ? `${analysis.video.width}x${analysis.video.height}` : 'SD'),
+      item.height || analysis?.video?.height
+    )
+    const dubBloatBytes = this.calculateDubBloatBytes(item, analysis)
+    const codec = (item.video_codec || analysis?.video?.codec || '').toLowerCase()
+    const isLegacyCodec = /^(h\.?264|x264|avc1?|vc-?1|mpeg-?2(video)?)$/i.test(codec)
+    const isModernCodec = codec.includes('hevc') || codec.includes('h265') || codec.includes('x265') || codec.includes('av1') || codec.includes('av01')
+    const videoBitrate = item.video_bitrate || analysis?.video?.bitrate || 0
+
+    // Remux with high bitrate (>12000 kbps or legacy codec)
+    if (sourceTier === 'Remux' && (videoBitrate > 12000 || isLegacyCodec || videoBitrate === 0)) {
+      const debtBytes = this.calculateStorageDebt(item, tier)
+      const estimatedSavingsBytes = debtBytes > 0 ? debtBytes : (item.file_size ? Math.round(item.file_size * 0.5) : 0)
+      return {
+        action: 'video_transcode',
+        sourceTier,
+        reason: 'High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.',
+        estimatedSavingsBytes
+      }
+    }
+
+    // WEB-DL, WEBRip, or modern HEVC/AV1 encoding
+    if (sourceTier === 'WEB-DL' || sourceTier === 'WEBRip' || isModernCodec) {
+      if (dubBloatBytes > 150 * 1024 * 1024) {
+        return {
+          action: 'stream_pruning',
+          sourceTier,
+          reason: 'Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended to prune foreign audio dubs/subtitles without re-encoding video.',
+          estimatedSavingsBytes: dubBloatBytes
+        }
+      } else {
+        return {
+          action: 'already_optimized',
+          sourceTier,
+          reason: 'Source is already compact and efficient. No transcode needed.',
+          estimatedSavingsBytes: 0
+        }
+      }
+    }
+
+    // Video bitrate is already within efficient range
+    const targetBitrate = this.efficiencyThresholds[tier] || 5000
+    if (videoBitrate > 0 && videoBitrate <= targetBitrate) {
+      if (dubBloatBytes > 150 * 1024 * 1024) {
+        return {
+          action: 'stream_pruning',
+          sourceTier,
+          reason: 'Video bitrate is already efficient. Container stream pruning recommended.',
+          estimatedSavingsBytes: dubBloatBytes
+        }
+      } else {
+        return {
+          action: 'already_optimized',
+          sourceTier,
+          reason: 'Video bitrate is already within efficient range.',
+          estimatedSavingsBytes: 0
+        }
+      }
+    }
+
+    // Otherwise: older high-bitrate HDTV or BluRay encode
+    const debtBytes = this.calculateStorageDebt(item, tier)
+    const estimatedSavingsBytes = debtBytes > 0 ? debtBytes : (item.file_size ? Math.round(item.file_size * 0.4) : 0)
+    return {
+      action: 'video_transcode',
+      sourceTier,
+      reason: 'Older or high-bitrate video stream suitable for modern transcoding.',
+      estimatedSavingsBytes
+    }
+  }
+
 
   // ============================================================================
   // MUSIC QUALITY ANALYSIS
