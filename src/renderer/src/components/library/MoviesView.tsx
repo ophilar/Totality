@@ -7,7 +7,7 @@ import { ConversionRecommendation } from '@/components/library/ConversionRecomme
 import { MoviePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
 import { useMenuClose } from '@/hooks/useMenuClose'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { providerColors, calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 

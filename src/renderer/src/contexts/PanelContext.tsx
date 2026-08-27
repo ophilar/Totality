@@ -1,5 +1,4 @@
-import React, { useState, useMemo } from 'react'
-import { PanelContext } from './PanelContextStore'
+import React, { createContext, useContext, useState, useMemo } from 'react'
 
 export interface PanelContextType {
   showCompletenessPanel: boolean
@@ -18,6 +17,8 @@ export interface PanelContextType {
   openAIInsights: (report?: string) => void
   closeAIInsights: () => void
 }
+
+const PanelContext = createContext<PanelContextType | undefined>(undefined)
 
 export function PanelProvider({ children }: { children: React.ReactNode }) {
   const [showCompletenessPanel, setShowCompletenessPanel] = useState(false)
@@ -92,4 +93,28 @@ export function PanelProvider({ children }: { children: React.ReactNode }) {
       {children}
     </PanelContext.Provider>
   )
+}
+
+export function usePanel() {
+  const context = useContext(PanelContext)
+  if (!context) {
+    return {
+      showCompletenessPanel: false,
+      setShowCompletenessPanel: () => {},
+      showWishlistPanel: false,
+      setShowWishlistPanel: () => {},
+      showChatPanel: false,
+      setShowChatPanel: () => {},
+      showAIInsights: false,
+      setShowAIInsights: () => {},
+      aiInsightsInitialReport: undefined,
+      setAiInsightsInitialReport: () => {},
+      toggleCompleteness: () => {},
+      toggleWishlist: () => {},
+      toggleChat: () => {},
+      openAIInsights: () => {},
+      closeAIInsights: () => {}
+    }
+  }
+  return context
 }

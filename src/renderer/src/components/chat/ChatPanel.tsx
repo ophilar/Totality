@@ -3,7 +3,7 @@ import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '@/hooks/useChat'
 import { ChatMessage } from '@/components/chat/ChatMessage'
 
-import { usePanel } from '@/contexts/usePanel'
+import { usePanel } from '@/contexts/PanelContext'
 
 interface ChatPanelProps {
   isOpen?: boolean

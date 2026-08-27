@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight, ListOrdered } from 'lucide-react'
 
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useNavigation } from '@/contexts/NavigationContext'
 import { ActivityPanel } from '@/components/ui/ActivityPanel'
@@ -24,7 +24,7 @@ interface SearchResults {
   tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string }>
 }
 
-import { usePanel } from '@/contexts/usePanel'
+import { usePanel } from '@/contexts/PanelContext'
 
 interface TopBarProps {
   currentView: 'dashboard' | 'library'

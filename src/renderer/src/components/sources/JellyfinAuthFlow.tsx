@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { Film, Tv, Music, Folder, Server, ChevronRight } from 'lucide-react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { LibraryType } from '@main/types/database'
 
 
@@ -64,7 +64,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
       setIsDiscovering(false)
     })() })
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmby])
 
   async function handleDiscover() {

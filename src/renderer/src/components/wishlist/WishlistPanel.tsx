@@ -4,7 +4,7 @@ import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, Wishl
 import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard'
 import { WishlistEmptyState } from '@/components/wishlist/WishlistEmptyState'
 
-import { usePanel } from '@/contexts/usePanel'
+import { usePanel } from '@/contexts/PanelContext'
 
 export interface WishlistPanelProps {
   isOpen?: boolean
@@ -20,8 +20,7 @@ type StatusType = WishlistStatus | 'all'
 export function WishlistPanel({ isOpen: propIsOpen, onClose: propOnClose }: WishlistPanelProps) {
   const { showWishlistPanel, setShowWishlistPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showWishlistPanel
-  const closePanel = useCallback(() => setShowWishlistPanel(false), [setShowWishlistPanel])
-  const onClose = propOnClose ?? closePanel
+  const onClose = propOnClose !== undefined ? propOnClose : () => setShowWishlistPanel(false)
   const {
     items,
     counts,

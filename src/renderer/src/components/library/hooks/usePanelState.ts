@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { usePanel } from '@/contexts/usePanel'
+import { usePanel } from '@/contexts/PanelContext'
 
 interface UsePanelStateOptions {
   externalShowCompletenessPanel?: boolean

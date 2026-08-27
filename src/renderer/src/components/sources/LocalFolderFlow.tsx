@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { Film, Tv, Music, HelpCircle } from 'lucide-react'
 import { LibraryType } from '@main/types/database'
 

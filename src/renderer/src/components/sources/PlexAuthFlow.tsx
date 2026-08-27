@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import type { ServerInstanceResponse, MediaLibraryResponse } from '@preload/api/types'
 
 interface PlexAuthFlowProps {

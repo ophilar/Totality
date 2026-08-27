@@ -5,7 +5,7 @@ import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
 import { tvSortColumns } from '@/components/library/sortDefinitions'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
@@ -124,12 +124,9 @@ export function TVShowsView({
           )}
         </div>
         <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-          {tvSortColumns.map(s => {
-            const isSelected = sortBy === s || (sortBy === 'storage_debt' && s === 'recoverable') || (sortBy === 'waste' && s === 'recoverable')
-            return (
-              <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${isSelected ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
-            )
-          })}
+          {tvSortColumns.map(s => (
+            <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
+          ))}
         </div>
       </div>
     )

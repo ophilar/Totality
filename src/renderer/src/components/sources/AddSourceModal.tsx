@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Server, HardDrive, Music } from 'lucide-react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { ProviderType } from '@main/types/database'
 import { PROVIDERS, SUPPORTED_PROVIDERS } from '@main/constants/providers'
 import { useFocusTrap } from '@/hooks/useFocusTrap'

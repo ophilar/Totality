@@ -382,7 +382,7 @@ export class TranscodingService {
       if (analysis.success) this.analysisCache.set(filePath, analysis)
     }
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
-    const effectiveOptions: TranscodeOptions = { ...options }
+    let effectiveOptions: TranscodeOptions = { ...options }
 
     if (effectiveOptions.optimizationMode === 'smart') {
       let itemForAdvice: Partial<MediaItem> | null = null
@@ -501,7 +501,7 @@ export class TranscodingService {
       throw new Error(`The selected device cannot produce ${targetCodec.toUpperCase()} with verified FFmpeg encoder ${expectedEncoder}.`)
     }
 
-    let summary: string
+    let summary = 'AI optimized transcode'
     let videoCodec = options.encoder
     let crf = options.crf
     let preset = options.preset
@@ -834,7 +834,7 @@ export class TranscodingService {
       const ffmpegPath = analyzer.getFFmpegPath() || 'ffmpeg'
       const actualPath = PathUtils.resolveExecutablePath(ffmpegPath)
 
-      let args: string[]
+      let args: string[] = []
       if (params.ffmpegArgs && params.ffmpegArgs.length > 0) {
         args = params.ffmpegArgs.map(arg => {
           if (arg === '<input>') return inputPath

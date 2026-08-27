@@ -1,11 +1,10 @@
 
-import { useState, useCallback, ReactNode, useEffect, useRef } from 'react'
-import { LibraryContext } from './LibraryContextStore'
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
 import type { MediaViewType, ViewType, QualityFilter } from '@/components/library/types'
 import type { MusicArtist, MusicAlbum } from '@main/types/database'
 import type { MediaDeepAnalysisResult } from '@preload/api/media'
 
-export interface LibraryContextType {
+interface LibraryContextType {
   view: MediaViewType
   setView: (view: MediaViewType) => void
   searchQuery: string
@@ -43,6 +42,8 @@ export interface LibraryContextType {
   setActiveSourceId: (id: string | null) => void
   deepAnalyzeMedia: (filePath: string) => Promise<MediaDeepAnalysisResult>
 }
+
+const LibraryContext = createContext<LibraryContextType | undefined>(undefined)
 
 export function LibraryProvider({ children, initialTab }: { children: ReactNode, initialTab?: MediaViewType }) {
   const [view, setView] = useState<MediaViewType>(initialTab || 'movies')
@@ -144,3 +145,8 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   )
 }
 
+export function useLibrary() {
+  const context = useContext(LibraryContext)
+  if (!context) throw new Error('useLibrary must be used within a LibraryProvider')
+  return context
+}

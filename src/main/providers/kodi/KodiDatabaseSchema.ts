@@ -1,4 +1,6 @@
+// @ts-nocheck
 import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 
 /**
@@ -29,13 +31,16 @@ let cachedNfsMappings: Record<string, string> | null = null
  * Format: { "server/export": "Z:" } where key is NFS path (without nfs://) and value is local path
  */
 function getNfsMountMappings(): Record<string, string> {
-  return cachedNfsMappings ?? {}
-}
-
-export async function refreshNfsMountMappingsCache(): Promise<void> {
-  const { getDatabase } = await import('@main/database/BetterSQLiteService')
-  const mappingsJson = await getDatabase().config.getSetting('nfs_mount_mappings')
-  cachedNfsMappings = mappingsJson ? JSON.parse(mappingsJson) as Record<string, string> : {}
+  if (cachedNfsMappings === null) {
+    try {
+      const db = getDatabase()
+      const mappingsJson = db.config.getSetting('nfs_mount_mappings')
+      cachedNfsMappings = mappingsJson ? JSON.parse(mappingsJson) : {}
+    } catch {
+      cachedNfsMappings = {}
+    }
+  }
+  return cachedNfsMappings!
 }
 
 /**

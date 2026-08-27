@@ -19,11 +19,10 @@ import { BrowserHeader } from '@/components/library/browser/BrowserHeader'
 import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from '@/components/library/browser/BrowserAlphabetNav'
 
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useLibrary } from '@/contexts/useLibrary'
-import { descendingSortColumns } from '@/components/library/sortDefinitions'
+import { useLibrary } from '@/contexts/LibraryContext'
 import { emitDismissUpgrade } from '@/utils/dismissEvents'
 import { usePaginatedData } from '@/hooks/usePaginatedData'
 
@@ -139,12 +138,11 @@ export function MediaBrowser({
   const [selectedAlbumCompleteness, setSelectedAlbumCompleteness] = useState<AlbumCompletenessData | null>(null)
   const [activeSourceLibraries, setActiveSourceLibraries] = useState<Array<MediaLibraryResponse & { isEnabled: boolean; isProtected: boolean; allowExpandedMatching: boolean; lastScanAt: string | null }>>([])
   const [detailRefreshKey, setDetailRefreshKey] = useState(0)
-
   const handleSortChange = useCallback((nextSort: string) => {
     if (nextSort === sortBy) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     else {
       setSortBy(nextSort)
-      setSortOrder(descendingSortColumns.has(nextSort) ? 'desc' : 'asc')
+      setSortOrder(nextSort === 'efficiency' || nextSort === 'waste' || nextSort === 'storage_debt' ? 'desc' : 'asc')
     }
   }, [setSortBy, setSortOrder, sortBy, sortOrder])
 
@@ -233,7 +231,7 @@ export function MediaBrowser({
 
   useEffect(() => {
     const commonFilters = {
-      sortBy: sortBy === 'waste' ? 'storage_debt' : (sortBy === 'recoverable' ? 'recoverable' : sortBy),
+      sortBy: sortBy === 'waste' ? 'storage_debt' : sortBy,
       sortOrder,
       qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
       tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
@@ -450,7 +448,7 @@ export function MediaBrowser({
             {view === 'tv' && (
               <SectionErrorBoundary title="TV Shows">
                 <TVShowsView
-                  shows={shows} sortBy={sortBy} onSortChange={handleSortChange} slimDown={slimDown}
+        shows={shows} sortBy={sortBy} onSortChange={handleSortChange} slimDown={slimDown}
                   selectedShow={selectedShow} selectedShowData={selectedShowData}
                   selectedShowLoading={selectedShowEpisodesLoading} onSelectShow={setSelectedShow}
                   onSelectEpisode={setSelectedMediaId}
@@ -462,6 +460,7 @@ export function MediaBrowser({
                   onFixMatch={(title: string, sId: string, fp?: string) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
                   onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                   onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
+
                   onDismissMissingSeason={handleDismissMissingSeason} totalShowCount={totalShowCount}
                   totalEpisodeCount={0} showsLoading={showsLoading} onLoadMoreShows={loadMoreShows}
                   isAnalyzing={isAnalyzing}
@@ -480,6 +479,7 @@ export function MediaBrowser({
                   albumSortColumn={albumSortColumn}
                   albumSortDirection={albumSortDirection}
                   stats={null} selectedArtist={selectedArtist} selectedAlbum={selectedAlbum}
+
                   artistCompleteness={artistCompleteness} albumCompleteness={selectedAlbumCompleteness} allAlbumCompleteness={allAlbumCompleteness}
                   musicViewMode={musicViewMode} trackSortColumn={trackSortColumn} trackSortDirection={trackSortDirection}
                   onTrackSortChange={(c, d) => { setTrackSortColumn(c); setTrackSortDirection(d) }}

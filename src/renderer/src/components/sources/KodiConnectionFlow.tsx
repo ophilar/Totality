@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { Database, HardDrive, Film, Music } from 'lucide-react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { ProviderType } from '@main/types/database'
 import { KodiMySQLFlow } from '@/components/sources/KodiMySQLFlow'
 

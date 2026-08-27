@@ -6,7 +6,7 @@
 
 import { useState, useCallback } from 'react'
 import { MediaDetails } from '@/components/library/MediaDetails'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import {
   emitDismissUpgrade,
   emitDismissCollectionMovie,

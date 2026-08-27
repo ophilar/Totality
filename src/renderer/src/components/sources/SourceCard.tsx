@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Server, HardDrive, Film, Tv, Music, Folder } from 'lucide-react'
-import { useSources } from '@/contexts/useSources'
+import { useSources } from '@/contexts/SourceContext'
 import { LibraryType, ProviderType } from '@main/types/database'
 import { PROVIDERS } from '@main/constants/providers'
 import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
