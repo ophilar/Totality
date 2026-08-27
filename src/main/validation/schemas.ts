@@ -498,7 +498,8 @@ export const LetterOffsetSchema = z.object({
 
 export const TranscodeOptionsSchema = z.object({
   targetCodec: z.enum(['av1', 'hevc']).optional(),
-  outputMode: z.enum(['copy', 'quarantine-replace']).optional(),
+  outputMode: z.enum(['copy', 'quarantine-replace', 'replace']).optional(),
+  tempDirectory: z.string().optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
   useGpu: z.boolean().optional(),
   encoder: z.string().optional(),
@@ -507,12 +508,24 @@ export const TranscodeOptionsSchema = z.object({
   customArgs: z.string().optional(),
   gpuId: z.string().optional(),
   transcodingEngine: z.literal('ffmpeg').optional(),
-    streamSelection: z.union([
-      z.object({ audio: z.literal('all'), subtitle: z.literal('all'), defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional() }),
-      z.object({ audio: z.literal('original-and-protected'), originalLanguage: z.string().min(1), subtitle: z.literal('all'), defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional() })
-    ]).optional(),
-    targetSize: z.string().optional(),
-    aiOptimize: z.boolean().optional(),
+  optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
+  streamSelection: z.union([
+    z.object({
+      audio: z.literal('all'),
+      subtitle: z.literal('all'),
+      subtitleLanguageWhitelist: z.array(z.string()).optional(),
+      defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional()
+    }),
+    z.object({
+      audio: z.literal('original-and-protected'),
+      originalLanguage: z.string().min(1),
+      subtitle: z.literal('all'),
+      subtitleLanguageWhitelist: z.array(z.string()).optional(),
+      defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional()
+    })
+  ]).optional(),
+  targetSize: z.string().optional(),
+  aiOptimize: z.boolean().optional(),
 }).optional()
 
 export const SetSelectedGpuSchema = z.string().min(1).max(200).nullable()

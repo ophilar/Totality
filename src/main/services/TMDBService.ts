@@ -46,6 +46,7 @@ export class TMDBService {
   private movieGenres: TMDBGenre[] | null = null
   private tvGenres: TMDBGenre[] | null = null
   private cache: Map<string, { data: unknown; timestamp: number }> = new Map()
+  private inFlightRequests: Map<string, Promise<unknown>> = new Map()
   private rateLimiter: SlidingWindowRateLimiter = RateLimiters.createTMDBLimiter()
   private activeRequests = 0
   private requestQueue: Array<{ execute: () => Promise<void>; resolve: () => void }> = []
@@ -218,80 +219,99 @@ export class TMDBService {
       return cached
     }
 
-    // Apply rate limiting
-    await this.waitForRateLimit()
+    // Check in-flight concurrent requests
+    const inFlight = this.inFlightRequests.get(cacheKey)
+    if (inFlight) {
+      getLoggingService().verbose('[TMDB]', `In-flight deduplication hit: ${endpoint}`)
+      return (await inFlight) as T
+    }
 
-    // Build URL
-    const url = new URL(this.buildUrl(endpoint))
-    url.searchParams.append('api_key', apiKey)
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, value)
+    const requestPromise = (async (): Promise<T> => {
+      // Apply rate limiting
+      await this.waitForRateLimit()
+
+      // Build URL
+      const url = new URL(this.buildUrl(endpoint))
+      url.searchParams.append('api_key', apiKey)
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, value)
+      })
+
+      const urlForLogging = url.toString().replace(apiKey, 'API_KEY')
+
+      // Track rate limit delay from Retry-After header for retry backoff
+      const retryState = { minRetryDelay: 0 }
+
+      // Make request with retry logic and timeout
+      const data = await retryWithBackoff<T>(
+        async () => {
+          getLoggingService().info('[TMDBService]', '[TMDB] Requesting:', urlForLogging)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
+
+          let response: Response
+          try {
+            response = await fetch(url.toString(), { signal: controller.signal })
+          } catch (error: unknown) {
+            clearTimeout(timeoutId)
+            if (error instanceof Error && error.name === 'AbortError') {
+              throw new Error('TMDB API request timed out')
+            }
+            throw error
+          } finally {
+            clearTimeout(timeoutId)
+          }
+
+          // Handle rate limiting with Retry-After header
+          const rateLimitDelay = getRateLimitRetryAfter(response)
+          if (rateLimitDelay !== null) {
+            getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
+            getLoggingService().warn('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
+            // Pass server's delay to retry backoff as minimum floor
+            retryState.minRetryDelay = rateLimitDelay
+            const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
+            error.status = 429
+            throw error
+          }
+
+          if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}))
+            getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
+            const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
+            error.status = response.status
+            throw error
+          }
+
+          const result = await response.json()
+          const totalResults = (result as { total_results?: number }).total_results
+          if (totalResults !== undefined) {
+            getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- total_results:', totalResults)
+          } else {
+            getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- success')
+          }
+          return result as T
+        },
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+          get minRetryDelay() { return retryState.minRetryDelay },
+          onRetry: (attempt, error, delay) => {
+            getLoggingService().warn('[TMDB]', `Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
+          }
+        }
+      )
+
+      // Cache the response
+      this.setCache(cacheKey, data)
+
+      return data
+    })().finally(() => {
+      this.inFlightRequests.delete(cacheKey)
     })
 
-    const urlForLogging = url.toString().replace(apiKey, 'API_KEY')
-
-    // Track rate limit delay from Retry-After header for retry backoff
-    const retryState = { minRetryDelay: 0 }
-
-    // Make request with retry logic and timeout
-    const data = await retryWithBackoff<T>(
-      async () => {
-        getLoggingService().info('[TMDBService]', '[TMDB] Requesting:', urlForLogging)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
-
-        let response: Response
-        try {
-          response = await fetch(url.toString(), { signal: controller.signal })
-        } catch (error: unknown) {
-          clearTimeout(timeoutId)
-          if (error instanceof Error && error.name === 'AbortError') {
-            throw new Error('TMDB API request timed out')
-          }
-          throw error
-        } finally {
-          clearTimeout(timeoutId)
-        }
-
-        // Handle rate limiting with Retry-After header
-        const rateLimitDelay = getRateLimitRetryAfter(response)
-        if (rateLimitDelay !== null) {
-          getLoggingService().verbose('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
-          getLoggingService().warn('[TMDB]', `Rate limited, retry after ${rateLimitDelay}ms`)
-          // Pass server's delay to retry backoff as minimum floor
-          retryState.minRetryDelay = rateLimitDelay
-          const error = new Error(`TMDB rate limited (429)`) as Error & { status: number }
-          error.status = 429
-          throw error
-        }
-
-        if (!response.ok) {
-          const errorBody = await response.json().catch(() => ({}))
-          getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
-          const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
-          error.status = response.status
-          throw error
-        }
-
-        const result = await response.json()
-        getLoggingService().info('[TMDBService]', '[TMDB] Response for', endpoint, '- total_results:', (result as { total_results?: number }).total_results)
-        return result as T
-      },
-      {
-        maxRetries: 3,
-        initialDelay: 1000,
-        maxDelay: 10000,
-        get minRetryDelay() { return retryState.minRetryDelay },
-        onRetry: (attempt, error, delay) => {
-          getLoggingService().warn('[TMDB]', `Retry ${attempt}/3 for ${urlForLogging} after ${delay}ms: ${error.message}`)
-        }
-      }
-    )
-
-    // Cache the response
-    this.setCache(cacheKey, data)
-
-    return data
+    this.inFlightRequests.set(cacheKey, requestPromise)
+    return await requestPromise
   }
 
   /**

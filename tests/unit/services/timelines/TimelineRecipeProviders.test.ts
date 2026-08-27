@@ -222,7 +222,61 @@ describe('TimelineRecipeProviders', () => {
       const starTrek = await provider.fetchTimeline('star-trek-chronological')
       expect(starTrek.id).toBe('star-trek-chronological')
       expect(starTrek.items.length).toBeGreaterThanOrEqual(20)
-      expect(starTrek.items[0].title).toBe('Star Trek: Enterprise')
+      expect(starTrek.items[0].seriesTitle).toBe('Star Trek: Enterprise')
+      expect(starTrek.items[0].type).toBe('episode')
+
+      const snwItems = starTrek.items.filter((i) => i.seriesTitle === 'Star Trek: Strange New Worlds')
+      expect(snwItems.length).toBe(40)
+
+      const snwS1 = snwItems.filter((i) => i.seasonNumber === 1)
+      const snwS2 = snwItems.filter((i) => i.seasonNumber === 2)
+      const snwS3 = snwItems.filter((i) => i.seasonNumber === 3)
+      const snwS4 = snwItems.filter((i) => i.seasonNumber === 4)
+
+      expect(snwS1.length).toBe(10)
+      expect(snwS2.length).toBe(10)
+      expect(snwS3.length).toBe(10)
+      expect(snwS4.length).toBe(10)
+
+      expect(snwS3[0].timelineEra).toBe('2260–2261')
+      expect(snwS3[0].identifiers.tmdbId).toBe(103516)
+      expect(snwS3[0].identifiers.tvdbId).toBe(382348)
+
+      expect(snwS4[0].timelineEra).toBe('2261–2262')
+      expect(snwS4[0].identifiers.tmdbId).toBe(103516)
+      expect(snwS4[0].identifiers.tvdbId).toBe(382348)
+
+      // Verify Strange New Worlds appears before The Original Series
+      const firstSnwIndex = starTrek.items.findIndex((i) => i.seriesTitle === 'Star Trek: Strange New Worlds')
+      const firstTosIndex = starTrek.items.findIndex((i) => i.seriesTitle === 'Star Trek: The Original Series')
+      expect(firstSnwIndex).toBeGreaterThan(-1)
+      expect(firstTosIndex).toBeGreaterThan(-1)
+      expect(firstSnwIndex).toBeLessThan(firstTosIndex)
+
+      // Verify DS9 S1 starts during TNG S6 (before TNG S6 finishes)
+      const firstDs9Index = starTrek.items.findIndex((i) => i.seriesTitle === 'Star Trek: Deep Space Nine')
+      const lastTngS6Index = starTrek.items.findIndex(
+        (i) => i.seriesTitle === 'Star Trek: The Next Generation' && i.seasonNumber === 6 && i.episodeNumber === 26
+      )
+      expect(firstDs9Index).toBeGreaterThan(-1)
+      expect(lastTngS6Index).toBeGreaterThan(-1)
+      expect(firstDs9Index).toBeLessThan(lastTngS6Index)
+
+      // Verify DS9 S2 episodes interleave with TNG S7
+      const ds9S2E1Index = starTrek.items.findIndex(
+        (i) => i.seriesTitle === 'Star Trek: Deep Space Nine' && i.seasonNumber === 2 && i.episodeNumber === 1
+      )
+      const tngS7E1Index = starTrek.items.findIndex(
+        (i) => i.seriesTitle === 'Star Trek: The Next Generation' && i.seasonNumber === 7 && i.episodeNumber === 1
+      )
+      const ds9S2E2Index = starTrek.items.findIndex(
+        (i) => i.seriesTitle === 'Star Trek: Deep Space Nine' && i.seasonNumber === 2 && i.episodeNumber === 2
+      )
+      expect(ds9S2E1Index).toBeLessThan(tngS7E1Index)
+      expect(tngS7E1Index).toBeLessThan(ds9S2E2Index)
+
+      // Verify no unrelated items (e.g. Star Driver) exist in the timeline
+      expect(starTrek.items.some((i) => /driver/i.test(i.title) || /driver/i.test(i.seriesTitle || ''))).toBe(false)
     })
   })
 
@@ -265,6 +319,64 @@ describe('TimelineRecipeProviders', () => {
       expect(timeline.items[0].title).toContain('Star Trek: Enterprise')
       expect(timeline.items[1].title).toContain('Star Trek: The Original Series')
       expect(timeline.items[2].title).toContain('Star Trek II: The Wrath of Khan')
+    })
+
+    it('parses numbered HTML list for chronological web guide', async () => {
+      const mockBlogHtml = `
+        <html>
+          <head><title>The Star Trek Chronology Project</title></head>
+          <body>
+            <div class="post-body">
+              <p>1. Star Trek: Enterprise (2001)</p>
+              <p>2. Star Trek: Discovery (2017)</p>
+            </div>
+          </body>
+        </html>
+      `
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockBlogHtml,
+      } as unknown as Response)
+
+      const { WebGuideRecipeProvider } = await import('@main/services/timelines/WebGuideRecipeProvider')
+      const provider = new WebGuideRecipeProvider(undefined as never, { isConfigured: () => false } as never, { searchMovie: vi.fn().mockResolvedValue({}), searchTVShow: vi.fn().mockResolvedValue({}) } as never)
+
+      const timeline = await provider.fetchTimeline('https://thestartrekchronologyproject.blogspot.com/')
+      expect(timeline.items.length).toBe(2)
+      expect(timeline.items[0].title).toBe('Star Trek: Enterprise')
+      expect(timeline.items[1].title).toBe('Star Trek: Discovery')
+    })
+
+    it('parses HTML table rows with episode indicators', async () => {
+      const mockTableHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Custom Table Guide</title></head>
+          <body>
+            <table>
+              <tr><td>1</td><td>Star Trek: Enterprise 1x01 - Broken Bow</td></tr>
+              <tr><td>2</td><td>Star Trek: Enterprise 1x02 - Fight or Flight</td></tr>
+            </table>
+          </body>
+        </html>
+      `
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockTableHtml,
+      } as unknown as Response)
+
+      const { WebGuideRecipeProvider } = await import('@main/services/timelines/WebGuideRecipeProvider')
+      const provider = new WebGuideRecipeProvider(undefined as never, { isConfigured: () => false } as never, { searchMovie: vi.fn().mockResolvedValue({}), searchTVShow: vi.fn().mockResolvedValue({}) } as never)
+
+      const timeline = await provider.fetchTimeline('https://example.com/guide')
+      expect(timeline.items.length).toBe(2)
+      expect(timeline.items[0].type).toBe('episode')
+      expect(timeline.items[0].seasonNumber).toBe(1)
+      expect(timeline.items[0].episodeNumber).toBe(1)
+      expect(timeline.items[1].episodeNumber).toBe(2)
     })
   })
 })

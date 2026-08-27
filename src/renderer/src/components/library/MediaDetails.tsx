@@ -428,10 +428,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               Full Rescan
             </button>
 
-            {isMovie && (
+            {Boolean(media.file_path) && (
               <button 
                 onClick={() => setShowTranscodeModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-sm font-bold transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-sm font-bold transition-all cursor-pointer"
               >
                 <Zap className="w-4 h-4" />
                 Optimize...

@@ -1,15 +1,13 @@
 import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 import { BUNDLED_MANIFEST, BUNDLED_RECIPES } from './bundledRecipes'
-import type { WebGuideRecipeProvider } from './WebGuideRecipeProvider'
 
 export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
   private readonly defaultRegistryUrl = 'https://raw.githubusercontent.com/totality-app/timelines-registry/main'
 
   constructor(
     private readonly registryBaseUrl?: string,
-    private readonly cacheService: TimelineCacheService = getTimelineCacheService(),
-    private readonly webGuideProvider?: WebGuideRecipeProvider
+    private readonly cacheService: TimelineCacheService = getTimelineCacheService()
   ) {}
 
   private get effectiveBaseUrl(): string {
@@ -17,13 +15,26 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
   }
 
   async listAvailableRecipes(): Promise<TimelineRecipeSummary[]> {
+    const isCustomUrl = !!this.registryBaseUrl && this.registryBaseUrl !== this.defaultRegistryUrl
+
     // 1. Check persistent/memoized cache
     const cachedManifest = await this.cacheService.getManifest(this.effectiveBaseUrl)
     if (cachedManifest && cachedManifest.length > 0) {
+      if (!isCustomUrl) {
+        // Ensure bundled presets reflect the latest manifest metadata and item counts
+        const merged = cachedManifest.map((item) => {
+          const bundled = BUNDLED_MANIFEST.find((b) => b.id === item.id)
+          return bundled ? { ...item, ...bundled } : item
+        })
+        for (const b of BUNDLED_MANIFEST) {
+          if (!merged.some((m) => m.id === b.id)) {
+            merged.push(b)
+          }
+        }
+        return merged
+      }
       return cachedManifest
     }
-
-    const isCustomUrl = !!this.registryBaseUrl && this.registryBaseUrl !== this.defaultRegistryUrl
 
     if (isCustomUrl) {
       try {
@@ -63,13 +74,18 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
   }
 
   async fetchTimeline(id: string): Promise<TimelineDefinition> {
+    const isCustomUrl = !!this.registryBaseUrl && this.registryBaseUrl !== this.defaultRegistryUrl
+
     // 1. Check persistent/memoized cache
     const cached = await this.cacheService.getRecipe(id)
     if (cached) {
-      return cached
+      const preset = BUNDLED_RECIPES[id]
+      if (preset && (preset.version || 1) > (cached.version || 1)) {
+        // Bundled preset is newer than stale cache — fall through to update cache with preset
+      } else {
+        return cached
+      }
     }
-
-    const isCustomUrl = !!this.registryBaseUrl && this.registryBaseUrl !== this.defaultRegistryUrl
 
     if (isCustomUrl) {
       const response = await fetch(`${this.effectiveBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(10000) })
@@ -83,27 +99,22 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
       return recipe
     }
 
-    // 2. Check presets with live web sync capability
+    // 2. Check presets with optional remote registry version verification
     if (BUNDLED_RECIPES[id]) {
       const preset = BUNDLED_RECIPES[id]
 
-      // If live web provider is available and preset has a live sourceUrl, attempt live sync
-      if (preset.sourceUrl && this.webGuideProvider) {
-        try {
-          const liveRecipe = await this.webGuideProvider.fetchTimeline(preset.sourceUrl)
-          if (liveRecipe && Array.isArray(liveRecipe.items) && liveRecipe.items.length > 0) {
-            const enriched: TimelineDefinition = {
-              ...preset,
-              items: liveRecipe.items,
-              version: (preset.version || 1) + 1,
-            }
-            this.validateRecipe(enriched)
-            await this.cacheService.setRecipe(id, enriched)
-            return enriched
+      try {
+        const response = await fetch(`${this.effectiveBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(4000) })
+        if (response.ok) {
+          const remoteRecipe: TimelineDefinition = await response.json()
+          this.validateRecipe(remoteRecipe)
+          if ((remoteRecipe.version || 1) > (preset.version || 1)) {
+            await this.cacheService.setRecipe(id, remoteRecipe)
+            return remoteRecipe
           }
-        } catch {
-          // Fall back to baseline
         }
+      } catch {
+        // Offline or remote registry unavailable — use bundled preset
       }
 
       this.validateRecipe(preset)

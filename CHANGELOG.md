@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.5.0](https://github.com/bbidwell85/totality/compare/v0.4.4...v0.5.0) (2026-08-27)
+
+### Major Capabilities, TRaSH Guides Integration & Pipeline Optimization
+
+* **TRaSH Guides Stream Pruning & Classification:** Direct integration with TRaSH Guides naming conventions, source tier classification, and lossless stream pruning (`-c:v copy`) for audio/subtitle bloat removal at raw I/O speeds.
+* **Granular Chronological Franchise Timelines:** Support for episode-interleaved viewing orders across Star Trek, Star Wars, MCU, DCEU, and Alien/Predator franchises with remote recipe providers and version precedence.
+* **Transcoding Engine Overhaul:** Parallelized show preflight analysis, direct OS process cancellation for FFmpeg (`taskkill`/`SIGKILL`), individual episode task removal, and live UI queue control.
+* **Weighted Efficiency & Quality Scoring Resilience:** Automatic bitrate derivation from container dimensions/duration when metadata is omitted, persistent SSOT language tracking, and batch completeness scoring infill.
+* **Elimination of Global Render Thrashing:** Optimized telemetry subscriptions and source contexts to maintain fluid 60 FPS UI performance during active hardware encoding.
+
 ## [0.4.4](https://github.com/bbidwell85/totality/compare/v0.4.3...v0.4.4) (2026-05-07)
 
 ### LibSQL & Drizzle Hardening

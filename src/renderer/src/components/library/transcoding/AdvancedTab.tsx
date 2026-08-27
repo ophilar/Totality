@@ -289,7 +289,20 @@ export function AdvancedTab({
         <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
           Output Mode
         </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={() => setOptions(prev => ({ ...prev, outputMode: 'replace' }))}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              options.outputMode === 'replace'
+                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary'
+                : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className="text-xs font-bold text-foreground block mb-0.5">Direct Replace</span>
+            <p className="text-[11px] text-muted-foreground leading-snug">In-place replacement with zero residual storage footprint.</p>
+          </button>
+
           <button
             type="button"
             onClick={() => setOptions(prev => ({ ...prev, outputMode: 'quarantine-replace' }))}
@@ -300,7 +313,7 @@ export function AdvancedTab({
             }`}
           >
             <span className="text-xs font-bold text-foreground block mb-0.5">Quarantine & Replace</span>
-            <p className="text-[11px] text-muted-foreground leading-snug">Atomic replacement after verification check.</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">Replaces original and retains timestamped backup.</p>
           </button>
 
           <button
@@ -313,7 +326,7 @@ export function AdvancedTab({
             }`}
           >
             <span className="text-xs font-bold text-foreground block mb-0.5">Create Sibling Copy</span>
-            <p className="text-[11px] text-muted-foreground leading-snug">Outputs next to original file as a duplicate.</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">Outputs alongside original file as a duplicate.</p>
           </button>
         </div>
       </div>

@@ -159,6 +159,7 @@ export function registerSeriesHandlers() {
     }
     await getDeduplicationService().scanForDuplicates(sourceId)
     const completeness = await service.analyzeSeries(details.title, sourceId)
+    await db.tvShows.mergeDuplicateShows(sourceId)
     getStatsCacheService().invalidate()
     return { success: true, updatedEpisodes: updated, completeness, newTitle: details.title }
   })

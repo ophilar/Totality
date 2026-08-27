@@ -17,15 +17,22 @@ export interface SubtitleSelectionPolicy {
 }
 
 export type StreamSelectionPolicy =
-  | { audio: 'all'; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy }
-  | { audio: 'original-and-protected'; originalLanguage: string; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy }
+  | {
+      audio: 'all'
+      subtitle: 'all'
+      subtitleLanguageWhitelist?: string[]
+      defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy
+    }
+  | {
+      audio: 'original-and-protected'
+      originalLanguage: string
+      subtitle: 'all'
+      subtitleLanguageWhitelist?: string[]
+      defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy
+    }
 
-function normalizeLanguage(language?: string | null): string | null {
-  if (!language) return null
-  const value = language.trim().toLowerCase().split(/[-_]/)[0]
-  const aliases: Record<string, string> = { eng: 'en', heb: 'he', deu: 'de', ger: 'de', fra: 'fr', fre: 'fr', spa: 'es', ita: 'it', jpn: 'ja', kor: 'ko', zho: 'zh', chi: 'zh', rus: 'ru' }
-  return aliases[value] || value || null
-}
+import { normalizeLanguage } from '@main/constants/languages'
+export { normalizeLanguage }
 
 function resolvePolicyIndexes(analysis: FileAnalysisResult, policy: StreamSelectionPolicy): number[] {
   if (policy.audio === 'all') return analysis.audioTracks.map(track => track.index)
@@ -76,7 +83,27 @@ function selectIndexes(
 export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: TranscodeOptions): StreamSelectionPlan {
   const policyAudio = options.streamSelection ? resolvePolicyIndexes(analysis, options.streamSelection) : undefined
   const audioStreamIndexes = selectIndexes(analysis.audioTracks, policyAudio, 'Audio')
-  const subtitleStreamIndexes = selectIndexes(analysis.subtitleTracks, undefined, 'Subtitle')
+
+  let subtitleCandidates: number[] | undefined = undefined
+  if (
+    options.streamSelection?.subtitleLanguageWhitelist &&
+    options.streamSelection.subtitleLanguageWhitelist.length > 0
+  ) {
+    const normalizedWhitelist = new Set(
+      options.streamSelection.subtitleLanguageWhitelist
+        .map(lang => normalizeLanguage(lang))
+        .filter((l): l is string => Boolean(l))
+    )
+    subtitleCandidates = analysis.subtitleTracks
+      .filter(track => {
+        const trackLang = normalizeLanguage(track.language)
+        const matchesWhitelist = Boolean(trackLang && normalizedWhitelist.has(trackLang))
+        return matchesWhitelist || track.isForced === true
+      })
+      .map(track => track.index)
+  }
+
+  const subtitleStreamIndexes = selectIndexes(analysis.subtitleTracks, subtitleCandidates, 'Subtitle')
   const requestedDefault: number | null | 'preserve' | 'none' | undefined = options.streamSelection ? resolvePolicySubtitle(options.streamSelection, analysis, subtitleStreamIndexes) : undefined
   if (typeof requestedDefault === 'number' && !subtitleStreamIndexes.includes(requestedDefault)) {
     throw new Error(`Subtitle stream ${requestedDefault} is not selected`)

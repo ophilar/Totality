@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Monitor, Radio, ChevronDown, CheckCircle, Circle } from 'lucide-react'
+import { Loader2, Monitor, Radio, ChevronDown, CheckCircle, Circle, Languages, HardDrive, FolderOpen, Zap, ShieldCheck, Copy } from 'lucide-react'
 
 // Collapsible settings card matching Library/Services tab pattern
 function SettingsCard({ title, description, icon, status, statusText, expanded, onToggle, children }: {
@@ -131,6 +131,13 @@ export function GeneralTab() {
   const [isLoading, setIsLoading] = useState(true)
   const [minimizeToTray, setMinimizeToTray] = useState(false)
   const [startMinimized, setStartMinimized] = useState(false)
+  const [subtitlePreferredLanguages, setSubtitlePreferredLanguages] = useState('eng, heb, spa')
+  const [isSavingSubtitles, setIsSavingSubtitles] = useState(false)
+  const [subtitleSaved, setSubtitleSaved] = useState(false)
+  const [transcodingTempDir, setTranscodingTempDir] = useState('')
+  const [transcodingDefaultOutputMode, setTranscodingDefaultOutputMode] = useState<'replace' | 'quarantine-replace' | 'copy'>('quarantine-replace')
+  const [isSavingTranscodeSettings, setIsSavingTranscodeSettings] = useState(false)
+  const [transcodeSettingsSaved, setTranscodeSettingsSaved] = useState(false)
   // Monitoring state
   const [monitoringConfig, setMonitoringConfig] = useState<MonitoringConfig>({
     enabled: false,
@@ -149,15 +156,27 @@ export function GeneralTab() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [trayVal, startVal, mConfig, sources] = await Promise.all([
+        const [trayVal, startVal, mConfig, sources, subLangs, tempDirVal, outputModeVal] = await Promise.all([
           window.electronAPI.getSetting('minimize_to_tray'),
           window.electronAPI.getSetting('start_minimized_to_tray'),
           window.electronAPI.monitoringGetConfig(),
           window.electronAPI.sourcesList(),
+          window.electronAPI.getSetting('subtitle_preferred_languages'),
+          window.electronAPI.getSetting('transcoding_temp_directory'),
+          window.electronAPI.getSetting('transcoding_default_output_mode'),
         ])
         setMinimizeToTray(trayVal === 'true')
         setStartMinimized(startVal === 'true')
         setMonitoringConfig(mConfig)
+        if (subLangs && typeof subLangs === 'string') {
+          setSubtitlePreferredLanguages(subLangs)
+        }
+        if (tempDirVal && typeof tempDirVal === 'string') {
+          setTranscodingTempDir(tempDirVal)
+        }
+        if (outputModeVal && (outputModeVal === 'replace' || outputModeVal === 'quarantine-replace' || outputModeVal === 'copy')) {
+          setTranscodingDefaultOutputMode(outputModeVal)
+        }
 
         const providerTypes = new Set<string>()
         ;(sources as MediaSource[]).forEach((source) => {
@@ -346,6 +365,208 @@ export function GeneralTab() {
                   disabled={isSaving || !monitoringConfig.enabled}
                 />
               </div>
+            </div>
+          </div>
+        </div>
+      </SettingsCard>
+
+      {/* Subtitle Stream Preferences */}
+      <SettingsCard
+        title="Subtitle Stream Preferences"
+        description="Default language whitelist for stream remuxing and transcoding"
+        icon={<Languages className="w-5 h-5" />}
+        status="configured"
+        statusText={subtitlePreferredLanguages.trim() ? `${subtitlePreferredLanguages.split(',').filter(Boolean).length} languages` : 'None'}
+        expanded={expandedCards.has('subtitles')}
+        onToggle={() => toggleCard('subtitles')}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Global Subtitle Language Whitelist
+            </label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Specify ISO-639 language codes (e.g. <code>eng, heb, spa, jpn</code>) to preserve during lossless stream copy or transcoding. Non-whitelisted subtitles are pruned to eliminate container bloat.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={subtitlePreferredLanguages}
+                onChange={(e) => {
+                  setSubtitlePreferredLanguages(e.target.value)
+                  setSubtitleSaved(false)
+                }}
+                placeholder="e.g. eng, heb, spa, jpn"
+                className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSavingSubtitles(true)
+                  try {
+                    await window.electronAPI.setSetting('subtitle_preferred_languages', subtitlePreferredLanguages)
+                    setSubtitleSaved(true)
+                    setTimeout(() => setSubtitleSaved(false), 2000)
+                  } finally {
+                    setIsSavingSubtitles(false)
+                  }
+                }}
+                disabled={isSavingSubtitles}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {isSavingSubtitles ? 'Saving...' : subtitleSaved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="font-semibold">Quick Add / Toggle:</span>
+              {['eng', 'heb', 'spa', 'fre', 'ger', 'ita', 'jpn', 'kor', 'zho', 'und'].map((code) => {
+                const currentList = subtitlePreferredLanguages.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+                const isAdded = currentList.includes(code)
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={async () => {
+                      let updated: string
+                      if (isAdded) {
+                        updated = currentList.filter(c => c !== code).join(', ')
+                      } else {
+                        updated = [...currentList, code].join(', ')
+                      }
+                      setSubtitlePreferredLanguages(updated)
+                      setSubtitleSaved(false)
+                      await window.electronAPI.setSetting('subtitle_preferred_languages', updated)
+                    }}
+                    className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                      isAdded
+                        ? 'bg-primary/20 border-primary text-primary font-semibold'
+                        : 'bg-background/80 border-border/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {code} {isAdded ? '✓' : '+'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </SettingsCard>
+
+      {/* Transcoding Cache & Output Handling */}
+      <SettingsCard
+        title="Transcoding Cache & Output Handling"
+        description="Dedicated temporary transcode drive and default file replacement strategy"
+        icon={<HardDrive className="w-5 h-5" />}
+        status="configured"
+        statusText={transcodingTempDir ? 'Custom cache path' : 'Default source drive'}
+        expanded={expandedCards.has('transcode-cache')}
+        onToggle={() => toggleCard('transcode-cache')}
+      >
+        <div className="space-y-4 pt-2">
+          {/* Dedicated Temp Directory */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FolderOpen className="w-4 h-4 text-primary" />
+              Dedicated Transcoding Cache Directory (Fast SSD / NVMe)
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Directory or dedicated drive used to write temporary encode files. Leave blank to write alongside source media files.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={transcodingTempDir}
+                onChange={(e) => {
+                  setTranscodingTempDir(e.target.value)
+                  setTranscodeSettingsSaved(false)
+                }}
+                placeholder="e.g. D:\transcode_cache or /tmp/transcode"
+                className="flex-1 bg-background text-foreground text-sm rounded-md px-3 py-2 border border-border/40 focus:outline-hidden focus:ring-2 focus:ring-primary font-mono"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSavingTranscodeSettings(true)
+                  try {
+                    await window.electronAPI.setSetting('transcoding_temp_directory', transcodingTempDir.trim())
+                    await window.electronAPI.setSetting('transcoding_default_output_mode', transcodingDefaultOutputMode)
+                    setTranscodeSettingsSaved(true)
+                    setTimeout(() => setTranscodeSettingsSaved(false), 2000)
+                  } finally {
+                    setIsSavingTranscodeSettings(false)
+                  }
+                }}
+                disabled={isSavingTranscodeSettings}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {isSavingTranscodeSettings ? 'Saving...' : transcodeSettingsSaved ? 'Saved!' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+
+          {/* Default Output Mode */}
+          <div className="space-y-2 pt-2 border-t border-border/20">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Zap className="w-4 h-4 text-primary" />
+              Default Output & Verification Mode
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('replace')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'replace')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'replace'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <span>Direct Replace</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">In-place replacement with zero residual storage footprint.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('quarantine-replace')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'quarantine-replace')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'quarantine-replace'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Quarantine & Replace</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Replaces original and retains timestamped backup.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setTranscodingDefaultOutputMode('copy')
+                  await window.electronAPI.setSetting('transcoding_default_output_mode', 'copy')
+                }}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  transcodingDefaultOutputMode === 'copy'
+                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
+                    : 'border-border bg-card/60 hover:bg-card'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs mb-1">
+                  <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Create Sibling Copy</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Preserves original intact and outputs an optimized sister file.</p>
+              </button>
             </div>
           </div>
         </div>

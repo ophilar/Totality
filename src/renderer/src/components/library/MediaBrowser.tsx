@@ -426,7 +426,7 @@ export function MediaBrowser({
         />
 
         <div className="flex-1 relative min-h-0">
-          <div className="absolute inset-0 px-4 pb-4 pr-10">
+          <div className={`absolute inset-0 px-4 pb-4 ${view === 'timelines' ? 'pr-4' : 'pr-10'}`}>
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
@@ -514,7 +514,9 @@ export function MediaBrowser({
               </SectionErrorBoundary>
             )}
           </div>
-          <BrowserAlphabetNav alphabetFilter={alphabetFilter} scrollToLetter={(l) => setAlphabetFilter(l)} />
+          {view !== 'timelines' && (
+            <BrowserAlphabetNav alphabetFilter={alphabetFilter} scrollToLetter={(l) => setAlphabetFilter(l)} />
+          )}
         </div>
       </div>
 

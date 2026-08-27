@@ -155,7 +155,19 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
 
     // Subscribe to updates
     const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      setTaskQueueState(state as TaskQueueState)
+      const queueState = state as TaskQueueState
+      if (!queueState) return
+      setTaskQueueState(prev => {
+        if (!prev) return queueState
+        const prevCurrent = prev.currentTask
+        const nextCurrent = queueState.currentTask
+        if (prev.queue.length !== queueState.queue.length) return queueState
+        if (prevCurrent?.id !== nextCurrent?.id || prevCurrent?.status !== nextCurrent?.status) return queueState
+        if (nextCurrent && (nextCurrent.type === 'library-scan' || nextCurrent.type === 'source-scan' || nextCurrent.type === 'music-scan')) {
+          return queueState
+        }
+        return prev
+      })
     })
     return () => unsubscribe?.()
   }, [])

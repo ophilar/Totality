@@ -3,6 +3,7 @@ import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import { getLoggingService } from '@main/services/LoggingService'
 
 export interface Notification {
   id?: number
@@ -30,7 +31,17 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
         createdAt: new Date().toISOString(),
       })
       .returning({ id: schema.notifications.id })
-    
+
+    const log = getLoggingService()
+    const logMsg = `Notification [${notification.type}]: ${notification.title} - ${notification.message}`
+    if (notification.type === 'error' || notification.type === 'task_failed') {
+      log.error('[Notification]', logMsg)
+    } else if (notification.type === 'warning') {
+      log.warn('[Notification]', logMsg)
+    } else {
+      log.info('[Notification]', logMsg)
+    }
+
     return result[0]?.id || 0
   }
 

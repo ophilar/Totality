@@ -160,4 +160,157 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       expect(screen.getByText('Run in Background')).toBeTruthy()
     })
   })
+
+  it('allows selecting optimization modes (Smart, Remux Only, Full Transcode) and configures subtitle whitelist', async () => {
+    const handleClose = vi.fn()
+    const mockSummary: TVShowSummary = {
+      series_title: 'Star Trek: Strange New Worlds',
+      source_id: 'src_local',
+      season_count: 1,
+      episode_count: 1
+    }
+
+    render(
+      <ToastProvider>
+        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
+      </ToastProvider>
+    )
+
+    // Wait for language to be auto-detected
+    await vi.waitFor(() => {
+      const languageSelect = screen.getByRole('combobox', { name: /original language/i }) as HTMLSelectElement
+      expect(languageSelect.value).toBe('ja')
+    })
+
+    // Verify optimization strategy options
+    expect(screen.getByText('Smart')).toBeTruthy()
+    expect(screen.getByText('Audio & Subs Prune')).toBeTruthy()
+    expect(screen.getByText('Full Transcode')).toBeTruthy()
+
+    // Select Remux Only mode
+    const remuxButton = screen.getByRole('button', { name: /Audio & Subs Prune/i })
+    fireEvent.click(remuxButton)
+
+    // Codec and GPU selection should be bypassed in remux only mode
+    expect(screen.queryByText('Target Video Codec')).toBeNull()
+
+    // Subtitle whitelist should be present with tags
+    expect(screen.getByText(/Subtitle Language Whitelist/i)).toBeTruthy()
+    expect(screen.getByText(/English \(eng\)/i)).toBeTruthy()
+
+    // Add preset tag for Japanese
+    const jpnPreset = screen.getByRole('button', { name: /^jpn/i })
+    fireEvent.click(jpnPreset)
+
+    const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
+    fireEvent.click(queueButton)
+
+    await vi.waitFor(() => {
+      expect(window.electronAPI.preflightShow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            optimizationMode: 'remux_only',
+            streamSelection: expect.objectContaining({
+              subtitleLanguageWhitelist: expect.arrayContaining(['eng', 'heb', 'spa', 'jpn'])
+            })
+          })
+        })
+      )
+    })
+  })
+
+  it('renders preflight preview with TRaSH Source Tier and Advisory Badges before queueing', async () => {
+    ;(window.electronAPI.preflightShow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      preflightId: 'pref-preview-1',
+      batchId: 'batch-preview-1',
+      compatible: true,
+      episodeCount: 3,
+      episodes: [
+        {
+          mediaItemId: 101,
+          label: 'S01E01 - Strange New Worlds',
+          compatible: true,
+          hdrFormat: 'HDR10',
+          sourceSize: 15000000000,
+          sourceTier: 'Remux',
+          recommendedAction: 'video_transcode',
+          adviceReason: 'High bitrate AVC Remux benefits from video transcoding.'
+        },
+        {
+          mediaItemId: 102,
+          label: 'S01E02 - Children of the Comet',
+          compatible: true,
+          hdrFormat: 'SDR',
+          sourceSize: 4500000000,
+          sourceTier: 'WEB-DL',
+          recommendedAction: 'stream_pruning',
+          adviceReason: 'WEB-DL with secondary dub bloat. Stream pruning preserves video quality.'
+        },
+        {
+          mediaItemId: 103,
+          label: 'S01E03 - Ghosts of Illyria',
+          compatible: true,
+          hdrFormat: 'SDR',
+          sourceSize: 2000000000,
+          sourceTier: 'WEB-DL',
+          recommendedAction: 'already_optimized',
+          adviceReason: 'Already optimized efficient release.'
+        }
+      ]
+    })
+
+    const handleClose = vi.fn()
+    const mockSummary: TVShowSummary = {
+      series_title: 'Star Trek: Strange New Worlds',
+      source_id: 'src_local',
+      season_count: 1,
+      episode_count: 3
+    }
+
+    render(
+      <ToastProvider>
+        <ShowTranscodeModal show={mockSummary} onClose={handleClose} />
+      </ToastProvider>
+    )
+
+    // Wait for language to be auto-detected
+    await vi.waitFor(() => {
+      const languageSelect = screen.getByRole('combobox', { name: /original language/i }) as HTMLSelectElement
+      expect(languageSelect.value).toBe('ja')
+    })
+
+    // Click Preview Plan
+    const previewButton = screen.getByRole('button', { name: /preview plan/i })
+    expect(previewButton).toBeTruthy()
+    fireEvent.click(previewButton)
+
+    // Verify transition to Preview Plan screen
+    await vi.waitFor(() => {
+      expect(screen.getByText('Preflight Optimization Plan')).toBeTruthy()
+      expect(screen.getByText('3 episodes ready to optimize')).toBeTruthy()
+    })
+
+    // Verify TRaSH Source Tier Badges
+    expect(screen.getByText('Remux')).toBeTruthy()
+    expect(screen.getAllByText('WEB-DL').length).toBe(2)
+
+    // Verify TRaSH Advisory Badges
+    expect(screen.getAllByText(/Video Transcode/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Lossless Stream Copy/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Already Optimized/i).length).toBeGreaterThanOrEqual(1)
+
+    // Verify Advice Reasons
+    expect(screen.getByText(/High bitrate AVC Remux benefits from video transcoding/i)).toBeTruthy()
+    expect(screen.getByText(/Stream pruning preserves video quality/i)).toBeTruthy()
+
+    // Click Queue All Episodes
+    const queueEpisodesButton = screen.getByRole('button', { name: /queue all episodes \(3\)/i })
+    expect(queueEpisodesButton).toBeTruthy()
+    fireEvent.click(queueEpisodesButton)
+
+    await vi.waitFor(() => {
+      expect(window.electronAPI.queueShow).toHaveBeenCalledWith('pref-preview-1')
+      expect(screen.getByText('Live Series Optimization')).toBeTruthy()
+    })
+  })
 })

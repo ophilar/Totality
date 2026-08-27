@@ -2,6 +2,8 @@ import { getDatabase, BetterSQLiteService } from '@main/database/BetterSQLiteSer
 import { getTMDBService, TMDBService } from '@main/services/TMDBService'
 import { MovieCollection, MediaItemType } from '@main/types/database'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getFileNameParser } from '@main/services/FileNameParser'
+import { getLoggingService } from '@main/services/LoggingService'
 import type { MediaItem } from '@main/types/database'
 import type { TMDBCollectionPart } from '@main/types/tmdb'
 
@@ -52,6 +54,12 @@ export class MovieCollectionService {
           if (this.cancelRequested) return
 
           if (!m.tmdb_id) {
+            // Skip searching TMDB for extras/bonus files or non-movie clips
+            const parser = getFileNameParser()
+            if (parser.isExtrasContent(m.title) || parser.isExtrasContent(m.file_path || '')) {
+              return
+            }
+
             try {
               const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
               if (search?.results?.length > 0) {
@@ -59,8 +67,8 @@ export class MovieCollectionService {
                 await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
                 m.tmdb_id = String(best.id)
               }
-            } catch {
-              // Ignore matching errors to continue processing other movies
+            } catch (e) {
+              getLoggingService().warn('[MovieCollectionService]', `Failed to search movie match for "${m.title}":`, e)
             }
           }
 
@@ -83,8 +91,8 @@ export class MovieCollectionService {
                   })
                 }
               }
-            } catch {
-              // Ignore collection fetch errors
+            } catch (e) {
+              getLoggingService().warn('[MovieCollectionService]', `Failed to fetch collection details for movie ${m.tmdb_id} (${m.title}):`, e)
             }
           }
         }))
@@ -108,7 +116,11 @@ export class MovieCollectionService {
               result.analyzed++
               if (analysis.completeness_percentage >= 100) result.complete++
             }
-          } catch (e: unknown) { result.errors.push(e instanceof Error ? e.message : String(e)) }
+          } catch (e: unknown) {
+            const errMsg = e instanceof Error ? e.message : String(e)
+            result.errors.push(errMsg)
+            getLoggingService().warn('[MovieCollectionService]', `Failed to analyze collection "${c.collection_name}": ${errMsg}`)
+          }
         }))
       }
       

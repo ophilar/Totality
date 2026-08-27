@@ -72,4 +72,20 @@ describe('NotificationRepository (Real DB)', () => {
     const all = await repo.getNotifications()
     expect(all).toHaveLength(0)
   })
+
+  it('should log notifications to LoggingService when added', async () => {
+    const { getLoggingService } = await import('@main/services/LoggingService')
+    const logging = getLoggingService()
+
+    await repo.addNotification({
+      type: 'error',
+      title: 'Task failed',
+      message: 'Scan Movies (Storos): Connection timeout'
+    })
+
+    const logs = logging.getLogs()
+    const found = logs.find(l => l.source === '[Notification]' && l.message.includes('Task failed') && l.level === 'error')
+    expect(found).toBeDefined()
+    expect(found?.message).toBe('Notification [error]: Task failed - Scan Movies (Storos): Connection timeout')
+  })
 })

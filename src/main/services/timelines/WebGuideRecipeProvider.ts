@@ -24,24 +24,21 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
   }
 
   async fetchTimeline(urlOrPrompt: string): Promise<TimelineDefinition> {
-    const cached = await this.cacheService.getRecipe(urlOrPrompt)
+    const normalizedInput = urlOrPrompt.trim()
+    const cached = await this.cacheService.getRecipe(normalizedInput)
     if (cached) {
       return cached
     }
 
-    const isUrl = /^https?:\/\//i.test(urlOrPrompt.trim())
-    let timeline: TimelineDefinition
-
-    if (isUrl) {
-      timeline = await this.fetchAndParseUrl(urlOrPrompt.trim())
-    } else {
-      timeline = await this.generateFromPrompt(urlOrPrompt.trim())
-    }
+    const isUrl = /^https?:\/\//i.test(normalizedInput)
+    const timeline = isUrl
+      ? await this.fetchAndParseUrl(normalizedInput)
+      : await this.generateFromPrompt(normalizedInput)
 
     this.validateRecipe(timeline)
     await this.cacheService.setRecipe(timeline.id, timeline)
-    if (urlOrPrompt !== timeline.id) {
-      await this.cacheService.setRecipe(urlOrPrompt, timeline)
+    if (normalizedInput !== timeline.id) {
+      await this.cacheService.setRecipe(normalizedInput, timeline)
     }
 
     return timeline
@@ -205,36 +202,75 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
 
   private async extractWithHeuristics(html: string, _cleanedText: string, sourceUrl: string, pageTitle: string): Promise<TimelineDefinition> {
     const items: TimelineItem[] = []
-    const lineRegex = /(?:<h[2-4][^>]*>|<li[^>]*>|<p[^>]*><strong>)\s*(\d+)[\.\):\-]\s*([^<]+?)(?:<\/h[2-4]>|<\/li>|<\/strong>)/gi
-
-    let match: RegExpExecArray | null
     const seenTitles = new Set<string>()
 
-    while ((match = lineRegex.exec(html)) !== null) {
-      const rawOrder = parseInt(match[1], 10)
-      let titleStr = match[2].trim()
-
-      // Strip trailing year in parenthesis
-      const yearMatch = titleStr.match(/\((\d{4}(?:[–-]\d{4}|[–-]present)?)\)/i)
+    const addItem = (rawOrder: number, titleStr: string) => {
+      let cleanTitle = titleStr.replace(/<[^>]+>/g, '').trim()
+      const yearMatch = cleanTitle.match(/\((\d{4}(?:[–-]\d{4}|[–-]present)?)\)/i)
       const year = yearMatch ? yearMatch[1] : undefined
-      titleStr = titleStr.replace(/\(\d{4}(?:[–-]\d{4}|[–-]present)?\)/i, '').trim()
+      cleanTitle = cleanTitle.replace(/\(\d{4}(?:[–-]\d{4}|[–-]present)?\)/i, '').trim()
 
-      if (titleStr.length > 2 && !seenTitles.has(titleStr.toLowerCase())) {
-        seenTitles.add(titleStr.toLowerCase())
-        const isTv = /season|series|episode|animated/i.test(titleStr)
+      if (cleanTitle.length > 2 && !seenTitles.has(cleanTitle.toLowerCase())) {
+        seenTitles.add(cleanTitle.toLowerCase())
+
+        // Check for episode notation: e.g. "Star Trek: Enterprise 1x01 - Broken Bow" or "S01E01"
+        const seMatch = cleanTitle.match(/(?:S(\d+)\s*E(\d+)|(\d+)x(\d+))/i)
+        let seasonNumber: number | undefined
+        let episodeNumber: number | undefined
+        let seriesTitle: string | undefined
+
+        if (seMatch) {
+          seasonNumber = parseInt(seMatch[1] || seMatch[3], 10)
+          episodeNumber = parseInt(seMatch[2] || seMatch[4], 10)
+          const parts = cleanTitle.split(/(?:S\d+\s*E\d+|\d+x\d+)/i)
+          seriesTitle = parts[0]?.replace(/[:\-\s]+$/, '').trim() || undefined
+        }
+
+        const isTv = Boolean(seMatch) || /season|series|episode|animated/i.test(cleanTitle)
 
         items.push({
           order: isNaN(rawOrder) ? items.length + 1 : rawOrder,
-          type: isTv ? 'show' : 'movie',
-          title: titleStr,
-          seriesTitle: isTv ? titleStr : undefined,
+          type: seMatch ? 'episode' : isTv ? 'show' : 'movie',
+          title: cleanTitle,
+          seriesTitle: seriesTitle || (isTv ? cleanTitle : undefined),
+          seasonNumber,
+          episodeNumber,
           timelineEra: year,
           identifiers: {},
         })
       }
     }
 
-    // If regex found items, enrich first 10 with TMDB search
+    // Pattern 1: HTML Table rows <tr><td>1</td><td>Title</td></tr>
+    const tableRowRegex = /<tr[^>]*>\s*<td[^>]*>\s*(\d{1,4})\s*<\/td>\s*<td[^>]*>([^<]+(?:<[^>]+>[^<]*)*?)<\/td>/gi
+    let match: RegExpExecArray | null
+
+    while ((match = tableRowRegex.exec(html)) !== null) {
+      const rawOrder = parseInt(match[1], 10)
+      addItem(rawOrder, match[2])
+    }
+
+    // Pattern 2: Headings / List items / Strong paragraph headers
+    if (items.length === 0) {
+      const lineRegex = /(?:<h[1-6][^>]*>|<li[^>]*>|<p[^>]*><strong>|<p[^>]*>|<div[^>]*>)\s*(\d{1,4})[\.\):\-]\s*([^<]+?)(?:<\/h[1-6]>|<\/li>|<\/strong>|<\/p>|<\/div>|<br\s*\/?>)/gi
+      while ((match = lineRegex.exec(html)) !== null) {
+        const rawOrder = parseInt(match[1], 10)
+        addItem(rawOrder, match[2])
+      }
+    }
+
+    // Pattern 3: Plain text lines starting with numbered index
+    if (items.length === 0) {
+      const textLines = _cleanedText.split('\n')
+      for (const line of textLines) {
+        const lineMatch = line.trim().match(/^(\d{1,4})[\.\)\-:\s]+([^\n\r]+)$/)
+        if (lineMatch) {
+          addItem(parseInt(lineMatch[1], 10), lineMatch[2])
+        }
+      }
+    }
+
+    // If items found, enrich first 15 with TMDB search
     if (items.length > 0) {
       for (const item of items.slice(0, 15)) {
         try {
@@ -246,7 +282,7 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
                 item.airDate = res.results[0].release_date
               }
             }
-          } else {
+          } else if (item.type === 'show') {
             const res = await this.tmdb.searchTVShow(item.title)
             if (res.results && res.results[0]) {
               item.identifiers.tmdbId = res.results[0].id

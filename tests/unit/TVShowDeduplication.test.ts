@@ -4,7 +4,6 @@ import { getFileNameParser } from '@main/services/FileNameParser'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import { mergeDuplicateSeriesCompleteness } from '@main/database/DatabaseMigration'
 import type { SeriesCompleteness, MediaItem } from '@main/types/database'
-
 describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
   const parser = getFileNameParser()
@@ -210,6 +209,42 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       for (const item of items) {
         expect(item.series_identity_key).toBe('tmdb:115981')
       }
+    })
+
+    it('merges duplicate TV shows directly via TVShowRepository.mergeDuplicateShows', async () => {
+      await db.tvShows.upsertCompleteness({
+        series_title: 'Silo (2023)',
+        source_id: 'src1',
+        library_id: 'lib1',
+        total_seasons: 1,
+        total_episodes: 10,
+        owned_seasons: 1,
+        owned_episodes: 5,
+        completeness_percentage: 50,
+        tmdb_id: '125988',
+      })
+
+      await db.tvShows.upsertCompleteness({
+        series_title: 'Silo',
+        source_id: 'src1',
+        library_id: 'lib1',
+        total_seasons: 0,
+        total_episodes: 0,
+        owned_seasons: 1,
+        owned_episodes: 3,
+        completeness_percentage: 100,
+        series_identity_key: 'unresolved:src1:lib1:silo',
+      })
+
+      const before = await db.tvShows.getAllCompleteness('src1', 'lib1')
+      expect(before.length).toBe(2)
+
+      const mergedCount = await db.tvShows.mergeDuplicateShows('src1', 'lib1')
+      expect(mergedCount).toBe(1)
+
+      const after = await db.tvShows.getAllCompleteness('src1', 'lib1')
+      expect(after.length).toBe(1)
+      expect(after[0].tmdb_id).toBe('125988')
     })
   })
 })

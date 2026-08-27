@@ -49,7 +49,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
            status: 'Ended'
          }
 
-         if (req.url?.includes('append_to_response=season/1') || req.url?.includes('append_to_response=season%2F1')) {
+         if (req.url?.includes('season/1') || req.url?.includes('season%2F1')) {
             res.end(JSON.stringify({
               ...baseData,
               'season/1': {

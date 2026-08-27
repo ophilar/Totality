@@ -14,7 +14,7 @@ import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import type { TimelineDefinition, TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 
 const webGuideProvider = new WebGuideRecipeProvider()
-const registryProvider = new RemoteRegistryRecipeProvider(undefined, undefined, webGuideProvider)
+const registryProvider = new RemoteRegistryRecipeProvider()
 const traktProvider = new TraktRecipeProvider()
 const tmdbProvider = new TMDBRecipeProvider()
 const syncService = new PlexPlaylistSyncService()

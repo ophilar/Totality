@@ -154,6 +154,12 @@ export class TaskQueueService {
    * Remove a task from the queue
    */
   async removeTask(taskId: string): Promise<boolean> {
+    if (this.currentTask && this.currentTask.id === taskId) {
+      this.cancelCurrent()
+      await this.saveState()
+      this.notifyListeners()
+      return true
+    }
     const index = this.queue.findIndex(t => t.id === taskId)
     if (index !== -1) {
       const task = this.queue.splice(index, 1)[0]
@@ -168,7 +174,11 @@ export class TaskQueueService {
   async removeTasksForSource(sourceId: string): Promise<void> {
     const originalCount = this.queue.length
     this.queue = this.queue.filter(t => t.sourceId !== sourceId)
-    if (this.queue.length !== originalCount) {
+    const cancelledCurrent = this.currentTask?.sourceId === sourceId
+    if (cancelledCurrent) {
+      this.cancelCurrent()
+    }
+    if (this.queue.length !== originalCount || cancelledCurrent) {
       this.logging.info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
       await this.saveState()
       this.notifyListeners()
@@ -199,6 +209,10 @@ export class TaskQueueService {
   async clearQueue(): Promise<void> {
     const count = this.queue.length
     this.queue = []
+    if (this.currentTask) {
+      this.cancelCurrent()
+    }
+    this.getTranscoding().abortAll()
     this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
     await this.saveState()
     this.notifyListeners()
@@ -234,6 +248,9 @@ export class TaskQueueService {
     if (this.currentTask) {
       this.cancelRequested = true
       this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
+      if (this.currentTask.type === TaskType.Transcode && this.currentTask.mediaItemId) {
+        this.getTranscoding().cancelTranscode(this.currentTask.mediaItemId)
+      }
     }
   }
 
@@ -516,11 +533,19 @@ export class TaskQueueService {
     if (!task.mediaItemId) throw new Error('Missing mediaItemId for transcode task')
     const service = this.getTranscoding()
     
+    onProgress({
+      current: 0,
+      total: 100,
+      percentage: 0,
+      phase: 'initializing',
+      currentItem: task.label
+    })
+
     await service.transcode(
       task.mediaItemId,
       task.options || {},
       (p: TranscodeProgress) => {
-        if (this.mainWindow) {
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           safeSend(this.mainWindow, 'transcoding:progress', { mediaItemId: task.mediaItemId, ...p })
         }
         onProgress({
@@ -538,7 +563,7 @@ export class TaskQueueService {
 
   private notifyListeners(): void {
     const state = this.getState()
-    if (this.mainWindow) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       safeSend(this.mainWindow, 'taskQueue:updated', state)
     }
   }

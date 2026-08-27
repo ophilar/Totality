@@ -459,6 +459,7 @@ export function ActivityPanel() {
           const isTranscodeTask = queueState.currentTask.type === TaskType.Transcode || 
             queueState.currentTask.label.toLowerCase().includes('transcode') || 
             queueState.currentTask.label.toLowerCase().includes('optimize') ||
+            Boolean(queueState.currentTask.mediaItemId) ||
             queueState.currentTask.progress?.fps !== undefined
 
           return (
@@ -551,12 +552,13 @@ export function ActivityPanel() {
                 Queue {queueState.queue.length > 0 && `(${queueState.queue.length})`}
               </span>
             </div>
-            {queueState.queue.length > 0 && (
+            {(queueState.queue.length > 0 || Boolean(queueState.currentTask)) && (
               <button
                 onClick={handleClearQueue}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="text-xs text-muted-foreground hover:text-red-400 transition-colors"
+                title="Clear queue and stop active task"
               >
-                Clear
+                Clear All
               </button>
             )}
           </div>

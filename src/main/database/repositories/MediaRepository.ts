@@ -648,6 +648,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       seriesTmdbId?: string
       tmdbId?: string
       imdbId?: string
+      originalLanguage?: string
     }
   ): Promise<void> {
     const data: Record<string, unknown> = { updatedAt: sql`(datetime('now'))` }
@@ -660,6 +661,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     if (metadata.seriesTmdbId !== undefined) data.seriesTmdbId = metadata.seriesTmdbId
     if (metadata.tmdbId !== undefined) data.tmdbId = metadata.tmdbId
     if (metadata.imdbId !== undefined) data.imdbId = metadata.imdbId
+    if (metadata.originalLanguage !== undefined) data.originalLanguage = metadata.originalLanguage
 
     await this.drizzle.update(schema.mediaItems).set(data).where(eq(schema.mediaItems.id, id))
   }
@@ -677,6 +679,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         seriesTmdbId?: string
         tmdbId?: string
         imdbId?: string
+        originalLanguage?: string
       }
     }>
   ): Promise<void> {

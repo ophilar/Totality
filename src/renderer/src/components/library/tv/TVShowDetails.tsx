@@ -3,9 +3,11 @@ import { Virtuoso } from 'react-virtuoso'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database, Zap } from 'lucide-react'
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
+import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
 import { getStatusBadge, formatSeasonLabel, formatLanguage } from '@/components/library/mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
+import type { TaskQueueState } from '@main/types/database'
 
 export function TVShowDetails({
   selectedShow,
@@ -50,14 +52,35 @@ export function TVShowDetails({
   const [showOverview, setShowOverview] = useState<string | null>(null)
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
   const [audioLanguages, setAudioLanguages] = useState<string[]>([])
+  const [optimizingEpisodeId, setOptimizingEpisodeId] = useState<number | null>(null)
+  const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
 
   useEffect(() => {
-    queueMicrotask(() => { setShowOverviewExpanded(false); setCopiedTitle(false); setShowOverview(null); setAudioLanguages([]) })
+    const unsub = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      setTaskQueueState(state as unknown as TaskQueueState)
+    })
+    window.electronAPI.taskQueueGetState?.().then((state) => {
+      setTaskQueueState(state as unknown as TaskQueueState)
+    })
+    return () => {
+      unsub?.()
+    }
+  }, [])
+
+  const completenessData = seriesCompleteness.get(selectedShow)
+  const tmdbId = completenessData?.tmdb_id
+  const missingSeasonsStr = completenessData?.missing_seasons
+  const missingEpisodesStr = completenessData?.missing_episodes
+
+  useEffect(() => {
+    setShowOverviewExpanded(false)
+    setCopiedTitle(false)
+    setShowOverview(null)
+    setAudioLanguages([])
 
     if (selectedShow) {
-      const completenessData = seriesCompleteness.get(selectedShow)
-      if (completenessData?.tmdb_id) {
-        window.electronAPI.tmdbGetTVShowDetails(completenessData.tmdb_id)
+      if (tmdbId) {
+        window.electronAPI.tmdbGetTVShowDetails(tmdbId)
           .then(details => { if (details?.overview) setShowOverview(details.overview) })
           .catch(() => { /* ignore */ })
       }
@@ -68,18 +91,18 @@ export function TVShowDetails({
           .catch(() => { /* ignore */ })
       }
     }
-  }, [selectedShow, seriesCompleteness])
+  }, [selectedShow, tmdbId])
 
   useEffect(() => {
-    const completenessData = seriesCompleteness.get(selectedShow)
+    if (!selectedShow) return
     const diagnostics = [
-      parseMissingSeasons(completenessData?.missing_seasons).diagnostic,
-      parseMissingEpisodes(completenessData?.missing_episodes).diagnostic,
+      parseMissingSeasons(missingSeasonsStr).diagnostic,
+      parseMissingEpisodes(missingEpisodesStr).diagnostic,
     ].filter((diagnostic): diagnostic is NonNullable<typeof diagnostic> => diagnostic !== undefined)
     for (const diagnostic of diagnostics) {
       window.electronAPI.log.error('TVShowDetails', diagnostic.message, { seriesTitle: selectedShow, field: diagnostic.field })
     }
-  }, [selectedShow, seriesCompleteness])
+  }, [selectedShow, missingSeasonsStr, missingEpisodesStr])
 
   if (selectedShowLoading) {
     return (
@@ -103,7 +126,6 @@ export function TVShowDetails({
   }
 
   const ownedSeasons = Array.from(selectedShowData.seasons.values()).sort((a, b) => a.seasonNumber - b.seasonNumber)
-  const completenessData = seriesCompleteness.get(selectedShow)
   const firstEpisode = ownedSeasons[0]?.episodes[0]
 
   const handleSonarrSearch = async () => {
@@ -319,11 +341,31 @@ export function TVShowDetails({
               </div>
               {episodeItems.length > 0 ? (
                 <div className="divide-y divide-border/50">
-                  {episodeItems.map(item => item.type === 'owned' ? (
-                    <EpisodeRow key={item.episode.id!} episode={item.episode} onClick={() => onSelectEpisode(item.episode.id!)} onRescan={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} isExpanded={expandedRecommendations.has(item.episode.id!)} onToggleOptimize={() => onToggleOptimize(item.episode.id!)} />
-                  ) : (
-                    <MissingEpisodeRowWithArtwork key={`missing-${item.missing.season_number}-${item.missing.episode_number}`} episode={item.missing} tmdbId={completenessData?.tmdb_id} fallbackPosterUrl={season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url} onClick={() => onMissingItemClick({ type: 'episode', title: item.missing.title || `Episode ${item.missing.episode_number}`, airDate: item.missing.air_date, seasonNumber: item.missing.season_number, episodeNumber: item.missing.episode_number, posterUrl: season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url, tmdbId: completenessData?.tmdb_id, seriesTitle: selectedShowData.title })} onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShowData.title, completenessData?.tmdb_id) : undefined} />
-                  ))}
+                  {episodeItems.map(item => {
+                    if (item.type === 'owned') {
+                      const isCurrentTranscode = taskQueueState?.currentTask?.mediaItemId === item.episode.id
+                      const transcodeProgress = isCurrentTranscode ? taskQueueState?.currentTask?.progress : undefined
+                      const isQueuedTranscode = !isCurrentTranscode && Boolean(taskQueueState?.queue?.some(t => t.mediaItemId === item.episode.id))
+
+                      return (
+                        <EpisodeRow
+                          key={item.episode.id!}
+                          episode={item.episode}
+                          onClick={() => onSelectEpisode(item.episode.id!)}
+                          onRescan={onRescanEpisode}
+                          onDismissUpgrade={onDismissUpgrade}
+                          isExpanded={expandedRecommendations.has(item.episode.id!)}
+                          onToggleOptimize={() => onToggleOptimize(item.episode.id!)}
+                          onOptimize={(ep) => setOptimizingEpisodeId(ep.id!)}
+                          transcodeProgress={transcodeProgress}
+                          isQueuedTranscode={isQueuedTranscode}
+                        />
+                      )
+                    }
+                    return (
+                      <MissingEpisodeRowWithArtwork key={`missing-${item.missing.season_number}-${item.missing.episode_number}`} episode={item.missing} tmdbId={completenessData?.tmdb_id} fallbackPosterUrl={season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url} onClick={() => onMissingItemClick({ type: 'episode', title: item.missing.title || `Episode ${item.missing.episode_number}`, airDate: item.missing.air_date, seasonNumber: item.missing.season_number, episodeNumber: item.missing.episode_number, posterUrl: season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url, tmdbId: completenessData?.tmdb_id, seriesTitle: selectedShowData.title })} onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShowData.title, completenessData?.tmdb_id) : undefined} />
+                    )
+                  })}
                 </div>
               ) : <p className="py-3 text-sm text-muted-foreground">No episodes available.</p>}
               {!season && onDismissMissingSeason && <button type="button" className="mt-2 min-h-6 text-xs text-muted-foreground underline" onClick={() => onDismissMissingSeason(seasonNumber, selectedShowData.title, completenessData?.tmdb_id)}>Dismiss missing season</button>}
@@ -332,6 +374,10 @@ export function TVShowDetails({
           }}
         />
       </div>
+
+      {optimizingEpisodeId !== null && (
+        <TranscodeModal mediaId={optimizingEpisodeId} onClose={() => setOptimizingEpisodeId(null)} />
+      )}
     </div>
   )
 }

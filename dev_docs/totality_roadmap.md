@@ -1,5 +1,4 @@
 # Totality Roadmap
-
 ## Phase 1: Core System & Media Analysis [Completed]
 - Initial Media Library, SQLite Database, and Media Analyzer integration.
 
@@ -116,5 +115,42 @@
 - [x] Throttle FFmpeg progress updates in `TranscodingService.ts` to 250ms (4 Hz) to eliminate IPC bottleneck and UI sluggishness.
 - [x] Wire "Optimize Series" action button into `ShowListItem.tsx` and standardize modal z-index hierarchy (`z-50`).
 - [x] Full regression test suite passing (139 test files, 1,052/1,052 tests passing).
+
+## Phase 14: Diagnostic Observability & Notification Logging [Completed]
+- [x] Integrate structured logging in `NotificationRepository.addNotification` to emit all created notifications (errors, task failures, warnings, info) to `LoggingService`.
+- [x] Verified diagnostic and file logging traceability with full unit test coverage (144 test files, 1088/1088 tests passing).
+
+## Phase 15: Language Decision & Analysis Diagnostics Logging [Completed]
+- [x] Add detailed warning logging for unknown original language, missing stream tags, and evidence conflicts in `LanguageDecisionService.ts`.
+- [x] Add intermediate error and warning diagnostics across `MovieCollectionService.ts` and `SeriesCompletenessService.ts`.
+- [x] Enhance extras filtering in `FileNameParser.ts` and skip invalid scraping queries during collection analysis.
+- [x] Sanitize TMDB response logs in `TMDBService.ts` to eliminate `total_results: undefined` on entity details.
+
+## Phase 16: TV Show Runtime Deduplication & Canonical Consolidation [Completed]
+- [x] Expose `mergeDuplicateShows` in `TVShowRepository` as canonical clustering and merge service.
+- [x] Enhance `TVShowRepository.upsertCompleteness` matching with normalized titles, clean titles, and computed unresolved keys.
+- [x] Deduplicate analysis queues and automatically merge duplicate clusters after post-scan analysis in `SeriesCompletenessService`.
+- [x] Trigger series deduplication during duplicate scans in `DeduplicationService` and after manual matches in `series:fixMatch`.
+- [x] Verify full regression test suite (144 test files, 1,091 tests passing).
+
+## Phase 17: Fine-Resolution Episode-Interleaved Timelines & Viewing Orders [Completed]
+- [x] Brainstorming & Architecture Spec Approval (`docs/superpowers/specs/2026-08-27-episode-interleaved-timelines-design.md`)
+- [x] Implement complete interleaved episode-level presets for Star Trek, Star Wars, and MCU in `bundledRecipes.ts`
+- [x] Align `WebGuideRecipeProvider.ts` and `TimelineResolutionEngine.ts` for fine-resolution episode-by-episode resolution
+- [x] Update Plex Playlist Sync to sequence 100% fine-grained mixed movie/episode lists
+- [x] Unit & integration test verification (144 test files, 1,091 tests passing)
+
+## Phase 18: TRaSH Guides Optimization, Audio Pruning & Subtitle Whitelist [Completed]
+- [x] Integrate TRaSH Guides quality tier classification (`Remux`, `WEB-DL`, `WEBRip`, `BluRay`, `HDTV`, `SDTV`) and stream pruning rules in `MediaFileAnalyzer` and `QualityAnalyzer`
+- [x] Implement 3 optimization strategies (`smart`, `remux_only`, `transcode`) with lossless stream copy container cleanup (`-c:v copy`)
+- [x] Implement subtitle language whitelist configuration and filtering across backend transcoding pipeline and UI
+- [x] Build interactive Preflight Preview Plan modal with TRaSH Source Tier badges, Advisory Badges, and action counters in `ShowTranscodeModal.tsx`
+- [x] Add global Subtitle Stream Preferences in Settings `GeneralTab.tsx`
+- [x] Full TypeScript typecheck and Vitest regression verification (148 test files, 1,131 tests passing)
+- [x] Canonical fine-grained episode interleaving for Star Trek (TNG S6/DS9 S1, TNG S7/DS9 S2, DS9/VOY) and isolated curated presets in RemoteRegistryRecipeProvider
+
+
+
+
 
 

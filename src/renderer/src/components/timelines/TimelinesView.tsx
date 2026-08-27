@@ -223,24 +223,39 @@ export function TimelinesView() {
     }
   }
 
-  const handleRefreshFromWeb = async () => {
+  const isWebImportedRecipe = useMemo(() => {
+    const r = recipes.find((rec) => rec.id === selectedRecipeId)
+    return r?.sourceType === 'web' || r?.sourceType === 'trakt' || selectedRecipeId.startsWith('web-') || selectedRecipeId.startsWith('trakt-')
+  }, [recipes, selectedRecipeId])
+
+  const handleRefresh = async () => {
     if (!selectedTimelineResult) return
-    const sourceUrl = selectedTimelineResult.timeline.sourceUrl || selectedRecipeId
     setIsRefreshingWeb(true)
     try {
-      const freshTimeline = await window.electronAPI.timelinesGetRecipe(sourceUrl)
-      const result = await window.electronAPI.timelinesResolveTimeline(freshTimeline.id, resolveSourceId)
-      setSelectedTimelineResult(result)
-      addToast({
-        type: 'success',
-        title: 'Timeline Refreshed',
-        message: `Successfully refreshed '${freshTimeline.name}' (${result.totalCount} items).`,
-      })
+      if (isWebImportedRecipe && selectedTimelineResult.timeline.sourceUrl) {
+        const freshTimeline = await window.electronAPI.timelinesGetRecipe(selectedTimelineResult.timeline.sourceUrl)
+        const result = await window.electronAPI.timelinesResolveTimeline(freshTimeline.id, resolveSourceId)
+        setSelectedTimelineResult(result)
+        addToast({
+          type: 'success',
+          title: 'Timeline Refreshed',
+          message: `Successfully refreshed '${freshTimeline.name}' (${result.totalCount} items).`,
+        })
+      } else {
+        // Preset / Canonical timeline: re-resolve local library matches
+        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId)
+        setSelectedTimelineResult(result)
+        addToast({
+          type: 'success',
+          title: 'Timeline Re-resolved',
+          message: `Successfully re-checked local library matches for '${result.timeline.name}' (${result.matchedCount}/${result.totalCount} matched).`,
+        })
+      }
     } catch (err: unknown) {
       addToast({
         type: 'error',
         title: 'Refresh Failed',
-        message: `Failed to refresh from web: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Failed to refresh timeline: ${err instanceof Error ? err.message : String(err)}`,
       })
     } finally {
       setIsRefreshingWeb(false)
@@ -378,7 +393,7 @@ export function TimelinesView() {
       </div>
 
       {/* Right Column / Detail View Area */}
-      <div className="flex-1 flex flex-col h-full overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden p-6 space-y-4">
         {isResolvingTimeline && !selectedTimelineResult ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -387,7 +402,7 @@ export function TimelinesView() {
         ) : selectedTimelineResult ? (
           <>
             {/* Sync Control & Stats Card */}
-            <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-xs">
+            <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-xs shrink-0">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div className="space-y-2 flex-1">
                   <div className="flex flex-wrap items-center gap-3">
@@ -403,13 +418,13 @@ export function TimelinesView() {
                       </a>
                     )}
                     <button
-                      onClick={handleRefreshFromWeb}
+                      onClick={handleRefresh}
                       disabled={isRefreshingWeb || isResolvingTimeline}
-                      title="Re-fetch and update this viewing order live from web"
+                      title={isWebImportedRecipe ? 'Re-fetch and update this viewing order live from web' : 'Re-check local library matches'}
                       className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-secondary transition-colors cursor-pointer disabled:opacity-50"
                     >
                       <RefreshCw className={`w-3 h-3 ${isRefreshingWeb ? 'animate-spin text-primary' : ''}`} />
-                      <span>{isRefreshingWeb ? 'Updating...' : 'Update from Web'}</span>
+                      <span>{isRefreshingWeb ? 'Refreshing...' : isWebImportedRecipe ? 'Update from Web' : 'Re-check Library'}</span>
                     </button>
                   </div>
                   <p className="text-xs text-muted-foreground">{selectedTimelineResult.timeline.description}</p>
@@ -489,7 +504,7 @@ export function TimelinesView() {
             </div>
 
             {/* Filter and Search Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-1.5 p-1 bg-secondary/50 rounded-xl border border-border w-fit">
                 <button
                   onClick={() => setFilterMode('all')}
@@ -533,12 +548,12 @@ export function TimelinesView() {
               </div>
             </div>
 
-            {/* Items Table */}
-            <div className="border border-border rounded-2xl overflow-hidden bg-card/40 backdrop-blur-md">
-              <div className="overflow-x-auto">
+            {/* Items Table with Dedicated Scroll Container */}
+            <div className="flex-1 min-h-0 border border-border rounded-2xl overflow-hidden bg-card/40 backdrop-blur-md flex flex-col">
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-secondary/30 text-muted-foreground font-semibold">
+                  <thead className="sticky top-0 z-10 bg-secondary border-b border-border text-muted-foreground font-semibold shadow-xs">
+                    <tr>
                       <th className="py-3 px-4 w-12 text-center">#</th>
                       <th className="py-3 px-4 w-20">Type</th>
                       <th className="py-3 px-4">Title / Series</th>

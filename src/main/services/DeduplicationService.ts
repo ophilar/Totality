@@ -79,11 +79,10 @@ export class DeduplicationService {
         if (ids.length > 1) {
           const parts = key.split(':')
           const sId = parts[0]
-          // Use a more specific external_id for episodes if needed, but for now series_tmdb_id is used in key
           operations.push(() =>
             db.duplicates.upsertDuplicate({
               source_id: sId,
-              external_id: key.replace(`${sId}:`, ''), // Use the unique episode key
+              external_id: key.replace(`${sId}:`, ''),
               external_type: 'tmdb_series',
               media_item_ids: JSON.stringify(ids),
               status: 'pending',
@@ -103,6 +102,8 @@ export class DeduplicationService {
       await db.rollbackBatch()
       throw err
     }
+
+    await db.tvShows.mergeDuplicateShows(sourceId)
 
     getLoggingService().info(
       '[DeduplicationService]',
@@ -145,9 +146,8 @@ export class DeduplicationService {
       let score = 0
 
       // 1. Resolution
-      if (policy.preferHighestResolution && item.resolution) {
-        const resMap: Record<string, number> = { '4K': 4, '1080p': 3, '720p': 2, SD: 1 }
-        score += (resMap[item.resolution] || 0) * 10
+      if (policy.preferHighestResolution && item.height) {
+        score += item.height
       }
 
       // 2. Original Language
@@ -169,7 +169,6 @@ export class DeduplicationService {
 
     const keepId = scores[0].id
     const discardIds = scores.slice(1).map((s) => s.id)
-
     return {
       keep: keepId!,
       discard: discardIds,

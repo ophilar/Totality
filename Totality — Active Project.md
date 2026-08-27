@@ -1,7 +1,7 @@
 # Totality — Active Project
 
 ## Project Status: Active & Maintained
-- **Version**: `0.4.4`
+- **Version**: `0.5.0`
 - **Quality Gates**: Fully Typechecked & Test-Verified
 - **TV Show Invariant (TOT-BUG-03)**: `[test-verified]`
 

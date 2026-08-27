@@ -15,6 +15,7 @@ import React from 'react'
 describe('Settings Rendering (Integrated Stack)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
 
+
   beforeEach(async () => {
     // Explicitly define window for happy-dom if it's not correctly propagated
     if (typeof window === 'undefined') {
@@ -109,6 +110,35 @@ describe('Settings Rendering (Integrated Stack)', () => {
     await waitFor(async () => {
         const updatedSetting = await db.config.getSetting('minimize_to_tray')
         expect(updatedSetting).toBe(!initialState ? 'true' : 'false')
+    })
+  })
+
+  it('should render and save Subtitle Stream Preferences in General Tab', async () => {
+    await renderSettings()
+
+    // Expand Subtitle Stream Preferences card
+    const subtitleCard = screen.getByText(/Subtitle Stream Preferences/i)
+    await act(async () => {
+      fireEvent.click(subtitleCard)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/Global Subtitle Language Whitelist/i)).toBeTruthy()
+    })
+
+    // Find input and preset buttons
+    const input = screen.getByPlaceholderText(/e\.g\. eng, heb, spa/i) as HTMLInputElement
+    expect(input).toBeTruthy()
+
+    // Click Japanese quick add preset
+    const jpnBtn = screen.getByRole('button', { name: /^jpn \+/i })
+    await act(async () => {
+      fireEvent.click(jpnBtn)
+    })
+
+    await waitFor(async () => {
+      const updated = await db.config.getSetting('subtitle_preferred_languages')
+      expect(updated).toContain('jpn')
     })
   })
 })

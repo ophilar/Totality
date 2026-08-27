@@ -86,38 +86,16 @@ export const formatFileSize = (bytes?: number): string => {
   return `${(bytes / 1024).toFixed(0)} KB`
 }
 
-/**
- * Format ISO language code (e.g. "ja", "en", "fra") to friendly human-readable name (e.g. "Japanese", "English", "French")
- */
-const languageDisplayNames = typeof Intl !== 'undefined' && Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'language' }) : null
-
-export const formatLanguage = (code?: string | null): string => {
-  if (!code) return 'Unknown'
-  const normalized = code.trim().toLowerCase().split(/[-_]/)[0]
-  if (normalized === 'und' || normalized === 'undetermined') return 'Undetermined / Untagged'
-  try {
-    return languageDisplayNames?.of(normalized) || code.toUpperCase()
-  } catch {
-    return code.toUpperCase()
-  }
-}
-
-/**
- * Compare two language codes to see if they refer to the same language
- * (handles 2-letter vs 3-letter ISO codes, e.g. 'ja' and 'jpn')
- */
-export const isSameLanguage = (codeA?: string | null, codeB?: string | null): boolean => {
-  if (!codeA || !codeB) return false
-  const a = codeA.trim().toLowerCase().split(/[-_]/)[0]
-  const b = codeB.trim().toLowerCase().split(/[-_]/)[0]
-  if (a === b) return true
-  const nameA = formatLanguage(a)
-  const nameB = formatLanguage(b)
-  if (nameA !== 'Unknown' && nameA !== 'Undetermined / Untagged' && nameA === nameB) {
-    return true
-  }
-  return false
-}
+export {
+  formatLanguage,
+  isSameLanguage,
+  normalizeLanguage,
+  toIso639_2,
+  CANONICAL_LANGUAGE_CODES,
+  LANGUAGE_OPTIONS,
+  LANGUAGE_ALIASES_TO_2,
+  ISO639_1_TO_3,
+} from '@main/constants/languages'
 
 // ============================================================================
 // Quality Assessment Functions

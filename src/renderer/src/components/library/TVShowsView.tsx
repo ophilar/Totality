@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { RefreshCw, Tv } from 'lucide-react'
+import { RefreshCw, Tv, HardDrive, Zap, X } from 'lucide-react'
 import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
@@ -11,6 +11,15 @@ import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
 import { calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode, MissingItemPopupData } from '@/components/library/types'
+
+const formatMB = (bytes?: number | null) => {
+  if (!bytes || bytes <= 0) return '0 MB'
+  const mb = Math.round(bytes / (1024 * 1024))
+  if (mb >= 1024) {
+    return `${(mb / 1024).toFixed(2)} GB (${mb.toLocaleString()} MB)`
+  }
+  return `${mb.toLocaleString()} MB`
+}
 
 export function TVShowsView({
   shows,
@@ -72,6 +81,7 @@ export function TVShowsView({
   onTranscodeShow?: (show: TVShowSummary) => void
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
+  const [dryRunReport, setDryRunReport] = useState<{ show: TVShowSummary; report: any } | null>(null)
   const { isScanning, scanProgress } = useSources()
   const activeScan = Array.from(scanProgress.values())[0]
 
@@ -91,7 +101,7 @@ export function TVShowsView({
   const handleOptimizationDryRun = useCallback(async (show: TVShowSummary) => {
     if (onOptimizationDryRun) return onOptimizationDryRun(show)
     const report = await window.electronAPI.optimizationDryRun(show.series_title, show.source_id)
-    window.alert(`${show.series_title}\nRecoverable: ${report.metrics.totalRecoverableBytes} bytes\nScored: ${report.metrics.scoredEpisodeCount}\nUnscored: ${report.metrics.unscoredEpisodeCount}\nAction: ${report.action}`)
+    setDryRunReport({ show, report })
   }, [onOptimizationDryRun])
 
   const handleOptimizationRequest = useCallback((show: TVShowSummary) => {
@@ -170,6 +180,86 @@ export function TVShowsView({
             </div>
           }
         />
+        {dryRunReport && (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-bold truncate max-w-xs">{dryRunReport.show.series_title}</h3>
+                </div>
+                <button
+                  onClick={() => setDryRunReport(null)}
+                  className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Total Library Size</span>
+                  <span className="text-base font-bold">{formatMB(dryRunReport.report.totalBytes || dryRunReport.show.total_size)}</span>
+                </div>
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Estimated Recoverable</span>
+                  <span className="text-base font-bold text-emerald-400">
+                    {formatMB(dryRunReport.report.totalCombinedSavingsBytes || dryRunReport.report.recoverableBytes)}
+                    {dryRunReport.report.percentageSavings > 0 && ` (${dryRunReport.report.percentageSavings.toFixed(1)}%)`}
+                  </span>
+                </div>
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Audio Track Pruning</span>
+                  <span className="font-semibold">{formatMB(dryRunReport.report.recoverableBytes)}</span>
+                </div>
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Video Transcode Debt</span>
+                  <span className="font-semibold">{formatMB(dryRunReport.report.videoDebtBytes)}</span>
+                </div>
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Episode Coverage</span>
+                  <span className="font-semibold">
+                    {dryRunReport.report.scoredEpisodes} / {dryRunReport.report.totalEpisodes} scored
+                    {dryRunReport.report.unscoredEpisodes > 0 && ` (${dryRunReport.report.unscoredEpisodes} unscored)`}
+                  </span>
+                </div>
+                <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
+                  <span className="text-xs text-muted-foreground block">Weighted Efficiency</span>
+                  <span className="font-semibold">
+                    {dryRunReport.report.weightedEfficiency != null ? `${Math.round(dryRunReport.report.weightedEfficiency)}%` : (dryRunReport.show.weighted_efficiency != null ? `${Math.round(dryRunReport.show.weighted_efficiency)}%` : 'N/A')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-primary/5 rounded-xl border border-primary/20 text-xs text-muted-foreground flex items-center justify-between">
+                <span>Recommendation:</span>
+                <span className="font-bold text-foreground capitalize">{dryRunReport.report.action || 'No action needed'}</span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setDryRunReport(null)}
+                  className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                {onTranscodeShow && (
+                  <button
+                    onClick={() => {
+                      const s = dryRunReport.show
+                      setDryRunReport(null)
+                      onTranscodeShow(s)
+                    }}
+                    className="flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground hover:opacity-90 rounded-xl text-sm font-bold transition-all shadow-md shadow-primary/20 cursor-pointer"
+                  >
+                    <Zap className="w-4 h-4 fill-current" />
+                    Optimize Series...
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

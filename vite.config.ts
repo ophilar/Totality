@@ -10,17 +10,17 @@ export default defineConfig({
     electron([
       {
         // Main process entry file
-        entry: path.resolve(__dirname, 'src/main/index.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
         onstart(args) {
           args.startup()
         },
         vite: {
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/main'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
             minify: 'esbuild',
             emptyOutDir: true,
             lib: {
-              entry: path.resolve(__dirname, 'src/main/index.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
@@ -45,14 +45,14 @@ export default defineConfig({
       },
       {
         // FFprobe worker thread
-        entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
         vite: {
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/main'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
             minify: 'esbuild',
             emptyOutDir: false, // Don't empty because index.cjs is already there
             lib: {
-              entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
               formats: ['cjs'],
               fileName: () => 'ffprobe-worker.cjs'
             },
@@ -70,17 +70,17 @@ export default defineConfig({
       },
       {
         // Preload scripts
-        entry: path.resolve(__dirname, 'src/preload/index.ts'),
+        entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
         onstart(args) {
           args.reload()
         },
         vite: {
           build: {
-            outDir: path.resolve(__dirname, 'dist-electron/preload'),
+            outDir: path.resolve(import.meta.dirname, 'dist-electron/preload'),
             minify: 'esbuild',
             emptyOutDir: true,
             lib: {
-              entry: path.resolve(__dirname, 'src/preload/index.ts'),
+              entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
               formats: ['cjs'],
               fileName: () => 'index.cjs'
             },
@@ -117,9 +117,9 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src/renderer/src'),
-      '@main': path.resolve(__dirname, './src/main'),
-      '@preload': path.resolve(__dirname, './src/preload')
+      '@': path.resolve(import.meta.dirname, './src/renderer/src'),
+      '@main': path.resolve(import.meta.dirname, './src/main'),
+      '@preload': path.resolve(import.meta.dirname, './src/preload')
     }
   },
   root: './src/renderer',

@@ -55,7 +55,10 @@
     ["dup_policy_highest_res", "true"],
     ["dup_policy_orig_lang", "true"],
     ["dup_policy_sub_whitelist", "[]"],
-    ["dup_policy_commentary", "true"]
+    ["dup_policy_commentary", "true"],
+    ["subtitle_preferred_languages", "eng, heb, spa"],
+    ["transcoding_temp_directory", ""],
+    ["transcoding_default_output_mode", "quarantine-replace"]
   ],
   "audioCodecs": {
     "lossless": ["truehd", "dts-hd ma", "dtshd_ma", "dtsma", "dts-hd.ma", "flac", "alac", "pcm", "lpcm", "wav", "aiff"],

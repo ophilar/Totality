@@ -1,9 +1,10 @@
 export interface TranscodeOptions {
   targetCodec: 'av1' | 'hevc'
-  outputMode: 'copy' | 'quarantine-replace'
+  outputMode: 'copy' | 'quarantine-replace' | 'replace'
+  tempDirectory?: string
   streamSelection?:
-    | { audio: 'all'; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' }
-    | { audio: 'original-and-protected'; originalLanguage: string; subtitle: 'all'; defaultSubtitle?: 'preserve' | 'none' }
+    | { audio: 'all'; subtitle: 'all'; subtitleLanguageWhitelist?: string[]; defaultSubtitle?: 'preserve' | 'none' }
+    | { audio: 'original-and-protected'; originalLanguage: string; subtitle: 'all'; subtitleLanguageWhitelist?: string[]; defaultSubtitle?: 'preserve' | 'none' }
   useGpu: boolean
   gpuId: string
   encoder: string
@@ -13,6 +14,30 @@ export interface TranscodeOptions {
   transcodingEngine: 'ffmpeg'
   targetSize: string
   aiOptimize?: boolean
+  optimizationMode?: 'smart' | 'remux_only' | 'transcode'
+}
+
+export interface ShowTranscodePreflightEpisode {
+  mediaItemId: number
+  label: string
+  compatible: boolean
+  reason?: string
+  hdrFormat: string
+  sourceSize: number
+  sourceMtimeMs: number
+  recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+  sourceTier?: string
+  adviceReason?: string
+}
+
+export interface ShowTranscodePreflight {
+  preflightId: string
+  batchId: string
+  seriesTitle: string
+  episodeCount: number
+  compatible: boolean
+  expiresAt: string
+  episodes: ShowTranscodePreflightEpisode[]
 }
 
 export interface TranscodingParams {

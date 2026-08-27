@@ -15,13 +15,33 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, isExpanded, onToggleOptimize }: {
+export const EpisodeRow = memo(({
+  episode,
+  onClick,
+  onRescan,
+  onDismissUpgrade,
+  isExpanded,
+  onToggleOptimize,
+  onOptimize,
+  transcodeProgress,
+  isQueuedTranscode
+}: {
   episode: MediaItem
   onClick: () => void
   onRescan?: (episode: MediaItem) => Promise<void>
   onDismissUpgrade?: (episode: MediaItem) => void
   isExpanded?: boolean
   onToggleOptimize?: () => void
+  onOptimize?: (episode: MediaItem) => void
+  transcodeProgress?: {
+    percentage?: number
+    phase?: string
+    speed?: string
+    fps?: number
+    eta?: string
+    currentItem?: string
+  }
+  isQueuedTranscode?: boolean
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
   const [showMenu, setShowMenu] = useState(false)
@@ -57,7 +77,7 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
 
 
   const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
-  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
+  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize || onOptimize
 
   return (
     <div className={`flex flex-col relative ${showMenu ? 'z-50' : 'z-10'}`}>
@@ -76,7 +96,7 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
       >
 
         {/* Episode Thumbnail - 16:9 aspect ratio with shadow */}
-        <div className="w-28 sm:w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0">
+        <div className="w-28 sm:w-44 aspect-video bg-muted overflow-hidden rounded-md shadow-md shadow-black/20 shrink-0 relative">
           {episode.episode_thumb_url ? (
             <img
               src={episode.episode_thumb_url}
@@ -89,6 +109,12 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-muted/50"><EpisodePlaceholder className="w-10 h-10 text-muted-foreground" /></div>
+          )}
+          {transcodeProgress && (
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex flex-col items-center justify-center gap-1 text-white z-10">
+              <Zap className="w-5 h-5 text-primary fill-primary animate-pulse" />
+              <span className="text-xs font-mono font-bold">{(transcodeProgress.percentage || 0).toFixed(0)}%</span>
+            </div>
           )}
         </div>
 
@@ -116,6 +142,46 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
               </span>
             )}
           </div>
+
+          {/* Transcode Progress Bar */}
+          {transcodeProgress && (
+            <div className="mt-2.5 space-y-1.5 w-full bg-primary/10 border border-primary/20 rounded-md p-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-primary font-medium">
+                  <Zap className="w-3.5 h-3.5 fill-primary animate-pulse" />
+                  <span>Optimizing episode...</span>
+                  {transcodeProgress.phase && (
+                    <span className="text-muted-foreground capitalize font-normal">({transcodeProgress.phase})</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                  {transcodeProgress.fps !== undefined && transcodeProgress.fps > 0 && (
+                    <span>{transcodeProgress.fps} FPS</span>
+                  )}
+                  {transcodeProgress.speed && (
+                    <span>{transcodeProgress.speed}</span>
+                  )}
+                  {transcodeProgress.eta && (
+                    <span>ETA: {transcodeProgress.eta}</span>
+                  )}
+                  <span className="font-semibold text-primary">{(transcodeProgress.percentage || 0).toFixed(1)}%</span>
+                </div>
+              </div>
+              <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-primary h-full transition-all duration-300 ease-out"
+                  style={{ width: `${Math.min(100, Math.max(0, transcodeProgress.percentage || 0))}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {isQueuedTranscode && !transcodeProgress && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-1 w-fit">
+              <Zap className="w-3 h-3 fill-amber-500" />
+              <span className="font-medium">Queued for optimization</span>
+            </div>
+          )}
 
           {/* Quality badges - white bg with black text */}
           <div className="mt-2 flex flex-wrap gap-1">
@@ -161,13 +227,26 @@ export const EpisodeRow = memo(({ episode, onClick, onRescan, onDismissUpgrade, 
 
             {showMenu && !isRescanning && (
               <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
+                {onOptimize && episode.file_path && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowMenu(false)
+                      onOptimize(episode)
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 text-primary font-medium cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-current" />
+                    Optimize Episode...
+                  </button>
+                )}
                 {onToggleOptimize && (
                   <button
                     onClick={handleToggleOptimize}
                     className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}
                   >
                     <Zap className="w-3.5 h-3.5" />
-                    {isExpanded ? 'Hide Optimization' : 'Optimize...'}
+                    {isExpanded ? 'Hide Optimization' : 'Optimization Details'}
                   </button>
                 )}
                 {onRescan && episode.file_path && (

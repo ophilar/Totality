@@ -20,18 +20,16 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     const cq = (options.crf ?? APP_CONFIG.transcoding.defaultCrf).toString()
     const preset = options.preset || APP_CONFIG.transcoding.defaultPreset
 
-    const sourceBitrate = analysis.video?.bitrate || analysis.overallBitrate || (analysis.duration && analysis.fileSize ? Math.round((analysis.fileSize * 8) / analysis.duration) : undefined)
-
     args.push(
       '-c:v', codec,
       '-preset', preset,
       '-rc', 'vbr',
       '-cq', cq,
-      ...(options.targetCodec === 'av1'
-        ? ['-maxrate', sourceBitrate ? `${Math.min(APP_CONFIG.transcoding.maxBitrateFallback, sourceBitrate)}` : `${APP_CONFIG.transcoding.maxBitrateFallback}`, '-bufsize', sourceBitrate ? `${Math.min(APP_CONFIG.transcoding.maxBufsizeFallback, sourceBitrate * 2)}` : `${APP_CONFIG.transcoding.maxBufsizeFallback}`, '-level', '5.2', '-tier', '0', '-bf', '0', '-b_ref_mode', 'disabled', '-rc-lookahead', '0']
-        : (sourceBitrate ? ['-b:v', '0', '-maxrate', `${sourceBitrate}`, '-bufsize', `${sourceBitrate * 2}`, '-b_ref_mode', 'middle'] : ['-b:v', '0', '-b_ref_mode', 'middle'])),
+      '-b:v', '0',
+      '-b_ref_mode', 'middle',
       '-spatial-aq', '1',
-      '-temporal-aq', '1'
+      '-temporal-aq', '1',
+      '-rc-lookahead', '32'
     )
 
     const is10BitSource = Boolean(

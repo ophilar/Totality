@@ -4,6 +4,8 @@ import { SeriesCompleteness, MediaItem, MediaItemType } from '@main/types/databa
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { CompletenessEngine } from '@main/services/CompletenessEngine'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { getLoggingService } from '@main/services/LoggingService'
+import { getFileNameParser } from '@main/services/FileNameParser'
 import type { TMDBEpisode } from '@main/types/tmdb'
 
 export function isPlaceholderEpisodeTitle(title?: string | null): boolean {
@@ -61,15 +63,26 @@ export class SeriesCompletenessService {
         completenessMap.set(comp.series_title, comp)
       }
 
-      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = existingShows.map((show) => ({
-        series_title: show.series_title,
-        series_identity_key: show.series_identity_key ?? undefined,
-      }))
-      const existingTitlesSet = new Set(showsToAnalyze.map((s) => s.series_title))
+      const parser = getFileNameParser()
+      const showsToAnalyze: Array<{ series_title: string; series_identity_key?: string }> = []
+      const normalizedTitlesSeen = new Set<string>()
+
+      for (const show of existingShows) {
+        const norm = parser.normalizeSeriesTitle(show.series_title)
+        if (norm && !normalizedTitlesSeen.has(norm)) {
+          normalizedTitlesSeen.add(norm)
+          showsToAnalyze.push({
+            series_title: show.series_title,
+            series_identity_key: show.series_identity_key ?? undefined,
+          })
+        }
+      }
+
       for (const title of titlesFromMedia) {
-        if (!existingTitlesSet.has(title)) {
+        const norm = parser.normalizeSeriesTitle(title)
+        if (norm && !normalizedTitlesSeen.has(norm)) {
+          normalizedTitlesSeen.add(norm)
           showsToAnalyze.push({ series_title: title })
-          existingTitlesSet.add(title)
         }
       }
 
@@ -113,11 +126,14 @@ export class SeriesCompletenessService {
               else result.incomplete++
             }
           } catch (error) {
-            result.errors.push(`"${title}": ${getErrorMessage(error)}`)
+            const errDetail = `"${title}": ${getErrorMessage(error)}`
+            result.errors.push(errDetail)
+            getLoggingService().warn('[SeriesCompleteness]', `Failed to analyze series ${errDetail}`, error)
           }
         }
       } finally {
         await this.db.endBatch()
+        await this.db.tvShows.mergeDuplicateShows(sourceId, libraryId)
         getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       }
       return { ...result, completed: true }
@@ -205,7 +221,7 @@ export class SeriesCompletenessService {
 
     const efficiencyScore = scoredCount > 0
       ? (scoredSize > 0 ? Math.round(weightedEfficiencyNumerator / scoredSize) : Math.round(totalEfficiencyScore / scoredCount))
-      : 0
+      : null
 
     const existing = prefetchedData?.existingCompleteness !== undefined
       ? prefetchedData.existingCompleteness
@@ -233,7 +249,7 @@ export class SeriesCompletenessService {
       backdrop_url: this.tmdb.buildImageUrl(showDetails.backdrop_path, 'original') || existing?.backdrop_url || undefined,
       status: showDetails.status,
       user_fixed_match: existing?.user_fixed_match,
-      efficiency_score: efficiencyScore,
+      efficiency_score: efficiencyScore ?? undefined,
       storage_debt_bytes: totalStorageDebt,
       total_size: totalSize,
     }
@@ -291,6 +307,7 @@ export class SeriesCompletenessService {
         seriesTmdbId?: string
         tmdbId?: string
         imdbId?: string
+        originalLanguage?: string
       } = {}
       let needsUpdate = false
 
@@ -346,6 +363,13 @@ export class SeriesCompletenessService {
       // 8. Backfill episode TMDB ID
       if (!ep.tmdb_id && tmdbEp?.id) {
         updates.tmdbId = String(tmdbEp.id)
+        needsUpdate = true
+      }
+
+      // 9. Backfill original language
+      const origLang = (showDetails as { original_language?: string }).original_language
+      if (!ep.original_language && origLang) {
+        updates.originalLanguage = origLang
         needsUpdate = true
       }
 

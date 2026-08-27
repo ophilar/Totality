@@ -548,13 +548,15 @@ export class FileNameParser {
       /\b(trailer|teaser)\b/i,
       /\bpromo(s)?\b/i,
       /\bcommentary\b/i,
-      /\bbonus[.\-_ ]?(content|feature)?\b/i,
+      /\bbonus[.\-_ ]?(content|feature|extras?|disc|disk)?\b/i,
       /\bextras?\b/i,
       /\bbts\b/i,
       /\bouttakes?\b/i,
       /\balternate[.\-_ ]?(opening|ending|cut|version|take|scene)?\b/i,
       /\bextended[.\-_ ]?(cut|scene|version)?\b/i,
       /\b(opening|closing)[.\-_ ]?credits?\b/i,
+      /\b(concept[.\-_ ]?model|picture[.\-_ ]?galler(y|ies)|rough[.\-_ ]?cut)\b/i,
+      /\b(?:VID|IMG|MOV|DSC|MVI)[_-]\d{6,}(?:[_-]WA\d+)?\b/i,
     ]
     return extrasPatterns.some((pattern) => pattern.test(lower))
   }

@@ -431,13 +431,25 @@ export function SourceProvider({ children }: SourceProviderProps) {
   // Subscribe to task queue for scan progress
   useEffect(() => {
     const updateProgress = (state: TaskQueueState) => {
+      if (!state) return
       const { currentTask } = state
       if (currentTask && (currentTask.type === 'library-scan' || currentTask.type === 'source-scan' || currentTask.type === 'music-scan')) {
-        setIsScanning(true)
+        setIsScanning(prev => (prev ? prev : true))
         const progress = currentTask.progress
         const phase = progress?.phase
         if (progress && phase !== undefined && isScanPhase(phase)) {
           setScanProgress(prev => {
+            const current = prev.get(currentTask.sourceId || 'global')
+            if (
+              current &&
+              current.phase === phase &&
+              current.current === progress.current &&
+              current.total === progress.total &&
+              current.percentage === progress.percentage &&
+              current.currentItem === progress.currentItem
+            ) {
+              return prev
+            }
             const next = new Map(prev)
             next.set(currentTask.sourceId || 'global', {
               sourceId: currentTask.sourceId || 'global',
@@ -453,8 +465,8 @@ export function SourceProvider({ children }: SourceProviderProps) {
           })
         }
       } else {
-        setIsScanning(false)
-        setScanProgress(new Map())
+        setIsScanning(prev => (prev ? false : prev))
+        setScanProgress(prev => (prev.size === 0 ? prev : new Map()))
       }
     }
 
