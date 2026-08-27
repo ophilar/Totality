@@ -21,3 +21,11 @@ Only the queue service, its focused tests, and this report are staged. Existing 
 ## Concern
 
 Cancellation is represented immediately as `cancelled` while the underlying task is unwinding; completion history is still recorded by the existing finalization path.
+
+## Follow-up correction
+
+State recovery now preserves a persisted cancelled task in terminal history instead of requeueing it. The recovery regression is covered by the focused test suite.
+
+- `npx vitest run tests/unit/TaskQueueService.test.ts` — 13 tests passed.
+- `npx tsc --noEmit` — passed.
+- `git diff --check` — passed.

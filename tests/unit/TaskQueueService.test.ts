@@ -171,6 +171,29 @@ describe('TaskQueueService', () => {
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
     })
 
+    it('does not revive a cancelled task during state recovery', async () => {
+      const cancelledTask = {
+        id: 'task_cancelled',
+        type: TaskType.LibraryScan,
+        label: 'Cancelled Test',
+        sourceId: 's1',
+        libraryId: 'l1',
+        status: 'cancelled',
+        createdAt: new Date().toISOString(),
+      }
+      await db.config.setSetting('task_queue_state', JSON.stringify({
+        currentTask: cancelledTask,
+        queue: [],
+        completedTasks: [],
+        isPaused: false,
+      }))
+
+      const recovered = new TaskQueueService({ db, logging })
+      await recovered.loadPersistedHistory()
+
+      expect(recovered.getQueueState()).toMatchObject({ currentTask: null, queue: [], completedTasks: [cancelledTask] })
+    })
+
     it('does not notify an unregistered main window', async () => {
       await service.addTask({ type: TaskType.LibraryScan, label: 'No Window', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
       expect(safeSend).not.toHaveBeenCalled()

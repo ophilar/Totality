@@ -602,8 +602,12 @@ export class TaskQueueService {
         // while an application restart must not leave a stale task blocking
         // queue processing. Requeue any task that was active at shutdown.
         if (state.currentTask) {
-          state.currentTask.status = TaskStatus.Queued
-          this.queue.unshift(state.currentTask)
+          if (state.currentTask.status === TaskStatus.Cancelled) {
+            this.completedTasks.unshift(state.currentTask)
+          } else {
+            state.currentTask.status = TaskStatus.Queued
+            this.queue.unshift(state.currentTask)
+          }
         }
         this.currentTask = null
         
