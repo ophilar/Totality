@@ -6,6 +6,16 @@ import { StreamRemuxCommandBuilder } from './StreamRemuxCommandBuilder'
 import { TranscodeOptions } from '../TranscodingService'
 
 export class TranscodeCommandFactory {
+  static resolveOutputMode(
+    requestedOutputMode: TranscodeOptions['outputMode'] | null | undefined,
+    encoder: string | undefined
+  ): NonNullable<TranscodeOptions['outputMode']> {
+    const outputMode = requestedOutputMode || 'quarantine-replace'
+    return encoder === 'copy'
+      ? outputMode
+      : outputMode === 'copy' ? 'copy' : 'quarantine-replace'
+  }
+
   static getBuilder(vendor?: string, options: TranscodeOptions = {}): ITranscodeCommandBuilder {
     if (options.optimizationMode === 'remux_only' || options.encoder === 'remux' || options.encoder === 'copy') {
       return new StreamRemuxCommandBuilder()
