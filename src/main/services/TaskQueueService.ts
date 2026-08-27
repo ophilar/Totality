@@ -118,8 +118,8 @@ export class TaskQueueService {
     this.logging.info('[TaskQueue]', msg)
     
     await this.saveState()
-    this.processQueue()
     this.notifyListeners()
+    void this.processQueue()
     
     return task.id
   }
@@ -145,8 +145,8 @@ export class TaskQueueService {
     this.logging.info('[TaskQueue]', `Added ${definitions.length} batch tasks`)
     
     await this.saveState()
-    this.processQueue()
     this.notifyListeners()
+    void this.processQueue()
     
     return ids
   }
@@ -221,13 +221,14 @@ export class TaskQueueService {
   /**
    * Pause queue processing
    */
-  pause(): void {
+  async pause(): Promise<void> {
     this.isPaused = true
     this.logging.info('[TaskQueue]', 'Queue paused')
+    await this.saveState()
     this.notifyListeners()
   }
 
-  pauseQueue(): void { this.pause() }
+  pauseQueue(): Promise<void> { return this.pause() }
 
   /**
    * Resume queue processing
@@ -235,11 +236,12 @@ export class TaskQueueService {
   async resume(): Promise<void> {
     this.isPaused = false
     this.logging.info('[TaskQueue]', 'Queue resumed')
-    await this.processQueue()
+    await this.saveState()
     this.notifyListeners()
+    void this.processQueue()
   }
 
-  resumeQueue(): void { this.resume() }
+  resumeQueue(): Promise<void> { return this.resume() }
 
   /**
    * Cancel the currently running task
@@ -317,17 +319,69 @@ export class TaskQueueService {
     this.notifyListeners()
 
     const task = this.currentTask
-    let lastProgressTime = 0
+    let lastProgressWriteStartedAt = 0
     const PROGRESS_THROTTLE_MS = 250 // Max 4 UI updates per second
+    let progressWrite: Promise<void> | null = null
+    let progressWritePending = false
+    let forceProgressWrite = false
+    let progressWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+    const startProgressWrite = (): void => {
+      if (progressWrite) {
+        progressWritePending = true
+        return
+      }
+
+      progressWritePending = false
+      forceProgressWrite = false
+      lastProgressWriteStartedAt = Date.now()
+      progressWrite = this.saveState()
+        .then(() => this.notifyListeners())
+        .finally(() => {
+          progressWrite = null
+          if (progressWritePending) scheduleProgressWrite(forceProgressWrite)
+        })
+    }
+
+    const scheduleProgressWrite = (force: boolean): void => {
+      progressWritePending = true
+      forceProgressWrite ||= force
+      if (progressWrite) return
+
+      const delay = forceProgressWrite ? 0 : Math.max(0, PROGRESS_THROTTLE_MS - (Date.now() - lastProgressWriteStartedAt))
+      if (progressWriteTimer) {
+        if (delay > 0) return
+        clearTimeout(progressWriteTimer)
+      }
+      progressWriteTimer = setTimeout(() => {
+        progressWriteTimer = null
+        startProgressWrite()
+      }, delay)
+    }
+
+    const flushProgressWrite = async (): Promise<void> => {
+      if (progressWriteTimer) {
+        clearTimeout(progressWriteTimer)
+        progressWriteTimer = null
+      }
+      progressWritePending = true
+      forceProgressWrite = true
+      while (progressWrite || progressWritePending) {
+        if (!progressWrite) {
+          if (progressWriteTimer) {
+            clearTimeout(progressWriteTimer)
+            progressWriteTimer = null
+          }
+          startProgressWrite()
+        }
+        await progressWrite
+      }
+    }
 
     const onProgress = (p: TaskProgress) => {
       task.progress = p
-      const stateWrite = this.saveState()
-      const now = Date.now()
-      if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || p.percentage === 100 || p.phase === 'complete' || p.phase === 'failed') {
-        lastProgressTime = now
-        void stateWrite.then(() => this.notifyListeners())
-      }
+      const terminal = p.percentage === 100 || p.phase === 'complete' || p.phase === 'failed'
+      scheduleProgressWrite(terminal)
     }
 
     try {
@@ -381,6 +435,7 @@ export class TaskQueueService {
         getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)
       }
     } finally {
+      await flushProgressWrite()
       task.completedAt = new Date().toISOString()
       this.completedTasks.unshift(task)
       if (this.completedTasks.length > this.historyLimit) {

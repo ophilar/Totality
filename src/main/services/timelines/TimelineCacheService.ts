@@ -1,6 +1,7 @@
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import type { TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
 import { getLoggingService } from '@main/services/LoggingService'
+import { isTimelineRecipeSummary, validateTimelineDefinition } from './TimelineValidation'
 
 interface CacheEntry<T> {
   data: T
@@ -34,8 +35,17 @@ export class TimelineCacheService {
 
     // 1. Check in-memory memoization
     const mem = this.memoryCache.get(key)
+    if (mem && !isCacheEntry(mem)) {
+      this.memoryCache.delete(key)
+      this.warnRejectedRecipe(id, 'cache envelope is malformed')
+      return null
+    }
     if (mem && mem.expiresAt > Date.now()) {
-      return mem.data as TimelineDefinition
+      const validation = validateTimelineDefinition(mem.data)
+      if (validation.valid) return validation.value
+      this.memoryCache.delete(key)
+      this.warnRejectedRecipe(id, validation.reason)
+      return null
     }
 
     // 2. Check persistent SQLite cache
@@ -43,12 +53,22 @@ export class TimelineCacheService {
       const db = getDatabase()
       const raw = await db.config.getSetting(key)
       if (raw) {
-        const entry: CacheEntry<TimelineDefinition> = JSON.parse(raw)
+        const parsed: unknown = JSON.parse(raw)
+        if (!isCacheEntry(parsed)) {
+          this.warnRejectedRecipe(id, 'cache envelope is malformed')
+          return null
+        }
+        const entry = parsed
         // Check expiration
         if (entry && entry.data && entry.expiresAt > Date.now()) {
+          const validation = validateTimelineDefinition(entry.data)
+          if (!validation.valid) {
+            this.warnRejectedRecipe(id, validation.reason)
+            return null
+          }
           // Memoize in memory for ultra-fast subsequent reads
           this.memoryCache.set(key, entry)
-          return entry.data
+          return validation.value
         }
       }
     } catch (err) {
@@ -59,6 +79,10 @@ export class TimelineCacheService {
   }
 
   async setRecipe(id: string, recipe: TimelineDefinition, ttlMs: number = TimelineCacheService.RECIPE_TTL_MS): Promise<void> {
+    const validation = validateTimelineDefinition(recipe)
+    if (!validation.valid) {
+      throw new Error(`Cannot cache timeline recipe '${id}': ${validation.reason}`)
+    }
     const key = `timeline_recipe:${id}`
     const now = Date.now()
     const entry: CacheEntry<TimelineDefinition> = {
@@ -91,8 +115,10 @@ export class TimelineCacheService {
       const db = getDatabase()
       const raw = await db.config.getSetting(key)
       if (raw) {
-        const entry: CacheEntry<TimelineRecipeSummary[]> = JSON.parse(raw)
-        if (entry && Array.isArray(entry.data) && entry.expiresAt > Date.now()) {
+        const parsed: unknown = JSON.parse(raw)
+        if (!isCacheEntry(parsed)) return null
+        const entry = parsed
+        if (entry && Array.isArray(entry.data) && entry.data.every(isTimelineRecipeSummary) && entry.expiresAt > Date.now()) {
           this.memoryCache.set(key, entry)
           return entry.data
         }
@@ -105,6 +131,9 @@ export class TimelineCacheService {
   }
 
   async setManifest(manifest: TimelineRecipeSummary[], manifestKey = 'default', ttlMs: number = TimelineCacheService.MANIFEST_TTL_MS): Promise<void> {
+    if (!manifest.every(isTimelineRecipeSummary)) {
+      throw new Error(`Cannot cache timeline manifest '${manifestKey}': payload does not match the supported schema`)
+    }
     const key = `timeline_manifest:${manifestKey}`
     const now = Date.now()
     const entry: CacheEntry<TimelineRecipeSummary[]> = {
@@ -146,8 +175,18 @@ export class TimelineCacheService {
       }
     }
   }
+
+  private warnRejectedRecipe(id: string, reason: string): void {
+    getLoggingService().warn('[TimelineCacheService]', `Rejected cached timeline recipe '${id}': ${reason}`)
+  }
 }
 
 export function getTimelineCacheService(): TimelineCacheService {
   return TimelineCacheService.getInstance()
+}
+
+function isCacheEntry(value: unknown): value is CacheEntry<unknown> {
+  return typeof value === 'object' && value !== null && 'data' in value &&
+    'timestamp' in value && typeof value.timestamp === 'number' && Number.isFinite(value.timestamp) &&
+    'expiresAt' in value && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt)
 }

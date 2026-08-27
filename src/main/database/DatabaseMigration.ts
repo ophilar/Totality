@@ -10,6 +10,7 @@ import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
 import { getLoggingService } from '@main/services/LoggingService'
 import { DATABASE_SCHEMA } from '@main/database/schema'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { isTimelineRecipeSummary, validateTimelineDefinition } from '@main/services/timelines/TimelineValidation'
 
 /**
  * Run database migrations and schema updates
@@ -363,13 +364,16 @@ async function migrateStaleTimelineRecipes(db: Client): Promise<void> {
 
         if (key.startsWith('timeline_recipe:')) {
           const recipe = parseTimelineRecipeCache(parsed)
-          if (recipe.version === 2) continue
-          if (recipe.version === 1) {
-            const migrated = { ...recipe.envelope, data: { ...recipe.data, version: 2 } }
-            await db.execute({ sql: 'UPDATE settings SET value = ? WHERE key = ?', args: [JSON.stringify(migrated), key] })
+          const validation = validateTimelineDefinition(recipe.data)
+          if (!validation.valid) {
+            const reason = validation.reason.startsWith('unsupported version ')
+              ? `unsupported recipe version ${validation.reason.slice('unsupported version '.length)}`
+              : validation.reason
+            warnTimelineCache(key, reason)
             continue
           }
-          warnTimelineCache(key, `unsupported recipe version ${String(recipe.version)}`)
+          if (validation.value.version === 2) continue
+          warnTimelineCache(key, 'cannot losslessly infer a version 2 episode-interleaved order from version 1 semantics')
           continue
         }
 
@@ -391,39 +395,22 @@ interface TimelineCacheEnvelope {
   expiresAt: number
 }
 
-function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnvelope; data: Record<string, unknown>; version: unknown } {
+function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnvelope; data: Record<string, unknown> } {
   if (!isTimelineCacheEnvelope(value) || !isRecord(value.data)) {
     throw new Error('recipe envelope is missing data, timestamp, or expiresAt')
   }
   const recipe = value.data
-  if (typeof recipe.id !== 'string' || typeof recipe.franchise !== 'string' || typeof recipe.name !== 'string' ||
-      typeof recipe.description !== 'string' || !Array.isArray(recipe.items)) {
-    throw new Error('recipe data is missing required fields')
-  }
-  if (!recipe.items.every(isTimelineItem)) throw new Error('recipe items are malformed')
-  return { envelope: value, data: recipe, version: recipe.version }
+  return { envelope: value, data: recipe }
 }
 
 function parseTimelineManifestCache(value: unknown): TimelineCacheEnvelope | null {
-  if (!isTimelineCacheEnvelope(value) || !Array.isArray(value.data) || !value.data.every(isTimelineSummary)) return null
+  if (!isTimelineCacheEnvelope(value) || !Array.isArray(value.data) || !value.data.every(isTimelineRecipeSummary)) return null
   return value
 }
 
 function isTimelineCacheEnvelope(value: unknown): value is TimelineCacheEnvelope {
   return isRecord(value) && typeof value.timestamp === 'number' && Number.isFinite(value.timestamp) &&
     typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt) && 'data' in value
-}
-
-function isTimelineItem(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  return typeof value.order === 'number' && typeof value.type === 'string' &&
-    typeof value.title === 'string' && isRecord(value.identifiers)
-}
-
-function isTimelineSummary(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  return typeof value.id === 'string' && typeof value.name === 'string' && typeof value.franchise === 'string' &&
-    typeof value.description === 'string' && typeof value.totalItems === 'number' && typeof value.sourceType === 'string'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -35,15 +35,26 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_manifest:current')).toBe(JSON.stringify(envelope(manifest)))
   })
 
-  it('transforms a supported version-one recipe without deleting it', async () => {
-    const legacy = { ...recipe, version: 1 }
+  it('retains and warns for a version-one recipe whose v2 interleaving cannot be proven lossless', async () => {
+    const legacy = {
+      ...recipe,
+      version: 1,
+      items: [
+        { order: 1, type: 'episode', title: 'Series A S01E01', seriesTitle: 'Series A', seasonNumber: 1, episodeNumber: 1, identifiers: { tmdbId: 1 } },
+        { order: 2, type: 'episode', title: 'Series B S01E01', seriesTitle: 'Series B', seasonNumber: 1, episodeNumber: 1, identifiers: { tmdbId: 2 } },
+        { order: 3, type: 'episode', title: 'Series A S01E02', seriesTitle: 'Series A', seasonNumber: 1, episodeNumber: 2, identifiers: { tmdbId: 1 } },
+      ],
+    }
     await dbService.config.setSetting('timeline_recipe:legacy', JSON.stringify(envelope(legacy)))
 
     await runMigrations(dbService.db)
 
-    const migrated = JSON.parse((await dbService.config.getSetting('timeline_recipe:legacy')) as string)
-    expect(migrated.data.version).toBe(2)
-    expect(migrated.data.items).toEqual(legacy.items)
+    expect(await dbService.config.getSetting('timeline_recipe:legacy')).toBe(JSON.stringify(envelope(legacy)))
+    expect(getLoggingService().getLogs().some(log =>
+      log.level === 'warn' &&
+      log.message.includes('timeline_recipe:legacy') &&
+      log.message.includes('cannot losslessly infer')
+    )).toBe(true)
   })
 
   it('retains malformed records and logs the key and reason', async () => {

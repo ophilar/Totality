@@ -152,6 +152,51 @@ describe('TaskQueueService', () => {
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
     })
 
+    it('persists add, pause, and resume state before notifying the renderer', async () => {
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
+      service.setMainWindow(win as never)
+      const originalSetSetting = db.config.setSetting.bind(db.config)
+      let releaseWrite: (() => void) | undefined
+      let blockNextWrite = false
+      vi.spyOn(db.config, 'setSetting').mockImplementation(async (key, value) => {
+        if (key === 'task_queue_state' && blockNextWrite) {
+          blockNextWrite = false
+          await new Promise<void>(resolve => { releaseWrite = resolve })
+        }
+        return await originalSetSetting(key, value)
+      })
+
+      blockNextWrite = true
+      const pausePromise = service.pauseQueue()
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(safeSend).not.toHaveBeenCalled()
+      releaseWrite!()
+      await pausePromise
+      expect(safeSend).toHaveBeenLastCalledWith(win, 'taskQueue:updated', expect.objectContaining({ isPaused: true }))
+
+      vi.mocked(safeSend).mockClear()
+      releaseWrite = undefined
+      blockNextWrite = true
+      const addPromise = service.addTask({ type: TaskType.LibraryScan, label: 'Ordered Add', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(safeSend).not.toHaveBeenCalled()
+      releaseWrite!()
+      await addPromise
+      expect(safeSend).toHaveBeenLastCalledWith(win, 'taskQueue:updated', expect.objectContaining({
+        queue: [expect.objectContaining({ label: 'Ordered Add', status: 'queued' })],
+      }))
+
+      vi.mocked(safeSend).mockClear()
+      releaseWrite = undefined
+      blockNextWrite = true
+      const resumePromise = service.resumeQueue()
+      await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
+      expect(safeSend).not.toHaveBeenCalled()
+      releaseWrite!()
+      await resumePromise
+      expect(safeSend).toHaveBeenCalledWith(win, 'taskQueue:updated', expect.objectContaining({ isPaused: false }))
+    })
+
     it('persists the latest task progress for renderer reconnects', async () => {
       let releaseTask!: () => void
       const sourceManager = {
@@ -169,6 +214,43 @@ describe('TaskQueueService', () => {
       })
       releaseTask()
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('coalesces burst progress persistence while retaining the latest update', async () => {
+      const sourceManager = {
+        scanLibrary: vi.fn(async (_sourceId: string, _libraryId: string, onProgress: (progress: never) => void) => {
+          for (let percentage = 1; percentage <= 100; percentage++) {
+            onProgress({ current: percentage, total: 100, percentage, phase: percentage === 100 ? 'complete' : 'scanning' } as never)
+          }
+        }),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+      }
+      const originalSetSetting = db.config.setSetting.bind(db.config)
+      let taskStateWriteCount = 0
+      let releaseProgressWrite: (() => void) | undefined
+      const setSetting = vi.spyOn(db.config, 'setSetting').mockImplementation(async (key, value) => {
+        if (key === 'task_queue_state' && ++taskStateWriteCount === 3) {
+          await new Promise<void>(resolve => { releaseProgressWrite = resolve })
+        }
+        return await originalSetSetting(key, value)
+      })
+      service = new TaskQueueService({ db, logging, sourceManager })
+
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Burst Progress', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(releaseProgressWrite).toBeTypeOf('function'))
+      releaseProgressWrite!()
+      await vi.waitFor(async () => {
+        const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+        expect(persisted.completedTasks[0]).toMatchObject({ id: taskId, progress: { percentage: 100, phase: 'complete' } })
+      })
+
+      const progressWindowWrites = setSetting.mock.calls.filter(([key]) => key === 'task_queue_state').length
+      expect(progressWindowWrites).toBeLessThanOrEqual(5)
+
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+      const writesAtCompletion = setSetting.mock.calls.filter(([key]) => key === 'task_queue_state').length
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(setSetting.mock.calls.filter(([key]) => key === 'task_queue_state')).toHaveLength(writesAtCompletion)
     })
 
     it('does not revive a cancelled task during state recovery', async () => {
