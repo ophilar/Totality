@@ -6,7 +6,10 @@ import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import type { LoggingService } from '@main/services/LoggingService'
 import type { SourceManager } from '@main/services/SourceManager'
 import { QueuedTask, TaskType } from '@main/types/database'
+import { safeSend } from '@main/ipc/utils/safeSend'
 type TaskDefinition = Omit<QueuedTask, 'id' | 'status' | 'createdAt'>
+
+vi.mock('@main/ipc/utils/safeSend', () => ({ safeSend: vi.fn() }))
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
@@ -14,6 +17,7 @@ describe('TaskQueueService', () => {
   let logging: LoggingService
 
   beforeEach(async () => {
+    vi.clearAllMocks()
     db = await setupTestDb()
     logging = getLoggingService()
     logging.setDatabaseGetter(() => db)
@@ -124,6 +128,52 @@ describe('TaskQueueService', () => {
       const parsed = JSON.parse(savedState!)
       expect(parsed.queue.length).toBe(1)
       expect(parsed.isPaused).toBe(true)
+    })
+
+    it('persists cancellation of the active task before notifying the renderer', async () => {
+      let releaseTask!: () => void
+      const sourceManager = {
+        scanLibrary: vi.fn(() => new Promise<void>(resolve => { releaseTask = resolve })),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+      }
+      service = new TaskQueueService({ db, logging, sourceManager })
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
+      service.setMainWindow(win as never)
+
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Cancel Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(() => expect(service.getQueueState().currentTask?.id).toBe(taskId))
+
+      await service.removeTask(taskId)
+      const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+      expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelled' })
+      expect(safeSend).toHaveBeenCalledWith(win, 'taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelled' }) }))
+
+      releaseTask()
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('persists the latest task progress for renderer reconnects', async () => {
+      let releaseTask!: () => void
+      const sourceManager = {
+        scanLibrary: vi.fn(async (_sourceId: string, _libraryId: string, onProgress: (progress: never) => void) => {
+          onProgress({ current: 3, total: 10, percentage: 30, phase: 'scanning' } as never)
+          await new Promise<void>(resolve => { releaseTask = resolve })
+        }),
+        scanSource: vi.fn().mockResolvedValue({ success: true }),
+      }
+      service = new TaskQueueService({ db, logging, sourceManager })
+      const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Progress Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await vi.waitFor(async () => {
+        const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+        expect(persisted.currentTask).toMatchObject({ id: taskId, progress: { percentage: 30, phase: 'scanning' } })
+      })
+      releaseTask()
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
+    })
+
+    it('does not notify an unregistered main window', async () => {
+      await service.addTask({ type: TaskType.LibraryScan, label: 'No Window', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      expect(safeSend).not.toHaveBeenCalled()
     })
   })
 

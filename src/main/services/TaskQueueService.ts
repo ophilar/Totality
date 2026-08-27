@@ -42,6 +42,7 @@ export class TaskQueueService {
   private isPaused = false
   private cancelRequested = false
   private historyLimit = 100
+  private stateWrite: Promise<void> = Promise.resolve()
 
   private db: BetterSQLiteService
   private logging: LoggingService
@@ -155,8 +156,7 @@ export class TaskQueueService {
    */
   async removeTask(taskId: string): Promise<boolean> {
     if (this.currentTask && this.currentTask.id === taskId) {
-      this.cancelCurrent()
-      await this.saveState()
+      await this.cancelCurrent()
       this.notifyListeners()
       return true
     }
@@ -176,7 +176,7 @@ export class TaskQueueService {
     this.queue = this.queue.filter(t => t.sourceId !== sourceId)
     const cancelledCurrent = this.currentTask?.sourceId === sourceId
     if (cancelledCurrent) {
-      this.cancelCurrent()
+      await this.cancelCurrent()
     }
     if (this.queue.length !== originalCount || cancelledCurrent) {
       this.logging.info('[TaskQueue]', `Removed ${originalCount - this.queue.length} tasks for source ${sourceId}`)
@@ -210,7 +210,7 @@ export class TaskQueueService {
     const count = this.queue.length
     this.queue = []
     if (this.currentTask) {
-      this.cancelCurrent()
+      await this.cancelCurrent()
     }
     this.getTranscoding().abortAll()
     this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
@@ -244,17 +244,19 @@ export class TaskQueueService {
   /**
    * Cancel the currently running task
    */
-  cancelCurrent(): void {
+  async cancelCurrent(): Promise<void> {
     if (this.currentTask) {
       this.cancelRequested = true
+      this.currentTask.status = TaskStatus.Cancelled
       this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
       if (this.currentTask.type === TaskType.Transcode && this.currentTask.mediaItemId) {
         this.getTranscoding().cancelTranscode(this.currentTask.mediaItemId)
       }
+      await this.saveState()
     }
   }
 
-  cancelCurrentTask(): void { this.cancelCurrent() }
+  cancelCurrentTask(): Promise<void> { return this.cancelCurrent() }
 
   /**
    * Get the current state of the queue
@@ -311,6 +313,7 @@ export class TaskQueueService {
     this.cancelRequested = false
     
     this.logging.info('[TaskQueue]', `Starting task: ${this.currentTask.label} (${this.currentTask.id})`)
+    await this.saveState()
     this.notifyListeners()
 
     const task = this.currentTask
@@ -319,10 +322,11 @@ export class TaskQueueService {
 
     const onProgress = (p: TaskProgress) => {
       task.progress = p
+      const stateWrite = this.saveState()
       const now = Date.now()
       if (now - lastProgressTime >= PROGRESS_THROTTLE_MS || p.percentage === 100 || p.phase === 'complete' || p.phase === 'failed') {
         lastProgressTime = now
-        this.notifyListeners()
+        void stateWrite.then(() => this.notifyListeners())
       }
     }
 
@@ -569,15 +573,20 @@ export class TaskQueueService {
   }
 
   private async saveState(): Promise<void> {
-    try {
-      await this.db.config.setSetting('task_queue_state', JSON.stringify({
-        queue: this.queue,
-        completedTasks: this.completedTasks,
-        isPaused: this.isPaused
-      }))
-    } catch (e) {
-      getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', e)
-    }
+    const state = JSON.stringify({
+      currentTask: this.currentTask,
+      queue: this.queue,
+      completedTasks: this.completedTasks,
+      isPaused: this.isPaused
+    })
+    this.stateWrite = this.stateWrite.then(async () => {
+      try {
+        await this.db.config.setSetting('task_queue_state', state)
+      } catch (e) {
+        getLoggingService().warn('[TaskQueueService]', 'Failed to save state:', e)
+      }
+    })
+    return this.stateWrite
   }
 
   private async loadState(): Promise<void> {
@@ -588,6 +597,15 @@ export class TaskQueueService {
         this.queue = state.queue || []
         this.completedTasks = state.completedTasks || []
         this.isPaused = state.isPaused === true
+
+        // A renderer reconnect must observe the persisted task immediately,
+        // while an application restart must not leave a stale task blocking
+        // queue processing. Requeue any task that was active at shutdown.
+        if (state.currentTask) {
+          state.currentTask.status = TaskStatus.Queued
+          this.queue.unshift(state.currentTask)
+        }
+        this.currentTask = null
         
         this.logging.info('[TaskQueue]', `State loaded: ${this.queue.length} queued, ${this.completedTasks.length} completed, isPaused=${this.isPaused}`)
         
