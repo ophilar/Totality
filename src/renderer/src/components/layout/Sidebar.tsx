@@ -1,7 +1,7 @@
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
 import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Plus, Film, Tv, Music, Folder, Trash2, Pencil, Info, Square, Server, HardDrive, Settings, Eye, EyeOff, Clock, PanelLeftClose, PanelLeft } from 'lucide-react'
-import { useSources } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
 import { LibraryType, ProviderType } from '@main/types/database'
 import { PROVIDERS } from '@main/constants/providers'

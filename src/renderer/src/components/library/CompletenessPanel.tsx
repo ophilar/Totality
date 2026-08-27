@@ -40,7 +40,7 @@ interface AnalysisProgress {
   skipped?: number  // Number of items skipped (already recently analyzed)
 }
 
-import { usePanel } from '@/contexts/PanelContext'
+import { usePanel } from '@/contexts/usePanel'
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
 
 interface CompletenessPanelProps {
@@ -86,7 +86,8 @@ export function CompletenessPanel({
 }: CompletenessPanelProps) {
   const { showCompletenessPanel, setShowCompletenessPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showCompletenessPanel
-  const onClose = propOnClose !== undefined ? propOnClose : () => setShowCompletenessPanel(false)
+  const closePanel = useCallback(() => setShowCompletenessPanel(false), [setShowCompletenessPanel])
+  const onClose = propOnClose ?? closePanel
   const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(initialSeriesStats || null)
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)

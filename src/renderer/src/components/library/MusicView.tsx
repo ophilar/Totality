@@ -9,7 +9,7 @@ import { ArtistListItem } from '@/components/library/music/ArtistListItem'
 import { AlbumListItem } from '@/components/library/music/AlbumListItem'
 import { MusicAlbumDetails } from '@/components/library/music/MusicAlbumDetails'
 import { MusicArtistDetails } from '@/components/library/music/MusicArtistDetails'
-import { useSources } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { calculatePosterWidth } from '@/components/library/mediaUtils'
 import type {
   MusicArtist,

@@ -127,6 +127,93 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries).toHaveLength(1)
     expect(summaries[0].series_identity_key).toBe('tmdb:83867')
   })
+
+  it('correctly sorts TV shows by title, recoverable debt, and efficiency', async () => {
+    await repo.upsertCompleteness({
+      series_title: 'Alpha Show',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      completeness_percentage: 100,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    } as SeriesCompleteness)
+
+    await repo.upsertCompleteness({
+      series_title: 'Beta Show',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      completeness_percentage: 100,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    } as SeriesCompleteness)
+
+    const ep1Id = await mediaRepo.upsertItem(mockEpisode('Alpha Show', 1, 1))
+    const ep2Id = await mediaRepo.upsertItem(mockEpisode('Beta Show', 1, 1))
+
+    // Alpha Show: Low debt (100 MB), High efficiency (95%)
+    await db.media.upsertQualityScore({
+      media_item_id: ep1Id,
+      quality_tier: '1080p',
+      tier_quality: 'good',
+      tier_score: 95,
+      bitrate_tier_score: 95,
+      audio_tier_score: 95,
+      overall_score: 95,
+      efficiency_score: 95,
+      storage_debt_bytes: 100 * 1024 * 1024,
+    })
+
+    // Beta Show: High debt (5 GB), Low efficiency (40%)
+    await db.media.upsertQualityScore({
+      media_item_id: ep2Id,
+      quality_tier: '1080p',
+      tier_quality: 'poor',
+      tier_score: 40,
+      bitrate_tier_score: 40,
+      audio_tier_score: 40,
+      overall_score: 40,
+      efficiency_score: 40,
+      storage_debt_bytes: 5 * 1024 * 1024 * 1024,
+    })
+
+    // Sort by recoverable desc (largest debt first)
+    const sortedDebtDesc = await repo.getSummaries({ sortBy: 'recoverable', sortOrder: 'desc' })
+    expect(sortedDebtDesc[0].series_title).toBe('Beta Show')
+    expect(sortedDebtDesc[1].series_title).toBe('Alpha Show')
+
+    // Sort by recoverable asc (smallest debt first)
+    const sortedDebtAsc = await repo.getSummaries({ sortBy: 'recoverable', sortOrder: 'asc' })
+    expect(sortedDebtAsc[0].series_title).toBe('Alpha Show')
+    expect(sortedDebtAsc[1].series_title).toBe('Beta Show')
+
+    // Sort by efficiency desc (highest efficiency first)
+    const sortedEffDesc = await repo.getSummaries({ sortBy: 'efficiency', sortOrder: 'desc' })
+    expect(sortedEffDesc[0].series_title).toBe('Alpha Show')
+    expect(sortedEffDesc[1].series_title).toBe('Beta Show')
+
+    // Sort by efficiency asc (lowest efficiency first)
+    const sortedEffAsc = await repo.getSummaries({ sortBy: 'efficiency', sortOrder: 'asc' })
+    expect(sortedEffAsc[0].series_title).toBe('Beta Show')
+    expect(sortedEffAsc[1].series_title).toBe('Alpha Show')
+
+    // Sort by title asc
+    const sortedTitleAsc = await repo.getSummaries({ sortBy: 'title', sortOrder: 'asc' })
+    expect(sortedTitleAsc[0].series_title).toBe('Alpha Show')
+    expect(sortedTitleAsc[1].series_title).toBe('Beta Show')
+
+    // Sort by title desc
+    const sortedTitleDesc = await repo.getSummaries({ sortBy: 'title', sortOrder: 'desc' })
+    expect(sortedTitleDesc[0].series_title).toBe('Beta Show')
+    expect(sortedTitleDesc[1].series_title).toBe('Alpha Show')
+  })
 })
 
 

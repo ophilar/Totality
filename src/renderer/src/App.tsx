@@ -8,12 +8,14 @@ import { CompletenessPanel } from '@/components/library/CompletenessPanel'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import type { ViewContext } from '@/hooks/useChat'
 import { AIInsightsPanel } from '@/components/library/AIInsightsPanel'
-import { SourceProvider, useSources } from '@/contexts/SourceContext'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { WishlistProvider } from '@/contexts/WishlistContext'
 import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
-import { LibraryProvider, useLibrary } from '@/contexts/LibraryContext'
+import { LibraryProvider } from '@/contexts/LibraryContext'
+import { useLibrary } from '@/contexts/useLibrary'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
 import { AboutModal } from '@/components/ui/AboutModal'
 import { SettingsPanel } from '@/components/settings/SettingsPanel'
@@ -26,7 +28,7 @@ import type { MediaViewType, AnalysisProgress } from '@/components/library/types
 
 type AppView = 'dashboard' | 'library'
 
-import { usePanel } from '@/contexts/PanelContext'
+import { usePanel } from '@/contexts/usePanel'
 
 function AppContent() {
   const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
@@ -221,7 +223,7 @@ function AppContent() {
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goBack])
+  }, [goBack, setLibraryTab])
 
   const handleForward = useCallback(() => {
     const restored = goForward()
@@ -233,7 +235,7 @@ function AppContent() {
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goForward])
+  }, [goForward, setLibraryTab])
 
   // Keyboard shortcuts for back/forward
   useEffect(() => {

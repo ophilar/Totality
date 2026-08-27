@@ -10,6 +10,7 @@
 
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { createRequire } from 'node:module'
 
 // Dynamic import for optional mysql2 dependency
 let mysql: typeof import('mysql2/promise') | null = null
@@ -17,10 +18,9 @@ let mysqlAvailable = false
 
 // Try to load mysql2 - it's optional
 try {
-  // @ts-ignore
-  mysql = require('mysql2/promise')
+  mysql = createRequire(__filename)('mysql2/promise') as typeof import('mysql2/promise')
   mysqlAvailable = true
-} catch (error) {
+} catch {
   // mysql2 not available
 }
 
@@ -83,9 +83,9 @@ class KodiMySQLConnectionService {
   /**
    * Create a connection pool for the given config
    */
-  async createPool(config: KodiMySQLConfig): Promise<Pool> {
+  async createPool(config: KodiMySQLConfig, database?: string): Promise<Pool> {
     this.ensureAvailable()
-    const poolKey = this.getPoolKey(config)
+    const poolKey = this.getPoolKey(config, database)
 
     // Return existing pool if available
     if (this.pools.has(poolKey)) {
@@ -97,6 +97,7 @@ class KodiMySQLConnectionService {
       port: config.port || 3306,
       user: config.username,
       password: config.password,
+      database,
       waitForConnections: true,
       connectionLimit: 5,
       queueLimit: 0,
@@ -111,8 +112,8 @@ class KodiMySQLConnectionService {
   /**
    * Close and remove a connection pool
    */
-  async closePool(config: KodiMySQLConfig): Promise<void> {
-    const poolKey = this.getPoolKey(config)
+  async closePool(config: KodiMySQLConfig, database?: string): Promise<void> {
+    const poolKey = this.getPoolKey(config, database)
     const pool = this.pools.get(poolKey)
 
     if (pool) {
@@ -306,8 +307,8 @@ class KodiMySQLConnectionService {
   /**
    * Generate a unique key for the pool map
    */
-  private getPoolKey(config: KodiMySQLConfig): string {
-    return `${config.host}:${config.port || 3306}:${config.username}`
+  private getPoolKey(config: KodiMySQLConfig, database?: string): string {
+    return `${config.host}:${config.port || 3306}:${config.username}:${database || ''}`
   }
 }
 

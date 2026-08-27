@@ -4,7 +4,7 @@ import { SimpleMarkdown } from '@/components/ui/SimpleMarkdown'
 
 type ReportType = 'quality' | 'upgrades' | 'completeness' | 'wishlist'
 
-import { usePanel } from '@/contexts/PanelContext'
+import { usePanel } from '@/contexts/usePanel'
 
 interface AIInsightsPanelProps {
   isOpen?: boolean

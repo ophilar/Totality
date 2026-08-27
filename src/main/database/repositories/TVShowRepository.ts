@@ -24,18 +24,60 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
     const conditions = this.buildFilterConditions(filters)
 
+    const dynamicStorageDebt = sql`COALESCE(
+      NULLIF(${schema.seriesCompleteness.storageDebtBytes}, 0),
+      (
+        SELECT SUM(COALESCE(q.storage_debt_bytes, 0))
+        FROM media_items m
+        JOIN quality_scores q ON m.id = q.media_item_id
+        WHERE m.type = 'episode'
+          AND m.series_title = ${schema.seriesCompleteness.seriesTitle}
+          AND (${schema.seriesCompleteness.sourceId} IS NULL OR m.source_id = ${schema.seriesCompleteness.sourceId})
+          AND (${schema.seriesCompleteness.libraryId} IS NULL OR m.library_id = ${schema.seriesCompleteness.libraryId})
+      ),
+      0
+    )`
+
+    const dynamicEfficiency = sql`COALESCE(
+      NULLIF(${schema.seriesCompleteness.efficiencyScore}, 0),
+      (
+        SELECT SUM(q.efficiency_score * COALESCE(m.file_size, 1)) / NULLIF(SUM(COALESCE(m.file_size, 1)), 0)
+        FROM media_items m
+        JOIN quality_scores q ON m.id = q.media_item_id
+        WHERE m.type = 'episode'
+          AND m.series_title = ${schema.seriesCompleteness.seriesTitle}
+          AND (${schema.seriesCompleteness.sourceId} IS NULL OR m.source_id = ${schema.seriesCompleteness.sourceId})
+          AND (${schema.seriesCompleteness.libraryId} IS NULL OR m.library_id = ${schema.seriesCompleteness.libraryId})
+          AND q.efficiency_score IS NOT NULL
+      ),
+      0
+    )`
+
+    const dynamicTotalSize = sql`COALESCE(
+      NULLIF(${schema.seriesCompleteness.totalSize}, 0),
+      (
+        SELECT SUM(COALESCE(m.file_size, 0))
+        FROM media_items m
+        WHERE m.type = 'episode'
+          AND m.series_title = ${schema.seriesCompleteness.seriesTitle}
+          AND (${schema.seriesCompleteness.sourceId} IS NULL OR m.source_id = ${schema.seriesCompleteness.sourceId})
+          AND (${schema.seriesCompleteness.libraryId} IS NULL OR m.library_id = ${schema.seriesCompleteness.libraryId})
+      ),
+      0
+    )`
+
     const sortMap: Record<string, AnyColumn | SQL> = {
       'title': schema.seriesCompleteness.seriesTitle,
       'completeness': schema.seriesCompleteness.completenessPercentage,
       'episode_count': schema.seriesCompleteness.totalEpisodes,
       'episodes': schema.seriesCompleteness.totalEpisodes,
       'season_count': schema.seriesCompleteness.totalSeasons,
-      'storage_debt': schema.seriesCompleteness.storageDebtBytes,
-      'recoverable': schema.seriesCompleteness.storageDebtBytes,
-      'debt': schema.seriesCompleteness.storageDebtBytes,
-      'waste': schema.seriesCompleteness.storageDebtBytes,
-      'efficiency': schema.seriesCompleteness.efficiencyScore,
-      'size': schema.seriesCompleteness.totalSize,
+      'storage_debt': dynamicStorageDebt,
+      'recoverable': dynamicStorageDebt,
+      'debt': dynamicStorageDebt,
+      'waste': dynamicStorageDebt,
+      'efficiency': dynamicEfficiency,
+      'size': dynamicTotalSize,
     }
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.seriesCompleteness.seriesTitle
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
@@ -189,7 +231,36 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     }
 
     if (filters?.slimDown) {
-      conditions.push(sql`(${schema.seriesCompleteness.efficiencyScore} < 60 OR ${schema.seriesCompleteness.storageDebtBytes} > 5368709120)`)
+      const dynamicStorageDebt = sql`COALESCE(
+        NULLIF(${schema.seriesCompleteness.storageDebtBytes}, 0),
+        (
+          SELECT SUM(COALESCE(q.storage_debt_bytes, 0))
+          FROM media_items m
+          JOIN quality_scores q ON m.id = q.media_item_id
+          WHERE m.type = 'episode'
+            AND m.series_title = ${schema.seriesCompleteness.seriesTitle}
+            AND (${schema.seriesCompleteness.sourceId} IS NULL OR m.source_id = ${schema.seriesCompleteness.sourceId})
+            AND (${schema.seriesCompleteness.libraryId} IS NULL OR m.library_id = ${schema.seriesCompleteness.libraryId})
+        ),
+        0
+      )`
+
+      const dynamicEfficiency = sql`COALESCE(
+        NULLIF(${schema.seriesCompleteness.efficiencyScore}, 0),
+        (
+          SELECT SUM(q.efficiency_score * COALESCE(m.file_size, 1)) / NULLIF(SUM(COALESCE(m.file_size, 1)), 0)
+          FROM media_items m
+          JOIN quality_scores q ON m.id = q.media_item_id
+          WHERE m.type = 'episode'
+            AND m.series_title = ${schema.seriesCompleteness.seriesTitle}
+            AND (${schema.seriesCompleteness.sourceId} IS NULL OR m.source_id = ${schema.seriesCompleteness.sourceId})
+            AND (${schema.seriesCompleteness.libraryId} IS NULL OR m.library_id = ${schema.seriesCompleteness.libraryId})
+            AND q.efficiency_score IS NOT NULL
+        ),
+        100
+      )`
+
+      conditions.push(sql`(${dynamicEfficiency} < 60 OR ${dynamicStorageDebt} > 5368709120)`)
     }
 
     if (filters?.qualityTier && filters.qualityTier !== 'all') {

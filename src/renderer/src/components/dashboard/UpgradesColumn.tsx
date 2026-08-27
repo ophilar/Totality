@@ -1,5 +1,5 @@
 import { CircleFadingArrowUp } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from '@/components/dashboard/UpgradeRows'
 import { Virtuoso } from 'react-virtuoso'
@@ -34,7 +34,7 @@ export function UpgradesColumn({
   expandedRecommendations, toggleRecommendation
 }: UpgradesColumnProps) {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
-  const sortItems = <T extends MediaItem | MusicAlbumUpgrade>(items: T[]) => [...items].sort((a, b) => {
+  const sortItems = useCallback(<T extends MediaItem | MusicAlbumUpgrade>(items: T[]) => [...items].sort((a, b) => {
     const value = (item: T): string | number => {
       if (upgradeSortBy === 'title') return item.title || ''
       if (upgradeSortBy === 'recent') return new Date(item.updated_at || item.created_at || 0).getTime()
@@ -44,10 +44,10 @@ export function UpgradesColumn({
     const left = value(a), right = value(b)
     const result = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' })
     return sortDirection === 'asc' ? result : -result
-  })
-  const sortedMovies = useMemo(() => sortItems(movieUpgrades), [movieUpgrades, upgradeSortBy, sortDirection])
-  const sortedTv = useMemo(() => sortItems(tvUpgrades), [tvUpgrades, upgradeSortBy, sortDirection])
-  const sortedMusic = useMemo(() => sortItems(musicUpgrades), [musicUpgrades, upgradeSortBy, sortDirection])
+  }), [upgradeSortBy, sortDirection])
+  const sortedMovies = useMemo(() => sortItems(movieUpgrades), [movieUpgrades, sortItems])
+  const sortedTv = useMemo(() => sortItems(tvUpgrades), [tvUpgrades, sortItems])
+  const sortedMusic = useMemo(() => sortItems(musicUpgrades), [musicUpgrades, sortItems])
   const movieRow = (index: number) => (
     <MovieUpgradeRow
       index={index}

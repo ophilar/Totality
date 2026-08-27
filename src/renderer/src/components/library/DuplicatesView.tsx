@@ -10,7 +10,7 @@ import {
   Search,
   HardDrive,
 } from 'lucide-react'
-import { useSources } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { useToast } from '@/contexts/ToastContext'
 import { MoviePlaceholder, TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import type { MediaItem } from '@/components/library/types'

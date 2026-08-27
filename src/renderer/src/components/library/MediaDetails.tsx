@@ -11,7 +11,8 @@ import {
   ExternalLink,
   EyeOff
 } from 'lucide-react'
-import { formatHdrLabel, QualityBadges } from '@/components/library/QualityBadges'
+import { QualityBadges } from '@/components/library/QualityBadges'
+import { formatHdrLabel } from '@/components/library/qualityBadgeUtils'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'

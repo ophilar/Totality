@@ -6,7 +6,8 @@
  * Provides access to sources, scanning state, and source operations.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { SourceContext } from './SourceContextStore'
 import { useToast } from '@/contexts/ToastContext'
 import { LibraryType, ProviderType } from '@main/types/database'
 import type { TaskQueueState } from '@main/types/database'
@@ -48,7 +49,7 @@ export interface SourceStats {
 
 
 // Context type definition
-interface SourceContextType {
+export interface SourceContextType {
   // State
   sources: MediaSourceResponse[]
   activeSources: MediaSourceResponse[]
@@ -117,8 +118,6 @@ interface SourceContextType {
 }
 
 // Create context with undefined default
-const SourceContext = createContext<SourceContextType | undefined>(undefined)
-
 // Provider component
 interface SourceProviderProps {
   children: ReactNode
@@ -592,21 +591,3 @@ export function SourceProvider({ children }: SourceProviderProps) {
   )
 }
 
-// Custom hook to use source context
-export function useSources(): SourceContextType {
-  const context = useContext(SourceContext)
-
-  if (context === undefined) {
-    throw new Error('useSources must be used within a SourceProvider')
-  }
-
-  return context
-}
-
-// Helper hook for getting a specific source
-export function useSource(sourceId: string) {
-  const { sources } = useSources()
-  return sources.find(s => s.source_id === sourceId)
-}
-
-export default SourceContext

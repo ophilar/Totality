@@ -252,7 +252,7 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
 
     // Pattern 2: Headings / List items / Strong paragraph headers
     if (items.length === 0) {
-      const lineRegex = /(?:<h[1-6][^>]*>|<li[^>]*>|<p[^>]*><strong>|<p[^>]*>|<div[^>]*>)\s*(\d{1,4})[\.\):\-]\s*([^<]+?)(?:<\/h[1-6]>|<\/li>|<\/strong>|<\/p>|<\/div>|<br\s*\/?>)/gi
+      const lineRegex = /(?:<h[1-6][^>]*>|<li[^>]*>|<p[^>]*><strong>|<p[^>]*>|<div[^>]*>)\s*(\d{1,4})[.):\-]\s*([^<]+?)(?:<\/h[1-6]>|<\/li>|<\/strong>|<\/p>|<\/div>|<br\s*\/?>)/gi
       while ((match = lineRegex.exec(html)) !== null) {
         const rawOrder = parseInt(match[1], 10)
         addItem(rawOrder, match[2])
@@ -263,7 +263,7 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
     if (items.length === 0) {
       const textLines = _cleanedText.split('\n')
       for (const line of textLines) {
-        const lineMatch = line.trim().match(/^(\d{1,4})[\.\)\-:\s]+([^\n\r]+)$/)
+        const lineMatch = line.trim().match(/^(\d{1,4})[.)\-:\s]+([^\n\r]+)$/)
         if (lineMatch) {
           addItem(parseInt(lineMatch[1], 10), lineMatch[2])
         }

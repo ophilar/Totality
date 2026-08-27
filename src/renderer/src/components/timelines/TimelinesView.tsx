@@ -12,7 +12,7 @@ import {
   Search,
   RefreshCw,
 } from 'lucide-react'
-import { useSources } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { useToast } from '@/contexts/ToastContext'
 import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'

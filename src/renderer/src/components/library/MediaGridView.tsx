@@ -2,7 +2,7 @@ import { forwardRef, ReactNode, useRef, useCallback, useLayoutEffect, HTMLAttrib
 import { Virtuoso, VirtuosoGrid, VirtuosoHandle, VirtuosoGridHandle, GridStateSnapshot } from 'react-virtuoso'
 import { RefreshCw } from 'lucide-react'
 import { MediaCardSkeleton, Skeleton } from '@/components/ui/Skeleton'
-import { useScrollMemory } from '@/contexts/ScrollMemoryContext'
+import { useScrollMemory } from '@/contexts/useScrollMemory'
 
 interface MediaGridViewProps<T> {
   /** The data to display */

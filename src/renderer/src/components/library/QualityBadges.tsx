@@ -7,18 +7,12 @@
 import { Trash2, HardDrive } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MediaItem } from '@/components/library/types'
-import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
+import { formatHdrLabel } from '@/components/library/qualityBadgeUtils'
 
 interface QualityBadgesProps {
   item: MediaItem
   whiteBg?: boolean
   showEfficiency?: boolean
-}
-
-/** Keep dynamic HDR formats distinct from the base HDR10 label. */
-export function formatHdrLabel(value?: string | null): string | undefined {
-  const normalized = normalizeHdrFormatValue(value)
-  return normalized === 'SDR' ? undefined : normalized
 }
 
 export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {

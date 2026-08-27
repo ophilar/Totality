@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { useSources } from '@/contexts/SourceContext'
+import { useSources } from '@/contexts/useSources'
 import { SourceCard } from '@/components/sources/SourceCard'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
 
