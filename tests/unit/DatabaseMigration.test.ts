@@ -64,4 +64,14 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_recipe:unsupported')).toBe(JSON.stringify(unsupported))
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unsupported') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
+
+  it('retains a recipe with no explicit version', async () => {
+    const unversioned = envelope({ ...recipe, version: undefined })
+    await dbService.config.setSetting('timeline_recipe:unversioned', JSON.stringify(unversioned))
+
+    await runMigrations(dbService.db)
+
+    expect(await dbService.config.getSetting('timeline_recipe:unversioned')).toBe(JSON.stringify(unversioned))
+    expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
+  })
 })

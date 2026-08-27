@@ -391,7 +391,7 @@ interface TimelineCacheEnvelope {
   expiresAt: number
 }
 
-function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnvelope; data: Record<string, unknown>; version: number } {
+function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnvelope; data: Record<string, unknown>; version: unknown } {
   if (!isTimelineCacheEnvelope(value) || !isRecord(value.data)) {
     throw new Error('recipe envelope is missing data, timestamp, or expiresAt')
   }
@@ -401,9 +401,6 @@ function parseTimelineRecipeCache(value: unknown): { envelope: TimelineCacheEnve
     throw new Error('recipe data is missing required fields')
   }
   if (!recipe.items.every(isTimelineItem)) throw new Error('recipe items are malformed')
-  if (typeof recipe.version !== 'number' || !Number.isInteger(recipe.version)) {
-    return { envelope: value, data: recipe, version: 1 }
-  }
   return { envelope: value, data: recipe, version: recipe.version }
 }
 

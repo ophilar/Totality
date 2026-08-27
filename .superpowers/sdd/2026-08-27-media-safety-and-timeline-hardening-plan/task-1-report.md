@@ -11,6 +11,8 @@
 - `npx tsc --noEmit` — passed.
 - `git diff --check` — passed.
 
+Reviewer follow-up: version migration now requires an explicit integer version `1`; missing, non-numeric, and non-integer versions are retained and warned. Regression coverage increased to 5 focused tests.
+
 ## Concerns
 
 - Legacy records are transformed only when they match the supported recipe envelope and item shape. Unsupported or malformed payloads remain available for manual recovery and are not modified.
