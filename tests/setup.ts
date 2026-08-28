@@ -152,7 +152,7 @@ vi.mock('react-virtuoso', () => {
       const List = components?.List || 'div'
       return React.createElement('div', { 'data-testid': 'mock-virtuoso-grid' }, [
         components?.Header && React.createElement(components.Header, { key: 'header' }),
-        React.createElement(List, { style: { display: 'grid' } }, items),
+        React.createElement(List, { key: 'list', style: { display: 'grid' } }, items),
         components?.Footer && React.createElement(components.Footer, { key: 'footer' })
       ])
     }
