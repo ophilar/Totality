@@ -57,6 +57,10 @@ export function registerTranscodingHandlers(): void {
     return await getTranscodingService().queueShowTranscode(preflightId)
   })
 
+  createValidatedIpcHandler('transcoding:approveShow', QueueShowTranscodeSchema, async (preflightId) => {
+    return await getTranscodingService().approveShowTranscode(preflightId)
+  })
+
   getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }
 

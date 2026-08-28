@@ -364,6 +364,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
           .join('; ')
         throw new Error(`Incompatible episodes detected: ${blockingReasons}`)
       }
+      const requiresApproval = preflightData.episodes.some((episode: { decisionStatus?: string }) => episode.decisionStatus === 'sample_required')
+      if (requiresApproval && !window.confirm('Video samples require your approval. Review playback in your preferred player, then choose OK to authorize this show.')) return
+      if (requiresApproval) await window.electronAPI.approveShow(preflightData.preflightId)
       const queued = await window.electronAPI.queueShow(preflightData.preflightId)
       setIsSuccess(true)
       setMode('monitoring')
@@ -400,6 +403,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
           .join('; ')
         throw new Error(`Incompatible episodes detected: ${blockingReasons}`)
       }
+      const requiresApproval = preflight.episodes.some((episode: { decisionStatus?: string }) => episode.decisionStatus === 'sample_required')
+      if (requiresApproval && !window.confirm('Video samples require your approval. Review playback in your preferred player, then choose OK to authorize this show.')) return
+      if (requiresApproval) await window.electronAPI.approveShow(preflight.preflightId)
       const queued = await window.electronAPI.queueShow(preflight.preflightId)
       setIsSuccess(true)
       setMode('monitoring')

@@ -98,6 +98,8 @@ export interface ShowTranscodePreflight {
   episodeCount: number
   compatible: boolean
   expiresAt: string
+  userApproved?: boolean
+  approvedAt?: string
   episodes: Array<{
     mediaItemId: number
     label: string
@@ -238,7 +240,7 @@ export class TranscodingService {
       results.push(...chunkResults)
     }
 
-    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.every(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), episodes: results }
+    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.every(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
     return result
@@ -265,7 +267,7 @@ export class TranscodingService {
     if (!preflight.result.compatible) throw new Error('Show transcode preflight has blocking episodes')
     const { getTaskQueueService } = await import('./TaskQueueService')
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
-      episode.compatible && episode.decisionStatus === 'actionable' && episode.recommendedAction !== 'already_optimized'
+      episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) && episode.recommendedAction !== 'already_optimized'
     )
     if (queueableEpisodes.length === 0) {
       throw new Error('No episodes have sufficient evidence for a safe optimization action.')
@@ -863,6 +865,20 @@ export class TranscodingService {
     const maximumOutputBytes = sourceSize - savings
     if (maximumOutputBytes <= 0) throw new Error('Global minimum savings policy exceeds the source file size.')
     return maximumOutputBytes
+  }
+
+  async approveShowTranscode(preflightId: string): Promise<ShowTranscodePreflight> {
+    let preflight = this.showPreflights.get(preflightId)
+    if (!preflight) {
+      const saved = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
+      if (saved) preflight = JSON.parse(saved) as { request: ShowTranscodeRequest; result: ShowTranscodePreflight }
+    }
+    if (!preflight) throw new Error('Show transcode preflight was not found or has expired')
+    if (Date.now() > Date.parse(preflight.result.expiresAt)) throw new Error('Show transcode preflight has expired; run preflight again')
+    const approved = { ...preflight.result, userApproved: true, approvedAt: new Date().toISOString() }
+    this.showPreflights.set(preflightId, { ...preflight, result: approved })
+    await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
+    return approved
   }
 
   private runFFmpeg(
