@@ -152,6 +152,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
+  const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string }>>([])
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<TaskQueueState>({
@@ -163,6 +164,20 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
   const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
+
+  const loadQuarantine = async () => {
+    if (!show.source_id) throw new Error('Show source is unavailable')
+    const files = await window.electronAPI.listShowQuarantine(show.series_title, show.source_id, show.library_id)
+    setQuarantineFiles(files)
+  }
+
+  const purgeQuarantine = async () => {
+    if (quarantineFiles.length === 0 || !window.confirm(`Permanently delete ${quarantineFiles.length} quarantined original${quarantineFiles.length === 1 ? '' : 's'} for this show?`)) return
+    if (!show.source_id) throw new Error('Show source is unavailable')
+    const result = await window.electronAPI.purgeShowQuarantine(show.series_title, show.source_id, show.library_id)
+    setQuarantineFiles([])
+    addToast({ type: 'success', title: 'Quarantine Purged', message: `Deleted ${result.purged} quarantined original${result.purged === 1 ? '' : 's'}.` })
+  }
 
   // Auto-detect available audio languages and provider original language from series metadata / episodes
   useEffect(() => {
@@ -522,6 +537,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
         {/* Content */}
         {mode === 'config' ? (
           <div className="p-5 sm:p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+            <div className="rounded-xl border border-border/40 bg-muted/20 p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0"><div className="text-xs font-bold">Quarantined originals</div><div className="text-[11px] text-muted-foreground">{quarantineFiles.length} retained file{quarantineFiles.length === 1 ? '' : 's'} for this show</div></div>
+              <div className="flex gap-2 shrink-0"><button type="button" onClick={loadQuarantine} className="px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted">List</button><button type="button" onClick={purgeQuarantine} disabled={quarantineFiles.length === 0} className="px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 disabled:opacity-40">Purge</button></div>
+            </div>
             {/* Optimization Mode Selection */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">

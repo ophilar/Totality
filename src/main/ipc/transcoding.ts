@@ -1,5 +1,5 @@
 import { getTranscodingService } from '@main/services/TranscodingService'
-import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema } from '@main/validation/schemas'
+import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, ShowQuarantineSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
@@ -60,6 +60,9 @@ export function registerTranscodingHandlers(): void {
   createValidatedIpcHandler('transcoding:approveShow', QueueShowTranscodeSchema, async (preflightId) => {
     return await getTranscodingService().approveShowTranscode(preflightId)
   })
+
+  createValidatedIpcHandler('transcoding:listShowQuarantine', ShowQuarantineSchema, async (seriesTitle, sourceId, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, libraryId))
+  createValidatedIpcHandler('transcoding:purgeShowQuarantine', ShowQuarantineSchema, async (seriesTitle, sourceId, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, libraryId))
 
   getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }

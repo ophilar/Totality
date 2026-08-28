@@ -573,6 +573,12 @@ export const PreflightShowTranscodeSchema = z.tuple([
 
 export const QueueShowTranscodeSchema = z.tuple([z.string().min(1)])
 
+export const ShowQuarantineSchema = z.tuple([
+  z.string().min(1),
+  z.string().min(1),
+  z.string().min(1).optional()
+])
+
 function preprocessFilterKeys(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input
   const clone: Record<string, unknown> = { ...input }

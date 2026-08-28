@@ -91,6 +91,14 @@ export interface ShowTranscodeRequest {
   options: TranscodeOptions
 }
 
+export interface QuarantinedShowFile {
+  mediaItemId: number
+  label: string
+  path: string
+  size: number
+  modifiedAt: string
+}
+
 export interface ShowTranscodePreflight {
   preflightId: string
   batchId: string
@@ -915,6 +923,38 @@ export class TranscodingService {
     this.showPreflights.set(preflightId, { ...preflight, result: approved })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ ...preflight, result: approved }))
     return approved
+  }
+
+  async listShowQuarantine(seriesTitle: string, sourceId: string, libraryId?: string): Promise<QuarantinedShowFile[]> {
+    const episodes = await getDatabase().tvShows.getEpisodes(seriesTitle, sourceId, undefined, libraryId)
+    const files: QuarantinedShowFile[] = []
+    for (const episode of episodes) {
+      if (!episode.id || !episode.file_path) continue
+      const extension = path.extname(episode.file_path)
+      const base = path.basename(episode.file_path, extension)
+      const directory = path.dirname(episode.file_path)
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.startsWith(`${base}.quarantine-`) || !entry.name.endsWith(extension)) continue
+        const quarantinePath = path.join(directory, entry.name)
+        const stat = await fs.stat(quarantinePath)
+        files.push({ mediaItemId: episode.id, label: `${seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`, path: quarantinePath, size: stat.size, modifiedAt: new Date(stat.mtimeMs).toISOString() })
+      }
+    }
+    return files
+  }
+
+  async purgeShowQuarantine(seriesTitle: string, sourceId: string, libraryId?: string): Promise<{ purged: number }> {
+    const files = await this.listShowQuarantine(seriesTitle, sourceId, libraryId)
+    const journals = await getDatabase().config.getSettingsByPrefix('transcoding.activation.')
+    const journalPaths = new Set(Object.values(journals).flatMap(value => {
+      const journal = JSON.parse(value) as { quarantinePath?: string }
+      return journal.quarantinePath ? [journal.quarantinePath] : []
+    }))
+    for (const file of files) {
+      if (journalPaths.has(file.path)) throw new Error(`Cannot purge ${file.path}; it is referenced by an unresolved activation journal`)
+    }
+    for (const file of files) await fs.unlink(file.path)
+    return { purged: files.length }
   }
 
   private runFFmpeg(
