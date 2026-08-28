@@ -20,6 +20,7 @@ const mockDbInstance = {
   isInitialized: true,
   config: {
     getSetting: vi.fn().mockResolvedValue(null),
+    getSettingsByPrefix: vi.fn().mockResolvedValue({}),
     setSetting: vi.fn().mockResolvedValue(undefined),
     deleteSetting: vi.fn().mockResolvedValue(undefined)
   },

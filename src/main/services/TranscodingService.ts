@@ -311,6 +311,32 @@ export class TranscodingService {
     }
 
     getLoggingService().debug('[TranscodingService]', 'FFmpeg-only transcoding paths initialized')
+    await this.recoverActivationJournals()
+  }
+
+  private async recoverActivationJournals(): Promise<void> {
+    const journals = await getDatabase().config.getSettingsByPrefix('transcoding.activation.')
+    for (const [key, value] of Object.entries(journals)) {
+      const journal = JSON.parse(value) as { mediaItemId: number; phase: string; inputPath: string; targetPath?: string; quarantinePath?: string }
+      if (!journal.mediaItemId || !journal.phase || !journal.inputPath) throw new Error(`Invalid transcoding activation journal: ${key}`)
+      const exists = async (filePath: string | undefined): Promise<boolean> => {
+        if (!filePath) return false
+        try { await fs.access(filePath); return true } catch { return false }
+      }
+      const inputExists = await exists(journal.inputPath)
+      const targetExists = await exists(journal.targetPath)
+      const quarantineExists = await exists(journal.quarantinePath)
+      if (journal.phase === 'source_quarantined' && !targetExists && quarantineExists && !inputExists) {
+        await fs.rename(journal.quarantinePath!, journal.inputPath)
+        await getDatabase().config.deleteSetting(key)
+        continue
+      }
+      if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined') && targetExists) {
+        await getDatabase().config.deleteSetting(key)
+        continue
+      }
+      throw new Error(`Unresolved transcoding activation journal for media item ${journal.mediaItemId}; manual recovery is required`)
+    }
   }
 
   /**
