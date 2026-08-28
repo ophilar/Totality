@@ -365,7 +365,7 @@ describe('TranscodingService', () => {
 
       expect(preflight.compatible).toBe(true)
       expect(preflight.episodes.length).toBe(1)
-      expect(preflight.episodes[0].recommendedAction).toBe('stream_pruning')
+      expect(preflight.episodes[0].recommendedAction).toBe('already_optimized')
       expect(preflight.episodes[0].sourceTier).toBe('WEB-DL')
       expect(preflight.episodes[0].adviceReason).toBeDefined()
     })
