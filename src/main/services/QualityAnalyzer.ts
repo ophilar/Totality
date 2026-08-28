@@ -468,10 +468,10 @@ export class QualityAnalyzer {
       )
     }
 
-    if (storageDebtBytes > 2 * 1024 * 1024 * 1024) { // > 2GB debt
+    if (storageDebtBytes != null && storageDebtBytes > 2 * 1024 * 1024 * 1024) { // > 2GB debt
       const debtGb = (storageDebtBytes / (1024 * 1024 * 1024)).toFixed(1)
       issues.push(`Bloated file: ${debtGb} GB potential savings via modern codec`)
-    } else if (efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
+    } else if (efficiencyScore != null && efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
       issues.push(`Low efficiency score (${efficiencyScore}%): bitrate is high for this tier`)
     }
 
@@ -516,6 +516,9 @@ export class QualityAnalyzer {
       audio_score: audioTierScore,
       efficiency_score: efficiencyScore,
       storage_debt_bytes: storageDebtBytes,
+      evidence_status: efficiencyScore == null ? 'insufficient' : 'measured',
+      confidence: efficiencyScore == null ? 'none' : 'high',
+      savings_basis: storageDebtBytes != null && storageDebtBytes > 0 ? 'video_sample_encode' : 'insufficient_data',
       is_low_quality: isLowQuality,
       needs_upgrade: needsUpgrade,
       issues: JSON.stringify(issues),
@@ -530,9 +533,9 @@ export class QualityAnalyzer {
    * Grants allowances for high-value features (Lossless Audio, HDR, 10-bit).
    * Penalizes over-encoding (bloat) beyond visually transparent thresholds.
    */
-  private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number {
-    const bitrate = item.video_bitrate || 0
-    if (bitrate === 0) return 0
+  private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number | null {
+    const bitrate = item.video_bitrate
+    if (bitrate == null || bitrate <= 0 || item.duration == null || item.duration <= 0 || !item.video_codec) return null
 
     const efficiencyMult = this.getCodecEfficiency(item.video_codec || '')
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
@@ -583,8 +586,8 @@ export class QualityAnalyzer {
    * Identifies potential video-stream savings against the configured target.
    * Container, audio, subtitle, and attachment bytes are intentionally excluded.
    */
-  private calculateStorageDebt(item: MediaItem, tier: QualityTier): number {
-    if (!item.duration || !item.video_bitrate || item.video_bitrate <= 0) return 0
+  private calculateStorageDebt(item: MediaItem, tier: QualityTier): number | null {
+    if (item.duration == null || item.duration <= 0 || item.video_bitrate == null || item.video_bitrate <= 0) return null
 
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
 
