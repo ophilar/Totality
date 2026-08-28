@@ -128,8 +128,8 @@ export const EpisodeRow = memo(({
           </div>
           <div className="flex gap-4 mt-2 text-sm text-muted-foreground font-mono">
             <span>{episode.resolution}</span>
-            <span>{((episode.video_bitrate ?? 0) / 1000).toFixed(1)} Mbps</span>
-            <span>{episode.audio_channels}.0 Audio</span>
+            <span>{episode.video_bitrate == null ? 'Bitrate unavailable' : `${(episode.video_bitrate / 1000).toFixed(1)} Mbps`}</span>
+            <span>{episode.audio_channels == null ? 'Audio channels unavailable' : `${episode.audio_channels}.0 Audio`}</span>
             {episode.file_size && (
               <span>
                 {(() => {

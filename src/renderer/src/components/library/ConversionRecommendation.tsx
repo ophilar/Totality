@@ -4,7 +4,27 @@ import { TranscodeModal } from '@/components/library/TranscodeModal'
 import type { MediaItem } from '@/components/library/types'
 import type { OptimizationDecision, OptimizationDecisionMechanism } from '@main/services/OptimizationDecisionService'
 
-const formatBytes = (value: number | null) => value == null ? 'Estimate unavailable' : value < 1024 ** 3 ? `${Math.round(value / 1024 ** 2)} MB` : `${(value / 1024 ** 3).toFixed(1)} GB`
+const formatBytes = (value: number | null) => {
+  if (value == null) return 'Estimate unavailable'
+  if (value < 1024) return `${Math.round(value)} B`
+  if (value < 1024 ** 2) return `${Math.round(value / 1024)} KB`
+  return value < 1024 ** 3 ? `${Math.round(value / 1024 ** 2)} MB` : `${(value / 1024 ** 3).toFixed(1)} GB`
+}
+
+type EvidenceKind = 'measured' | 'estimated' | 'insufficient'
+type EvidenceMechanism = OptimizationDecisionMechanism & { evidence?: EvidenceKind }
+
+const getEvidenceKind = (mechanism: EvidenceMechanism): EvidenceKind => {
+  if (mechanism.evidence) return mechanism.evidence
+  return mechanism.estimatedSavingsBytes != null && Number.isFinite(mechanism.estimatedSavingsBytes)
+    ? 'estimated'
+    : 'insufficient'
+}
+
+const evidenceLabel = (mechanism: EvidenceMechanism) => {
+  const evidence = getEvidenceKind(mechanism)
+  return evidence === 'measured' ? 'Measured' : evidence === 'estimated' ? 'Estimated savings' : 'Insufficient evidence'
+}
 
 function MechanismRow({ label, mechanism, action, onAction }: { label: string; mechanism: OptimizationDecisionMechanism; action?: string; onAction?: () => void }) {
   return <div className="flex items-center gap-3 border-t border-border/30 py-2 first:border-t-0">
@@ -12,7 +32,7 @@ function MechanismRow({ label, mechanism, action, onAction }: { label: string; m
       <div className="font-medium">{label}</div>
       <div className="text-muted-foreground">{mechanism.reason}</div>
     </div>
-    <span className="shrink-0 text-muted-foreground">{formatBytes(mechanism.estimatedSavingsBytes)}</span>
+    <span className="shrink-0 text-muted-foreground" title={evidenceLabel(mechanism)}>{mechanism.estimatedSavingsBytes == null ? evidenceLabel(mechanism) : `${evidenceLabel(mechanism)} · ${formatBytes(mechanism.estimatedSavingsBytes)}`}</span>
     {action && onAction && <button onClick={onAction} className="shrink-0 rounded bg-primary px-2 py-1 text-primary-foreground">{action}</button>}
   </div>
 }
@@ -59,8 +79,9 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
   if (error) return <div className="flex items-center gap-2 p-3 text-destructive"><AlertCircle className="h-4 w-4" />{error}</div>
   if (!decision) return null
 
-  const removeTracks = decision.trackRemoval.status === 'executable'
-  const transcode = decision.audioTranscode.status === 'executable' || decision.videoTranscode.status === 'executable'
+  const canExecute = (mechanism: OptimizationDecisionMechanism) => mechanism.status === 'executable' && mechanism.estimatedSavingsBytes != null && mechanism.estimatedSavingsBytes > 0
+  const removeTracks = canExecute(decision.trackRemoval)
+  const transcode = canExecute(decision.audioTranscode) || canExecute(decision.videoTranscode)
   const requestRemux = async () => {
     setRemuxing(true)
     setRemuxError(null)
@@ -78,8 +99,8 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
     {remuxError && <div className="mb-2 text-destructive">{remuxError}</div>}
     <div className="mb-2 flex items-center gap-2 font-semibold text-primary"><Zap className="h-3.5 w-3.5" />Disk optimization</div>
     <MechanismRow label="Remove audio tracks" mechanism={decision.trackRemoval} action={removeTracks ? (remuxing ? 'Working' : 'Remove audio tracks') : undefined} onAction={requestRemux} />
-    <MechanismRow label="Transcode audio" mechanism={decision.audioTranscode} action={decision.primaryAction === 'transcode-audio' ? 'Transcode audio' : undefined} onAction={() => setShowTranscodeModal(true)} />
-    <MechanismRow label="Transcode video" mechanism={decision.videoTranscode} action={decision.primaryAction === 'transcode-video' ? 'Transcode video' : undefined} onAction={() => setShowTranscodeModal(true)} />
+    <MechanismRow label="Transcode audio" mechanism={decision.audioTranscode} action={decision.primaryAction === 'transcode-audio' && canExecute(decision.audioTranscode) ? 'Transcode audio' : undefined} onAction={() => setShowTranscodeModal(true)} />
+    <MechanismRow label="Transcode video" mechanism={decision.videoTranscode} action={decision.primaryAction === 'transcode-video' && canExecute(decision.videoTranscode) ? 'Transcode video' : undefined} onAction={() => setShowTranscodeModal(true)} />
     {!compact && <div className="mt-3 border-t border-border/30 pt-3">
       <div className="mb-1 font-medium">Audio track analysis</div>
       <div className="space-y-1 text-muted-foreground">
