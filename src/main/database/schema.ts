@@ -217,9 +217,9 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
-  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
-  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
-  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL,
@@ -275,9 +275,9 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
-  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
-  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
-  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
   total_size INTEGER,
 
   created_at TEXT NOT NULL,
@@ -498,9 +498,9 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
-  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
-  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
-  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
+  evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
 
   -- Quality flags
   needs_upgrade INTEGER NOT NULL,
