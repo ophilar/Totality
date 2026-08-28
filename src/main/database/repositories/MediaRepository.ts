@@ -44,17 +44,17 @@ interface MediaAnalysisStats {
 }
 
 interface VersionQualityUpdate {
-  efficiency_score?: number
-  storage_debt_bytes?: number
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
   quality_tier?: string
   tier_quality?: string
-  tier_score?: number
-  bitrate_tier_score?: number
-  audio_tier_score?: number
-  overall_score?: number
-  resolution_score?: number
-  bitrate_score?: number
-  audio_score?: number
+  tier_score?: number | null
+  bitrate_tier_score?: number | null
+  audio_tier_score?: number | null
+  overall_score?: number | null
+  resolution_score?: number | null
+  bitrate_score?: number | null
+  audio_score?: number | null
   needs_upgrade?: boolean | number
   is_low_quality?: boolean | number
   issues?: string
@@ -1087,10 +1087,10 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         qualityTier: score.quality_tier,
         tierQuality: score.tier_quality,
         tierScore: score.tier_score,
-        bitrateTierScore: score.bitrate_tier_score || 0,
-        audioTierScore: score.audio_tier_score || 0,
-        efficiencyScore: score.efficiency_score || 0,
-        storageDebtBytes: score.storage_debt_bytes || 0,
+        bitrateTierScore: score.bitrate_tier_score,
+        audioTierScore: score.audio_tier_score,
+        efficiencyScore: score.efficiency_score,
+        storageDebtBytes: score.storage_debt_bytes,
         updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(schema.mediaItemVersions.id, id))
@@ -1320,15 +1320,18 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         mediaItemId: score.media_item_id!,
         qualityTier: score.quality_tier || 'SD',
         tierQuality: score.tier_quality || 'MEDIUM',
-        tierScore: score.tier_score || 0,
-        bitrateTierScore: score.bitrate_tier_score || 0,
-        audioTierScore: score.audio_tier_score || 0,
-        overallScore: score.overall_score || 0,
-        resolutionScore: score.resolution_score || 0,
-        bitrateScore: score.bitrate_score || 0,
-        audioScore: score.audio_score || 0,
-        efficiencyScore: score.efficiency_score || 0,
-        storageDebtBytes: score.storage_debt_bytes || 0,
+        tierScore: score.tier_score,
+        bitrateTierScore: score.bitrate_tier_score,
+        audioTierScore: score.audio_tier_score,
+        overallScore: score.overall_score,
+        resolutionScore: score.resolution_score,
+        bitrateScore: score.bitrate_score,
+        audioScore: score.audio_score,
+        efficiencyScore: score.efficiency_score,
+        storageDebtBytes: score.storage_debt_bytes,
+        evidenceStatus: score.evidence_status,
+        confidence: score.confidence,
+        savingsBasis: score.savings_basis,
         isLowQuality: score.is_low_quality ? 1 : 0,
         needsUpgrade: score.needs_upgrade ? 1 : 0,
         issues: Array.isArray(score.issues) ? JSON.stringify(score.issues) : score.issues || '[]',
@@ -1349,6 +1352,9 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           audioScore: score.audio_score,
           efficiencyScore: score.efficiency_score,
           storageDebtBytes: score.storage_debt_bytes,
+          evidenceStatus: score.evidence_status,
+          confidence: score.confidence,
+          savingsBasis: score.savings_basis,
           isLowQuality: score.is_low_quality ? 1 : 0,
           needsUpgrade: score.needs_upgrade ? 1 : 0,
           issues: Array.isArray(score.issues) ? JSON.stringify(score.issues) : score.issues || '[]',

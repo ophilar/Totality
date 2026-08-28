@@ -140,6 +140,14 @@ export enum MediaItemType {
   Episode = 'episode'
 }
 
+export type EvidenceStatus = 'measured' | 'estimated' | 'insufficient'
+export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none'
+export type SavingsBasis =
+  | 'audio_stream_removal'
+  | 'audio_transcode_model'
+  | 'video_sample_encode'
+  | 'insufficient_data'
+
 export interface MediaItem {
   id?: number
 
@@ -222,13 +230,16 @@ export interface MediaItem {
   // Quality scores (denormalized for fast access)
   quality_tier?: string
   tier_quality?: string
-  tier_score?: number
-  overall_score?: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
+  tier_score?: number | null
+  overall_score?: number | null
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
   needs_upgrade?: boolean
-  bitrate_tier_score?: number
-  audio_tier_score?: number
+  bitrate_tier_score?: number | null
+  audio_tier_score?: number | null
   issues?: string
 
   // Timestamps
@@ -309,19 +320,22 @@ export interface QualityScore {
   // Tier-based scoring
   quality_tier: 'SD' | '720p' | '1080p' | '4K'
   tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
-  tier_score: number // 0-100 score within tier
-  bitrate_tier_score: number // 0-100 bitrate score for tier
-  audio_tier_score: number // 0-100 audio score for tier
+  tier_score: number | null // 0-100 score within tier
+  bitrate_tier_score: number | null // 0-100 bitrate score for tier
+  audio_tier_score: number | null // 0-100 audio score for tier
 
   // Legacy scores (added back for compatibility)
-  overall_score: number
-  resolution_score: number
-  bitrate_score: number
-  audio_score: number
+  overall_score: number | null
+  resolution_score: number | null
+  bitrate_score: number | null
+  audio_score: number | null
 
   // Efficiency metrics
-  efficiency_score: number // 0-100 score (BPP based)
-  storage_debt_bytes: number // How many bytes are "wasted" compared to HEVC target
+  efficiency_score: number | null // 0-100 score (BPP based)
+  storage_debt_bytes: number | null // How many bytes are "wasted" compared to HEVC target
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
   needs_upgrade: boolean // Maps to tier_quality === 'LOW'
@@ -359,8 +373,11 @@ export interface SeriesCompleteness {
   missing_episodes: string // JSON array of MissingEpisode
 
   completeness_percentage: number
-  efficiency_score?: number
-  storage_debt_bytes?: number
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
   total_size?: number
 
   // TMDB metadata
@@ -469,6 +486,9 @@ export interface TVShowSummary {
   user_fixed_match?: number | boolean | null
   efficiency_score?: number | null
   storage_debt_bytes?: number | null
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
   total_size?: number | null
   current_episodes?: number
   total_recoverable_bytes?: number
@@ -653,14 +673,17 @@ export interface MusicQualityScore {
 
   quality_tier: MusicQualityTier
   tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
-  tier_score: number
+  tier_score: number | null
 
-  codec_score: number
-  bitrate_score: number
+  codec_score: number | null
+  bitrate_score: number | null
 
   // Efficiency metrics
-  efficiency_score?: number
-  storage_debt_bytes?: number
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
 
   needs_upgrade: boolean
 

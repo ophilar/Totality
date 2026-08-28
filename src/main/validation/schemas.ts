@@ -32,6 +32,15 @@ export const QualityTierSchema = z.enum(['SD', '720p', '1080p', '4K'])
  */
 export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
 
+export const EvidenceStatusSchema = z.enum(['measured', 'estimated', 'insufficient'])
+export const EvidenceConfidenceSchema = z.enum(['high', 'medium', 'low', 'none'])
+export const SavingsBasisSchema = z.enum([
+  'audio_stream_removal',
+  'audio_transcode_model',
+  'video_sample_encode',
+  'insufficient_data',
+])
+
 /**
  * Positive integer (for IDs)
  */
@@ -368,18 +377,21 @@ export const MediaItemSchema = z.object({
 export const QualityScoreSchema = z.object({
   id: z.number().int().positive().optional(),
   media_item_id: z.number().int().positive(),
-  overall_score: z.number().min(0).max(100),
+  overall_score: z.number().min(0).max(100).optional().nullable(),
   needs_upgrade: z.boolean(),
   quality_tier: QualityTierSchema,
   tier_quality: TierQualitySchema.optional(),
-  tier_score: z.number().min(0).max(100).optional(),
-  bitrate_tier_score: z.number().min(0).max(100).optional(),
-  audio_tier_score: z.number().min(0).max(100).optional(),
-  resolution_score: z.number().min(0).max(100).optional(),
-  bitrate_score: z.number().min(0).max(100).optional(),
-  audio_score: z.number().min(0).max(100).optional(),
-  efficiency_score: z.number().min(0).max(100).optional(),
-  storage_debt_bytes: z.number().min(0).optional(),
+  tier_score: z.number().min(0).max(100).optional().nullable(),
+  bitrate_tier_score: z.number().min(0).max(100).optional().nullable(),
+  audio_tier_score: z.number().min(0).max(100).optional().nullable(),
+  resolution_score: z.number().min(0).max(100).optional().nullable(),
+  bitrate_score: z.number().min(0).max(100).optional().nullable(),
+  audio_score: z.number().min(0).max(100).optional().nullable(),
+  efficiency_score: z.number().min(0).max(100).optional().nullable(),
+  storage_debt_bytes: z.number().min(0).optional().nullable(),
+  evidence_status: EvidenceStatusSchema.optional(),
+  confidence: EvidenceConfidenceSchema.optional(),
+  savings_basis: SavingsBasisSchema.optional(),
   is_low_quality: z.boolean().optional(),
   issues: z.string().optional().nullable(),
 })

@@ -30,6 +30,9 @@ export interface OptimizationDecisionMechanism {
   status: OptimizationMechanismStatus
   estimatedSavingsBytes: number | null
   reason: string
+  evidence_status: 'measured' | 'estimated' | 'insufficient'
+  confidence: 'high' | 'medium' | 'low' | 'none'
+  savings_basis: 'audio-track-bitrates' | 'provided-audio-analysis' | 'video-storage-debt' | 'none' | 'unavailable'
 }
 
 export interface OptimizationDecisionTrackRemoval extends OptimizationDecisionMechanism {
@@ -38,7 +41,6 @@ export interface OptimizationDecisionTrackRemoval extends OptimizationDecisionMe
   reviewRequiredTrackIndexes: number[]
   tracks: OptimizationDecisionAudioTrack[]
   originalLanguage: string | null
-  confidence: 'high' | 'none'
   evidenceSources: string[]
 }
 
@@ -49,21 +51,21 @@ export interface OptimizationDecision {
   videoTranscode: OptimizationDecisionMechanism
 }
 
-const nonNegative = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? null : Math.max(0, value)
+const nonNegative = (value: number | null | undefined) => value == null || !Number.isFinite(value) || value < 0 ? null : value
 
 export function buildOptimizationDecision(input: OptimizationDecisionInput): OptimizationDecision {
   const languageDecision = new LanguageDecisionService().decide(input.originalLanguage, input.audioTracks)
+  const removableTracks = input.audioTracks.filter(track => languageDecision.removableTrackIndexes.includes(track.index))
+  const hasMeasuredTrackSavings = input.durationSeconds != null && input.durationSeconds > 0 &&
+    removableTracks.every(track => Number.isFinite(track.bitrate) && track.bitrate != null && track.bitrate > 0)
   const trackRemovalStatus: OptimizationMechanismStatus = languageDecision.status === 'review-required'
     ? 'review-required'
-    : languageDecision.removableTrackIndexes.length > 0 ? 'executable' : 'blocked'
-  const trackSavings = trackRemovalStatus === 'executable' && input.durationSeconds != null
-    ? input.audioTracks
-        .filter(track => languageDecision.removableTrackIndexes.includes(track.index))
-        .reduce((sum, track) => {
-          const bitrateKbps = track.bitrate && track.bitrate > 0 ? track.bitrate : AudioCodecRanker.estimateBitrate(track.codec, track.channels)
-          return sum + Math.max(0, (bitrateKbps * 1000 / 8) * input.durationSeconds!)
-        }, 0)
+    : removableTracks.length === 0 ? 'blocked'
+    : hasMeasuredTrackSavings ? 'executable' : 'unavailable'
+  const trackSavings = trackRemovalStatus === 'executable'
+    ? removableTracks.reduce((sum, track) => sum + ((track.bitrate! * 1000 / 8) * input.durationSeconds!), 0)
     : null
+  const trackRemovalEvidenceStatus: 'measured' | 'insufficient' = languageDecision.confidence === 'high' && (removableTracks.length === 0 || hasMeasuredTrackSavings) ? 'measured' : 'insufficient'
 
   const trackRemoval: OptimizationDecisionTrackRemoval = {
     status: trackRemovalStatus,
@@ -74,13 +76,18 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     reviewRequiredTrackIndexes: languageDecision.reviewRequiredTrackIndexes,
     tracks: input.audioTracks,
     originalLanguage: languageDecision.originalLanguage,
-    confidence: languageDecision.confidence,
+    evidence_status: trackRemovalEvidenceStatus,
+    confidence: trackRemovalEvidenceStatus === 'measured' ? 'high' : 'none',
+    savings_basis: trackSavings != null ? 'audio-track-bitrates' : trackRemovalEvidenceStatus === 'measured' ? 'none' : 'unavailable',
     evidenceSources: languageDecision.evidenceSources,
   }
-  const computedAudioSavings = input.durationSeconds != null && input.audioTracks.length > 0
-    ? input.audioTracks.reduce((sum, track) => {
+  const audioTracksEligibleForTranscode = input.audioTracks.filter(track => !track.hasObjectAudio && !track.isCommentary && !track.isAudioDescription && !track.isAccessibility)
+  const hasMeasuredAudioEvidence = input.durationSeconds != null && input.durationSeconds > 0 && audioTracksEligibleForTranscode.length > 0 &&
+    audioTracksEligibleForTranscode.every(track => track.codec.trim().length > 0 && Number.isFinite(track.channels) && track.channels > 0 && Number.isFinite(track.bitrate) && track.bitrate != null && track.bitrate > 0)
+  const computedAudioSavings = hasMeasuredAudioEvidence
+    ? audioTracksEligibleForTranscode.reduce((sum, track) => {
         const tier = AudioCodecRanker.getTier(track.codec, track.hasObjectAudio)
-        const currentBitrateKbps = track.bitrate && track.bitrate > 0 ? track.bitrate : AudioCodecRanker.estimateBitrate(track.codec, track.channels)
+        const currentBitrateKbps = track.bitrate!
         const targetBitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
         if (currentBitrateKbps > targetBitrateKbps && (tier >= AudioCodecRanker.TIER_LOSSLESS || currentBitrateKbps >= APP_CONFIG.transcoding.audioHeavyBitrateThresholdKbps)) {
           const savingsPerSecBytes = ((currentBitrateKbps - targetBitrateKbps) * 1000) / 8
@@ -90,14 +97,26 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
       }, 0)
     : null
 
-  const audioSavings = nonNegative(input.audioTranscodeSavingsBytes ?? (computedAudioSavings && computedAudioSavings > 0 ? computedAudioSavings : null))
+  const audioSavings = hasMeasuredAudioEvidence
+    ? nonNegative(input.audioTranscodeSavingsBytes ?? (computedAudioSavings && computedAudioSavings > 0 ? computedAudioSavings : null))
+    : null
   const videoSavings = nonNegative(input.videoStorageDebtBytes)
-  const audioTranscode: OptimizationDecisionMechanism = { 
-    status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable', 
-    estimatedSavingsBytes: audioSavings, 
-    reason: audioSavings != null && audioSavings > 0 ? 'Transcoding high-bitrate or lossless audio to efficient surround format will save space' : 'Audio streams are already efficient' 
+  const audioTranscode: OptimizationDecisionMechanism = {
+    status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable',
+    estimatedSavingsBytes: audioSavings,
+    reason: !hasMeasuredAudioEvidence ? 'Measured codec, channel, bitrate, and duration evidence is required for audio transcoding' : audioSavings != null && audioSavings > 0 ? 'Measured audio streams exceed the configured target bitrate' : 'Measured audio streams are already efficient',
+    evidence_status: hasMeasuredAudioEvidence ? 'estimated' : 'insufficient',
+    confidence: hasMeasuredAudioEvidence ? 'medium' : 'none',
+    savings_basis: !hasMeasuredAudioEvidence ? 'unavailable' : input.audioTranscodeSavingsBytes != null ? 'provided-audio-analysis' : audioSavings != null ? 'audio-track-bitrates' : 'none',
   }
-  const videoTranscode: OptimizationDecisionMechanism = { status: videoSavings != null && videoSavings > 0 ? 'executable' : 'unavailable', estimatedSavingsBytes: videoSavings, reason: videoSavings != null && videoSavings > 0 ? 'Existing video storage analysis found recoverable space' : 'Video transcode estimate is unavailable' }
+  const videoTranscode: OptimizationDecisionMechanism = {
+    status: videoSavings != null && videoSavings > 0 ? 'executable' : 'unavailable',
+    estimatedSavingsBytes: videoSavings,
+    reason: videoSavings != null && videoSavings > 0 ? 'Estimated video-stream analysis found recoverable space' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Measured video-stream savings evidence is unavailable',
+    evidence_status: videoSavings == null ? 'insufficient' : 'estimated',
+    confidence: videoSavings == null ? 'none' : 'medium',
+    savings_basis: videoSavings == null ? 'unavailable' : videoSavings > 0 ? 'video-storage-debt' : 'none',
+  }
   const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : videoTranscode.status === 'executable' ? 'transcode-video' : 'no-action'
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }
 }

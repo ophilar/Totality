@@ -204,19 +204,22 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   -- Tier-based scoring
   quality_tier TEXT NOT NULL DEFAULT 'SD',
   tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
-  tier_score INTEGER NOT NULL,
-  bitrate_tier_score INTEGER NOT NULL,
-  audio_tier_score INTEGER NOT NULL,
+  tier_score INTEGER,
+  bitrate_tier_score INTEGER,
+  audio_tier_score INTEGER,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
-  overall_score INTEGER NOT NULL,
-  resolution_score INTEGER NOT NULL,
-  bitrate_score INTEGER NOT NULL,
-  audio_score INTEGER NOT NULL,
+  overall_score INTEGER,
+  resolution_score INTEGER,
+  bitrate_score INTEGER,
+  audio_score INTEGER,
 
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
+  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL,
@@ -272,6 +275,9 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
+  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
   total_size INTEGER,
 
   created_at TEXT NOT NULL,
@@ -483,15 +489,18 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
   -- Quality tier: 'LOSSY_LOW', 'LOSSY_MID', 'LOSSY_HIGH', 'LOSSLESS', 'HI_RES'
   quality_tier TEXT NOT NULL DEFAULT 'LOSSY_MID',
   tier_quality TEXT NOT NULL DEFAULT 'MEDIUM', -- 'LOW', 'MEDIUM', 'HIGH' within tier
-  tier_score INTEGER NOT NULL DEFAULT 0, -- 0-100 score within tier
+  tier_score INTEGER, -- 0-100 score within tier
 
   -- Component scores
-  codec_score INTEGER NOT NULL,
-  bitrate_score INTEGER NOT NULL,
+  codec_score INTEGER,
+  bitrate_score INTEGER,
 
   -- Efficiency metrics
   efficiency_score INTEGER,
   storage_debt_bytes INTEGER,
+  evidence_status TEXT NOT NULL DEFAULT 'insufficient' CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
+  confidence TEXT NOT NULL DEFAULT 'none' CHECK(confidence IN ('high', 'medium', 'low', 'none')),
+  savings_basis TEXT NOT NULL DEFAULT 'insufficient_data' CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
 
   -- Quality flags
   needs_upgrade INTEGER NOT NULL,

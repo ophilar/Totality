@@ -25,7 +25,7 @@ export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: 
   const badges: Array<{ label: string; coloredClass: string; icon?: LucideIcon }> = []
 
   // Efficiency "Trash" badge - show if score is below threshold (60%)
-  if (showEfficiency && item.efficiency_score !== undefined && item.efficiency_score > 0 && item.efficiency_score < 60) {
+  if (showEfficiency && item.efficiency_score != null && item.efficiency_score > 0 && item.efficiency_score < 60) {
     badges.push({ 
       label: 'Bloated', 
       coloredClass: 'bg-orange-600/90 text-white',

@@ -78,6 +78,28 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(analyzer.calculateDubBloatBytes(item)).toBe(0)
   })
 
+  it('withholds a video transcode recommendation when the video stream bitrate is unknown', () => {
+    const advice = analyzer.getOptimizationAdvice({
+      id: 10,
+      source_id: 'src1',
+      plex_id: 'p10',
+      title: 'Unmeasured remux',
+      type: 'movie',
+      file_path: '/media/Unmeasured.Remux.AVC.mkv',
+      file_size: 20 * 1024 * 1024 * 1024,
+      duration: 2 * 60 * 60 * 1000,
+      resolution: '1080p',
+      video_codec: 'h264',
+      video_bitrate: null,
+    })
+
+    expect(advice.action).toBe('already_optimized')
+    expect(advice.evidence_status).toBe('insufficient')
+    expect(advice.confidence).toBe('none')
+    expect(advice.savings_basis).toBe('unavailable')
+    expect(advice.estimatedSavingsBytes).toBe(null)
+  })
+
   it('recommends video_transcode for high-bitrate AVC Remux source', () => {
     const item: MediaItem = {
       id: 1,
@@ -101,7 +123,10 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('video_transcode')
     expect(advice.sourceTier).toBe('Remux')
     expect(advice.reason).toContain('High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.')
-    expect(advice.estimatedSavingsBytes).toBeGreaterThan(0)
+    expect(advice.evidence_status).toBe('estimated')
+    expect(advice.confidence).toBe('medium')
+    expect(advice.savings_basis).toBe('video-stream-bitrate')
+    expect(advice.estimatedSavingsBytes).toBe(11_250_000_000)
   })
 
   it('recommends stream_pruning for WEB-DL with foreign audio dub bloat (>150MB)', () => {
@@ -133,7 +158,35 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('stream_pruning')
     expect(advice.sourceTier).toBe('WEB-DL')
     expect(advice.reason).toContain('Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended')
-    expect(advice.estimatedSavingsBytes).toBeGreaterThan(150 * 1024 * 1024)
+    expect(advice.evidence_status).toBe('measured')
+    expect(advice.savings_basis).toBe('audio-track-bitrates')
+    expect(advice.estimatedSavingsBytes).toBe(720_000_000)
+  })
+
+  it('withholds stream pruning when a removable audio track has no measured bitrate', () => {
+    const advice = analyzer.getOptimizationAdvice({
+      id: 11,
+      source_id: 'src1',
+      plex_id: 'p11',
+      title: 'Unmeasured dub',
+      type: 'episode',
+      file_path: '/media/Show.1080p.WEB-DL.mkv',
+      duration: 50 * 60 * 1000,
+      resolution: '1080p',
+      video_codec: 'h264',
+      video_bitrate: 6000,
+      original_language: 'en',
+      audio_tracks: JSON.stringify([
+        { index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en' },
+        { index: 2, codec: 'eac3', channels: 6, language: 'de' },
+      ]),
+    })
+
+    expect(advice.action).toBe('already_optimized')
+    expect(advice.evidence_status).toBe('insufficient')
+    expect(advice.confidence).toBe('none')
+    expect(advice.savings_basis).toBe('unavailable')
+    expect(advice.estimatedSavingsBytes).toBe(null)
   })
 
   it('recommends already_optimized for clean WEB-DL with no foreign dubs', () => {

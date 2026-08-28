@@ -61,6 +61,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       user_fixed_match: schema.seriesCompleteness.userFixedMatch,
       efficiency_score: schema.seriesCompleteness.efficiencyScore,
       storage_debt_bytes: schema.seriesCompleteness.storageDebtBytes,
+      evidence_status: schema.seriesCompleteness.evidenceStatus,
+      confidence: schema.seriesCompleteness.confidence,
+      savings_basis: schema.seriesCompleteness.savingsBasis,
       total_size: schema.seriesCompleteness.totalSize,
       current_episodes: schema.seriesCompleteness.ownedEpisodes
     })
@@ -149,6 +152,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
       summaries.push({
         ...row,
+        evidence_status: row.evidence_status as TVShowSummary['evidence_status'],
+        confidence: row.confidence as TVShowSummary['confidence'],
+        savings_basis: row.savings_basis as TVShowSummary['savings_basis'],
         poster_url: row.poster_url ?? undefined,
         episode_count: totalCount,
         season_count: row.total_seasons,
@@ -257,6 +263,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       userFixedMatch: data.user_fixed_match ? 1 : 0,
       efficiencyScore: data.efficiency_score ?? null,
       storageDebtBytes: data.storage_debt_bytes ?? null,
+      evidenceStatus: data.evidence_status,
+      confidence: data.confidence,
+      savingsBasis: data.savings_basis,
       totalSize: data.total_size ?? null,
     }
 
@@ -648,8 +657,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       poster_url: r.posterUrl || undefined,
       backdrop_url: r.backdropUrl || undefined,
       status: r.status || undefined,
-      efficiency_score: r.efficiencyScore ?? undefined,
-      storage_debt_bytes: r.storageDebtBytes ?? undefined,
+      efficiency_score: r.efficiencyScore,
+      storage_debt_bytes: r.storageDebtBytes,
+      evidence_status: r.evidenceStatus as SeriesCompleteness['evidence_status'],
+      confidence: r.confidence as SeriesCompleteness['confidence'],
+      savings_basis: r.savingsBasis as SeriesCompleteness['savings_basis'],
       total_size: r.totalSize ?? undefined,
       created_at: r.createdAt,
       updated_at: r.updatedAt

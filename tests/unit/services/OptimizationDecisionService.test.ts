@@ -18,6 +18,9 @@ describe('buildOptimizationDecision', () => {
     expect(result.primaryAction).toBe('remove-audio-tracks')
     expect(result.trackRemoval.status).toBe('executable')
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000)
+    expect(result.trackRemoval.evidence_status).toBe('measured')
+    expect(result.trackRemoval.confidence).toBe('high')
+    expect(result.trackRemoval.savings_basis).toBe('audio-track-bitrates')
     expect(result.audioTranscode.estimatedSavingsBytes).toBe(1_000)
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(2_000)
   })
@@ -35,6 +38,8 @@ describe('buildOptimizationDecision', () => {
     expect(result.trackRemoval.status).toBe('review-required')
     expect(result.primaryAction).toBe('review-language')
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(null)
+    expect(result.trackRemoval.evidence_status).toBe('insufficient')
+    expect(result.trackRemoval.confidence).toBe('none')
   })
 
   it('protects commentary and object-audio tracks from removal', () => {
@@ -71,5 +76,41 @@ describe('buildOptimizationDecision', () => {
     expect(result.audioTranscode.status).toBe('executable')
     expect(result.audioTranscode.estimatedSavingsBytes).toBeGreaterThan(0)
     expect(result.primaryAction).toBe('transcode-audio')
+  })
+
+  it('does not invent audio savings from codec or channel defaults when a stream bitrate is absent', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 50_000_000,
+      durationSeconds: 3600,
+      videoStorageDebtBytes: null,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [
+        { index: 1, language: 'en', codec: 'truehd', channels: 8, isDefault: true, hasObjectAudio: false, reliableTag: true },
+      ],
+    })
+
+    expect(result.audioTranscode.status).toBe('unavailable')
+    expect(result.audioTranscode.evidence_status).toBe('insufficient')
+    expect(result.audioTranscode.confidence).toBe('none')
+    expect(result.audioTranscode.savings_basis).toBe('unavailable')
+    expect(result.audioTranscode.estimatedSavingsBytes).toBe(null)
+  })
+
+  it('marks video transcoding unavailable without an evidenced video savings value', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 50_000_000,
+      durationSeconds: 3600,
+      videoStorageDebtBytes: null,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [],
+    })
+
+    expect(result.videoTranscode.status).toBe('unavailable')
+    expect(result.videoTranscode.evidence_status).toBe('insufficient')
+    expect(result.videoTranscode.confidence).toBe('none')
+    expect(result.videoTranscode.savings_basis).toBe('unavailable')
+    expect(result.videoTranscode.estimatedSavingsBytes).toBe(null)
   })
 })

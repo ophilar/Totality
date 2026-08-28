@@ -68,6 +68,9 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'quality_scores', 'audio_tier_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'quality_scores', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
+  await ensureColumn(db, 'quality_scores', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
+  await ensureColumn(db, 'quality_scores', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
 
   // Media Items
   await ensureColumn(db, 'media_items', 'source_id', "TEXT NOT NULL DEFAULT ''")
@@ -110,6 +113,9 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'series_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'series_identity_key', 'TEXT')
+  await ensureColumn(db, 'series_completeness', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
+  await ensureColumn(db, 'series_completeness', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
+  await ensureColumn(db, 'series_completeness', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
 
   // Movie Collections
   await ensureColumn(db, 'movie_collections', 'source_id', "TEXT NOT NULL DEFAULT ''")
@@ -138,6 +144,9 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'music_quality_scores', 'tier_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'music_quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'music_quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'music_quality_scores', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
+  await ensureColumn(db, 'music_quality_scores', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
+  await ensureColumn(db, 'music_quality_scores', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
 
   // Per-version enhancements
   await ensureColumn(db, 'media_item_versions', 'original_language', 'TEXT')
@@ -161,6 +170,8 @@ export async function runMigrations(db: Client): Promise<void> {
   // Library scans
   await ensureColumn(db, 'library_scans', 'is_enabled', 'INTEGER NOT NULL DEFAULT 1')
   await ensureColumn(db, 'library_scans', 'allow_expanded_matching', 'INTEGER NOT NULL DEFAULT 0')
+
+  await migrateNullableEvidenceScores(db)
 
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
@@ -196,6 +207,191 @@ async function backfillMediaIdentities(db: Client): Promise<void> {
   for (const sql of statements) {
     try { await db.execute(sql) } catch (error) { getLoggingService().warn('[DatabaseMigration]', `Identity backfill skipped: ${getErrorMessage(error)}`) }
   }
+}
+
+const EVIDENCE_COLUMNS = ['evidence_status', 'confidence', 'savings_basis'] as const
+
+async function migrateNullableEvidenceScores(db: Client): Promise<void> {
+  await rebuildQualityScoresForNullableEvidence(db)
+  await rebuildMusicQualityScoresForNullableEvidence(db)
+  await rebuildSeriesCompletenessForNullableEvidence(db)
+  await markLegacyZeroScoresInsufficient(db)
+}
+
+async function hasNotNullColumn(db: Client, table: string, columns: readonly string[]): Promise<boolean> {
+  const result = await db.execute(`PRAGMA table_info(${table})`)
+  return result.rows.some(row => columns.includes(String(row.name)) && Number(row.notnull) === 1)
+}
+
+async function rebuildTableWhenNeeded(
+  db: Client,
+  table: string,
+  nullableColumns: readonly string[],
+  createSql: string,
+  copyColumns: readonly string[],
+  createSupportingObjects: readonly string[],
+): Promise<void> {
+  if (!await hasNotNullColumn(db, table, nullableColumns)) return
+
+  const legacyTable = `${table}_legacy_nullable_evidence`
+  getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so evidence-based numeric fields can be NULL`)
+  await db.execute('BEGIN IMMEDIATE')
+  try {
+    await db.execute(`ALTER TABLE ${table} RENAME TO ${legacyTable}`)
+    await db.execute(createSql)
+    await db.execute(`INSERT INTO ${table} (${copyColumns.join(', ')}) SELECT ${copyColumns.join(', ')} FROM ${legacyTable}`)
+    await db.execute(`DROP TABLE ${legacyTable}`)
+    for (const statement of createSupportingObjects) await db.execute(statement)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
+  }
+}
+
+async function rebuildQualityScoresForNullableEvidence(db: Client): Promise<void> {
+  await rebuildTableWhenNeeded(
+    db,
+    'quality_scores',
+    ['tier_score', 'bitrate_tier_score', 'audio_tier_score', 'overall_score', 'resolution_score', 'bitrate_score', 'audio_score', 'efficiency_score', 'storage_debt_bytes'],
+    `CREATE TABLE quality_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      media_item_id INTEGER NOT NULL UNIQUE,
+      quality_tier TEXT NOT NULL DEFAULT 'SD',
+      tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
+      tier_score INTEGER,
+      bitrate_tier_score INTEGER,
+      audio_tier_score INTEGER,
+      overall_score INTEGER,
+      resolution_score INTEGER,
+      bitrate_score INTEGER,
+      audio_score INTEGER,
+      efficiency_score INTEGER,
+      storage_debt_bytes INTEGER,
+      evidence_status TEXT NOT NULL DEFAULT 'insufficient',
+      confidence TEXT NOT NULL DEFAULT 'none',
+      savings_basis TEXT NOT NULL DEFAULT 'insufficient_data',
+      is_low_quality INTEGER NOT NULL,
+      needs_upgrade INTEGER NOT NULL,
+      issues TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
+    )`,
+    ['id', 'media_item_id', 'quality_tier', 'tier_quality', 'tier_score', 'bitrate_tier_score', 'audio_tier_score', 'overall_score', 'resolution_score', 'bitrate_score', 'audio_score', 'efficiency_score', 'storage_debt_bytes', ...EVIDENCE_COLUMNS, 'is_low_quality', 'needs_upgrade', 'issues', 'created_at', 'updated_at'],
+    [
+      `CREATE TRIGGER IF NOT EXISTS update_quality_scores_timestamp
+       AFTER UPDATE ON quality_scores BEGIN
+         UPDATE quality_scores SET updated_at = datetime('now') WHERE id = NEW.id;
+       END`,
+    ],
+  )
+}
+
+async function rebuildMusicQualityScoresForNullableEvidence(db: Client): Promise<void> {
+  await rebuildTableWhenNeeded(
+    db,
+    'music_quality_scores',
+    ['tier_score', 'codec_score', 'bitrate_score', 'efficiency_score', 'storage_debt_bytes'],
+    `CREATE TABLE music_quality_scores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      album_id INTEGER NOT NULL UNIQUE,
+      quality_tier TEXT NOT NULL DEFAULT 'LOSSY_MID',
+      tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
+      tier_score INTEGER,
+      codec_score INTEGER,
+      bitrate_score INTEGER,
+      efficiency_score INTEGER,
+      storage_debt_bytes INTEGER,
+      evidence_status TEXT NOT NULL DEFAULT 'insufficient',
+      confidence TEXT NOT NULL DEFAULT 'none',
+      savings_basis TEXT NOT NULL DEFAULT 'insufficient_data',
+      needs_upgrade INTEGER NOT NULL,
+      issues TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (album_id) REFERENCES music_albums(id) ON DELETE CASCADE
+    )`,
+    ['id', 'album_id', 'quality_tier', 'tier_quality', 'tier_score', 'codec_score', 'bitrate_score', 'efficiency_score', 'storage_debt_bytes', ...EVIDENCE_COLUMNS, 'needs_upgrade', 'issues', 'created_at', 'updated_at'],
+    [
+      'CREATE INDEX IF NOT EXISTS idx_music_quality_scores_album ON music_quality_scores(album_id)',
+      'CREATE INDEX IF NOT EXISTS idx_music_quality_scores_tier ON music_quality_scores(quality_tier)',
+      'CREATE INDEX IF NOT EXISTS idx_music_quality_scores_upgrade ON music_quality_scores(needs_upgrade)',
+      `CREATE TRIGGER IF NOT EXISTS update_music_quality_scores_timestamp
+       AFTER UPDATE ON music_quality_scores BEGIN
+         UPDATE music_quality_scores SET updated_at = datetime('now') WHERE id = NEW.id;
+       END`,
+    ],
+  )
+}
+
+async function rebuildSeriesCompletenessForNullableEvidence(db: Client): Promise<void> {
+  await rebuildTableWhenNeeded(
+    db,
+    'series_completeness',
+    ['efficiency_score', 'storage_debt_bytes'],
+    `CREATE TABLE series_completeness (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      series_title TEXT NOT NULL,
+      series_identity_key TEXT,
+      source_id TEXT NOT NULL DEFAULT '',
+      library_id TEXT NOT NULL DEFAULT '',
+      total_seasons INTEGER NOT NULL,
+      total_episodes INTEGER NOT NULL,
+      owned_seasons INTEGER NOT NULL,
+      owned_episodes INTEGER NOT NULL,
+      missing_seasons TEXT NOT NULL DEFAULT '[]',
+      missing_episodes TEXT NOT NULL DEFAULT '[]',
+      completeness_percentage REAL NOT NULL,
+      tmdb_id TEXT,
+      tvdb_id TEXT,
+      poster_url TEXT,
+      backdrop_url TEXT,
+      status TEXT,
+      user_fixed_match INTEGER,
+      efficiency_score INTEGER,
+      storage_debt_bytes INTEGER,
+      evidence_status TEXT NOT NULL DEFAULT 'insufficient',
+      confidence TEXT NOT NULL DEFAULT 'none',
+      savings_basis TEXT NOT NULL DEFAULT 'insufficient_data',
+      total_size INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    ['id', 'series_title', 'series_identity_key', 'source_id', 'library_id', 'total_seasons', 'total_episodes', 'owned_seasons', 'owned_episodes', 'missing_seasons', 'missing_episodes', 'completeness_percentage', 'tmdb_id', 'tvdb_id', 'poster_url', 'backdrop_url', 'status', 'user_fixed_match', 'efficiency_score', 'storage_debt_bytes', ...EVIDENCE_COLUMNS, 'total_size', 'created_at', 'updated_at'],
+    [
+      'CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completeness(tmdb_id) WHERE tmdb_id IS NOT NULL',
+      'CREATE INDEX IF NOT EXISTS idx_series_completeness_title ON series_completeness(series_title)',
+      'CREATE INDEX IF NOT EXISTS idx_series_completeness_library ON series_completeness(source_id, library_id)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != \'\'',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != \'\'',
+      'CREATE INDEX IF NOT EXISTS idx_series_completeness_title_pct ON series_completeness(series_title, completeness_percentage)',
+      'CREATE INDEX IF NOT EXISTS idx_series_completeness_incomplete ON series_completeness(completeness_percentage) WHERE tmdb_id IS NOT NULL AND completeness_percentage < 100',
+      `CREATE TRIGGER IF NOT EXISTS update_series_completeness_timestamp
+       AFTER UPDATE ON series_completeness BEGIN
+         UPDATE series_completeness SET updated_at = datetime('now') WHERE id = NEW.id;
+       END`,
+    ],
+  )
+}
+
+async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
+  const updates = [
+    `UPDATE quality_scores
+     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     WHERE tier_score = 0 AND bitrate_tier_score = 0 AND audio_tier_score = 0
+       AND overall_score = 0 AND resolution_score = 0 AND bitrate_score = 0 AND audio_score = 0
+       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+    `UPDATE music_quality_scores
+     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     WHERE tier_score = 0 AND codec_score = 0 AND bitrate_score = 0
+       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+    `UPDATE series_completeness
+     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     WHERE COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+  ]
+  for (const statement of updates) await db.execute(statement)
 }
 
 /**

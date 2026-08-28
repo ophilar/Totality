@@ -10,7 +10,10 @@ export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
   sourceTier: MediaSourceTier
   reason: string
-  estimatedSavingsBytes: number
+  estimatedSavingsBytes: number | null
+  evidence_status: 'measured' | 'estimated' | 'insufficient'
+  confidence: 'high' | 'medium' | 'low' | 'none'
+  savings_basis: 'video-stream-bitrate' | 'audio-track-bitrates' | 'none' | 'unavailable'
 }
 
 /**
@@ -61,7 +64,6 @@ export class QualityAnalyzer {
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
   private bloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS }
   private efficiencyTrashThreshold = APP_CONFIG.quality.minEfficiencyScore
-  private losslessAudioAllowance = APP_CONFIG.quality.losslessAudioAllowance
   private hdrOverheadMultiplier = APP_CONFIG.quality.hdrOverheadMultiplier
   private codecEfficiency = { ...DEFAULT_CODEC_EFFICIENCY }
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
@@ -170,8 +172,7 @@ export class QualityAnalyzer {
       // Load efficiency trash threshold
       this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', 60)
 
-      // Load efficiency allowances
-      this.losslessAudioAllowance = getNum('quality_efficiency_lossless_allowance', 4000)
+      // Load video-only efficiency allowance.
       this.hdrOverheadMultiplier = getNum('quality_efficiency_hdr_overhead', 1.10)
 
       // Load music quality thresholds
@@ -534,14 +535,12 @@ export class QualityAnalyzer {
     if (bitrate === 0) return 0
 
     const efficiencyMult = this.getCodecEfficiency(item.video_codec || '')
-    const isLossless = this.isLosslessAudio(item.audio_codec || '') || (item.audio_tracks?.toLowerCase().includes('truehd') || item.audio_tracks?.toLowerCase().includes('dts-hd'))
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
     const is10Bit = item.color_bit_depth && item.color_bit_depth >= 10
 
-    // Deduct audio allowance from bitrate for analysis (don't penalize high-quality audio)
-    const audioAllowance = isLossless ? this.losslessAudioAllowance : 0
-    // Penalize dubs: bitrates from non-original language tracks are considered pure bloat
-    const analysisBitrate = Math.max(500, bitrate - audioAllowance + this.calculateDubBitrate(item))
+    // Visual efficiency uses the measured video stream only. Audio and subtitle
+    // decisions have separate evidence and must not influence this score.
+    const analysisBitrate = bitrate
 
     const effectiveBitrate = analysisBitrate * efficiencyMult
     const targetKbps = this.efficiencyThresholds[tier]
@@ -581,32 +580,30 @@ export class QualityAnalyzer {
 
   /**
    * Calculate Storage Debt in bytes.
-   * Identifies potential savings if the file were re-encoded to an efficient HIGH quality HEVC target.
-   * Factors in allowances for lossless audio and HDR.
+   * Identifies potential video-stream savings against the configured target.
+   * Container, audio, subtitle, and attachment bytes are intentionally excluded.
    */
   private calculateStorageDebt(item: MediaItem, tier: QualityTier): number {
-    if (!item.file_size || !item.duration) return 0
+    if (!item.duration || !item.video_bitrate || item.video_bitrate <= 0) return 0
 
-    const isLossless = this.isLosslessAudio(item.audio_codec || '') || (item.audio_tracks?.toLowerCase().includes('truehd') || item.audio_tracks?.toLowerCase().includes('dts-hd'))
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
 
-    // Efficient target for this tier
+    // Efficient video target for this tier.
     let targetKbps = this.efficiencyThresholds[tier]
 
-    // Add allowances to the target (so we don't count these high-value bits as debt)
-    if (isLossless) targetKbps += this.losslessAudioAllowance
     if (isHdr) targetKbps *= this.hdrOverheadMultiplier
 
     const durationSec = item.duration / 1000
-    // Target size = (Target Bitrate * 1000 * Duration) / 8 bits
-    const targetSizeBytes = (targetKbps * 1000 * durationSec) / 8
+    const currentVideoBytes = (item.video_bitrate * 1000 * durationSec) / 8
+    const targetVideoBytes = (targetKbps * 1000 * durationSec) / 8
 
-    // Debt only exists if current file is > 20% larger than target AND at least 500MB difference
+    // Debt only exists if the video stream is > 20% larger than target and at
+    // least 500MB apart. Never infer video debt from container size.
     const bufferMult = 1.2
-    if (item.file_size <= targetSizeBytes * bufferMult) return 0
-    if (item.file_size - targetSizeBytes < 500 * 1024 * 1024) return 0
+    if (currentVideoBytes <= targetVideoBytes * bufferMult) return 0
+    if (currentVideoBytes - targetVideoBytes < 500 * 1024 * 1024) return 0
 
-    return Math.round(item.file_size - targetSizeBytes)
+    return Math.round(currentVideoBytes - targetVideoBytes)
   }
 
   /**
@@ -770,150 +767,145 @@ const distribution = {
   }
 
   /**
-   * Calculate dub bloat bytes from secondary audio tracks (non-original language tracks) and subtitle tracks.
+   * Calculate removable foreign-audio bytes only from complete stream evidence.
+   * Subtitle estimates are deliberately excluded: stream metadata does not expose
+   * their byte sizes, so assigning a nominal value would be fabricated evidence.
    */
-  calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number {
-    const durationSec = analysis?.duration
-      ? analysis.duration / 1000
-      : (item.duration ? item.duration / 1000 : 0)
+  private getAudioPruningEvidence(item: MediaItem, analysis?: FileAnalysisResult): {
+    status: 'measured' | 'insufficient'
+    estimatedSavingsBytes: number | null
+  } {
+    const durationMs = analysis?.duration ?? item.duration
+    const durationSec = durationMs != null ? durationMs / 1000 : 0
+    const originalLanguage = normalizeLanguage(item.original_language)
+    if (!originalLanguage || originalLanguage === 'und' || durationSec <= 0) {
+      return { status: 'insufficient', estimatedSavingsBytes: null }
+    }
 
-    if (durationSec <= 0) return 0
-
-    const normalizedOrig = normalizeLanguage(item.original_language)
-    if (!normalizedOrig || normalizedOrig === 'und') return 0
-
-    let dubBitrateKbps = 0
-
-    if (analysis && analysis.audioTracks && analysis.audioTracks.length > 0) {
-      for (const track of analysis.audioTracks) {
-        if (track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio) {
-          continue
-        }
-        if (track.language) {
-          const normalizedLang = normalizeLanguage(track.language)
-          if (normalizedLang !== normalizedOrig && normalizedLang !== 'und' && normalizedLang !== 'unk') {
-            dubBitrateKbps += track.bitrate || (track.channels ? track.channels * 64 : 192)
-          }
-        }
-      }
+    let tracks: Array<{
+      bitrate?: number
+      language?: string | null
+      title?: string | null
+      hasObjectAudio?: boolean
+      isCommentary?: boolean
+      isAudioDescription?: boolean
+      isAccessibility?: boolean
+    }>
+    if (analysis) {
+      tracks = analysis.audioTracks
     } else if (item.audio_tracks) {
       try {
-        const tracks: AudioTrack[] = JSON.parse(item.audio_tracks)
-        if (Array.isArray(tracks)) {
-          for (const track of tracks) {
-            if (track.title?.toLowerCase().includes('commentary')) continue
-            if (track.language) {
-            const normalizedLang = normalizeLanguage(track.language)
-              if (normalizedLang !== normalizedOrig && normalizedLang !== 'und' && normalizedLang !== 'unk') {
-                dubBitrateKbps += track.bitrate || (track.channels ? track.channels * 64 : 192)
-              }
-            }
-          }
-        }
+        const parsed: unknown = JSON.parse(item.audio_tracks)
+        if (!Array.isArray(parsed)) return { status: 'insufficient', estimatedSavingsBytes: null }
+        tracks = parsed as AudioTrack[]
       } catch {
-        // Malformed track metadata is not evidence for removal.
-        dubBitrateKbps = 0
+        return { status: 'insufficient', estimatedSavingsBytes: null }
       }
+    } else {
+      return { status: 'insufficient', estimatedSavingsBytes: null }
     }
 
-    const audioBloatBytes = (dubBitrateKbps * 1000 * durationSec) / 8
+    let removableBitrateKbps = 0
+    for (const track of tracks) {
+      const protectedTrack = track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio || /commentary|comment|audio description|descriptive|accessib|narration/i.test(track.title || '')
+      if (protectedTrack) continue
 
-    let subBloatBytes = 0
-    if (analysis?.subtitleTracks && analysis.subtitleTracks.length > 0) {
-      const foreignSubs = analysis.subtitleTracks.filter(sub => {
-        if (sub.isForced) return false
-        if (!sub.language) return false
-        const normalizedLang = normalizeLanguage(sub.language)
-        return normalizedLang !== normalizedOrig && normalizedLang !== 'und'
-      })
-      for (const sub of foreignSubs) {
-        const isBitmap = sub.codec.toLowerCase().includes('pgs') || sub.codec.toLowerCase().includes('dvd')
-        subBloatBytes += isBitmap ? 20 * 1024 * 1024 : 100 * 1024
+      const language = normalizeLanguage(track.language)
+      if (!language || language === 'und' || language === 'unk') {
+        return { status: 'insufficient', estimatedSavingsBytes: null }
       }
+      if (language === originalLanguage) continue
+      if (!Number.isFinite(track.bitrate) || !track.bitrate || track.bitrate <= 0) {
+        return { status: 'insufficient', estimatedSavingsBytes: null }
+      }
+      removableBitrateKbps += track.bitrate
     }
 
-    return Math.round(audioBloatBytes + subBloatBytes)
+    return {
+      status: 'measured',
+      estimatedSavingsBytes: Math.round((removableBitrateKbps * 1000 * durationSec) / 8),
+    }
+  }
+
+  calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number {
+    return this.getAudioPruningEvidence(item, analysis).estimatedSavingsBytes ?? 0
   }
 
   /**
-   * Generates TRaSH-aligned actionable optimization recommendations.
+   * Generates actionable recommendations only from the evidence owned by that
+   * action: measured video streams for transcodes, measured audio streams for
+   * stream pruning.
    */
   getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult): OptimizationAdvice {
-    const sourceTier = TrashSourceClassifier.classify(
-      item.file_path || '',
-      item.video_bitrate || analysis?.video?.bitrate || undefined,
-      item.video_codec || analysis?.video?.codec || undefined
-    )
-
+    const video = analysis?.video
+    const videoBitrate = video?.bitrate ?? item.video_bitrate ?? 0
+    const codec = (video?.codec ?? item.video_codec ?? '').toLowerCase()
+    const durationMs = analysis?.duration ?? item.duration
+    const sourceTier = TrashSourceClassifier.classify(item.file_path || '', videoBitrate || undefined, codec || undefined)
     const tier = this.classifyTier(
-      item.resolution || (analysis?.video ? `${analysis.video.width}x${analysis.video.height}` : 'SD'),
-      item.height || analysis?.video?.height
+      item.resolution || (video ? `${video.width}x${video.height}` : 'SD'),
+      video?.height ?? item.height ?? undefined
     )
-    const dubBloatBytes = this.calculateDubBloatBytes(item, analysis)
-    const codec = (item.video_codec || analysis?.video?.codec || '').toLowerCase()
+    const durationSec = durationMs != null ? durationMs / 1000 : 0
+    const hasVideoEvidence = Number.isFinite(videoBitrate) && videoBitrate > 0 && codec.length > 0 && durationSec > 0 && Boolean(item.resolution || video?.height)
+    const targetBitrate = this.efficiencyThresholds[tier]
+    const videoSavings = hasVideoEvidence
+      ? Math.round(Math.max(0, (videoBitrate - targetBitrate) * 1000 * durationSec / 8))
+      : null
+    const audioEvidence = this.getAudioPruningEvidence(item, analysis)
+    const audioSavings = audioEvidence.estimatedSavingsBytes
     const isLegacyCodec = /^(h\.?264|x264|avc1?|vc-?1|mpeg-?2(video)?)$/i.test(codec)
     const isModernCodec = codec.includes('hevc') || codec.includes('h265') || codec.includes('x265') || codec.includes('av1') || codec.includes('av01')
-    const videoBitrate = item.video_bitrate || analysis?.video?.bitrate || 0
 
-    // Remux with high bitrate (>12000 kbps or legacy codec)
-    if (sourceTier === 'Remux' && (videoBitrate > 12000 || isLegacyCodec || videoBitrate === 0)) {
-      const debtBytes = this.calculateStorageDebt(item, tier)
-      const estimatedSavingsBytes = debtBytes > 0 ? debtBytes : (item.file_size ? Math.round(item.file_size * 0.5) : 0)
+    if (audioEvidence.status === 'measured' && audioSavings != null && audioSavings > 150 * 1024 * 1024 &&
+      (sourceTier === 'WEB-DL' || sourceTier === 'WEBRip' || isModernCodec || !hasVideoEvidence || videoSavings === 0)) {
+      return {
+        action: 'stream_pruning',
+        sourceTier,
+        reason: 'Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended to prune measured foreign audio streams without re-encoding video.',
+        estimatedSavingsBytes: audioSavings,
+        evidence_status: 'measured',
+        confidence: 'high',
+        savings_basis: 'audio-track-bitrates',
+      }
+    }
+
+    if (hasVideoEvidence && videoSavings != null && videoSavings > 0 && !isModernCodec && sourceTier !== 'WEB-DL' && sourceTier !== 'WEBRip') {
       return {
         action: 'video_transcode',
         sourceTier,
-        reason: 'High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.',
-        estimatedSavingsBytes
+        reason: sourceTier === 'Remux' && (videoBitrate > 12000 || isLegacyCodec)
+          ? 'High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.'
+          : 'Older or high-bitrate video stream suitable for modern transcoding.',
+        estimatedSavingsBytes: videoSavings,
+        evidence_status: 'estimated',
+        confidence: 'medium',
+        savings_basis: 'video-stream-bitrate',
       }
     }
 
-    // WEB-DL, WEBRip, or modern HEVC/AV1 encoding
-    if (sourceTier === 'WEB-DL' || sourceTier === 'WEBRip' || isModernCodec) {
-      if (dubBloatBytes > 150 * 1024 * 1024) {
-        return {
-          action: 'stream_pruning',
-          sourceTier,
-          reason: 'Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended to prune foreign audio dubs/subtitles without re-encoding video.',
-          estimatedSavingsBytes: dubBloatBytes
-        }
-      } else {
-        return {
-          action: 'already_optimized',
-          sourceTier,
-          reason: 'Source is already compact and efficient. No transcode needed.',
-          estimatedSavingsBytes: 0
-        }
+    if (!hasVideoEvidence || audioEvidence.status === 'insufficient') {
+      return {
+        action: 'already_optimized',
+        sourceTier,
+        reason: 'Insufficient measured stream evidence to recommend an optimization action.',
+        estimatedSavingsBytes: null,
+        evidence_status: 'insufficient',
+        confidence: 'none',
+        savings_basis: 'unavailable',
       }
     }
 
-    // Video bitrate is already within efficient range
-    const targetBitrate = this.efficiencyThresholds[tier] || 5000
-    if (videoBitrate > 0 && videoBitrate <= targetBitrate) {
-      if (dubBloatBytes > 150 * 1024 * 1024) {
-        return {
-          action: 'stream_pruning',
-          sourceTier,
-          reason: 'Video bitrate is already efficient. Container stream pruning recommended.',
-          estimatedSavingsBytes: dubBloatBytes
-        }
-      } else {
-        return {
-          action: 'already_optimized',
-          sourceTier,
-          reason: 'Video bitrate is already within efficient range.',
-          estimatedSavingsBytes: 0
-        }
-      }
-    }
-
-    // Otherwise: older high-bitrate HDTV or BluRay encode
-    const debtBytes = this.calculateStorageDebt(item, tier)
-    const estimatedSavingsBytes = debtBytes > 0 ? debtBytes : (item.file_size ? Math.round(item.file_size * 0.4) : 0)
     return {
-      action: 'video_transcode',
+      action: 'already_optimized',
       sourceTier,
-      reason: 'Older or high-bitrate video stream suitable for modern transcoding.',
-      estimatedSavingsBytes
+      reason: isModernCodec || sourceTier === 'WEB-DL' || sourceTier === 'WEBRip'
+        ? 'Source is already compact and efficient. No transcode needed.'
+        : 'Video bitrate is already within efficient range.',
+      estimatedSavingsBytes: 0,
+      evidence_status: 'measured',
+      confidence: 'high',
+      savings_basis: 'none',
     }
   }
 
