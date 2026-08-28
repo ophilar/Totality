@@ -385,6 +385,17 @@ export class FFprobeWorkerPool {
 
     // Terminate all workers
     const terminationPromises = this.workers.map(workerInfo => {
+      if (workerInfo.currentTask) {
+        workerInfo.currentTask.resolve({
+          success: false,
+          error: 'Worker pool shutting down',
+          filePath: workerInfo.currentTask.filePath,
+          audioTracks: [],
+          subtitleTracks: [],
+        })
+        workerInfo.currentTask = null
+        workerInfo.busy = false
+      }
       return new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           workerInfo.worker.terminate()

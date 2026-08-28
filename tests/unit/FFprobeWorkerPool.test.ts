@@ -19,7 +19,11 @@ const mockWorker = {
 }
 
 vi.mock('worker_threads', () => ({
-  Worker: vi.fn(() => mockWorker),
+  Worker: class WorkerMock {
+    constructor() {
+      return mockWorker as unknown as WorkerMock
+    }
+  },
 }))
 
 // Import after mocks
@@ -37,6 +41,7 @@ describe('FFprobeWorkerPool', () => {
     mockWorker.postMessage.mockReset()
     mockWorker.terminate.mockReset()
     mockWorker.removeAllListeners.mockReset()
+    mockWorker.terminate.mockResolvedValue(0)
   })
 
   describe('initialization', () => {
@@ -89,19 +94,16 @@ describe('FFprobeWorkerPool', () => {
 
     it('should reject tasks when queue is full', async () => {
       await pool.initialize('/path/to/ffprobe')
+      pool.setMaxWorkers(1)
 
-      // Fill the queue
-      const promises: Promise<unknown>[] = []
-      for (let i = 0; i < 10000; i++) {
-        promises.push(pool.analyzeFile(`/test${i}.mkv`).catch(() => {}))
-      }
+      // Represent a full queue without creating thousands of unresolved tasks.
+      const internalPool = pool as unknown as { taskQueue: unknown[] }
+      internalPool.taskQueue = new Array(10000)
 
-      // The 10001st task should throw immediately
-      expect(() => pool.analyzeFile('/test-too-many.mkv')).rejects.toThrow('queue is full')
-      
-      // Cleanup to resolve pending promises
+      // The next task should reject immediately.
+      await expect(pool.analyzeFile('/test-too-many.mkv')).rejects.toThrow('queue is full')
+      internalPool.taskQueue = []
       await pool.shutdown()
-      await Promise.all(promises)
     })
   })
 
