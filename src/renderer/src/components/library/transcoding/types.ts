@@ -13,6 +13,7 @@ export interface TranscodeOptions {
   customArgs: string
   transcodingEngine: 'ffmpeg'
   targetSize: string
+  maxOutputBytes?: number
   aiOptimize?: boolean
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
 }
@@ -26,6 +27,11 @@ export interface ShowTranscodePreflightEpisode {
   sourceSize: number
   sourceMtimeMs: number
   recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+  decisionStatus?: 'actionable' | 'sample_required' | 'already_optimized' | 'insufficient_evidence'
+  evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
+  confidence?: 'high' | 'medium' | 'low' | 'none'
+  estimatedSavingsBytes?: number | null
+  savingsBasis?: string
   sourceTier?: string
   adviceReason?: string
 }

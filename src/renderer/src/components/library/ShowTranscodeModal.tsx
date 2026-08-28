@@ -79,11 +79,25 @@ function getSourceTierBadge(tier?: string) {
   }
 }
 
-function getAdvisoryBadge(action?: string, compatible: boolean = true) {
+function getAdvisoryBadge(action?: string, compatible: boolean = true, decisionStatus?: string) {
   if (!compatible) {
     return (
       <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
         <AlertCircle className="w-3 h-3" /> Incompatible
+      </span>
+    )
+  }
+  if (decisionStatus === 'insufficient_evidence') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+        <AlertCircle className="w-3 h-3" /> Insufficient Evidence
+      </span>
+    )
+  }
+  if (decisionStatus === 'sample_required') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+        <Eye className="w-3 h-3" /> Sample Required
       </span>
     )
   }
@@ -210,8 +224,6 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       if (provLang) {
         const matchingFileCode = fileLangs.find(code => isSameLanguage(code, provLang))
         setLanguage(matchingFileCode || provLang.toLowerCase())
-      } else if (fileLangs.length > 0) {
-        setLanguage(fileLangs[0])
       }
     }
 
@@ -239,7 +251,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       if (!isMounted || !capabilities) return
       const detectedGpus = capabilities.gpus || []
       setGpus(detectedGpus)
-      const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId) || detectedGpus[0]
+      const selected = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities.selectedGpuId)
       if (selected) {
         setGpuId(selected.id)
         setUseGpu(true)
@@ -859,7 +871,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-sm font-bold text-foreground">Preflight Optimization Plan</h4>
-                  <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes ready to optimize</p>
+                  <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
                 </div>
                 <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30">
                   {optimizationMode === 'smart' ? 'Smart (TRaSH)' : optimizationMode === 'remux_only' ? 'Lossless Stream Copy' : 'Full Transcode'}
@@ -867,11 +879,17 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
 
               {/* Action Breakdown Counters */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                 <div className="bg-background/80 p-2.5 rounded-xl border border-border/30 text-center">
                   <div className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Video Transcode</div>
                   <div className="text-base font-black text-foreground">
                     {preflightData.episodes.filter(e => e.recommendedAction === 'video_transcode').length}
+                  </div>
+                </div>
+                <div className="bg-background/80 p-2.5 rounded-xl border border-amber-500/30 text-center">
+                  <div className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">Insufficient Evidence</div>
+                  <div className="text-base font-black text-foreground">
+                    {preflightData.episodes.filter(e => e.decisionStatus === 'insufficient_evidence').length}
                   </div>
                 </div>
                 <div className="bg-background/80 p-2.5 rounded-xl border border-border/30 text-center">
@@ -904,7 +922,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                       <span className="font-bold text-xs text-foreground truncate">{ep.label}</span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {getSourceTierBadge(ep.sourceTier)}
-                        {getAdvisoryBadge(ep.recommendedAction, ep.compatible)}
+                        {getAdvisoryBadge(ep.recommendedAction, ep.compatible, ep.decisionStatus)}
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground">
@@ -914,6 +932,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                       <span className="shrink-0 font-mono text-[10px]">
                         {formatBytes(ep.sourceSize)} • {ep.hdrFormat}
                       </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
+                      <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
+                      <span>{ep.estimatedSavingsBytes != null ? `Savings: ${formatBytes(ep.estimatedSavingsBytes)}` : 'Savings: unknown'}</span>
                     </div>
                   </div>
                 ))}

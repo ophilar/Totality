@@ -68,6 +68,7 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'quality_scores', 'audio_tier_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'quality_scores', 'estimated_savings_bytes', 'INTEGER')
   await ensureColumn(db, 'quality_scores', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
   await ensureColumn(db, 'quality_scores', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
   await ensureColumn(db, 'quality_scores', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
@@ -268,6 +269,7 @@ async function rebuildQualityScoresForNullableEvidence(db: Client): Promise<void
       audio_score INTEGER,
       efficiency_score INTEGER,
       storage_debt_bytes INTEGER,
+      estimated_savings_bytes INTEGER,
       evidence_status TEXT,
       confidence TEXT,
       savings_basis TEXT,
@@ -278,7 +280,7 @@ async function rebuildQualityScoresForNullableEvidence(db: Client): Promise<void
       updated_at TEXT NOT NULL,
       FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE CASCADE
     )`,
-    ['id', 'media_item_id', 'quality_tier', 'tier_quality', 'tier_score', 'bitrate_tier_score', 'audio_tier_score', 'overall_score', 'resolution_score', 'bitrate_score', 'audio_score', 'efficiency_score', 'storage_debt_bytes', ...EVIDENCE_COLUMNS, 'is_low_quality', 'needs_upgrade', 'issues', 'created_at', 'updated_at'],
+    ['id', 'media_item_id', 'quality_tier', 'tier_quality', 'tier_score', 'bitrate_tier_score', 'audio_tier_score', 'overall_score', 'resolution_score', 'bitrate_score', 'audio_score', 'efficiency_score', 'storage_debt_bytes', 'estimated_savings_bytes', ...EVIDENCE_COLUMNS, 'is_low_quality', 'needs_upgrade', 'issues', 'created_at', 'updated_at'],
     [
       `CREATE TRIGGER IF NOT EXISTS update_quality_scores_timestamp
        AFTER UPDATE ON quality_scores BEGIN

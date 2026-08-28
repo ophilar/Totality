@@ -11,10 +11,12 @@ export class TranscodeCommandFactory {
     encoder: string | undefined,
     hasCustomArgs = false
   ): NonNullable<TranscodeOptions['outputMode']> {
-    const outputMode = requestedOutputMode || 'quarantine-replace'
-    return encoder === 'copy' && !hasCustomArgs
-      ? outputMode
-      : outputMode === 'copy' ? 'copy' : 'quarantine-replace'
+    if (!requestedOutputMode) throw new Error('Transcode output mode must be explicitly selected.')
+    const outputMode = requestedOutputMode
+    if (encoder === 'copy' && !hasCustomArgs) return outputMode
+    if (outputMode === 'replace') return 'quarantine-replace'
+    if (outputMode === 'copy') throw new Error('Copy output mode requires a stream-remux encoder without custom arguments.')
+    return outputMode
   }
 
   static getBuilder(vendor?: string, options: TranscodeOptions = {}): ITranscodeCommandBuilder {

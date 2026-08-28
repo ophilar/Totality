@@ -43,7 +43,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
     const gemini = getGeminiService()
     vi.spyOn(gemini, 'isConfigured').mockReturnValue(true)
     vi.spyOn(gemini, 'sendMessage').mockResolvedValue({
-       text: '{"summary": "test", "ffmpegArgs": ["-c:v", "hevc_nvenc"]}',
+       text: '{"summary": "test", "videoCodec": "nvenc_h265", "crf": 20, "preset": "p6", "ffmpegArgs": ["-c:v", "hevc_nvenc"]}',
        usage: { input_tokens: 0, output_tokens: 0 }
     })
 

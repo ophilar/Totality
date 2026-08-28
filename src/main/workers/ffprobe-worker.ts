@@ -142,6 +142,7 @@ export interface FileAnalysisResult {
   duration?: number
   fileSize?: number
   overallBitrate?: number
+  streamBytes?: Record<number, number>
   video?: AnalyzedVideoStream
   audioTracks: AnalyzedAudioStream[]
   subtitleTracks: AnalyzedSubtitleStream[]
@@ -334,65 +335,6 @@ function detectObjectAudio(stream: FFprobeStream): boolean {
 }
 
 /**
- * Estimate audio bitrate for codecs that don't report it
- */
-function estimateAudioBitrate(codec: string, channels: number, profile?: string, sampleRateStr?: string): number | undefined {
-  const codecLower = codec.toLowerCase()
-  const sampleRate = sampleRateStr ? parseInt(sampleRateStr, 10) : 48000
-
-  if (codecLower === 'ac3') {
-    if (channels <= 2) return 192
-    if (channels <= 6) return 448
-    return 640
-  }
-
-  if (codecLower === 'eac3') {
-    if (channels <= 2) return 256
-    if (channels <= 6) return 640
-    if (channels <= 8) return 1024
-    return 1536
-  }
-
-  if (codecLower === 'truehd') {
-    const baseRate = sampleRate > 48000 ? 4000 : 2500
-    if (channels <= 2) return Math.round(baseRate * 0.4)
-    if (channels <= 6) return baseRate
-    if (channels <= 8) return Math.round(baseRate * 1.6)
-    return Math.round(baseRate * 2)
-  }
-
-  if (codecLower === 'dts') {
-    const profileLower = profile?.toLowerCase() || ''
-    if (profileLower.includes('ma') || profileLower.includes('hd ma')) {
-      if (channels <= 2) return 1500
-      if (channels <= 6) return 3000
-      if (channels <= 8) return 4500
-      return 6000
-    }
-    if (profileLower.includes('hra') || profileLower.includes('hd hra')) {
-      if (channels <= 6) return 1500
-      return 2000
-    }
-    if (channels <= 2) return 768
-    if (channels <= 6) return 1509
-    return 1509
-  }
-
-  if (codecLower === 'flac') {
-    const bitDepth = 16
-    const compressionRatio = 0.6
-    return Math.round((channels * sampleRate * bitDepth * compressionRatio) / 1000)
-  }
-
-  if (codecLower.includes('pcm')) {
-    const bitDepth = 16
-    return Math.round((channels * sampleRate * bitDepth) / 1000)
-  }
-
-  return undefined
-}
-
-/**
  * Parse video stream
  */
 function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedVideoStream {
@@ -423,14 +365,9 @@ function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedV
  * Parse audio stream
  */
 function parseAudioStream(stream: FFprobeStream, durationMs?: number): AnalyzedAudioStream {
-  let bitrate = extractBitrate(stream, durationMs)
+  const bitrate = extractBitrate(stream, durationMs)
   const hasObjectAudio = detectObjectAudio(stream)
-  const codec = stream.codec_name?.toLowerCase() || 'unknown'
   const channels = stream.channels || 2
-
-  if (!bitrate) {
-    bitrate = estimateAudioBitrate(codec, channels, stream.profile, stream.sample_rate)
-  }
 
   return {
     index: stream.index,
@@ -579,37 +516,6 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
         result.subtitleTracks.push(parseSubtitleStream(stream))
         break
     }
-  }
-
-  // Calculate video bitrate from file size
-  if (result.video && result.fileSize && result.duration) {
-    const durationSeconds = result.duration / 1000
-    const calculatedTotalBitrate = Math.round((result.fileSize * 8) / durationSeconds / 1000)
-
-    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
-    const maxAudioBitrate = Math.round(calculatedTotalBitrate * 0.30)
-    if (totalAudioBitrate > maxAudioBitrate) {
-      totalAudioBitrate = maxAudioBitrate
-    }
-
-    const calculatedVideoBitrate = Math.max(0, calculatedTotalBitrate - totalAudioBitrate)
-    const metadataBitrate = result.video.bitrate
-
-    if (metadataBitrate) {
-      const ratio = metadataBitrate / calculatedVideoBitrate
-      if (ratio < 0.5 || ratio > 1.5) {
-        result.video.bitrate = calculatedVideoBitrate
-      }
-    } else {
-      result.video.bitrate = calculatedVideoBitrate
-    }
-  } else if (result.video && result.overallBitrate && !result.video.bitrate) {
-    let totalAudioBitrate = result.audioTracks.reduce((sum, t) => sum + (t.bitrate || 0), 0)
-    const maxAudioBitrate = Math.round(result.overallBitrate * 0.30)
-    if (totalAudioBitrate > maxAudioBitrate) {
-      totalAudioBitrate = maxAudioBitrate
-    }
-    result.video.bitrate = Math.max(0, result.overallBitrate - totalAudioBitrate)
   }
 
   return result

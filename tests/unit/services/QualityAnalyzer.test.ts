@@ -98,6 +98,34 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.confidence).toBe('none')
     expect(advice.savings_basis).toBe('insufficient_data')
     expect(advice.estimatedSavingsBytes).toBe(null)
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
+  })
+
+  it('does not use persisted bitrate when fresh analysis omits video bitrate', () => {
+    const advice = analyzer.getOptimizationAdvice({
+      id: 12,
+      source_id: 'src1',
+      plex_id: 'p12',
+      title: 'Fresh probe without bitrate',
+      type: 'episode',
+      file_path: '/media/fresh-probe.mkv',
+      resolution: '1080p',
+      video_codec: 'h264',
+      video_bitrate: 35_000,
+      duration: 50 * 60 * 1000,
+      original_language: 'en',
+    }, {
+      success: true,
+      filePath: '/media/fresh-probe.mkv',
+      duration: 50 * 60 * 1000,
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080 },
+      audioTracks: [],
+      subtitleTracks: [],
+    })
+
+    expect(advice.evidence_status).toBe('insufficient')
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
+    expect(advice.estimatedSavingsBytes).toBeNull()
   })
 
   it('recommends video_transcode for high-bitrate AVC Remux source', () => {
@@ -123,10 +151,11 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('video_transcode')
     expect(advice.sourceTier).toBe('Remux')
     expect(advice.reason).toContain('High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.')
-    expect(advice.evidence_status).toBe('estimated')
-    expect(advice.confidence).toBe('medium')
+    expect(advice.evidence_status).toBe('measured')
+    expect(advice.confidence).toBe('high')
     expect(advice.savings_basis).toBe('video_sample_encode')
-    expect(advice.estimatedSavingsBytes).toBe(11_250_000_000)
+    expect(advice.estimatedSavingsBytes).toBe(null)
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
   })
 
   it('recommends stream_pruning for WEB-DL with foreign audio dub bloat (>150MB)', () => {
@@ -158,7 +187,8 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('stream_pruning')
     expect(advice.sourceTier).toBe('WEB-DL')
     expect(advice.reason).toContain('Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended')
-    expect(advice.evidence_status).toBe('measured')
+    expect(advice.evidence_status).toBe('estimated')
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
     expect(advice.savings_basis).toBe('audio_stream_removal')
     expect(advice.estimatedSavingsBytes).toBe(720_000_000)
   })
@@ -187,6 +217,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.confidence).toBe('none')
     expect(advice.savings_basis).toBe('insufficient_data')
     expect(advice.estimatedSavingsBytes).toBe(null)
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
   })
 
   it('recommends already_optimized for clean WEB-DL with no foreign dubs', () => {
@@ -294,7 +325,8 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('video_transcode')
     expect(advice.sourceTier).toBe('BluRay')
     expect(advice.reason).toContain('Older or high-bitrate video stream suitable for modern transcoding.')
-    expect(advice.estimatedSavingsBytes).toBeGreaterThan(0)
+    expect(advice.estimatedSavingsBytes).toBe(null)
+    expect(advice.decisionStatus).toBe('insufficient_evidence')
   })
 
   it('supports passing FileAnalysisResult directly for detailed track and subtitle calculations', () => {
@@ -330,7 +362,8 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
         { index: 4, codec: 'subrip', language: 'en', isDefault: true, isForced: false },
         { index: 5, codec: 'hdmv_pgs_subtitle', language: 'de', isDefault: false, isForced: false },
         { index: 6, codec: 'hdmv_pgs_subtitle', language: 'fr', isDefault: false, isForced: false }
-      ]
+      ],
+      streamBytes: { 0: 1_687_500_000, 1: 216_000_000, 2: 216_000_000, 3: 216_000_000 }
     }
 
     const advice: OptimizationAdvice = analyzer.getOptimizationAdvice(item, analysis)

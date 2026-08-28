@@ -234,6 +234,7 @@ export interface MediaItem {
   overall_score?: number | null
   efficiency_score?: number | null
   storage_debt_bytes?: number | null
+  estimated_savings_bytes?: number | null
   evidence_status?: EvidenceStatus
   confidence?: EvidenceConfidence
   savings_basis?: SavingsBasis
@@ -333,6 +334,7 @@ export interface QualityScore {
   // Efficiency metrics
   efficiency_score: number | null // 0-100 score (BPP based)
   storage_debt_bytes: number | null // How many bytes are "wasted" compared to HEVC target
+  estimated_savings_bytes?: number | null
   evidence_status?: EvidenceStatus
   confidence?: EvidenceConfidence
   savings_basis?: SavingsBasis

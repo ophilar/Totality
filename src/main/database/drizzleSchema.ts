@@ -144,6 +144,7 @@ export const qualityScores = sqliteTable('quality_scores', {
   audioScore: integer('audio_score'),
   efficiencyScore: integer('efficiency_score'),
   storageDebtBytes: integer('storage_debt_bytes'),
+  estimatedSavingsBytes: integer('estimated_savings_bytes'),
   evidenceStatus: text('evidence_status'),
   confidence: text('confidence'),
   savingsBasis: text('savings_basis'),

@@ -78,6 +78,7 @@ const mockAnalyzerInstance = {
   }),
   isAvailable: vi.fn().mockResolvedValue(true),
   getFFmpegPath: vi.fn().mockReturnValue('ffmpeg')
+  ,measureStreamBytes: vi.fn().mockResolvedValue({ 1: 24000000, 2: 24000000, 3: 24000000, 4: 24000000 })
 }
 
 vi.mock('../../../src/main/services/MediaFileAnalyzer', () => ({
@@ -125,6 +126,7 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         targetCodec: 'hevc',
         useGpu: true,
+        encoder: 'nvenc_h265',
         crf: 20,
         preset: 'p6'
       }
@@ -149,6 +151,7 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         targetCodec: 'av1',
         useGpu: false,
+        encoder: 'svt_av1',
         crf: 24,
         preset: 'medium'
       }
@@ -223,11 +226,16 @@ describe('TranscodingService', () => {
           { index: 2, codec: 'eac3', channels: 6, bitrate: 640, language: 'de', isDefault: false, hasObjectAudio: false },
           { index: 3, codec: 'eac3', channels: 6, bitrate: 640, language: 'fr', isDefault: false, hasObjectAudio: false }
         ],
-        subtitleTracks: []
+        subtitleTracks: [],
+        streamBytes: { 0: 1_687_500_000, 1: 216_000_000, 2: 216_000_000, 3: 216_000_000 }
       })
 
       const options: TranscodeOptions = {
-        optimizationMode: 'smart'
+        optimizationMode: 'smart',
+        targetCodec: 'hevc',
+        encoder: 'nvenc_h265',
+        crf: 20,
+        preset: 'p6'
       }
 
       mockDbInstance.media.getItemByPath.mockResolvedValueOnce({
@@ -275,7 +283,10 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         optimizationMode: 'smart',
         useGpu: true,
-        targetCodec: 'hevc'
+        targetCodec: 'hevc',
+        encoder: 'nvenc_h265',
+        crf: 20,
+        preset: 'p6'
       }
 
       const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.Remux.mkv', options)
@@ -307,7 +318,10 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         optimizationMode: 'transcode',
         useGpu: true,
-        targetCodec: 'hevc'
+        targetCodec: 'hevc',
+        encoder: 'nvenc_h265',
+        crf: 20,
+        preset: 'p6'
       }
 
       const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
@@ -380,7 +394,7 @@ describe('TranscodingService', () => {
 
       vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
 
-      const options: TranscodeOptions = { useGpu: false }
+      const options: TranscodeOptions = { useGpu: false, targetCodec: 'hevc', encoder: 'svt_av1', crf: 24, preset: 'medium' }
       const params = await service.getTranscodeParameters('input.mp4', options)
 
       const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<unknown> }
@@ -452,10 +466,10 @@ describe('TranscodingService', () => {
       })
 
       expect(fsPromises.rename).toHaveBeenCalledWith(
-        inputPath,
-        expect.stringContaining('.quarantine-')
+        expect.stringContaining('.totality_tmp_'),
+        inputPath
       )
-      expect(fsPromises.copyFile).toHaveBeenCalled()
+      expect(fsPromises.copyFile).not.toHaveBeenCalled()
     })
 
     it('moves a verified temporary output onto the original instead of copying it', async () => {
@@ -527,7 +541,7 @@ describe('TranscodingService', () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           episodes: [
             { mediaItemId: 1, label: 'E01', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'already_optimized' },
-            { mediaItemId: 2, label: 'E02', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'stream_pruning' }
+            { mediaItemId: 2, label: 'E02', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'stream_pruning', decisionStatus: 'actionable' }
           ]
         }
       })

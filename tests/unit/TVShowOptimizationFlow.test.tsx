@@ -303,7 +303,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     // Verify transition to Preview Plan screen
     await vi.waitFor(() => {
       expect(screen.getByText('Preflight Optimization Plan')).toBeTruthy()
-      expect(screen.getByText('3 episodes ready to optimize')).toBeTruthy()
+      expect(screen.getByText('3 episodes analyzed; only evidenced actions can be queued')).toBeTruthy()
     })
 
     // Verify TRaSH Source Tier Badges

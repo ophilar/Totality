@@ -535,6 +535,7 @@ export const TranscodeOptionsSchema = z.object({
     })
   ]).optional(),
   targetSize: z.string().optional(),
+  maxOutputBytes: z.number().int().positive().optional(),
   aiOptimize: z.boolean().optional(),
 }).optional()
 

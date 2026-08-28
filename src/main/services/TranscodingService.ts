@@ -1,5 +1,4 @@
 import { spawn } from 'child_process'
-import * as os from 'os'
 import * as fs from 'fs/promises'
 import { existsSync } from 'fs'
 import * as path from 'path'
@@ -43,6 +42,7 @@ export interface TranscodeOptions {
   gpuId?: string
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
+  maxOutputBytes?: number
   aiOptimize?: boolean
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
 }
@@ -107,6 +107,11 @@ export interface ShowTranscodePreflight {
     sourceSize: number
     sourceMtimeMs: number
     recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+    decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence'
+    evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
+    confidence?: 'high' | 'medium' | 'low' | 'none'
+    estimatedSavingsBytes?: number | null
+    savingsBasis?: string
     sourceTier?: MediaSourceTier
     adviceReason?: string
   }>
@@ -189,8 +194,10 @@ export class TranscodingService {
         if (queuedMediaIds.has(episode.id)) throw new Error('Episode already has a queued or running transcode')
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        const analysis = await getMediaFileAnalyzer().analyzeFile(episode.file_path)
+        const analyzer = getMediaFileAnalyzer()
+        const analysis = await analyzer.analyzeFile(episode.file_path)
         if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
+        analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
         buildStreamSelectionPlan(analysis, request.options)
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
         return {
@@ -201,6 +208,11 @@ export class TranscodingService {
           sourceSize: stat.size,
           sourceMtimeMs: stat.mtimeMs,
           recommendedAction: advice.action,
+          decisionStatus: advice.decisionStatus,
+          evidenceStatus: advice.evidence_status,
+          confidence: advice.confidence,
+          estimatedSavingsBytes: advice.estimatedSavingsBytes,
+          savingsBasis: advice.savings_basis,
           sourceTier: advice.sourceTier,
           adviceReason: advice.reason
         }
@@ -252,9 +264,12 @@ export class TranscodingService {
     }
     if (!preflight.result.compatible) throw new Error('Show transcode preflight has blocking episodes')
     const { getTaskQueueService } = await import('./TaskQueueService')
-    const queueableEpisodes = preflight.result.episodes.filter(
-      episode => episode.recommendedAction !== 'already_optimized'
+    const queueableEpisodes = preflight.result.episodes.filter(episode =>
+      episode.compatible && episode.decisionStatus === 'actionable' && episode.recommendedAction !== 'already_optimized'
     )
+    if (queueableEpisodes.length === 0) {
+      throw new Error('No episodes have sufficient evidence for a safe optimization action.')
+    }
     const tasks = queueableEpisodes.map(episode => ({
       type: TaskType.Transcode,
       label: episode.label,
@@ -382,17 +397,13 @@ export class TranscodingService {
       if (analysis.success) this.analysisCache.set(filePath, analysis)
     }
     if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
-    let effectiveOptions: TranscodeOptions = { ...options }
+    const effectiveOptions: TranscodeOptions = { ...options }
 
     if (effectiveOptions.optimizationMode === 'smart') {
       let itemForAdvice: Partial<MediaItem> | null = null
-      try {
-        const db = getDatabase()
-        if (db.isInitialized) {
-          itemForAdvice = await db.media.getItemByPath(filePath)
-        }
-      } catch {
-        // Fall back to synthetic item if DB is uninitialized or in unit test
+      const db = getDatabase()
+      if (db.isInitialized) {
+        itemForAdvice = await db.media.getItemByPath(filePath)
       }
       const itemToAnalyze: Partial<MediaItem> = itemForAdvice || {
         file_path: filePath,
@@ -450,7 +461,8 @@ export class TranscodingService {
     }
 
     validateHdrTranscode(analysis)
-    const targetCodec = effectiveOptions.targetCodec || 'av1'
+    const targetCodec = effectiveOptions.targetCodec
+    if (!targetCodec) throw new Error('Target video codec must be explicitly selected.')
     const hasManualOverrides = effectiveOptions.encoder && effectiveOptions.crf !== undefined && effectiveOptions.preset
 
     let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
@@ -505,12 +517,12 @@ export class TranscodingService {
     let videoCodec = options.encoder
     let crf = options.crf
     let preset = options.preset
-    let expectedSizeReduction = 'e.g. 50%'
+    let expectedSizeReduction: string | undefined
     let warnings: string[] = []
 
     if (!hasManualOverrides && options.aiOptimize !== false) {
       if (this.parameterAdvisor instanceof GeminiTranscodeParameterAdvisor && !getGeminiService().isConfigured()) {
-        summary = 'FFmpeg transcoding (AI not configured)'
+        throw new Error('AI optimization is not configured; provide explicit encoder, quality, and preset settings.')
       } else {
         const sizeConstraint = options.targetSize === 'ai-recommended'
           ? '- Target Size: Recommend the optimal target size that preserves maximum transparent visual quality while maximizing space savings.'
@@ -550,11 +562,11 @@ export class TranscodingService {
           const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
           const data = JSON.parse(jsonStr)
           
-          summary = typeof data.summary === 'string' ? data.summary : 'AI optimized transcode'
+          summary = typeof data.summary === 'string' ? data.summary : ''
           if (!videoCodec) videoCodec = data.videoCodec
           if (crf === undefined) crf = data.crf
           if (!preset) preset = data.preset
-          expectedSizeReduction = data.expectedSizeReduction || expectedSizeReduction
+          expectedSizeReduction = typeof data.expectedSizeReduction === 'string' ? data.expectedSizeReduction : undefined
           warnings = data.warnings || []
         } catch (e) {
           getLoggingService().error('[TranscodingService]', 'Failed to parse Gemini response or fetch parameters:', e)
@@ -566,22 +578,14 @@ export class TranscodingService {
       expectedSizeReduction = 'Custom'
     }
 
-    // Set defaults if still not resolved
-    if (!videoCodec) {
-      videoCodec = expectedEncoder
-    }
-
     // Normalize encoder aliases returned by the parameter advisor.
     if (videoCodec === 'av1_nvenc') {
       videoCodec = 'nvenc_av1'
     }
 
-    if (crf === undefined) {
-      crf = 22
-    }
-    if (!preset) {
-      preset = 'fast'
-    }
+    if (!videoCodec) throw new Error('Video encoder must be explicitly selected or returned by the configured advisor.')
+    if (crf === undefined) throw new Error('Video quality value must be explicitly selected or returned by the configured advisor.')
+    if (!preset) throw new Error('Encoder preset must be explicitly selected or returned by the configured advisor.')
 
     // Validate parameters against allowed lists to prevent command injection
     const allowedVideoCodecs = [
@@ -595,14 +599,12 @@ export class TranscodingService {
       throw new Error(`Invalid or unsupported video encoder: ${videoCodec}`)
     }
       
-    const finalCrf = (typeof crf === 'number' && crf >= 0 && crf <= 51)
-      ? crf
-      : 22
+    if (typeof crf !== 'number' || crf < 0 || crf > 51) throw new Error(`Invalid video quality value: ${String(crf)}`)
+    const finalCrf = crf
       
     const allowedPresets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo', 'hq', 'hp', 'bd', 'll', 'llhq', 'llhp', 'lossless', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'quality']
-    const finalPreset = allowedPresets.includes(preset || '')
-      ? preset!
-      : 'fast'
+    if (!allowedPresets.includes(preset)) throw new Error(`Invalid encoder preset: ${preset}`)
+    const finalPreset = preset
 
     const resolvedOptions: TranscodeOptions = {
       ...effectiveOptions,
@@ -690,14 +692,39 @@ export class TranscodingService {
       const configuredTempDir = options.tempDirectory || (await db.config.getSetting('transcoding_temp_directory'))
       if (configuredTempDir && typeof configuredTempDir === 'string' && configuredTempDir.trim() !== '') {
         const sanitizedTemp = PathUtils.sanitizeAbsolutePath(configuredTempDir.trim())
-        if (existsSync(sanitizedTemp)) {
-          tempBaseDir = sanitizedTemp
-        }
+        if (!existsSync(sanitizedTemp)) throw new Error(`Configured transcoding temporary directory does not exist: ${sanitizedTemp}`)
+        const tempDirectoryStat = await fs.stat(sanitizedTemp)
+        if (!tempDirectoryStat.isDirectory()) throw new Error(`Configured transcoding temporary path is not a directory: ${sanitizedTemp}`)
+        tempBaseDir = sanitizedTemp
       }
       tempPath = PathUtils.sanitizeAbsolutePath(path.join(
         tempBaseDir,
         `.totality_tmp_${Date.now()}_${path.basename(inputPath, path.extname(inputPath))}${outputExt}`
       ))
+
+      const configuredDefaultOutputMode = (await db.config.getSetting('transcoding_default_output_mode')) as 'copy' | 'quarantine-replace' | 'replace' | null
+      const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
+      const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(
+        requestedOutputMode,
+        params.encoder,
+        Boolean(options.customArgs?.trim())
+      )
+      if (effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') {
+        const sourceVolume = (await fs.stat(inputPath)).dev
+        const tempVolume = (await fs.stat(tempBaseDir)).dev
+        if (sourceVolume !== tempVolume) throw new Error('Replacement transcoding requires the temporary directory to be on the same volume as the source file.')
+      }
+      if (params.encoder !== 'copy') {
+        const maximumOutputBytes = await this.resolveMaximumOutputBytes(sourceStat.size, options, db)
+        if (maximumOutputBytes !== null) {
+          const available = await fs.statfs(tempBaseDir)
+          const availableBytes = Number(available.bavail) * Number(available.bsize)
+          if (availableBytes < maximumOutputBytes) {
+            throw new Error(`Insufficient free space for the configured output ceiling: ${maximumOutputBytes} bytes required, ${availableBytes} bytes available.`)
+          }
+          options = { ...options, maxOutputBytes: maximumOutputBytes }
+        }
+      }
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${inputPath} -> ${tempPath}`)
       const success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
@@ -711,9 +738,6 @@ export class TranscodingService {
 
       if (!success) {
         if (controller.signal.aborted) {
-          if (tempPath && existsSync(tempPath)) {
-            try { await fs.unlink(tempPath) } catch (e) { getLoggingService().warn('[TranscodingService]', 'Failed to clean up temp file on abort:', e) }
-          }
           onProgress?.({ percent: 0, status: 'cancelled' })
           return false
         }
@@ -726,6 +750,9 @@ export class TranscodingService {
       const stats = await fs.stat(tempPath)
       if (stats.size === 0) {
         throw new Error('Transcoded file is empty')
+      }
+      if (options.maxOutputBytes !== undefined && stats.size > options.maxOutputBytes) {
+        throw new Error(`Transcoded output exceeded the configured output ceiling (${stats.size} > ${options.maxOutputBytes} bytes).`)
       }
 
       const outputAnalysis = await getMediaFileAnalyzer().analyzeFile(tempPath)
@@ -744,14 +771,6 @@ export class TranscodingService {
         throw new Error('Transcoded output verification failed: HDR10 metadata was not preserved')
       }
 
-      const configuredDefaultOutputMode = (await db.config.getSetting('transcoding_default_output_mode')) as 'copy' | 'quarantine-replace' | 'replace' | null
-      const requestedOutputMode = options.outputMode || configuredDefaultOutputMode
-      const effectiveOutputMode = TranscodeCommandFactory.resolveOutputMode(
-        requestedOutputMode,
-        params.encoder,
-        Boolean(options.customArgs?.trim())
-      )
-
       // Guard against size inflation for replacement modes: if transcoded result is larger than source, abort replacement
       if ((effectiveOutputMode === 'quarantine-replace' || effectiveOutputMode === 'replace') && stats.size > sourceStat.size) {
         throw new Error(`Transcoded output (${Math.round(stats.size / (1024 * 1024))} MB) is larger than original source (${Math.round(sourceStat.size / (1024 * 1024))} MB). Aborting replacement to protect storage.`)
@@ -769,27 +788,28 @@ export class TranscodingService {
         if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(inputPath)) {
           await fs.unlink(inputPath)
         }
-        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(targetSamePath)
-        if (newAnalysis.success) {
-          await db.media.updatePathAndStats(mediaItemId, targetSamePath, newAnalysis)
-        }
+        await db.media.updatePathAndStats(mediaItemId, targetSamePath, {
+          fileSize: outputAnalysis.fileSize,
+          duration: outputAnalysis.duration,
+          video: outputAnalysis.video,
+          audioTracks: outputAnalysis.audioTracks,
+        })
       } else if (effectiveOutputMode === 'quarantine-replace') {
         getLoggingService().info('[TranscodingService]', `Replacing with quarantine backup: ${inputPath}`)
         const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.quarantine-${Date.now()}${origExt}`)
         await fs.rename(inputPath, quarantinePath)
         try {
-          if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
-            await fs.copyFile(tempPath, targetSamePath)
-            await fs.unlink(tempPath)
-          }
+          if (path.resolve(tempPath) !== path.resolve(targetSamePath)) await fs.rename(tempPath, targetSamePath)
         } catch (error) {
           await fs.rename(quarantinePath, inputPath)
           throw error
         }
-        const newAnalysis = await getMediaFileAnalyzer().analyzeFile(targetSamePath)
-        if (newAnalysis.success) {
-          await db.media.updatePathAndStats(mediaItemId, targetSamePath, newAnalysis)
-        }
+        await db.media.updatePathAndStats(mediaItemId, targetSamePath, {
+          fileSize: outputAnalysis.fileSize,
+          duration: outputAnalysis.duration,
+          video: outputAnalysis.video,
+          audioTracks: outputAnalysis.audioTracks,
+        })
       } else {
         // Sibling copy
         const copyPath = path.join(path.dirname(inputPath), `${origBase} - Transcoded${outputExt}`)
@@ -809,16 +829,40 @@ export class TranscodingService {
         : error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
       
-      if (tempPath && existsSync(tempPath)) {
-        try { await fs.unlink(tempPath) } catch (e) { getLoggingService().warn('[TranscodingService]', 'Failed to clean up temp file:', e) }
-      }
-
       onProgress?.({ percent: 0, status: 'failed', error: msg })
       if (controller.signal.aborted) return false
       throw error
     } finally {
       this.activeJobs.delete(mediaItemId)
     }
+  }
+
+  private async resolveMaximumOutputBytes(
+    sourceSize: number,
+    options: TranscodeOptions,
+    db: ReturnType<typeof getDatabase>
+  ): Promise<number | null> {
+    if (options.maxOutputBytes !== undefined) {
+      if (!Number.isSafeInteger(options.maxOutputBytes) || options.maxOutputBytes <= 0) {
+        throw new Error('Maximum output size must be a positive integer number of bytes.')
+      }
+      return options.maxOutputBytes
+    }
+    const rawPolicy = await db.config.getSetting('transcoding.global_min_savings')
+    if (!rawPolicy) throw new Error('Global minimum savings policy is not configured.')
+    let policy: { kind: 'percent' | 'bytes'; value: number }
+    try {
+      policy = JSON.parse(rawPolicy) as { kind: 'percent' | 'bytes'; value: number }
+    } catch (error) {
+      throw new Error(`Global minimum savings policy is invalid: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!['percent', 'bytes'].includes(policy.kind) || !Number.isFinite(policy.value) || policy.value <= 0) {
+      throw new Error('Global minimum savings policy must define a positive percent or byte value.')
+    }
+    const savings = policy.kind === 'percent' ? Math.floor(sourceSize * policy.value / 100) : Math.floor(policy.value)
+    const maximumOutputBytes = sourceSize - savings
+    if (maximumOutputBytes <= 0) throw new Error('Global minimum savings policy exceeds the source file size.')
+    return maximumOutputBytes
   }
 
   private runFFmpeg(
@@ -831,7 +875,11 @@ export class TranscodingService {
   ): Promise<boolean> {
     return new Promise((resolve, reject) => {
       const analyzer = getMediaFileAnalyzer()
-      const ffmpegPath = analyzer.getFFmpegPath() || 'ffmpeg'
+      const ffmpegPath = analyzer.getFFmpegPath()
+      if (!ffmpegPath) {
+        reject(new TranscodeError('FFmpeg path is unavailable'))
+        return
+      }
       const actualPath = PathUtils.resolveExecutablePath(ffmpegPath)
 
       let args: string[] = []
@@ -849,14 +897,17 @@ export class TranscodingService {
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
 
       const proc = spawn(actualPath, args)
-      if (proc.pid) {
-        try {
-          os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL)
-        } catch {
-          // Ignore if OS or permissions disallow priority adjustments
-        }
-      }
       let stderrBuffer = ''
+      let outputLimitExceeded = false
+      const outputLimitMonitor = options.maxOutputBytes === undefined ? undefined : setInterval(() => {
+        if (!existsSync(outputPath)) return
+        void fs.stat(outputPath).then(stats => {
+          if (stats.size > options.maxOutputBytes! && !outputLimitExceeded) {
+            outputLimitExceeded = true
+            proc.kill('SIGKILL')
+          }
+        }).catch(error => getLoggingService().error('[TranscodingService]', 'Failed to inspect transcoding output size:', error))
+      }, 1000)
 
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -919,11 +970,14 @@ export class TranscodingService {
       })
 
       proc.on('close', (code) => {
+        if (outputLimitMonitor) clearInterval(outputLimitMonitor)
         if (code === 0) {
           resolve(true)
         } else {
           if (signal?.aborted) {
             resolve(false)
+          } else if (outputLimitExceeded) {
+            reject(new TranscodeError(`FFmpeg output exceeded the configured maximum of ${options.maxOutputBytes} bytes`, code ?? undefined, stderrBuffer.trim()))
           } else {
             const stderrSnippet = stderrBuffer.trim()
             reject(new TranscodeError(`FFmpeg process failed with exit code ${code}`, code ?? undefined, stderrSnippet))
