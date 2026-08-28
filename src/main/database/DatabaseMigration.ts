@@ -382,14 +382,17 @@ async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
      SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE tier_score = 0 AND bitrate_tier_score = 0 AND audio_tier_score = 0
        AND overall_score = 0 AND resolution_score = 0 AND bitrate_score = 0 AND audio_score = 0
-       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
+       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
     `UPDATE music_quality_scores
      SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE tier_score = 0 AND codec_score = 0 AND bitrate_score = 0
-       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+       AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
+       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
     `UPDATE series_completeness
      SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
-     WHERE COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0`,
+     WHERE COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
+       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
   ]
   for (const statement of updates) await db.execute(statement)
 }

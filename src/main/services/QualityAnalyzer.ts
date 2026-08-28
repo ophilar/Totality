@@ -1,6 +1,6 @@
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
-import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '@main/types/database'
+import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack, EvidenceConfidence, EvidenceStatus, SavingsBasis } from '@main/types/database'
 import { APP_CONFIG } from '@main/config'
 import { TrashSourceClassifier, MediaSourceTier } from '@main/services/transcoding/TrashSourceClassifier'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
@@ -11,9 +11,9 @@ export interface OptimizationAdvice {
   sourceTier: MediaSourceTier
   reason: string
   estimatedSavingsBytes: number | null
-  evidence_status: 'measured' | 'estimated' | 'insufficient'
-  confidence: 'high' | 'medium' | 'low' | 'none'
-  savings_basis: 'video-stream-bitrate' | 'audio-track-bitrates' | 'none' | 'unavailable'
+  evidence_status: EvidenceStatus
+  confidence: EvidenceConfidence
+  savings_basis: SavingsBasis
 }
 
 /**
@@ -827,8 +827,8 @@ const distribution = {
     }
   }
 
-  calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number {
-    return this.getAudioPruningEvidence(item, analysis).estimatedSavingsBytes ?? 0
+  calculateDubBloatBytes(item: MediaItem, analysis?: FileAnalysisResult): number | null {
+    return this.getAudioPruningEvidence(item, analysis).estimatedSavingsBytes
   }
 
   /**
@@ -838,16 +838,16 @@ const distribution = {
    */
   getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult): OptimizationAdvice {
     const video = analysis?.video
-    const videoBitrate = video?.bitrate ?? item.video_bitrate ?? 0
+    const videoBitrate = video?.bitrate ?? item.video_bitrate
     const codec = (video?.codec ?? item.video_codec ?? '').toLowerCase()
     const durationMs = analysis?.duration ?? item.duration
-    const sourceTier = TrashSourceClassifier.classify(item.file_path || '', videoBitrate || undefined, codec || undefined)
+    const sourceTier = TrashSourceClassifier.classify(item.file_path || '', videoBitrate ?? undefined, codec || undefined)
     const tier = this.classifyTier(
       item.resolution || (video ? `${video.width}x${video.height}` : 'SD'),
       video?.height ?? item.height ?? undefined
     )
     const durationSec = durationMs != null ? durationMs / 1000 : 0
-    const hasVideoEvidence = Number.isFinite(videoBitrate) && videoBitrate > 0 && codec.length > 0 && durationSec > 0 && Boolean(item.resolution || video?.height)
+    const hasVideoEvidence = typeof videoBitrate === 'number' && Number.isFinite(videoBitrate) && videoBitrate > 0 && codec.length > 0 && durationSec > 0 && Boolean(item.resolution || video?.height)
     const targetBitrate = this.efficiencyThresholds[tier]
     const videoSavings = hasVideoEvidence
       ? Math.round(Math.max(0, (videoBitrate - targetBitrate) * 1000 * durationSec / 8))
@@ -866,7 +866,7 @@ const distribution = {
         estimatedSavingsBytes: audioSavings,
         evidence_status: 'measured',
         confidence: 'high',
-        savings_basis: 'audio-track-bitrates',
+        savings_basis: 'audio_stream_removal',
       }
     }
 
@@ -880,7 +880,7 @@ const distribution = {
         estimatedSavingsBytes: videoSavings,
         evidence_status: 'estimated',
         confidence: 'medium',
-        savings_basis: 'video-stream-bitrate',
+        savings_basis: 'video_sample_encode',
       }
     }
 
@@ -892,7 +892,7 @@ const distribution = {
         estimatedSavingsBytes: null,
         evidence_status: 'insufficient',
         confidence: 'none',
-        savings_basis: 'unavailable',
+        savings_basis: 'insufficient_data',
       }
     }
 
@@ -902,10 +902,10 @@ const distribution = {
       reason: isModernCodec || sourceTier === 'WEB-DL' || sourceTier === 'WEBRip'
         ? 'Source is already compact and efficient. No transcode needed.'
         : 'Video bitrate is already within efficient range.',
-      estimatedSavingsBytes: 0,
-      evidence_status: 'measured',
-      confidence: 'high',
-      savings_basis: 'none',
+      estimatedSavingsBytes: null,
+      evidence_status: 'estimated',
+      confidence: 'medium',
+      savings_basis: 'video_sample_encode',
     }
   }
 

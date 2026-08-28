@@ -1,6 +1,7 @@
 import { LanguageDecisionService, type AudioTrackForDecision } from './LanguageDecisionService'
 import { AudioCodecRanker } from './AudioCodecRanker'
 import { APP_CONFIG } from '@main/config'
+import type { EvidenceConfidence, EvidenceStatus, SavingsBasis } from '@main/types/database'
 
 export type OptimizationMechanismStatus = 'executable' | 'eligible-awaiting-opt-in' | 'review-required' | 'blocked' | 'unavailable'
 export type OptimizationPrimaryAction = 'remove-audio-tracks' | 'transcode-audio' | 'transcode-video' | 'review-language' | 'no-action'
@@ -30,9 +31,9 @@ export interface OptimizationDecisionMechanism {
   status: OptimizationMechanismStatus
   estimatedSavingsBytes: number | null
   reason: string
-  evidence_status: 'measured' | 'estimated' | 'insufficient'
-  confidence: 'high' | 'medium' | 'low' | 'none'
-  savings_basis: 'audio-track-bitrates' | 'provided-audio-analysis' | 'video-storage-debt' | 'none' | 'unavailable'
+  evidence_status: EvidenceStatus
+  confidence: EvidenceConfidence
+  savings_basis: SavingsBasis
 }
 
 export interface OptimizationDecisionTrackRemoval extends OptimizationDecisionMechanism {
@@ -65,7 +66,7 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const trackSavings = trackRemovalStatus === 'executable'
     ? removableTracks.reduce((sum, track) => sum + ((track.bitrate! * 1000 / 8) * input.durationSeconds!), 0)
     : null
-  const trackRemovalEvidenceStatus: 'measured' | 'insufficient' = languageDecision.confidence === 'high' && (removableTracks.length === 0 || hasMeasuredTrackSavings) ? 'measured' : 'insufficient'
+  const trackRemovalEvidenceStatus: EvidenceStatus = languageDecision.confidence === 'high' && (removableTracks.length === 0 || hasMeasuredTrackSavings) ? 'measured' : 'insufficient'
 
   const trackRemoval: OptimizationDecisionTrackRemoval = {
     status: trackRemovalStatus,
@@ -78,7 +79,7 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     originalLanguage: languageDecision.originalLanguage,
     evidence_status: trackRemovalEvidenceStatus,
     confidence: trackRemovalEvidenceStatus === 'measured' ? 'high' : 'none',
-    savings_basis: trackSavings != null ? 'audio-track-bitrates' : trackRemovalEvidenceStatus === 'measured' ? 'none' : 'unavailable',
+    savings_basis: trackRemovalEvidenceStatus === 'measured' ? 'audio_stream_removal' : 'insufficient_data',
     evidenceSources: languageDecision.evidenceSources,
   }
   const audioTracksEligibleForTranscode = input.audioTracks.filter(track => !track.hasObjectAudio && !track.isCommentary && !track.isAudioDescription && !track.isAccessibility)
@@ -107,16 +108,17 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     reason: !hasMeasuredAudioEvidence ? 'Measured codec, channel, bitrate, and duration evidence is required for audio transcoding' : audioSavings != null && audioSavings > 0 ? 'Measured audio streams exceed the configured target bitrate' : 'Measured audio streams are already efficient',
     evidence_status: hasMeasuredAudioEvidence ? 'estimated' : 'insufficient',
     confidence: hasMeasuredAudioEvidence ? 'medium' : 'none',
-    savings_basis: !hasMeasuredAudioEvidence ? 'unavailable' : input.audioTranscodeSavingsBytes != null ? 'provided-audio-analysis' : audioSavings != null ? 'audio-track-bitrates' : 'none',
+    savings_basis: hasMeasuredAudioEvidence ? 'audio_transcode_model' : 'insufficient_data',
   }
+  const estimatedVideoSavings = videoSavings != null && videoSavings > 0 ? videoSavings : null
   const videoTranscode: OptimizationDecisionMechanism = {
-    status: videoSavings != null && videoSavings > 0 ? 'executable' : 'unavailable',
-    estimatedSavingsBytes: videoSavings,
-    reason: videoSavings != null && videoSavings > 0 ? 'Estimated video-stream analysis found recoverable space' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Measured video-stream savings evidence is unavailable',
+    status: estimatedVideoSavings != null ? 'review-required' : 'unavailable',
+    estimatedSavingsBytes: estimatedVideoSavings,
+    reason: estimatedVideoSavings != null ? 'Estimated video-stream analysis found recoverable space' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Measured video-stream savings evidence is unavailable',
     evidence_status: videoSavings == null ? 'insufficient' : 'estimated',
     confidence: videoSavings == null ? 'none' : 'medium',
-    savings_basis: videoSavings == null ? 'unavailable' : videoSavings > 0 ? 'video-storage-debt' : 'none',
+    savings_basis: videoSavings == null ? 'insufficient_data' : 'video_sample_encode',
   }
-  const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : videoTranscode.status === 'executable' ? 'transcode-video' : 'no-action'
+  const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : 'no-action'
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }
 }

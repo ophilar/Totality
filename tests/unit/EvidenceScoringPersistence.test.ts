@@ -218,4 +218,34 @@ describe('evidence-based score persistence', () => {
       }],
     })
   })
+
+  it('does not relabel an explicitly measured zero as legacy insufficient data', async () => {
+    await db.tvShows.upsertCompleteness({
+      series_title: 'Measured Zero Series',
+      source_id: 'measured-source',
+      library_id: 'measured-library',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+      completeness_percentage: 100,
+      efficiency_score: 0,
+      storage_debt_bytes: 0,
+      evidence_status: 'measured',
+      confidence: 'high',
+      savings_basis: 'video_sample_encode',
+    } satisfies SeriesCompleteness)
+
+    await runMigrations(db.db)
+
+    await expect(db.tvShows.getCompletenessByTitle('Measured Zero Series', 'measured-source', 'measured-library')).resolves.toMatchObject({
+      efficiency_score: 0,
+      storage_debt_bytes: 0,
+      evidence_status: 'measured',
+      confidence: 'high',
+      savings_basis: 'video_sample_encode',
+    })
+  })
 })

@@ -75,7 +75,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       audio_tracks: JSON.stringify([{ index: 1, language: 'de', bitrate: 640 }]),
     }
 
-    expect(analyzer.calculateDubBloatBytes(item)).toBe(0)
+    expect(analyzer.calculateDubBloatBytes(item)).toBeNull()
   })
 
   it('withholds a video transcode recommendation when the video stream bitrate is unknown', () => {
@@ -96,7 +96,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('already_optimized')
     expect(advice.evidence_status).toBe('insufficient')
     expect(advice.confidence).toBe('none')
-    expect(advice.savings_basis).toBe('unavailable')
+    expect(advice.savings_basis).toBe('insufficient_data')
     expect(advice.estimatedSavingsBytes).toBe(null)
   })
 
@@ -125,7 +125,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.reason).toContain('High-bitrate Remux/BluRay source suitable for modern HEVC/AV1 encoding.')
     expect(advice.evidence_status).toBe('estimated')
     expect(advice.confidence).toBe('medium')
-    expect(advice.savings_basis).toBe('video-stream-bitrate')
+    expect(advice.savings_basis).toBe('video_sample_encode')
     expect(advice.estimatedSavingsBytes).toBe(11_250_000_000)
   })
 
@@ -159,7 +159,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.sourceTier).toBe('WEB-DL')
     expect(advice.reason).toContain('Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended')
     expect(advice.evidence_status).toBe('measured')
-    expect(advice.savings_basis).toBe('audio-track-bitrates')
+    expect(advice.savings_basis).toBe('audio_stream_removal')
     expect(advice.estimatedSavingsBytes).toBe(720_000_000)
   })
 
@@ -185,7 +185,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('already_optimized')
     expect(advice.evidence_status).toBe('insufficient')
     expect(advice.confidence).toBe('none')
-    expect(advice.savings_basis).toBe('unavailable')
+    expect(advice.savings_basis).toBe('insufficient_data')
     expect(advice.estimatedSavingsBytes).toBe(null)
   })
 
@@ -215,7 +215,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('already_optimized')
     expect(advice.sourceTier).toBe('WEB-DL')
     expect(advice.reason).toContain('Source is already compact and efficient.')
-    expect(advice.estimatedSavingsBytes).toBe(0)
+    expect(advice.estimatedSavingsBytes).toBe(null)
   })
 
   it('recommends stream_pruning for HEVC file with foreign audio dubs', () => {
@@ -268,7 +268,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(advice.action).toBe('already_optimized')
     expect(advice.sourceTier).toBe('HDTV')
     expect(advice.reason).toContain('Video bitrate is already within efficient range.')
-    expect(advice.estimatedSavingsBytes).toBe(0)
+    expect(advice.estimatedSavingsBytes).toBe(null)
   })
 
   it('recommends video_transcode for older high-bitrate BluRay encode', () => {

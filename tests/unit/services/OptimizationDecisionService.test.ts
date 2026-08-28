@@ -20,7 +20,7 @@ describe('buildOptimizationDecision', () => {
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000)
     expect(result.trackRemoval.evidence_status).toBe('measured')
     expect(result.trackRemoval.confidence).toBe('high')
-    expect(result.trackRemoval.savings_basis).toBe('audio-track-bitrates')
+    expect(result.trackRemoval.savings_basis).toBe('audio_stream_removal')
     expect(result.audioTranscode.estimatedSavingsBytes).toBe(1_000)
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(2_000)
   })
@@ -58,7 +58,7 @@ describe('buildOptimizationDecision', () => {
 
     expect(result.trackRemoval.retainedTrackIndexes).toEqual([1, 2])
     expect(result.trackRemoval.removableTrackIndexes).toEqual([])
-    expect(result.primaryAction).toBe('transcode-video')
+    expect(result.primaryAction).toBe('no-action')
   })
 
   it('suggests audio transcoding and computes savings for lossless TrueHD/DTS-HD audio', () => {
@@ -93,7 +93,7 @@ describe('buildOptimizationDecision', () => {
     expect(result.audioTranscode.status).toBe('unavailable')
     expect(result.audioTranscode.evidence_status).toBe('insufficient')
     expect(result.audioTranscode.confidence).toBe('none')
-    expect(result.audioTranscode.savings_basis).toBe('unavailable')
+    expect(result.audioTranscode.savings_basis).toBe('insufficient_data')
     expect(result.audioTranscode.estimatedSavingsBytes).toBe(null)
   })
 
@@ -110,7 +110,7 @@ describe('buildOptimizationDecision', () => {
     expect(result.videoTranscode.status).toBe('unavailable')
     expect(result.videoTranscode.evidence_status).toBe('insufficient')
     expect(result.videoTranscode.confidence).toBe('none')
-    expect(result.videoTranscode.savings_basis).toBe('unavailable')
+    expect(result.videoTranscode.savings_basis).toBe('insufficient_data')
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(null)
   })
 })
