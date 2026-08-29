@@ -97,6 +97,35 @@ describe('TVShowRepository (Real DB)', () => {
     expect(results[0].series_title).toBe('The Wire')
   })
 
+  it('sorts TV summaries by weighted efficiency before applying pagination', async () => {
+    const addShow = async (title: string, efficiency: number) => {
+      await repo.upsertCompleteness({
+        series_title: title,
+        source_id: 'src-1',
+        library_id: 'lib-1',
+        total_seasons: 1,
+        total_episodes: 1,
+        owned_seasons: 1,
+        owned_episodes: 1,
+        completeness_percentage: 100,
+        efficiency_score: efficiency,
+        missing_seasons: '[]',
+        missing_episodes: '[]',
+      } as SeriesCompleteness)
+    }
+
+    await addShow('Low Efficiency', 20)
+    await addShow('High Efficiency', 90)
+
+    const summaries = await repo.getSummaries({
+      sortBy: 'weighted_efficiency',
+      sortOrder: 'desc',
+      limit: 1,
+    })
+
+    expect(summaries.map((summary) => summary.series_title)).toEqual(['High Efficiency'])
+  })
+
   it('should retrieve episodes for a specific show', async () => {
     await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
     await mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))

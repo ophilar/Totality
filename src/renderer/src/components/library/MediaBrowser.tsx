@@ -20,6 +20,7 @@ import { BrowserFilterBar } from '@/components/library/browser/BrowserFilterBar'
 import { BrowserAlphabetNav } from '@/components/library/browser/BrowserAlphabetNav'
 
 import { useSources } from '@/contexts/SourceContext'
+import { nextSortDirection } from '@/components/library/sortDefinitions'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useLibrary } from '@/contexts/LibraryContext'
@@ -142,7 +143,7 @@ export function MediaBrowser({
     if (nextSort === sortBy) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     else {
       setSortBy(nextSort)
-      setSortOrder(nextSort === 'efficiency' || nextSort === 'waste' || nextSort === 'storage_debt' ? 'desc' : 'asc')
+      setSortOrder(nextSortDirection(sortBy, nextSort, sortOrder))
     }
   }, [setSortBy, setSortOrder, sortBy, sortOrder])
 
@@ -430,7 +431,7 @@ export function MediaBrowser({
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
-                  movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
+                  movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   onSelectMovie={(id) => setSelectedMediaId(id)}
                   onSelectCollection={(c) => { setSelectedCollection(c); setShowCollectionModal(true) }}
                   viewType={viewType} gridScale={gridScale}
@@ -448,7 +449,7 @@ export function MediaBrowser({
             {view === 'tv' && (
               <SectionErrorBoundary title="TV Shows">
                 <TVShowsView
-        shows={shows} sortBy={sortBy} onSortChange={handleSortChange} slimDown={slimDown}
+                  shows={shows} sortBy={sortBy} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   selectedShow={selectedShow} selectedShowData={selectedShowData}
                   selectedShowLoading={selectedShowEpisodesLoading} onSelectShow={setSelectedShow}
                   onSelectEpisode={setSelectedMediaId}
@@ -470,7 +471,7 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} onSortChange={handleSortChange} slimDown={slimDown}
+                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}

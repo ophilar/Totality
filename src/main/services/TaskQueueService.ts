@@ -96,9 +96,12 @@ export class TaskQueueService {
 
   async loadPersistedHistory(): Promise<void> {
     await this.loadState()
+  }
+
+  async resumePersistedTasks(): Promise<void> {
     if (this.queue.length > 0 && !this.isPaused && !this.currentTask) {
       this.logging.info('[TaskQueue]', `Resuming queue with ${this.queue.length} persisted tasks`)
-      this.processQueue()
+      await this.processQueue()
     }
   }
 
@@ -253,6 +256,11 @@ export class TaskQueueService {
       this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
       if (this.currentTask.type === TaskType.Transcode && this.currentTask.mediaItemId) {
         this.getTranscoding().cancelTranscode(this.currentTask.mediaItemId)
+      }
+      if (this.currentTask.type === TaskType.LibraryScan ||
+        this.currentTask.type === TaskType.SourceScan ||
+        this.currentTask.type === TaskType.MusicScan) {
+        this.getSourceManager().stopScan()
       }
       await this.saveState()
     }

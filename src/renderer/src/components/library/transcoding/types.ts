@@ -8,14 +8,15 @@ export interface TranscodeOptions {
   useGpu: boolean
   gpuId: string
   encoder: string
-  crf: number
+  crf?: number
   preset: string
   customArgs: string
   transcodingEngine: 'ffmpeg'
   targetSize: string
   maxOutputBytes?: number
-  aiOptimize?: boolean
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
+  qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
+  encoderPolicy?: 'hardware' | 'software' | 'compare'
 }
 
 export interface ShowTranscodePreflightEpisode {
@@ -34,6 +35,7 @@ export interface ShowTranscodePreflightEpisode {
   savingsBasis?: string
   sourceTier?: string
   adviceReason?: string
+  measuredParameters?: { encoder: string; crf?: number; preset: string }
 }
 
 export interface ShowTranscodePreflight {

@@ -34,7 +34,7 @@ export function Dashboard({
     series,
     artists,
     isLoading, error,
-    upgradeSortBy, setUpgradeSortBy,
+    upgradeSortBy, setUpgradeSortBy, upgradeSortOrder, setUpgradeSortOrder,
     collectionSortBy, setCollectionSortBy,
     seriesSortBy, setSeriesSortBy,
     artistSortBy, setArtistSortBy,
@@ -174,7 +174,7 @@ export function Dashboard({
           <UpgradesColumn
             upgradeTab={upgradeTab} setUpgradeTab={setUpgradeTab}
             movieUpgrades={movieUpgrades} tvUpgrades={tvUpgrades} musicUpgrades={musicUpgrades as MusicAlbumUpgrade[]}
-            upgradeSortBy={upgradeSortBy} setUpgradeSortBy={setUpgradeSortBy}
+            upgradeSortBy={upgradeSortBy} setUpgradeSortBy={setUpgradeSortBy} sortDirection={upgradeSortOrder} setSortDirection={setUpgradeSortOrder}
             hasMovies={hasMovies} hasTV={hasTV} hasMusic={hasMusic}
             onSelect={setSelectedMediaId}
             onDismissMovie={dismissMovieUpgrade} onDismissTv={dismissTvUpgrade} onDismissMusic={dismissMusicUpgrade}

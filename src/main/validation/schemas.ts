@@ -115,7 +115,7 @@ export const TVShowFiltersSchema = z.object({
   completenessFilter: z.string().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'size', 'completeness', 'waste']).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'weighted_efficiency', 'size', 'completeness', 'waste']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -519,6 +519,8 @@ export const TranscodeOptionsSchema = z.object({
   gpuId: z.string().optional(),
   transcodingEngine: z.literal('ffmpeg').optional(),
   optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
+  qualityProfile: z.enum(['transparent', 'balanced', 'maximum_savings']).optional(),
+  encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
   streamSelection: z.union([
     z.object({
       audio: z.literal('all'),
@@ -536,7 +538,6 @@ export const TranscodeOptionsSchema = z.object({
   ]).optional(),
   targetSize: z.string().optional(),
   maxOutputBytes: z.number().int().positive().optional(),
-  aiOptimize: z.boolean().optional(),
 }).optional()
 
 export const SetSelectedGpuSchema = z.string().min(1).max(200).nullable()

@@ -14,7 +14,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-hwaccel_output_format', 'cuda',
       '-extra_hw_frames', '8',
       '-i', input,
-      '-fps_mode', 'cfr'
+      '-fps_mode', 'passthrough'
     ]
     const codec = options.targetCodec === 'av1' ? 'av1_nvenc' : 'hevc_nvenc'
     const cq = (options.crf ?? APP_CONFIG.transcoding.defaultCrf).toString()
@@ -27,7 +27,6 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
       '-cq', cq,
       '-b:v', '0',
       '-b_ref_mode', 'middle',
-      '-spatial-aq', '1',
       '-temporal-aq', '1',
       '-rc-lookahead', '32'
     )

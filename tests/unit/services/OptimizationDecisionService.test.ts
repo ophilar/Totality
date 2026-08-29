@@ -113,4 +113,16 @@ describe('buildOptimizationDecision', () => {
     expect(result.videoTranscode.savings_basis).toBe('insufficient_data')
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(null)
   })
+
+  it('keeps a positive storage estimate available for review', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en', fileSize: 50_000_000, durationSeconds: 3600,
+      videoStorageDebtBytes: 12_000_000, audioTranscodeSavingsBytes: null, audioTracks: [],
+    })
+
+    expect(result.videoTranscode.status).toBe('review-required')
+    expect(result.videoTranscode.evidence_status).toBe('estimated')
+    expect(result.videoTranscode.estimatedSavingsBytes).toBe(12_000_000)
+    expect(result.videoTranscode.savings_basis).toBe('video_sample_encode')
+  })
 })

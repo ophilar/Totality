@@ -10,7 +10,7 @@
     ["quality_threshold_audio", "192"],
     ["theme", "dark"],
     ["theme_mode", "dark"],
-    ["tmdb_api_key", ""],
+      ["tmdb_api_key", ""],
     ["omdb_api_key", ""],
     ["quality_video_sd_medium", "1500"],
     ["quality_video_sd_high", "3500"],

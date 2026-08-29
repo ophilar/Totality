@@ -22,7 +22,7 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
       '-y',
       '-threads', softwareThreads.toString(),
       '-i', input,
-      '-fps_mode', 'cfr',
+      '-fps_mode', 'passthrough',
       ...(options.targetCodec === 'av1' ? ['-svtav1-params', 'tune=0'] : []),
       '-c:v', codec,
       '-crf', crf,

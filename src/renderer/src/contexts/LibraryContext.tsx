@@ -73,7 +73,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   }, [])
 
   // Persist view preferences
-  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortOrder?: 'asc' | 'desc', groupByCollections?: boolean }>>({})
+  const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortBy?: string, sortOrder?: 'asc' | 'desc', groupByCollections?: boolean }>>({})
 
   useEffect(() => {
     window.electronAPI.getSetting('library_view_prefs').then(val => {
@@ -84,6 +84,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
           if (current) {
             setViewTypeState(current.viewType)
             setGridScaleState(current.gridScale)
+            if (current.sortBy) setSortBy(current.sortBy)
             if (current.sortOrder) setSortOrder(current.sortOrder)
             if (current.groupByCollections !== undefined) setGroupByCollectionsState(current.groupByCollections)
           }
@@ -118,6 +119,12 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
     window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
   }, [view])
 
+  const updateSortBy = useCallback((sort: string) => {
+    setSortBy(sort)
+    viewPrefsRef.current[view] = { ...viewPrefsRef.current[view], sortBy: sort }
+    window.electronAPI.setSetting('library_view_prefs', JSON.stringify(viewPrefsRef.current))
+  }, [view])
+
   const setSelectedMedia = useCallback((id: number | null, type: 'movie' | 'episode' | 'track' = 'movie') => {
     setSelectedItemId(id)
     setSelectedItemType(id ? type : null)
@@ -135,7 +142,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       selectedShow, setSelectedShow,
       selectedArtist, setSelectedArtist,
       selectedAlbum, setSelectedAlbum,
-      sortBy, setSortBy,
+      sortBy, setSortBy: updateSortBy,
       sortOrder, setSortOrder: updateSortOrder,
       activeSourceId, setActiveSourceId,
       deepAnalyzeMedia

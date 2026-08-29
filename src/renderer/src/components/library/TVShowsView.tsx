@@ -4,7 +4,7 @@ import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
-import { tvSortColumns } from '@/components/library/sortDefinitions'
+import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
@@ -24,6 +24,7 @@ const formatMB = (bytes?: number | null) => {
 export function TVShowsView({
   shows,
   sortBy,
+  sortOrder,
   onSortChange,
   slimDown,
   selectedShow,
@@ -52,6 +53,7 @@ export function TVShowsView({
 }: {
   shows: TVShowSummary[]
   sortBy: string
+  sortOrder: 'asc' | 'desc'
   onSortChange: (sort: string) => void
   slimDown: boolean
   selectedShow: string | null
@@ -124,8 +126,8 @@ export function TVShowsView({
           )}
         </div>
         <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-          {tvSortColumns.map(s => (
-            <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
+          {getSortOptions('tv').map(s => (
+              <button key={s.key} onClick={() => onSortChange(s.key)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${sortBy === s.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s.label}{sortBy === s.key ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''}</button>
           ))}
         </div>
       </div>
@@ -173,9 +175,9 @@ export function TVShowsView({
           listHeader={
             <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <span className="w-16 shrink-0">Poster</span>
-              <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">Title</button>
-              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by recoverable bytes">Recoverable</button>
-              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('efficiency')} aria-label="Sort TV shows by weighted efficiency">Weighted efficiency</button>
+              <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">{getSortLabel('tv', 'title')}</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by recoverable bytes">{getSortLabel('tv', 'recoverable')}</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('weighted_efficiency')} aria-label="Sort TV shows by weighted efficiency">{getSortLabel('tv', 'weighted_efficiency')}</button>
               <span className="w-8 shrink-0" />
             </div>
           }

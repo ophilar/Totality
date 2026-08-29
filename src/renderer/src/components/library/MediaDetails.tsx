@@ -16,6 +16,7 @@ import { ConversionRecommendation } from '@/components/library/ConversionRecomme
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
 import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
+import { formatDuration } from '@/components/library/mediaUtils'
 import { Zap } from 'lucide-react'
 import type { MediaItem, MediaItemVersion } from '@main/types/database'
 
@@ -130,12 +131,6 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const displayItem: MediaItem = media
   const isMovie = media.type === 'movie'
   
-  const formatDuration = (mins: number) => {
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return h > 0 ? `${h}h ${m}m` : `${m}m`
-  }
-
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
     let size = bytes

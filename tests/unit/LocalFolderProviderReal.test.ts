@@ -276,8 +276,8 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     const analyzer = getMediaFileAnalyzer()
     
     vi.spyOn(analyzer, 'analyzeFilesParallel').mockResolvedValue(new Map([
-      [path.join(tempDir.path, 'Short.mkv'), { success: true, duration: 30, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult],
-      [path.join(tempDir.path, 'Long.mkv'), { success: true, duration: 7200, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult]
+      [path.join(tempDir.path, 'Short.mkv'), { success: true, duration: 30_000, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult],
+      [path.join(tempDir.path, 'Long.mkv'), { success: true, duration: 7_200_000, video: { width: 1920, height: 1080, codec: 'h264' } } as FileAnalysisResult]
     ]))
 
     fs.writeFileSync(path.join(tempDir.path, 'Short.mkv'), 'short')

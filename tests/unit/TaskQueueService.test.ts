@@ -24,9 +24,10 @@ describe('TaskQueueService', () => {
     
     // We still mock SourceManager for now as it involves complex provider setup,
     // but we use real DB and Logging.
-    const mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource'> = {
+    const mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource' | 'stopScan'> = {
       scanLibrary: vi.fn().mockResolvedValue({ success: true }),
       scanSource: vi.fn().mockResolvedValue({ success: true }),
+      stopScan: vi.fn(),
     }
 
     service = new TaskQueueService({
@@ -135,6 +136,7 @@ describe('TaskQueueService', () => {
       const sourceManager = {
         scanLibrary: vi.fn(() => new Promise<void>(resolve => { releaseTask = resolve })),
         scanSource: vi.fn().mockResolvedValue({ success: true }),
+        stopScan: vi.fn(),
       }
       service = new TaskQueueService({ db, logging, sourceManager })
       const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
@@ -144,6 +146,7 @@ describe('TaskQueueService', () => {
       await vi.waitFor(() => expect(service.getQueueState().currentTask?.id).toBe(taskId))
 
       await service.removeTask(taskId)
+      expect(sourceManager.stopScan).toHaveBeenCalledOnce()
       const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
       expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelled' })
       expect(safeSend).toHaveBeenCalledWith(win, 'taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelled' }) }))

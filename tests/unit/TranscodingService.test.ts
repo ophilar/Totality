@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getTranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
-import { getGeminiService } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
@@ -38,14 +37,6 @@ describe('Transcoding Integration (Service + IPC)', () => {
 
     registerTranscodingHandlers()
     service = getTranscodingService()
-
-    // Use real GeminiService but spy on its network method
-    const gemini = getGeminiService()
-    vi.spyOn(gemini, 'isConfigured').mockReturnValue(true)
-    vi.spyOn(gemini, 'sendMessage').mockResolvedValue({
-       text: '{"summary": "test", "videoCodec": "nvenc_h265", "crf": 20, "preset": "p6", "ffmpegArgs": ["-c:v", "hevc_nvenc"]}',
-       usage: { input_tokens: 0, output_tokens: 0 }
-    })
 
     // Setup real analyzer but mock ffprobe call
     const analyzer = getMediaFileAnalyzer()
@@ -99,16 +90,16 @@ describe('Transcoding Integration (Service + IPC)', () => {
   })
 
   describe('Integrated Transcoding Flow', () => {
-    it('returns AI generated parameters via IPC for a real file', async () => {
+    it('returns explicit transcoding parameters via IPC for a real file', async () => {
       const testFile = path.join(testDir, 'input.mkv')
       fs.writeFileSync(testFile, 'dummy')
       await db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'Test source', connection_config: JSON.stringify({ folderPath: testDir }), is_enabled: 1 })
       await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: testFile, file_size: 5, duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null } satisfies MediaItem)
 
       const handler = handlers.get('transcoding:getParameters')!
-      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1' }) as { summary: string }
+      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1', encoder: 'svt_av1', crf: 25, preset: 'fast', qualityProfile: 'balanced', encoderPolicy: 'software' }) as { summary: string }
       
-      expect(result.summary).toBe('test')
+      expect(result.summary).toBe('Explicit measured transcoding parameters')
     })
 
   })

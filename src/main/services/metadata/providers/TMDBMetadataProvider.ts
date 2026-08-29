@@ -20,6 +20,8 @@ interface TmdbItem {
   networks?: Array<{ id?: number; name?: string }>
   production_companies?: Array<{ id?: number; name?: string }>
   production_countries?: Array<{ iso_3166_1?: string; name?: string }>
+  media_type?: 'movie' | 'tv' | 'person'
+  known_for?: TmdbItem[]
 }
 
 function isTmdbItem(value: unknown): value is TmdbItem {
@@ -37,21 +39,19 @@ export class TMDBMetadataProvider implements IMetadataProvider {
     const apiKey = this.apiKeyGetter()
     if (!apiKey) return []
 
+    const expanded = query.includeExpanded ?? query.includeAdult ?? false
     const endpoint = query.type === 'movie' ? 'search/movie' : 'search/tv'
-    const adultParam = (query.includeExpanded ?? query.includeAdult) ? '&include_adult=true' : ''
+    const adultParam = expanded ? '&include_adult=true' : ''
     const yearParam = query.year ? (query.type === 'movie' ? `&year=${query.year}` : `&first_air_date_year=${query.year}`) : ''
-    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${yearParam}${adultParam}`
 
     try {
+      const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${yearParam}${adultParam}`
       const res = await fetch(url)
-      if (!res.ok) {
-        console.error(`[TMDBMetadataProvider] Search HTTP ${res.status} for query: ${query.title}`)
-        return []
-      }
-      const data: Record<string, unknown> = await res.json()
-
+        if (!res.ok) throw new Error(`TMDB search HTTP ${res.status}`)
+      const data = await res.json() as Record<string, unknown>
       const items = Array.isArray(data.results) ? data.results.filter(isTmdbItem) : []
-      return items.slice(0, 10).map((item) => ({
+      const uniqueItems = Array.from(new Map(items.map(item => [item.id, item])).values())
+      const results = uniqueItems.slice(0, expanded ? 50 : 10).map((item) => ({
         id: String(item.id),
         provider: this.providerId,
         title: item.title || item.name || query.title,
@@ -68,6 +68,34 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         externalIds: { tmdbId: String(item.id) },
         score: item.vote_average
       }))
+
+      if (!expanded) return results
+
+      // Expanded search is entity-aware: resolve people, then search their credits.
+      // The original query and year are never rewritten.
+      const personUrl = `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${encodeURIComponent(query.title)}&include_adult=true`
+      const personResponse = await fetch(personUrl)
+      if (!personResponse.ok) return results
+      const people = (await personResponse.json() as Record<string, unknown>).results
+      const personIds = Array.isArray(people) ? people.filter(isTmdbItem).slice(0, 5).map(person => person.id) : []
+      const credits = await Promise.all(personIds.map(async personId => {
+        const creditsUrl = `https://api.themoviedb.org/3/person/${personId}/${query.type === 'movie' ? 'movie_credits' : 'tv_credits'}?api_key=${apiKey}`
+        const creditsResponse = await fetch(creditsUrl)
+        if (!creditsResponse.ok) return []
+        const body = await creditsResponse.json() as Record<string, unknown>
+        return (Array.isArray(body.cast) ? body.cast : []).filter(isTmdbItem)
+      }))
+      const creditItems = credits.flat().filter(item => {
+        const date = item.release_date || item.first_air_date
+        return !query.year || date?.startsWith(String(query.year))
+      })
+      return [...results, ...creditItems.slice(0, 50).map(item => ({
+        id: String(item.id), provider: this.providerId, title: item.title || item.name || query.title,
+        year: item.release_date ? parseInt(item.release_date.slice(0, 4)) : item.first_air_date ? parseInt(item.first_air_date.slice(0, 4)) : undefined,
+        type: query.type, posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
+        bannerUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
+        overview: item.overview, externalIds: { tmdbId: String(item.id) }, score: item.vote_average
+      }))]
     } catch (err) {
       console.error('[TMDBMetadataProvider] Search error:', err)
       return []

@@ -35,6 +35,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       'debt': schema.seriesCompleteness.storageDebtBytes,
       'waste': schema.seriesCompleteness.storageDebtBytes,
       'efficiency': schema.seriesCompleteness.efficiencyScore,
+      'weighted_efficiency': schema.seriesCompleteness.efficiencyScore,
       'size': schema.seriesCompleteness.totalSize,
     }
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.seriesCompleteness.seriesTitle
@@ -70,10 +71,12 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .from(schema.seriesCompleteness)
 
     if (conditions.length > 0) query.where(and(...conditions))
-    query.orderBy(sortOrder)
-
-    if (filters?.limit) query.limit(filters.limit)
-    if (filters?.offset) query.offset(filters.offset)
+    const requiresCalculatedSort = filters?.sortBy === 'weighted_efficiency'
+    if (!requiresCalculatedSort) {
+      query.orderBy(sortOrder)
+      if (filters?.limit) query.limit(filters.limit)
+      if (filters?.offset) query.offset(filters.offset)
+    }
 
     const rows = await query.all()
     const summaries: TVShowSummary[] = []
@@ -166,6 +169,15 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         unscored_episode_count: unscoredCount,
         recommended_action: totalRecoverable > 0 ? 'review-required' : 'no-optimization'
       })
+    }
+    if (requiresCalculatedSort) {
+      summaries.sort((a, b) => {
+        const left = a.weighted_efficiency ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
+        const right = b.weighted_efficiency ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
+        return filters?.sortOrder === 'desc' ? right - left : left - right
+      })
+      const offset = filters?.offset ?? 0
+      return filters?.limit ? summaries.slice(offset, offset + filters.limit) : summaries.slice(offset)
     }
     return summaries
   }

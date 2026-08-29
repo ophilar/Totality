@@ -101,6 +101,8 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'media_items', 'version_count', 'INTEGER NOT NULL DEFAULT 1')
   await ensureColumn(db, 'media_items', 'summary', 'TEXT')
 
+  await migrateMediaOptimizationJobs(db)
+
   // Series Completeness
   await ensureColumn(db, 'series_completeness', 'tmdb_id', 'TEXT')
   await ensureColumn(db, 'series_completeness', 'tvdb_id', 'TEXT')
@@ -185,6 +187,24 @@ export async function runMigrations(db: Client): Promise<void> {
   await migrateStaleTimelineRecipes(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
+}
+
+async function migrateMediaOptimizationJobs(db: Client): Promise<void> {
+  const oldTable = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='media_remux_jobs'")
+  const newTable = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='media_optimization_jobs'")
+  if (oldTable.rows.length > 0 && newTable.rows.length === 0) {
+    await db.execute('ALTER TABLE media_remux_jobs RENAME TO media_optimization_jobs')
+  }
+  await ensureColumn(db, 'media_optimization_jobs', 'operation_kind', "TEXT NOT NULL DEFAULT 'remux'")
+  await ensureColumn(db, 'media_optimization_jobs', 'predicted_output_bytes', 'INTEGER')
+  await ensureColumn(db, 'media_optimization_jobs', 'actual_output_bytes', 'INTEGER')
+  await ensureColumn(db, 'media_optimization_jobs', 'bytes_saved', 'INTEGER')
+  await ensureColumn(db, 'media_optimization_jobs', 'source_duration_ms', 'INTEGER')
+  await ensureColumn(db, 'media_optimization_jobs', 'output_duration_ms', 'INTEGER')
+  await ensureColumn(db, 'media_optimization_jobs', 'encoder_profile', 'TEXT')
+  await ensureColumn(db, 'media_optimization_jobs', 'source_analysis', 'TEXT')
+  await ensureColumn(db, 'media_optimization_jobs', 'output_analysis', 'TEXT')
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_media_optimization_jobs_item ON media_optimization_jobs(media_item_id, updated_at DESC)')
 }
 
 async function backfillMediaIdentities(db: Client): Promise<void> {

@@ -1,12 +1,12 @@
 import { spawn } from 'child_process'
 import * as fs from 'fs/promises'
 import { existsSync } from 'fs'
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import * as path from 'path'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getGeminiService } from '@main/services/GeminiService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { APP_CONFIG } from '@main/config'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
@@ -20,6 +20,8 @@ import { TaskType, MediaItem } from '@main/types/database'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
+import { buildCandidateLadder, selectMeasuredCandidate, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
+import { MeasuredOptimizationService } from './MeasuredOptimizationService'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -43,8 +45,16 @@ export interface TranscodeOptions {
   transcodingEngine?: 'ffmpeg'
   targetSize?: string
   maxOutputBytes?: number
-  aiOptimize?: boolean
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
+  qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
+  encoderPolicy?: 'hardware' | 'software' | 'compare'
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = createHash('sha256')
+  const stream = createReadStream(filePath)
+  for await (const chunk of stream) hash.update(chunk as Buffer)
+  return hash.digest('hex')
 }
 
 export interface QueuedTranscodePayload {
@@ -79,9 +89,6 @@ export interface TranscodingParams {
   subtitleTracks?: FileAnalysisResult['subtitleTracks']
 }
 
-export interface TranscodeParameterAdvisor {
-  advise(request: { prompt: string; system: string }): Promise<{ text: string }>
-}
 
 export interface ShowTranscodeRequest {
   seriesTitle: string
@@ -124,22 +131,14 @@ export interface ShowTranscodePreflight {
     savingsBasis?: string
     sourceTier?: MediaSourceTier
     adviceReason?: string
+    measuredParameters?: Pick<TranscodingParams, 'encoder' | 'crf' | 'preset'>
   }>
-}
-
-class GeminiTranscodeParameterAdvisor implements TranscodeParameterAdvisor {
-  async advise(request: { prompt: string; system: string }): Promise<{ text: string }> {
-    return (await getGeminiService().sendMessage({
-      messages: [{ role: 'user', content: request.prompt }],
-      system: request.system
-    }))
-  }
 }
 
 /**
  * TranscodingService
  *
- * Coordinates FFmpeg transcoding and optional AI parameter advice.
+ * Coordinates FFmpeg transcoding from explicit parameters.
  */
 export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
@@ -147,8 +146,9 @@ export class TranscodingService {
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
   private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
+  private measuredOptimizationService = new MeasuredOptimizationService()
 
-  constructor(private parameterAdvisor: TranscodeParameterAdvisor = new GeminiTranscodeParameterAdvisor()) {
+  constructor() {
     // Initialization is deferred until first use to allow DB to be ready
   }
 
@@ -183,12 +183,6 @@ export class TranscodingService {
     this.activeJobs.clear()
   }
 
-  setParameterAdvisorForTesting(advisor: TranscodeParameterAdvisor): void {
-    this.parameterAdvisor = advisor
-    this.analysisCache.clear()
-    this.showPreflights.clear()
-  }
-
   async preflightShowTranscode(request: ShowTranscodeRequest): Promise<ShowTranscodePreflight> {
     if (!request.seriesTitle.trim() || !request.sourceId.trim()) throw new Error('Show title and source ID are required')
     const episodes = await getDatabase().tvShows.getEpisodes(request.seriesTitle, request.sourceId, request.seriesIdentityKey, request.libraryId)
@@ -209,6 +203,9 @@ export class TranscodingService {
         if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
         analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
         buildStreamSelectionPlan(analysis, request.options)
+        const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
+          ? await this.selectMeasuredParameters(episode.file_path, request.options)
+          : undefined
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
         return {
           mediaItemId: episode.id,
@@ -224,7 +221,8 @@ export class TranscodingService {
           estimatedSavingsBytes: advice.estimatedSavingsBytes,
           savingsBasis: advice.savings_basis,
           sourceTier: advice.sourceTier,
-          adviceReason: advice.reason
+          adviceReason: advice.reason,
+          measuredParameters
         }
       } catch (error) {
         return {
@@ -285,7 +283,7 @@ export class TranscodingService {
       label: episode.label,
       mediaItemId: episode.mediaItemId,
       batchId: preflight.result.batchId,
-      options: { ...preflight.request.options, queuePayload: { batchId: preflight.result.batchId, preflightId, expiresAt: preflight.result.expiresAt, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs } }
+      options: { ...preflight.request.options, ...episode.measuredParameters, queuePayload: { batchId: preflight.result.batchId, preflightId, expiresAt: preflight.result.expiresAt, sourceSize: episode.sourceSize, sourceMtimeMs: episode.sourceMtimeMs } }
     }))
     if (tasks.length > 0) await getTaskQueueService().addTasks(tasks)
     this.showPreflights.delete(preflightId)
@@ -427,7 +425,7 @@ export class TranscodingService {
 
 
   /**
-   * Get optimized transcoding parameters from Gemini
+   * Build transcoding parameters from explicit settings or measured samples.
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
@@ -503,10 +501,12 @@ export class TranscodingService {
     validateHdrTranscode(analysis)
     const targetCodec = effectiveOptions.targetCodec
     if (!targetCodec) throw new Error('Target video codec must be explicitly selected.')
+    if (!effectiveOptions.qualityProfile) throw new Error('Quality profile must be explicitly selected.')
+    if (!effectiveOptions.encoderPolicy) throw new Error('Encoder policy must be explicitly selected.')
+    if (effectiveOptions.encoderPolicy === 'compare') throw new Error('Compare policy requires measured candidates before a transcode can be submitted.')
     const hasManualOverrides = effectiveOptions.encoder && effectiveOptions.crf !== undefined && effectiveOptions.preset
 
     let selectedVendor: 'NVIDIA' | 'Intel' | 'AMD' | 'Apple' | 'Unknown' = 'Unknown'
-    let gpuName = ''
     let selectedGpuIdForOptions: string | undefined
     let capabilitiesForOptions: TranscodingCapabilities | undefined
     if (effectiveOptions.useGpu || effectiveOptions.gpuId) {
@@ -522,7 +522,6 @@ export class TranscodingService {
         throw new Error(`Requested GPU ID "${selectedGpuId}" is not available on the machine.`)
       }
       selectedVendor = matchedGpu.vendor
-      gpuName = matchedGpu.name
       if (selectedVendor === 'Unknown') {
         throw new Error(`GPU acceleration is not supported for GPU: "${matchedGpu.name}". Supported vendors are NVIDIA, Intel, AMD, and Apple.`)
       }
@@ -553,79 +552,20 @@ export class TranscodingService {
       throw new Error(`The selected device cannot produce ${targetCodec.toUpperCase()} with verified FFmpeg encoder ${expectedEncoder}.`)
     }
 
-    let summary = 'AI optimized transcode'
-    let videoCodec = options.encoder
-    let crf = options.crf
-    let preset = options.preset
-    let expectedSizeReduction: string | undefined
-    let warnings: string[] = []
+    const measuredParameters = hasManualOverrides
+      ? { encoder: effectiveOptions.encoder!, crf: effectiveOptions.crf!, preset: effectiveOptions.preset! }
+      : await this.selectMeasuredParameters(filePath, effectiveOptions)
 
-    if (!hasManualOverrides && options.aiOptimize !== false) {
-      if (this.parameterAdvisor instanceof GeminiTranscodeParameterAdvisor && !getGeminiService().isConfigured()) {
-        throw new Error('AI optimization is not configured; provide explicit encoder, quality, and preset settings.')
-      } else {
-        const sizeConstraint = options.targetSize === 'ai-recommended'
-          ? '- Target Size: Recommend the optimal target size that preserves maximum transparent visual quality while maximizing space savings.'
-          : options.targetSize
-            ? `- Target Size: The user has requested a target file size of ${options.targetSize}. Adjust the CRF value and preset parameters to try to reach or stay below this target size while maintaining acceptable quality.`
-            : '- Target: Maximum space saving with transparent quality.';
+    const summary = 'Explicit measured transcoding parameters'
+    const videoCodec = measuredParameters.encoder
+    const crf = measuredParameters.crf
+    const preset = measuredParameters.preset
+    const expectedSizeReduction: string | undefined = undefined
+    const warnings: string[] = []
 
-        const prompt = `Analyze this media file and provide optimized ${targetCodec.toUpperCase()} transcoding parameters for FFmpeg.
-        
-        File Analysis:
-        ${JSON.stringify(analysis, null, 2)}
-        
-        Constraints:
-        ${sizeConstraint}
-        - Preference: 10-bit encoding if source is 10-bit or HDR.
-        ${(options.useGpu || options.gpuId) ? `- Hardware Acceleration: Use GPU encoder (${expectedEncoder}) for ${gpuName} as the videoCodec.` : ''}
-        
-        Return a JSON object with:
-        {
-          "summary": "Brief explanation",
-          "videoCodec": "${expectedEncoder}", // use this exact encoder
-          "crf": 20, // number between 0 and 51
-          "preset": "fast", // preset string, e.g., fast, medium, slow
-          "expectedSizeReduction": "e.g. 60%",
-          "warnings": []
-        }
-        
-        Important: Do NOT output raw command-line arguments in this response.`
-
-        const systemPrompt = APP_CONFIG.ai.compressionAdvice + `
-        Additional Requirement: 
-        - Output must be valid JSON only. 
-        - Focus on FFmpeg and the selected hardware/software encoder specifically.`
-
-        try {
-          const response = await this.parameterAdvisor.advise({ prompt, system: systemPrompt })
-          const jsonStr = response.text.replace(/```json\n?|\n?```/g, '').trim()
-          const data = JSON.parse(jsonStr)
-          
-          summary = typeof data.summary === 'string' ? data.summary : ''
-          if (!videoCodec) videoCodec = data.videoCodec
-          if (crf === undefined) crf = data.crf
-          if (!preset) preset = data.preset
-          expectedSizeReduction = typeof data.expectedSizeReduction === 'string' ? data.expectedSizeReduction : undefined
-          warnings = data.warnings || []
-        } catch (e) {
-          getLoggingService().error('[TranscodingService]', 'Failed to parse Gemini response or fetch parameters:', e)
-          throw new Error(`Failed to generate optimized transcoding parameters: ${e instanceof Error ? e.message : String(e)}`)
-        }
-      }
-    } else {
-      summary = 'User-defined custom parameters'
-      expectedSizeReduction = 'Custom'
-    }
-
-    // Normalize encoder aliases returned by the parameter advisor.
-    if (videoCodec === 'av1_nvenc') {
-      videoCodec = 'nvenc_av1'
-    }
-
-    if (!videoCodec) throw new Error('Video encoder must be explicitly selected or returned by the configured advisor.')
-    if (crf === undefined) throw new Error('Video quality value must be explicitly selected or returned by the configured advisor.')
-    if (!preset) throw new Error('Encoder preset must be explicitly selected or returned by the configured advisor.')
+    if (!videoCodec) throw new Error('Video encoder must be explicitly selected.')
+    if (crf === undefined) throw new Error('Video quality value must be explicitly selected.')
+    if (!preset) throw new Error('Encoder preset must be explicitly selected.')
 
     // Validate parameters against allowed lists to prevent command injection
     const allowedVideoCodecs = [
@@ -715,17 +655,45 @@ export class TranscodingService {
     this.activeJobs.set(mediaItemId, controller)
 
     let tempPath: string | null = null
+    let optimizationJobId: number | null = null
 
     try {
       onProgress?.({ percent: 0, status: 'initializing' })
       
       const inputPath = PathUtils.sanitizeAbsolutePath(item.file_path)
       const sourceStat = await fs.stat(inputPath)
+      const sourceSha256 = await sha256File(inputPath)
       const queuePayload = (options as TranscodeOptions & { queuePayload?: QueuedTranscodePayload }).queuePayload
       if (queuePayload && (sourceStat.size !== queuePayload.sourceSize || Math.abs(sourceStat.mtimeMs - queuePayload.sourceMtimeMs) > 1000)) {
         throw new Error('Source file changed after show preflight')
       }
-      const params = await this.getTranscodeParameters(inputPath, { ...options, aiOptimize: false })
+      const params = await this.getTranscodeParameters(inputPath, options)
+      const encoderProfile = `${params.encoder}:${params.preset}:${params.crf}`
+      const predictedOutputBytes = await db.mediaRemuxJobs.getCalibratedOutputBytes(sourceStat.size, 'transcode', encoderProfile)
+      optimizationJobId = await db.mediaRemuxJobs.create({
+        mediaItemId,
+        operationKind: 'transcode',
+        status: 'planned',
+        sourcePath: inputPath,
+        sourceSize: sourceStat.size,
+        sourceMtimeMs: Math.trunc(sourceStat.mtimeMs),
+        sourceSha256,
+        decisionSnapshot: JSON.stringify({ options, params }),
+        streamSignatures: JSON.stringify({ audio: params.audioTracks, subtitles: params.subtitleTracks }),
+        quarantinePath: null,
+        error: null,
+        predictedOutputBytes,
+        actualOutputBytes: null,
+        bytesSaved: null,
+        sourceDurationMs: item.duration ?? null,
+        outputDurationMs: null,
+        encoderProfile,
+        sourceAnalysis: JSON.stringify({ duration: item.duration, fileSize: sourceStat.size }),
+        outputAnalysis: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      await db.mediaRemuxJobs.update(optimizationJobId, { status: 'running' })
       
       const outputExt = '.mkv' // We prefer MKV for flexibility
       let tempBaseDir = path.dirname(inputPath)
@@ -866,6 +834,16 @@ export class TranscodingService {
         }
       }
 
+      if (optimizationJobId !== null) {
+        await db.mediaRemuxJobs.update(optimizationJobId, {
+          status: 'promoted',
+          actualOutputBytes: stats.size,
+          bytesSaved: sourceStat.size - stats.size,
+          outputDurationMs: outputAnalysis.duration,
+          outputAnalysis: JSON.stringify(outputAnalysis),
+        })
+      }
+
       onProgress?.({ percent: 100, status: 'complete' })
       return true
 
@@ -874,6 +852,7 @@ export class TranscodingService {
         ? `${error.message}: ${error.stderr.slice(-4000).trim()}`
         : error instanceof Error ? error.message : String(error)
       getLoggingService().error('[TranscodingService]', `Transcode failed for item ${mediaItemId}:`, msg)
+      if (optimizationJobId !== null) await db.mediaRemuxJobs.update(optimizationJobId, { status: 'failed', error: msg })
       
       onProgress?.({ percent: 0, status: 'failed', error: msg })
       if (controller.signal.aborted) return false
@@ -909,6 +888,24 @@ export class TranscodingService {
     const maximumOutputBytes = sourceSize - savings
     if (maximumOutputBytes <= 0) throw new Error('Global minimum savings policy exceeds the source file size.')
     return maximumOutputBytes
+  }
+
+  async selectMeasuredParameters(filePath: string, options: TranscodeOptions): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset'>> {
+    if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
+    const analysis = await getMediaFileAnalyzer().analyzeFile(filePath)
+    if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
+    const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
+    const hardwareEncoder = capabilities?.selectedGpuId ? (options.targetCodec === 'av1' ? 'nvenc_av1' : 'nvenc_h265') : undefined
+    const hardwareVendor = capabilities?.gpus.find(gpu => gpu.id === capabilities.selectedGpuId)?.vendor
+    const ladder = buildCandidateLadder(options.targetCodec, options.encoderPolicy, hardwareEncoder)
+    const candidates = ladder.map(candidate => {
+      const candidateOptions = { ...options, encoder: candidate.encoder, crf: candidate.quality, preset: candidate.preset }
+      const builder = TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions)
+      return { ...candidate, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: builder.buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
+    })
+    const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory: path.join(path.dirname(filePath), '.totality-measurements'), candidates })
+    const selected = selectMeasuredCandidate(options.qualityProfile as OptimizationQualityProfile, measured.candidates)
+    return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset }
   }
 
   async approveShowTranscode(preflightId: string): Promise<ShowTranscodePreflight> {

@@ -114,10 +114,10 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const videoTranscode: OptimizationDecisionMechanism = {
     status: estimatedVideoSavings != null ? 'review-required' : 'unavailable',
     estimatedSavingsBytes: estimatedVideoSavings,
-    reason: estimatedVideoSavings != null ? 'Estimated video-stream analysis found recoverable space' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Measured video-stream savings evidence is unavailable',
+    reason: estimatedVideoSavings != null ? 'Estimated video-stream analysis found recoverable space; review before transcoding' : videoSavings === 0 ? 'Estimated video-stream analysis found no recoverable space' : 'Video-stream savings evidence is unavailable',
     evidence_status: videoSavings == null ? 'insufficient' : 'estimated',
     confidence: videoSavings == null ? 'none' : 'medium',
-    savings_basis: videoSavings == null ? 'insufficient_data' : 'video_sample_encode',
+    savings_basis: estimatedVideoSavings != null ? 'video_sample_encode' : 'insufficient_data',
   }
   const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : 'no-action'
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }

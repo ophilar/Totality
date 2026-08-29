@@ -4,6 +4,7 @@ import { CollectionRow, SeriesRow, ArtistRow } from '@/components/dashboard/Comp
 import { Virtuoso } from 'react-virtuoso'
 import type { MissingMovie, MissingEpisode, MissingAlbumItem } from '@/components/dashboard/types'
 import type { MovieCollectionData, SeriesCompletenessData, ArtistCompletenessData } from '@/components/library/types'
+import { dashboardSortOptions } from '@/components/dashboard/sortDefinitions'
 
 interface CollectionColumnProps {
   collections: MovieCollectionData[]
@@ -31,7 +32,7 @@ export function CollectionsColumn({
 
   const headerExtra = (
     <div className="flex items-center gap-1"><select value={sortBy} onChange={e => { const v = e.target.value; setSortBy(v); window.electronAPI.setSetting('dashboard_collection_sort', v) }} className="text-xs bg-background border border-border/50 rounded px-2 py-0.5 cursor-pointer">
-      <option value="completeness">Completeness</option><option value="name">Name</option><option value="recent">Recent</option>
+      {dashboardSortOptions.collections.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
     </select><button onClick={() => { const v = sortOrder === 'asc' ? 'desc' : 'asc'; setSortOrder(v); window.electronAPI.setSetting('dashboard_collection_sort_order', v) }} className="text-xs px-1" aria-label="Toggle collection sort direction">{sortOrder === 'asc' ? '↑' : '↓'}</button></div>
   )
 
@@ -70,7 +71,7 @@ export function SeriesColumn({
 
   const headerExtra = (
     <div className="flex items-center gap-1"><select value={sortBy} onChange={e => { const v = e.target.value; setSortBy(v); window.electronAPI.setSetting('dashboard_series_sort', v) }} className="text-xs bg-background border border-border/50 rounded px-2 py-0.5 cursor-pointer">
-      <option value="completeness">Completeness</option><option value="name">Name</option><option value="recent">Recent</option>
+      {dashboardSortOptions.series.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
     </select><button onClick={() => { const v = sortOrder === 'asc' ? 'desc' : 'asc'; setSortOrder(v); window.electronAPI.setSetting('dashboard_series_sort_order', v) }} className="text-xs px-1" aria-label="Toggle series sort direction">{sortOrder === 'asc' ? '↑' : '↓'}</button></div>
   )
 
@@ -113,7 +114,7 @@ export function ArtistColumn({
 
   const headerExtra = (
     <div className="flex items-center gap-1"><select value={sortBy} onChange={e => { const v = e.target.value; setSortBy(v); window.electronAPI.setSetting('dashboard_artist_sort', v) }} className="text-xs bg-background border border-border/50 rounded px-2 py-0.5 cursor-pointer">
-      <option value="completeness">Completeness</option><option value="name">Name</option>
+      {dashboardSortOptions.artists.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
     </select><button onClick={() => { const v = sortOrder === 'asc' ? 'desc' : 'asc'; setSortOrder(v); window.electronAPI.setSetting('dashboard_artist_sort_order', v) }} className="text-xs px-1" aria-label="Toggle artist sort direction">{sortOrder === 'asc' ? '↑' : '↓'}</button></div>
   )
 

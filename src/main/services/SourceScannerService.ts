@@ -38,6 +38,14 @@ export class SourceScannerService {
 
   stopScan(): void {
     this.scanCancelled = true
+    for (const provider of this.providers.values()) {
+      if (typeof (provider as MediaProvider & { cancelScan?: () => void }).cancelScan === 'function') {
+        (provider as MediaProvider & { cancelScan: () => void }).cancelScan()
+      }
+      if (typeof (provider as MediaProvider & { cancelMusicScan?: () => void }).cancelMusicScan === 'function') {
+        (provider as MediaProvider & { cancelMusicScan: () => void }).cancelMusicScan()
+      }
+    }
     this.logging.info('[SourceScannerService]', 'Scan cancellation requested')
   }
 

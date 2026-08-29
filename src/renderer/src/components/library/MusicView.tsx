@@ -20,6 +20,7 @@ import type {
   ArtistCompletenessData,
   AlbumCompletenessData
 } from '@/components/library/types'
+import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 
 type MusicSortKey = 'title' | 'efficiency' | 'waste' | 'size'
 
@@ -60,6 +61,7 @@ export function MusicView({
   trackSortDirection,
   onTrackSortChange,
   sortBy,
+  sortOrder,
   onSortChange,
   slimDown,
   tracks,
@@ -116,6 +118,7 @@ export function MusicView({
   includeSingles: boolean
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
   sortBy: 'title' | 'efficiency' | 'waste' | 'size'
+  sortOrder: 'asc' | 'desc'
   onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
   slimDown: boolean
 }) {
@@ -128,14 +131,14 @@ export function MusicView({
     items.sort((a, b) => {
       if (sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size') {
         const compA = artistCompleteness.get(a.name); const compB = artistCompleteness.get(b.name)
-        if (sortBy === 'efficiency') { const effA = compA?.efficiency_score ?? 100; const effB = compB?.efficiency_score ?? 100; if (effA !== effB) return effA - effB }
-        else if (sortBy === 'waste') { const wA = compA?.storage_debt_bytes ?? 0; const wB = compB?.storage_debt_bytes ?? 0; if (wA !== wB) return wB - wA }
-        else if (sortBy === 'size') { const sA = compA?.total_size ?? 0; const sB = compB?.total_size ?? 0; if (sA !== sB) return sB - sA }
+        if (sortBy === 'efficiency') { const effA = compA?.efficiency_score ?? 100; const effB = compB?.efficiency_score ?? 100; if (effA !== effB) return (effA - effB) * (sortOrder === 'asc' ? 1 : -1) }
+        else if (sortBy === 'waste') { const wA = compA?.storage_debt_bytes ?? 0; const wB = compB?.storage_debt_bytes ?? 0; if (wA !== wB) return (wB - wA) * (sortOrder === 'asc' ? 1 : -1) }
+        else if (sortBy === 'size') { const sA = compA?.total_size ?? 0; const sB = compB?.total_size ?? 0; if (sA !== sB) return (sB - sA) * (sortOrder === 'asc' ? 1 : -1) }
       }
       return (a.sort_name || a.name).localeCompare(b.sort_name || b.name)
     })
     return items
-  }, [artists, sortBy, artistCompleteness])
+  }, [artists, sortBy, sortOrder, artistCompleteness])
 
   const handleAnalyzeAlbum = useCallback(async (albumId: number) => { await onAnalyzeAlbum(albumId) }, [onAnalyzeAlbum])
   const handleAnalyzeArtist = useCallback(async (artistId: number) => { await onAnalyzeArtist(artistId); onArtistCompletenessUpdated() }, [onAnalyzeArtist, onArtistCompletenessUpdated])
@@ -191,8 +194,8 @@ export function MusicView({
         )}
       </div>
       <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg">
-        {(['title', 'efficiency', 'waste', 'size'] as const).map((s: MusicSortKey) => (
-          <button key={s} onClick={() => onSortChange(s)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${sortBy === s ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s}</button>
+        {getSortOptions('music').map(s => (
+          <button key={s.key} onClick={() => onSortChange(s.key as MusicSortKey)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${sortBy === s.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{s.label}{sortBy === s.key ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''}</button>
         ))}
       </div>
     </div>
@@ -219,7 +222,7 @@ export function MusicView({
       <span className="w-16 shrink-0">Artwork</span>
       {columns.map(column => (
         <button key={column} className="flex-1 text-left hover:text-foreground" onClick={() => handleListSort(column)} aria-label={`Sort music by ${column}`}>
-          {column}
+          {getSortLabel('music', column)}
         </button>
       ))}
     </div>

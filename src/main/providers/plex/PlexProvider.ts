@@ -89,6 +89,7 @@ export class PlexProvider extends BaseMediaProvider {
 
   private scanCancelled = false
   private musicScanCancelled = false
+  private scanAbortController: AbortController | null = null
 
   private get plexApiUrl(): string {
     const config = this.config.connectionConfig as ProviderCredentials & { plexApiUrl?: string }
@@ -370,6 +371,7 @@ export class PlexProvider extends BaseMediaProvider {
 
     const startTime = Date.now()
     this.scanCancelled = false
+    this.scanAbortController = new AbortController()
     const result: ScanResult = {
       success: false,
       itemsScanned: 0,
@@ -416,7 +418,7 @@ export class PlexProvider extends BaseMediaProvider {
             batch.map(async (plexItem) => {
               try {
                 if (plexItem.type === 'show') {
-                  const episodes = await this.getShowEpisodes(plexItem.ratingKey)
+                  const episodes = await this.getShowEpisodes(plexItem.ratingKey, this.scanAbortController?.signal)
 
                   // Fetch details for episodes in parallel too (limited)
                   const EP_CHUNK_SIZE = 5
@@ -424,7 +426,7 @@ export class PlexProvider extends BaseMediaProvider {
                   for (let k = 0; k < episodes.length; k += EP_CHUNK_SIZE) {
                     const chunk = episodes.slice(k, k + EP_CHUNK_SIZE)
                     const chunkDetails = await Promise.all(
-                      chunk.map((ep) => this.getItemMetadataDetailed(ep.ratingKey))
+                      chunk.map((ep) => this.getItemMetadataDetailed(ep.ratingKey, this.scanAbortController?.signal))
                     )
                     detailedEpisodes.push(...chunkDetails.filter((d) => d !== null))
                   }
@@ -594,6 +596,7 @@ export class PlexProvider extends BaseMediaProvider {
           await new Promise((r) => setTimeout(r, 0))
         }
       } finally {
+        this.scanAbortController = null
         if (db.isInTransaction()) {
           try {
             db.endBatch()
@@ -676,7 +679,7 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
-  private async getItemMetadataDetailed(ratingKey: string): Promise<PlexMediaItem | null> {
+  private async getItemMetadataDetailed(ratingKey: string, signal?: AbortSignal): Promise<PlexMediaItem | null> {
     if (!this.selectedServer) return null
     try {
       const response = await this.api.get(
@@ -685,6 +688,7 @@ export class PlexProvider extends BaseMediaProvider {
           headers: {
             'X-Plex-Token': this.selectedServer.accessToken,
           },
+          signal,
         }
       )
       return response.data.MediaContainer?.Metadata?.[0] || null
@@ -694,15 +698,16 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
-  private async getShowEpisodes(showKey: string): Promise<PlexMediaItem[]> {
+  private async getShowEpisodes(showKey: string, signal?: AbortSignal): Promise<PlexMediaItem[]> {
     if (!this.selectedServer) return []
     const url = `${this.selectedServer.uri}/library/metadata/${showKey}/allLeaves`
-    return this.paginatedPlexFetch<PlexMediaItem>(url)
+    return this.paginatedPlexFetch<PlexMediaItem>(url, {}, signal)
   }
 
   private async paginatedPlexFetch<T>(
     url: string,
-    params: Record<string, unknown> = {}
+    params: Record<string, unknown> = {},
+    signal?: AbortSignal
   ): Promise<T[]> {
     if (!this.selectedServer) return []
     const allItems: T[] = []
@@ -711,6 +716,7 @@ export class PlexProvider extends BaseMediaProvider {
     while (true) {
       const response = await this.api.get(url, {
         headers: { 'X-Plex-Token': this.selectedServer.accessToken },
+        signal,
         params: { ...params, 'X-Plex-Container-Start': offset, 'X-Plex-Container-Size': limit },
       })
       const container = response.data.MediaContainer
@@ -1020,6 +1026,7 @@ export class PlexProvider extends BaseMediaProvider {
 
   cancelScan(): void {
     this.scanCancelled = true
+    this.scanAbortController?.abort()
   }
   cancelMusicScan(): void {
     this.musicScanCancelled = true

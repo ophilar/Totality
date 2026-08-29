@@ -1,10 +1,11 @@
 import { CircleFadingArrowUp } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { DashboardColumn } from '@/components/dashboard/DashboardColumn'
 import { MovieUpgradeRow, TvUpgradeRow, MusicUpgradeRow } from '@/components/dashboard/UpgradeRows'
 import { Virtuoso } from 'react-virtuoso'
 import type { UpgradeTab, MusicAlbumUpgrade } from '@/components/dashboard/types'
 import type { MediaItem } from '@main/types/database'
+import { dashboardSortOptions } from '@/components/dashboard/sortDefinitions'
 
 interface UpgradesColumnProps {
   upgradeTab: UpgradeTab
@@ -14,6 +15,8 @@ interface UpgradesColumnProps {
   musicUpgrades: MusicAlbumUpgrade[]
   upgradeSortBy: string
   setUpgradeSortBy: (sort: string) => void
+  sortDirection: 'asc' | 'desc'
+  setSortDirection: (direction: 'asc' | 'desc') => void
   hasMovies: boolean
   hasTV: boolean
   hasMusic: boolean
@@ -29,11 +32,11 @@ export function UpgradesColumn({
   upgradeTab, setUpgradeTab,
   movieUpgrades, tvUpgrades, musicUpgrades,
   upgradeSortBy, setUpgradeSortBy,
+  sortDirection, setSortDirection,
   hasMovies, hasTV, hasMusic,
   onSelect, onDismissMovie, onDismissTv, onDismissMusic,
   expandedRecommendations, toggleRecommendation
 }: UpgradesColumnProps) {
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const sortItems = <T extends MediaItem | MusicAlbumUpgrade>(items: T[]) => [...items].sort((a, b) => {
     const value = (item: T): string | number => {
       if (upgradeSortBy === 'title') return item.title || ''
@@ -90,12 +93,9 @@ export function UpgradesColumn({
         }}
         className="text-xs bg-background text-foreground border border-border/50 rounded px-2 py-0.5 cursor-pointer focus:outline-hidden"
       >
-        <option value="quality">Quality</option>
-        <option value="efficiency">Efficiency</option>
-        <option value="recent">Recent</option>
-        <option value="title">Title</option>
+        {dashboardSortOptions.upgrades.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
       </select>
-      <button type="button" onClick={() => setSortDirection(value => value === 'asc' ? 'desc' : 'asc')} className="text-xs px-1.5 py-0.5 border border-border/50 rounded hover:bg-muted" title="Toggle sort direction">
+      <button type="button" onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')} className="text-xs px-1.5 py-0.5 border border-border/50 rounded hover:bg-muted" title="Toggle sort direction">
         {sortDirection === 'asc' ? '↑' : '↓'}
       </button>
     </div>

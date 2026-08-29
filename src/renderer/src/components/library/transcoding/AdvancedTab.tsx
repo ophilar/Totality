@@ -103,7 +103,8 @@ export function AdvancedTab({
   }
 
   // CQ Quality Visual Label Helper
-  const getCqVisualLabel = (crf: number) => {
+  const getCqVisualLabel = (crf: number | undefined) => {
+    if (crf === undefined) return { text: 'Measured quality required', color: 'text-muted-foreground', badgeBg: 'bg-muted/30 border-border/30' }
     if (crf <= 16) {
       return { text: 'Near Lossless / Archival (CQ 10-16)', color: 'text-emerald-400', badgeBg: 'bg-emerald-500/15 border-emerald-500/30' }
     } else if (crf <= 22) {

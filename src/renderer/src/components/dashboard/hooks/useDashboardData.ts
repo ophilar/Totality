@@ -13,6 +13,7 @@ export function useDashboardData(activeSourceId: string | null) {
 
   // Sort/Setting states
   const [upgradeSortBy, setUpgradeSortBy] = useState('quality')
+  const [upgradeSortOrder, setUpgradeSortOrderState] = useState<'asc' | 'desc'>('desc')
   const [collectionSortBy, setCollectionSortBy] = useState('completeness')
   const [seriesSortBy, setSeriesSortBy] = useState('completeness')
   const [artistSortBy, setArtistSortBy] = useState('completeness')
@@ -52,6 +53,17 @@ export function useDashboardData(activeSourceId: string | null) {
       setIsLoading(false)
     }
   }, [activeSourceId])
+
+  useEffect(() => {
+    window.electronAPI.getSetting('dashboard_upgrade_sort_order').then(value => {
+      if (value === 'asc' || value === 'desc') setUpgradeSortOrderState(value)
+    })
+  }, [])
+
+  const setUpgradeSortOrder = useCallback((order: 'asc' | 'desc') => {
+    setUpgradeSortOrderState(order)
+    void window.electronAPI.setSetting('dashboard_upgrade_sort_order', order)
+  }, [])
 
   useEffect(() => {
     queueMicrotask(() => { void loadDashboardData() })
@@ -101,7 +113,7 @@ export function useDashboardData(activeSourceId: string | null) {
     series, setSeries,
     artists, setArtists,
     isLoading, error,
-    upgradeSortBy, setUpgradeSortBy,
+    upgradeSortBy, setUpgradeSortBy, upgradeSortOrder, setUpgradeSortOrder,
     collectionSortBy, setCollectionSortBy,
     seriesSortBy, setSeriesSortBy,
     artistSortBy, setArtistSortBy,

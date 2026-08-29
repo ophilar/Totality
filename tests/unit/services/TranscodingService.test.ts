@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'events'
+import { Readable } from 'stream'
 import { TranscodingService, TranscodeError, TranscodeOptions } from '../../../src/main/services/TranscodingService'
 import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/TranscodeCommandFactory'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
@@ -12,6 +13,10 @@ vi.mock('fs/promises', () => ({
   rename: vi.fn().mockResolvedValue(undefined),
   copyFile: vi.fn().mockResolvedValue(undefined),
   unlink: vi.fn().mockResolvedValue(undefined)
+}))
+
+vi.mock('node:fs', () => ({
+  createReadStream: vi.fn(() => Readable.from(['source-content']))
 }))
 
 type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> }
@@ -39,6 +44,12 @@ const mockDbInstance = {
     getItemByPath: vi.fn().mockResolvedValue(null),
     getItem: vi.fn().mockResolvedValue(null),
     updatePathAndStats: vi.fn().mockResolvedValue(undefined)
+  },
+  mediaRemuxJobs: {
+    create: vi.fn().mockResolvedValue(1),
+    update: vi.fn().mockResolvedValue(undefined),
+    getLatest: vi.fn().mockResolvedValue(null),
+    getCalibratedOutputBytes: vi.fn().mockResolvedValue(null)
   }
 }
 
@@ -129,7 +140,10 @@ describe('TranscodingService', () => {
         useGpu: true,
         encoder: 'nvenc_h265',
         crf: 20,
-        preset: 'p6'
+        preset: 'p6',
+        qualityProfile: 'balanced',
+        encoderPolicy: 'hardware'
+        ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
       const params = await service.getTranscodeParameters('input.mp4', options)
@@ -155,6 +169,7 @@ describe('TranscodingService', () => {
         encoder: 'svt_av1',
         crf: 24,
         preset: 'medium'
+        ,qualityProfile: 'balanced', encoderPolicy: 'software'
       }
 
       const params = await service.getTranscodeParameters('input.mp4', options)
@@ -236,7 +251,10 @@ describe('TranscodingService', () => {
         targetCodec: 'hevc',
         encoder: 'nvenc_h265',
         crf: 20,
-        preset: 'p6'
+        preset: 'p6',
+        qualityProfile: 'balanced',
+        encoderPolicy: 'hardware'
+        ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
       mockDbInstance.media.getItemByPath.mockResolvedValueOnce({
@@ -288,6 +306,7 @@ describe('TranscodingService', () => {
         encoder: 'nvenc_h265',
         crf: 20,
         preset: 'p6'
+        ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
       const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.Remux.mkv', options)
@@ -322,7 +341,9 @@ describe('TranscodingService', () => {
         targetCodec: 'hevc',
         encoder: 'nvenc_h265',
         crf: 20,
-        preset: 'p6'
+        preset: 'p6',
+        qualityProfile: 'balanced',
+        encoderPolicy: 'hardware'
       }
 
       const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
@@ -395,7 +416,7 @@ describe('TranscodingService', () => {
 
       vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
 
-      const options: TranscodeOptions = { useGpu: false, targetCodec: 'hevc', encoder: 'svt_av1', crf: 24, preset: 'medium' }
+      const options: TranscodeOptions = { useGpu: false, targetCodec: 'hevc', encoder: 'svt_av1', crf: 24, preset: 'medium', qualityProfile: 'balanced', encoderPolicy: 'software' }
       const params = await service.getTranscodeParameters('input.mp4', options)
 
       const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<unknown> }

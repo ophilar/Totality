@@ -15,6 +15,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 import { getDatabase } from '@main/database/BetterSQLiteService'
+import { resolveDatabasePath } from '@main/database/DatabasePath'
 import { getSourceManager } from '@main/services/SourceManager'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerQualityHandlers } from '@main/ipc/quality'
@@ -194,7 +195,7 @@ app.whenReady().then(async () => {
     ipcMain.handle(IPC_CHANNELS.APP.GET_VERSION, () => version)
 
     // Explicit Database Initialization
-    const dbPath = path.join(app.getPath('userData'), 'totality.db')
+    const dbPath = resolveDatabasePath(app.getPath('userData'))
     await getDatabase().initialize(dbPath)
 
     // Probe transcoding capabilities once per application startup so the renderer
@@ -328,6 +329,7 @@ app.whenReady().then(async () => {
     if (win) {
       getLiveMonitoringService().setMainWindow(win)
       getTaskQueueService().setMainWindow(win)
+      setTimeout(() => { void getTaskQueueService().resumePersistedTasks() }, 1500)
       getLoggingService().setMainWindow(win)
       getAutoUpdateService().setMainWindow(win)
       getWishlistCompletionService().setMainWindow(win)

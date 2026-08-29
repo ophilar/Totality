@@ -507,9 +507,10 @@ export const taskHistory = sqliteTable('task_history', {
   recordedAt: text('recorded_at').notNull(),
 });
 
-export const mediaRemuxJobs = sqliteTable('media_remux_jobs', {
+export const mediaOptimizationJobs = sqliteTable('media_optimization_jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   mediaItemId: integer('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  operationKind: text('operation_kind').notNull(),
   status: text('status').notNull(),
   sourcePath: text('source_path').notNull(),
   sourceSize: integer('source_size').notNull(),
@@ -519,6 +520,14 @@ export const mediaRemuxJobs = sqliteTable('media_remux_jobs', {
   streamSignatures: text('stream_signatures').notNull(),
   quarantinePath: text('quarantine_path'),
   error: text('error'),
+  predictedOutputBytes: integer('predicted_output_bytes'),
+  actualOutputBytes: integer('actual_output_bytes'),
+  bytesSaved: integer('bytes_saved'),
+  sourceDurationMs: integer('source_duration_ms'),
+  outputDurationMs: integer('output_duration_ms'),
+  encoderProfile: text('encoder_profile'),
+  sourceAnalysis: text('source_analysis'),
+  outputAnalysis: text('output_analysis'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

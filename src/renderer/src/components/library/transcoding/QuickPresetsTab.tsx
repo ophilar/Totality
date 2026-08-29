@@ -24,11 +24,6 @@ interface PresetProfile {
   id: string
   name: string
   badge: string
-  crf: number
-  nvencPreset: string
-  cpuPreset: string
-  reductionBadge: string
-  footprint: string
   description: string
   icon: typeof Zap
   highlight?: boolean
@@ -39,24 +34,14 @@ const PRESET_PROFILES: PresetProfile[] = [
     id: 'lossless',
     name: 'Lossless Archival',
     badge: 'Highest Quality',
-    crf: 16,
-    nvencPreset: 'p7',
-    cpuPreset: 'slow',
-    reductionBadge: '~15-25% Reduction',
-    footprint: '~45 MB/min',
-    description: 'Maximum fidelity master archival. Preserves 10-bit depth, HDR10+, and original film grain.',
+    description: 'Highest quality gate. Parameters are selected from measured samples for this source.',
     icon: ShieldCheck
   },
   {
     id: 'balanced',
     name: 'Balanced Smooth HQ',
     badge: 'Recommended',
-    crf: 20,
-    nvencPreset: 'p6',
-    cpuPreset: 'medium',
-    reductionBadge: '~40-50% Reduction',
-    footprint: '~25 MB/min',
-    description: 'Optimal balance of visually transparent encoding, smooth anti-stutter passthrough, and space efficiency.',
+    description: 'Balanced quality and savings gate. No savings claim is shown until a sample is measured.',
     icon: Zap,
     highlight: true
   },
@@ -64,12 +49,7 @@ const PRESET_PROFILES: PresetProfile[] = [
     id: 'efficiency',
     name: 'High Efficiency Space Saver',
     badge: 'Max Savings',
-    crf: 25,
-    nvencPreset: 'p5',
-    cpuPreset: 'fast',
-    reductionBadge: '~65-75% Reduction',
-    footprint: '~12 MB/min',
-    description: 'High compression ratio engineered to minimize storage footprint for streaming and massive libraries.',
+    description: 'Maximum savings gate subject to measured VMAF and banding limits.',
     icon: TrendingDown
   }
 ]
@@ -81,19 +61,16 @@ export function QuickPresetsTab({
   gpus
 }: QuickPresetsTabProps) {
   const { addToast } = useToast()
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('balanced')
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('')
 
   const applyProfile = (profile: PresetProfile) => {
     setSelectedProfileId(profile.id)
-    const selectedGpu = gpus.find(gpu => gpu.id === options.gpuId) ?? gpus[0]
-    const isNvidia = selectedGpu?.vendor === 'NVIDIA'
-    const preset = isNvidia ? profile.nvencPreset : profile.cpuPreset
-    
     setOptions(prev => ({
       ...prev,
-      crf: profile.crf,
-      preset: preset,
-      encoder: isNvidia ? (prev.targetCodec === 'av1' ? 'nvenc_av1' : 'nvenc_h265') : ''
+      qualityProfile: profile.id as TranscodeOptions['qualityProfile'],
+      crf: undefined,
+      preset: '',
+      encoder: ''
     }))
     
     addToast({ title: `Applied profile: ${profile.name}`, type: 'info' })
@@ -165,16 +142,8 @@ export function QuickPresetsTab({
                   </p>
                 </div>
 
-                {/* Metrics Footer */}
-                <div className="mt-4 pt-3 border-t border-border/20 space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-green-400">{profile.reductionBadge}</span>
-                    <span className="text-[11px] font-mono text-muted-foreground">{profile.footprint}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground/70">
-                    <span>Quality Target: CQ {profile.crf}</span>
-                    <span>Preset: {profile.nvencPreset.toUpperCase()}</span>
-                  </div>
+                <div className="mt-4 pt-3 border-t border-border/20 text-[11px] text-muted-foreground/70">
+                  Measured per source and selected encoder
                 </div>
               </div>
             )
@@ -192,6 +161,19 @@ export function QuickPresetsTab({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Encoder policy</label>
+            <select
+              value={options.encoderPolicy ?? ''}
+              onChange={event => setOptions(prev => ({ ...prev, encoderPolicy: event.target.value as TranscodeOptions['encoderPolicy'] }))}
+              className="w-full py-2 px-3 rounded-xl border border-border/40 bg-muted/40 text-xs font-bold"
+            >
+              <option value="">Select encoder policy</option>
+              <option value="hardware">Selected hardware</option>
+              <option value="software">Software</option>
+              <option value="compare">Compare both</option>
+            </select>
+          </div>
           {/* Target Codec */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Target Codec</label>

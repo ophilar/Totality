@@ -45,13 +45,19 @@ export function registerOptimizationHandlers() {
     if (decision.removableTrackIndexes.length === 0) throw new Error('No removable audio tracks were identified')
     const quarantineDirectory = path.join(app.getPath('userData'), 'quarantine', String(mediaItemId))
     const run = (binary: string, args: string[], output = false) => new Promise<unknown>((resolve, reject) => { const child = spawn(binary, args, { stdio: output ? ['ignore', 'pipe', 'pipe'] : 'ignore' }); let stdout = ''; let stderr = ''; child.stdout?.on('data', d => { stdout += d }); child.stderr?.on('data', d => { stderr += d }); child.on('error', reject); child.on('close', code => code === 0 ? resolve(output ? JSON.parse(stdout) : undefined) : reject(new Error(stderr || `${binary} exited with ${code}`))) })
-    const remux = new LanguageRemuxService({ run: args => run(analyzer.getFFmpegPath()!, args).then(() => undefined), probe: filePath => run(analyzer.getFFprobePath()!, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', filePath], true).then(value => { const p = value as { streams?: unknown[]; format?: { duration?: string; size?: string } }; return { streams: (p.streams || []) as never[], duration: Number(p.format?.duration), size: Number(p.format?.size) } }) })
-    const jobId = await db.mediaRemuxJobs.create({ mediaItemId, status: 'planned', sourcePath: item.file_path, sourceSize: stat.size, sourceMtimeMs: Math.trunc(stat.mtimeMs), sourceSha256, decisionSnapshot: JSON.stringify(decision), streamSignatures: JSON.stringify(analysis.audioTracks), quarantinePath: path.join(quarantineDirectory, path.basename(item.file_path)), error: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    const remux = new LanguageRemuxService({ run: args => run(analyzer.getFFmpegPath()!, args).then(() => undefined), probe: filePath => run(analyzer.getFFprobePath()!, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', filePath], true).then(value => { const p = value as { streams?: unknown[]; format?: { duration?: string; size?: string } }; const durationSeconds = Number(p.format?.duration); return { streams: (p.streams || []) as never[], duration: Number.isFinite(durationSeconds) ? durationSeconds * 1000 : undefined, size: Number(p.format?.size) } }) })
+    const jobId = await db.mediaRemuxJobs.create({ mediaItemId, operationKind: 'remux', status: 'planned', sourcePath: item.file_path, sourceSize: stat.size, sourceMtimeMs: Math.trunc(stat.mtimeMs), sourceSha256, decisionSnapshot: JSON.stringify(decision), streamSignatures: JSON.stringify(analysis.audioTracks), quarantinePath: path.join(quarantineDirectory, path.basename(item.file_path)), error: null, predictedOutputBytes: null, actualOutputBytes: null, bytesSaved: null, sourceDurationMs: analysis.duration ?? null, outputDurationMs: null, encoderProfile: null, sourceAnalysis: JSON.stringify(analysis), outputAnalysis: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
     await db.mediaRemuxJobs.update(jobId, { status: 'running' })
     try {
       const result = await remux.remux(item.file_path, { quarantineDirectory, retainedAudioIndexes: decision.retainedTrackIndexes, sourceAudioStreams: analysis.audioTracks.map(track => ({ index: track.index, codec_type: 'audio', codec_name: track.codec, profile: track.profile, channel_layout: track.channelLayout, hasObjectAudio: track.hasObjectAudio, tags: { language: track.language, title: track.title }, disposition: { default: track.isDefault ? 1 : 0 } })), sourceFingerprint: { size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs), sha256: sourceSha256 }, fingerprint: async filePath => { const current = await fs.stat(filePath); const hash = crypto.createHash('sha256'); const stream = createReadStream(filePath); await new Promise<void>((resolve, reject) => { stream.on('data', chunk => hash.update(chunk)); stream.on('error', reject); stream.on('end', resolve) }); return { size: current.size, mtimeMs: Math.trunc(current.mtimeMs), sha256: hash.digest('hex') } } })
       await db.media.updateActivatedPathAndStats(mediaItemId, result.activePath, result.verifiedProbe.size || 0, result.verifiedProbe.duration || 0)
-      await db.mediaRemuxJobs.update(jobId, { status: 'promoted' })
+      await db.mediaRemuxJobs.update(jobId, {
+        status: 'promoted',
+        actualOutputBytes: result.verifiedProbe.size ?? null,
+        bytesSaved: stat.size - (result.verifiedProbe.size ?? stat.size),
+        outputDurationMs: result.verifiedProbe.duration ?? null,
+        outputAnalysis: JSON.stringify(result.verifiedProbe),
+      })
       return { jobId, result, decision }
     } catch (error) {
       await db.mediaRemuxJobs.update(jobId, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
@@ -65,65 +71,19 @@ export function registerOptimizationHandlers() {
 
     const episodeMetrics = await Promise.all(
       episodes.map(async (episode) => {
-        let audioStreams: import('@main/services/ShowOptimizationMetricsService').TrackStreamInfo[] | undefined = undefined
-        let durationSeconds = episode.duration ? (episode.duration > 10000 ? episode.duration / 1000 : episode.duration) : undefined
-
-        if (episode.audio_tracks) {
-          try {
-            const parsedTracks = JSON.parse(episode.audio_tracks)
-            if (Array.isArray(parsedTracks) && parsedTracks.length > 0) {
-              audioStreams = parsedTracks.map((value: unknown, idx: number) => {
-                const track = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-                const codec = typeof track.codec === 'string' ? track.codec : typeof track.codec_name === 'string' ? track.codec_name : 'unknown'
-                const bitrate = typeof track.bitrate === 'number' ? track.bitrate * 1000 : undefined
-                const channelLayout = typeof track.channelLayout === 'string' ? track.channelLayout : undefined
-                return {
-                  index: typeof track.index === 'number' ? track.index : idx,
-                  codec,
-                  codec_name: codec,
-                  language: typeof track.language === 'string' ? track.language : typeof track.lang === 'string' ? track.lang : null,
-                  title: typeof track.title === 'string' ? track.title : null,
-                  channels: typeof track.channels === 'number' ? track.channels : (channelLayout ? parseInt(channelLayout, 10) || 2 : 2),
-                  bit_rate: bitrate,
-                  bitrate,
-                  isCommentary: Boolean(track.isCommentary),
-                  isAudioDescription: Boolean(track.isAudioDescription),
-                  isAccessibility: Boolean(track.isAccessibility),
-                  reliableTag: typeof track.language === 'string' || typeof track.lang === 'string',
-                }
-              })
-            }
-          } catch {
-            // fallback to probe
-          }
+        if (!analyzerAvailable || !episode.file_path) throw new Error(`Fresh media analysis is unavailable for episode ${episode.title}`)
+        const analysis = await analyzer.analyzeFile(episode.file_path)
+        if (!analysis.success || !analysis.duration || analysis.audioTracks.length === 0) {
+          throw new Error(`Fresh media analysis is incomplete for episode ${episode.title}`)
         }
-
-        if (!audioStreams && episode.file_path && analyzerAvailable) {
-          try {
-            const analysis = await analyzer.analyzeFile(episode.file_path)
-            if (analysis.success && analysis.audioTracks.length > 0) {
-              audioStreams = analysis.audioTracks.map((t) => ({
-                index: t.index,
-                codec: t.codec,
-                codec_name: t.codec,
-                language: t.language,
-                title: t.title,
-                channels: t.channels,
-                bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
-                bitrate: t.bitrate ? t.bitrate * 1000 : undefined,
-                isCommentary: t.isCommentary,
-                isAudioDescription: t.isAudioDescription,
-                isAccessibility: t.isAccessibility,
-                reliableTag: Boolean(t.language),
-              }))
-              if (analysis.duration) {
-                durationSeconds = analysis.duration > 10000 ? analysis.duration / 1000 : analysis.duration
-              }
-            }
-          } catch {
-            // Keep fallback database values
-          }
-        }
+        const audioStreams = analysis.audioTracks.map((t) => ({
+          index: t.index, codec: t.codec, codec_name: t.codec, language: t.language, title: t.title,
+          channels: t.channels, bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
+          bitrate: t.bitrate ? t.bitrate * 1000 : undefined, isCommentary: t.isCommentary,
+          isAudioDescription: t.isAudioDescription, isAccessibility: t.isAccessibility,
+          reliableTag: Boolean(t.language),
+        }))
+        const durationSeconds = analysis.duration / 1000
 
         return {
           sizeBytes: episode.file_size ?? undefined,
@@ -226,7 +186,7 @@ export function registerOptimizationHandlers() {
     if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
-      durationSeconds: analysis.duration == null ? undefined : (analysis.duration > 10000 ? analysis.duration / 1000 : analysis.duration),
+      durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
       fileSize: analysis.fileSize || 0,
       videoStorageDebtBytes: item.storage_debt_bytes,
       audioTranscodeSavingsBytes: null,

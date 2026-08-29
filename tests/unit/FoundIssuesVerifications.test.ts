@@ -65,6 +65,11 @@ describe('Found Issues Verifications (No Mocks)', () => {
     expect(validated.sortBy).toBe('storage_debt')
   })
 
+  it('verifies TVShowFiltersSchema accepts the weighted TV efficiency sort emitted by list mode', () => {
+    const validated = validateInput(TVShowFiltersSchema, { sortBy: 'weighted_efficiency', sortOrder: 'desc' }, 'tvshows')
+    expect(validated.sortBy).toBe('weighted_efficiency')
+  })
+
   it('verifies validateInput pre-processes and maps UI filter parameters to backend schema parameters', () => {
     const uiInput = {
       tier: '1080p',

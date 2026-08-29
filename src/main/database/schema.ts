@@ -757,9 +757,10 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
 
-CREATE TABLE IF NOT EXISTS media_remux_jobs (
+CREATE TABLE IF NOT EXISTS media_optimization_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+  operation_kind TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('planned', 'running', 'verified', 'promoted', 'failed')),
   source_path TEXT NOT NULL,
   source_size INTEGER NOT NULL,
@@ -769,10 +770,18 @@ CREATE TABLE IF NOT EXISTS media_remux_jobs (
   stream_signatures TEXT NOT NULL,
   quarantine_path TEXT,
   error TEXT,
+  predicted_output_bytes INTEGER,
+  actual_output_bytes INTEGER,
+  bytes_saved INTEGER,
+  source_duration_ms INTEGER,
+  output_duration_ms INTEGER,
+  encoder_profile TEXT,
+  source_analysis TEXT,
+  output_analysis TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_media_remux_jobs_item ON media_remux_jobs(media_item_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_media_optimization_jobs_item ON media_optimization_jobs(media_item_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_recorded ON task_history(recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_history_source ON task_history(source_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_type ON activity_log(entry_type);

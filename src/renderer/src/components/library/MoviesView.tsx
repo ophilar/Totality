@@ -10,6 +10,7 @@ import { useMenuClose } from '@/hooks/useMenuClose'
 import { useSources } from '@/contexts/SourceContext'
 import { providerColors, calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
+import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {
@@ -28,6 +29,7 @@ type MovieDisplayItem =
 export function MoviesView({
   movies = [],
   sortBy,
+  sortOrder,
   onSortChange,
   slimDown,
   onSelectMovie,
@@ -49,6 +51,7 @@ export function MoviesView({
 }: {
   movies?: MediaItem[]
   sortBy: 'title' | 'year' | 'efficiency' | 'waste' | 'size'
+  sortOrder: 'asc' | 'desc'
   onSortChange: (sort: 'title' | 'year' | 'efficiency' | 'waste' | 'size') => void
   slimDown: boolean
   onSelectMovie: (id: number, movie: MediaItem) => void
@@ -127,22 +130,22 @@ export function MoviesView({
         const yearA = a.type === 'movie' ? a.movie.year : undefined
         const yearB = b.type === 'movie' ? b.movie.year : undefined
         if (yearA == null || yearB == null) return yearA == null ? (yearB == null ? 0 : 1) : -1
-        if (yearA !== yearB) return yearB - yearA
+        if (yearA !== yearB) return (yearB - yearA) * (sortOrder === 'asc' ? -1 : 1)
       } else if (sortBy === 'efficiency') {
         const effA = a.type === 'movie' ? a.movie.efficiency_score : undefined
         const effB = b.type === 'movie' ? b.movie.efficiency_score : undefined
         if (effA == null || effB == null) return effA == null ? (effB == null ? 0 : 1) : -1
-        if (effA !== effB) return effA - effB
+        if (effA !== effB) return (effA - effB) * (sortOrder === 'asc' ? 1 : -1)
       } else if (sortBy === 'waste') {
         const wasteA = a.type === 'movie' ? a.movie.storage_debt_bytes : undefined
         const wasteB = b.type === 'movie' ? b.movie.storage_debt_bytes : undefined
         if (wasteA == null || wasteB == null) return wasteA == null ? (wasteB == null ? 0 : 1) : -1
-        if (wasteA !== wasteB) return wasteB - wasteA
+        if (wasteA !== wasteB) return (wasteB - wasteA) * (sortOrder === 'asc' ? 1 : -1)
       } else if (sortBy === 'size') {
         const sizeA = a.type === 'movie' ? a.movie.file_size : undefined
         const sizeB = b.type === 'movie' ? b.movie.file_size : undefined
         if (sizeA == null || sizeB == null) return sizeA == null ? (sizeB == null ? 0 : 1) : -1
-        if (sizeA !== sizeB) return sizeB - sizeA
+        if (sizeA !== sizeB) return (sizeB - sizeA) * (sortOrder === 'asc' ? 1 : -1)
       }
 
       const titleA = a.type === 'collection' ? a.collection.collection_name : a.movie.title
@@ -151,7 +154,7 @@ export function MoviesView({
     })
 
     return items
-  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, groupByCollections, sortBy])
+  }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, groupByCollections, sortBy, sortOrder])
 
   const statsBar = (
     <div className="flex items-center justify-between pb-4 px-1">
@@ -162,13 +165,13 @@ export function MoviesView({
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Sort:</span>
         <div className="flex gap-1 bg-muted/30 p-1 rounded-lg">
-          {(['title', 'efficiency', 'waste', 'size'] as const).map(s => (
+          {getSortOptions('movie').filter(s => s.key !== 'year').map(s => (
             <button
-              key={s}
-              onClick={() => onSortChange(s)}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${sortBy === s ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted/50 text-muted-foreground'}`}
+              key={s.key}
+              onClick={() => onSortChange(s.key as typeof sortBy)}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${sortBy === s.key ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted/50 text-muted-foreground'}`}
             >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {s.label}{sortBy === s.key ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''}
             </button>
           ))}
         </div>
@@ -185,14 +188,14 @@ export function MoviesView({
           aria-label="Sort movies by year"
           className="hover:text-foreground transition-colors uppercase font-bold text-xs"
         >
-          Year
+          {getSortLabel('movie', 'year')}
         </button>
       </div>
       <div>Resolution</div>
       <div>Codec</div>
       <div className="text-right">Bitrate</div>
       <div className="text-right">Size</div>
-      <div className="text-center">Efficiency</div>
+      <div className="text-center">{getSortLabel('movie', 'efficiency')}</div>
       <div className="text-right">Debt</div>
       <div className="text-center"></div>
     </div>

@@ -19,8 +19,7 @@ describe('TranscodingService (No Mocks)', () => {
 
     db = await setupTestDb()
     
-    service = new TranscodingService({ advise: async () => ({ text: JSON.stringify({ summary: 'Fixture parameters', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
-    getTranscodingService().setParameterAdvisorForTesting({ advise: async () => ({ text: JSON.stringify({ summary: 'Optimized for AV1', videoCodec: 'svt_av1', crf: 25, preset: 'fast', expectedSizeReduction: '50%', warnings: [] }) }) })
+    service = new TranscodingService()
   })
 
   afterEach(() => {
@@ -45,8 +44,8 @@ describe('TranscodingService (No Mocks)', () => {
       subtitleTracks: []
     })
 
-    const params = await service.getTranscodeParameters(filePath, { targetCodec: 'av1' })
-    expect(params.summary).toBe('Fixture parameters')
+    const params = await service.getTranscodeParameters(filePath, { targetCodec: 'av1', encoder: 'svt_av1', crf: 25, preset: 'fast', qualityProfile: 'balanced', encoderPolicy: 'software' })
+    expect(params.summary).toBe('Explicit measured transcoding parameters')
   })
 
   describe('Transcoding IPC Integration', () => {
@@ -77,8 +76,7 @@ describe('TranscodingService (No Mocks)', () => {
         audioTracks: [], subtitleTracks: []
       })
 
-      const params = await handler({}, 1, { targetCodec: 'av1' })
-      expect(params.summary).toBe("Optimized for AV1")
+      await expect(handler({}, 1, { targetCodec: 'av1' })).rejects.toThrow('Quality profile must be explicitly selected')
     })
   })
 })

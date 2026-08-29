@@ -228,6 +228,7 @@ export function ServicesTab() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [isSavingTmdb, setIsSavingTmdb] = useState(false)
 
   const tmdbId = useId()
   const musicbrainzId = useId()
@@ -342,7 +343,7 @@ export function ServicesTab() {
       setFfprobeAvailable(ffAvailable)
       setFfprobeBundled(ffBundled)
       setFfprobeVersion(ffVersion)
-      setFfprobeEnabled(allSettings.ffprobe_enabled === 'true')
+      setFfprobeEnabled(allSettings.ffprobe_enabled !== 'false' && ffAvailable)
 
       setNfsMappings(nfsMaps || {})
       setOriginalNfsMappings(nfsMaps || {})
@@ -363,6 +364,24 @@ export function ServicesTab() {
       setTmdbStatus(response.ok ? 'valid' : 'invalid')
     } catch {
       setTmdbStatus('invalid')
+    }
+  }
+
+  const handleTmdbBlur = async () => {
+    const value = tmdbApiKey.trim()
+    if (value === originalTmdb.trim() || isSavingTmdb) return
+
+    setIsSavingTmdb(true)
+    try {
+      await window.electronAPI.setSetting('tmdb_api_key', value)
+      setTmdbApiKey(value)
+      setOriginalTmdb(value)
+      addToast({ type: 'success', title: 'TMDB API key saved' })
+    } catch (error) {
+      window.electronAPI.log.error('[ServicesTab]', 'Failed to save TMDB API key:', error)
+      addToast({ type: 'error', title: 'TMDB API key was not saved', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setIsSavingTmdb(false)
     }
   }
 
@@ -406,6 +425,11 @@ export function ServicesTab() {
         window.electronAPI.setSetting('radarr_api_key', radarrKey),
         window.electronAPI.setSetting('metadata_provider_preferences', metadataProviderPreferences),
       ])
+      const storedTmdb = await window.electronAPI.getSetting('tmdb_api_key')
+      if ((storedTmdb || '') !== tmdbApiKey) {
+        throw new Error('TMDB API key could not be verified after saving')
+      }
+      addToast({ type: 'success', title: 'Settings saved' })
       setOriginalTmdb(tmdbApiKey)
       setOriginalNfsMappings({ ...nfsMappings })
       setOriginalGemini(geminiApiKey)
@@ -638,6 +662,7 @@ export function ServicesTab() {
                     setTmdbApiKey(e.target.value)
                     setTmdbStatus('idle')
                   }}
+                  onBlur={() => { void handleTmdbBlur() }}
                   placeholder="Enter your TMDB API key"
                   className="w-full px-3 py-2 pr-10 bg-background border border-border/30 rounded-md text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 />

@@ -402,7 +402,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
             const analysis = ffprobeResults.get(filePath)
             if (analysis?.success) {
               metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
-              if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) continue
+              if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
             }
             processedItems.push({ metadata, parsed, fileMtime })
             scannedFilePaths.add(PathUtils.toDatabasePath(filePath))
@@ -531,7 +531,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
               const analysis = await fileAnalyzer.analyzeFile(filePath)
               if (analysis.success) {
                 metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
-                if (scanType === 'movie' && analysis.duration && analysis.duration < MIN_MOVIE_DURATION_SECONDS) continue
+                if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
               }
             }
             processedItems.push({ metadata, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime })

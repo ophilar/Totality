@@ -510,7 +510,7 @@ export interface TVShowFilters {
   completenessFilter?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'size' | 'completeness' | 'waste'
+  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'weighted_efficiency' | 'size' | 'completeness' | 'waste'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number

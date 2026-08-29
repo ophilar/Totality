@@ -31,16 +31,18 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor'>('presets')
 
   const [options, setOptions] = useState<TranscodeOptions>({
-    targetCodec: 'av1',
-    outputMode: 'copy',
-    useGpu: true,
+    targetCodec: '' as TranscodeOptions['targetCodec'],
+    outputMode: 'quarantine-replace',
+    useGpu: false,
     gpuId: '',
     encoder: '',
-    crf: 20,
-    preset: 'p6',
+    crf: undefined,
+    preset: '',
     customArgs: '',
     transcodingEngine: 'ffmpeg',
-    targetSize: 'ai-recommended'
+    targetSize: '',
+    qualityProfile: undefined,
+    encoderPolicy: undefined
   })
 
   const [status, setStatus] = useState<'idle' | 'generating' | 'encoding' | 'complete' | 'failed'>('idle')
@@ -121,7 +123,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     const currentSeq = ++paramSequenceRef.current
     const timer = setTimeout(async () => {
       try {
-        const p = await window.electronAPI.getParameters(media.id!, { ...options, aiOptimize: false })
+        const p = await window.electronAPI.getParameters(media.id!, options)
         if (paramSequenceRef.current === currentSeq) {
           setParams(p)
         }
@@ -139,7 +141,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
     setGenerating(true)
     setStatus('generating')
     try {
-      const p = await window.electronAPI.getParameters(media.id!, { ...options, aiOptimize: true })
+        const p = await window.electronAPI.getParameters(media.id!, options)
       setParams(p)
       
       setOptions(prev => ({
