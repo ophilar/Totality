@@ -489,7 +489,7 @@ describe('TranscodingService', () => {
 
       expect(fsPromises.rename).toHaveBeenCalledWith(
         expect.stringContaining('.totality_tmp_'),
-        inputPath
+        path.resolve(inputPath)
       )
       expect(fsPromises.copyFile).not.toHaveBeenCalled()
     })
@@ -509,7 +509,7 @@ describe('TranscodingService', () => {
 
       expect(fsPromises.rename).toHaveBeenCalledWith(
         expect.stringContaining('.totality_tmp_'),
-        inputPath
+        path.resolve(inputPath)
       )
       expect(fsPromises.copyFile).not.toHaveBeenCalled()
     })
