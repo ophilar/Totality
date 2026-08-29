@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { resolveDatabasePath } from '../../src/main/database/DatabasePath'
+import path from 'node:path'
 
 describe('resolveDatabasePath', () => {
   it('uses one stable database filename under the application user-data directory', () => {
-    expect(resolveDatabasePath('C:\\Users\\user\\AppData\\Roaming\\Totality')).toBe('C:\\Users\\user\\AppData\\Roaming\\Totality\\totality.db')
+    const basePath = process.platform === 'win32'
+      ? 'C:\\Users\\user\\AppData\\Roaming\\Totality'
+      : '/home/user/.config/Totality';
+    const expected = path.join(basePath, 'totality.db');
+    expect(resolveDatabasePath(basePath)).toBe(expected);
   })
 })
