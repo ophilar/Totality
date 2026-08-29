@@ -400,10 +400,8 @@ export class LocalFolderProvider extends BaseMediaProvider {
           let { metadata } = fileInfo
           try {
             const analysis = ffprobeResults.get(filePath)
-            if (analysis?.success) {
-              metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
-              if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
-            }
+            if (analysis?.success && scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
+            if (analysis?.success) metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
             processedItems.push({ metadata, parsed, fileMtime })
             scannedFilePaths.add(PathUtils.toDatabasePath(filePath))
           } catch (error: unknown) {
@@ -501,8 +499,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
       try {
         const processedItems: ProcessedItem[] = []
-        for (let i = 0; i < validFiles.length; i++) {
-          const filePath = validFiles[i]
+        for (const [i, filePath] of validFiles.entries()) {
           const relativePath = path.relative(this.folderPath, filePath)
           onProgress?.({ current: i + 1, total: validFiles.length, phase: 'processing', currentItem: path.basename(filePath), percentage: ((i + 1) / validFiles.length) * 100 })
 
@@ -529,10 +526,8 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             if (ffprobeAvailable) {
               const analysis = await fileAnalyzer.analyzeFile(filePath)
-              if (analysis.success) {
-                metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
-                if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
-              }
+              if (analysis.success && scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
+              if (analysis.success) metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
             }
             processedItems.push({ metadata, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime })
           } catch (error: unknown) {
