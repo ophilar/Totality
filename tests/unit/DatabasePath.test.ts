@@ -3,6 +3,6 @@ import { resolveDatabasePath } from '../../src/main/database/DatabasePath'
 
 describe('resolveDatabasePath', () => {
   it('uses one stable database filename under the application user-data directory', () => {
-    expect(resolveDatabasePath('C:\\Users\\user\\AppData\\Roaming\\Totality')).toBe('C:\\Users\\user\\AppData\\Roaming\\Totality\\totality.db')
+    expect(resolveDatabasePath('/Users/user/AppData/Roaming/Totality')).toBe('/Users/user/AppData/Roaming/Totality\/totality.db')
   })
 })
