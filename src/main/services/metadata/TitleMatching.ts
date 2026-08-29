@@ -1,12 +1,4 @@
-const NON_TITLE_TOKENS = new Set([
-  '2160p', '1080p', '720p', '576p', '480p', '4k', 'uhd', 'sd', 'hd',
-  'bluray', 'brrip', 'webrip', 'webdl', 'web', 'hdtv', 'dvdrip', 'remux',
-  'x264', 'x265', 'h264', 'h265', 'hevc', 'av1', 'vp9', 'avc',
-  'aac', 'ac3', 'dts', 'truehd', 'atmos', 'flac', 'hdr', 'hdr10', 'dv',
-  'proper', 'repack', 'limited', 'internal', 'extended', 'unrated', 'directors',
-  'cut', 'remastered', 'criterion', 'multi', 'subbed', 'dubbed', 'complete',
-  'edition', 'special', 'theatrical', 'readnfo', 'sample', 'xxx', 'clip'
-])
+import { NON_TITLE_TOKENS } from '@main/providers/utils/TokenConstants'
 
 const ARTICLE_TOKENS = new Set(['a', 'an', 'the'])
 
