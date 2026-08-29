@@ -584,9 +584,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       }
 
-      for (const filePath of deletedFiles) {
-        const existingTrack = await db.music.getTrackByPath(filePath)
-        if (existingTrack?.id) { await db.music.deleteMusicTrack(existingTrack.id); result.itemsRemoved++ }
+      if (deletedFiles.length > 0) {
+        const existingTracks = await db.music.getTracksByPaths(deletedFiles)
+        const idsToDelete = existingTracks.map((t) => t.id).filter((id): id is number => id !== undefined)
+        if (idsToDelete.length > 0) {
+          await db.music.deleteMusicTracks(idsToDelete)
+          result.itemsRemoved += idsToDelete.length
+        }
       }
 
       if (validFiles.length === 0 && deletedFiles.length === 0) { result.success = true; result.durationMs = Date.now() - startTime; return result }
