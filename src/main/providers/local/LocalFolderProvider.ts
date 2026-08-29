@@ -487,11 +487,12 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       }
 
-      for (const filePath of deletedFiles) {
-        const existingItem = await db.media.getItemByPath(filePath)
-        if (existingItem?.id) {
-          await db.media.deleteItem(existingItem.id)
-          result.itemsRemoved++
+      if (deletedFiles.length > 0) {
+        const existingItems = await db.media.getItemsByPaths(deletedFiles)
+        const idsToDelete = existingItems.map(item => item.id).filter((id): id is number => id !== undefined)
+        if (idsToDelete.length > 0) {
+          await db.media.deleteItems(idsToDelete)
+          result.itemsRemoved += idsToDelete.length
         }
       }
 
@@ -584,9 +585,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
       }
 
-      for (const filePath of deletedFiles) {
-        const existingTrack = await db.music.getTrackByPath(filePath)
-        if (existingTrack?.id) { await db.music.deleteMusicTrack(existingTrack.id); result.itemsRemoved++ }
+      if (deletedFiles.length > 0) {
+        const existingTracks = await db.music.getTracksByPaths(deletedFiles)
+        const trackIdsToDelete = existingTracks.map(track => track.id).filter((id): id is number => id !== undefined)
+        if (trackIdsToDelete.length > 0) {
+          await db.music.deleteMusicTracks(trackIdsToDelete)
+          result.itemsRemoved += trackIdsToDelete.length
+        }
       }
 
       if (validFiles.length === 0 && deletedFiles.length === 0) { result.success = true; result.durationMs = Date.now() - startTime; return result }

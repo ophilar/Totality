@@ -252,15 +252,17 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
       const sourceName = source?.display_name || sourceId
 
       // Queue scan tasks for every enabled library in this source
-      for (const library of libraries) {
-        const taskType = library.type === LibraryType.Music ? 'music-scan' : 'library-scan'
-        await window.electronAPI.taskQueueAddTask({
-          type: taskType,
-          label: `Scan ${library.name} (${sourceName})`,
-          sourceId,
-          libraryId: library.id,
+      await Promise.all(
+        libraries.map(library => {
+          const taskType = library.type === LibraryType.Music ? 'music-scan' : 'library-scan'
+          return window.electronAPI.taskQueueAddTask({
+            type: taskType,
+            label: `Scan ${library.name} (${sourceName})`,
+            sourceId,
+            libraryId: library.id,
+          })
         })
-      }
+      )
 
       // Queue analysis tasks for this source based on library types present
       const libraryTypes = new Set(libraries.map(l => l.type))

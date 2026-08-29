@@ -206,6 +206,19 @@ app.whenReady().then(async () => {
       getLoggingService().warn('[index]', 'Transcoding capability probe failed; fallback detection will remain available:', error)
     }
 
+    const extractAllowedRootsFromConfig = (configStr: string | null): string[] => {
+      if (!configStr) return []
+      try {
+        const config = JSON.parse(configStr)
+        const roots: string[] = []
+        if (config.folderPath) roots.push(config.folderPath)
+        if (config.databasePath) roots.push(config.databasePath)
+        return roots
+      } catch {
+        return []
+      }
+    }
+
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     protocol.handle('local-artwork', async (request) => {
       const url = new URL(request.url)
@@ -236,15 +249,7 @@ app.whenReady().then(async () => {
             const schema = await import('@main/database/drizzleSchema')
             const sources = await db.drizzle.select().from(schema.mediaSources).all()
             for (const src of sources) {
-              if (src.connectionConfig) {
-                try {
-                  const config = JSON.parse(src.connectionConfig)
-                  if (config.folderPath) allowedRoots.push(config.folderPath)
-                  if (config.databasePath) allowedRoots.push(config.databasePath)
-                } catch (e) {
-                  // ignore
-                }
-              }
+              allowedRoots.push(...extractAllowedRootsFromConfig(src.connectionConfig))
             }
           }
         } catch (e) {
