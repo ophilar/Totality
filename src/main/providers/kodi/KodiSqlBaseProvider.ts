@@ -209,13 +209,14 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       if (scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = await db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
-        for (const item of existingItems) {
-          if (!scannedProviderIds.has(item.plex_id)) {
-            if (item.id) {
-              await db.media.deleteItem(item.id)
-              result.itemsRemoved++
-            }
-          }
+
+        const idsToDelete = existingItems
+          .filter(item => !scannedProviderIds.has(item.plex_id) && item.id)
+          .map(item => item.id as number)
+
+        if (idsToDelete.length > 0) {
+          await db.media.deleteItems(idsToDelete)
+          result.itemsRemoved += idsToDelete.length
         }
       }
 
