@@ -299,22 +299,30 @@ export class KodiProvider extends BaseMediaProvider {
           const albums = (await this.rpc.call<{ albums: KodiMusicAlbum[] }>('AudioLibrary.GetAlbums', { filter: { artistid: artist.artistid }, properties: ['artistid', 'artist', 'displayartist', 'year', 'musicbrainzalbumid', 'musicbrainzreleasegroupid', 'genre', 'type', 'thumbnail'] })).albums || []
           
           let [tc, ac] = [0, 0]
-          for (const album of albums) {
-            const albumId = await db.music.upsertAlbum(this.mapper.convertToMusicAlbum(album, artistId, 'music'))
-            const songs = (await this.rpc.call<{ songs: KodiMusicSong[] }>('AudioLibrary.GetSongs', { filter: { albumid: album.albumid }, properties: ['artistid', 'artist', 'displayartist', 'albumid', 'album', 'track', 'disc', 'duration', 'file', 'audio_codec', 'samplerate', 'bitdepth', 'musicbrainztrackid'] })).songs || []
-            
-            const trackDataList = songs.map(s => this.mapper.convertToMusicTrack(s, albumId, artistId, 'music')).filter(Boolean) as MusicTrack[]
-            await db.startBatch()
-            try {
-              await db.music.bulkUpsertTracks(trackDataList)
-              result.itemsScanned += trackDataList.length
-            } finally {
-              await db.endBatch()
+          // Process albums in chunks to avoid memory spikes and reduce N+1 delays
+          for (let j = 0; j < albums.length; j += 5) {
+            const albumChunk = albums.slice(j, j + 5)
+            const albumSongResults = await Promise.all(albumChunk.map(async (album) => {
+              const songs = (await this.rpc.call<{ songs: KodiMusicSong[] }>('AudioLibrary.GetSongs', { filter: { albumid: album.albumid }, properties: ['artistid', 'artist', 'displayartist', 'albumid', 'album', 'track', 'disc', 'duration', 'file', 'audio_codec', 'samplerate', 'bitdepth', 'musicbrainztrackid'] })).songs || []
+              return { album, songs }
+            }))
+
+            for (const { album, songs } of albumSongResults) {
+              const albumId = await db.music.upsertAlbum(this.mapper.convertToMusicAlbum(album, artistId, 'music'))
+
+              const trackDataList = songs.map(s => this.mapper.convertToMusicTrack(s, albumId, artistId, 'music')).filter(Boolean) as MusicTrack[]
+              await db.startBatch()
+              try {
+                await db.music.bulkUpsertTracks(trackDataList)
+                result.itemsScanned += trackDataList.length
+              } finally {
+                await db.endBatch()
+              }
+
+              const stats = calculateAlbumStats(trackDataList)
+              await db.music.upsertAlbum({ ...this.mapper.convertToMusicAlbum(album, artistId, 'music'), ...stats, id: albumId })
+              ac++; tc += trackDataList.length
             }
-            
-            const stats = calculateAlbumStats(trackDataList)
-            await db.music.upsertAlbum({ ...this.mapper.convertToMusicAlbum(album, artistId, 'music'), ...stats, id: albumId })
-            ac++; tc += trackDataList.length
           }
           await db.music.updateMusicArtistCounts(artistId, ac, tc)
         } catch (e: unknown) { result.errors.push(`Artist ${artist.artist}: ${getErrorMessage(e)}`) }
