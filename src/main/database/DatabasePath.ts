@@ -1,5 +1,6 @@
 import path from 'node:path'
+import { PathUtils } from '../services/utils/PathUtils'
 
 export function resolveDatabasePath(userDataPath: string): string {
-  return path.join(userDataPath, 'totality.db')
+  return PathUtils.toDatabasePath(path.join(userDataPath, 'totality.db'))
 }
