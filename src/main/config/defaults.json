@@ -90,7 +90,17 @@
   "monitoring": {
     "batchWindowMs": 45000,
     "maxIndividualNotifications": 10,
-    "maxStoredNotifications": 100
+    "maxStoredNotifications": 100,
+    "pollingIntervals": {
+      "plex": 300000,
+      "jellyfin": 300000,
+      "emby": 300000,
+      "kodi": 300000,
+      "kodi-local": 60000,
+      "kodi-mysql": 60000,
+      "local": 60000,
+      "mediamonkey": 60000
+    }
   },
   "gemini": {
     "defaultModel": "gemini-3.1-flash-lite",

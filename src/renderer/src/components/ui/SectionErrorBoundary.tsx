@@ -4,7 +4,9 @@ import { AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 interface Props {
   children: ReactNode
   /** Section name for logging and display */
-  section: string
+  section?: string
+  /** Alias for section */
+  title?: string
   /** Custom fallback UI - if not provided, uses default inline error */
   fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode)
   /** Callback when error occurs */
@@ -26,20 +28,6 @@ interface State {
 
 /**
  * SectionErrorBoundary - Granular error boundary for component sections
- *
- * Features:
- * - Configurable fallback UI
- * - Section-specific error messages
- * - Retry/reset capability
- * - Error logging
- * - Compact mode for smaller sections
- *
- * Usage:
- * ```tsx
- * <SectionErrorBoundary section="Media Browser">
- *   <MediaBrowser />
- * </SectionErrorBoundary>
- * ```
  */
 export class SectionErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -56,8 +44,13 @@ export class SectionErrorBoundary extends Component<Props, State> {
     return { hasError: true, error }
   }
 
+  private getSectionName(): string {
+    return this.props.section || this.props.title || 'Section'
+  }
+
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    window.electronAPI.log.error('[SectionErrorBoundary:${this.props.section}]', ``, error, errorInfo)
+    const sectionName = this.getSectionName()
+    window.electronAPI.log.error(`[SectionErrorBoundary:${sectionName}]`, error.message, error, errorInfo)
     this.setState({ errorInfo })
 
     // Call optional error callback

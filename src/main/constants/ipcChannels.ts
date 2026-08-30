@@ -101,8 +101,10 @@ export const IPC_CHANNELS = {
     ADD_TASKS: 'taskQueue:addTasks',
   },
   WISHLIST: {
-    GET_ALL: 'wishlist:getAll',
-    GET_COUNT: 'wishlist:getCount',
+    GET_ALL: 'wishlist:list',
+    GET_COUNT: 'wishlist:count',
+    LIST: 'wishlist:list',
+    COUNT: 'wishlist:count',
     GET_COUNTS_BY_REASON: 'wishlist:getCountsByReason',
     GET_REGION: 'wishlist:getRegion',
     SET_REGION: 'wishlist:setRegion',

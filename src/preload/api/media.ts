@@ -15,12 +15,12 @@ export const mediaApi: MediaAPI = {
   },
 
   // Database - Media Items
-  getMediaItems: (filters?: MediaItemFilters) => ipcRenderer.invoke('db:getMediaItems', filters),
-  countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
+  getMediaItems: (filters?: MediaItemFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
+  countMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
   mediaList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
   mediaCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
-  getTVShows: (filters?: TVShowFilters) => ipcRenderer.invoke('db:getTVShows', filters),
-  countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
+  getTVShows: (filters?: TVShowFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
+  countTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, filters),
   getLibraryOverview: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sourceId),
   tvShowList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
   tvShowCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, filters),

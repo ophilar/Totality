@@ -392,7 +392,13 @@ export class LocalFolderProvider extends BaseMediaProvider {
           onProgress?.({ current: batchEnd, total: totalFiles, phase: 'analyzing', currentItem: `Analyzing ${filesToAnalyze.length} files...`, percentage: (batchEnd / totalFiles) * 100 })
           ffprobeResults = useParallelFFprobe
             ? await fileAnalyzer.analyzeFilesParallel(filesToAnalyze)
-            : new Map(await Promise.all(filesToAnalyze.map(async fp => [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult])))
+            : new Map(await Promise.all(filesToAnalyze.map(async fp => {
+                try {
+                  return [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult]
+                } catch {
+                  return [fp, { success: false, filePath: fp, audioTracks: [], subtitleTracks: [] }] as [string, FileAnalysisResult]
+                }
+              })))
         }
 
         for (const fileInfo of filesToProcess) {
@@ -529,10 +535,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
             }
 
             if (ffprobeAvailable) {
-              const analysis = await fileAnalyzer.analyzeFile(filePath)
-              if (analysis.success) {
-                metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
-                if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
+              try {
+                const analysis = await fileAnalyzer.analyzeFile(filePath)
+                if (analysis.success) {
+                  metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
+                  if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
+                }
+              } catch {
+                // Non-fatal if ffprobe cannot parse corrupted/mock file content
               }
             }
             processedItems.push({ metadata, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime })
@@ -610,10 +620,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
             let audioInfo: AudioAnalysisSummary = {}
             if (ffprobeAvailable) {
-              const analysis = await fileAnalyzer.analyzeFile(filePath)
-              if (analysis.success && analysis.audioTracks?.length > 0) {
-                const primaryAudio = analysis.audioTracks[0]
-                audioInfo = { codec: normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile), bitrate: primaryAudio.bitrate, sampleRate: primaryAudio.sampleRate, bitDepth: primaryAudio.bitDepth, channels: primaryAudio.channels, duration: analysis.duration, isLossless: this.isLosslessCodec(primaryAudio.codec), hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork }
+              try {
+                const analysis = await fileAnalyzer.analyzeFile(filePath)
+                if (analysis.success && analysis.audioTracks?.length > 0) {
+                  const primaryAudio = analysis.audioTracks[0]
+                  audioInfo = { codec: normalizeAudioCodec(primaryAudio.codec, primaryAudio.profile), bitrate: primaryAudio.bitrate, sampleRate: primaryAudio.sampleRate, bitDepth: primaryAudio.bitDepth, channels: primaryAudio.channels, duration: analysis.duration, isLossless: this.isLosslessCodec(primaryAudio.codec), hasEmbeddedArtwork: analysis.embeddedArtwork?.hasArtwork }
+                }
+              } catch {
+                // Non-fatal if ffprobe cannot parse file
               }
             }
 
@@ -830,7 +844,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
     for (let i = 0; i < groups.length; i += BATCH_SIZE) {
       const batch = groups.slice(i, i + BATCH_SIZE)
       
-      await db.startBatch()
+      await db.beginBatch()
       try {
         for (const group of batch) {
           try {
@@ -986,7 +1000,15 @@ export class LocalFolderProvider extends BaseMediaProvider {
           let ffprobeResults = new Map<string, FileAnalysisResult>()
           if (filesToAnalyze.length > 0) {
             onProgress?.({ current: batchEnd, total: totalFiles, phase: 'analyzing', currentItem: `Analyzing ${filesToAnalyze.length} audio files...`, percentage: (batchEnd / totalFiles) * 100 })
-            ffprobeResults = ffprobeParallelEnabled && ffprobeBatchSize > 1 ? await fileAnalyzer.analyzeFilesParallel(filesToAnalyze) : new Map(await Promise.all(filesToAnalyze.map(async fp => [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult])))
+            ffprobeResults = ffprobeParallelEnabled && ffprobeBatchSize > 1
+              ? await fileAnalyzer.analyzeFilesParallel(filesToAnalyze)
+              : new Map(await Promise.all(filesToAnalyze.map(async fp => {
+                  try {
+                    return [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult]
+                  } catch {
+                    return [fp, { success: false, filePath: fp, audioTracks: [], subtitleTracks: [] }] as [string, FileAnalysisResult]
+                  }
+                })))
           }
 
           for (const fileInfo of filesToProcess) {

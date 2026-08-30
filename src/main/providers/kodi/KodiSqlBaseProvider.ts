@@ -124,7 +124,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       const fileAnalyzer = getMediaFileAnalyzer()
       if (this.ffprobeAvailable === null) this.ffprobeAvailable = await fileAnalyzer.isAvailable()
 
-      db.startBatch()
+      await db.beginBatch()
 
       try {
         const groups: MediaMetadata[][] = []
@@ -258,7 +258,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       const totalItems = artists.length + albums.length + songs.length
       getLoggingService().info(`[${this.constructor.name}]`, `Scanning ${totalItems} music items...`)
 
-      db.startBatch()
+      await db.beginBatch()
 
       let itemIndex = 0
 

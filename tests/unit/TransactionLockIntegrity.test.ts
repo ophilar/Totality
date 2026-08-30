@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('Transaction Lock and Yield Integrity', () => {
@@ -13,9 +13,6 @@ describe('Transaction Lock and Yield Integrity', () => {
   })
 
   it('should allow concurrent-ish writes by yielding and using BEGIN IMMEDIATE', async () => {
-    // This test simulates the PlexProvider batching + yielding logic
-    // combined with a concurrent UI update attempt.
-
     let scanProgress = 0
     let uiUpdateSuccess = false
     let scanFinished = false
@@ -28,7 +25,7 @@ describe('Transaction Lock and Yield Integrity', () => {
       for (let i = 1; i <= TOTAL_ITEMS; i++) {
         // Start batch every COMMIT_INTERVAL
         if ((i - 1) % COMMIT_INTERVAL === 0) {
-          await db.startBatch() // BEGIN IMMEDIATE
+          await db.beginBatch() // BEGIN IMMEDIATE
         }
 
         // Simulate work (upserting)
@@ -60,15 +57,14 @@ describe('Transaction Lock and Yield Integrity', () => {
 
       try {
         // Try to write while scan is "active" (but hopefully yielded)
-        await db.startBatch() // This should succeed because heavyScan committed and yielded
+        await db.beginBatch() // This should succeed because heavyScan committed and yielded
         await db.db.execute({
           sql: 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
           args: ['ui_status', 'updated']
         })
         await db.endBatch()
         uiUpdateSuccess = true
-      } catch (err) {
-        // If this fails, it means yielding or batching failed
+      } catch {
         uiUpdateSuccess = false
       }
     }
@@ -86,27 +82,20 @@ describe('Transaction Lock and Yield Integrity', () => {
     expect(await db.config.getSetting('scan_item_15')).toBe('done')
   })
 
-  it('should verify that BEGIN IMMEDIATE is used globally for batches', async () => {
-     // We can't easily "intercept" the SQL from node:sqlite without a wrapper,
-     // but we can verify the behavior. BEGIN IMMEDIATE prevents other 
-     // connections from starting their own IMMEDIATE transactions.
-     // Since we use a single connection, we verified the "no nesting" rule already.
-     
-     // Let's verify startBatch/beginBatch both use the same logic
-     expect(db.startBatch).toBeDefined()
+  it('should verify that BEGIN IMMEDIATE is used globally for batches and endBatch enforces active transaction', async () => {
      expect(db.beginBatch).toBeDefined()
      
-     // Test that startBatch is nested-safe
-     await db.startBatch()
+     // Test that beginBatch is nested-safe
+     await db.beginBatch()
      expect(db.isInTransaction()).toBe(true)
-     await db.startBatch() 
+     await db.beginBatch() 
      expect(db.isInTransaction()).toBe(true)
      await db.endBatch()
      expect(db.isInTransaction()).toBe(true)
      await db.endBatch()
      expect(db.isInTransaction()).toBe(false)
+
+     // Calling endBatch without an active transaction must throw
+     await expect(db.endBatch()).rejects.toThrow('no active transaction batch to end')
   })
 })
-
-
-

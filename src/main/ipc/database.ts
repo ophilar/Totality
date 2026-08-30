@@ -49,14 +49,8 @@ export function registerDatabaseHandlers() {
 
 
   // Register generic list/count handlers
-  registerListHandlers('db:media', f => db.media.getItems(f as MediaItemFilters), f => db.media.count(f as MediaItemFilters), MediaItemFiltersSchema, {
-    listAlias: 'db:getMediaItems',
-    countAlias: 'db:countMediaItems'
-  })
-  registerListHandlers('db:tvshows', f => db.tvShows.getSummaries(f), f => db.tvShows.count(f), TVShowFiltersSchema, {
-    listAlias: 'db:getTVShows',
-    countAlias: 'db:countTVShows'
-  })
+  registerListHandlers('db:media', f => db.media.getItems(f as MediaItemFilters), f => db.media.count(f as MediaItemFilters), MediaItemFiltersSchema)
+  registerListHandlers('db:tvshows', f => db.tvShows.getSummaries(f), f => db.tvShows.count(f), TVShowFiltersSchema)
 
   // ============================================================================
   // MEDIA ITEMS

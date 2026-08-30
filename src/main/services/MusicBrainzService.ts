@@ -1106,7 +1106,7 @@ export class MusicBrainzService extends CancellableOperation {
     let consecutiveNetworkErrors = 0
     const MAX_CONSECUTIVE_NETWORK_ERRORS = 5
 
-    await db.startBatch()
+    await db.beginBatch()
     try {
       // Phase 1: Analyze artist completeness
       getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)

@@ -155,7 +155,16 @@
 - [x] Persist the latest task queue state before renderer notification so reconnecting renderers read the authoritative state.
 - [x] Report ShowTranscodeModal failures through application logging and remove renderer list-key warnings.
 
-
-
-
+## Phase 20: Correctness, Security & Architectural Hardening [Completed]
+- [x] Fix path authorization containment and eliminate allow-on-unknown bypass in `local-artwork` and `MediaPathAuthorization`
+- [x] Implement atomic export/import and strict transaction batch management in `BetterSQLiteService`
+- [x] Align database schema Single Source of Truth (SSOT) via Drizzle ORM definitions and migrations
+- [x] Eliminate sentinel fake episode records (`mediaItemId: 0`, `"Unknown"`) from TV preflight analysis and propagate real failures
+- [x] Ensure `QualityAnalyzer` preserves unknown/error states without injecting synthetic zero bitrates or SD defaults
+- [x] Implement explicit GPU vendor strategy in `TranscodeCommandFactory` to prevent silent fallback to software encoding
+- [x] Eliminate test overrides and PATH binary fallbacks from `MediaFileAnalyzer`
+- [x] Consolidate IPC handler registration pipelines (`createHandler` / `genericHandlers`)
+- [x] Unify provider definitions and instantiation into a single-source registry
+- [x] Eliminate silent error swallowing in `safeSend` and unify `SectionErrorBoundary`
+- [x] Full TypeScript typecheck and Vitest regression verification (158 test files, 1,203 tests passing)
 

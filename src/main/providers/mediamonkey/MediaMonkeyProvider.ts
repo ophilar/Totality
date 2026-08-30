@@ -167,7 +167,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
       `).all() as unknown as MediaMonkeySongRow[]
 
       result.itemsScanned = songs.length
-      db.startBatch()
+      await db.beginBatch()
 
       try {
         const artistIdMap = new Map<number, number>() // MM5 Artist ID -> Totality Music Artist ID

@@ -193,47 +193,41 @@ export class TranscodingService {
 
     const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
       const label = `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
-      try {
-        if (!episode.id || !episode.file_path || !episode.source_id) throw new Error('Episode has no local source identity')
-        if (queuedMediaIds.has(episode.id)) throw new Error('Episode already has a queued or running transcode')
-        await this.assertAuthorizedItem(episode.id)
-        const stat = await fs.stat(episode.file_path)
-        const analyzer = getMediaFileAnalyzer()
-        const analysis = await analyzer.analyzeFile(episode.file_path)
-        if (!analysis.success || !analysis.video) throw new Error(analysis.error || 'Fresh media analysis failed')
-        analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
-        buildStreamSelectionPlan(analysis, request.options)
-        const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
-          ? await this.selectMeasuredParameters(episode.file_path, request.options)
-          : undefined
-        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
-        return {
-          mediaItemId: episode.id,
-          label,
-          compatible: true,
-          hdrFormat: analysis.video.hdrFormat || 'SDR',
-          sourceSize: stat.size,
-          sourceMtimeMs: stat.mtimeMs,
-          recommendedAction: advice.action,
-          decisionStatus: advice.decisionStatus,
-          evidenceStatus: advice.evidence_status,
-          confidence: advice.confidence,
-          estimatedSavingsBytes: advice.estimatedSavingsBytes,
-          savingsBasis: advice.savings_basis,
-          sourceTier: advice.sourceTier,
-          adviceReason: advice.reason,
-          measuredParameters
-        }
-      } catch (error) {
-        return {
-          mediaItemId: episode.id || 0,
-          label,
-          compatible: false,
-          reason: error instanceof Error ? error.message : String(error),
-          hdrFormat: 'Unknown',
-          sourceSize: 0,
-          sourceMtimeMs: 0
-        }
+      if (!episode.id || !episode.file_path || !episode.source_id) {
+        throw new Error(`Episode "${label}" has no local source identity`)
+      }
+      if (queuedMediaIds.has(episode.id)) {
+        throw new Error(`Episode "${label}" already has a queued or running transcode`)
+      }
+      await this.assertAuthorizedItem(episode.id)
+      const stat = await fs.stat(episode.file_path)
+      const analyzer = getMediaFileAnalyzer()
+      const analysis = await analyzer.analyzeFile(episode.file_path)
+      if (!analysis.success || !analysis.video) {
+        throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
+      }
+      analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
+      buildStreamSelectionPlan(analysis, request.options)
+      const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
+        ? await this.selectMeasuredParameters(episode.file_path, request.options)
+        : undefined
+      const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
+      return {
+        mediaItemId: episode.id,
+        label,
+        compatible: true,
+        hdrFormat: analysis.video.hdrFormat || 'SDR',
+        sourceSize: stat.size,
+        sourceMtimeMs: stat.mtimeMs,
+        recommendedAction: advice.action,
+        decisionStatus: advice.decisionStatus,
+        evidenceStatus: advice.evidence_status,
+        confidence: advice.confidence,
+        estimatedSavingsBytes: advice.estimatedSavingsBytes,
+        savingsBasis: advice.savings_basis,
+        sourceTier: advice.sourceTier,
+        adviceReason: advice.reason,
+        measuredParameters
       }
     }
 
@@ -288,7 +282,7 @@ export class TranscodingService {
     if (tasks.length > 0) await getTaskQueueService().addTasks(tasks)
     this.showPreflights.delete(preflightId)
     await getDatabase().config.deleteSetting(`transcoding.preflight.${preflightId}`)
-    return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId).filter((id): id is number => id > 0) }
+    return { batchId: preflight.result.batchId, queuedMediaItemIds: queueableEpisodes.map(episode => episode.mediaItemId) }
   }
 
   private async assertAuthorizedItem(mediaItemId: number): Promise<void> {

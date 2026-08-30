@@ -50,6 +50,22 @@ export class PathUtils {
   }
 
   /**
+   * Checks if childPath is strictly equal to rootPath or is a descendant of rootPath.
+   * Prevents path traversal and sibling folder false positives (e.g. /media/library-private matching /media/library).
+   */
+  static isWithinRoot(childPath: string, rootPath: string): boolean {
+    if (!childPath || !rootPath) return false
+    try {
+      const resolvedChild = path.resolve(this.sanitizeAbsolutePath(childPath))
+      const resolvedRoot = path.resolve(this.sanitizeAbsolutePath(rootPath))
+      const relative = path.relative(resolvedRoot, resolvedChild)
+      return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Strictly sanitizes an arbitrary file path to prevent command injection and ensure it is absolute.
    * Rejects paths containing null bytes.
    */

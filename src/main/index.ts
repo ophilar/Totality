@@ -46,6 +46,8 @@ import { getGeminiService } from '@main/services/GeminiService'
 import { getAutoUpdateService } from '@main/services/AutoUpdateService'
 import { getWishlistCompletionService } from '@main/services/WishlistCompletionService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { PathUtils } from '@main/services/utils/PathUtils'
+import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 
 // __dirname is provided by CommonJS/Node
 declare const __dirname: string
@@ -206,19 +208,6 @@ app.whenReady().then(async () => {
       getLoggingService().warn('[index]', 'Transcoding capability probe failed; fallback detection will remain available:', error)
     }
 
-    const extractAllowedRootsFromConfig = (configStr: string | null): string[] => {
-      if (!configStr) return []
-      try {
-        const config = JSON.parse(configStr)
-        const roots: string[] = []
-        if (config.folderPath) roots.push(config.folderPath)
-        if (config.databasePath) roots.push(config.databasePath)
-        return roots
-      } catch {
-        return []
-      }
-    }
-
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     protocol.handle('local-artwork', async (request) => {
       const url = new URL(request.url)
@@ -226,16 +215,22 @@ app.whenReady().then(async () => {
         const filePath = url.searchParams.get('path')
         if (!filePath) return new Response('Not found', { status: 404 })
         const ext = path.extname(filePath).toLowerCase()
-        if (!new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff']).has(ext)) return new Response('Forbidden', { status: 403 })
+        if (!new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff']).has(ext)) {
+          return new Response('Forbidden', { status: 403 })
+        }
         
-        // Strict LFI validation
-        const resolvedPath = path.resolve(filePath)
-        let isAllowed = false
+        let resolvedPath: string
+        try {
+          resolvedPath = PathUtils.sanitizeAbsolutePath(filePath)
+        } catch {
+          return new Response('Forbidden', { status: 403 })
+        }
+
         const userDataPath = app.getPath('userData')
         const tempPath = app.getPath('temp')
         const homePath = app.getPath('home')
         
-        const allowedRoots = [
+        const allowedRoots: string[] = [
           userDataPath,
           tempPath,
           path.join(homePath, 'Music'),
@@ -245,28 +240,28 @@ app.whenReady().then(async () => {
         
         try {
           const db = getDatabase()
-          if (db && db.isInitialized && db.drizzle) {
-            const schema = await import('@main/database/drizzleSchema')
-            const sources = await db.drizzle.select().from(schema.mediaSources).all()
-            for (const src of sources) {
-              allowedRoots.push(...extractAllowedRootsFromConfig(src.connectionConfig))
+          if (!db || !db.isInitialized || !db.drizzle) {
+            getLoggingService().error('[local-artwork]', 'Database not initialized during artwork authorization check')
+            return new Response('Internal Server Error', { status: 500 })
+          }
+          const schema = await import('@main/database/drizzleSchema')
+          const sources = await db.drizzle.select().from(schema.mediaSources).all()
+          for (const src of sources) {
+            if (src.connectionConfig) {
+              const roots = MediaPathAuthorization.extractRootsFromSource({
+                source_type: src.sourceType,
+                connection_config: src.connectionConfig
+              })
+              allowedRoots.push(...roots)
             }
           }
         } catch (e) {
-          // Ignore DB or initialization errors
+          getLoggingService().error('[local-artwork]', 'Failed to query media source roots or malformed configuration:', e)
+          return new Response('Internal Server Error', { status: 500 })
         }
 
-        for (const root of allowedRoots) {
-          const resolvedRoot = path.resolve(root)
-          const normPath = resolvedPath.toLowerCase()
-          const normRoot = resolvedRoot.toLowerCase()
-          if (normPath.startsWith(normRoot)) {
-            isAllowed = true
-            break
-          }
-        }
-
-        if (!isAllowed) {
+        const auth = new MediaPathAuthorization(allowedRoots)
+        if (!auth.isAuthorized(resolvedPath)) {
           return new Response('Forbidden', { status: 403 })
         }
 
@@ -279,8 +274,10 @@ app.whenReady().then(async () => {
       }
       const urlPath = url.pathname.replace(/^\/+/, '')
       const normalizedPath = path.normalize(urlPath)
-      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) return new Response('Forbidden', { status: 403 })
       const filePath = path.resolve(artworkBasePath, normalizedPath)
+      if (!PathUtils.isWithinRoot(filePath, artworkBasePath)) {
+        return new Response('Forbidden', { status: 403 })
+      }
       if (fs.existsSync(filePath)) {
         if (process.platform === 'win32') return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
         return net.fetch(`file://${filePath}`)

@@ -237,7 +237,7 @@ export class KodiProvider extends BaseMediaProvider {
         } catch { /* ignore show pre-scan errors */ }
       }
 
-      await db.startBatch()
+      await db.beginBatch()
       try {
         for (let i = 0; i < items.length; i++) {
           const item = items[i]
@@ -270,7 +270,7 @@ export class KodiProvider extends BaseMediaProvider {
           if (i % 50 === 0 && i > 0) {
             await db.endBatch()
             await new Promise(r => setTimeout(r, 0))
-            await db.startBatch()
+            await db.beginBatch()
           }
         }
       } finally { await db.endBatch() }
@@ -311,7 +311,7 @@ export class KodiProvider extends BaseMediaProvider {
               const albumId = await db.music.upsertAlbum(this.mapper.convertToMusicAlbum(album, artistId, 'music'))
 
               const trackDataList = songs.map(s => this.mapper.convertToMusicTrack(s, albumId, artistId, 'music')).filter(Boolean) as MusicTrack[]
-              await db.startBatch()
+              await db.beginBatch()
               try {
                 await db.music.bulkUpsertTracks(trackDataList)
                 result.itemsScanned += trackDataList.length

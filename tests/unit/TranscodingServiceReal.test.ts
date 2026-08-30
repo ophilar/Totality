@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
@@ -24,6 +24,7 @@ describe('TranscodingService (No Mocks)', () => {
 
   afterEach(() => {
     cleanupTestDb()
+    vi.restoreAllMocks()
   })
 
   it('should check tool availability', async () => {
@@ -33,14 +34,13 @@ describe('TranscodingService (No Mocks)', () => {
   })
 
   it('should generate transcoding parameters through the production advisor port', async () => {
-    const analyzer = getMediaFileAnalyzer()
     const filePath = '/path/to/video.mkv'
     
-    analyzer.setAnalysisOverride(filePath, {
+    vi.spyOn(getMediaFileAnalyzer(), 'analyzeFile').mockResolvedValue({
       success: true,
       filePath,
-      video: { codec: 'h264', width: 1920, height: 1080, bitrate: 10000 },
-      audioTracks: [{ codec: 'ac3', channels: 6, bitrate: 640, index: 0 }],
+      video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 10000 },
+      audioTracks: [{ index: 0, codec: 'ac3', channels: 6, bitrate: 640, isDefault: true, hasObjectAudio: false }],
       subtitleTracks: []
     })
 
@@ -70,9 +70,9 @@ describe('TranscodingService (No Mocks)', () => {
       
       const persistedItem = await db.media.getItemById(1)
       const authorizedPath = persistedItem?.file_path
-      getMediaFileAnalyzer().setAnalysisOverride(authorizedPath!, {
+      vi.spyOn(getMediaFileAnalyzer(), 'analyzeFile').mockResolvedValue({
         success: true, filePath: authorizedPath!,
-        video: { codec: 'h264', width: 1920, height: 1080, bitrate: 5000 },
+        video: { index: 0, codec: 'h264', width: 1920, height: 1080, bitrate: 5000 },
         audioTracks: [], subtitleTracks: []
       })
 

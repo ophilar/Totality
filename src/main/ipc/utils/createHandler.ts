@@ -219,3 +219,17 @@ export function registerHandlers(
     createIpcHandler(channel, handler, options)
   }
 }
+
+/**
+ * Register standard list and count IPC handlers for a resource with schema validation.
+ */
+export function registerListHandlers<T, TFilters>(
+  baseChannel: string,
+  listFn: (filters: TFilters) => T[] | Promise<T[]>,
+  countFn: (filters: TFilters) => number | Promise<number>,
+  filtersSchema: z.ZodSchema<TFilters>,
+  options: HandlerOptions = {}
+): void {
+  createValidatedIpcHandler(`${baseChannel}:list`, filtersSchema, async (filters: TFilters) => listFn(filters), options)
+  createValidatedIpcHandler(`${baseChannel}:count`, filtersSchema, async (filters: TFilters) => countFn(filters), options)
+}

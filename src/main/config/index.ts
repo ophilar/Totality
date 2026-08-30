@@ -14,21 +14,7 @@ export const APP_CONFIG = {
   tmdb: defaults.tmdb,
   logging: defaults.logging,
   workers: defaults.workers,
-  monitoring: {
-    batchWindowMs: defaults.monitoring.batchWindowMs,
-    maxIndividualNotifications: defaults.monitoring.maxIndividualNotifications,
-    maxStoredNotifications: defaults.monitoring.maxStoredNotifications,
-    pollingIntervals: {
-      plex: 300000,
-      jellyfin: 300000,
-      emby: 300000,
-      kodi: 300000,
-      'kodi-local': 60000,
-      'kodi-mysql': 60000,
-      local: 60000,
-      mediamonkey: 60000,
-    }
-  },
+  monitoring: defaults.monitoring,
   gemini: defaults.gemini,
   quality: defaults.quality,
   transcoding: defaults.transcoding,

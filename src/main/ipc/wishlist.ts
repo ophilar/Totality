@@ -17,10 +17,7 @@ export function registerWishlistHandlers() {
   const db = getDatabase()
   const storeService = getStoreSearchService()
 
-  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as unknown as WishlistFilters), () => db.wishlist.getCount(), WishlistFiltersSchema, {
-    listAlias: 'wishlist:getAll',
-    countAlias: 'wishlist:getCount'
-  })
+  registerListHandlers('wishlist', (f) => db.wishlist.getItems(f as unknown as WishlistFilters), () => db.wishlist.getCount(), WishlistFiltersSchema)
 
   createValidatedIpcHandler(IPC_CHANNELS.WISHLIST.ADD, WishlistItemSchema, async (item) => {
     if (item.tmdb_id && !item.poster_url) {

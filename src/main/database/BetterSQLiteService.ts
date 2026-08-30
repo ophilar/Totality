@@ -19,6 +19,7 @@ import { DuplicateRepository } from '@main/database/repositories/DuplicateReposi
 import { MovieCollectionRepository } from '@main/database/repositories/MovieCollectionRepository'
 import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
 import { MediaRemuxJobRepository } from '@main/database/repositories/MediaRemuxJobRepository'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 let serviceInstance: BetterSQLiteService | null = null
 type ExportRow = Record<string, unknown>
@@ -163,13 +164,11 @@ export class BetterSQLiteService {
     })
   }
 
-  public async startBatch(): Promise<void> {
-    await this.beginBatch()
-  }
-
   public async endBatch(): Promise<void> {
     await this.withLock(async () => {
-      if (this._transactionDepth <= 0) return
+      if (this._transactionDepth <= 0) {
+        throw new Error('Transaction batch error: no active transaction batch to end')
+      }
       
       const isLast = this._transactionDepth === 1
       if (isLast) {
@@ -182,8 +181,11 @@ export class BetterSQLiteService {
   public async rollbackBatch(): Promise<void> {
     await this.withLock(async () => {
       if (this._transactionDepth > 0) {
-        await this._client?.execute('ROLLBACK')
-        this._transactionDepth = 0
+        try {
+          await this._client?.execute('ROLLBACK')
+        } finally {
+          this._transactionDepth = 0
+        }
       }
     })
   }
@@ -193,25 +195,48 @@ export class BetterSQLiteService {
 
   public async exportData(): Promise<ExportData> {
     const data: ExportData = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
-    const tables = ['settings', 'media_sources', 'library_scans', 'media_items', 'music_artists', 'music_albums', 'music_tracks', 'quality_scores', 'series_completeness', 'movie_collections', 'exclusions']
-    for (const t of tables) {
-      try { 
+    const tables = [
+      'settings',
+      'media_sources',
+      'library_scans',
+      'media_items',
+      'music_artists',
+      'music_albums',
+      'music_tracks',
+      'quality_scores',
+      'series_completeness',
+      'movie_collections',
+      'exclusions'
+    ]
+
+    await this.beginBatch()
+    try {
+      const tableCheck = await this.db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+      )
+      const existingTables = new Set(tableCheck.rows.map(row => row.name as string))
+
+      for (const t of tables) {
+        if (!existingTables.has(t)) continue
         const result = await this.db.execute(`SELECT * FROM "${t.replace(/"/g, '""')}"`)
         data[t] = result.rows as ExportRow[]
-      } catch {
-        // Ignore errors for missing tables or query issues
       }
+      await this.endBatch()
+    } catch (e) {
+      await this.rollbackBatch()
+      throw new Error(`Database export failed: ${getErrorMessage(e)}`)
     }
     return data
   }
 
   public async resetDatabase(): Promise<void> {
-    const result = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-    const tables = result.rows.map(row => row.name as string)
-    
     await this.beginBatch()
     try {
-      for (const t of tables) await this._client?.execute(`DELETE FROM "${t.replace(/"/g, '""')}"`)
+      const result = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      const tables = result.rows.map(row => row.name as string)
+      for (const t of tables) {
+        await this._client?.execute(`DELETE FROM "${t.replace(/"/g, '""')}"`)
+      }
       await this.endBatch()
     } catch (e) {
       await this.rollbackBatch()
@@ -220,7 +245,7 @@ export class BetterSQLiteService {
   }
 
   public async importData(data: ExportData): Promise<{ imported: number, errors: number }> {
-    let imported = 0, errors = 0
+    let imported = 0
     await this.beginBatch()
     try {
       const tableCheck = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -233,28 +258,26 @@ export class BetterSQLiteService {
         const validCols = new Set(colCheck.rows.map(row => row.name as string))
 
         for (const row of rows) {
-          try {
-            const validEntries = Object.entries(row).filter(([key]) => validCols.has(key))
-            if (validEntries.length === 0) continue
+          const validEntries = Object.entries(row).filter(([key]) => validCols.has(key))
+          if (validEntries.length === 0) continue
 
-            const keys = validEntries.map(([key]) => key)
-            const values = validEntries.map(([, val]) => val)
+          const keys = validEntries.map(([key]) => key)
+          const values = validEntries.map(([, val]) => val)
 
-            const cols = keys.map(k => '"' + k.replace(/"/g, '""') + '"').join(',')
-            const vals = keys.map(() => '?').join(',')
-            await this.db.execute({
-              sql: `INSERT OR REPLACE INTO "${table.replace(/"/g, '""')}" (${cols}) VALUES (${vals})`,
-              args: values as InValue[]
-            })
-            imported++
-          } catch { errors++ }
+          const cols = keys.map(k => '"' + k.replace(/"/g, '""') + '"').join(',')
+          const vals = keys.map(() => '?').join(',')
+          await this.db.execute({
+            sql: `INSERT OR REPLACE INTO "${table.replace(/"/g, '""')}" (${cols}) VALUES (${vals})`,
+            args: values as InValue[]
+          })
+          imported++
         }
       }
       await this.endBatch()
     } catch (e) {
       await this.rollbackBatch()
-      throw e
+      throw new Error(`Database import failed transactionally: ${getErrorMessage(e)}`)
     }
-    return { imported, errors }
+    return { imported, errors: 0 }
   }
 }

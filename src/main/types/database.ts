@@ -319,8 +319,8 @@ export interface QualityScore {
   media_item_id: number
 
   // Tier-based scoring
-  quality_tier: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
+  quality_tier: 'SD' | '720p' | '1080p' | '4K' | 'Unknown'
+  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score: number | null // 0-100 score within tier
   bitrate_tier_score: number | null // 0-100 bitrate score for tier
   audio_tier_score: number | null // 0-100 audio score for tier

@@ -349,7 +349,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }))
 
           // STEP 2: Write to DB synchronously
-          await db.startBatch()
+          await db.beginBatch()
           try {
             for (const data of preparedBatch) {
               if (!data) continue

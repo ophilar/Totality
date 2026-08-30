@@ -29,18 +29,9 @@ export function registerMusicHandlers(): void {
   const manager = getSourceManager()
 
   // Register generic list/count handlers
-  registerListHandlers('music:artists', (f) => db.music.getArtists(f), (f) => db.music.countMusicArtists(f), MusicFiltersSchema, {
-    listAlias: 'music:getArtists',
-    countAlias: 'music:countArtists'
-  })
-  registerListHandlers('music:albums', (f) => db.music.getAlbums(f), (f) => db.music.countMusicAlbums(f), MusicFiltersSchema, {
-    listAlias: 'music:getAlbums',
-    countAlias: 'music:countAlbums'
-  })
-  registerListHandlers('music:tracks', (f) => db.music.getTracks(f), (f) => db.music.countMusicTracks(f), MusicFiltersSchema, {
-    listAlias: 'music:getTracks',
-    countAlias: 'music:countTracks'
-  })
+  registerListHandlers('music:artists', (f) => db.music.getArtists(f), (f) => db.music.countMusicArtists(f), MusicFiltersSchema)
+  registerListHandlers('music:albums', (f) => db.music.getAlbums(f), (f) => db.music.countMusicAlbums(f), MusicFiltersSchema)
+  registerListHandlers('music:tracks', (f) => db.music.getTracks(f), (f) => db.music.countMusicTracks(f), MusicFiltersSchema)
 
   // ============================================================================
   // MUSIC LIBRARY SCANNING

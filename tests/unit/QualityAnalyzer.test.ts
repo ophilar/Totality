@@ -51,10 +51,11 @@ describe('QualityAnalyzer', () => {
       expect(score.quality_tier).toBe('1080p')
     })
 
-    it('should default to SD for unknown resolution', async () => {
+    it('should classify unknown resolution as Unknown', async () => {
       const item = createMediaItem({ resolution: 'unknown', video_bitrate: 2000 })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.quality_tier).toBe('SD')
+      expect(score.quality_tier).toBe('Unknown')
+      expect(score.tier_quality).toBe('UNKNOWN')
     })
   })
 
@@ -407,10 +408,10 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('video tier score calculation', () => {
-    it('should return 0 for zero bitrate', async () => {
+    it('should return null for zero/missing bitrate', async () => {
       const item = createMediaItem({ resolution: '1080p', video_bitrate: 0 })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.bitrate_tier_score).toBe(0)
+      expect(score.bitrate_tier_score).toBeNull()
     })
 
     it('should return 100 for bitrate at or above HIGH threshold', async () => {
@@ -477,7 +478,7 @@ describe('QualityAnalyzer', () => {
       expect(score.audio_tier_score).toBe(100)
     })
 
-    it('should return 0 for zero audio bitrate (non-lossless)', async () => {
+    it('should return null for zero audio bitrate (non-lossless)', async () => {
       const item = createMediaItem({
         resolution: '1080p',
         video_bitrate: 15000,
@@ -486,7 +487,7 @@ describe('QualityAnalyzer', () => {
         audio_bitrate: 0,
       })
       const score = await analyzer.analyzeMediaItem(item)
-      expect(score.audio_tier_score).toBe(0)
+      expect(score.audio_tier_score).toBeNull()
     })
 
     it('should scale audio score between MEDIUM and HIGH thresholds', async () => {

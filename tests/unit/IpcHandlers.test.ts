@@ -72,7 +72,7 @@ describe('IPC Handler Registration', () => {
 
   })
 
-  it('registerListHandlers registers standard aliases', () => {
+  it('registerListHandlers registers canonical list and count channels', () => {
     const base = 'test:resource'
     const schema = z.unknown()
     
@@ -80,15 +80,11 @@ describe('IPC Handler Registration', () => {
       base,
       () => [],
       () => 0,
-      schema,
-      {
-        listAlias: ['test:resource:alt'],
-        countAlias: ['test:resource:altcount']
-      }
+      schema
     )
 
-    expect(handlers.has('test:resource:alt')).toBe(true)
-    expect(handlers.has('test:resource:altcount')).toBe(true)
+    expect(handlers.has('test:resource:list')).toBe(true)
+    expect(handlers.has('test:resource:count')).toBe(true)
   })
 })
 

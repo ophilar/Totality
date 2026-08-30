@@ -5,7 +5,7 @@ import { ProviderType } from '@main/types/database'
 vi.mock('@main/database/BetterSQLiteService', () => {
     return {
         getDatabase: () => ({
-            startBatch: vi.fn(),
+            beginBatch: vi.fn(),
             endBatch: vi.fn(),
             music: {
                 upsertArtist: vi.fn(),

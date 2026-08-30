@@ -221,9 +221,14 @@ describe('TranscodeCommandFactory', () => {
     expect(builder).toBeInstanceOf(IntelCommandBuilder)
   })
 
-  it('returns SoftwareCommandBuilder when useGpu is false or vendor is unsupported', () => {
+  it('returns SoftwareCommandBuilder when useGpu is false or omitted', () => {
     expect(TranscodeCommandFactory.getBuilder('NVIDIA', { useGpu: false })).toBeInstanceOf(SoftwareCommandBuilder)
-    expect(TranscodeCommandFactory.getBuilder('AMD', { useGpu: true })).toBeInstanceOf(SoftwareCommandBuilder)
     expect(TranscodeCommandFactory.getBuilder(undefined, {})).toBeInstanceOf(SoftwareCommandBuilder)
+  })
+
+  it('rejects unsupported GPU vendors when GPU transcoding is requested', () => {
+    expect(() => TranscodeCommandFactory.getBuilder('AMD', { useGpu: true })).toThrow('GPU transcoding is not supported for vendor: "AMD"')
+    expect(() => TranscodeCommandFactory.getBuilder('Apple', { useGpu: true })).toThrow('GPU transcoding is not supported for vendor: "Apple"')
+    expect(() => TranscodeCommandFactory.getBuilder('Unknown', { useGpu: true })).toThrow('GPU transcoding was requested, but no valid GPU vendor was provided.')
   })
 })

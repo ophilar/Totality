@@ -7,13 +7,14 @@ describe('PathUtils', () => {
     it('should return empty string if input is falsy', () => {
       expect(PathUtils.toDatabasePath('')).toBe('')
       expect(PathUtils.toDatabasePath(null)).toBe('')
+      expect(PathUtils.toDatabasePath(undefined)).toBe('')
     })
 
     it('should convert backslashes to forward slashes', () => {
       expect(PathUtils.toDatabasePath('C:\\Users\\test\\file.txt')).toBe('C:/Users/test/file.txt')
     })
 
-    it('should resolve redundant segments', () => {
+    it('should normalize relative paths', () => {
       expect(PathUtils.toDatabasePath('a/b/../c/./d')).toBe('a/c/d')
       expect(PathUtils.toDatabasePath('C:\\a\\b\\..\\c\\.\\d')).toBe('C:/a/c/d')
     })
@@ -29,6 +30,7 @@ describe('PathUtils', () => {
     it('should return empty string if input is falsy', () => {
       expect(PathUtils.toOsPath('')).toBe('')
       expect(PathUtils.toOsPath(null)).toBe('')
+      expect(PathUtils.toOsPath(undefined)).toBe('')
     })
 
     it('should normalize path for the current OS', () => {
@@ -43,6 +45,22 @@ describe('PathUtils', () => {
       expect(PathUtils.arePathsEqual('a/b/../c', 'a/c')).toBe(true)
       expect(PathUtils.arePathsEqual('\\\\nas\\movies', '//nas/movies')).toBe(true)
       expect(PathUtils.arePathsEqual('C:/a/b', 'C:/a/c')).toBe(false)
+    })
+  })
+
+  describe('isWithinRoot', () => {
+    it('should return true for child files and nested directories', () => {
+      expect(PathUtils.isWithinRoot('C:/media/library/movie.mkv', 'C:/media/library')).toBe(true)
+      expect(PathUtils.isWithinRoot('C:/media/library/sub/season1/ep1.mkv', 'C:/media/library')).toBe(true)
+      expect(PathUtils.isWithinRoot('C:/media/library', 'C:/media/library')).toBe(true)
+    })
+
+    it('should return false for sibling directories and traversal attempts', () => {
+      expect(PathUtils.isWithinRoot('C:/media/library-private/movie.mkv', 'C:/media/library')).toBe(false)
+      expect(PathUtils.isWithinRoot('C:/media/library/../private/movie.mkv', 'C:/media/library')).toBe(false)
+      expect(PathUtils.isWithinRoot('D:/media/library/movie.mkv', 'C:/media/library')).toBe(false)
+      expect(PathUtils.isWithinRoot('', 'C:/media/library')).toBe(false)
+      expect(PathUtils.isWithinRoot('C:/media/library/movie.mkv', '')).toBe(false)
     })
   })
 
@@ -113,7 +131,6 @@ describe('PathUtils', () => {
       expect(paths).toContain('ffmpeg')
       expect(paths).toContain('/usr/local/bin/ffmpeg')
       expect(paths).toContain('/opt/homebrew/bin/ffmpeg')
-
     })
 
     it('should generate paths for linux (other)', () => {
@@ -128,8 +145,6 @@ describe('PathUtils', () => {
     it('should deduplicate paths', () => {
       Object.defineProperty(process, 'platform', { value: 'linux' })
       const paths = PathUtils.getPossibleExecutablePaths('ffmpeg', '/usr/bin/ffmpeg')
-      // /usr/bin/ffmpeg is added twice (once as bundled, once as default)
-      // but should appear only once
       const count = paths.filter(p => p === '/usr/bin/ffmpeg').length
       expect(count).toBe(1)
     })

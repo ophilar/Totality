@@ -545,7 +545,7 @@ export class PlexProvider extends BaseMediaProvider {
           }
 
           // STEP 3: Write to DB inside a fast, PURELY SYNCHRONOUS transaction
-          await db.startBatch()
+          await db.beginBatch()
           try {
             for (const data of preparedData) {
               if (data.type === 'show') {
@@ -918,7 +918,7 @@ export class PlexProvider extends BaseMediaProvider {
               )
               .filter(Boolean) as MusicTrack[]
 
-            await db.startBatch()
+            await db.beginBatch()
             try {
               await db.music.upsertTracks(tracksData)
               result.itemsScanned += tracksData.length

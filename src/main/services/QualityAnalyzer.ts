@@ -98,43 +98,43 @@ export class QualityAnalyzer {
         return defaultVal
       }
 
-      // Load video bitrate thresholds (try new keys first, fall back to old)
+      // Load video bitrate thresholds
       this.videoThresholds = {
         'SD': {
-          medium: getNum('quality_video_sd_medium', getNum('quality_video_sd_low', DEFAULT_VIDEO_THRESHOLDS.SD.medium)),
+          medium: getNum('quality_video_sd_medium', DEFAULT_VIDEO_THRESHOLDS.SD.medium),
           high: getNum('quality_video_sd_high', DEFAULT_VIDEO_THRESHOLDS.SD.high),
         },
         '720p': {
-          medium: getNum('quality_video_720p_medium', getNum('quality_video_720p_low', DEFAULT_VIDEO_THRESHOLDS['720p'].medium)),
+          medium: getNum('quality_video_720p_medium', DEFAULT_VIDEO_THRESHOLDS['720p'].medium),
           high: getNum('quality_video_720p_high', DEFAULT_VIDEO_THRESHOLDS['720p'].high),
         },
         '1080p': {
-          medium: getNum('quality_video_1080p_medium', getNum('quality_video_1080p_low', DEFAULT_VIDEO_THRESHOLDS['1080p'].medium)),
+          medium: getNum('quality_video_1080p_medium', DEFAULT_VIDEO_THRESHOLDS['1080p'].medium),
           high: getNum('quality_video_1080p_high', DEFAULT_VIDEO_THRESHOLDS['1080p'].high),
         },
         '4K': {
-          medium: getNum('quality_video_4k_medium', getNum('quality_video_4k_low', DEFAULT_VIDEO_THRESHOLDS['4K'].medium)),
+          medium: getNum('quality_video_4k_medium', DEFAULT_VIDEO_THRESHOLDS['4K'].medium),
           high: getNum('quality_video_4k_high', DEFAULT_VIDEO_THRESHOLDS['4K'].high),
         },
       }
 
-      // Load audio bitrate thresholds (try new keys first, fall back to old)
+      // Load audio bitrate thresholds
       this.audioThresholds = {
         'SD': {
-          medium: getNum('quality_audio_sd_medium', getNum('quality_audio_sd_good', DEFAULT_AUDIO_THRESHOLDS.SD.medium)),
-          high: getNum('quality_audio_sd_high', getNum('quality_audio_sd_excellent', DEFAULT_AUDIO_THRESHOLDS.SD.high)),
+          medium: getNum('quality_audio_sd_medium', DEFAULT_AUDIO_THRESHOLDS.SD.medium),
+          high: getNum('quality_audio_sd_high', DEFAULT_AUDIO_THRESHOLDS.SD.high),
         },
         '720p': {
-          medium: getNum('quality_audio_720p_medium', getNum('quality_audio_720p_good', DEFAULT_AUDIO_THRESHOLDS['720p'].medium)),
-          high: getNum('quality_audio_720p_high', getNum('quality_audio_720p_excellent', DEFAULT_AUDIO_THRESHOLDS['720p'].high)),
+          medium: getNum('quality_audio_720p_medium', DEFAULT_AUDIO_THRESHOLDS['720p'].medium),
+          high: getNum('quality_audio_720p_high', DEFAULT_AUDIO_THRESHOLDS['720p'].high),
         },
         '1080p': {
-          medium: getNum('quality_audio_1080p_medium', getNum('quality_audio_1080p_good', DEFAULT_AUDIO_THRESHOLDS['1080p'].medium)),
-          high: getNum('quality_audio_1080p_high', getNum('quality_audio_1080p_excellent', DEFAULT_AUDIO_THRESHOLDS['1080p'].high)),
+          medium: getNum('quality_audio_1080p_medium', DEFAULT_AUDIO_THRESHOLDS['1080p'].medium),
+          high: getNum('quality_audio_1080p_high', DEFAULT_AUDIO_THRESHOLDS['1080p'].high),
         },
         '4K': {
-          medium: getNum('quality_audio_4k_medium', getNum('quality_audio_4k_good', DEFAULT_AUDIO_THRESHOLDS['4K'].medium)),
-          high: getNum('quality_audio_4k_high', getNum('quality_audio_4k_excellent', DEFAULT_AUDIO_THRESHOLDS['4K'].high)),
+          medium: getNum('quality_audio_4k_medium', DEFAULT_AUDIO_THRESHOLDS['4K'].medium),
+          high: getNum('quality_audio_4k_high', DEFAULT_AUDIO_THRESHOLDS['4K'].high),
         },
       }
 
@@ -187,6 +187,7 @@ export class QualityAnalyzer {
       this.thresholdsLoaded = true
     } catch (error) {
       getLoggingService().error('[QualityAnalyzer]', 'Failed to load quality thresholds:', error)
+      throw error
     }
   }
 
@@ -303,14 +304,14 @@ export class QualityAnalyzer {
   private getBestAudioTrack(input: QualityScoringInput): {
     codec: string
     channels: number
-    bitrate: number
+    bitrate: number | null
     hasObjectAudio: boolean
   } {
     // Default to the primary audio fields
     const fallback = {
       codec: input.audio_codec || '',
       channels: input.audio_channels || 2,
-      bitrate: input.audio_bitrate || 0,
+      bitrate: typeof input.audio_bitrate === 'number' && input.audio_bitrate > 0 ? input.audio_bitrate : null,
       hasObjectAudio: input.has_object_audio || false,
     }
 
@@ -341,13 +342,14 @@ export class QualityAnalyzer {
         }
       }
 
+      const trackBitrate = typeof bestTrack.bitrate === 'number' && bestTrack.bitrate > 0 ? bestTrack.bitrate : fallback.bitrate
       return {
         codec: bestTrack.codec || fallback.codec,
         channels: bestTrack.channels || fallback.channels,
-        bitrate: bestTrack.bitrate || fallback.bitrate,
+        bitrate: trackBitrate,
         hasObjectAudio: bestTrack.hasObjectAudio || false,
       }
-    } catch (e) {
+    } catch {
       // JSON parse failed, return fallback
       return fallback
     }
@@ -372,14 +374,14 @@ export class QualityAnalyzer {
    * Pure bitrate-based scoring against tier thresholds — no codec bonuses.
    */
   private calculateAudioTierScore(
-    bestAudio: { codec: string; channels: number; bitrate: number; hasObjectAudio: boolean },
+    bestAudio: { codec: string; channels: number; bitrate: number | null; hasObjectAudio: boolean },
     tier: QualityTier
-  ): number {
+  ): number | null {
     // Object audio = perfect
     if (bestAudio.hasObjectAudio) return 100
     // Lossless = perfect
     if (this.isLosslessAudio(bestAudio.codec)) return 100
-
+    if (bestAudio.bitrate === null || bestAudio.bitrate === undefined) return null
     if (bestAudio.bitrate <= 0) return 0
 
     const { medium, high } = this.audioThresholds[tier]
@@ -404,26 +406,49 @@ export class QualityAnalyzer {
    * Core quality scoring logic shared by analyzeMediaItem and analyzeVersion.
    */
   private scoreQuality(input: QualityScoringInput): {
-    qualityTier: QualityTier
-    tierQuality: TierQuality
-    tierScore: number
-    bitrateTierScore: number
-    audioTierScore: number
-    effectiveBitrate: number
-    bestAudio: { codec: string; channels: number; bitrate: number; hasObjectAudio: boolean }
+    qualityTier: QualityTier | 'Unknown'
+    tierQuality: TierQuality | 'UNKNOWN'
+    tierScore: number | null
+    bitrateTierScore: number | null
+    audioTierScore: number | null
+    effectiveBitrate: number | null
+    bestAudio: { codec: string; channels: number; bitrate: number | null; hasObjectAudio: boolean }
   } {
-    const qualityTier = this.classifyTier(input.resolution || 'SD', input.height || 0)
-    const codecEfficiency = this.getCodecEfficiency(input.video_codec || '')
-    // Container size includes audio, subtitles, and attachments. It is not a
-    // verified video-stream bitrate and must not influence visual scoring.
-    const inputBitrate = input.video_bitrate || 0
-    const effectiveBitrate = (inputBitrate || 0) * codecEfficiency
-
+    const qualityTier = this.classifyTier(input.resolution, input.height)
     const bestAudio = this.getBestAudioTrack(input)
-    const bitrateTierScore = this.calculateVideoTierScore(effectiveBitrate, qualityTier)
+
+    if (qualityTier === 'Unknown') {
+      return {
+        qualityTier: 'Unknown',
+        tierQuality: 'UNKNOWN',
+        tierScore: null,
+        bitrateTierScore: null,
+        audioTierScore: null,
+        effectiveBitrate: null,
+        bestAudio,
+      }
+    }
+
+    const codecEfficiency = this.getCodecEfficiency(input.video_codec || '')
+    const hasExplicitBitrate = typeof input.video_bitrate === 'number' && input.video_bitrate > 0
+    const effectiveBitrate = hasExplicitBitrate ? input.video_bitrate! * codecEfficiency : null
+
+    const bitrateTierScore = effectiveBitrate !== null ? this.calculateVideoTierScore(effectiveBitrate, qualityTier) : null
     const audioTierScore = this.calculateAudioTierScore(bestAudio, qualityTier)
-    const tierScore = Math.round(bitrateTierScore * this.videoWeight + audioTierScore * (1 - this.videoWeight))
-    const tierQuality: TierQuality = tierScore >= 75 ? 'HIGH' : tierScore >= 50 ? 'MEDIUM' : 'LOW'
+
+    let tierScore: number | null = null
+    if (bitrateTierScore !== null && audioTierScore !== null) {
+      tierScore = Math.round(bitrateTierScore * this.videoWeight + audioTierScore * (1 - this.videoWeight))
+    } else if (bitrateTierScore !== null) {
+      tierScore = bitrateTierScore
+    } else if (audioTierScore !== null) {
+      tierScore = audioTierScore
+    }
+
+    let tierQuality: TierQuality | 'UNKNOWN' = 'UNKNOWN'
+    if (tierScore !== null) {
+      tierQuality = tierScore >= 75 ? 'HIGH' : tierScore >= 50 ? 'MEDIUM' : 'LOW'
+    }
     return { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio }
   }
 
@@ -436,9 +461,9 @@ export class QualityAnalyzer {
     return {
       quality_tier: qualityTier,
       tier_quality: tierQuality,
-      tier_score: tierScore,
-      bitrate_tier_score: bitrateTierScore,
-      audio_tier_score: audioTierScore,
+      tier_score: tierScore ?? 0,
+      bitrate_tier_score: bitrateTierScore ?? 0,
+      audio_tier_score: audioTierScore ?? 0,
     }
   }
 
@@ -450,72 +475,78 @@ export class QualityAnalyzer {
       this.scoreQuality(mediaItem)
 
     // Efficiency Metrics
-    const efficiencyScore = this.calculateEfficiencyScore(mediaItem, qualityTier)
+    const efficiencyScore = qualityTier !== 'Unknown' ? this.calculateEfficiencyScore(mediaItem, qualityTier) : null
     const storageDebtBytes = null
 
     // Identify issues
     const issues: string[] = []
-    const { medium: mediumThreshold } = this.videoThresholds[qualityTier]
-
     const hasExplicitBitrate = (mediaItem.video_bitrate !== undefined && mediaItem.video_bitrate !== null && mediaItem.video_bitrate > 0)
     const itemBitrate = mediaItem.video_bitrate || 0
     const codecEfficiency = this.getCodecEfficiency(mediaItem.video_codec || '')
-    if (!hasExplicitBitrate) {
-      issues.push(`Bitrate unknown for ${qualityTier}`)
-    } else if (effectiveBitrate < mediumThreshold && itemBitrate > 0) {
-      const codecName = codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
-      issues.push(
-        `Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`
-      )
-    }
 
-    if (efficiencyScore != null && efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
-      issues.push(`Low efficiency score (${efficiencyScore}%): bitrate is high for this tier`)
-    }
+    if (qualityTier === 'Unknown') {
+      issues.push('Resolution unknown')
+    } else {
+      const { medium: mediumThreshold } = this.videoThresholds[qualityTier]
+      if (!hasExplicitBitrate) {
+        issues.push(`Bitrate unknown for ${qualityTier}`)
+      } else if (effectiveBitrate !== null && effectiveBitrate < mediumThreshold && itemBitrate > 0) {
+        const codecName = codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
+        issues.push(
+          `Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`
+        )
+      }
 
-    // HDR missing for 4K
-    if (qualityTier === '4K' && (!mediaItem.hdr_format || mediaItem.hdr_format === 'None')) {
-      issues.push('4K content without HDR')
-    }
+      if (efficiencyScore != null && efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
+        issues.push(`Low efficiency score (${efficiencyScore}%): bitrate is high for this tier`)
+      }
 
-    // 8-bit for 4K content
-    if (qualityTier === '4K' &&
-        (!mediaItem.color_bit_depth || mediaItem.color_bit_depth < 10)) {
-      issues.push('8-bit color (10-bit recommended)')
-    }
+      // HDR missing for 4K
+      if (qualityTier === '4K' && (!mediaItem.hdr_format || mediaItem.hdr_format === 'None')) {
+        issues.push('4K content without HDR')
+      }
 
-    // Audio issues (check best audio track)
-    const { medium: audioMedium } = this.audioThresholds[qualityTier]
-    if (bestAudio.channels < 2) {
-      issues.push(`Mono audio`)
-    } else if (bestAudio.channels === 2 && bestAudio.bitrate < audioMedium) {
-      issues.push(`Low audio quality: ${bestAudio.bitrate} kbps`)
+      // 8-bit for 4K content
+      if (qualityTier === '4K' &&
+          (!mediaItem.color_bit_depth || mediaItem.color_bit_depth < 10)) {
+        issues.push('8-bit color (10-bit recommended)')
+      }
+
+      // Audio issues (check best audio track)
+      const { medium: audioMedium } = this.audioThresholds[qualityTier]
+      if (bestAudio.channels < 2) {
+        issues.push(`Mono audio`)
+      } else if (bestAudio.bitrate === null) {
+        issues.push('Audio bitrate unknown')
+      } else if (bestAudio.channels === 2 && bestAudio.bitrate < audioMedium) {
+        issues.push(`Low audio quality: ${bestAudio.bitrate} kbps`)
+      }
     }
 
     // Dubbed audio check
-    if (this.calculateDubBitrate(mediaItem) > 500) { // Significant dub bloat
+    if (this.calculateDubBitrate(mediaItem) > 500) {
       issues.push(`Dubbed audio bloat: ${this.formatBitrate(this.calculateDubBitrate(mediaItem))} from non-original language tracks`)
     }
 
-    // Determine if needs upgrade (LOW quality only)
     const isLowQuality = tierQuality === 'LOW'
     const needsUpgrade = tierQuality === 'LOW'
+    const resolutionScore = qualityTier === '4K' ? 100 : qualityTier === '1080p' ? 80 : qualityTier === '720p' ? 60 : qualityTier === 'SD' ? 40 : null
 
     return {
       media_item_id: mediaItem.id || 0,
-      quality_tier: qualityTier,
-      tier_quality: tierQuality,
+      quality_tier: qualityTier as any,
+      tier_quality: tierQuality as any,
       tier_score: tierScore,
       bitrate_tier_score: bitrateTierScore,
       audio_tier_score: audioTierScore,
       overall_score: tierScore,
-      resolution_score: qualityTier === '4K' ? 100 : qualityTier === '1080p' ? 80 : qualityTier === '720p' ? 60 : 40,
+      resolution_score: resolutionScore,
       bitrate_score: bitrateTierScore,
       audio_score: audioTierScore,
       efficiency_score: efficiencyScore,
       storage_debt_bytes: storageDebtBytes,
-      evidence_status: 'insufficient',
-      confidence: 'none',
+      evidence_status: hasExplicitBitrate && bestAudio.bitrate !== null ? 'estimated' : 'insufficient',
+      confidence: hasExplicitBitrate && bestAudio.bitrate !== null ? 'medium' : 'none',
       savings_basis: 'insufficient_data',
       is_low_quality: isLowQuality,
       needs_upgrade: needsUpgrade,
@@ -582,37 +613,42 @@ export class QualityAnalyzer {
   /**
    * Classify media into quality tier using resolution string
    */
-  private classifyTier(resolution: string, height?: number): QualityTier {
-    const resLower = resolution.toLowerCase()
+  private classifyTier(resolution?: string | null, height?: number | null): QualityTier | 'Unknown' {
+    if (!resolution && !height) return 'Unknown'
+    const resLower = (resolution || '').toLowerCase().trim()
 
-    if (resLower.includes('4k') || resLower.includes('2160p')) {
+    if (resLower.includes('4k') || resLower.includes('2160p') || resLower.includes('uhd')) {
       return '4K'
     }
-    if (resLower.includes('1080p') || resLower.includes('1080i')) {
+    if (resLower.includes('1080p') || resLower.includes('1080i') || resLower.includes('fhd')) {
       return '1080p'
     }
-    if (resLower.includes('720p') || resLower.includes('720i')) {
+    if (resLower.includes('720p') || resLower.includes('720i') || resLower.includes('hd')) {
       return '720p'
+    }
+    if (resLower.includes('sd') || resLower.includes('480p') || resLower.includes('576p') || resLower.includes('480i') || resLower.includes('576i')) {
+      return 'SD'
     }
 
     // Parse WxH format (e.g., "1920x1080")
-    const wxhMatch = resolution.match(/(\d+)\s*x\s*(\d+)/i)
+    const wxhMatch = resLower.match(/(\d+)\s*x\s*(\d+)/i)
     if (wxhMatch) {
       const h = parseInt(wxhMatch[2], 10)
       if (h >= 2160) return '4K'
       if (h >= 1080) return '1080p'
       if (h >= 720) return '720p'
-      return 'SD'
+      if (h > 0) return 'SD'
     }
 
     // Fallback to height field if available
-    if (height) {
+    if (height && height > 0) {
       if (height >= 2160) return '4K'
       if (height >= 1080) return '1080p'
       if (height >= 720) return '720p'
+      return 'SD'
     }
 
-    return 'SD'
+    return 'Unknown'
   }
 
   /**
@@ -633,43 +669,42 @@ export class QualityAnalyzer {
     await db.beginBatch()
     try {
       for (const item of mediaItems) {
-        try {
-          const qualityScore = await this.analyzeMediaItem(item)
-          await db.media.upsertQualityScore(qualityScore)
+        const qualityScore = await this.analyzeMediaItem(item)
+        await db.media.upsertQualityScore(qualityScore)
 
-          // Track distribution for verbose summary
-          const tier = qualityScore.quality_tier || 'SD'
-          const quality = qualityScore.tier_quality || 'MEDIUM'
-          tierCounts[tier] = (tierCounts[tier] || 0) + 1
-          qualityCounts[quality] = (qualityCounts[quality] || 0) + 1
+        // Track distribution for verbose summary
+        const tier = qualityScore.quality_tier || 'Unknown'
+        const quality = qualityScore.tier_quality || 'UNKNOWN'
+        tierCounts[tier] = (tierCounts[tier] || 0) + 1
+        qualityCounts[quality] = (qualityCounts[quality] || 0) + 1
 
-          // Score individual versions and update best version selection
-          if (item.id && item.version_count && item.version_count > 1) {
-            const versions = await db.media.getItemVersions(item.id)
-            const updatePromises = []
-            for (const version of versions) {
-              if (version.id) {
-                const vScore = this.analyzeVersion(version)
-                updatePromises.push(db.media.updateVersionQuality(version.id, vScore))
-              }
+        // Score individual versions and update best version selection
+        if (item.id && item.version_count && item.version_count > 1) {
+          const versions = await db.media.getItemVersions(item.id)
+          const updatePromises = []
+          for (const version of versions) {
+            if (version.id) {
+              const vScore = this.analyzeVersion(version)
+              updatePromises.push(db.media.updateVersionQuality(version.id, vScore as any))
             }
-            if (updatePromises.length > 0) {
-              await Promise.all(updatePromises)
-            }
-            await db.media.updateBestVersion(item.id)
           }
-
-          analyzed++
-
-          if (onProgress) {
-            onProgress(analyzed, mediaItems.length)
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises)
           }
-        } catch (error) {
-          getLoggingService().error('[QualityAnalyzer]', `Failed to analyze item ${item.id}:`, error)
+          await db.media.updateBestVersion(item.id)
+        }
+
+        analyzed++
+
+        if (onProgress) {
+          onProgress(analyzed, mediaItems.length)
         }
       }
-    } finally {
       await db.endBatch()
+    } catch (error) {
+      await db.rollbackBatch()
+      getLoggingService().error('[QualityAnalyzer]', 'Analysis batch failed and was rolled back:', error)
+      throw error
     }
 
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')
