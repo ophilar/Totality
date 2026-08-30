@@ -73,7 +73,25 @@ export class MovieCollectionService {
 
           if (m.tmdb_id && !this.cancelRequested) {
             try {
-              const details = await this.tmdb.getMovieDetails(m.tmdb_id)
+              let details: Awaited<ReturnType<TMDBService['getMovieDetails']>> | null = null
+              try {
+                details = await this.tmdb.getMovieDetails(m.tmdb_id)
+              } catch (e: unknown) {
+                const errWithStatus = e as { status?: number; message?: string }
+                if (errWithStatus?.status === 404 || errWithStatus?.message?.includes('could not be found')) {
+                  getLoggingService().info('[MovieCollectionService]', `Stale TMDB ID ${m.tmdb_id} for "${m.title}", searching fresh match...`)
+                  const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+                  if (search?.results?.length > 0) {
+                    const best = search.results[0]
+                    m.tmdb_id = String(best.id)
+                    await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
+                    details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                  }
+                } else {
+                  throw e
+                }
+              }
+
               if (details?.belongs_to_collection) {
                 const cid = String(details.belongs_to_collection.id)
                 const cacheKey = `${cid}-${m.source_id || ''}-${m.library_id || ''}`

@@ -517,6 +517,8 @@ export class PlexProvider extends BaseMediaProvider {
               })
             } else if (res.type === 'movie' && res.detail) {
               try {
+                if (!res.detail.Guid && res.plexItem.Guid) res.detail.Guid = res.plexItem.Guid
+                if (!res.detail.guid && res.plexItem.guid) res.detail.guid = res.plexItem.guid
                 const result = MediaTransformer.fromPlex(
                   res.detail,
                   this.sourceId,

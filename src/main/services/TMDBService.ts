@@ -275,8 +275,12 @@ export class TMDBService {
           }
 
           if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({}))
-            getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
+            const errorBody = await response.json().catch(() => ({})) as { status_message?: string }
+            if (response.status === 404) {
+              getLoggingService().warn('[TMDBService]', `[TMDB] Resource not found (404) for ${endpoint}:`, errorBody)
+            } else {
+              getLoggingService().error('[TMDBService]', '[TMDB] Error response:', errorBody)
+            }
             const error = new Error(`TMDB API Error: ${errorBody.status_message || response.statusText}`) as Error & { status: number }
             error.status = response.status
             throw error
@@ -578,19 +582,19 @@ export class TMDBService {
   }
 
   /**
-   * Find content by external ID (IMDB)
+   * Find content by external ID (IMDB, TVDB, Wikidata)
    * Returns both movie and TV show results if found
    */
   async findByExternalId(
     externalId: string,
-    externalSource: 'imdb_id'
+    externalSource: 'imdb_id' | 'tvdb_id' | 'wikidata_id' = 'imdb_id'
   ): Promise<{
     movie_results: Array<{ id: number; title: string; release_date?: string }>
-    tv_results: Array<{ id: number; name: string }>
+    tv_results: Array<{ id: number; name: string; first_air_date?: string }>
   }> {
     return await this.request<{
       movie_results: Array<{ id: number; title: string; release_date?: string }>
-      tv_results: Array<{ id: number; name: string }>
+      tv_results: Array<{ id: number; name: string; first_air_date?: string }>
     }>(
       `/find/${externalId}`,
       { external_source: externalSource }

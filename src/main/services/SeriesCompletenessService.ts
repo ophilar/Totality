@@ -155,11 +155,27 @@ export class SeriesCompletenessService {
     if (episodes.length === 0) return null
 
     const tmdbApiKey = prefetchedData?.tmdbApiKey !== undefined ? prefetchedData.tmdbApiKey : await this.db.config.getSetting('tmdb_api_key')
-    let tmdbId = cachedTmdbId || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id
-    
+    let tmdbId = cachedTmdbId || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id || episodes.find(e => e.tmdb_id)?.tmdb_id
+    const imdbId = episodes.find(e => e.imdb_id)?.imdb_id
+
     if (!tmdbId && tmdbApiKey && this.tmdb.isConfigured()) {
-      const search = await this.tmdb.searchTVShow(seriesTitle)
-      if (search.results.length > 0) tmdbId = String(search.results[0].id)
+      // 1. Try exact external IMDB ID lookup
+      if (imdbId) {
+        try {
+          const found = await this.tmdb.findByExternalId(imdbId, 'imdb_id')
+          if (found.tv_results && found.tv_results.length > 0) {
+            tmdbId = String(found.tv_results[0].id)
+          }
+        } catch {
+          // Continue to search
+        }
+      }
+
+      // 2. Fallback to title search
+      if (!tmdbId) {
+        const search = await this.tmdb.searchTVShow(seriesTitle)
+        if (search.results.length > 0) tmdbId = String(search.results[0].id)
+      }
     }
     
     if (!tmdbId || !tmdbApiKey || !this.tmdb.isConfigured()) {
@@ -168,7 +184,25 @@ export class SeriesCompletenessService {
       return prefetchedData?.returnConstructed ? unmatched : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
     }
 
-    const showDetails = await this.tmdb.getTVShowDetails(tmdbId)
+    let showDetails: Awaited<ReturnType<TMDBService['getTVShowDetails']>>
+    try {
+      showDetails = await this.tmdb.getTVShowDetails(tmdbId)
+    } catch (e: unknown) {
+      const errWithStatus = e as { status?: number; message?: string }
+      if (errWithStatus?.status === 404 || errWithStatus?.message?.includes('could not be found')) {
+        getLoggingService().info('[SeriesCompleteness]', `Stale TMDB show ID ${tmdbId} for "${seriesTitle}", searching fresh match...`)
+        const search = await this.tmdb.searchTVShow(seriesTitle)
+        if (search.results.length > 0) {
+          tmdbId = String(search.results[0].id)
+          showDetails = await this.tmdb.getTVShowDetails(tmdbId)
+        } else {
+          throw e
+        }
+      } else {
+        throw e
+      }
+    }
+
     const seasonNums = showDetails.seasons.filter(s => s.season_number > 0).map(s => s.season_number)
     const fullDetails = await this.tmdb.getTVShowWithSeasons(tmdbId, seasonNums)
     

@@ -118,9 +118,15 @@ export function isPlaceholderMusicTitle(text?: string | null): boolean {
   const trimmed = text.trim()
   if (!trimmed || trimmed.length === 0) return true
   // If string contains no alphanumeric characters (e.g. "?????", "---", "...")
-  if (!/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(trimmed)) return true
+  if (!/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u0590-\u05FF\u3040-\u30FF\u4E00-\u9FFF]/.test(trimmed)) return true
 
-  const normalized = trimmed.toLowerCase().replace(/[[\]()]/g, '').trim()
+  // Strip common noisy wrappers and dates
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
   const placeholders = new Set([
     'unknown album',
     'unknown artist',
@@ -133,15 +139,33 @@ export function isPlaceholderMusicTitle(text?: string | null): boolean {
     'untitled',
     'album',
     'disc',
+    'disk',
     'cd',
     'unknown title',
-    'unknown performer'
+    'unknown performer',
+    'language instruction',
+    'sound effects',
+    'sound effects and music',
+    'audio',
+    'misc',
+    'other',
+    'bootleg',
+    'rarities',
+    'unreleased album'
   ])
 
   if (placeholders.has(normalized)) return true
   if (/^track\s*\d+$/i.test(normalized)) return true
   if (/^cd\s*\d+$/i.test(normalized)) return true
   if (/^disc\s*\d+$/i.test(normalized)) return true
+  if (/^disk\s*\d+$/i.test(normalized)) return true
+  if (/^side\s*[a-z0-9]+$/i.test(normalized)) return true
+  // Check for timestamp/date-only album titles like "05_02_04 18_41_19" or "8/12/2006 2:17:18 PM"
+  if (/^unknown\s*album\s*\d.*$/i.test(normalized)) return true
+  // Check for corrupted encoding unknown album placeholders (e.g. Hebrew 'אלבום לא ידוע' in CP1255/1252)
+  if (normalized.includes('àìáåí ìà éãåò') || normalized.includes('אלבום לא ידוע')) return true
+  // Check for month/year only titles like "Nov 2002"
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}$/i.test(normalized)) return true
   return false
 }
 
@@ -274,34 +298,59 @@ export class MusicBrainzService extends CancellableOperation {
     requestFn: () => Promise<T>,
     context: string
   ): Promise<T> {
-    return retryWithBackoff(
-      async () => {
-        await this.rateLimit()
-        try {
-          return await requestFn()
-        } catch (error: unknown) {
-          // Re-throw retryable errors so retry logic can handle them
-          if (this.isRetryableConnectionError(error)) {
-            throw error
+    try {
+      const result = await retryWithBackoff(
+        async () => {
+          await this.rateLimit()
+          try {
+            const data = await requestFn()
+            this.rateLimiter.recordSuccess()
+            return data
+          } catch (error: unknown) {
+            // Check status code for rate limiting / overload
+            if (axios.isAxiosError(error)) {
+              const status = error.response?.status
+              if (status === 429 || status === 503) {
+                this.rateLimiter.recordError(status)
+                const retryAfter = error.response?.headers?.['retry-after']
+                if (retryAfter) {
+                  const seconds = parseInt(retryAfter, 10)
+                  if (!isNaN(seconds)) {
+                    this.rateLimiter.setDelay(seconds * 1000)
+                  }
+                }
+              }
+            }
+
+            // Re-throw retryable errors so retry logic can handle them
+            if (this.isRetryableConnectionError(error)) {
+              throw error
+            }
+            // For non-retryable errors, wrap with a marker so retry stops
+            const wrappedError = new Error(getErrorMessage(error)) as Error & { nonRetryable: boolean }
+            wrappedError.nonRetryable = true
+            throw wrappedError
           }
-          // For non-retryable errors, wrap with a marker so retry stops
-          const wrappedError = new Error(getErrorMessage(error)) as Error & { nonRetryable: boolean }
-          wrappedError.nonRetryable = true
-          throw wrappedError
+        },
+        {
+          maxRetries: this.MAX_RETRIES,
+          initialDelay: this.RETRY_DELAY_MS,
+          maxDelay: 30000,
+          backoffFactor: 2,
+          retryableStatuses: [429, 500, 502, 503, 504],
+          onRetry: (attempt, error, delay) => {
+            getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
+            getLoggingService().warn('[MusicBrainzService]', `${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
+          }
         }
-      },
-      {
-        maxRetries: this.MAX_RETRIES,
-        initialDelay: this.RETRY_DELAY_MS,
-        maxDelay: 30000,
-        backoffFactor: 2,
-        retryableStatuses: [429, 500, 502, 503, 504],
-        onRetry: (attempt, error, delay) => {
-          getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
-          getLoggingService().warn('[MusicBrainzService]', `${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
-        }
+      )
+      return result
+    } catch (finalError) {
+      if (axios.isAxiosError(finalError) && finalError.response?.status) {
+        this.rateLimiter.recordError(finalError.response.status)
       }
-    )
+      throw finalError
+    }
   }
 
   /**

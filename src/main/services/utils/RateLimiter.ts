@@ -121,19 +121,25 @@ export class SlidingWindowRateLimiter implements RateLimiter {
  */
 export class SimpleDelayRateLimiter implements RateLimiter {
   private lastScheduledTime: number = 0
-  private readonly delayMs: number
+  private readonly baseDelayMs: number
+  private currentDelayMs: number
+  private readonly maxDelayMs: number
+  private consecutiveSuccesses: number = 0
 
   /**
    * @param delayMs Minimum milliseconds between requests
+   * @param maxDelayMs Maximum milliseconds delay when backing off (default: 6000ms)
    */
-  constructor(delayMs: number) {
-    this.delayMs = delayMs
+  constructor(delayMs: number, maxDelayMs: number = 6000) {
+    this.baseDelayMs = delayMs
+    this.currentDelayMs = delayMs
+    this.maxDelayMs = maxDelayMs
   }
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
-    // Schedule slots sequentially: whichever is later, current timestamp or previous scheduled + delayMs
-    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.delayMs)
+    // Schedule slots sequentially: whichever is later, current timestamp or previous scheduled + currentDelayMs
+    const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs)
     this.lastScheduledTime = scheduledTime
     const waitMs = scheduledTime - now
 
@@ -142,8 +148,42 @@ export class SimpleDelayRateLimiter implements RateLimiter {
     }
   }
 
+  /**
+   * Adaptively back off when an upstream rate limit (429) or service overload (503/502/504) occurs
+   */
+  recordError(status?: number): void {
+    if (status === 429 || status === 503 || status === 502 || status === 504) {
+      this.currentDelayMs = Math.min(this.maxDelayMs, Math.max(this.currentDelayMs * 1.5, 3000))
+      this.consecutiveSuccesses = 0
+    }
+  }
+
+  /**
+   * Gradually recover back toward base delay after sustained success
+   */
+  recordSuccess(): void {
+    this.consecutiveSuccesses++
+    if (this.consecutiveSuccesses >= 5 && this.currentDelayMs > this.baseDelayMs) {
+      this.currentDelayMs = Math.max(this.baseDelayMs, this.currentDelayMs - 500)
+      this.consecutiveSuccesses = 0
+    }
+  }
+
+  /**
+   * Directly set or override current pacing delay (e.g. from Retry-After header)
+   */
+  setDelay(delayMs: number): void {
+    this.currentDelayMs = Math.min(this.maxDelayMs, Math.max(this.baseDelayMs, delayMs))
+  }
+
+  getCurrentDelay(): number {
+    return this.currentDelayMs
+  }
+
   reset(): void {
     this.lastScheduledTime = 0
+    this.currentDelayMs = this.baseDelayMs
+    this.consecutiveSuccesses = 0
   }
 
   private delay(ms: number): Promise<void> {
