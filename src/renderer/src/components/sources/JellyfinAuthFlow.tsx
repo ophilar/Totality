@@ -64,7 +64,7 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
       if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
       setIsDiscovering(false)
     })() })
-     
+
   }, [isEmby])
 
   async function handleDiscover() {
