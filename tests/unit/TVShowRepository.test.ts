@@ -148,7 +148,7 @@ describe('TVShowRepository (Real DB)', () => {
 
     const [summary] = await repo.getSummaries({ sourceId: 'src-1', libraryId: 'lib-1' })
 
-    expect(summary.total_recoverable_bytes).toBeNull()
+    expect(summary.total_recoverable_bytes).toBeUndefined()
     expect(summary.weighted_efficiency).toBeNull()
     expect(summary.scored_episode_count).toBe(0)
     expect(summary.unscored_episode_count).toBe(1)
