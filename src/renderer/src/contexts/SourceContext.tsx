@@ -467,16 +467,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     sourceId: string,
     libraryId: string
   ): Promise<ScanResultResponse> => {
-    const source = sources.find(s => s.source_id === sourceId)
-    await window.electronAPI.taskQueueAddTask({
-      type: 'library-scan',
-      label: `Scanning ${source?.display_name || sourceId}`,
-      sourceId,
-      libraryId,
-    })
-    // For backward compatibility, return a dummy success result
-    // The actual result will come via notifications/task history
-    return { success: true, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0, itemsRemoved: 0, errors: [], durationMs: 0 }
+    return window.electronAPI.sourcesScanLibrary(sourceId, libraryId)
   }, [sources])
 
   // Scan all enabled sources via Task Queue
