@@ -14,7 +14,7 @@ describe('Show Analysis & Metadata Integrity', () => {
     cleanupTestDb()
   })
 
-  it('uses owned episode inventory when completeness evidence is unavailable', async () => {
+  it('uses owned episode inventory while keeping unavailable completeness unknown', async () => {
     const service = getSeriesCompletenessService()
 
     await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
@@ -38,7 +38,10 @@ describe('Show Analysis & Metadata Integrity', () => {
     expect(analysis!.total_episodes).toBe(1)
     expect(analysis!.owned_episodes).toBe(1)
     expect(analysis!.poster_url).toBe('provider-poster-url')
-    expect(analysis!.completeness_percentage).toBe(-1)
+    expect(analysis!.completeness_percentage).toBeNull()
+    expect(analysis!.efficiency_score).toBeNull()
+    expect(analysis!.storage_debt_bytes).toBeNull()
+    expect(analysis!.status).toBeUndefined()
   })
 
   it('preserves verified identity metadata when completeness cannot be refreshed', async () => {
