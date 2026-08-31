@@ -407,18 +407,24 @@ async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
      WHERE tier_score = 0 AND bitrate_tier_score = 0 AND audio_tier_score = 0
        AND overall_score = 0 AND resolution_score = 0 AND bitrate_score = 0 AND audio_score = 0
        AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
     `UPDATE music_quality_scores
      SET efficiency_score = NULL, storage_debt_bytes = NULL,
          evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE tier_score = 0 AND codec_score = 0 AND bitrate_score = 0
        AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
     `UPDATE series_completeness
      SET efficiency_score = NULL, storage_debt_bytes = NULL,
          evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
   ]
   for (const statement of updates) await db.execute(statement)
 }
@@ -495,9 +501,9 @@ async function migrateExistingItemsToVersions(db: Client): Promise<void> {
     INSERT INTO media_item_versions (
       media_item_id, version_source, file_path, file_size, duration,
       resolution, width, height, video_codec, video_bitrate,
-      audio_codec, audio_channels, audio_bitrate, is_best
+      audio_codec, audio_channels, audio_bitrate, is_best, created_at, updated_at
     )
-    SELECT id, 'primary', file_path, file_size, duration, resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate, 1
+    SELECT id, 'primary', file_path, file_size, duration, resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate, 1, created_at, updated_at
     FROM media_items
   `)
 }
@@ -536,8 +542,8 @@ export async function mergeDuplicateSeriesCompleteness(db: Client): Promise<void
 async function ensureSeriesUniquenessIndexes(db: Client): Promise<void> {
   const indexes = [
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ""',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ""'
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ''`
   ]
   for (const idx of indexes) await db.execute(idx)
 }
