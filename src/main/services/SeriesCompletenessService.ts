@@ -103,10 +103,12 @@ export class SeriesCompletenessService {
             existingCompleteness: completenessByNormalizedTitle.get(normalizedTitle) ?? null,
             returnConstructed: true,
           })
-          if (analysis?.completeness_percentage != null) {
+          if (analysis) {
             result.analyzed++
-            if (analysis.completeness_percentage >= 100) result.complete++
-            else result.incomplete++
+            if (analysis.completeness_percentage != null) {
+              if (analysis.completeness_percentage >= 100) result.complete++
+              else result.incomplete++
+            }
           }
         } catch (error) {
           const errDetail = `"${series.title}": ${getErrorMessage(error)}`
