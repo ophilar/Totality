@@ -111,8 +111,9 @@ interface SeriesRowProps {
 }
 
 export const SeriesRow = React.memo(({ s, index, isExpanded, onToggleExpand, onDismiss }: SeriesRowProps) => {
-  const missingCount = s.total_episodes - s.owned_episodes
-  const seasonGroups = isExpanded ? groupEpisodesBySeason(s) : []
+  const hasCompleteness = s.completeness_percentage != null
+  const missingCount = hasCompleteness ? s.total_episodes - s.owned_episodes : 0
+  const seasonGroups = isExpanded && hasCompleteness ? groupEpisodesBySeason(s) : []
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && missingCount > 0) {
@@ -130,7 +131,9 @@ export const SeriesRow = React.memo(({ s, index, isExpanded, onToggleExpand, onD
         onClick={() => missingCount > 0 && onToggleExpand(index)}
         onKeyDown={handleKeyDown}
         aria-expanded={isExpanded}
-        aria-label={`${s.series_title}, ${s.owned_seasons} of ${s.total_seasons} seasons, ${s.owned_episodes} of ${s.total_episodes} episodes`}
+        aria-label={hasCompleteness
+          ? `${s.series_title}, ${s.owned_seasons} of ${s.total_seasons} seasons, ${s.owned_episodes} of ${s.total_episodes} episodes`
+          : `${s.series_title}, ${s.owned_episodes} episodes owned, completeness unavailable`}
       >
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40">
           {s.poster_url ? (
@@ -144,11 +147,15 @@ export const SeriesRow = React.memo(({ s, index, isExpanded, onToggleExpand, onD
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{s.series_title}</div>
           <div className="text-xs text-muted-foreground">
-            {s.owned_seasons}/{s.total_seasons} seasons · {s.owned_episodes}/{s.total_episodes} eps · {Math.round(s.completeness_percentage)}%
+            {hasCompleteness
+              ? `${s.owned_seasons}/${s.total_seasons} seasons · ${s.owned_episodes}/${s.total_episodes} eps · ${Math.round(s.completeness_percentage!)}%`
+              : `${s.owned_episodes} eps owned · completeness unavailable`}
           </div>
-          <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
-            <div className="h-full bg-primary rounded-full" style={{ width: `${s.completeness_percentage}%` }} />
-          </div>
+          {hasCompleteness && (
+            <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
+              <div className="h-full bg-primary rounded-full" style={{ width: `${s.completeness_percentage}%` }} />
+            </div>
+          )}
         </div>
         {missingCount > 0 && (
           <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
