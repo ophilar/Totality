@@ -660,7 +660,7 @@ export class FileNameParser {
       return undefined
     }
 
-    let remaining = afterMatch.replace(/^[-.\s]+/, '')
+    const remaining = afterMatch.replace(/^[-.\s]+/, '')
 
     const allQualityPatterns = [
       ...this.resolutionPatterns,

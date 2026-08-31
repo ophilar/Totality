@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { TMDBService } from '@main/services/TMDBService'
-import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 
 // Mock fetch globally
 const mockFetch = vi.fn()

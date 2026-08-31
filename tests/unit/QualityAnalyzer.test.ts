@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { QualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import type { MediaItem, MediaItemVersion, MusicAlbum, MusicTrack, MusicQualityScore } from '@main/types/database'
 
 describe('QualityAnalyzer', () => {
   let analyzer: QualityAnalyzer
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
-    db = await setupTestDb()
+    _db = await setupTestDb()
     analyzer = new QualityAnalyzer()
   })
 

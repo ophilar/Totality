@@ -3,7 +3,7 @@ import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import { SourceManager } from '@main/services/SourceManager'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import type { ScanOptions } from '@main/providers/base/MediaProvider'
-import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
+import type { _BetterSQLiteService } from '@main/database/BetterSQLiteService'
 
 type TestDatabase = Awaited<ReturnType<typeof setupTestDb>>
 type ScannerState = { activeScans: number; scanCancelled: boolean }

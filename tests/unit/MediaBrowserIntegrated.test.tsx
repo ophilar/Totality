@@ -19,7 +19,7 @@ import { registerSeriesHandlers } from '@main/ipc/series'
 import { registerMusicHandlers } from '@main/ipc/music'
 import { registerLoggingHandlers } from '@main/ipc/logging'
 import { registerMonitoringHandlers } from '@main/ipc/monitoring'
-import { ProviderType, LibraryType } from '@main/types/database'
+import { _ProviderType, _LibraryType } from '@main/types/database'
 import React from 'react'
 type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 

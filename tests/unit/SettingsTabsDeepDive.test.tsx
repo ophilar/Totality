@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { render, screen, _waitFor, act, fireEvent } from '@testing-library/react'
 import { ServicesTab } from '@/components/settings/tabs/ServicesTab'
 import { DataManagementTab } from '@/components/settings/tabs/DataManagementTab'
 import { TroubleshootTab } from '@/components/settings/tabs/TroubleshootTab'
@@ -14,7 +14,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import React from 'react'
 
 describe('Settings Tabs Deep Dive (Integrated Stack)', () => {
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     if (typeof window === 'undefined') {
@@ -36,7 +36,7 @@ describe('Settings Tabs Deep Dive (Integrated Stack)', () => {
       })),
     });
 
-    db = await setupTestDb()
+    _db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
     Object.assign(window, { electronAPI: bridge.api })

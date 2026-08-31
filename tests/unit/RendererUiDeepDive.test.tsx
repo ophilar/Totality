@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent, _within } from '@testing-library/react'
 import { MediaDetails } from '@/components/library/MediaDetails'
 import { WishlistView } from '@/components/library/WishlistView'
 import { DuplicatesView } from '@/components/library/DuplicatesView'

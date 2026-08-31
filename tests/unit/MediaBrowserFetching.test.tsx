@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MediaBrowser } from '@/components/library/MediaBrowser'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
@@ -10,10 +10,10 @@ import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 
 describe('MediaBrowser Data Fetching (Real Integrated Bridge)', () => {
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
-    db = await setupTestDb()
+    _db = await setupTestDb()
     setupRealIntegratedBridge()
     registerDatabaseHandlers()
   })

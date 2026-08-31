@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, _waitFor } from '@testing-library/react'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
 import { useSources } from '@/contexts/SourceContext'
 import { useToast } from '@/contexts/ToastContext'

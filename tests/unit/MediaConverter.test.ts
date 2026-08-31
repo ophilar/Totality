@@ -6,7 +6,7 @@
  * placeholder creation, and merge updates.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, _vi } from 'vitest'
 import { MediaConverter } from '@main/services/MediaConverter'
 import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 

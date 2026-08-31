@@ -1,6 +1,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { TaskType } from '@main/types/database'

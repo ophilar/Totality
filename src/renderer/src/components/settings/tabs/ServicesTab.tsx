@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react'
+import { useState, useEffect, useId, useCallback } from 'react'
 import {
   Eye,
   EyeOff,
@@ -253,10 +253,6 @@ export function ServicesTab() {
   }
 
   useEffect(() => {
-    loadSettings()
-  }, [])
-
-  useEffect(() => {
     const tmdbChanged = tmdbApiKey !== originalTmdb
     const nfsChanged = JSON.stringify(nfsMappings) !== JSON.stringify(originalNfsMappings)
     const geminiChanged = geminiApiKey !== originalGemini || geminiModel !== originalGeminiModel
@@ -274,7 +270,7 @@ export function ServicesTab() {
     return () => cleanup?.()
   }, [])
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     setIsLoading(true)
     try {
       const [allSettings, ffAvailable, ffBundled, ffVersion, nfsMaps] = await Promise.all([
@@ -352,7 +348,11 @@ export function ServicesTab() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [metadataProviderPreferences])
+
+  useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
 
   const handleTestTmdb = async () => {
     if (!tmdbApiKey.trim()) return

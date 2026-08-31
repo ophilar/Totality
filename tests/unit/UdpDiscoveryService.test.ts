@@ -215,7 +215,7 @@ describe('UdpDiscoveryService', () => {
     it('should handle socket bind exception', async () => {
       const mockSocket = dgram.createSocket('udp4')
 
-      vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
+      vi.mocked(mockSocket.bind).mockImplementation((_cb: Callback) => {
          throw new Error('Bind failed')
       })
 

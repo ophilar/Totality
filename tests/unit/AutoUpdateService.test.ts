@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { AutoUpdateService, getAutoUpdateService } from '@main/services/AutoUpdateService'
+import { AutoUpdateService, _getAutoUpdateService } from '@main/services/AutoUpdateService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { app } from 'electron'

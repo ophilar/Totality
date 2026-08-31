@@ -8,12 +8,12 @@ import type { MediaItem, MusicAlbum, MusicTrack } from '@main/types/database'
 describe('Service Deep Dive (No Mocks)', () => {
   let dbService: Awaited<ReturnType<typeof setupTestDb>>
   let qualityAnalyzer: QualityAnalyzer
-  let seriesService: SeriesCompletenessService
+  let _seriesService: SeriesCompletenessService
 
   beforeEach(async () => {
     dbService = await setupTestDb()
     qualityAnalyzer = new QualityAnalyzer()
-    seriesService = new SeriesCompletenessService()
+    _seriesService = new SeriesCompletenessService()
   })
 
   afterEach(() => {

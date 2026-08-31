@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 
 // Mock dependencies before importing
 vi.mock('../../src/main/services/QualityAnalyzer', () => ({
@@ -29,11 +29,11 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 const { executeTool } = await import('../../src/main/services/GeminiTools')
 
 describe('GeminiTools', () => {
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    db = await setupTestDb()
+    _db = await setupTestDb()
     process.env.NODE_ENV = 'test'
   })
 

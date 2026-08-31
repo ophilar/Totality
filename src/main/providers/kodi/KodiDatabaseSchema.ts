@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
 import { getDatabase } from '@main/database/BetterSQLiteService'

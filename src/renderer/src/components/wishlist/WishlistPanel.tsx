@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { X, Filter, ArrowUpDown, Film, Tv, Music, Loader2, ListTodo, CircleFadingArrowUp, Download, CheckCircle2, Circle } from 'lucide-react'
 import { useWishlist, WishlistMediaType, WishlistPriority, WishlistReason, WishlistStatus } from '@/contexts/WishlistContext'
 import { WishlistItemCard } from '@/components/wishlist/WishlistItemCard'
@@ -20,7 +20,7 @@ type StatusType = WishlistStatus | 'all'
 export function WishlistPanel({ isOpen: propIsOpen, onClose: propOnClose }: WishlistPanelProps) {
   const { showWishlistPanel, setShowWishlistPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showWishlistPanel
-  const onClose = propOnClose !== undefined ? propOnClose : () => setShowWishlistPanel(false)
+  const onClose = useMemo(() => propOnClose !== undefined ? propOnClose : () => setShowWishlistPanel(false), [propOnClose, setShowWishlistPanel])
   const {
     items,
     counts,

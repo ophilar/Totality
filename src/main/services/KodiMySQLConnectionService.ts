@@ -17,7 +17,6 @@ let mysqlAvailable = false
 
 // Try to load mysql2 - it's optional
 try {
-  // @ts-ignore
   mysql = require('mysql2/promise')
   mysqlAvailable = true
 } catch (error) {

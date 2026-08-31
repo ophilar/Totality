@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
-import { BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase } from '@main/database/BetterSQLiteService'
-import * as dbFuncs from '@main/database/BetterSQLiteService'
+import { _BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase } from '@main/database/BetterSQLiteService'
+import * as _dbFuncs from '@main/database/BetterSQLiteService'
 import path from 'node:path'
 import fs from 'node:fs'
 import { ipcMain } from 'electron'

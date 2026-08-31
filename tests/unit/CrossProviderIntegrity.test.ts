@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { ProviderType, MediaItemType } from '@main/types/database'
+import { ProviderType, _MediaItemType } from '@main/types/database'
 import { MediaTransformer } from '@main/providers/base/MediaTransformer'
 import type { PlexMediaItem } from '@main/types/plex'
 import type { JellyfinMediaItem } from '@main/providers/jellyfin-emby/JellyfinTypes'

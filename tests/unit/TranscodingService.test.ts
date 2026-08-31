@@ -8,7 +8,7 @@ import { spawn } from 'child_process'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import type { FileAnalysisResult } from '@main/workers/ffprobe-worker'
+import type { _FileAnalysisResult } from '@main/workers/ffprobe-worker'
 import type { MediaItem } from '@main/types/database'
 
 vi.mock('child_process')

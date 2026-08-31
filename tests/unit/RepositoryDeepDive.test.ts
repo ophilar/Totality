@@ -7,10 +7,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { ProviderType, MediaItemType } from '@main/types/database'
+import { _ProviderType, MediaItemType } from '@main/types/database'
 import type { MediaItem } from '@main/types/database'
-import * as schema from '@main/database/drizzleSchema'
-import { eq, and } from 'drizzle-orm'
+import * as _schema from '@main/database/drizzleSchema'
+import { _eq, _and } from 'drizzle-orm'
 
 describe('BaseRepository Generic Logic', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>

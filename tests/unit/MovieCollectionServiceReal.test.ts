@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, _vi } from 'vitest'
 import { MovieCollectionService } from '@main/services/MovieCollectionService'
 import { getTMDBService, resetTMDBServiceForTesting } from '@main/services/TMDBService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import http from 'node:http'
-import path from 'node:path'
+import _path from 'node:path'
 import type { AddressInfo } from 'node:net'
 
 describe('MovieCollectionService (No Mocks)', () => {

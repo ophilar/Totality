@@ -1,14 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { SourceProvider, useSources } from '@/contexts/SourceContext'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext'
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 import { WishlistProvider, useWishlist } from '@/contexts/WishlistContext'
-import { LibraryType, ProviderType, WishlistMediaType, WishlistReason, WishlistStatus } from '@main/types/database'
+import { _LibraryType, ProviderType, WishlistMediaType, WishlistReason, WishlistStatus } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerWishlistHandlers } from '@main/ipc/wishlist'

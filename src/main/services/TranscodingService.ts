@@ -648,7 +648,7 @@ export class TranscodingService {
     const controller = new AbortController()
     this.activeJobs.set(mediaItemId, controller)
 
-    let tempPath: string | null = null
+    let tempPath: string
     let optimizationJobId: number | null = null
 
     try {
@@ -965,17 +965,13 @@ export class TranscodingService {
       }
       const actualPath = PathUtils.resolveExecutablePath(ffmpegPath)
 
-      let args: string[] = []
-      if (params.ffmpegArgs && params.ffmpegArgs.length > 0) {
-        args = params.ffmpegArgs.map(arg => {
+      const args = params.ffmpegArgs && params.ffmpegArgs.length > 0
+        ? params.ffmpegArgs.map(arg => {
           if (arg === '<input>') return inputPath
           if (arg === '<output>') return outputPath
           return arg
         })
-      } else {
-        const builder = TranscodeCommandFactory.getBuilder(undefined, options)
-        args = builder.buildFFmpegArgs(inputPath, outputPath, options, {} as FileAnalysisResult)
-      }
+        : TranscodeCommandFactory.getBuilder(undefined, options).buildFFmpegArgs(inputPath, outputPath, options, {} as FileAnalysisResult)
 
       getLoggingService().info('[TranscodingService]', `Starting FFmpeg transcode: ${ffmpegPath} ${args.join(' ')}`)
 

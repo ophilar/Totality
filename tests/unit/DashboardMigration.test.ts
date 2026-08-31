@@ -1,7 +1,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runMigrations } from '@main/database/DatabaseMigration'
-import { StatsRepository } from '@main/database/repositories/StatsRepository'
+import { _StatsRepository } from '@main/database/repositories/StatsRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 /**

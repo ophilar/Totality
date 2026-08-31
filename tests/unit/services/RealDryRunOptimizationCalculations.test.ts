@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateTrackByteSize,
-  aggregateShowOptimizationMetrics,
+  _aggregateShowOptimizationMetrics,
   calculateDryRunMetrics,
   type TrackStreamInfo,
 } from '@main/services/ShowOptimizationMetricsService'
 import {
   LanguageDecisionService,
-  type AudioTrackForDecision,
+  type _AudioTrackForDecision,
 } from '@main/services/LanguageDecisionService'
 
 describe('RealDryRunOptimizationCalculations', () => {

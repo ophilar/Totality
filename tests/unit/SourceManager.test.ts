@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { SourceManager } from '@main/services/SourceManager'
 import { LibraryType, ProviderType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'

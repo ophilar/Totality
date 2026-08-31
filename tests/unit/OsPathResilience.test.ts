@@ -5,8 +5,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { ProviderType } from '@main/types/database'
-import * as path from 'node:path'
+import { _ProviderType } from '@main/types/database'
+import * as _path from 'node:path'
 
 describe('OS Path Resilience (No Mocks)', () => {
   beforeEach(async () => {

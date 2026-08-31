@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { GeminiAnalysisService } from '@main/services/GeminiAnalysisService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { getGeminiService } from '@main/services/GeminiService'
+import { _getGeminiService } from '@main/services/GeminiService'
 
 describe('GeminiAnalysisService', () => {
   let service: GeminiAnalysisService

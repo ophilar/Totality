@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
+import { _getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'

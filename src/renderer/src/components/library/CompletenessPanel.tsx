@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, Loader2 } from 'lucide-react'
 
 type CompletenessTaskType = 'series-completeness' | 'collection-completeness' | 'music-completeness'
@@ -86,7 +86,7 @@ export function CompletenessPanel({
 }: CompletenessPanelProps) {
   const { showCompletenessPanel, setShowCompletenessPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showCompletenessPanel
-  const onClose = propOnClose !== undefined ? propOnClose : () => setShowCompletenessPanel(false)
+  const onClose = useMemo(() => propOnClose !== undefined ? propOnClose : () => setShowCompletenessPanel(false), [propOnClose, setShowCompletenessPanel])
   const [seriesStats, setSeriesStats] = useState<SeriesStats | null>(initialSeriesStats || null)
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)

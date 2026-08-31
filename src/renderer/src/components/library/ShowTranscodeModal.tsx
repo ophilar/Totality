@@ -244,7 +244,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
     loadLanguages()
     return () => { isMounted = false }
-  }, [show.series_title, show.source_id])
+  }, [show])
 
   // Load global subtitle preference
   useEffect(() => {

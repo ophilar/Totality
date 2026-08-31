@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as http from 'node:http'
@@ -9,20 +9,14 @@ import { SafeUrlSchema } from '@main/validation/schemas'
 describe('Plex Authentication (Real Logic)', () => {
   let server: http.Server
   let serverUrl: string
-  let lastRequestBody: string | null = null
 
   beforeEach(async () => {
     await setupTestDb()
     
     // Setup a local "Plex API" server
     server = http.createServer((req, res) => {
-      let body = ''
-      req.on('data', chunk => { body += chunk })
+      req.resume()
       req.on('end', () => {
-        if (body) {
-          try { lastRequestBody = JSON.parse(body) } catch { lastRequestBody = body }
-        }
-        
         res.setHeader('Content-Type', 'application/json')
         if (req.url?.includes('/pins') && req.method === 'POST') {
           res.end(JSON.stringify({ id: 12345, code: 'TEST-CODE' }))

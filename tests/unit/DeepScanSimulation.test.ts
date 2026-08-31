@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { setupTestDb, cleanupTestDb, LocalIntegratedApiServer } from '@tests/TestUtils'
 import { ProviderType } from '@main/types/database'
@@ -67,7 +67,7 @@ describe('Deep Scan Simulation (Load Testing)', () => {
     })
 
     // Handler for detailed metadata calls
-    server.setHandler('/library/metadata', (req, body) => {
+    server.setHandler('/library/metadata', (req, _body) => {
         const path = req.url || ''
         const ratingKey = path.split('/').pop()
         const movie = movies.find(m => m.ratingKey === ratingKey)

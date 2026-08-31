@@ -1,14 +1,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase } from '@main/database/BetterSQLiteService'
-import { runMigrations } from '@main/database/DatabaseMigration'
+import { BetterSQLiteService, _resetBetterSQLiteServiceForTesting, _getDatabase } from '@main/database/BetterSQLiteService'
+import { _runMigrations } from '@main/database/DatabaseMigration'
 import { WishlistCompletionService } from '@main/services/WishlistCompletionService'
 import { DeduplicationService } from '@main/services/DeduplicationService'
-import { MediaRepository } from '@main/database/repositories/MediaRepository'
-import { WishlistRepository } from '@main/database/repositories/WishlistRepository'
-import { DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
-import * as fs from 'fs'
-import * as path from 'path'
+import { _MediaRepository } from '@main/database/repositories/MediaRepository'
+import { _WishlistRepository } from '@main/database/repositories/WishlistRepository'
+import { _DuplicateRepository } from '@main/database/repositories/DuplicateRepository'
+import * as _fs from 'fs'
+import * as _path from 'path'
 
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 

@@ -13,7 +13,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import React from 'react'
 
 describe('Source Flows Deep Dive (Integrated Stack)', () => {
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     if (typeof window === 'undefined') {
@@ -35,7 +35,7 @@ describe('Source Flows Deep Dive (Integrated Stack)', () => {
       })),
     });
 
-    db = await setupTestDb()
+    _db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     
     Object.assign(window, { electronAPI: bridge.api })

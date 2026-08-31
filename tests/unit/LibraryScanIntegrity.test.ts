@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { registerDatabaseHandlers } from '@main/ipc/database'
-import { ipcMain } from 'electron'
-import { getMovieCollectionService } from '@main/services/MovieCollectionService'
+import { _registerDatabaseHandlers } from '@main/ipc/database'
+import { _ipcMain } from 'electron'
+import { _getMovieCollectionService } from '@main/services/MovieCollectionService'
 import { SourceManager } from '@main/services/SourceManager'
-import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
+import { _getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
-import { StatsRepository } from '@main/database/repositories/StatsRepository'
+import { _StatsRepository } from '@main/database/repositories/StatsRepository'
 
 type AnalyzerHooks = { runFFprobe: (...args: never[]) => Promise<unknown> }
 

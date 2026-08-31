@@ -36,7 +36,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     await mb.initialize()
 
     // Setup mock handlers on the local server
-    server.setHandler('/tmdb/search/movie', (req, body) => {
+    server.setHandler('/tmdb/search/movie', (req, _body) => {
       const url = new URL(req.url!, 'http://localhost')
       const query = url.searchParams.get('query') || ''
       const id = query.includes('Stay') ? 111 : query.includes('Delete') ? 222 : 123
@@ -48,7 +48,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
       }
     })
 
-    server.setHandler('/tmdb/search/tv', (req, body) => {
+    server.setHandler('/tmdb/search/tv', (req, _body) => {
       const url = new URL(req.url!, 'http://localhost')
       const query = url.searchParams.get('query') || ''
       return {
@@ -72,7 +72,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
       title: 'Test Movie'
     })
 
-    server.setHandler('/musicbrainz/artist', (req, body) => {
+    server.setHandler('/musicbrainz/artist', (_req, _body) => {
       return {
         status: 200,
         body: {
@@ -83,7 +83,7 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     
     // Setup real analyzer but mock ffprobe call
     const analyzer = getMediaFileAnalyzer()
-    vi.spyOn(analyzer as unknown as { runFFprobe: (...args: never[]) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (filePath: string) => {
+    vi.spyOn(analyzer as unknown as { runFFprobe: (...args: never[]) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (_filePath: string) => {
       return {
         format: { format_name: 'matroska', size: '1000', duration: '7200' },
         streams: [

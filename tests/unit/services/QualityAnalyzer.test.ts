@@ -6,10 +6,10 @@ import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 
 describe('QualityAnalyzer TRaSH Advisory', () => {
   let analyzer: QualityAnalyzer
-  let db: Awaited<ReturnType<typeof setupTestDb>>
+  let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
-    db = await setupTestDb()
+    _db = await setupTestDb()
     analyzer = new QualityAnalyzer()
   })
 

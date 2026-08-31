@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { JellyfinProvider } from '@main/providers/jellyfin-emby/JellyfinProvider'
 import { KodiProvider } from '@main/providers/kodi/KodiProvider'

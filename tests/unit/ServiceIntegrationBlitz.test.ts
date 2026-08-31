@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { getSourceManager, resetSourceManagerForTesting } from '@main/services/SourceManager'
 import { getLiveMonitoringService, resetLiveMonitoringServiceForTesting } from '@main/services/LiveMonitoringService'
 import { GeminiAnalysisService } from '@main/services/GeminiAnalysisService'
@@ -79,7 +79,7 @@ describe('Service Integration Blitz (No Mocks)', () => {
         }
       })
 
-      server.setHandler('/library/metadata', (req) => {
+      server.setHandler('/library/metadata', (_req) => {
           return {
               status: 200,
               body: { MediaContainer: { Metadata: [movieMetadata] } }
@@ -180,7 +180,7 @@ describe('Service Integration Blitz (No Mocks)', () => {
         const id1 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f1', title: 'Fight Club', type: 'movie', file_path: 'f1.mkv', tmdb_id: '550'
         })
-        const id2 = await db.media.upsertItem({
+        const _id2 = await db.media.upsertItem({
             source_id: 's1', plex_id: 'm1-f2', title: 'Fight Club', type: 'movie', file_path: 'f2.mkv', tmdb_id: '550'
         })
 
@@ -213,7 +213,7 @@ describe('Service Integration Blitz (No Mocks)', () => {
             source_id: 's1', plex_id: 'm1', title: 'AI Test Movie', type: 'movie', file_path: 'ai.mkv'
         })
 
-        server.setHandler('/v1beta/models', (req) => {
+        server.setHandler('/v1beta/models', (_req) => {
             return {
                 status: 200,
                 body: {

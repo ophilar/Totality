@@ -3,7 +3,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest'
-import { parseMissingMovies, parseMissingEpisodes, groupEpisodesBySeason } from '@/components/dashboard/dashboardUtils'
+import { parseMissingMovies, _parseMissingEpisodes, groupEpisodesBySeason } from '@/components/dashboard/dashboardUtils'
 import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getTrackQualityTier } from '@/components/library/mediaUtils'
 import type { MovieCollectionData, SeriesCompletenessData } from '@/components/library/types'
 

@@ -221,7 +221,7 @@ function AppContent() {
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goBack])
+  }, [goBack, setLibraryTab])
 
   const handleForward = useCallback(() => {
     const restored = goForward()
@@ -233,7 +233,7 @@ function AppContent() {
     }
     window.dispatchEvent(new CustomEvent('navigate-restore', { detail: restored }))
     isRestoringRef.current = false
-  }, [goForward])
+  }, [goForward, setLibraryTab])
 
   // Keyboard shortcuts for back/forward
   useEffect(() => {

@@ -326,7 +326,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     }
     const cleanupProgress = window.electronAPI.onSourcesScanProgress(handleProgress as (progress: unknown) => void)
     return () => cleanupProgress()
-  }, [])
+  }, [refreshSources])
 
   // Refresh source data when a scan completes (updates last_scan_at)
   useEffect(() => {
@@ -468,7 +468,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     libraryId: string
   ): Promise<ScanResultResponse> => {
     return window.electronAPI.sourcesScanLibrary(sourceId, libraryId)
-  }, [sources])
+  }, [])
 
   // Scan all enabled sources via Task Queue
   const scanAllSources = useCallback(async () => {

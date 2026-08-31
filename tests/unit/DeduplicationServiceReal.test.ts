@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { DeduplicationService } from '@main/services/DeduplicationService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
@@ -19,8 +19,8 @@ describe('DeduplicationService (Real DB)', () => {
   })
 
   it('should detect duplicates by TMDB ID', async () => {
-    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p1', resolution: '1080p' })
-    const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p2', resolution: '4K' })
+    const _id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p1', resolution: '1080p' })
+    const _id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '100', title: 'Movie A', type: 'movie', file_path: '/p2', resolution: '4K' })
 
     await service.scanForDuplicates('s1')
 
@@ -30,7 +30,7 @@ describe('DeduplicationService (Real DB)', () => {
   })
 
   it('should resolve duplicates by merging versions', async () => {
-    const id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p1', resolution: '1080p' })
+    const _id1 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p1', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p1', resolution: '1080p' })
     const id2 = await db.media.upsertItem({ source_id: 's1', plex_id: 'p2', tmdb_id: '200', title: 'Movie B', type: 'movie', file_path: '/p2', resolution: '4K' })
 
     await service.scanForDuplicates('s1')

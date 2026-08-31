@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Worker } from 'worker_threads'
+import { _Worker } from 'worker_threads'
 import * as os from 'os'
 
 // Mock worker_threads
@@ -53,7 +53,7 @@ describe('FFprobeWorkerPool', () => {
 
     it('should set max workers based on CPU count', () => {
       const stats = pool.getStats()
-      const expected = Math.max(1, os.cpus().length - 1)
+      const _expected = Math.max(1, os.cpus().length - 1)
       // Note: Config might limit it, but we check logic
       expect(stats.maxWorkers).toBeGreaterThanOrEqual(1)
     })
