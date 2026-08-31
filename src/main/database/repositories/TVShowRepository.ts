@@ -100,13 +100,19 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     const aggregatedScoresMap = new Map<string, {
       totalSize: number
       storageDebtBytes: number | null
-      measuredDebtCount: number
       weightedEfficiency: number | null
       scoredCount: number
       ownedCount: number
     }>()
 
     if (missingScoreTitles.length > 0) {
+      const aggregateConditions: SQL[] = [
+        eq(schema.mediaItems.type, 'episode'),
+        sql`${schema.mediaItems.seriesTitle} IN (${sql.join(missingScoreTitles.map(t => sql`${t}`), sql`, `)})`
+      ]
+      if (filters?.sourceId) aggregateConditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
+      if (filters?.libraryId) aggregateConditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
+
       const aggRows = await this.drizzle.select({
         seriesTitle: schema.mediaItems.seriesTitle,
         sourceId: schema.mediaItems.sourceId,
@@ -120,33 +126,24 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       })
       .from(schema.mediaItems)
       .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
-      .where(and(
-        eq(schema.mediaItems.type, 'episode'),
-        sql`${schema.mediaItems.seriesTitle} IN (${sql.join(missingScoreTitles.map(t => sql`${t}`), sql`, `)})`
-      ))
+      .where(and(...aggregateConditions))
       .groupBy(schema.mediaItems.seriesTitle, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
       .all()
 
       for (const agg of aggRows) {
-        if (agg.seriesTitle) {
-          const ownedCount = Number(agg.ownedCount) || 0
-          const measuredDebtCount = Number(agg.measuredDebtCount) || 0
-          const key = `${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
-          const data = {
-            totalSize: Number(agg.totalSize) || 0,
-            storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
-              ? Number(agg.storageDebtBytes)
-              : null,
-            measuredDebtCount,
-            weightedEfficiency: agg.weightedEfficiency != null ? Math.round(Number(agg.weightedEfficiency)) : null,
-            scoredCount: Number(agg.scoredCount) || 0,
-            ownedCount
-          }
-          aggregatedScoresMap.set(key, data)
-          if (!aggregatedScoresMap.has(agg.seriesTitle)) {
-            aggregatedScoresMap.set(agg.seriesTitle, data)
-          }
-        }
+        if (!agg.seriesTitle) continue
+        const ownedCount = Number(agg.ownedCount) || 0
+        const measuredDebtCount = Number(agg.measuredDebtCount) || 0
+        const key = `${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
+        aggregatedScoresMap.set(key, {
+          totalSize: Number(agg.totalSize) || 0,
+          storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
+            ? Number(agg.storageDebtBytes)
+            : null,
+          weightedEfficiency: agg.weightedEfficiency != null ? Math.round(Number(agg.weightedEfficiency)) : null,
+          scoredCount: Number(agg.scoredCount) || 0,
+          ownedCount
+        })
       }
     }
 
@@ -154,12 +151,12 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
       const key = `${row.series_title}:${row.source_id}:${row.library_id}`
-      const aggregate = aggregatedScoresMap.get(key) || (row.series_title ? aggregatedScoresMap.get(row.series_title) : undefined)
+      const aggregate = aggregatedScoresMap.get(key)
 
       const totalSize = row.total_size != null ? row.total_size : (aggregate?.totalSize ?? 0)
       const totalRecoverable = row.evidence_status === 'measured' && row.storage_debt_bytes != null
         ? row.storage_debt_bytes
-        : (aggregate?.storageDebtBytes ?? null)
+        : (aggregate?.storageDebtBytes ?? undefined)
       const weightedEfficiency = row.efficiency_score != null ? row.efficiency_score : (aggregate?.weightedEfficiency ?? null)
       const ownedCount = row.owned_episodes || aggregate?.ownedCount || 0
       const totalCount = row.total_episodes || ownedCount
@@ -180,7 +177,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         weighted_efficiency: weightedEfficiency,
         scored_episode_count: scoredCount,
         unscored_episode_count: unscoredCount,
-        recommended_action: totalRecoverable === null
+        recommended_action: totalRecoverable === undefined
           ? undefined
           : totalRecoverable > 0
             ? 'review-required'
@@ -589,10 +586,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             sql: `SELECT
                     COUNT(DISTINCT season_number) as owned_seasons,
                     COUNT(*) as owned_episodes,
-                    SUM(file_size) as total_size,
-                    SUM(CASE WHEN evidence_status = 'measured' THEN storage_debt_bytes ELSE NULL END) as storage_debt_bytes,
-                    COUNT(CASE WHEN evidence_status = 'measured' AND storage_debt_bytes IS NOT NULL THEN 1 END) as measured_debt_count,
-                    AVG(efficiency_score) as avg_efficiency
+                    SUM(file_size) as total_size
                   FROM media_items
                   WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
                     AND series_identity_key = ?`,
@@ -602,9 +596,6 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             owned_seasons: number
             owned_episodes: number
             total_size: number | null
-            storage_debt_bytes: number | null
-            measured_debt_count: number
-            avg_efficiency: number | null
           }
 
           const totalEpisodes = Math.max(primary.totalEpisodes || 0, Number(epStats?.owned_episodes || 0))
@@ -612,23 +603,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
           const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
           const completenessPct = totalEpisodes > 0 ? (ownedEpisodes / totalEpisodes) * 100 : primary.completenessPercentage
-          const measuredDebtCount = Number(epStats?.measured_debt_count || 0)
-          const storageDebtBytes = measuredDebtCount === ownedEpisodes && epStats?.storage_debt_bytes !== null
-            ? Math.round(Number(epStats.storage_debt_bytes))
-            : primary.evidenceStatus === 'measured'
-              ? primary.storageDebtBytes
-              : null
-          const efficiencyScore = epStats?.avg_efficiency !== null && epStats?.avg_efficiency !== undefined
-            ? Math.round(Number(epStats.avg_efficiency))
-            : primary.efficiencyScore
 
           await this.db.execute({
             sql: `UPDATE series_completeness
                   SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
                       poster_url = ?, backdrop_url = ?, status = ?, user_fixed_match = ?,
                       total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
-                      completeness_percentage = ?, total_size = ?, storage_debt_bytes = ?,
-                      efficiency_score = ?, updated_at = datetime('now')
+                      completeness_percentage = ?, total_size = ?, updated_at = datetime('now')
                   WHERE id = ?`,
             args: [
               cleanTitle,
@@ -645,8 +626,6 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
               ownedEpisodes,
               completenessPct,
               epStats?.total_size !== null && epStats?.total_size !== undefined ? Math.round(Number(epStats.total_size)) : primary.totalSize,
-              storageDebtBytes,
-              efficiencyScore,
               primary.id
             ]
           })
