@@ -80,8 +80,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
     const rows = await query.all()
     const summaries: TVShowSummary[] = []
-    
-    // Batch fetch conflicts in single query if there are rows with identities
+
     const seriesWithIds = rows
       .filter((r) => r.id && (r.tmdb_id || r.tvdb_id))
       .map((row) => ({
@@ -93,13 +92,19 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       }))
     const conflictMap = await this.identities.getBatchConflictingEntityIds('series', seriesWithIds)
 
-    // Batch query episode quality aggregation for any series missing cached efficiency or storage debt
     const missingScoreTitles = rows
-      .filter((r) => r.efficiency_score === null || r.efficiency_score === 0 || r.storage_debt_bytes === null || r.total_size === null)
+      .filter((r) => r.efficiency_score === null || r.storage_debt_bytes === null || r.total_size === null)
       .map((r) => r.series_title)
       .filter(Boolean)
 
-    const aggregatedScoresMap = new Map<string, { totalSize: number; storageDebtBytes: number; weightedEfficiency: number | null; scoredCount: number; ownedCount: number }>()
+    const aggregatedScoresMap = new Map<string, {
+      totalSize: number
+      storageDebtBytes: number | null
+      measuredDebtCount: number
+      weightedEfficiency: number | null
+      scoredCount: number
+      ownedCount: number
+    }>()
 
     if (missingScoreTitles.length > 0) {
       const aggRows = await this.drizzle.select({
@@ -107,7 +112,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         sourceId: schema.mediaItems.sourceId,
         libraryId: schema.mediaItems.libraryId,
         totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`,
-        storageDebtBytes: sql<number>`SUM(COALESCE(${schema.qualityScores.storageDebtBytes}, 0))`,
+        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
+        measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
         scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
         ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`,
         weightedEfficiency: sql<number>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`
@@ -123,13 +129,18 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
       for (const agg of aggRows) {
         if (agg.seriesTitle) {
+          const ownedCount = Number(agg.ownedCount) || 0
+          const measuredDebtCount = Number(agg.measuredDebtCount) || 0
           const key = `${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
           const data = {
             totalSize: Number(agg.totalSize) || 0,
-            storageDebtBytes: Number(agg.storageDebtBytes) || 0,
+            storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
+              ? Number(agg.storageDebtBytes)
+              : null,
+            measuredDebtCount,
             weightedEfficiency: agg.weightedEfficiency != null ? Math.round(Number(agg.weightedEfficiency)) : null,
             scoredCount: Number(agg.scoredCount) || 0,
-            ownedCount: Number(agg.ownedCount) || 0
+            ownedCount
           }
           aggregatedScoresMap.set(key, data)
           if (!aggregatedScoresMap.has(agg.seriesTitle)) {
@@ -143,14 +154,16 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
       const key = `${row.series_title}:${row.source_id}:${row.library_id}`
-      const aggFallback = aggregatedScoresMap.get(key) || (row.series_title ? aggregatedScoresMap.get(row.series_title) : undefined)
+      const aggregate = aggregatedScoresMap.get(key) || (row.series_title ? aggregatedScoresMap.get(row.series_title) : undefined)
 
-      const totalSize = (row.total_size != null && row.total_size > 0) ? row.total_size : (aggFallback?.totalSize || 0)
-      const totalRecoverable = (row.storage_debt_bytes != null && row.storage_debt_bytes > 0) ? row.storage_debt_bytes : (aggFallback?.storageDebtBytes || 0)
-      const weightedEfficiency = (row.efficiency_score != null && row.efficiency_score > 0) ? row.efficiency_score : (aggFallback?.weightedEfficiency ?? null)
-      const ownedCount = row.owned_episodes || aggFallback?.ownedCount || 0
+      const totalSize = row.total_size != null ? row.total_size : (aggregate?.totalSize ?? 0)
+      const totalRecoverable = row.evidence_status === 'measured' && row.storage_debt_bytes != null
+        ? row.storage_debt_bytes
+        : (aggregate?.storageDebtBytes ?? null)
+      const weightedEfficiency = row.efficiency_score != null ? row.efficiency_score : (aggregate?.weightedEfficiency ?? null)
+      const ownedCount = row.owned_episodes || aggregate?.ownedCount || 0
       const totalCount = row.total_episodes || ownedCount
-      const scoredCount = (row.efficiency_score != null && row.efficiency_score > 0) ? ownedCount : (aggFallback?.scoredCount ?? ownedCount)
+      const scoredCount = row.efficiency_score != null ? ownedCount : (aggregate?.scoredCount ?? 0)
       const unscoredCount = Math.max(0, totalCount - scoredCount)
 
       summaries.push({
@@ -167,7 +180,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         weighted_efficiency: weightedEfficiency,
         scored_episode_count: scoredCount,
         unscored_episode_count: unscoredCount,
-        recommended_action: totalRecoverable > 0 ? 'review-required' : 'no-optimization'
+        recommended_action: totalRecoverable === null
+          ? undefined
+          : totalRecoverable > 0
+            ? 'review-required'
+            : 'no-optimization'
       })
     }
     if (requiresCalculatedSort) {
@@ -359,7 +376,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(schema.seriesCompleteness.seriesTitle))
       .all()
-    
+
     return rows.map(r => this.mapDrizzleToCompleteness(r))
   }
 
@@ -372,7 +389,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       .where(and(...conditions))
       .orderBy(asc(schema.seriesCompleteness.completenessPercentage))
       .all()
-    
+
     return rows.map(r => this.mapDrizzleToCompleteness(r))
   }
 
@@ -437,214 +454,219 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     const logging = getLoggingService()
     let mergedCount = 0
 
-    try {
-      const conditions = []
-      if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
-      if (libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, libraryId))
+    const conditions = []
+    if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
+    if (libraryId) conditions.push(eq(schema.seriesCompleteness.libraryId, libraryId))
 
-      const rows = await this.drizzle.select()
-        .from(schema.seriesCompleteness)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .all()
+    const rows = await this.drizzle.select()
+      .from(schema.seriesCompleteness)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .all()
 
-      if (!rows || rows.length <= 1) return 0
+    if (!rows || rows.length <= 1) return 0
 
-      // Group by (source_id, library_id)
-      const scopedGroups = new Map<string, typeof rows>()
-      for (const row of rows) {
-        const scope = `${row.sourceId || ''}:::${row.libraryId || ''}`
-        if (!scopedGroups.has(scope)) scopedGroups.set(scope, [])
-        scopedGroups.get(scope)!.push(row)
-      }
+    const scopedGroups = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const scope = `${row.sourceId || ''}:::${row.libraryId || ''}`
+      if (!scopedGroups.has(scope)) scopedGroups.set(scope, [])
+      scopedGroups.get(scope)!.push(row)
+    }
 
-      for (const [scope, scopeRows] of scopedGroups.entries()) {
-        const [scopeSourceId, scopeLibraryId] = scope.split(':::')
-        const clusters: Array<typeof rows> = []
-        const visited = new Set<number>()
+    for (const [scope, scopeRows] of scopedGroups.entries()) {
+      const [scopeSourceId, scopeLibraryId] = scope.split(':::')
+      const clusters: Array<typeof rows> = []
+      const visited = new Set<number>()
 
-        for (let i = 0; i < scopeRows.length; i++) {
-          const a = scopeRows[i]
-          if (visited.has(a.id)) continue
+      for (let i = 0; i < scopeRows.length; i++) {
+        const a = scopeRows[i]
+        if (visited.has(a.id)) continue
 
-          const cluster: typeof rows = [a]
-          visited.add(a.id)
+        const cluster: typeof rows = [a]
+        visited.add(a.id)
 
-          const normA = parser.normalizeSeriesTitle(a.seriesTitle)
-          const cleanA = parser.cleanSeriesTitleAndYear(a.seriesTitle)
+        const normA = parser.normalizeSeriesTitle(a.seriesTitle)
+        const cleanA = parser.cleanSeriesTitleAndYear(a.seriesTitle)
 
-          for (let j = i + 1; j < scopeRows.length; j++) {
-            const b = scopeRows[j]
-            if (visited.has(b.id)) continue
+        for (let j = i + 1; j < scopeRows.length; j++) {
+          const b = scopeRows[j]
+          if (visited.has(b.id)) continue
 
-            const normB = parser.normalizeSeriesTitle(b.seriesTitle)
-            const cleanB = parser.cleanSeriesTitleAndYear(b.seriesTitle)
+          const normB = parser.normalizeSeriesTitle(b.seriesTitle)
+          const cleanB = parser.cleanSeriesTitleAndYear(b.seriesTitle)
 
-            const matchTvdb = a.tvdbId && b.tvdbId && a.tvdbId === b.tvdbId
-            const matchTmdb = a.tmdbId && b.tmdbId && a.tmdbId === b.tmdbId
-            const matchIdentityKey = a.seriesIdentityKey && b.seriesIdentityKey && a.seriesIdentityKey === b.seriesIdentityKey
-            const matchNormTitle = normA && normB && normA === normB
-            const matchCleanTitleAndYear = cleanA.title && cleanB.title && cleanA.title.toLowerCase() === cleanB.title.toLowerCase() && (cleanA.year === cleanB.year || !cleanA.year || !cleanB.year)
+          const matchTvdb = a.tvdbId && b.tvdbId && a.tvdbId === b.tvdbId
+          const matchTmdb = a.tmdbId && b.tmdbId && a.tmdbId === b.tmdbId
+          const matchIdentityKey = a.seriesIdentityKey && b.seriesIdentityKey && a.seriesIdentityKey === b.seriesIdentityKey
+          const matchNormTitle = normA && normB && normA === normB
+          const matchCleanTitleAndYear = cleanA.title && cleanB.title && cleanA.title.toLowerCase() === cleanB.title.toLowerCase() && (cleanA.year === cleanB.year || !cleanA.year || !cleanB.year)
 
-            if (matchTvdb || matchTmdb || matchIdentityKey || (matchNormTitle && matchCleanTitleAndYear)) {
-              cluster.push(b)
-              visited.add(b.id)
-            }
-          }
-
-          if (cluster.length > 1) {
-            clusters.push(cluster)
+          if (matchTvdb || matchTmdb || matchIdentityKey || (matchNormTitle && matchCleanTitleAndYear)) {
+            cluster.push(b)
+            visited.add(b.id)
           }
         }
 
-        for (const cluster of clusters) {
-          cluster.sort((x, y) => {
-            const xFixed = (x.userFixedMatch || 0) === 1 ? 1 : 0
-            const yFixed = (y.userFixedMatch || 0) === 1 ? 1 : 0
-            if (xFixed !== yFixed) return yFixed - xFixed
+        if (cluster.length > 1) clusters.push(cluster)
+      }
 
-            const xHasExt = (x.tmdbId || x.tvdbId) ? 1 : 0
-            const yHasExt = (y.tmdbId || y.tvdbId) ? 1 : 0
-            if (xHasExt !== yHasExt) return yHasExt - xHasExt
+      for (const cluster of clusters) {
+        cluster.sort((x, y) => {
+          const xFixed = (x.userFixedMatch || 0) === 1 ? 1 : 0
+          const yFixed = (y.userFixedMatch || 0) === 1 ? 1 : 0
+          if (xFixed !== yFixed) return yFixed - xFixed
 
-            const xEpisodes = x.ownedEpisodes || 0
-            const yEpisodes = y.ownedEpisodes || 0
-            if (xEpisodes !== yEpisodes) return yEpisodes - xEpisodes
+          const xHasExt = (x.tmdbId || x.tvdbId) ? 1 : 0
+          const yHasExt = (y.tmdbId || y.tvdbId) ? 1 : 0
+          if (xHasExt !== yHasExt) return yHasExt - xHasExt
 
-            return x.id - y.id
-          })
+          const xEpisodes = x.ownedEpisodes || 0
+          const yEpisodes = y.ownedEpisodes || 0
+          if (xEpisodes !== yEpisodes) return yEpisodes - xEpisodes
 
-          const primary = cluster[0]
-          const secondaryRows = cluster.slice(1)
-          const secondaryIds = secondaryRows.map(r => r.id)
+          return x.id - y.id
+        })
 
-          const mergedTmdbId = primary.tmdbId || cluster.find(r => r.tmdbId)?.tmdbId || null
-          const mergedTvdbId = primary.tvdbId || cluster.find(r => r.tvdbId)?.tvdbId || null
-          const mergedPosterUrl = primary.posterUrl ?? cluster.find(r => r.posterUrl)?.posterUrl ?? null
-          const mergedBackdropUrl = primary.backdropUrl ?? cluster.find(r => r.backdropUrl)?.backdropUrl ?? null
-          const mergedStatus = primary.status || cluster.find(r => r.status)?.status || 'Continuing'
-          const mergedUserFixed = cluster.some(r => r.userFixedMatch === 1) ? 1 : 0
+        const primary = cluster[0]
+        const secondaryRows = cluster.slice(1)
+        const secondaryIds = secondaryRows.map(r => r.id)
 
-          const canonicalKey = deriveSeriesIdentityKey({
-            sourceId: scopeSourceId,
-            libraryId: scopeLibraryId,
-            folderRelativePath: primary.seriesTitle,
-            tmdbId: mergedTmdbId,
-            tvdbId: mergedTvdbId,
-          })
+        const mergedTmdbId = primary.tmdbId || cluster.find(r => r.tmdbId)?.tmdbId || null
+        const mergedTvdbId = primary.tvdbId || cluster.find(r => r.tvdbId)?.tvdbId || null
+        const mergedPosterUrl = primary.posterUrl ?? cluster.find(r => r.posterUrl)?.posterUrl ?? null
+        const mergedBackdropUrl = primary.backdropUrl ?? cluster.find(r => r.backdropUrl)?.backdropUrl ?? null
+        const mergedStatus = primary.status ?? cluster.find(r => r.status)?.status ?? null
+        const mergedUserFixed = cluster.some(r => r.userFixedMatch === 1) ? 1 : 0
 
-          const cleanTitle = parser.cleanSeriesTitleAndYear(primary.seriesTitle).title || primary.seriesTitle
+        const canonicalKey = deriveSeriesIdentityKey({
+          sourceId: scopeSourceId,
+          libraryId: scopeLibraryId,
+          folderRelativePath: primary.seriesTitle,
+          tmdbId: mergedTmdbId,
+          tvdbId: mergedTvdbId,
+        })
 
-          await this.db.execute('BEGIN IMMEDIATE')
-          try {
-            for (const sec of secondaryRows) {
-              await this.db.execute({
-                sql: `UPDATE media_items
-                      SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
-                      WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
-                        AND (series_identity_key = ? OR series_title = ?)`,
-                args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, sec.seriesIdentityKey || '', sec.seriesTitle]
-              })
-            }
+        const cleanTitle = parser.cleanSeriesTitleAndYear(primary.seriesTitle).title || primary.seriesTitle
+
+        await this.db.execute('BEGIN IMMEDIATE')
+        try {
+          for (const sec of secondaryRows) {
             await this.db.execute({
               sql: `UPDATE media_items
                     SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
                     WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
                       AND (series_identity_key = ? OR series_title = ?)`,
-              args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, primary.seriesIdentityKey || '', primary.seriesTitle]
+              args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, sec.seriesIdentityKey || '', sec.seriesTitle]
             })
-
-            for (const secId of secondaryIds) {
-              await this.db.execute({
-                sql: `UPDATE OR IGNORE media_identities SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
-                args: [primary.id, secId]
-              })
-              await this.db.execute({
-                sql: `DELETE FROM media_identities WHERE entity_type = 'series' AND entity_id = ?`,
-                args: [secId]
-              })
-              await this.db.execute({
-                sql: `UPDATE OR IGNORE media_aliases SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
-                args: [primary.id, secId]
-              })
-              await this.db.execute({
-                sql: `DELETE FROM media_aliases WHERE entity_type = 'series' AND entity_id = ?`,
-                args: [secId]
-              })
-            }
-
-            const epStatsRes = await this.db.execute({
-              sql: `SELECT
-                      COUNT(DISTINCT season_number) as owned_seasons,
-                      COUNT(*) as owned_episodes,
-                      TOTAL(file_size) as total_size,
-                      TOTAL(storage_debt_bytes) as storage_debt_bytes,
-                      AVG(CASE WHEN efficiency_score > 0 THEN efficiency_score ELSE NULL END) as avg_efficiency
-                    FROM media_items
-                    WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
-                      AND series_identity_key = ?`,
-              args: [scopeSourceId, scopeLibraryId, canonicalKey]
-            })
-            const epStats = epStatsRes.rows[0] as unknown as {
-              owned_seasons: number
-              owned_episodes: number
-              total_size: number
-              storage_debt_bytes: number
-              avg_efficiency: number | null
-            }
-
-            const totalEpisodes = Math.max(primary.totalEpisodes || 0, Number(epStats?.owned_episodes || 0))
-            const totalSeasons = Math.max(primary.totalSeasons || 0, Number(epStats?.owned_seasons || 0))
-            const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
-            const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
-            const completenessPct = totalEpisodes > 0 ? (ownedEpisodes / totalEpisodes) * 100 : (primary.completenessPercentage || 100)
-
-            await this.db.execute({
-              sql: `UPDATE series_completeness
-                    SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
-                        poster_url = ?, backdrop_url = ?, status = ?, user_fixed_match = ?,
-                        total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
-                        completeness_percentage = ?, total_size = ?, storage_debt_bytes = ?,
-                        efficiency_score = ?, updated_at = datetime('now')
-                    WHERE id = ?`,
-              args: [
-                cleanTitle,
-                canonicalKey,
-                mergedTmdbId,
-                mergedTvdbId,
-                mergedPosterUrl,
-                mergedBackdropUrl,
-                mergedStatus,
-                mergedUserFixed,
-                totalSeasons,
-                totalEpisodes,
-                ownedSeasons,
-                ownedEpisodes,
-                completenessPct,
-                Math.round(Number(epStats?.total_size || primary.totalSize || 0)),
-                Math.round(Number(epStats?.storage_debt_bytes || primary.storageDebtBytes || 0)),
-                Math.round(Number(epStats?.avg_efficiency || primary.efficiencyScore || 0)),
-                primary.id
-              ]
-            })
-
-            for (const secId of secondaryIds) {
-              await this.db.execute({
-                sql: `DELETE FROM series_completeness WHERE id = ?`,
-                args: [secId]
-              })
-            }
-
-            await this.db.execute('COMMIT')
-            mergedCount++
-            logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records into canonical ID ${primary.id} ("${cleanTitle}")`)
-          } catch (err) {
-            await this.db.execute('ROLLBACK')
-            logging.error('[TVShowRepository]', `Failed to merge duplicate cluster for "${primary.seriesTitle}": ${getErrorMessage(err)}`)
           }
+          await this.db.execute({
+            sql: `UPDATE media_items
+                  SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
+                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                    AND (series_identity_key = ? OR series_title = ?)`,
+            args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, primary.seriesIdentityKey || '', primary.seriesTitle]
+          })
+
+          for (const secId of secondaryIds) {
+            await this.db.execute({
+              sql: `UPDATE OR IGNORE media_identities SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await this.db.execute({
+              sql: `DELETE FROM media_identities WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+            await this.db.execute({
+              sql: `UPDATE OR IGNORE media_aliases SET entity_id = ? WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [primary.id, secId]
+            })
+            await this.db.execute({
+              sql: `DELETE FROM media_aliases WHERE entity_type = 'series' AND entity_id = ?`,
+              args: [secId]
+            })
+          }
+
+          const epStatsRes = await this.db.execute({
+            sql: `SELECT
+                    COUNT(DISTINCT season_number) as owned_seasons,
+                    COUNT(*) as owned_episodes,
+                    SUM(file_size) as total_size,
+                    SUM(CASE WHEN evidence_status = 'measured' THEN storage_debt_bytes ELSE NULL END) as storage_debt_bytes,
+                    COUNT(CASE WHEN evidence_status = 'measured' AND storage_debt_bytes IS NOT NULL THEN 1 END) as measured_debt_count,
+                    AVG(efficiency_score) as avg_efficiency
+                  FROM media_items
+                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                    AND series_identity_key = ?`,
+            args: [scopeSourceId, scopeLibraryId, canonicalKey]
+          })
+          const epStats = epStatsRes.rows[0] as unknown as {
+            owned_seasons: number
+            owned_episodes: number
+            total_size: number | null
+            storage_debt_bytes: number | null
+            measured_debt_count: number
+            avg_efficiency: number | null
+          }
+
+          const totalEpisodes = Math.max(primary.totalEpisodes || 0, Number(epStats?.owned_episodes || 0))
+          const totalSeasons = Math.max(primary.totalSeasons || 0, Number(epStats?.owned_seasons || 0))
+          const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
+          const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
+          const completenessPct = totalEpisodes > 0 ? (ownedEpisodes / totalEpisodes) * 100 : primary.completenessPercentage
+          const measuredDebtCount = Number(epStats?.measured_debt_count || 0)
+          const storageDebtBytes = measuredDebtCount === ownedEpisodes && epStats?.storage_debt_bytes !== null
+            ? Math.round(Number(epStats.storage_debt_bytes))
+            : primary.evidenceStatus === 'measured'
+              ? primary.storageDebtBytes
+              : null
+          const efficiencyScore = epStats?.avg_efficiency !== null && epStats?.avg_efficiency !== undefined
+            ? Math.round(Number(epStats.avg_efficiency))
+            : primary.efficiencyScore
+
+          await this.db.execute({
+            sql: `UPDATE series_completeness
+                  SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
+                      poster_url = ?, backdrop_url = ?, status = ?, user_fixed_match = ?,
+                      total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
+                      completeness_percentage = ?, total_size = ?, storage_debt_bytes = ?,
+                      efficiency_score = ?, updated_at = datetime('now')
+                  WHERE id = ?`,
+            args: [
+              cleanTitle,
+              canonicalKey,
+              mergedTmdbId,
+              mergedTvdbId,
+              mergedPosterUrl,
+              mergedBackdropUrl,
+              mergedStatus,
+              mergedUserFixed,
+              totalSeasons,
+              totalEpisodes,
+              ownedSeasons,
+              ownedEpisodes,
+              completenessPct,
+              epStats?.total_size !== null && epStats?.total_size !== undefined ? Math.round(Number(epStats.total_size)) : primary.totalSize,
+              storageDebtBytes,
+              efficiencyScore,
+              primary.id
+            ]
+          })
+
+          for (const secId of secondaryIds) {
+            await this.db.execute({
+              sql: `DELETE FROM series_completeness WHERE id = ?`,
+              args: [secId]
+            })
+          }
+
+          await this.db.execute('COMMIT')
+          mergedCount++
+          logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records into canonical ID ${primary.id} ("${cleanTitle}")`)
+        } catch (err) {
+          await this.db.execute('ROLLBACK')
+          logging.error('[TVShowRepository]', `Failed to merge duplicate cluster for "${primary.seriesTitle}": ${getErrorMessage(err)}`)
+          throw err
         }
       }
-    } catch (error) {
-      logging.error('[TVShowRepository]', `Error in mergeDuplicateShows: ${getErrorMessage(error)}`)
     }
 
     return mergedCount
