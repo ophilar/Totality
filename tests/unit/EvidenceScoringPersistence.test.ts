@@ -145,7 +145,7 @@ describe('evidence-based score persistence', () => {
     })
   })
 
-  it('marks legacy zero values as insufficient without changing those values', async () => {
+  it('migrates legacy zero evidence to explicit insufficient nulls', async () => {
     const mediaItemId = await db.media.upsertItem({
       source_id: 'legacy-source',
       source_type: 'local',
@@ -196,7 +196,7 @@ describe('evidence-based score persistence', () => {
     })).resolves.toMatchObject({
       rows: [{
         tier_score: 0,
-        storage_debt_bytes: 0,
+        storage_debt_bytes: null,
         evidence_status: 'insufficient',
         confidence: 'none',
         savings_basis: 'insufficient_data',
@@ -204,7 +204,7 @@ describe('evidence-based score persistence', () => {
     })
 
     await expect(db.db.execute({
-      sql: 'UPDATE quality_scores SET tier_score = NULL, storage_debt_bytes = NULL WHERE media_item_id = ?',
+      sql: 'UPDATE quality_scores SET tier_score = NULL WHERE media_item_id = ?',
       args: [mediaItemId],
     })).resolves.toBeDefined()
 
