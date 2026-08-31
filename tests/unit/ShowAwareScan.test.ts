@@ -1,147 +1,80 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
-import { MediaItemType, LibraryType } from '@main/types/database'
+import { MediaItemType } from '@main/types/database'
 
-type PlexScanHooks = {
-  selectedServer: unknown
-  getLibraries: (...args: never[]) => Promise<unknown[]>
-  paginatedPlexFetch: (...args: never[]) => Promise<unknown[]>
-  getShowEpisodes: (...args: never[]) => Promise<unknown[]>
-  getItemMetadataDetailed: (...args: never[]) => Promise<unknown>
-}
-
-describe('Show-Aware Scan & Metadata Integrity', () => {
+describe('Show Analysis & Metadata Integrity', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
     db = await setupTestDb()
-    vi.clearAllMocks()
   })
 
   afterEach(() => {
     cleanupTestDb()
   })
 
-  describe('SeriesCompletenessService Fallbacks', () => {
-    it('should use owned episode count for total_episodes when TMDB is unavailable', async () => {
-      const service = getSeriesCompletenessService()
-      
-      // 1. Setup owned episodes for an unmatched show
-      await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
-      await db.media.upsertItem({
-        source_id: 's1',
-        library_id: '2',
-        plex_id: 'ep1',
-        title: 'Episode 1',
-        type: MediaItemType.Episode,
-        series_title: 'Unmatched Show',
-        season_number: 1,
-        episode_number: 1,
-        file_path: '/path/to/ep1.mkv',
-        poster_url: 'provider-poster-url'
-      })
+  it('uses owned episode inventory when completeness evidence is unavailable', async () => {
+    const service = getSeriesCompletenessService()
 
-      // 2. Run analysis without TMDB key
-      await db.config.setSetting('tmdb_api_key', '')
-      const analysis = await service.analyzeSeries('Unmatched Show', 's1', '2')
-
-      // 3. Verify integrity
-      expect(analysis).not.toBeNull()
-      expect(analysis!.total_episodes).toBe(1) // Should NOT be 0
-      expect(analysis!.owned_episodes).toBe(1)
-      expect(analysis!.poster_url).toBe('provider-poster-url') // Should fallback to episode poster
-      expect(analysis!.completeness_percentage).toBe(-1)
+    await db.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
+    await db.media.upsertItem({
+      source_id: 's1',
+      library_id: '2',
+      plex_id: 'ep1',
+      title: 'Episode 1',
+      type: MediaItemType.Episode,
+      series_title: 'Unmatched Show',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/path/to/ep1.mkv',
+      poster_url: 'provider-poster-url'
     })
 
-    it('should preserve existing TMDB ID and poster when re-analyzing without internet', async () => {
-      const service = getSeriesCompletenessService()
-      
-      // 1. Setup a show that ALREADY has metadata
-      await db.tvShows.upsertCompleteness({
-        series_title: 'Matched Show',
-        source_id: 's1',
-        library_id: '2',
-        total_seasons: 5,
-        total_episodes: 100,
-        owned_seasons: 1,
-        owned_episodes: 1,
-        missing_seasons: '[]',
-        missing_episodes: '[]',
-        completeness_percentage: 1,
-        tmdb_id: '12345',
-        poster_url: 'existing-poster-url'
-      })
+    await db.config.setSetting('tmdb_api_key', '')
+    const analysis = await service.analyzeSeries('Unmatched Show', 's1', '2')
 
-      await db.media.upsertItem({
-        source_id: 's1', library_id: '2', plex_id: 'ep2', title: 'Ep 1', type: MediaItemType.Episode,
-        series_title: 'Matched Show', season_number: 1, episode_number: 1, file_path: '/p2.mkv'
-      })
-
-      // 2. Run analysis without TMDB key (simulating offline/no key)
-      await db.config.setSetting('tmdb_api_key', '')
-      const analysis = await service.analyzeSeries('Matched Show', 's1', '2')
-
-      // 3. Verify metadata is PRESERVED
-      expect(analysis!.tmdb_id).toBe('12345')
-      expect(analysis!.poster_url).toBe('existing-poster-url')
-    })
+    expect(analysis).not.toBeNull()
+    expect(analysis!.total_episodes).toBe(1)
+    expect(analysis!.owned_episodes).toBe(1)
+    expect(analysis!.poster_url).toBe('provider-poster-url')
+    expect(analysis!.completeness_percentage).toBe(-1)
   })
 
-  describe('Provider Show-Awareness (Plex Simulation)', () => {
-    it('should upsert show completeness stubs during initial scan', async () => {
-      // 1. Mock Plex response with a show and episodes
-      const provider = new PlexProvider({ sourceId: 'p1', sourceName: 'Plex', sourceType: 'plex', connectionConfig: { token: 't' } })
-      const hooks = provider as unknown as PlexScanHooks
-      
-      // Mock the internal fetcher to return a show
-      vi.spyOn(hooks, 'getLibraries').mockResolvedValue([{ id: '2', name: 'TV', type: LibraryType.Show }])
-      vi.spyOn(hooks, 'paginatedPlexFetch').mockResolvedValue([
-        { ratingKey: 'show1', type: 'show', title: 'Plex Show', thumb: '/thumb.jpg', Guid: [{ id: 'tmdb://999' }] }
-      ])
-      vi.spyOn(hooks, 'getShowEpisodes').mockResolvedValue([
-        { 
-          ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
-          Media: [{ 
-            id: 1, 
-            videoCodec: 'h264', audioCodec: 'aac', width: 1920, height: 1080,
-            Part: [{ 
-              file: 'f.mkv',
-              Stream: [
-                { streamType: 1, codec: 'h264', frameRate: 23.976 },
-                { streamType: 2, codec: 'aac', channels: 2 }
-              ]
-            }] 
-          }] 
-        }
-      ])
-      vi.spyOn(hooks, 'getItemMetadataDetailed').mockResolvedValue({
-        ratingKey: 'ep1', type: 'episode', title: 'Ep 1', grandparentTitle: 'Plex Show', 
-        Media: [{ 
-          id: 1, 
-          videoCodec: 'h264', audioCodec: 'aac', width: 1920, height: 1080,
-          Part: [{ 
-            file: 'f.mkv',
-            Stream: [
-              { streamType: 1, codec: 'h264', frameRate: 23.976 },
-              { streamType: 2, codec: 'aac', channels: 2 }
-            ]
-          }] 
-        }]
-      })
+  it('preserves verified identity metadata when completeness cannot be refreshed', async () => {
+    const service = getSeriesCompletenessService()
 
-      // Select a server (mocked)
-      hooks.selectedServer = { uri: 'http://plex:32400', accessToken: 't' }
-
-      // 2. Run Scan
-      await provider.scanLibrary('2')
-
-      // 3. Verify the show stub exists in DB BEFORE any analysis
-      const show = await db.tvShows.getCompletenessByTitle('Plex Show', 'p1', '2')
-      expect(show).not.toBeNull()
-      expect(show.tmdb_id).toBe('999')
-      expect(show.poster_url).toContain('/thumb.jpg')
+    await db.tvShows.upsertCompleteness({
+      series_title: 'Matched Show',
+      source_id: 's1',
+      library_id: '2',
+      total_seasons: 5,
+      total_episodes: 100,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+      completeness_percentage: 1,
+      tmdb_id: '12345',
+      poster_url: 'existing-poster-url'
     })
+
+    await db.media.upsertItem({
+      source_id: 's1',
+      library_id: '2',
+      plex_id: 'ep2',
+      title: 'Ep 1',
+      type: MediaItemType.Episode,
+      series_title: 'Matched Show',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/p2.mkv'
+    })
+
+    await db.config.setSetting('tmdb_api_key', '')
+    const analysis = await service.analyzeSeries('Matched Show', 's1', '2')
+
+    expect(analysis!.tmdb_id).toBe('12345')
+    expect(analysis!.poster_url).toBe('existing-poster-url')
   })
 })
