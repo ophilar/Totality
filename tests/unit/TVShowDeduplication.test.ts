@@ -246,5 +246,26 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       expect(after.length).toBe(1)
       expect(after[0].tmdb_id).toBe('125988')
     })
+
+    it('preserves unknown completeness when deduplicating inventory-only rows', async () => {
+      const client = db.db
+      await client.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
+
+      await client.execute({
+        sql: `INSERT INTO series_completeness (series_title, series_identity_key, source_id, library_id, total_seasons, total_episodes, owned_seasons, owned_episodes, missing_seasons, missing_episodes, completeness_percentage, created_at, updated_at)
+              VALUES ('Unknown Show', 'legacy:unknown-show', 'src1', 'lib1', 1, 2, 1, 2, '[]', '[]', NULL, datetime('now'), datetime('now'))`
+      })
+      await client.execute({
+        sql: `INSERT INTO series_completeness (series_title, series_identity_key, source_id, library_id, total_seasons, total_episodes, owned_seasons, owned_episodes, missing_seasons, missing_episodes, completeness_percentage, created_at, updated_at)
+              VALUES ('Unknown Show (2024)', 'legacy:unknown-show', 'src1', 'lib1', 1, 1, 1, 1, '[]', '[]', NULL, datetime('now'), datetime('now'))`
+      })
+
+      const mergedCount = await db.tvShows.mergeDuplicateShows('src1', 'lib1')
+      expect(mergedCount).toBe(1)
+
+      const after = await db.tvShows.getAllCompleteness('src1', 'lib1')
+      expect(after).toHaveLength(1)
+      expect(after[0].completeness_percentage).toBeNull()
+    })
   })
 })
