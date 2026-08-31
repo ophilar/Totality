@@ -121,7 +121,7 @@ export class SeriesCompletenessService {
     }
 
     if (result.errors.length > 0) {
-      throw new AggregateError(result.errors.map(error => new Error(error)), `Series completeness analysis failed for ${result.errors.length} series`)
+      throw new Error(`Series completeness analysis failed for ${result.errors.length} series: ${result.errors.join('; ')}`)
     }
 
     return { ...result, completed: !this.cancelRequested }
