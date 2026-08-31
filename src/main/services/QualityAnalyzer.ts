@@ -534,8 +534,8 @@ export class QualityAnalyzer {
 
     return {
       media_item_id: mediaItem.id || 0,
-      quality_tier: qualityTier as any,
-      tier_quality: tierQuality as any,
+      quality_tier: qualityTier,
+      tier_quality: tierQuality,
       tier_score: tierScore,
       bitrate_tier_score: bitrateTierScore,
       audio_tier_score: audioTierScore,
@@ -685,7 +685,7 @@ export class QualityAnalyzer {
           for (const version of versions) {
             if (version.id) {
               const vScore = this.analyzeVersion(version)
-              updatePromises.push(db.media.updateVersionQuality(version.id, vScore as any))
+              updatePromises.push(db.media.updateVersionQuality(version.id, vScore))
             }
           }
           if (updatePromises.length > 0) {

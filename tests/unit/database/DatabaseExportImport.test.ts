@@ -18,7 +18,7 @@ describe('Database Export/Import Transactional Integrity', () => {
 
     const exported = await db.exportData()
     expect(exported.settings).toBeDefined()
-    expect(exported.settings?.some((r: any) => r.key === 'test_key_1' && r.value === 'value_1')).toBe(true)
+    expect(exported.settings?.some((r) => r.key === 'test_key_1' && r.value === 'value_1')).toBe(true)
 
     await db.config.setSetting('test_key_1', 'overwritten')
     const result = await db.importData(exported)
@@ -38,7 +38,7 @@ describe('Database Export/Import Transactional Integrity', () => {
       ],
       media_items: [
         // Malformed row that violates NOT NULL constraint (e.g. missing title and required fields)
-        { plex_id: 'invalid-item', file_path: null as any }
+        { plex_id: 'invalid-item', file_path: null }
       ]
     }
 
