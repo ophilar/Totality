@@ -2,7 +2,7 @@ import { Link2Off } from 'lucide-react'
 
 interface CompletenessIndicatorProps {
   type: 'series' | 'collection'
-  percentage: number
+  percentage: number | null | undefined
   owned: number
   total: number
   className?: string
@@ -19,7 +19,7 @@ export function CompletenessIndicator({
   if (percentage === 100) return null
 
   // Handle unmatched/no-data state
-  if (percentage === -1) {
+  if (percentage == null) {
     return (
       <div className={`absolute top-2 right-2 ${className}`}>
         <div
