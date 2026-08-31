@@ -103,7 +103,7 @@ export class SeriesCompletenessService {
             existingCompleteness: completenessByNormalizedTitle.get(normalizedTitle) ?? null,
             returnConstructed: true,
           })
-          if (analysis) {
+          if (analysis?.completeness_percentage != null) {
             result.analyzed++
             if (analysis.completeness_percentage >= 100) result.complete++
             else result.incomplete++
@@ -405,34 +405,15 @@ export class SeriesCompletenessService {
 
   private async createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string, preFetchedExisting?: SeriesCompleteness | null): Promise<SeriesCompleteness> {
     const existing = preFetchedExisting !== undefined ? preFetchedExisting : await this.db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
-    
+
+    if (existing?.completeness_percentage != null) return existing
+
     const fallbackPoster = existing?.poster_url || owned.find(e => e.poster_url)?.poster_url
     const tmdbId = existing?.tmdb_id || owned.find(e => e.series_tmdb_id)?.series_tmdb_id
-
-    let totalSize = 0
-    let totalStorageDebt = 0
-    let scoredSize = 0
-    let weightedEfficiencyNumerator = 0
-    let scoredCount = 0
-    let totalEfficiencyScore = 0
-
-    for (const ep of owned) {
-      const epSize = (ep as { size?: number }).size || ep.file_size || 0
-      totalSize += epSize
-      totalStorageDebt += ep.storage_debt_bytes || 0
-      if (ep.efficiency_score !== undefined && ep.efficiency_score !== null && ep.efficiency_score >= 0) {
-        weightedEfficiencyNumerator += ep.efficiency_score * epSize
-        totalEfficiencyScore += ep.efficiency_score
-        scoredSize += epSize
-        scoredCount++
-      }
-    }
-
-    const efficiencyScore = scoredCount > 0
-      ? (scoredSize > 0 ? Math.round(weightedEfficiencyNumerator / scoredSize) : Math.round(totalEfficiencyScore / scoredCount))
-      : 0
+    const totalSize = owned.reduce((sum, ep) => sum + ((ep as { size?: number }).size || ep.file_size || 0), 0)
 
     return {
+      id: existing?.id,
       series_title: title,
       source_id: sourceId,
       library_id: libraryId,
@@ -442,13 +423,16 @@ export class SeriesCompletenessService {
       owned_episodes: owned.length,
       missing_seasons: '[]',
       missing_episodes: '[]',
-      completeness_percentage: -1, // MAGIC VALUE for unmatched/no-data
+      completeness_percentage: null,
       poster_url: fallbackPoster || undefined,
       tmdb_id: tmdbId || undefined,
-      status: existing?.status || 'Continuing',
-      efficiency_score: efficiencyScore,
-      storage_debt_bytes: totalStorageDebt,
-      total_size: totalSize
+      status: existing?.status,
+      efficiency_score: null,
+      storage_debt_bytes: null,
+      evidence_status: 'insufficient',
+      confidence: 'none',
+      savings_basis: 'insufficient_data',
+      total_size: totalSize,
     }
   }
 }
