@@ -602,7 +602,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           const totalSeasons = Math.max(primary.totalSeasons || 0, Number(epStats?.owned_seasons || 0))
           const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
           const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
-          const completenessPct = totalEpisodes > 0 ? (ownedEpisodes / totalEpisodes) * 100 : primary.completenessPercentage
+          const completenessPct = primary.completenessPercentage == null
+            ? null
+            : totalEpisodes > 0
+              ? (ownedEpisodes / totalEpisodes) * 100
+              : primary.completenessPercentage
 
           await this.db.execute({
             sql: `UPDATE series_completeness
