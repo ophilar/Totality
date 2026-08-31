@@ -65,15 +65,15 @@ export async function runMigrations(db: Client): Promise<void> {
   // 2. Incremental column updates
   await ensureColumn(db, 'quality_scores', 'quality_tier', "TEXT NOT NULL DEFAULT 'SD'")
   await ensureColumn(db, 'quality_scores', 'tier_quality', "TEXT NOT NULL DEFAULT 'MEDIUM'")
-  await ensureColumn(db, 'quality_scores', 'tier_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'quality_scores', 'bitrate_tier_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'quality_scores', 'audio_tier_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'quality_scores', 'tier_score', 'INTEGER')
+  await ensureColumn(db, 'quality_scores', 'bitrate_tier_score', 'INTEGER')
+  await ensureColumn(db, 'quality_scores', 'audio_tier_score', 'INTEGER')
+  await ensureColumn(db, 'quality_scores', 'efficiency_score', 'INTEGER')
+  await ensureColumn(db, 'quality_scores', 'storage_debt_bytes', 'INTEGER')
   await ensureColumn(db, 'quality_scores', 'estimated_savings_bytes', 'INTEGER')
-  await ensureColumn(db, 'quality_scores', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
-  await ensureColumn(db, 'quality_scores', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
-  await ensureColumn(db, 'quality_scores', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
+  await ensureColumn(db, 'quality_scores', 'evidence_status', 'TEXT')
+  await ensureColumn(db, 'quality_scores', 'confidence', 'TEXT')
+  await ensureColumn(db, 'quality_scores', 'savings_basis', 'TEXT')
 
   // Media Items
   await ensureColumn(db, 'media_items', 'source_id', "TEXT NOT NULL DEFAULT ''")
@@ -114,13 +114,13 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'series_completeness', 'user_fixed_match', 'INTEGER DEFAULT 0')
   await ensureColumn(db, 'series_completeness', 'source_id', "TEXT NOT NULL DEFAULT ''")
   await ensureColumn(db, 'series_completeness', 'library_id', "TEXT NOT NULL DEFAULT ''")
-  await ensureColumn(db, 'series_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'series_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'series_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'series_completeness', 'efficiency_score', 'INTEGER')
+  await ensureColumn(db, 'series_completeness', 'storage_debt_bytes', 'INTEGER')
+  await ensureColumn(db, 'series_completeness', 'total_size', 'INTEGER')
   await ensureColumn(db, 'series_completeness', 'series_identity_key', 'TEXT')
-  await ensureColumn(db, 'series_completeness', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
-  await ensureColumn(db, 'series_completeness', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
-  await ensureColumn(db, 'series_completeness', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
+  await ensureColumn(db, 'series_completeness', 'evidence_status', 'TEXT')
+  await ensureColumn(db, 'series_completeness', 'confidence', 'TEXT')
+  await ensureColumn(db, 'series_completeness', 'savings_basis', 'TEXT')
 
   // Movie Collections
   await ensureColumn(db, 'movie_collections', 'source_id', "TEXT NOT NULL DEFAULT ''")
@@ -146,20 +146,20 @@ export async function runMigrations(db: Client): Promise<void> {
   // Music Quality Scores
   await ensureColumn(db, 'music_quality_scores', 'quality_tier', "TEXT NOT NULL DEFAULT 'LOSSY_MID'")
   await ensureColumn(db, 'music_quality_scores', 'tier_quality', "TEXT NOT NULL DEFAULT 'MEDIUM'")
-  await ensureColumn(db, 'music_quality_scores', 'tier_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'music_quality_scores', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'music_quality_scores', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'music_quality_scores', 'evidence_status', "TEXT NOT NULL DEFAULT 'insufficient'")
-  await ensureColumn(db, 'music_quality_scores', 'confidence', "TEXT NOT NULL DEFAULT 'none'")
-  await ensureColumn(db, 'music_quality_scores', 'savings_basis', "TEXT NOT NULL DEFAULT 'insufficient_data'")
+  await ensureColumn(db, 'music_quality_scores', 'tier_score', 'INTEGER')
+  await ensureColumn(db, 'music_quality_scores', 'efficiency_score', 'INTEGER')
+  await ensureColumn(db, 'music_quality_scores', 'storage_debt_bytes', 'INTEGER')
+  await ensureColumn(db, 'music_quality_scores', 'evidence_status', 'TEXT')
+  await ensureColumn(db, 'music_quality_scores', 'confidence', 'TEXT')
+  await ensureColumn(db, 'music_quality_scores', 'savings_basis', 'TEXT')
 
   // Per-version enhancements
   await ensureColumn(db, 'media_item_versions', 'original_language', 'TEXT')
   await ensureColumn(db, 'media_item_versions', 'audio_language', 'TEXT')
-  await ensureColumn(db, 'media_item_versions', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'media_item_versions', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn(db, 'media_item_versions', 'bitrate_tier_score', 'INTEGER DEFAULT 0')
-  await ensureColumn(db, 'media_item_versions', 'audio_tier_score', 'INTEGER DEFAULT 0')
+  await ensureColumn(db, 'media_item_versions', 'efficiency_score', 'INTEGER')
+  await ensureColumn(db, 'media_item_versions', 'storage_debt_bytes', 'INTEGER')
+  await ensureColumn(db, 'media_item_versions', 'bitrate_tier_score', 'INTEGER')
+  await ensureColumn(db, 'media_item_versions', 'audio_tier_score', 'INTEGER')
 
   // Wishlist
   await ensureColumn(db, 'wishlist_items', 'reason', "TEXT DEFAULT 'missing'")
@@ -227,9 +227,7 @@ async function backfillMediaIdentities(db: Client): Promise<void> {
      SELECT 'album', id, 'musicbrainz', musicbrainz_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
      FROM music_albums WHERE musicbrainz_id IS NOT NULL AND musicbrainz_id <> ''`
   ]
-  for (const sql of statements) {
-    try { await db.execute(sql) } catch (error) { getLoggingService().warn('[DatabaseMigration]', `Identity backfill skipped: ${getErrorMessage(error)}`) }
-  }
+  for (const sql of statements) await db.execute(sql)
 }
 
 const EVIDENCE_COLUMNS = ['evidence_status', 'confidence', 'savings_basis'] as const
@@ -239,6 +237,7 @@ async function migrateNullableEvidenceScores(db: Client): Promise<void> {
   await rebuildMusicQualityScoresForNullableEvidence(db)
   await rebuildSeriesCompletenessForNullableEvidence(db)
   await markLegacyZeroScoresInsufficient(db)
+  await db.execute('UPDATE series_completeness SET completeness_percentage = NULL WHERE completeness_percentage < 0')
 }
 
 async function hasNotNullColumn(db: Client, table: string, columns: readonly string[]): Promise<boolean> {
@@ -257,7 +256,7 @@ async function rebuildTableWhenNeeded(
   if (!await hasNotNullColumn(db, table, nullableColumns)) return
 
   const legacyTable = `${table}_legacy_nullable_evidence`
-  getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so evidence-based numeric fields can be NULL`)
+  getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so analysis evidence can be NULL`)
   await db.execute('BEGIN IMMEDIATE')
   try {
     await db.execute(`ALTER TABLE ${table} RENAME TO ${legacyTable}`)
@@ -353,7 +352,7 @@ async function rebuildSeriesCompletenessForNullableEvidence(db: Client): Promise
   await rebuildTableWhenNeeded(
     db,
     'series_completeness',
-    ['efficiency_score', 'storage_debt_bytes'],
+    ['completeness_percentage', 'efficiency_score', 'storage_debt_bytes'],
     `CREATE TABLE series_completeness (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       series_title TEXT NOT NULL,
@@ -366,7 +365,7 @@ async function rebuildSeriesCompletenessForNullableEvidence(db: Client): Promise
       owned_episodes INTEGER NOT NULL,
       missing_seasons TEXT NOT NULL DEFAULT '[]',
       missing_episodes TEXT NOT NULL DEFAULT '[]',
-      completeness_percentage REAL NOT NULL,
+      completeness_percentage REAL,
       tmdb_id TEXT,
       tvdb_id TEXT,
       poster_url TEXT,
@@ -403,20 +402,29 @@ async function rebuildSeriesCompletenessForNullableEvidence(db: Client): Promise
 async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
   const updates = [
     `UPDATE quality_scores
-     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     SET efficiency_score = NULL, storage_debt_bytes = NULL,
+         evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE tier_score = 0 AND bitrate_tier_score = 0 AND audio_tier_score = 0
        AND overall_score = 0 AND resolution_score = 0 AND bitrate_score = 0 AND audio_score = 0
        AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
     `UPDATE music_quality_scores
-     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     SET efficiency_score = NULL, storage_debt_bytes = NULL,
+         evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE tier_score = 0 AND codec_score = 0 AND bitrate_score = 0
        AND COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
     `UPDATE series_completeness
-     SET evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
+     SET efficiency_score = NULL, storage_debt_bytes = NULL,
+         evidence_status = 'insufficient', confidence = 'none', savings_basis = 'insufficient_data'
      WHERE COALESCE(efficiency_score, 0) = 0 AND COALESCE(storage_debt_bytes, 0) = 0
-       AND evidence_status = 'insufficient' AND confidence = 'none' AND savings_basis = 'insufficient_data'`,
+       AND (evidence_status IS NULL OR evidence_status = 'insufficient')
+       AND (confidence IS NULL OR confidence = 'none')
+       AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
   ]
   for (const statement of updates) await db.execute(statement)
 }
@@ -425,47 +433,37 @@ async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
  * Ensures a column exists in a table, adding it if missing.
  */
 async function ensureColumn(db: Client, table: string, column: string, definition: string): Promise<void> {
-  try {
-    const tableExists = await db.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] })
-    if (tableExists.rows.length === 0) return
+  const tableExists = await db.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] })
+  if (tableExists.rows.length === 0) return
 
-    const info = await db.execute(`PRAGMA table_info(${table})`)
-    if (!info.rows.some(c => c.name === column)) {
-      getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
-      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
-    }
-  } catch (error) {
-    const msg = getErrorMessage(error)
-    getLoggingService().error('[DatabaseMigration]', `Failed to ensure column ${table}.${column}: ${msg}`)
-    if (!msg.includes('duplicate column name')) throw error
+  const info = await db.execute(`PRAGMA table_info(${table})`)
+  if (!info.rows.some(c => c.name === column)) {
+    getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
   }
 }
 
 async function migrateCheckConstraints(db: Client): Promise<void> {
-  try {
-    const res = await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='media_sources'")
-    const schemaRow = res.rows[0] as unknown as { sql: string } | undefined
-    
-    if (schemaRow?.sql && !schemaRow.sql.includes('kodi-mysql')) {
-      const tableNames = ['media_sources', 'media_items', 'music_artists', 'music_albums', 'music_tracks']
-      await db.execute('PRAGMA writable_schema = ON')
-      try {
-        for (const table of tableNames) {
-          await db.execute({
-            sql: `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`,
-            args: [table]
-          })
-          await db.execute({
-            sql: `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local'', ''local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`,
-            args: [table]
-          })
-        }
-      } finally {
-        await db.execute('PRAGMA writable_schema = OFF')
+  const res = await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='media_sources'")
+  const schemaRow = res.rows[0] as unknown as { sql: string } | undefined
+
+  if (schemaRow?.sql && !schemaRow.sql.includes('kodi-mysql')) {
+    const tableNames = ['media_sources', 'media_items', 'music_artists', 'music_albums', 'music_tracks']
+    await db.execute('PRAGMA writable_schema = ON')
+    try {
+      for (const table of tableNames) {
+        await db.execute({
+          sql: `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`,
+          args: [table]
+        })
+        await db.execute({
+          sql: `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local'', ''local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`,
+          args: [table]
+        })
       }
+    } finally {
+      await db.execute('PRAGMA writable_schema = OFF')
     }
-  } catch (error) {
-    getLoggingService().debug('[DatabaseMigration]', 'CHECK migration note: ' + getErrorMessage(error))
   }
 }
 
@@ -477,138 +475,108 @@ async function createIndexes(db: Client): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completeness(tmdb_id) WHERE tmdb_id IS NOT NULL',
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
-  for (const idx of indexes) {
-    try { await db.execute(idx) } 
-    catch (e) { getLoggingService().debug('[DatabaseMigration]', 'Index creation note: ' + getErrorMessage(e)) }
-  }
+  for (const idx of indexes) await db.execute(idx)
 }
 
 async function fixMusicTrackAlbumReferences(db: Client): Promise<void> {
-  try {
-    await db.execute(`
-      UPDATE music_tracks SET album_id = (
-        SELECT a.id FROM music_albums a
-        WHERE a.title = music_tracks.album_name
-          AND a.artist_name = music_tracks.artist_name
-          AND a.source_id = music_tracks.source_id
-        LIMIT 1
-      )
-      WHERE album_id IS NULL OR NOT EXISTS (
-        SELECT 1 FROM music_albums a WHERE a.id = music_tracks.album_id
-      )
-    `)
-  } catch (error) {
-    getLoggingService().debug('[DatabaseMigration]', 'Music track reference fix note: ' + getErrorMessage(error))
-  }
+  await db.execute(`
+    UPDATE music_tracks SET album_id = (
+      SELECT a.id FROM music_albums a
+      WHERE a.title = music_tracks.album_name
+        AND a.artist_name = music_tracks.artist_name
+        AND a.source_id = music_tracks.source_id
+      LIMIT 1
+    )
+    WHERE album_id IS NULL OR NOT EXISTS (
+      SELECT 1 FROM music_albums a WHERE a.id = music_tracks.album_id
+    )
+  `)
 }
 
 async function migrateExistingItemsToVersions(db: Client): Promise<void> {
-  try {
-    const res = await db.execute('SELECT COUNT(*) as count FROM media_item_versions')
-    if ((res.rows[0]?.count as number) > 0) return
+  const res = await db.execute('SELECT COUNT(*) as count FROM media_item_versions')
+  if ((res.rows[0]?.count as number) > 0) return
 
-    await db.execute(`
-      INSERT INTO media_item_versions (
-        media_item_id, version_source, file_path, file_size, duration,
-        resolution, width, height, video_codec, video_bitrate,
-        audio_codec, audio_channels, audio_bitrate, is_best
-      )
-      SELECT id, 'primary', file_path, file_size, duration, resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate, 1
-      FROM media_items
-    `)
-  } catch (error) {
-    getLoggingService().debug('[DatabaseMigration]', 'Version migration note: ' + getErrorMessage(error))
-  }
+  await db.execute(`
+    INSERT INTO media_item_versions (
+      media_item_id, version_source, file_path, file_size, duration,
+      resolution, width, height, video_codec, video_bitrate,
+      audio_codec, audio_channels, audio_bitrate, is_best, created_at, updated_at
+    )
+    SELECT id, 'primary', file_path, file_size, duration, resolution, width, height, video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate, 1, created_at, updated_at
+    FROM media_items
+  `)
 }
 
 async function cleanupOrphanedRecords(db: Client): Promise<void> {
+  await db.execute('BEGIN IMMEDIATE')
   try {
-    await db.execute('BEGIN IMMEDIATE')
-    try {
-        await db.execute('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-        await db.execute('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-        await db.execute('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-        await db.execute(`DELETE FROM series_completeness
-          WHERE library_id = ''
-            AND source_id <> ''
-            AND NOT EXISTS (
-              SELECT 1 FROM media_items
-              WHERE media_items.type = 'episode'
-                AND media_items.source_id = series_completeness.source_id
-                AND COALESCE(media_items.library_id, '') = ''
-                AND media_items.series_title = series_completeness.series_title
-            )`)
-        await db.execute('COMMIT')
-    } catch(err) {
-      await db.execute('ROLLBACK')
-      throw err
-    }
-  } catch (e) {
-    getLoggingService().error('[DatabaseMigration]', 'Cleanup error: ' + getErrorMessage(e))
+    await db.execute('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+    await db.execute('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+    await db.execute('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)')
+    await db.execute(`DELETE FROM series_completeness
+      WHERE library_id = ''
+        AND source_id <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM media_items
+          WHERE media_items.type = 'episode'
+            AND media_items.source_id = series_completeness.source_id
+            AND COALESCE(media_items.library_id, '') = ''
+            AND media_items.series_title = series_completeness.series_title
+        )`)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
   }
 }
 
 export async function mergeDuplicateSeriesCompleteness(db: Client): Promise<void> {
   getLoggingService().debug('[DatabaseMigration]', 'Checking for duplicate TV show records...')
-  try {
-    const drizzleDb = drizzle(db, { schema })
-    const repo = new TVShowRepository(db, drizzleDb)
-    await repo.mergeDuplicateShows()
-  } catch (error) {
-    getLoggingService().error('[DatabaseMigration]', `Error in mergeDuplicateSeriesCompleteness: ${getErrorMessage(error)}`)
-  }
-
+  const drizzleDb = drizzle(db, { schema })
+  const repo = new TVShowRepository(db, drizzleDb)
+  await repo.mergeDuplicateShows()
   await ensureSeriesUniquenessIndexes(db)
 }
 
 async function ensureSeriesUniquenessIndexes(db: Client): Promise<void> {
   const indexes = [
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ""',
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ""'
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ''`
   ]
-  for (const idx of indexes) {
-    try {
-      await db.execute(idx)
-    } catch (e) {
-      getLoggingService().debug('[DatabaseMigration]', 'Unique index creation note: ' + getErrorMessage(e))
-    }
-  }
+  for (const idx of indexes) await db.execute(idx)
 }
 
 async function migrateStaleTimelineRecipes(db: Client): Promise<void> {
-  try {
-    const rows = await db.execute("SELECT key, value FROM settings WHERE key LIKE 'timeline_recipe:%' OR key LIKE 'timeline_manifest:%'")
-    for (const row of rows.rows) {
-      const key = String(row.key)
-      const raw = typeof row.value === 'string' ? row.value : String(row.value ?? '')
-      try {
-        const parsed = JSON.parse(raw)
+  const rows = await db.execute("SELECT key, value FROM settings WHERE key LIKE 'timeline_recipe:%' OR key LIKE 'timeline_manifest:%'")
+  for (const row of rows.rows) {
+    const key = String(row.key)
+    const raw = typeof row.value === 'string' ? row.value : String(row.value ?? '')
+    try {
+      const parsed = JSON.parse(raw)
 
-        if (key.startsWith('timeline_recipe:')) {
-          const recipe = parseTimelineRecipeCache(parsed)
-          const validation = validateTimelineDefinition(recipe.data)
-          if (!validation.valid) {
-            const reason = validation.reason.startsWith('unsupported version ')
-              ? `unsupported recipe version ${validation.reason.slice('unsupported version '.length)}`
-              : validation.reason
-            warnTimelineCache(key, reason)
-            continue
-          }
-          if (validation.value.version === 2) continue
-          warnTimelineCache(key, 'cannot losslessly infer a version 2 episode-interleaved order from version 1 semantics')
+      if (key.startsWith('timeline_recipe:')) {
+        const recipe = parseTimelineRecipeCache(parsed)
+        const validation = validateTimelineDefinition(recipe.data)
+        if (!validation.valid) {
+          const reason = validation.reason.startsWith('unsupported version ')
+            ? `unsupported recipe version ${validation.reason.slice('unsupported version '.length)}`
+            : validation.reason
+          warnTimelineCache(key, reason)
           continue
         }
-
-        const manifest = parseTimelineManifestCache(parsed)
-        if (manifest) continue
-        warnTimelineCache(key, 'unsupported manifest payload')
-      } catch (error) {
-        warnTimelineCache(key, `malformed JSON or cache payload: ${getErrorMessage(error)}`)
+        if (validation.value.version === 2) continue
+        warnTimelineCache(key, 'cannot losslessly infer a version 2 episode-interleaved order from version 1 semantics')
+        continue
       }
+
+      const manifest = parseTimelineManifestCache(parsed)
+      if (manifest) continue
+      warnTimelineCache(key, 'unsupported manifest payload')
+    } catch (error) {
+      warnTimelineCache(key, `malformed JSON or cache payload: ${getErrorMessage(error)}`)
     }
-  } catch (err) {
-    getLoggingService().debug('[DatabaseMigration]', 'Timeline cache migration note: ' + getErrorMessage(err))
   }
 }
 

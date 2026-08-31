@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS series_completeness (
   missing_seasons TEXT NOT NULL DEFAULT '[]',
   missing_episodes TEXT NOT NULL DEFAULT '[]',
 
-  completeness_percentage REAL NOT NULL,
+  completeness_percentage REAL,
 
   -- TMDB metadata
   tmdb_id TEXT,

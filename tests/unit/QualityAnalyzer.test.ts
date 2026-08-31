@@ -157,6 +157,18 @@ describe('QualityAnalyzer', () => {
   // ============================================================================
 
   describe('audio quality detection', () => {
+    it('keeps malformed audio stream metadata unmeasured', async () => {
+      const item = createMediaItem({
+        audio_tracks: '{ malformed json',
+        audio_bitrate: 640,
+      })
+
+      const score = await analyzer.analyzeMediaItem(item)
+
+      expect(score.audio_score).toBeNull()
+      expect(score.evidence_status).toBe('insufficient')
+    })
+
     it('should recognize object audio (Atmos) as HIGH quality', async () => {
       const item = createMediaItem({
         resolution: '2160p', // Standard resolution string

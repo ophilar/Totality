@@ -297,17 +297,16 @@ export class LiveMonitoringService {
       const watcher = fs.watch(watchPath, { recursive: true }, async (_eventType, filename) => {
         if (!filename || /(^|[/\\])\./.test(filename)) return
         const fullPath = path.join(watchPath, filename)
+        if (!this.isMediaFile(fullPath)) return
         getLoggingService().debug('[LiveMonitoring]', `File event: ${filename} for ${sourceName}`)
-        if (this.isMediaFile(fullPath)) {
-          let action: 'change' | 'unlink'
-          try {
-            await fs.promises.access(fullPath, fs.constants.F_OK)
-            action = 'change'
-          } catch {
-            action = 'unlink'
-          }
-          this.handleFileChange(sourceId, action, fullPath)
+        let action: 'change' | 'unlink'
+        try {
+          await fs.promises.access(fullPath, fs.constants.F_OK)
+          action = 'change'
+        } catch {
+          action = 'unlink'
         }
+        this.handleFileChange(sourceId, action, fullPath)
       })
 
       watcher.on('error', (error) => {

@@ -350,8 +350,8 @@ export class QualityAnalyzer {
         hasObjectAudio: bestTrack.hasObjectAudio || false,
       }
     } catch {
-      // JSON parse failed, return fallback
-      return fallback
+      // Invalid stream metadata is not evidence for the primary audio fields.
+      return { codec: '', channels: 0, bitrate: null, hasObjectAudio: false }
     }
   }
 

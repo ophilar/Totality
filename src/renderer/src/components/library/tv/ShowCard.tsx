@@ -156,7 +156,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           <div
             className="shrink-0"
             title={
-              completenessData.completeness_percentage === -1
+              completenessData.completeness_percentage == null
                 ? 'Unmatched: No completeness data available'
                 : `${completenessData.owned_episodes} of ${completenessData.total_episodes} episodes`
             }
@@ -174,7 +174,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
                 </svg>
                 100%
               </div>
-            ) : completenessData.completeness_percentage === -1 ? (
+            ) : completenessData.completeness_percentage == null ? (
               <div
                 className="bg-muted text-muted-foreground px-1.5 py-1 rounded shadow-md border border-border flex items-center justify-center"
                 title="Unmatched"

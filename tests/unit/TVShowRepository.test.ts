@@ -126,6 +126,64 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries.map((summary) => summary.series_title)).toEqual(['High Efficiency'])
   })
 
+  it('preserves unknown recoverable evidence instead of reporting zero optimization', async () => {
+    await repo.upsertCompleteness({
+      series_title: 'Unmeasured Show',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      completeness_percentage: 100,
+      storage_debt_bytes: null,
+      efficiency_score: null,
+      evidence_status: 'insufficient',
+      confidence: 'none',
+      savings_basis: 'insufficient_data',
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    })
+    await mediaRepo.upsertItem(mockEpisode('Unmeasured Show', 1, 1))
+
+    const [summary] = await repo.getSummaries({ sourceId: 'src-1', libraryId: 'lib-1' })
+
+    expect(summary.total_recoverable_bytes).toBeUndefined()
+    expect(summary.weighted_efficiency).toBeNull()
+    expect(summary.scored_episode_count).toBe(0)
+    expect(summary.unscored_episode_count).toBe(1)
+    expect(summary.recommended_action).toBeUndefined()
+  })
+
+  it('preserves a measured zero recoverable result as real evidence', async () => {
+    await repo.upsertCompleteness({
+      series_title: 'Measured Zero Show',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      completeness_percentage: 100,
+      storage_debt_bytes: 0,
+      efficiency_score: 100,
+      evidence_status: 'measured',
+      confidence: 'high',
+      savings_basis: 'video_sample_encode',
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    })
+    await mediaRepo.upsertItem(mockEpisode('Measured Zero Show', 1, 1))
+
+    const [summary] = await repo.getSummaries({ sourceId: 'src-1', libraryId: 'lib-1' })
+
+    expect(summary.total_recoverable_bytes).toBe(0)
+    expect(summary.weighted_efficiency).toBe(100)
+    expect(summary.scored_episode_count).toBe(1)
+    expect(summary.unscored_episode_count).toBe(0)
+    expect(summary.recommended_action).toBe('no-optimization')
+  })
+
   it('should retrieve episodes for a specific show', async () => {
     await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
     await mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
@@ -157,6 +215,3 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries[0].series_identity_key).toBe('tmdb:83867')
   })
 })
-
-
-
