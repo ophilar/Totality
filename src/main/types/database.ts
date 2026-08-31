@@ -374,7 +374,7 @@ export interface SeriesCompleteness {
   missing_seasons: string // JSON array of numbers
   missing_episodes: string // JSON array of MissingEpisode
 
-  completeness_percentage: number
+  completeness_percentage: number | null
   efficiency_score?: number | null
   storage_debt_bytes?: number | null
   evidence_status?: EvidenceStatus
@@ -478,7 +478,7 @@ export interface TVShowSummary {
   owned_episodes?: number
   missing_seasons?: string
   missing_episodes?: string
-  completeness_percentage?: number
+  completeness_percentage?: number | null
   tmdb_id?: string | null
   tvdb_id?: string | null
   poster_url?: string
