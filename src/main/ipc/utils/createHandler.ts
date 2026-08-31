@@ -7,7 +7,7 @@
  * - Reduced boilerplate
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
+import { ipcMain, IpcMainInvokeEvent, app } from 'electron'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { z } from 'zod'
@@ -23,7 +23,24 @@ export interface HandlerOptions {
   onError?: (channel: string, error: unknown) => void
 }
 
+/**
+ * Validates that an incoming IPC message originates from an authorized local frame.
+ */
+export function validateSenderFrame(event: IpcMainInvokeEvent, channel: string): void {
+  if (!event || !event.senderFrame) return
 
+  const frameUrl = event.senderFrame.url
+  if (!frameUrl) return
+
+  const isDev = !app?.isPackaged || process.env.NODE_ENV === 'development'
+  const isAllowedDev = isDev && (frameUrl.startsWith('http://localhost:') || frameUrl.startsWith('http://127.0.0.1:'))
+  const isAllowedApp = frameUrl.startsWith('file://') || frameUrl.startsWith('app://') || frameUrl.startsWith('local-artwork://')
+
+  if (!isAllowedDev && !isAllowedApp) {
+    getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel} from frame URL: ${frameUrl}`)
+    throw new Error(`Unauthorized IPC sender frame for ${channel}: ${frameUrl}`)
+  }
+}
 
 /**
  * Create a type-safe IPC handler with consistent validation and error handling.
@@ -41,8 +58,9 @@ export function createValidatedIpcHandler<TSchema extends z.ZodSchema<unknown>, 
     : (arg: z.infer<TSchema>) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (_event: IpcMainInvokeEvent, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
+      validateSenderFrame(event, channel)
       if (options.logCalls) {
         getLoggingService().info('[IPC]', `${channel} called`)
       }
@@ -85,6 +103,7 @@ export function createValidatedIpcHandlerWithEvent<TSchema extends z.ZodSchema<u
 ): void {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
+      validateSenderFrame(event, channel)
       if (options.logCalls) {
         getLoggingService().info('[IPC]', `${channel} called`)
       }
@@ -120,8 +139,9 @@ export function createIpcHandler<TArgs extends unknown[], TReturn>(
   handler: (...args: TArgs) => Promise<TReturn>,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, async (_event: IpcMainInvokeEvent, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
+      validateSenderFrame(event, channel)
       if (options.logCalls) {
         getLoggingService().info('[IPC]', `${channel} called`)
       }
@@ -156,6 +176,7 @@ export function createIpcHandlerWithEvent<TArgs extends unknown[], TReturn>(
 ): void {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
+      validateSenderFrame(event, channel)
       if (options.logCalls) {
         getLoggingService().info('[IPC]', `${channel} called`)
       }
@@ -182,8 +203,9 @@ export function createSyncHandler<TArgs extends unknown[], TReturn>(
   handler: (...args: TArgs) => TReturn,
   options: HandlerOptions = {}
 ): void {
-  ipcMain.handle(channel, (_event: IpcMainInvokeEvent, ...args: unknown[]) => {
+  ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     try {
+      validateSenderFrame(event, channel)
       if (options.logCalls) {
         getLoggingService().info('[IPC]', `${channel} called (sync)`)
       }

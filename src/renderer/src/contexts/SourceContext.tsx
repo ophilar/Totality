@@ -217,15 +217,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources.length])
 
-  // Auto-select first enabled source when sources load
-  useEffect(() => {
-    if (activeSourceId === null && sources.length > 0) {
-      const firstEnabled = sources.find(s => s.is_enabled)
-      if (firstEnabled) {
-        queueMicrotask(() => { setActiveSourceId(firstEnabled.source_id) })
-      }
-    }
-  }, [sources, activeSourceId])
+  // Default activeSourceId is null (representing 'All Sources' aggregated mode)
 
   // Load supported providers
   const loadSupportedProviders = async () => {
@@ -248,37 +240,24 @@ export function SourceProvider({ children }: SourceProviderProps) {
   }
 
   // Detect which library types are available from enabled sources
-  // Runs all sources in parallel with a per-source timeout to avoid blocking on unreachable servers
   const detectLibraryTypesFromList = async (sourceList: MediaSourceResponse[]) => {
     let movies = false, tv = false, music = false
-    const unreachable: string[] = []
-
     const enabledSources = sourceList.filter(s => s.is_enabled)
 
-    const results = await Promise.allSettled(
-      enabledSources.map(async (source) => {
-        try {
-          const libraries = await Promise.race([
-            window.electronAPI.sourcesGetLibrariesWithStatus(source.source_id),
-            new Promise<never>((_resolve, reject) =>
-              setTimeout(() => reject(new Error('timeout')), 5000)
-            ),
-          ])
-          return { source, libraries }
-        } catch {
-          unreachable.push(source.display_name)
-          return { source, libraries: [] as Array<MediaLibraryResponse & { isEnabled: boolean }> }
-        }
-      })
+    const results = await Promise.all(
+      enabledSources.map(source => window.electronAPI.sourcesGetLibrariesWithStatus(source.source_id))
     )
 
-    for (const result of results) {
-      if (result.status !== 'fulfilled') continue
-      for (const lib of result.value.libraries) {
+    for (const libraries of results) {
+      for (const lib of libraries) {
         if (lib.isEnabled) {
           if (lib.type === LibraryType.Movie) movies = true
           if (lib.type === LibraryType.Show) tv = true
           if (lib.type === LibraryType.Music) music = true
+          if (lib.type === LibraryType.Mixed) {
+            movies = true
+            tv = true
+          }
         }
       }
     }
@@ -287,7 +266,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
     setHasTV(tv)
     setHasMusic(music)
 
-    return unreachable
+    return []
   }
 
   // Public function to refresh library types (e.g., after toggling a library)

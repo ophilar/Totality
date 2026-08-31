@@ -52,7 +52,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       audio_bitrate: item.audio_bitrate!,
     })
 
-    expect(score.bitrate_tier_score).toBe(0)
+    expect(score.bitrate_tier_score).toBeNull()
   })
 
   it('does not estimate removable audio bytes without original-language evidence', () => {

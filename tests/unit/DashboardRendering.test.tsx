@@ -43,7 +43,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
             <ToastProvider>
                 <SourceProvider>
                 <WishlistProvider>
-                    <Dashboard hasMovies={true} hasShows={true} hasMusic={true} />
+                    <Dashboard hasMovies={true} hasTV={true} hasMusic={true} />
                 </WishlistProvider>
                 </SourceProvider>
             </ToastProvider>
@@ -107,6 +107,38 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     }, { timeout: 5000 })
   })
 
+  it('should render TV completeness series from database', async () => {
+    await db.sources.upsertSource({
+      source_id: 's1',
+      source_type: ProviderType.Local,
+      display_name: 'Test Source',
+      is_enabled: 1,
+      connection_config: '{}'
+    })
+
+    await db.tvShows.upsertCompleteness({
+      series_title: 'Test TV Series',
+      source_id: 's1',
+      library_id: '1',
+      total_seasons: 2,
+      total_episodes: 20,
+      owned_seasons: 1,
+      owned_episodes: 10,
+      missing_seasons: JSON.stringify([2]),
+      missing_episodes: JSON.stringify([
+        { season_number: 2, episode_number: 1, episode_title: 'Chapter One', tmdb_id: 999 }
+      ]),
+      completeness_percentage: 50
+    })
+
+    await renderDashboard()
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TV Series')).toBeTruthy()
+      expect(screen.getByText(/50%/)).toBeTruthy()
+    }, { timeout: 5000 })
+  })
+
   it('should reflect database setting changes', async () => {
     // Change sort setting in real DB
     await db.config.setSetting('dashboard_upgrade_sort', 'title')
@@ -119,6 +151,3 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     })
   })
 })
-
-
-

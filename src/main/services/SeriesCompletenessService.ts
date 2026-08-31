@@ -154,6 +154,9 @@ export class SeriesCompletenessService {
     const episodes = providedEpisodes || (await this.db.tvShows.getEpisodes(seriesTitle, sourceId))
     if (episodes.length === 0) return null
 
+    const effectiveSourceId = sourceId || episodes[0]?.source_id || ''
+    const effectiveLibraryId = libraryId || episodes[0]?.library_id || ''
+
     const tmdbApiKey = prefetchedData?.tmdbApiKey !== undefined ? prefetchedData.tmdbApiKey : await this.db.config.getSetting('tmdb_api_key')
     let tmdbId = cachedTmdbId || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id || episodes.find(e => e.tmdb_id)?.tmdb_id
     const imdbId = episodes.find(e => e.imdb_id)?.imdb_id
@@ -171,7 +174,7 @@ export class SeriesCompletenessService {
         }
       }
 
-      // 2. Fallback to title search
+      // 2. Search by title
       if (!tmdbId) {
         const search = await this.tmdb.searchTVShow(seriesTitle)
         if (search.results.length > 0) tmdbId = String(search.results[0].id)
@@ -179,9 +182,9 @@ export class SeriesCompletenessService {
     }
     
     if (!tmdbId || !tmdbApiKey || !this.tmdb.isConfigured()) {
-      const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, sourceId || '', libraryId || '', prefetchedData?.existingCompleteness)
+      const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, effectiveSourceId, effectiveLibraryId, prefetchedData?.existingCompleteness)
       await this.db.tvShows.upsertCompleteness(unmatched)
-      return prefetchedData?.returnConstructed ? unmatched : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      return prefetchedData?.returnConstructed ? unmatched : await this.db.tvShows.getCompletenessByTitle(seriesTitle, effectiveSourceId, effectiveLibraryId)
     }
 
     let showDetails: Awaited<ReturnType<TMDBService['getTVShowDetails']>>
@@ -255,7 +258,7 @@ export class SeriesCompletenessService {
 
     const existing = prefetchedData?.existingCompleteness !== undefined
       ? prefetchedData.existingCompleteness
-      : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+      : await this.db.tvShows.getCompletenessByTitle(seriesTitle, effectiveSourceId, effectiveLibraryId)
 
     const externalIds = fullDetails.external_ids || (showDetails as { external_ids?: { imdb_id?: string | null; tvdb_id?: number | string | null } }).external_ids
     const resolvedTvdbId = existing?.tvdb_id || (externalIds?.tvdb_id ? String(externalIds.tvdb_id) : undefined)
@@ -264,8 +267,8 @@ export class SeriesCompletenessService {
     const result: SeriesCompleteness = {
       id: existing?.id,
       series_title: seriesTitle,
-      source_id: sourceId || '',
-      library_id: libraryId || '',
+      source_id: effectiveSourceId,
+      library_id: effectiveLibraryId,
       total_seasons: showDetails.number_of_seasons,
       total_episodes: analysis.total,
       owned_seasons: new Set(episodes.map(e => e.season_number)).size,

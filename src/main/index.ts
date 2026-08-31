@@ -3,9 +3,6 @@ import { app, BrowserWindow, ipcMain, protocol, net, dialog, Tray, Menu, nativeI
 import path from 'node:path'
 import * as fs from 'fs'
 
-// Disable hardware acceleration to prevent GPU process crashes
-app.disableHardwareAcceleration()
-
 // Register custom protocol for serving local artwork files
 protocol.registerSchemesAsPrivileged([
   {
@@ -159,7 +156,6 @@ function createTray() {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    getDatabase().close()
     app.quit()
   }
 })
@@ -178,8 +174,13 @@ app.on('before-quit', async (event) => {
     // Ignore errors during worker pool shutdown
   }
   
+  try {
+    await getTaskQueueService().persistInterruptedTasks()
+  } catch (err) {
+    getLoggingService().warn('[index]', 'Failed to persist interrupted tasks during shutdown:', err)
+  }
+
   await getLoggingService().shutdown()
-  getTaskQueueService().persistInterruptedTasks()
   getDatabase().close()
   app.exit()
 })

@@ -120,7 +120,7 @@ export function Dashboard({
   const dismissSeriesEpisode = useCallback((_index: number, episode: MissingEpisode) => {
     if (episode.tmdb_id) {
       window.electronAPI.addExclusion(
-        'missing_episode',
+        'series_episode',
         undefined,
         `${episode.season_number}x${episode.episode_number}`,
         episode.tmdb_id.toString(),
@@ -132,7 +132,7 @@ export function Dashboard({
 
   const dismissArtistAlbum = useCallback((_index: number, album: MissingAlbumItem) => {
     window.electronAPI.addExclusion(
-      'missing_album',
+      'artist_album',
       undefined,
       album.musicbrainz_id,
       album.artist_mbid,

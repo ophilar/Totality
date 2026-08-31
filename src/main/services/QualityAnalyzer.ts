@@ -40,9 +40,9 @@ interface QualityScoringInput {
 export interface VersionQualityResult {
   quality_tier: string
   tier_quality: string
-  tier_score: number
-  bitrate_tier_score: number
-  audio_tier_score: number
+  tier_score: number | null
+  bitrate_tier_score: number | null
+  audio_tier_score: number | null
 }
 
 // Default thresholds and values loaded from configuration
@@ -461,9 +461,9 @@ export class QualityAnalyzer {
     return {
       quality_tier: qualityTier,
       tier_quality: tierQuality,
-      tier_score: tierScore ?? 0,
-      bitrate_tier_score: bitrateTierScore ?? 0,
-      audio_tier_score: audioTierScore ?? 0,
+      tier_score: tierScore,
+      bitrate_tier_score: bitrateTierScore,
+      audio_tier_score: audioTierScore,
     }
   }
 

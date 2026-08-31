@@ -168,3 +168,15 @@
 - [x] Eliminate silent error swallowing in `safeSend` and unify `SectionErrorBoundary`
 - [x] Full TypeScript typecheck and Vitest regression verification (158 test files, 1,203 tests passing)
 
+## Phase 21: Home TV Completeness, Green CI Gate & Release Polish [Completed]
+- [x] Restore Home TV completeness data contract across `SourceContext`, `Dashboard`, and `SeriesCompletenessService`.
+- [x] Fix dismissal exclusion types (`series_episode` and `artist_album`) in `Dashboard.tsx`.
+- [x] Make test suites cross-platform (`DatabasePath.test.ts`, `TranscodingService.test.ts`) for Linux/POSIX CI compatibility.
+- [x] Harden database migration error handling to fail fast on unexpected baseline schema execution failures.
+- [x] Preserve `null` semantics for unmeasured stream evidence in `QualityAnalyzer.analyzeVersion`.
+- [x] Enforce sender frame security validation across all IPC handlers.
+- [x] Prevent database shutdown races and guarantee task queue interruption persistence on quit.
+- [x] Enable Chromium GPU hardware acceleration in main process.
+- [x] Full test suite (158 test files, 1,204 tests passing) and production release build verified.
+
+

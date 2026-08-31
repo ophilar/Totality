@@ -296,8 +296,8 @@ export class TaskQueueService {
       this.currentTask.status = TaskStatus.Queued
       this.queue.unshift(this.currentTask)
       this.currentTask = null
-      await this.saveState()
     }
+    await this.saveState()
   }
 
   // --- Internal Methods ---

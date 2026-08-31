@@ -53,11 +53,13 @@ export async function runMigrations(db: Client): Promise<void> {
         const msg = getErrorMessage(err)
         if (msg.includes('already exists')) continue
         getLoggingService().error('[DatabaseMigration]', `Schema statement failed: "${sql.substring(0, 100)}..." Error: ${msg}`)
+        throw new Error(`Schema statement execution failed: "${sql.substring(0, 100)}..." Error: ${msg}`)
       }
     }
     getLoggingService().debug('[DatabaseMigration]', 'Baseline schema applied/verified')
   } catch (error) {
     getLoggingService().error('[DatabaseMigration]', 'Baseline schema execution failed: ' + getErrorMessage(error))
+    throw error
   }
 
   // 2. Incremental column updates
