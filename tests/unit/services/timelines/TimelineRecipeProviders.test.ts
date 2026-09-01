@@ -4,8 +4,21 @@ import { TraktRecipeProvider } from '@main/services/timelines/TraktRecipeProvide
 import { TMDBRecipeProvider } from '@main/services/timelines/TMDBRecipeProvider'
 import { TimelineCacheService } from '@main/services/timelines/TimelineCacheService'
 import type { TMDBService } from '@main/services/TMDBService'
+import { BUNDLED_RECIPES } from '@main/services/timelines/bundledRecipes'
 
 describe('TimelineRecipeProviders', () => {
+  it('includes the curated Babylon 5 timeline with every episode and movie', () => {
+    const timeline = BUNDLED_RECIPES['babylon-5-complete']
+
+    expect(timeline).toBeDefined()
+    expect(timeline.franchise).toBe('Babylon 5')
+    expect(timeline.items).toHaveLength(132)
+    expect(timeline.items.filter((item) => item.type === 'episode')).toHaveLength(126)
+    expect(timeline.items.filter((item) => item.type === 'movie')).toHaveLength(6)
+    expect(timeline.items[0].title).toBe('Babylon 5: The Gathering')
+    expect(timeline.items.at(-1)?.title).toBe('Babylon 5: The Road Home')
+  })
+
   beforeEach(() => {
     vi.restoreAllMocks()
     TimelineCacheService.resetInstanceForTesting()

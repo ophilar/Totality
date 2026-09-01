@@ -539,6 +539,27 @@ const ALIEN_PREDATOR_CHRONO_ITEMS: Array<Omit<TimelineItem, 'order'>> = [
   movie('Alien 3', '1992-05-22', '2179', { tmdbId: 8077, imdbId: 'tt0103644' }),
 ]
 
+// ---------------------------------------------------------------------------
+// 6. BABYLON 5 (Release-order complete franchise preset)
+// ---------------------------------------------------------------------------
+const BABYLON_5_COMPLETE_ITEMS: Array<Omit<TimelineItem, 'order'>> = [
+  movie('Babylon 5: The Gathering', '1993-02-22', 'Pilot', { imdbId: 'tt0106062' }),
+  ...epRange('Babylon 5', 1, 1, 22, '2258', { tmdbId: 7073 }),
+  ...epRange('Babylon 5', 2, 1, 22, '2259', { tmdbId: 7073 }),
+  ...epRange('Babylon 5', 3, 1, 22, '2260', { tmdbId: 7073 }),
+  movie('Babylon 5: In the Beginning', '1998-01-04', 'Pre-2258 history', { imdbId: 'tt0116627' }),
+  ...epRange('Babylon 5', 4, 1, 22, '2261', { tmdbId: 7073 }),
+  movie('Babylon 5: Thirdspace', '1998-07-19', '2261', { imdbId: 'tt0121804' }),
+  movie('Babylon 5: The River of Souls', '1998-11-08', '2263', { imdbId: 'tt0120828' }),
+  ...epRange('Babylon 5', 5, 1, 22, '2262–2263', { tmdbId: 7073 }),
+  movie('Babylon 5: A Call to Arms', '1999-01-03', '2267', { imdbId: 'tt0120844' }),
+  ...epRange('Crusade', 1, 1, 13, '2267', { tmdbId: 7074 }),
+  singleEp('Babylon 5: The Legend of the Rangers', 1, 1, 'To Live and Die in Starlight', '2271', { imdbId: 'tt0256430' }),
+  singleEp('Babylon 5: The Lost Tales', 1, 1, 'Voices of Darkness', '2271', { imdbId: 'tt0871201' }),
+  singleEp('Babylon 5: The Lost Tales', 1, 2, 'Over Here', '2271', { imdbId: 'tt0871201' }),
+  movie('Babylon 5: The Road Home', '2023-08-15', '2261 alternate timeline', { imdbId: 'tt27743549' }),
+]
+
 export const BUNDLED_RECIPES: Record<string, TimelineDefinition> = {
   'star-trek-chronological': createTimeline(
     'star-trek-chronological',
@@ -579,6 +600,14 @@ export const BUNDLED_RECIPES: Record<string, TimelineDefinition> = {
     'Chronological timeline from Prey (1719) and Predator through Prometheus, Alien, Aliens, and Alien: Romulus.',
     'https://www.ign.com/articles/alien-movies-in-order',
     ALIEN_PREDATOR_CHRONO_ITEMS
+  ),
+  'babylon-5-complete': createTimeline(
+    'babylon-5-complete',
+    'Babylon 5',
+    'Babylon 5 (Complete Release Order)',
+    'Curated complete Babylon 5 franchise order covering the pilot, all Babylon 5 and Crusade episodes, The Lost Tales, The Legend of the Rangers, and all six television/animated movies.',
+    'https://www.babylon5.com/',
+    BABYLON_5_COMPLETE_ITEMS
   ),
 }
 
