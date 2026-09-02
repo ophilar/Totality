@@ -52,6 +52,7 @@ interface CompletenessPanelProps {
   onAnalyzeSeries: (libraryId?: string) => Promise<void>
   onAnalyzeCollections: (libraryId?: string) => Promise<void>
   onAnalyzeMusic: () => Promise<void>
+  onAnalyzeAll?: () => Promise<void>
   onCancel: (type: 'series' | 'collections' | 'music') => Promise<void>
   isAnalyzing: boolean
   analysisProgress: AnalysisProgress | null
@@ -73,6 +74,7 @@ export function CompletenessPanel({
   onAnalyzeSeries,
   onAnalyzeCollections,
   onAnalyzeMusic,
+  onAnalyzeAll,
   onCancel,
   isAnalyzing,
   analysisProgress,
@@ -714,6 +716,15 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
               Run analysis after adding new content to your library.
             </p>
           </div>
+        )}
+        {onAnalyzeAll && (hasTV || hasMovies || hasMusic) && (
+          <button
+            onClick={onAnalyzeAll}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh All Analysis
+          </button>
         )}
       </div>
 

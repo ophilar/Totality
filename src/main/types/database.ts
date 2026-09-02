@@ -219,6 +219,8 @@ export interface MediaItem {
   episode_thumb_url?: string | null | undefined
   season_poster_url?: string | null | undefined
   summary?: string | null | undefined
+  deep_analysis?: string | null | undefined
+  deep_analysis_at?: string | null | undefined
 
   // User override flag (preserves user-selected metadata during rescans)
   user_fixed_match?: boolean
@@ -898,6 +900,7 @@ export enum TaskType {
   CollectionCompleteness = 'collection-completeness',
   MusicCompleteness = 'music-completeness',
   MusicScan = 'music-scan',
+  QualityAnalysis = 'quality-analysis',
   Transcode = 'transcode'
 }
 

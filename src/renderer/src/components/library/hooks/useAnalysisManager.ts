@@ -28,6 +28,8 @@ interface UseAnalysisManagerReturn {
   handleAnalyzeSeries: (libraryId?: string) => Promise<void>
   handleAnalyzeCollections: (libraryId?: string) => Promise<void>
   handleAnalyzeMusic: () => Promise<void>
+  handleAnalyzeQuality: () => Promise<void>
+  handleAnalyzeAll: (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => Promise<void>
   handleAnalyzeSingleSeries: (seriesTitle: string) => Promise<void>
   handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
   checkTmdbApiKey: () => Promise<void>
@@ -123,6 +125,21 @@ export function useAnalysisManager({
     }
   }, [activeSourceId, getSourceName])
 
+  const handleAnalyzeQuality = useCallback(async () => {
+    await window.electronAPI.taskQueueAddTask({
+      type: 'quality-analysis',
+      label: `Recalculate Media Quality (${getSourceName()})`,
+      sourceId: activeSourceId || undefined,
+    })
+  }, [activeSourceId, getSourceName])
+
+  const handleAnalyzeAll = useCallback(async (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => {
+    await handleAnalyzeQuality()
+    if (hasTV) await handleAnalyzeSeries()
+    if (hasMovies) await handleAnalyzeCollections()
+    if (hasMusic) await handleAnalyzeMusic()
+  }, [handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeQuality, handleAnalyzeSeries])
+
   // Analyze a single series for completeness
   const handleAnalyzeSingleSeries = useCallback(
     async (seriesTitle: string) => {
@@ -158,6 +175,8 @@ export function useAnalysisManager({
     handleAnalyzeSeries,
     handleAnalyzeCollections,
     handleAnalyzeMusic,
+    handleAnalyzeQuality,
+    handleAnalyzeAll,
     handleAnalyzeSingleSeries,
     handleCancelAnalysis,
     checkTmdbApiKey,

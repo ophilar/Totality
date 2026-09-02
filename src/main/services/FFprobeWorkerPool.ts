@@ -29,6 +29,8 @@ interface QueuedTask {
   filePath: string
   resolve: (result: FileAnalysisResult) => void
   reject: (error: Error) => void
+  signal?: AbortSignal
+  abortCleanup?: () => void
 }
 
 interface WorkerInfo {
@@ -112,7 +114,8 @@ export class FFprobeWorkerPool {
    */
   async analyzeFiles(
     filePaths: string[],
-    onProgress?: (current: number, total: number, currentFile: string) => void
+    onProgress?: (current: number, total: number, currentFile: string) => void,
+    signal?: AbortSignal
   ): Promise<Map<string, FileAnalysisResult>> {
     if (!this.initialized || !this.ffprobePath) {
       throw new Error('FFprobeWorkerPool not initialized. Call initialize() first.')
@@ -129,7 +132,7 @@ export class FFprobeWorkerPool {
 
     // Create promises for all files
     const promises = filePaths.map(async (filePath) => {
-      const result = await this.analyzeFile(filePath)
+      const result = await this.analyzeFile(filePath, signal)
       results.set(filePath, result)
       completed++
       onProgress?.(completed, total, path.basename(filePath))
@@ -170,7 +173,7 @@ export class FFprobeWorkerPool {
   /**
    * Analyze a single file using a worker
    */
-  async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+  async analyzeFile(filePath: string, signal?: AbortSignal): Promise<FileAnalysisResult> {
     if (!this.initialized || !this.ffprobePath) {
       throw new Error('FFprobeWorkerPool not initialized')
     }
@@ -185,11 +188,40 @@ export class FFprobeWorkerPool {
 
     return new Promise((resolve, reject) => {
       const taskId = `task-${++this.taskIdCounter}`
-      const task: QueuedTask = { taskId, filePath, resolve, reject }
+      const task: QueuedTask = { taskId, filePath, resolve, reject, signal }
+      if (signal) {
+        const cancel = () => this.cancelTask(task)
+        task.abortCleanup = () => signal.removeEventListener('abort', cancel)
+        if (signal.aborted) {
+          cancel()
+          return
+        }
+        signal.addEventListener('abort', cancel, { once: true })
+      }
 
       this.taskQueue.push(task)
       this.processQueue()
     })
+  }
+
+  private cancelTask(task: QueuedTask): void {
+    const queuedIndex = this.taskQueue.indexOf(task)
+    if (queuedIndex !== -1) {
+      this.taskQueue.splice(queuedIndex, 1)
+      task.abortCleanup?.()
+      task.resolve({ success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] })
+      return
+    }
+
+    const workerInfo = this.workers.find(worker => worker.currentTask === task)
+    if (!workerInfo) return
+    task.abortCleanup?.()
+    task.resolve({ success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] })
+    workerInfo.currentTask = null
+    workerInfo.busy = false
+    workerInfo.worker.terminate()
+    this.removeWorker(workerInfo)
+    this.processQueue()
   }
 
   /**
@@ -283,6 +315,7 @@ export class FFprobeWorkerPool {
   private handleWorkerResult(workerInfo: WorkerInfo, result: WorkerResult): void {
     const task = workerInfo.currentTask
     if (task && task.taskId === result.taskId) {
+      task.abortCleanup?.()
       task.resolve(result.result)
     }
 
@@ -301,6 +334,7 @@ export class FFprobeWorkerPool {
   private handleWorkerError(workerInfo: WorkerInfo, error: unknown): void {
     const task = workerInfo.currentTask
     if (task) {
+      task.abortCleanup?.()
       task.resolve({
         success: false,
         error: getErrorMessage(error),

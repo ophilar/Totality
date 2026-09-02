@@ -92,8 +92,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       }))
     const conflictMap = await this.identities.getBatchConflictingEntityIds('series', seriesWithIds)
 
-    const missingScoreTitles = rows
-      .filter((r) => r.efficiency_score === null || r.storage_debt_bytes === null || r.total_size === null)
+    const seriesTitles = rows
       .map((r) => r.series_title)
       .filter(Boolean)
 
@@ -105,16 +104,17 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       ownedCount: number
     }>()
 
-    if (missingScoreTitles.length > 0) {
+    if (seriesTitles.length > 0) {
       const aggregateConditions: SQL[] = [
         eq(schema.mediaItems.type, 'episode'),
-        sql`${schema.mediaItems.seriesTitle} IN (${sql.join(missingScoreTitles.map(t => sql`${t}`), sql`, `)})`
+        sql`${schema.mediaItems.seriesTitle} IN (${sql.join(seriesTitles.map(t => sql`${t}`), sql`, `)})`
       ]
       if (filters?.sourceId) aggregateConditions.push(eq(schema.mediaItems.sourceId, filters.sourceId))
       if (filters?.libraryId) aggregateConditions.push(eq(schema.mediaItems.libraryId, filters.libraryId))
 
       const aggRows = await this.drizzle.select({
         seriesTitle: schema.mediaItems.seriesTitle,
+        seriesIdentityKey: schema.mediaItems.seriesIdentityKey,
         sourceId: schema.mediaItems.sourceId,
         libraryId: schema.mediaItems.libraryId,
         totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`,
@@ -127,14 +127,14 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       .from(schema.mediaItems)
       .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
       .where(and(...aggregateConditions))
-      .groupBy(schema.mediaItems.seriesTitle, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+      .groupBy(schema.mediaItems.seriesIdentityKey, schema.mediaItems.seriesTitle, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
       .all()
 
       for (const agg of aggRows) {
         if (!agg.seriesTitle) continue
         const ownedCount = Number(agg.ownedCount) || 0
         const measuredDebtCount = Number(agg.measuredDebtCount) || 0
-        const key = `${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
+        const key = `${agg.seriesIdentityKey || agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
         aggregatedScoresMap.set(key, {
           totalSize: Number(agg.totalSize) || 0,
           storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
@@ -150,17 +150,22 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     for (const row of rows) {
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
-      const key = `${row.series_title}:${row.source_id}:${row.library_id}`
+      const key = `${row.series_identity_key || row.series_title}:${row.source_id}:${row.library_id}`
       const aggregate = aggregatedScoresMap.get(key)
+      const hasEpisodeAggregate = aggregate !== undefined && aggregate.ownedCount > 0
 
-      const totalSize = row.total_size != null ? row.total_size : (aggregate?.totalSize ?? 0)
+      const totalSize = hasEpisodeAggregate ? aggregate.totalSize : (row.total_size ?? 0)
       const totalRecoverable = row.evidence_status === 'measured' && row.storage_debt_bytes != null
         ? row.storage_debt_bytes
-        : (aggregate?.storageDebtBytes ?? undefined)
-      const weightedEfficiency = row.efficiency_score != null ? row.efficiency_score : (aggregate?.weightedEfficiency ?? null)
-      const ownedCount = row.owned_episodes || aggregate?.ownedCount || 0
+        : (hasEpisodeAggregate ? (aggregate.storageDebtBytes ?? undefined) : undefined)
+      const weightedEfficiency = hasEpisodeAggregate && aggregate.weightedEfficiency !== null
+        ? aggregate.weightedEfficiency
+        : (row.efficiency_score ?? null)
+      const ownedCount = hasEpisodeAggregate ? aggregate.ownedCount : (row.owned_episodes || 0)
       const totalCount = row.total_episodes || ownedCount
-      const scoredCount = row.efficiency_score != null ? ownedCount : (aggregate?.scoredCount ?? 0)
+      const scoredCount = hasEpisodeAggregate && aggregate.scoredCount > 0
+        ? aggregate.scoredCount
+        : (row.efficiency_score != null ? ownedCount : 0)
       const unscoredCount = Math.max(0, totalCount - scoredCount)
 
       summaries.push({

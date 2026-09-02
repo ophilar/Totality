@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   X, 
@@ -38,6 +38,11 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   const [isRescanning, setIsRescanning] = useState(false)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  const [isDeepAnalyzing, setIsDeepAnalyzing] = useState(false)
+  const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
+  const [isComparingProvider, setIsComparingProvider] = useState(false)
+  const [providerDifferences, setProviderDifferences] = useState<Array<{ field: string; local: unknown; provider: unknown }> | null>(null)
+  const deepRequestId = useRef<string | null>(null)
   const { addToast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -50,6 +55,13 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       
       if (item) {
         setMedia(item as MediaItem)
+        const persistedAnalysis = (item as MediaItem).deep_analysis
+        if (persistedAnalysis) {
+          const persisted = JSON.parse(persistedAnalysis)
+          setDeepAnalysis(persisted.deepAnalysis || null)
+        } else {
+          setDeepAnalysis(null)
+        }
         setVersions(itemVersions as MediaItemVersion[])
         
         // Default to best version
@@ -72,6 +84,10 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     return () => { active = false }
   }, [loadData])
 
+  useEffect(() => () => {
+    if (deepRequestId.current) void window.electronAPI.mediaCancelDeepAnalyze(deepRequestId.current)
+  }, [])
+
   const handleRescan = async () => {
     if (!media || !media.source_id || !media.file_path || !onRescan) return
     setIsRescanning(true)
@@ -90,6 +106,39 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     if (!media || !onDismissUpgrade) return
     onDismissUpgrade(media.id!, media.title)
     onClose()
+  }
+
+  const handleDeepAnalysis = async () => {
+    const filePath = media?.file_path
+    if (!filePath) return
+    setIsDeepAnalyzing(true)
+    const requestId = `deep-${Date.now()}-${media.id}`
+    deepRequestId.current = requestId
+    try {
+      const result = await window.electronAPI.mediaDeepAnalyze({ filePath, requestId })
+      if (!result.success) throw new Error(result.error || 'Deep analysis failed')
+      setDeepAnalysis(result.deepAnalysis || null)
+      addToast({ title: 'Deep analysis completed', type: 'success' })
+    } catch (error) {
+      addToast({ title: error instanceof Error ? error.message : 'Deep analysis failed', type: 'error' })
+    } finally {
+      if (deepRequestId.current === requestId) deepRequestId.current = null
+      setIsDeepAnalyzing(false)
+    }
+  }
+
+  const handleProviderComparison = async () => {
+    if (!media?.id) return
+    setIsComparingProvider(true)
+    try {
+      const result = await window.electronAPI.mediaCompareProvider(media.id)
+      setProviderDifferences(result.differences)
+      addToast({ title: result.differences.length ? `${result.differences.length} provider differences found` : 'Provider metadata matches', type: result.differences.length ? 'error' : 'success' })
+    } catch (error) {
+      addToast({ title: error instanceof Error ? error.message : 'Provider comparison failed', type: 'error' })
+    } finally {
+      setIsComparingProvider(false)
+    }
   }
 
   const handleRadarrSearch = async () => {
@@ -422,6 +471,47 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               {isRescanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Full Rescan
             </button>
+
+            {Boolean(media.file_path) && (
+              <button
+                onClick={handleDeepAnalysis}
+                disabled={isDeepAnalyzing}
+                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+              >
+                {isDeepAnalyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                {isDeepAnalyzing ? 'Deep analysis...' : 'Deep Analysis'}
+              </button>
+            )}
+
+            {Boolean(media.source_id && media.plex_id) && (
+              <button
+                onClick={handleProviderComparison}
+                disabled={isComparingProvider}
+                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+              >
+                {isComparingProvider ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                {isComparingProvider ? 'Comparing...' : providerDifferences === null ? 'Compare Provider' : `Provider Differences: ${providerDifferences.length}`}
+              </button>
+            )}
+            {providerDifferences && providerDifferences.length > 0 && (
+              <div className="basis-full text-xs text-muted-foreground space-y-1">
+                {providerDifferences.map(difference => (
+                  <div key={difference.field} className="flex gap-2">
+                    <span className="font-semibold">{difference.field}:</span>
+                    <span>local {String(difference.local ?? '—')}</span>
+                    <span>provider {String(difference.provider ?? '—')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {deepAnalysis && (
+              <div className="basis-full text-xs text-muted-foreground">
+                Bitrate: {deepAnalysis.avgBitrate ? `${Math.round(deepAnalysis.avgBitrate / 1000)} kbps average` : 'unavailable'}
+                {deepAnalysis.peakBitrate ? `, ${Math.round(deepAnalysis.peakBitrate / 1000)} kbps peak` : ''}
+                {deepAnalysis.scanDurationMs ? ` (${Math.round(deepAnalysis.scanDurationMs / 1000)}s)` : ''}
+              </div>
+            )}
 
             {Boolean(media.file_path) && (
               <button 

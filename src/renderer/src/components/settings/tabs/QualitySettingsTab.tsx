@@ -173,6 +173,17 @@ export function QualitySettingsTab() {
   }, [])
 
   useEffect(() => {
+    const cleanup = window.electronAPI.onTaskQueueTaskComplete?.((task) => {
+      if (task.type === 'quality-analysis') {
+        setIsReanalyzing(false)
+        setReanalyzeProgress(null)
+        setShowReanalyzePrompt(false)
+      }
+    })
+    return () => cleanup?.()
+  }, [])
+
+  useEffect(() => {
     const cleanup = window.electronAPI.onQualityAnalysisProgress?.((progress: unknown) => {
       setReanalyzeProgress(progress as { current: number; total: number })
     })
@@ -203,13 +214,14 @@ export function QualitySettingsTab() {
     setIsReanalyzing(true)
     setReanalyzeProgress({ current: 0, total: 0 })
     try {
-      await window.electronAPI.qualityAnalyzeAll()
+      await window.electronAPI.taskQueueAddTask({
+        type: 'quality-analysis',
+        label: 'Recalculate Media Quality (Settings)',
+      })
     } catch (error) {
       window.electronAPI.log.error('[QualitySettingsTab]', 'Failed to re-analyze:', error)
-    } finally {
       setIsReanalyzing(false)
       setReanalyzeProgress(null)
-      setShowReanalyzePrompt(false)
     }
   }
 

@@ -60,12 +60,13 @@ export class SeriesCompletenessService {
       if (!episode.series_title) continue
       const normalizedTitle = parser.normalizeSeriesTitle(episode.series_title)
       if (!normalizedTitle) continue
+      const seriesKey = episode.series_identity_key || normalizedTitle
 
-      const series = seriesByNormalizedTitle.get(normalizedTitle)
+      const series = seriesByNormalizedTitle.get(seriesKey)
       if (series) {
         series.episodes.push(episode)
       } else {
-        seriesByNormalizedTitle.set(normalizedTitle, {
+        seriesByNormalizedTitle.set(seriesKey, {
           title: episode.series_title,
           episodes: [episode],
         })
@@ -76,7 +77,10 @@ export class SeriesCompletenessService {
     const completenessByNormalizedTitle = new Map<string, SeriesCompleteness>()
     for (const completeness of allCompleteness) {
       const normalizedTitle = parser.normalizeSeriesTitle(completeness.series_title)
-      if (normalizedTitle) completenessByNormalizedTitle.set(normalizedTitle, completeness)
+      if (normalizedTitle) {
+        const seriesKey = completeness.series_identity_key || normalizedTitle
+        completenessByNormalizedTitle.set(seriesKey, completeness)
+      }
     }
 
     const seriesToAnalyze = Array.from(seriesByNormalizedTitle.entries())
@@ -226,6 +230,7 @@ export class SeriesCompletenessService {
 
     let totalSize = 0
     let totalStorageDebt = 0
+    let knownStorageDebtCount = 0
     let scoredSize = 0
     let weightedEfficiencyNumerator = 0
     let scoredCount = 0
@@ -234,7 +239,10 @@ export class SeriesCompletenessService {
     for (const ep of episodes) {
       const epSize = ep.file_size || 0
       totalSize += epSize
-      totalStorageDebt += ep.storage_debt_bytes || 0
+      if (ep.storage_debt_bytes !== undefined && ep.storage_debt_bytes !== null) {
+        totalStorageDebt += ep.storage_debt_bytes
+        knownStorageDebtCount++
+      }
       if (ep.efficiency_score !== undefined && ep.efficiency_score !== null && ep.efficiency_score >= 0) {
         weightedEfficiencyNumerator += ep.efficiency_score * epSize
         totalEfficiencyScore += ep.efficiency_score
@@ -274,7 +282,7 @@ export class SeriesCompletenessService {
       status: showDetails.status,
       user_fixed_match: existing?.user_fixed_match,
       efficiency_score: efficiencyScore ?? undefined,
-      storage_debt_bytes: totalStorageDebt,
+      storage_debt_bytes: knownStorageDebtCount === episodes.length ? totalStorageDebt : undefined,
       total_size: totalSize,
     }
 

@@ -12,6 +12,7 @@ import { getSourceManager, SourceManager } from '@main/services/SourceManager'
 import { getSeriesCompletenessService, SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getMovieCollectionService, MovieCollectionService } from '@main/services/MovieCollectionService'
 import { getMusicBrainzService, MusicBrainzService } from '@main/services/MusicBrainzService'
+import { getQualityAnalyzer, QualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getTranscodingService, TranscodingService, TranscodeProgress } from '@main/services/TranscodingService'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { BrowserWindow } from 'electron'
@@ -32,6 +33,7 @@ export interface TaskQueueDependencies {
   seriesCompleteness?: SeriesCompletenessService
   movieCollection?: MovieCollectionService
   musicBrainz?: MusicBrainzService
+  qualityAnalyzer?: QualityAnalyzer
   transcoding?: TranscodingService
 }
 
@@ -50,6 +52,7 @@ export class TaskQueueService {
   private seriesCompleteness: SeriesCompletenessService | null
   private movieCollection: MovieCollectionService | null
   private musicBrainz: MusicBrainzService | null
+  private qualityAnalyzer: QualityAnalyzer | null
   private transcoding: TranscodingService | null
   private mainWindow: BrowserWindow | null = null
 
@@ -60,6 +63,7 @@ export class TaskQueueService {
     this.seriesCompleteness = deps.seriesCompleteness || null
     this.movieCollection = deps.movieCollection || null
     this.musicBrainz = deps.musicBrainz || null
+    this.qualityAnalyzer = deps.qualityAnalyzer || null
     this.transcoding = deps.transcoding || null
   }
 
@@ -71,6 +75,11 @@ export class TaskQueueService {
   private getSeriesCompleteness(): SeriesCompletenessService {
     if (!this.seriesCompleteness) this.seriesCompleteness = getSeriesCompletenessService()
     return this.seriesCompleteness
+  }
+
+  private getQualityAnalyzer(): QualityAnalyzer {
+    if (!this.qualityAnalyzer) this.qualityAnalyzer = getQualityAnalyzer()
+    return this.qualityAnalyzer
   }
 
   private getMovieCollection(): MovieCollectionService {
@@ -412,6 +421,9 @@ export class TaskQueueService {
         case TaskType.MusicScan:
           await this.executeMusicScan(task, onProgress)
           break
+        case TaskType.QualityAnalysis:
+          await this.executeQualityAnalysis(task, onProgress)
+          break
         case TaskType.Transcode:
           await this.executeTranscode(task, onProgress)
           break
@@ -594,6 +606,18 @@ export class TaskQueueService {
     if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
     const manager = this.getSourceManager()
     await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+  }
+
+  private async executeQualityAnalysis(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+    await this.getQualityAnalyzer().analyzeAllMediaItems((current, total) => {
+      if (this.mainWindow) safeSend(this.mainWindow, 'quality:analysisProgress', { current, total })
+      onProgress({
+        current,
+        total,
+        percentage: total > 0 ? Math.round((current / total) * 100) : 100,
+        phase: current >= total ? 'complete' : 'analyzing',
+      })
+    }, () => this.cancelRequested, task.sourceId)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {

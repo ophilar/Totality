@@ -655,10 +655,12 @@ export class QualityAnalyzer {
    * Analyze all media items in the database
    */
   async analyzeAllMediaItems(
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number) => void,
+    isCancelled?: () => boolean,
+    sourceId?: string
   ): Promise<number> {
     const db = getDatabase()
-    const mediaItems = await db.media.getItems()
+    const mediaItems = await db.media.getItems(sourceId ? { sourceId } : undefined)
 
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
@@ -669,6 +671,10 @@ export class QualityAnalyzer {
     await db.beginBatch()
     try {
       for (const item of mediaItems) {
+        if (isCancelled?.()) {
+          await db.rollbackBatch()
+          return analyzed
+        }
         const qualityScore = await this.analyzeMediaItem(item)
         await db.media.upsertQualityScore(qualityScore)
 
@@ -683,6 +689,10 @@ export class QualityAnalyzer {
           const versions = await db.media.getItemVersions(item.id)
           const updatePromises = []
           for (const version of versions) {
+            if (isCancelled?.()) {
+              await db.rollbackBatch()
+              return analyzed
+            }
             if (version.id) {
               const vScore = this.analyzeVersion(version)
               updatePromises.push(db.media.updateVersionQuality(version.id, vScore))

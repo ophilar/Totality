@@ -63,6 +63,8 @@ export const mediaItems = sqliteTable('media_items', {
   episodeThumbUrl: text('episode_thumb_url'),
   seasonPosterUrl: text('season_poster_url'),
   summary: text('summary'),
+  deepAnalysis: text('deep_analysis'),
+  deepAnalysisAt: text('deep_analysis_at'),
   userFixedMatch: integer('user_fixed_match'),
   qualityTier: text('quality_tier'),
   tierQuality: text('tier_quality'),

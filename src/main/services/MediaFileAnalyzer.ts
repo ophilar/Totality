@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import AdmZip from 'adm-zip'
@@ -113,6 +114,7 @@ export function getMediaFileAnalyzer(): MediaFileAnalyzer {
 }
 
 export class MediaFileAnalyzer {
+  private readonly deepProcesses = new Map<string, ChildProcess>()
   private ffprobePath: string | null = null
   private ffmpegPath: string | null = null
   private ffprobeChecked: boolean = false
@@ -232,7 +234,7 @@ export class MediaFileAnalyzer {
   /**
    * Perform deep analysis of a media file (bitrate variance, volume peaks)
    */
-  async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean } = {}): Promise<Partial<FileAnalysisResult>> {
+  async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<Partial<FileAnalysisResult>> {
     if (!await this.isAvailable()) throw new Error('FFmpeg/FFprobe not available')
     
     const results: Partial<FileAnalysisResult> = { success: true, filePath, audioTracks: [], subtitleTracks: [], deepAnalysis: {} }
@@ -240,12 +242,12 @@ export class MediaFileAnalyzer {
     const startTime = Date.now()
 
     if (options.detectVolume && this.ffmpegPath) {
-      const vol = await this.detectAudioVolume(filePath)
+      const vol = await this.detectAudioVolume(filePath, options.requestId)
         results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }] // Simplified for first track for now
     }
 
     if (options.scanBitrate) {
-      const bitrate = await this.analyzeBitrateVariance(filePath)
+      const bitrate = await this.analyzeBitrateVariance(filePath, options.requestId)
       results.deepAnalysis = { ...results.deepAnalysis, ...bitrate }
     }
 
@@ -253,16 +255,23 @@ export class MediaFileAnalyzer {
     return results
   }
 
-  private async detectAudioVolume(filePath: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
+  cancelDeepAnalysis(requestId: string): void {
+    this.deepProcesses.get(requestId)?.kill()
+    this.deepProcesses.delete(requestId)
+  }
+
+  private async detectAudioVolume(filePath: string, requestId?: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     return new Promise((resolve, reject) => {
       const args = ['-i', `file:${sanitizedPath}`, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-']
       const proc = spawn(this.ffmpegPath || 'ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
+      if (requestId) this.deepProcesses.set(requestId, proc)
       
       let stderr = ''
       proc.stderr.on('data', (d) => { stderr += d.toString() })
       
       proc.on('close', (code) => {
+        if (requestId) this.deepProcesses.delete(requestId)
         if (code !== 0) return reject(new Error(`FFmpeg exited with code ${code}`))
         
         const maxVolumeMatch = stderr.match(/max_volume:\s+(-?[0-9.]+)\s+dB/)
@@ -280,17 +289,19 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private async analyzeBitrateVariance(filePath: string): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
+  private async analyzeBitrateVariance(filePath: string, requestId?: string): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     return new Promise((resolve, reject) => {
       // Use ffprobe to get packet sizes for the first video stream
       const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0:nk=1', `file:${sanitizedPath}`]
       const proc = spawn(this.ffprobePath || 'ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 })
+      if (requestId) this.deepProcesses.set(requestId, proc)
       
       let stdout = ''
       proc.stdout.on('data', (d) => { stdout += d.toString() })
       
       proc.on('close', (code) => {
+        if (requestId) this.deepProcesses.delete(requestId)
         if (code !== 0) return reject(new Error(`FFprobe exited with code ${code}`))
         
         const lines = stdout.trim().split('\n')
@@ -651,7 +662,8 @@ export class MediaFileAnalyzer {
    */
   async analyzeFilesParallel(
     filePaths: string[],
-    onProgress?: (current: number, total: number, currentFile: string) => void
+    onProgress?: (current: number, total: number, currentFile: string) => void,
+    signal?: AbortSignal
   ): Promise<Map<string, FileAnalysisResult>> {
     if (!await this.isAvailable()) {
       const results = new Map<string, FileAnalysisResult>()
@@ -664,7 +676,7 @@ export class MediaFileAnalyzer {
     const { getFFprobeWorkerPool } = await import('./FFprobeWorkerPool')
     const pool = getFFprobeWorkerPool()
     await pool.initialize(this.ffprobePath!)
-    return await pool.analyzeFiles(filePaths, onProgress)
+    return await pool.analyzeFiles(filePaths, onProgress, signal)
   }
 
   /**

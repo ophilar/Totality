@@ -10,6 +10,9 @@ import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { z } from 'zod'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
+import { getSourceManager } from '@main/services/SourceManager'
+import type { MediaItem } from '@main/types/database'
 
 export function registerMediaHandlers(): void {
   const analyzer = getMediaFileAnalyzer()
@@ -20,14 +23,44 @@ export function registerMediaHandlers(): void {
    */
   createValidatedIpcHandler(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, z.object({
     filePath: z.string(),
+    requestId: z.string().min(1).optional(),
     scanBitrate: z.boolean().optional(),
     detectVolume: z.boolean().optional()
   }), async (options) => {
     getLoggingService().info('[media]', `Starting deep analysis for: ${options.filePath}`)
-    return await analyzer.deepAnalyzeFile(options.filePath, {
+    const result = await analyzer.deepAnalyzeFile(options.filePath, {
       scanBitrate: options.scanBitrate ?? true,
-      detectVolume: options.detectVolume ?? true
+      detectVolume: options.detectVolume ?? true,
+      requestId: options.requestId
     })
+    await getDatabase().media.updateDeepAnalysisByPath(options.filePath, {
+      deepAnalysis: result.deepAnalysis,
+      audioTracks: result.audioTracks,
+    }, new Date().toISOString())
+    return result
+  })
+
+  createValidatedIpcHandler('media:cancelDeepAnalyze', z.string().min(1), async (requestId) => {
+    analyzer.cancelDeepAnalysis(requestId)
+    return { success: true }
+  })
+
+  createValidatedIpcHandler('media:compareProvider', z.number().int().positive(), async (mediaItemId) => {
+    const item = await getDatabase().media.getById(mediaItemId) as MediaItem | null
+    if (!item) throw new Error('Media item not found')
+    if (!item.source_id) throw new Error('Media item has no source')
+    const provider = getSourceManager().getProvider(item.source_id)
+    if (!provider) throw new Error(`Provider unavailable for source ${item.source_id}`)
+    const providerItem = await provider.getItemMetadata(item.plex_id)
+    const fields = ['title', 'year', 'duration', 'resolution', 'width', 'height', 'videoCodec', 'videoBitrate', 'audioCodec', 'audioChannels', 'audioBitrate'] as const
+    const localValues: Record<string, unknown> = {
+      title: item.title, year: item.year, duration: item.duration, resolution: item.resolution,
+      width: item.width, height: item.height, videoCodec: item.video_codec, videoBitrate: item.video_bitrate,
+      audioCodec: item.audio_codec, audioChannels: item.audio_channels, audioBitrate: item.audio_bitrate,
+    }
+    const differences = fields.filter(field => providerItem[field] !== undefined && providerItem[field] !== localValues[field])
+      .map(field => ({ field, local: localValues[field], provider: providerItem[field] }))
+    return { providerType: provider.providerType, differences }
   })
 
   createValidatedIpcHandler('media:getFileAudioLanguages', z.number().int().positive(), async (mediaItemId) => {

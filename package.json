@@ -39,7 +39,6 @@
         "drizzle-orm": "^0.45.2",
         "electron-updater": "^6.8.9",
         "mysql2": "^3.24.2",
-        "p-limit": "^7.3.2",
         "yocto-queue": "^1.2.2"
     },
     "overrides": {

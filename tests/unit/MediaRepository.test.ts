@@ -38,6 +38,21 @@ describe('MediaRepository (Real DB)', () => {
     resolution: '1080p',
   })
 
+  const mockVersion = (filePath: string) => ({
+    version_source: filePath,
+    file_path: filePath,
+    file_size: 100,
+    duration: 1000,
+    resolution: '1080p',
+    width: 1920,
+    height: 1080,
+    video_codec: 'h264',
+    video_bitrate: 100,
+    audio_codec: 'aac',
+    audio_channels: 2,
+    audio_bitrate: 100,
+  })
+
   it('should upsert and retrieve a media item', async () => {
     const item = mockItem()
     const id = await repo.upsertItem(item)
@@ -72,6 +87,24 @@ describe('MediaRepository (Real DB)', () => {
     const id = await repo.upsertItem(mockItem())
     await repo.deleteItem(id)
     expect(await repo.getItem(id)).toBeNull()
+  })
+
+  it('should merge a movie version without removing sibling versions', async () => {
+    const id = await repo.upsertItem(mockItem())
+    await repo.syncItemVersions(id, [mockVersion('/movie-a.mkv')])
+    await repo.mergeItemVersion(id, mockVersion('/movie-b.mkv'))
+
+    expect((await repo.getItemVersions(id)).map(item => item.file_path)).toEqual([
+      '/movie-a.mkv',
+      '/movie-b.mkv',
+    ])
+  })
+
+  it('should remove only movie versions absent from the valid path set', async () => {
+    const id = await repo.upsertItem(mockItem())
+    await repo.syncItemVersions(id, [mockVersion('/movie-a.mkv'), mockVersion('/movie-b.mkv')])
+    expect(await repo.removeStaleItemVersions(id, new Set(['/movie-a.mkv']))).toBe(1)
+    expect((await repo.getItemVersions(id)).map(item => item.file_path)).toEqual(['/movie-a.mkv'])
   })
 })
 

@@ -1,25 +1,11 @@
-import { BrowserWindow } from 'electron'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { PositiveIntSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
-import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 
 export function registerQualityHandlers() {
   const analyzer = getQualityAnalyzer()
-
-  createIpcHandlerWithEvent('quality:analyzeAll', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    await analyzer.loadThresholdsFromDatabase()
-    let lastUpdate = 0
-    return await analyzer.analyzeAllMediaItems((current, total) => {
-      win?.webContents.send('quality:analysisProgress', { current, total })
-      if (Date.now() - lastUpdate >= 2000) {
-        win?.webContents.send('library:updated', { type: 'media' })
-        lastUpdate = Date.now()
-      }
-    })
-  })
 
   createIpcHandler('quality:getDistribution', async () => {
     return analyzer.getQualityDistribution()

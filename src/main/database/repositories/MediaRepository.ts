@@ -339,6 +339,8 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       episodeThumbUrl: item.episode_thumb_url ?? null,
       seasonPosterUrl: item.season_poster_url ?? null,
       summary: item.summary ?? null,
+      deepAnalysis: item.deep_analysis ?? null,
+      deepAnalysisAt: item.deep_analysis_at ?? null,
       userFixedMatch: item.user_fixed_match ? 1 : 0,
       qualityTier: item.quality_tier ?? null,
       tierQuality: item.tier_quality ?? null,
@@ -367,6 +369,12 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
       }
     )
+  }
+
+  async updateDeepAnalysisByPath(filePath: string, analysis: unknown, analyzedAt: string): Promise<void> {
+    await this.drizzle.update(schema.mediaItems)
+      .set({ deepAnalysis: JSON.stringify(analysis), deepAnalysisAt: analyzedAt })
+      .where(eq(schema.mediaItems.filePath, filePath))
   }
 
   async deleteItem(id: number): Promise<void> {
@@ -1035,6 +1043,30 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       await this.rollbackBatch()
       throw err
     }
+  }
+
+  async mergeItemVersion(
+    mediaItemId: number,
+    version: Omit<MediaItemVersion, 'id' | 'media_item_id'>,
+  ): Promise<void> {
+    const versions = await this.getItemVersions(mediaItemId)
+    const normalizedPath = PathUtils.toDatabasePath(version.file_path)
+    const merged: Array<Omit<MediaItemVersion, 'id' | 'media_item_id'>> = versions
+      .filter(existing => existing.file_path !== normalizedPath)
+      .map(({ id: _id, media_item_id: _mediaItemId, ...existing }) => existing)
+    merged.push({ ...version, file_path: normalizedPath })
+    await this.syncItemVersions(mediaItemId, merged)
+  }
+
+  async removeStaleItemVersions(mediaItemId: number, validPaths: Set<string>): Promise<number> {
+    const versions = await this.getItemVersions(mediaItemId)
+    const staleIds = versions
+      .filter(version => !validPaths.has(PathUtils.toDatabasePath(version.file_path)))
+      .map(version => version.id)
+      .filter((id): id is number => id !== undefined)
+    if (staleIds.length === 0) return 0
+    await this.drizzle.delete(schema.mediaItemVersions).where(inArray(schema.mediaItemVersions.id, staleIds))
+    return staleIds.length
   }
 
   async updateMediaItemVersionQuality(id: number, score: VersionQualityUpdate): Promise<void> {

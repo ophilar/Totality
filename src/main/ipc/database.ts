@@ -32,11 +32,12 @@ import {
 } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getSourceManager } from '@main/services/SourceManager'
-import { MediaItemType } from '@main/types/database'
+import { MediaItemType, TaskType } from '@main/types/database'
 import type { MediaItem, MediaItemFilters, QualityScore } from '@main/types/database'
 import type { TMDBMovieSearchResult } from '@main/types/tmdb'
 import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
@@ -126,7 +127,12 @@ export function registerDatabaseHandlers() {
       }
     }
 
-    if (key === 'ffprobe_enabled' && value === 'true') getQualityAnalyzer().analyzeAllMediaItems().catch(() => {})
+    if (key === 'ffprobe_enabled' && value === 'true') {
+      await getTaskQueueService().addTask({
+        type: TaskType.QualityAnalysis,
+        label: 'Recalculate Media Quality (FFprobe enabled)',
+      })
+    }
 
 
     const win = BrowserWindow.fromWebContents(event.sender)

@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS media_items (
   -- All audio tracks (JSON array)
   audio_tracks TEXT,
 
+  -- Deep FFmpeg/FFprobe analysis (JSON) and measurement timestamp
+  deep_analysis TEXT,
+  deep_analysis_at TEXT,
+
   -- All subtitle tracks (JSON array)
   subtitle_tracks TEXT,
 

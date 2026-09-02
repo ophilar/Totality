@@ -156,9 +156,6 @@ export const sourcesApi = {
   // Get FFprobe version string
   ffprobeGetVersion: () => ipcRenderer.invoke('ffprobe:getVersion'),
 
-  // Analyze a media file with FFprobe
-  ffprobeAnalyzeFile: (filePath: string) => ipcRenderer.invoke('ffprobe:analyzeFile', filePath),
-
   // Enable/disable FFprobe analysis for a source
   ffprobeSetEnabled: (sourceId: string, enabled: boolean) =>
     ipcRenderer.invoke('ffprobe:setEnabled', sourceId, enabled),
@@ -426,55 +423,6 @@ export interface SourcesAPI {
 
   // Get FFprobe version string
   ffprobeGetVersion: () => Promise<string | null>
-
-  // Analyze a media file with FFprobe
-  ffprobeAnalyzeFile: (filePath: string) => Promise<{
-    success: boolean
-    error?: string
-    filePath: string
-    container?: string
-    duration?: number
-    fileSize?: number
-    overallBitrate?: number
-    video?: {
-      index: number
-      codec: string
-      profile?: string
-      level?: number
-      width: number
-      height: number
-      bitrate?: number
-      frameRate?: number
-      bitDepth?: number
-      pixelFormat?: string
-      colorSpace?: string
-      colorTransfer?: string
-      colorPrimaries?: string
-      hdrFormat?: string
-    }
-    audioTracks: Array<{
-      index: number
-      codec: string
-      profile?: string
-      channels: number
-      channelLayout?: string
-      bitrate?: number
-      sampleRate?: number
-      bitDepth?: number
-      language?: string
-      title?: string
-      isDefault: boolean
-      hasObjectAudio: boolean
-    }>
-    subtitleTracks: Array<{
-      index: number
-      codec: string
-      language?: string
-      title?: string
-      isDefault: boolean
-      isForced: boolean
-    }>
-  }>
 
   // Enable/disable FFprobe analysis for a source
   ffprobeSetEnabled: (sourceId: string, enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>

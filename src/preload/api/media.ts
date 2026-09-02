@@ -4,7 +4,6 @@ import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicAr
 
 export const mediaApi: MediaAPI = {
   // Quality Analysis
-  qualityAnalyzeAll: () => ipcRenderer.invoke('quality:analyzeAll'),
   qualityGetDistribution: () => ipcRenderer.invoke('quality:getDistribution'),
   qualityGetRecommendedFormat: (mediaItemId: number) =>
     ipcRenderer.invoke('quality:getRecommendedFormat', mediaItemId),
@@ -143,8 +142,10 @@ export const mediaApi: MediaAPI = {
   removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
-  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) =>
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, options),
+  mediaCancelDeepAnalyze: (requestId: string) => ipcRenderer.invoke('media:cancelDeepAnalyze', requestId),
+  mediaCompareProvider: (mediaItemId: number) => ipcRenderer.invoke('media:compareProvider', mediaItemId),
 }
 
 export interface MediaDeepAnalysisResult {
@@ -162,7 +163,6 @@ export interface MediaDeepAnalysisResult {
 
 export interface MediaAPI {
   // Quality Analysis
-  qualityAnalyzeAll: () => Promise<number>
   qualityGetDistribution: () => Promise<{
     byTier: {
       [tier: string]: { low: number; medium: number; high: number }
@@ -378,7 +378,9 @@ export interface MediaAPI {
   }>
 
   // Deep Analysis
-  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean }) => Promise<MediaDeepAnalysisResult>
+  mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) => Promise<MediaDeepAnalysisResult>
+  mediaCancelDeepAnalyze: (requestId: string) => Promise<{ success: boolean }>
+  mediaCompareProvider: (mediaItemId: number) => Promise<{ providerType: string; differences: Array<{ field: string; local: unknown; provider: unknown }> }>
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) => Promise<number>
   batchAddExclusions: (exclusions: unknown[]) => Promise<void>
   removeExclusion: (id: number) => Promise<void>

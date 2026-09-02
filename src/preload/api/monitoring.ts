@@ -51,7 +51,7 @@ export const monitoringApi = {
 
   // Task Management
   taskQueueAddTask: (definition: {
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
     label: string
     sourceId?: string
     libraryId?: string
@@ -60,7 +60,7 @@ export const monitoringApi = {
     options?: unknown
   }) => ipcRenderer.invoke('taskQueue:addTask', definition),
   taskQueueAddTasks: (definitions: Array<{
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
     label: string
     sourceId?: string
     libraryId?: string
@@ -190,7 +190,7 @@ export interface MonitoringAPI {
 
   // Task Management
   taskQueueAddTask: (definition: {
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
     label: string
     sourceId?: string
     libraryId?: string
@@ -199,7 +199,7 @@ export interface MonitoringAPI {
     options?: unknown
   }) => Promise<{ success: boolean; taskId: string }>
   taskQueueAddTasks: (definitions: Array<{
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'transcode'
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis' | 'transcode'
     label: string
     sourceId?: string
     libraryId?: string
@@ -241,7 +241,7 @@ export interface MonitoringAPI {
   onTaskQueueUpdated: (callback: (state: import('@main/types/database').TaskQueueState) => void) => () => void
   onTaskQueueTaskComplete: (callback: (task: {
     id: string
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
+    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan' | 'quality-analysis'
     label: string
     status: 'completed' | 'failed' | 'cancelled'
     completedAt: string

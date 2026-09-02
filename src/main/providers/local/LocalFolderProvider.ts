@@ -1,6 +1,4 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
-import pLimit from 'p-limit'
-
 interface ProcessedItem {
   metadata: MediaMetadata
   parsed: ParsedMovieInfo | ParsedEpisodeInfo
@@ -71,6 +69,7 @@ import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MediaItem, MediaItemVersion, AudioTrack } from '@main/types/database'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
+import { mapBounded } from '@main/services/utils/mapBounded'
 
 export interface LocalFolderConfig {
   folderPath: string
@@ -87,6 +86,8 @@ export interface LocalFolderConfig {
 
 // Minimum duration in seconds for movies (45 minutes)
 const MIN_MOVIE_DURATION_SECONDS = 45 * 60
+const FILE_EXISTENCE_CONCURRENCY = 50
+const TARGETED_FILE_BATCH_SIZE = 500
 
 function isExtrasContent(filename: string): boolean {
   return getFileNameParser().isExtrasContent(filename)
@@ -145,19 +146,16 @@ export class LocalFolderProvider extends BaseMediaProvider {
       let mediaFileCount = 0
       let directoriesProcessed = 0
 
-      const limit = pLimit(50)
       const countFiles = async (dir: string, depth = 0): Promise<void> => {
         if (depth > 10) return
-        const entries = await limit(() => fsPromises.readdir(dir, { withFileTypes: true }))
-        await Promise.all(
-          entries.map(async (entry) => {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true })
+        await mapBounded(entries, 50, async (entry) => {
             if (entry.isDirectory()) {
               await countFiles(path.join(dir, entry.name), depth + 1)
             } else if (parser.isMediaFile(entry.name)) {
               mediaFileCount++
             }
           })
-        )
         directoriesProcessed++
         if (directoriesProcessed % 50 === 0) await new Promise(resolve => setImmediate(resolve))
       }
@@ -222,8 +220,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
 
   async getItemMetadata(itemId: string): Promise<MediaMetadata> {
     const db = getDatabase()
-    const items = await db.media.getItems({ sourceId: this.sourceId })
-    const mediaItem = items.find((item: MediaItem) => item.plex_id === itemId)
+    const mediaItem = await db.media.getItemByProviderId(itemId, this.sourceId)
     if (mediaItem) return this.convertMediaItemToMetadata(mediaItem)
     throw new Error(`Item not found: ${itemId}. Run a library scan first.`)
   }
@@ -380,7 +377,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
               }
             }
 
-            filesToProcess.push({ filePath, relativePath, fileMtime, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, metadata })
+            for (const episodeMetadata of this.expandEpisodeMetadata(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo)) {
+              filesToProcess.push({ filePath, relativePath, fileMtime, parsed: episodeMetadata.parsed, metadata: episodeMetadata.metadata })
+            }
             if (ffprobeAvailable) filesToAnalyze.push(filePath)
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
@@ -390,18 +389,25 @@ export class LocalFolderProvider extends BaseMediaProvider {
         let ffprobeResults = new Map<string, FileAnalysisResult>()
         if (filesToAnalyze.length > 0) {
           onProgress?.({ current: batchEnd, total: totalFiles, phase: 'analyzing', currentItem: `Analyzing ${filesToAnalyze.length} files...`, percentage: (batchEnd / totalFiles) * 100 })
-          ffprobeResults = useParallelFFprobe
-            ? await fileAnalyzer.analyzeFilesParallel(filesToAnalyze)
-            : new Map(await Promise.all(filesToAnalyze.map(async fp => {
-                try {
-                  return [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult]
-                } catch {
-                  return [fp, { success: false, filePath: fp, audioTracks: [], subtitleTracks: [] }] as [string, FileAnalysisResult]
-                }
-              })))
-        }
+          ffprobeResults = await this.analyzeFiles(fileAnalyzer, filesToAnalyze, useParallelFFprobe)
 
-        for (const fileInfo of filesToProcess) {
+          for (const fileInfo of filesToProcess) {
+            const { filePath, fileMtime, parsed } = fileInfo
+            let { metadata } = fileInfo
+            try {
+              const analysis = ffprobeResults.get(filePath)
+              if (analysis?.success) {
+                metadata = fileAnalyzer.enhanceMetadata(metadata, analysis)
+                if (scanType === 'movie' && analysis.duration && analysis.duration / 1000 < MIN_MOVIE_DURATION_SECONDS) continue
+              }
+              processedItems.push({ metadata, parsed, fileMtime })
+              scannedFilePaths.add(PathUtils.toDatabasePath(filePath))
+            } catch (error: unknown) {
+              result.errors.push(`Failed to analyze ${path.basename(filePath)}: ${getErrorMessage(error)}`)
+            }
+          }
+        }
+        if (filesToAnalyze.length === 0) for (const fileInfo of filesToProcess) {
           const { filePath, fileMtime, parsed } = fileInfo
           let { metadata } = fileInfo
           try {
@@ -416,17 +422,33 @@ export class LocalFolderProvider extends BaseMediaProvider {
             result.errors.push(`Failed to analyze ${path.basename(filePath)}: ${getErrorMessage(error)}`)
           }
         }
+
+        if (processedItems.length > 0 && (scanType === MediaItemType.Episode || scanType === MediaItemType.Movie)) {
+          const batchSaveResult = scanType === MediaItemType.Movie
+            ? await this.saveMovieItemsStreaming(db, processedItems, libraryId)
+            : await this.saveMediaItems(db, processedItems, libraryId, scanType, isIncremental)
+          result.itemsScanned += batchSaveResult.itemsScanned
+          result.itemsAdded += batchSaveResult.itemsAdded
+          result.itemsUpdated += batchSaveResult.itemsUpdated
+          result.errors.push(...batchSaveResult.errors)
+          processedItems.length = 0
+        }
       }
 
-      const saveResult = await this.saveMediaItems(db, processedItems, libraryId, scanType, isIncremental)
-      result.itemsScanned += saveResult.itemsScanned
-      result.itemsAdded += saveResult.itemsAdded
-      result.itemsUpdated += saveResult.itemsUpdated
-      result.errors.push(...saveResult.errors)
+      if (processedItems.length > 0) {
+        const saveResult = await this.saveMediaItems(db, processedItems, libraryId, scanType, isIncremental)
+        result.itemsScanned += saveResult.itemsScanned
+        result.itemsAdded += saveResult.itemsAdded
+        result.itemsUpdated += saveResult.itemsUpdated
+        result.errors.push(...saveResult.errors)
+      }
 
       onProgress?.({ current: totalFiles, total: totalFiles, phase: 'saving', currentItem: 'Reconciling deletions...', percentage: 100 })
       const existingItems = await db.media.getItems({ type: scanType, sourceId: this.sourceId, libraryId })
       for (const item of existingItems) {
+        if (scanType === MediaItemType.Movie && item.id) {
+          await db.media.removeStaleItemVersions(item.id, scannedFilePaths)
+        }
         const stillExists = isIncremental ? (item.file_path && fs.existsSync(item.file_path)) : (item.file_path && scannedFilePaths.has(item.file_path))
         if (!stillExists && item.id) {
           await db.media.deleteItem(item.id)
@@ -469,29 +491,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const movieTmdbCache = new Map<string, MovieMatchCacheEntry | null>()
       const seriesTmdbCache = new Map<string, SeriesMatchCacheEntry | null>()
 
-      const validFiles: string[] = []
-      const deletedFiles: string[] = []
-      const chunkSize = 500
-      for (let i = 0; i < filePaths.length; i += chunkSize) {
-        const chunk = filePaths.slice(i, i + chunkSize)
-        const existsChecks = await Promise.all(chunk.map(async fp => {
-          try {
-            await fsPromises.access(fp, fs.constants.F_OK)
-            return true
-          } catch {
-            return false
-          }
-        }))
-        for (let j = 0; j < chunk.length; j++) {
-          if (existsChecks[j]) {
-            if (parser.isVideoFile(path.basename(chunk[j]))) {
-              validFiles.push(chunk[j])
-            }
-          } else {
-            deletedFiles.push(chunk[j])
-          }
-        }
-      }
+      const { validFiles, deletedFiles } = await this.partitionExistingFiles(
+        filePaths,
+        filePath => parser.isVideoFile(path.basename(filePath)),
+      )
 
       if (deletedFiles.length > 0) {
         const existingItems = await db.media.getItemsByPaths(deletedFiles)
@@ -545,7 +548,9 @@ export class LocalFolderProvider extends BaseMediaProvider {
                 // Non-fatal if ffprobe cannot parse corrupted/mock file content
               }
             }
-            processedItems.push({ metadata, parsed: parsed as ParsedMovieInfo | ParsedEpisodeInfo, fileMtime })
+            for (const episodeMetadata of this.expandEpisodeMetadata(metadata, parsed as ParsedMovieInfo | ParsedEpisodeInfo)) {
+              processedItems.push({ metadata: episodeMetadata.metadata, parsed: episodeMetadata.parsed, fileMtime })
+            }
           } catch (error: unknown) {
             result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`)
           }
@@ -571,29 +576,10 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const db = getDatabase(); const fileAnalyzer = getMediaFileAnalyzer(); const parser = getFileNameParser()
       const ffprobeEnabled = (await db.config.getSetting('ffprobe_enabled')) !== 'false'
       const ffprobeAvailable = ffprobeEnabled && await fileAnalyzer.isAvailable()
-      const validFiles: string[] = []
-      const deletedFiles: string[] = []
-      const chunkSize = 500
-      for (let i = 0; i < filePaths.length; i += chunkSize) {
-        const chunk = filePaths.slice(i, i + chunkSize)
-        const existsChecks = await Promise.all(chunk.map(async fp => {
-          try {
-            await fsPromises.access(fp, fs.constants.F_OK)
-            return true
-          } catch {
-            return false
-          }
-        }))
-        for (let j = 0; j < chunk.length; j++) {
-          if (existsChecks[j]) {
-            if (parser.isAudioFile(path.basename(chunk[j]))) {
-              validFiles.push(chunk[j])
-            }
-          } else {
-            deletedFiles.push(chunk[j])
-          }
-        }
-      }
+      const { validFiles, deletedFiles } = await this.partitionExistingFiles(
+        filePaths,
+        filePath => parser.isAudioFile(path.basename(filePath)),
+      )
 
       if (deletedFiles.length > 0) {
         const existingTracks = await db.music.getTracksByPaths(deletedFiles)
@@ -657,6 +643,50 @@ export class LocalFolderProvider extends BaseMediaProvider {
       await db.music.updateMusicArtistCountsBatch(Array.from(artistMap.values()))
       result.success = true; result.durationMs = Date.now() - startTime; return result
     } catch (error: unknown) { result.errors.push(getErrorMessage(error)); result.durationMs = Date.now() - startTime; return result }
+  }
+
+  private async partitionExistingFiles(
+    filePaths: string[],
+    isSupported: (filePath: string) => boolean,
+  ): Promise<{ validFiles: string[]; deletedFiles: string[] }> {
+    const validFiles: string[] = []
+    const deletedFiles: string[] = []
+
+    for (let i = 0; i < filePaths.length; i += TARGETED_FILE_BATCH_SIZE) {
+      const chunk = filePaths.slice(i, i + TARGETED_FILE_BATCH_SIZE)
+      const existsChecks = await mapBounded(chunk, FILE_EXISTENCE_CONCURRENCY, async filePath => {
+        try {
+          await fsPromises.access(filePath, fs.constants.F_OK)
+          return true
+        } catch {
+          return false
+        }
+      })
+
+      for (let index = 0; index < chunk.length; index++) {
+        if (existsChecks[index] && isSupported(chunk[index])) validFiles.push(chunk[index])
+        else if (!existsChecks[index]) deletedFiles.push(chunk[index])
+      }
+    }
+
+    return { validFiles, deletedFiles }
+  }
+
+  private async analyzeFiles(
+    analyzer: ReturnType<typeof getMediaFileAnalyzer>,
+    filePaths: string[],
+    parallel: boolean,
+  ): Promise<Map<string, FileAnalysisResult>> {
+    if (parallel) return analyzer.analyzeFilesParallel(filePaths)
+
+    const entries = await mapBounded(filePaths, 1, async filePath => {
+      try {
+        return [filePath, await analyzer.analyzeFile(filePath)] as [string, FileAnalysisResult]
+      } catch {
+        return [filePath, { success: false, filePath, audioTracks: [], subtitleTracks: [] }] as [string, FileAnalysisResult]
+      }
+    })
+    return new Map(entries)
   }
 
   private async discoverMediaFiles(rootDir: string, _type: MediaItemType, _onProgress?: ProgressCallback, sinceTimestamp?: Date): Promise<Array<{ filePath: string; relativePath: string }>> {
@@ -815,6 +845,32 @@ export class LocalFolderProvider extends BaseMediaProvider {
     return `local_${this.simpleHash(filePath)}`
   }
 
+  private expandEpisodeMetadata(
+    metadata: MediaMetadata,
+    parsed: ParsedMovieInfo | ParsedEpisodeInfo,
+  ): Array<{ metadata: MediaMetadata; parsed: ParsedMovieInfo | ParsedEpisodeInfo }> {
+    if (parsed.type !== 'episode' || parsed.episodeNumberEnd === undefined || parsed.episodeNumberEnd <= parsed.episodeNumber) {
+      return [{ metadata, parsed }]
+    }
+
+    const count = parsed.episodeNumberEnd - parsed.episodeNumber + 1
+    return Array.from({ length: count }, (_, index) => {
+      const episodeNumber = parsed.episodeNumber + index
+      const episode: ParsedEpisodeInfo = { ...parsed, episodeNumber, episodeNumberEnd: undefined }
+      return {
+        parsed: episode,
+        metadata: {
+          ...metadata,
+          itemId: `${metadata.itemId}-e${episodeNumber}`,
+          title: `Episode ${episodeNumber}`,
+          episodeNumber,
+          fileSize: metadata.fileSize != null ? metadata.fileSize / count : undefined,
+          duration: metadata.duration != null ? metadata.duration / count : undefined,
+        },
+      }
+    })
+  }
+
   private generateCanonicalPlexId(metadata: MediaMetadata): string {
     if (metadata.type === 'movie') {
       if (metadata.tmdbId) return `local_movie_${metadata.tmdbId}`
@@ -882,6 +938,14 @@ export class LocalFolderProvider extends BaseMediaProvider {
       await new Promise(r => setTimeout(r, 0))
     }
     return result
+  }
+
+  private async saveMovieItemsStreaming(
+    db: ReturnType<typeof getDatabase>,
+    processedItems: ProcessedItem[],
+    libraryId: string,
+  ) {
+    return this.saveMediaItems(db, processedItems, libraryId, 'movie', true)
   }
 
   private hashCache = new Map<string, string>()
@@ -1000,15 +1064,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
           let ffprobeResults = new Map<string, FileAnalysisResult>()
           if (filesToAnalyze.length > 0) {
             onProgress?.({ current: batchEnd, total: totalFiles, phase: 'analyzing', currentItem: `Analyzing ${filesToAnalyze.length} audio files...`, percentage: (batchEnd / totalFiles) * 100 })
-            ffprobeResults = ffprobeParallelEnabled && ffprobeBatchSize > 1
-              ? await fileAnalyzer.analyzeFilesParallel(filesToAnalyze)
-              : new Map(await Promise.all(filesToAnalyze.map(async fp => {
-                  try {
-                    return [fp, await fileAnalyzer.analyzeFile(fp)] as [string, FileAnalysisResult]
-                  } catch {
-                    return [fp, { success: false, filePath: fp, audioTracks: [], subtitleTracks: [] }] as [string, FileAnalysisResult]
-                  }
-                })))
+            ffprobeResults = await this.analyzeFiles(fileAnalyzer, filesToAnalyze, ffprobeParallelEnabled && ffprobeBatchSize > 1)
           }
 
           for (const fileInfo of filesToProcess) {

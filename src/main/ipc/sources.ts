@@ -371,10 +371,6 @@ export function registerSourceHandlers(): void {
     return await getMediaFileAnalyzer().getVersion()
   })
 
-  createValidatedIpcHandler('ffprobe:analyzeFile', z.string(), async (filePath) => {
-    return await getMediaFileAnalyzer().analyzeFile(filePath)
-  })
-
   createValidatedIpcHandler('ffprobe:setEnabled', z.tuple([SourceIdSchema, z.boolean()]), async (sourceId, enabled) => {
     const provider = manager.getProvider(sourceId)
     if (provider?.providerType !== ProviderType.KodiLocal) throw new Error('Not a Kodi local source')

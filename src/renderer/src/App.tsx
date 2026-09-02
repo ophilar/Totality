@@ -172,6 +172,21 @@ function AppContent() {
     }
   }
 
+  const handleAnalyzeQuality = async () => {
+    await window.electronAPI.taskQueueAddTask({
+      type: 'quality-analysis',
+      label: `Recalculate Media Quality (${activeSourceId ? sources.find(s => s.source_id === activeSourceId)?.display_name || 'Selected Source' : 'All Sources'})`,
+      sourceId: activeSourceId || undefined,
+    })
+  }
+
+  const handleAnalyzeAll = async () => {
+    await handleAnalyzeQuality()
+    if (hasTV) await handleAnalyzeSeries()
+    if (hasMovies) await handleAnalyzeCollections()
+    if (hasMusic) await handleAnalyzeMusic()
+  }
+
   const handleCancelAnalysis = async () => {
     try {
       await window.electronAPI.taskQueueCancelCurrent()
@@ -375,6 +390,7 @@ function AppContent() {
                 onAnalyzeSeries={handleAnalyzeSeries}
                 onAnalyzeCollections={handleAnalyzeCollections}
                 onAnalyzeMusic={handleAnalyzeMusic}
+                onAnalyzeAll={handleAnalyzeAll}
                 onCancel={handleCancelAnalysis}
                 isAnalyzing={isAnalyzing}
                 analysisProgress={analysisProgress}

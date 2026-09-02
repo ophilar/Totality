@@ -341,7 +341,7 @@ export function MediaBrowser({
 
   const {
     isAnalyzing, setIsAnalyzing, analysisProgress, setAnalysisProgress, analysisType, setAnalysisType,
-    handleAnalyzeSeries, handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeSingleSeries, handleCancelAnalysis, checkTmdbApiKey,
+    handleAnalyzeSeries, handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeAll, handleAnalyzeSingleSeries, handleCancelAnalysis, checkTmdbApiKey,
   } = useAnalysisManager({ sources, activeSourceId, activeSourceLibraries, loadCompletenessData })
 
   const loadActiveSourceLibraries = useCallback(async () => {
@@ -549,6 +549,7 @@ export function MediaBrowser({
         onAnalyzeSeries={handleAnalyzeSeries}
         onAnalyzeCollections={handleAnalyzeCollections}
         onAnalyzeMusic={handleAnalyzeMusic}
+        onAnalyzeAll={() => handleAnalyzeAll((stats?.totalShows ?? 0) > 0, (stats?.totalMovies ?? 0) > 0, musicArtists.length > 0)}
         onCancel={handleCancelAnalysis}
         isAnalyzing={isAnalyzing}
         analysisProgress={analysisProgress}

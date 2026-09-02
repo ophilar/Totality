@@ -102,6 +102,8 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'media_items', 'sort_title', 'TEXT')
   await ensureColumn(db, 'media_items', 'version_count', 'INTEGER NOT NULL DEFAULT 1')
   await ensureColumn(db, 'media_items', 'summary', 'TEXT')
+  await ensureColumn(db, 'media_items', 'deep_analysis', 'TEXT')
+  await ensureColumn(db, 'media_items', 'deep_analysis_at', 'TEXT')
 
   await migrateMediaOptimizationJobs(db)
 

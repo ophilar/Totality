@@ -61,6 +61,8 @@ export function toSnakeCaseMediaItem(r: unknown, q?: unknown): MediaItem {
     series_tmdb_id: item.seriesTmdbId || item.series_tmdb_id,
     original_language: item.originalLanguage || item.original_language,
     audio_language: item.audioLanguage || item.audio_language,
+    deep_analysis: item.deepAnalysis || item.deep_analysis,
+    deep_analysis_at: item.deepAnalysisAt || item.deep_analysis_at,
     poster_url: item.posterUrl || item.poster_url,
     episode_thumb_url: item.episodeThumbUrl || item.episode_thumb_url,
     season_poster_url: item.seasonPosterUrl || item.season_poster_url,
