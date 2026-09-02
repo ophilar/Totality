@@ -266,7 +266,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
       const currentLib = libs.find(l => l.libraryId === libraryId)
-      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.isProtected && currentLib?.allowExpandedMatching) || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
+      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
       const ffprobeParallelEnabled = (await db.config.getSetting('ffprobe_parallel_enabled')) !== 'false'
       const ffprobeBatchSize = parseInt((await db.config.getSetting('ffprobe_batch_size')) || '25', 10)
 
@@ -486,7 +486,7 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const tmdbConfigured = await this.isTMDBConfigured()
       const libs = await db.sources.getSourceLibraries(this.sourceId)
       const currentLib = libs.find(l => l.libraryId === libraryId)
-      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.isProtected && currentLib?.allowExpandedMatching) || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
+      const includeAdult = Boolean(currentLib?.allowExpandedMatching || (currentLib?.libraryName && /adult|xxx|nsfw|18\+/i.test(currentLib.libraryName)))
       const scanType = (libraryType === 'movie' || libraryType === 'movies') ? MediaItemType.Movie : MediaItemType.Episode
       const movieTmdbCache = new Map<string, MovieMatchCacheEntry | null>()
       const seriesTmdbCache = new Map<string, SeriesMatchCacheEntry | null>()

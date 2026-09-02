@@ -113,8 +113,8 @@ export function MatchFixModal({
               const libs = await window.electronAPI.sourcesGetLibrariesWithStatus(item.source_id)
               const lib = libs.find(
                 (l) => l.id === item.library_id
-              ) as { isProtected?: boolean; allowExpandedMatching?: boolean } | undefined
-              if (lib?.isProtected && lib?.allowExpandedMatching) {
+              ) as { allowExpandedMatching?: boolean } | undefined
+              if (lib?.allowExpandedMatching) {
                 setIncludeExpanded(true)
               }
             }

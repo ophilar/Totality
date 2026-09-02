@@ -143,6 +143,7 @@ export function LibrarySettingsTab() {
     artist_album: [],
   })
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedLibrarySettings, setExpandedLibrarySettings] = useState<Set<string>>(new Set())
 
   // Protected Libraries state
   type LibraryWithStatus = MediaLibraryResponse & { isEnabled: boolean; isProtected: boolean; allowExpandedMatching: boolean; lastScanAt: string | null; itemsScanned: number }
@@ -157,6 +158,15 @@ export function LibrarySettingsTab() {
       const next = new Set(prev)
       if (next.has(card)) next.delete(card)
       else next.add(card)
+      return next
+    })
+  }
+
+  const toggleLibrarySettings = (libraryKey: string) => {
+    setExpandedLibrarySettings((prev) => {
+      const next = new Set(prev)
+      if (next.has(libraryKey)) next.delete(libraryKey)
+      else next.add(libraryKey)
       return next
     })
   }
@@ -548,22 +558,25 @@ export function LibrarySettingsTab() {
                       </div>
                       
                       <div className="bg-background/50 rounded-lg border border-border/30 divide-y divide-border/20">
-                        {libs.map(lib => (
-                          <div key={lib.id} className="flex items-center justify-between px-4 py-2.5">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{lib.name}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase">{lib.type}</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              {lib.isProtected && (
-                                <div className="flex items-center gap-1.5 border-r border-border/20 pr-4">
-                                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Expanded Match</span>
-                                  <Toggle 
-                                    checked={!!lib.allowExpandedMatching}
-                                    onChange={(checked) => handleToggleAllowExpandedMatching(source.source_id, lib.id, checked)}
-                                  />
-                                </div>
-                              )}
+                        {libs.map(lib => {
+                          const libraryKey = `${source.source_id}:${lib.id}`
+                          const isSettingsExpanded = expandedLibrarySettings.has(libraryKey)
+                          return (
+                          <div key={lib.id}>
+                            <div className="flex items-center justify-between px-4 py-2.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleLibrarySettings(libraryKey)}
+                                className="min-w-0 flex items-center gap-2 text-left"
+                                aria-expanded={isSettingsExpanded}
+                              >
+                                {isSettingsExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                                <span className="min-w-0">
+                                  <span className="text-sm font-medium truncate block">{lib.name}</span>
+                                  <span className="text-[10px] text-muted-foreground uppercase">{lib.type}</span>
+                                </span>
+                              </button>
+                              <div className="flex items-center gap-4">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Protected</span>
                                 <Toggle 
@@ -573,7 +586,21 @@ export function LibrarySettingsTab() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                            {isSettingsExpanded && (
+                              <div className="border-t border-border/20 bg-muted/10 px-10 py-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs font-medium text-foreground">Extended Search</p>
+                                  <p className="text-[10px] text-muted-foreground">Use broader metadata results when matching this library.</p>
+                                </div>
+                                <Toggle
+                                  checked={!!lib.allowExpandedMatching}
+                                  onChange={(checked) => handleToggleAllowExpandedMatching(source.source_id, lib.id, checked)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )
