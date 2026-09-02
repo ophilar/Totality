@@ -106,6 +106,27 @@ describe('MediaRepository (Real DB)', () => {
     expect(await repo.removeStaleItemVersions(id, new Set(['/movie-a.mkv']))).toBe(1)
     expect((await repo.getItemVersions(id)).map(item => item.file_path)).toEqual(['/movie-a.mkv'])
   })
+
+  it('should persist deep analysis for every episode sharing a normalized file path', async () => {
+    const first = mockItem('Episode 1')
+    first.type = 'episode'
+    first.file_path = 'C:\\Shows\\Season 1\\Episodes.mkv'
+    const second = mockItem('Episode 2')
+    second.type = 'episode'
+    second.file_path = 'C:/Shows/Season 1/Episodes.mkv'
+
+    await repo.upsertItem(first)
+    await repo.upsertItem(second)
+    await repo.updateDeepAnalysisByPath('C:/Shows/Season 1/Episodes.mkv', { streams: 3 }, '2026-09-02T00:00:00.000Z')
+
+    const items = await repo.getItems({ type: 'episode' })
+    expect(items).toHaveLength(2)
+    expect(items.map(item => item.deep_analysis)).toEqual(['{"streams":3}', '{"streams":3}'])
+    expect(items.map(item => item.deep_analysis_at)).toEqual([
+      '2026-09-02T00:00:00.000Z',
+      '2026-09-02T00:00:00.000Z',
+    ])
+  })
 })
 
 

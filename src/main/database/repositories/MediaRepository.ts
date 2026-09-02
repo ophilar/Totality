@@ -372,9 +372,10 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async updateDeepAnalysisByPath(filePath: string, analysis: unknown, analyzedAt: string): Promise<void> {
+    const normalizedPath = PathUtils.toDatabasePath(filePath)
     await this.drizzle.update(schema.mediaItems)
       .set({ deepAnalysis: JSON.stringify(analysis), deepAnalysisAt: analyzedAt })
-      .where(eq(schema.mediaItems.filePath, filePath))
+      .where(eq(schema.mediaItems.filePath, normalizedPath))
   }
 
   async deleteItem(id: number): Promise<void> {
