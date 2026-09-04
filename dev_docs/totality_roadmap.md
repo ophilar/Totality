@@ -212,8 +212,8 @@
 - [x] Full regression test suite passing (166 test files, 1,259/1,259 tests passing, 100%).
 
 ## Phase 26: Quality Metrics SSOT, Automated Currency & UI Convergence (Sub-Project 1) [In Progress]
-- [ ] Make `QualityAnalyzer` the sole producer of `efficiency_score`, `storage_debt_bytes`, and quality tiers for video items with defensible recoverable semantics.
-- [ ] Omit `efficiency_score` and `storage_debt_bytes` for music items in `QualityAnalyzer`, focusing strictly on quality fidelity tiers, completeness, and specs.
+- [x] Make `QualityAnalyzer` the sole producer of `efficiency_score`, `storage_debt_bytes`, and quality tiers for video items with defensible recoverable semantics.
+- [x] Omit `efficiency_score` and `storage_debt_bytes` for music items in `QualityAnalyzer`, focusing strictly on quality fidelity tiers, completeness, and specs.
 - [ ] Remove duplicate TV dry-run aggregation from `ShowOptimizationMetricsService.ts` and renderer-side duplicate calculations.
 - [ ] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
 - [ ] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.

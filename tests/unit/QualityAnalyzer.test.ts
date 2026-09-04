@@ -1099,12 +1099,194 @@ describe('QualityAnalyzer', () => {
       expect(analyzer.getRecommendedMusicFormat(album, score)).toBe('Lossless (FLAC/ALAC)')
     })
   })
+
+  // ============================================================================
+  // DEFENSIBLE STORAGE DEBT & EFFICIENCY (SSOT)
+  // ============================================================================
+
+  describe('defensible storage_debt_bytes calculation', () => {
+    it('calculates video bloat when video bitrate exceeds target threshold', async () => {
+      // 1080p target bitrate = 5000 kbps
+      // Bitrate = 10000 kbps, Duration = 7200 sec (120 min)
+      // Bloat = ((10000 - 5000) * 1000 * 7200) / 8 = 4,500,000,000 bytes
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 10000,
+        duration: 7200 * 1000,
+        audio_tracks: JSON.stringify([
+          { codec: 'ac3', channels: 6, bitrate: 640, language: 'en' },
+        ]),
+        original_language: 'en',
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBe(4500000000)
+    })
+
+    it('returns zero storage debt when video bitrate is below target and no audio can be pruned', async () => {
+      // 1080p target bitrate = 5000 kbps
+      // Bitrate = 4000 kbps -> video bloat = 0
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 4000,
+        duration: 7200 * 1000,
+        audio_tracks: JSON.stringify([
+          { codec: 'ac3', channels: 6, bitrate: 640, language: 'en' },
+        ]),
+        original_language: 'en',
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBe(0)
+    })
+
+    it('combines video bloat with audio pruning savings', async () => {
+      // 1080p target = 5000 kbps
+      // Video: 10000 kbps, Duration = 3600 sec (60 min)
+      // Video bloat = ((10000 - 5000) * 1000 * 3600) / 8 = 2,250,000,000 bytes
+      // Audio: 1 English (orig), 1 Spanish dub (640 kbps * 1000 * 3600 / 8 = 288,000,000 bytes)
+      // Total storage debt = 2,250,000,000 + 288,000,000 = 2,538,000,000 bytes
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 10000,
+        duration: 3600 * 1000,
+        original_language: 'en',
+        audio_tracks: JSON.stringify([
+          { codec: 'truehd', channels: 8, bitrate: 4000, language: 'en' },
+          { codec: 'ac3', channels: 6, bitrate: 640, language: 'es' },
+        ]),
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBe(2538000000)
+    })
+
+    it('includes audio pruning savings when video bloat is zero', async () => {
+      // 1080p target = 5000 kbps
+      // Video: 4000 kbps -> bloat = 0
+      // Audio pruning: 288,000,000 bytes
+      // Total storage debt = 0 + 288,000,000 = 288,000,000 bytes
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 4000,
+        duration: 3600 * 1000,
+        original_language: 'en',
+        audio_tracks: JSON.stringify([
+          { codec: 'truehd', channels: 8, bitrate: 4000, language: 'en' },
+          { codec: 'ac3', channels: 6, bitrate: 640, language: 'es' },
+        ]),
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBe(288000000)
+    })
+  })
+
+  describe('missing evidence yields null for both storage_debt_bytes and efficiency_score', () => {
+    it('returns null for both metrics when video bitrate is missing', async () => {
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: null,
+        duration: 7200 * 1000,
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBeNull()
+      expect(score.efficiency_score).toBeNull()
+    })
+
+    it('returns null for both metrics when video bitrate is 0', async () => {
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 0,
+        duration: 7200 * 1000,
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBeNull()
+      expect(score.efficiency_score).toBeNull()
+    })
+
+    it('returns null for both metrics when duration is missing', async () => {
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 10000,
+        duration: null,
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBeNull()
+      expect(score.efficiency_score).toBeNull()
+    })
+
+    it('returns null for both metrics when duration is 0', async () => {
+      const item = createMediaItem({
+        resolution: '1080p',
+        video_bitrate: 10000,
+        duration: 0,
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.storage_debt_bytes).toBeNull()
+      expect(score.efficiency_score).toBeNull()
+    })
+
+    it('returns null for both metrics when resolution is unknown', async () => {
+      const item = createMediaItem({
+        resolution: 'unknown',
+        height: null,
+        video_bitrate: 10000,
+        duration: 7200 * 1000,
+      })
+      const score = await analyzer.analyzeMediaItem(item)
+      expect(score.quality_tier).toBe('Unknown')
+      expect(score.storage_debt_bytes).toBeNull()
+      expect(score.efficiency_score).toBeNull()
+    })
+  })
+
+  describe('music album analysis preserves null for efficiency_score and storage_debt_bytes', () => {
+    it('determines fidelity tier for HI_RES and leaves efficiency and debt null', () => {
+      const album = createMusicAlbum({ avg_audio_bitrate: 2000 })
+      const tracks = [createMusicTrack({ is_hi_res: true, is_lossless: true, audio_codec: 'flac' })]
+      const score = analyzer.analyzeMusicAlbum(album, tracks)
+      expect(score.quality_tier).toBe('HI_RES')
+      expect(score.efficiency_score).toBeNull()
+      expect(score.storage_debt_bytes).toBeNull()
+    })
+
+    it('determines fidelity tier for LOSSLESS and leaves efficiency and debt null', () => {
+      const album = createMusicAlbum({ avg_audio_bitrate: 900 })
+      const tracks = [createMusicTrack({ is_lossless: true, audio_codec: 'flac' })]
+      const score = analyzer.analyzeMusicAlbum(album, tracks)
+      expect(score.quality_tier).toBe('LOSSLESS')
+      expect(score.efficiency_score).toBeNull()
+      expect(score.storage_debt_bytes).toBeNull()
+    })
+
+    it('determines fidelity tier for LOSSY_HIGH and leaves efficiency and debt null', () => {
+      const album = createMusicAlbum({ avg_audio_bitrate: 320 })
+      const tracks = [createMusicTrack({ is_lossless: false, audio_codec: 'mp3' })]
+      const score = analyzer.analyzeMusicAlbum(album, tracks)
+      expect(score.quality_tier).toBe('LOSSY_HIGH')
+      expect(score.efficiency_score).toBeNull()
+      expect(score.storage_debt_bytes).toBeNull()
+    })
+
+    it('determines fidelity tier for LOSSY_MID and leaves efficiency and debt null', () => {
+      const album = createMusicAlbum({ avg_audio_bitrate: 220 })
+      const tracks = [createMusicTrack({ is_lossless: false, audio_codec: 'mp3' })]
+      const score = analyzer.analyzeMusicAlbum(album, tracks)
+      expect(score.quality_tier).toBe('LOSSY_MID')
+      expect(score.efficiency_score).toBeNull()
+      expect(score.storage_debt_bytes).toBeNull()
+    })
+
+    it('determines fidelity tier for LOSSY_LOW and leaves efficiency and debt null', () => {
+      const album = createMusicAlbum({ avg_audio_bitrate: 128 })
+      const tracks = [createMusicTrack({ is_lossless: false, audio_codec: 'mp3' })]
+      const score = analyzer.analyzeMusicAlbum(album, tracks)
+      expect(score.quality_tier).toBe('LOSSY_LOW')
+      expect(score.efficiency_score).toBeNull()
+      expect(score.storage_debt_bytes).toBeNull()
+    })
+  })
 })
 
 // ============================================================================
 // HELPER FUNCTIONS
-// ============================================================================
-
 function createMediaItem(overrides: Partial<MediaItem> = {}): MediaItem {
   return {
     id: 1,
