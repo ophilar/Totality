@@ -154,38 +154,35 @@ export class BetterSQLiteService {
   public get mediaRemuxJobs() { return this.repos.mediaRemuxJobs ??= new MediaRemuxJobRepository(this.db, this.drizzle) }
 
   // Transaction API
-  public async beginBatch(): Promise<void> {
-    await this.withLock(async () => {
-      const isFirst = this._transactionDepth === 0
-      this._transactionDepth++
-      if (isFirst) {
+  /**
+   * Execute a complete, short-lived write transaction under the database lock.
+   * The callback must contain local database work only; remote I/O must happen
+   * before or after this scope.
+   */
+  public async withBatch<T>(fn: () => Promise<T>): Promise<T> {
+    if (this._transactionDepth !== 0) {
+      throw new Error('Cannot start scoped transaction while another batch is active')
+    }
+
+    return this.withLock(async () => {
+      this._transactionDepth = 1
+      try {
         await this.db.execute('BEGIN IMMEDIATE')
-      }
-    })
-  }
-
-  public async endBatch(): Promise<void> {
-    await this.withLock(async () => {
-      if (this._transactionDepth <= 0) {
-        throw new Error('Transaction batch error: no active transaction batch to end')
-      }
-      
-      const isLast = this._transactionDepth === 1
-      if (isLast) {
-        await this._client?.execute('COMMIT')
-      }
-      this._transactionDepth--
-    })
-  }
-
-  public async rollbackBatch(): Promise<void> {
-    await this.withLock(async () => {
-      if (this._transactionDepth > 0) {
+        const result = await fn()
+        await this.db.execute('COMMIT')
+        this._transactionDepth = 0
+        return result
+      } catch (error) {
         try {
-          await this._client?.execute('ROLLBACK')
+          await this.db.execute('ROLLBACK')
+        } catch (rollbackError) {
+          if (error && typeof error === 'object') {
+            Object.assign(error as Error, { rollbackCause: rollbackError })
+          }
         } finally {
           this._transactionDepth = 0
         }
+        throw error
       }
     })
   }
@@ -209,7 +206,6 @@ export class BetterSQLiteService {
       'exclusions'
     ]
 
-    await this.beginBatch()
     try {
       const tableCheck = await this.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -221,33 +217,25 @@ export class BetterSQLiteService {
         const result = await this.db.execute(`SELECT * FROM "${t.replace(/"/g, '""')}"`)
         data[t] = result.rows as ExportRow[]
       }
-      await this.endBatch()
     } catch (e) {
-      await this.rollbackBatch()
       throw new Error(`Database export failed: ${getErrorMessage(e)}`)
     }
     return data
   }
 
   public async resetDatabase(): Promise<void> {
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const result = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
       const tables = result.rows.map(row => row.name as string)
       for (const t of tables) {
         await this._client?.execute(`DELETE FROM "${t.replace(/"/g, '""')}"`)
       }
-      await this.endBatch()
-    } catch (e) {
-      await this.rollbackBatch()
-      throw e
-    }
+    })
   }
 
   public async importData(data: ExportData): Promise<{ imported: number, errors: number }> {
     let imported = 0
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const tableCheck = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
       const validTables = new Set(tableCheck.rows.map(row => row.name as string))
 
@@ -273,11 +261,9 @@ export class BetterSQLiteService {
           imported++
         }
       }
-      await this.endBatch()
-    } catch (e) {
-      await this.rollbackBatch()
+    }).catch((e) => {
       throw new Error(`Database import failed transactionally: ${getErrorMessage(e)}`)
-    }
+    })
     return { imported, errors: 0 }
   }
 }

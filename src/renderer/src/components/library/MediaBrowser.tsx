@@ -231,8 +231,9 @@ export function MediaBrowser({
   const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters(searchInput)
 
   useEffect(() => {
+    const normalizedSortBy = (sortBy === 'waste' || sortBy === 'recoverable') ? 'recoverable' : (sortBy === 'weighted_efficiency' && view !== 'tv' ? 'efficiency' : sortBy)
     const commonFilters = {
-      sortBy: sortBy === 'waste' ? 'storage_debt' : sortBy,
+      sortBy: normalizedSortBy,
       sortOrder,
       qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
       tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
@@ -245,8 +246,8 @@ export function MediaBrowser({
     if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as MediaItemFilters)
     else if (view === 'tv') setShowsFilters({ ...commonFilters } as TVShowFilters)
     else if (view === 'music') {
-      const musicSortBy = sortBy === 'waste' ? 'storage_debt' : sortBy
-      const validArtistSorts = ['name', 'album_count', 'track_count', 'storage_debt', 'efficiency', 'size']
+      const musicSortBy = normalizedSortBy
+      const validArtistSorts = ['name', 'album_count', 'track_count', 'recoverable', 'storage_debt', 'efficiency', 'size']
       const artistSort = sortBy === 'title' ? 'name' : (validArtistSorts.includes(musicSortBy) ? musicSortBy : 'name')
       const albumOrTrackSort = sortBy === 'title' ? 'title' : musicSortBy
       if (musicViewMode === 'artists') setArtistsFilters({ ...commonFilters, sortBy: artistSort } as MusicFilters)
@@ -431,7 +432,7 @@ export function MediaBrowser({
             {view === 'movies' && (
               <SectionErrorBoundary title="Movies">
                 <MoviesView
-                  movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'waste'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
+                  movies={movies} sortBy={sortBy as 'title' | 'year' | 'size' | 'efficiency' | 'recoverable'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   onSelectMovie={(id) => setSelectedMediaId(id)}
                   onSelectCollection={(c) => { setSelectedCollection(c); setShowCollectionModal(true) }}
                   viewType={viewType} gridScale={gridScale}
@@ -471,7 +472,7 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'waste'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
+                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'recoverable'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}

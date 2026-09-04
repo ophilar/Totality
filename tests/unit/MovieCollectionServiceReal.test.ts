@@ -60,6 +60,11 @@ describe('MovieCollectionService (No Mocks)', () => {
          res.end(JSON.stringify({
            results: [{ id: 10, name: 'Fight Club Collection' }]
          }))
+      } else if (req.url?.includes('/find/tt0137523')) {
+        res.end(JSON.stringify({
+          movie_results: [{ id: 550, title: 'Fight Club', release_date: '1999-10-15', poster_path: '/poster.jpg' }],
+          tv_results: []
+        }))
       } else {
         res.end(JSON.stringify({ results: [] }))
       }
@@ -162,6 +167,22 @@ describe('MovieCollectionService (No Mocks)', () => {
     await service.analyzeAllCollections('local1')
 
     const item = await db.media.getItemByProviderId('local-file-1', 'local1')
+    expect(item.tmdb_id).toBe('550')
+  })
+
+  it('should prioritize authoritative IMDb ID over title search for movie match', async () => {
+    await db.sources.upsertSource({ source_id: 'imdb-source', source_type: 'plex', display_name: 'Plex', connection_config: '{}', is_enabled: 1 })
+    await db.media.upsertItem(createMovie({
+      source_id: 'imdb-source',
+      plex_id: 'imdb-file-1',
+      title: 'Ambiguous Title Or Remake',
+      imdb_id: 'tt0137523',
+      tmdb_id: null
+    }))
+
+    await service.analyzeAllCollections('imdb-source')
+
+    const item = await db.media.getItemByProviderId('imdb-file-1', 'imdb-source')
     expect(item.tmdb_id).toBe('550')
   })
 })

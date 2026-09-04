@@ -59,15 +59,35 @@ export class MovieCollectionService {
               return
             }
 
-            try {
-              const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
-              if (search?.results?.length > 0) {
-                const best = search.results[0]
-                await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
-                m.tmdb_id = String(best.id)
+            // Priority 0: Authoritative external IMDb resolution
+            if (m.imdb_id && this.tmdb.isConfigured()) {
+              try {
+                const found = await this.tmdb.findByExternalId(m.imdb_id, 'imdb_id')
+                if (found.movie_results && found.movie_results.length > 0) {
+                  const match = found.movie_results[0]
+                  const releaseYear = match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined
+                  const poster = match.poster_path ? (this.tmdb.buildImageUrl(match.poster_path, 'w500') ?? undefined) : undefined
+                  await this.db.media.updateMovieMatch(m.id!, String(match.id), poster, match.title, releaseYear)
+                  m.tmdb_id = String(match.id)
+                }
+              } catch (e) {
+                getLoggingService().warn('[MovieCollectionService]', `IMDb lookup failed for "${m.title}" (${m.imdb_id}):`, e)
               }
-            } catch (e) {
-              getLoggingService().warn('[MovieCollectionService]', `Failed to search movie match for "${m.title}":`, e)
+            }
+
+            if (!m.tmdb_id && this.tmdb.isConfigured()) {
+              try {
+                const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+                if (search?.results?.length > 0) {
+                  const best = search.results[0]
+                  const releaseYear = best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined
+                  const poster = best.poster_path ? (this.tmdb.buildImageUrl(best.poster_path, 'w500') ?? undefined) : undefined
+                  await this.db.media.updateMovieMatch(m.id!, String(best.id), poster, best.title, releaseYear)
+                  m.tmdb_id = String(best.id)
+                }
+              } catch (e) {
+                getLoggingService().warn('[MovieCollectionService]', `Failed to search movie match for "${m.title}":`, e)
+              }
             }
           }
 
@@ -80,12 +100,33 @@ export class MovieCollectionService {
                 const errWithStatus = e as { status?: number; message?: string }
                 if (errWithStatus?.status === 404 || errWithStatus?.message?.includes('could not be found')) {
                   getLoggingService().info('[MovieCollectionService]', `Stale TMDB ID ${m.tmdb_id} for "${m.title}", searching fresh match...`)
-                  const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
-                  if (search?.results?.length > 0) {
-                    const best = search.results[0]
-                    m.tmdb_id = String(best.id)
-                    await this.db.media.updateMovieMatch(m.id!, String(best.id), this.tmdb.buildImageUrl(best.poster_path, 'w500') || undefined, best.title, best.release_date ? parseInt(best.release_date.split('-')[0]) : undefined)
-                    details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                  let matchFound = false
+                  if (m.imdb_id && this.tmdb.isConfigured()) {
+                    try {
+                      const found = await this.tmdb.findByExternalId(m.imdb_id, 'imdb_id')
+                      if (found.movie_results && found.movie_results.length > 0) {
+                        const match = found.movie_results[0]
+                        const releaseYear = match.release_date ? parseInt(match.release_date.split('-')[0], 10) : undefined
+                        const poster = match.poster_path ? (this.tmdb.buildImageUrl(match.poster_path, 'w500') ?? undefined) : undefined
+                        m.tmdb_id = String(match.id)
+                        await this.db.media.updateMovieMatch(m.id!, String(match.id), poster, match.title, releaseYear)
+                        details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                        matchFound = true
+                      }
+                    } catch (err) {
+                      getLoggingService().warn('[MovieCollectionService]', `Stale fallback IMDb lookup failed for "${m.title}":`, err)
+                    }
+                  }
+                  if (!matchFound) {
+                    const search = await this.tmdb.searchMovie(m.title, m.year || undefined)
+                    if (search?.results?.length > 0) {
+                      const best = search.results[0]
+                      const releaseYear = best.release_date ? parseInt(best.release_date.split('-')[0], 10) : undefined
+                      const poster = best.poster_path ? (this.tmdb.buildImageUrl(best.poster_path, 'w500') ?? undefined) : undefined
+                      m.tmdb_id = String(best.id)
+                      await this.db.media.updateMovieMatch(m.id!, String(best.id), poster, best.title, releaseYear)
+                      details = await this.tmdb.getMovieDetails(m.tmdb_id)
+                    }
                   }
                 } else {
                   throw e

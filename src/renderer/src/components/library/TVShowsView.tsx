@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
 import { RefreshCw, Tv, HardDrive, Zap, X } from 'lucide-react'
-import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
@@ -26,7 +25,7 @@ export function TVShowsView({
   sortBy,
   sortOrder,
   onSortChange,
-  slimDown,
+  slimDown: _slimDown,
   selectedShow,
   selectedShowData,
   selectedShowLoading,
@@ -135,7 +134,6 @@ export function TVShowsView({
 
     return (
       <div className="h-full flex flex-col overflow-hidden">
-        {slimDown && <SlimDownBanner className="mb-4" />}
         <MediaGridView
           items={shows} totalCount={totalShowCount} viewType={viewType} loading={showsLoading} onLoadMore={onLoadMoreShows} posterMinWidth={posterMinWidth} banner={listHeader}
           scrollKey="shows"

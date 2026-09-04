@@ -57,7 +57,7 @@ export const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, 
       <div className="relative">
         {/* 3-dot menu button - positioned outside the circular frame */}
         {hasMenuActions && (
-          <div ref={menuRef} className="absolute -top-1 -left-1 z-20">
+          <div ref={menuRef} className="absolute -top-1 -right-1 z-20">
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -70,7 +70,7 @@ export const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, 
 
             {/* Dropdown menu */}
             {showMenu && (
-              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
                 {onAnalyzeCompleteness && (
                   <button
                     onClick={handleAnalyzeCompleteness}

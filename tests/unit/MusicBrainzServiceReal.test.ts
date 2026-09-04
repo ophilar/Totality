@@ -96,6 +96,85 @@ describe('MusicBrainzService (No Mocks)', () => {
     expect(missing).toHaveLength(1)
     expect(missing[0].title).toBe('Kid A')
   })
+
+  it('returns exact deferred counts when the five-error breaker trips during artists', async () => {
+    for (let i = 0; i < 6; i++) {
+      await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: `a${i}`, name: `Artist ${i}` })
+    }
+    for (let i = 0; i < 4; i++) {
+      await db.music.upsertAlbum({ source_id: 'src', source_type: 'local', provider_id: `al${i}`, artist_name: `Artist ${i}`, title: `Album ${i}` })
+    }
+
+    ;(service as any).analyzeArtistCompleteness = async () => { throw new Error('503 provider unavailable') }
+    const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
+
+    expect(result.status).toBe('deferred')
+    // Four artists already reached the breaker boundary; the current failed
+    // item is included in the five recorded failures, leaving two artists and
+    // all four albums deferred.
+    expect(result.deferred).toBe(6)
+    expect(result.artistsAnalyzed).toBe(0)
+    expect(db.isInTransaction()).toBe(false)
+  })
+
+  it('counts only the remaining albums when the breaker trips during album analysis', async () => {
+    const artistId = await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'artist', name: 'Radiohead', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    for (let i = 0; i < 6; i++) {
+      await db.music.upsertAlbum({ source_id: 'src', source_type: 'local', provider_id: `album${i}`, artist_id: artistId, artist_name: 'Radiohead', title: `Album ${i}` })
+    }
+    ;(service as any).analyzeAlbumTrackCompleteness = async () => { throw new Error('503 provider unavailable') }
+    const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
+    expect(result.status).toBe('deferred')
+    expect(result.deferred).toBe(2)
+    expect(result.albumsAnalyzed).toBe(0)
+    expect(db.isInTransaction()).toBe(false)
+  })
+
+  it('returns cancelled without leaving a transaction open', async () => {
+    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'a1', name: 'Radiohead', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'a2', name: 'Radiohead 2', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    const original = service.analyzeArtistCompleteness.bind(service)
+    let calls = 0
+    ;(service as any).analyzeArtistCompleteness = async (...args: unknown[]) => {
+      const value = await original(...args as Parameters<MusicBrainzService['analyzeArtistCompleteness']>)
+      calls++
+      if (calls === 1) service.cancel()
+      return value
+    }
+    const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
+    expect(result.status).toBe('cancelled')
+    expect(result.artistsAnalyzed).toBe(1)
+    expect(db.isInTransaction()).toBe(false)
+  })
+
+  it('resets the consecutive-error counter after a successful response', async () => {
+    for (let i = 0; i < 6; i++) {
+      await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: `reset${i}`, name: i === 1 ? 'Radiohead' : `Reset ${i}`, musicbrainz_id: i === 1 ? '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' : `mbid-${i}` })
+    }
+    const original = service.analyzeArtistCompleteness.bind(service)
+    let calls = 0
+    ;(service as any).analyzeArtistCompleteness = async (...args: unknown[]) => {
+      calls++
+      if (calls !== 2) throw new Error('503 provider unavailable')
+      return original(...args as Parameters<MusicBrainzService['analyzeArtistCompleteness']>)
+    }
+    const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
+    expect(result.status).toBe('partial')
+    expect(result.artistsAnalyzed).toBe(1)
+    expect(result.deferred).toBe(0)
+  })
+
+  it('distinguishes a database write failure from a provider failure', async () => {
+    const artistId = await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'db-failure', name: 'Radiohead', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    vi.spyOn(db.music, 'upsertArtistCompleteness').mockRejectedValueOnce(new Error('SQLite constraint failed for artist_completeness'))
+    const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
+    expect(result.status).toBe('failed')
+    expect(result.artistsAnalyzed).toBe(0)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ item: 'Radiohead', kind: 'database' })
+    ]))
+    expect(artistId).toBeGreaterThan(0)
+  })
 })
 
 

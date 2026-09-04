@@ -589,12 +589,12 @@ export class TMDBService {
     externalId: string,
     externalSource: 'imdb_id' | 'tvdb_id' | 'wikidata_id' = 'imdb_id'
   ): Promise<{
-    movie_results: Array<{ id: number; title: string; release_date?: string }>
-    tv_results: Array<{ id: number; name: string; first_air_date?: string }>
+    movie_results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
+    tv_results: Array<{ id: number; name: string; first_air_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
   }> {
     return await this.request<{
-      movie_results: Array<{ id: number; title: string; release_date?: string }>
-      tv_results: Array<{ id: number; name: string; first_air_date?: string }>
+      movie_results: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
+      tv_results: Array<{ id: number; name: string; first_air_date?: string; poster_path?: string | null; backdrop_path?: string | null }>
     }>(
       `/find/${externalId}`,
       { external_source: externalSource }

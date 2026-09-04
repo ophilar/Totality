@@ -1,6 +1,6 @@
 import { LibraryType, ProviderType } from '@main/types/database'
 export { LibraryType, ProviderType }
-export type { TaskQueueState, QueuedTask, TaskType, TaskStatus, TaskProgress } from '@main/types/database'
+export type { TaskQueueState, QueuedTask, TaskType, TaskStatus, TaskProgress, AnalysisStatus, AnalysisDiagnostic, AnalysisOutcome, OptimizationMetricsSummary, CalculationStatus } from '@main/types/database'
 export type { ConnectionTestResult, RateLimitInfo } from '@main/types/ipc'
 
 // Type definitions for multi-source support

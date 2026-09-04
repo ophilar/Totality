@@ -1,8 +1,9 @@
 import { useState, memo, useRef } from 'react'
 import { RefreshCw, Pencil, HardDrive, Tv as TvPlaceholder, Link2Off, Zap } from 'lucide-react'
 import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
-import { providerColors, formatBytes } from '@/components/library/mediaUtils'
+import { providerColors } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
+import { MediaMetricsRow } from '@/components/library/MediaMetricsRow'
 
 export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow, isLibraryAnalyzing }: {
   show: TVShowSummary
@@ -91,17 +92,17 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
     >
       <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {show.match_status && show.match_status !== 'verified' && (
-          <div className="absolute top-2 right-2 z-10 rounded bg-black/70 px-2 py-1 text-xs text-white">
+          <div className="absolute top-2 left-2 z-10 rounded bg-black/70 px-2 py-1 text-xs text-white">
             {show.match_status === 'manual' ? 'Manual match' : show.match_status === 'conflicting' ? 'Conflicting match' : 'Unresolved match'}
           </div>
         )}
         {/* 3-dot menu button */}
         {menuItems.length > 0 && (
-          <div className="absolute top-2 left-2 z-20">
+          <div className="absolute top-2 right-2 z-20">
             <ActionMenu
               items={menuItems}
               isWorking={isAnalyzing}
-              menuPosition="left"
+              menuPosition="right"
             />
           </div>
         )}
@@ -146,10 +147,12 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           <p className="text-xs text-muted-foreground mt-0.5">
             {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
           </p>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            {show.total_size == null ? 'Size unavailable' : formatBytes(show.total_size)} · {show.total_recoverable_bytes == null ? 'Recoverable space unavailable' : `${formatBytes(show.total_recoverable_bytes)} recoverable`}
-            {show.weighted_efficiency == null ? ' · Analysis incomplete' : ` · ${show.weighted_efficiency.toFixed(0)}% efficient`}
-          </p>
+          <MediaMetricsRow
+            fileSize={show.total_size}
+            storageDebtBytes={show.total_recoverable_bytes}
+            efficiencyScore={show.weighted_efficiency}
+            evidenceStatus={show.evidence_status}
+          />
         </div>
 
         {completenessData && (

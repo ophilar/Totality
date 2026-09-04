@@ -503,9 +503,7 @@ export class PlexProvider extends BaseMediaProvider {
 
           if (result.errors.length > 0) break
 
-          await db.beginBatch()
-          try {
-            for (const data of preparedData) {
+          for (const data of preparedData) {
               if (data.type === 'show') {
                 for (const episode of data.episodes) {
                   validPlexIds.add(episode.ratingKey)
@@ -529,15 +527,11 @@ export class PlexProvider extends BaseMediaProvider {
                 })
               }
             }
-          } finally {
-            await db.endBatch()
-          }
 
           await new Promise((resolve) => setTimeout(resolve, 0))
         }
       } finally {
         this.scanAbortController = null
-        if (db.isInTransaction()) await db.endBatch()
       }
 
       if (result.errors.length > 0) {
@@ -826,13 +820,8 @@ export class PlexProvider extends BaseMediaProvider {
               )
               .filter(Boolean) as MusicTrack[]
 
-            await db.beginBatch()
-            try {
-              await db.music.upsertTracks(tracksData)
-              result.itemsScanned += tracksData.length
-            } finally {
-              await db.endBatch()
-            }
+            await db.music.upsertTracks(tracksData)
+            result.itemsScanned += tracksData.length
           }
 
           processedAlbums++

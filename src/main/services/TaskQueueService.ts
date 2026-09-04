@@ -20,7 +20,7 @@ import {
   QueuedTask, 
   TaskType, 
   TaskStatus, 
-  TaskProgress 
+  TaskProgress,
 } from '@main/types/database'
 import { NotificationType } from '@main/types/monitoring'
 
@@ -508,28 +508,42 @@ export class TaskQueueService {
 
   private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     const service = this.getSeriesCompleteness()
-    const result = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress)
-    
-      task.result = {
-        itemsScanned: result.analyzed,
-        totalSeries: result.totalSeries,
-        analyzedSeries: result.analyzed,
-        failedSeries: result.errors,
-      }
+    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress)
 
-      if (result.analyzed === 0 && result.totalSeries > 0 && result.errors.length > 0 && !this.cancelRequested) {
-        throw new Error(`Series analysis failed: ${result.errors[0]}`)
+    task.result = {
+      itemsScanned: outcome.processedCount,
+      totalSeries: outcome.totalCount,
+      analyzedSeries: outcome.processedCount,
+      failedSeries: outcome.diagnostics.map(d => d.message),
+      status: outcome.status,
+      diagnostics: outcome.diagnostics,
+      outcome,
+    }
+
+    if (outcome.status === 'failed' && !this.cancelRequested) {
+      const firstError = outcome.diagnostics[0]?.message
+      if (!firstError) {
+        throw new Error('Series analysis failed: diagnostic message missing')
       }
-      if (result.analyzed > 0 && result.analyzed < result.totalSeries && result.errors.length > 0 && !this.cancelRequested) {
-        const summary = `Series analysis partially completed: ${result.analyzed}/${result.totalSeries} analyzed; ${result.errors.length} failed`
-        this.logging.warn('[TaskQueue]', summary, { totalSeries: result.totalSeries, analyzedSeries: result.analyzed, failedSeries: result.errors })
-        await this.db.notifications.addNotification({
-          type: 'info',
-          title: 'Series analysis partially completed',
-          message: summary,
-          reference_id: task.sourceId,
-        })
-      }
+      throw new Error(`Series analysis failed: ${firstError}`)
+    }
+    if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
+      const summary = `Series analysis partially completed: ${outcome.processedCount}/${outcome.totalCount} analyzed; ${outcome.diagnostics.length} failed`
+      this.logging.warn('[TaskQueue]', summary, { totalCount: outcome.totalCount, processedCount: outcome.processedCount, diagnostics: outcome.diagnostics })
+      await this.db.notifications.addNotification({
+        type: 'info',
+        title: 'Series analysis partially completed',
+        message: summary,
+        reference_id: task.sourceId,
+      })
+    } else if (outcome.status === 'completed' && !this.cancelRequested) {
+      await this.db.notifications.addNotification({
+        type: 'scan_complete',
+        title: 'Series analysis completed',
+        message: `Series analysis completed: ${outcome.processedCount} analyzed`,
+        reference_id: task.sourceId,
+      })
+    }
   }
 
   private async executeCollectionCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
@@ -554,7 +568,7 @@ export class TaskQueueService {
     const db = this.db
     
     if (!task.artistId) {
-      const result = await service.analyzeAllMusic(
+      const outcome = await service.analyzeAllMusic(
         (prog: TaskProgress) => {
           onProgress({
             current: prog.current,
@@ -568,11 +582,41 @@ export class TaskQueueService {
       )
 
       task.result = {
-        itemsScanned: (result?.artistsAnalyzed || 0) + (result?.albumsAnalyzed || 0),
+        itemsScanned: outcome.processedCount,
+        status: outcome.status,
+        deferred: outcome.deferredCount,
+        errors: outcome.diagnostics.map(d => d.message),
+        diagnostics: outcome.diagnostics,
+        outcome,
+      }
+
+      if (outcome.status === 'failed' && !this.cancelRequested) {
+        const firstError = outcome.diagnostics[0]?.message
+        if (!firstError) {
+          throw new Error('Music analysis failed: diagnostic message missing')
+        }
+        throw new Error(`Music analysis failed: ${firstError}`)
+      }
+      if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
+        const summary = `Music analysis ${outcome.status}: ${outcome.processedCount}/${outcome.totalCount} analyzed; ${outcome.deferredCount} deferred; ${outcome.diagnostics.length} issues`
+        this.logging.warn('[TaskQueue]', summary, { totalCount: outcome.totalCount, processedCount: outcome.processedCount, deferredCount: outcome.deferredCount })
+        await db.notifications.addNotification({
+          type: 'info',
+          title: `Music analysis ${outcome.status}`,
+          message: summary,
+          reference_id: task.sourceId,
+        })
+      } else if (outcome.status === 'completed' && !this.cancelRequested) {
+        await db.notifications.addNotification({
+          type: 'scan_complete',
+          title: 'Music analysis completed',
+          message: `Music analysis completed: ${outcome.processedCount} analyzed`,
+          reference_id: task.sourceId,
+        })
       }
       return
     }
-    
+
     const artist = await db.music.getArtistById(task.artistId)
     if (!artist) throw new Error(`Artist not found: ${task.artistId}`)
 
@@ -580,18 +624,18 @@ export class TaskQueueService {
     const albums = await db.music.getAlbums({ artistId: task.artistId })
     const ownedAlbumTitles = albums.map(a => a.title)
     const ownedAlbumMbIds = albums.map(a => a.musicbrainz_id).filter((id): id is string => !!id)
-    
+
     const result = await service.analyzeArtistCompleteness(
       artist.name,
       artist.musicbrainz_id || undefined,
       ownedAlbumTitles,
       ownedAlbumMbIds
     )
-    
+
     task.result = {
       itemsScanned: result.total_albums,
     }
-    
+
     // Set progress to complete
     onProgress({
       current: 1,

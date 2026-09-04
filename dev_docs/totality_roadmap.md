@@ -177,6 +177,36 @@
 - [x] Enforce sender frame security validation across all IPC handlers.
 - [x] Prevent database shutdown races and guarantee task queue interruption persistence on quit.
 - [x] Enable Chromium GPU hardware acceleration in main process.
-- [x] Full test suite (158 test files, 1,204 tests passing) and production release build verified.
+## Phase 22: Analysis Reliability, Provider Identity & Media UX Unification [Completed]
+- [x] Shared Analysis Outcome & Diagnostic Contracts: Created typed contracts (`AnalysisStatus`, `AnalysisDiagnostic`, `AnalysisOutcome`, `CalculationStatus`, `OptimizationMetricsSummary`) in `src/main/types/database.ts`.
+- [x] Database Transaction Isolation: Depth evaluation in `BetterSQLiteService.ts` before mutex acquisition preventing deadlock on nested `withBatch` calls.
+- [x] MediaMonkey Scanning Throughput: Chunked song upserts in batches of 500 in `MediaMonkeyProvider.ts` via `bulkUpsertTracks`.
+- [x] MusicBrainz Analysis & Exact Deferred Work: Decoupled artist/album queues, exact deferred calculations, and 5-consecutive-error circuit breaker in `MusicBrainzService.ts`.
+- [x] Provider-Authoritative Series Resolution: 5-tier resolution (`user_fixed_match` -> canonical identity -> tmdb_id -> clean exact -> fuzzy match), immutable lock protection, and atomic stale TMDB identity cleanup in `SeriesCompletenessService.ts`.
+- [x] Decomposed SQLite Diagnostics & Conflict Resolution: Created `parseDatabaseError` and resolved unique index collision in `TVShowRepository.upsertCompleteness`.
+- [x] Unified Movie & TV Optimization Calculations: Implemented `getOptimizationMetricsSummary` and dual-metric calculated sorting in `MediaRepository.ts` and `TVShowRepository.ts`.
+- [x] Shared Media UX Components: Built `EvidenceStatusBadge.tsx`, `EfficiencyDisplay.tsx`, `RecoverableWasteDisplay.tsx`, and `OptimizationMetrics.tsx` and integrated across `MoviesView.tsx`, `ShowCard.tsx`, and `ShowListItem.tsx`.
+- [x] Task Queue Integration: Integrated `AnalysisOutcome` tracking into `TaskQueueService.ts` and consolidated single notifications for series and music scan batches.
+- [x] Verification Suite: Verified clean typecheck (`npm run typecheck`), 100% Vitest pass rate (165 test files, 1,251 tests passing), and clean production release build (`Totality-Setup-0.5.0.exe`).
 
+## Phase 23: Complete Movie & TV UI Parity & Authoritative External ID Matching [Completed]
+- [x] Authoritative IMDb-first resolution in `MovieCollectionService.ts` via `findByExternalId(m.imdb_id, 'imdb_id')` before title search and fallback on stale IDs.
+- [x] Exact UI parity between Movie and TV Show cards and list items: integrated canonical metrics row (`Size · RecoverableWasteDisplay · EfficiencyDisplay · EvidenceStatusBadge`) with zero data loss.
+- [x] Header-level `OptimizationMetrics` banner summary across both Movies and TV Shows.
+- [x] Strict fail-fast hygiene: zero fallbacks, silent errors, synthetic byte counts, or duplicate verifications across services and components.
+- [x] Full regression test suite passing (166 test files, 1,253/1,253 tests passing).
 
+## Phase 24: Deduplicated SOLID Components & TV Shows Season/Episode Precision [Completed]
+- [x] Extracted [`MediaMetricsRow.tsx`](file:///H:/Totality/src/renderer/src/components/library/MediaMetricsRow.tsx) eliminating metric markup duplication across `MovieCard` and `ShowCard`.
+- [x] Extracted [`calculateOptimizationSummary`](file:///H:/Totality/src/renderer/src/components/library/optimizationSummary.ts) pure function eliminating calculation duplication between `MoviesView.tsx` and `TVShowsView.tsx`.
+- [x] Unified `formatBytes` usage from canonical SSOT [`mediaUtils.ts`](file:///H:/Totality/src/renderer/src/components/library/mediaUtils.ts).
+- [x] Fixed TV Show season count precision in [`TVShowRepository.ts`](file:///H:/Totality/src/main/database/repositories/TVShowRepository.ts) by selecting distinct seasons from episode records, eliminating the `0 Seasons` bug for unanalyzed/local shows.
+- [x] Full regression test suite passing (166 test files, 1,259/1,259 tests passing, 100%).
+
+## Phase 25: Build Size Optimization, Recoverable Terminology & UI Responsiveness [Completed]
+- [x] Configured NSIS maximum solid compression in `electron-builder.yml` to significantly reduce installer executable size.
+- [x] Standardized optimization terminology across Movies, TV Shows, and Music to "Recoverable" in `sortDefinitions.ts`, `MoviesView.tsx`, `MusicView.tsx`, and `MediaBrowser.tsx`.
+- [x] Fixed `MediaItemFiltersSchema` validation by permitting legacy/cross-view keys (`waste`, `weighted_efficiency`) alongside `recoverable`.
+- [x] Prevented UI freezes by debouncing `onLibraryUpdated` in `usePaginatedData.ts` (400ms) and yielding the main-thread event loop with `setImmediate` in `SeriesCompletenessService.analyzeAllSeries`.
+- [x] Fixed notification contract in `SeriesCompletenessService.ts` by returning `processedCount` and `totalCount`, eliminating `undefined analyzed` notices.
+- [x] Full regression test suite passing (166 test files, 1,259/1,259 tests passing, 100%).

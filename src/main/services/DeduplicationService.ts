@@ -55,8 +55,7 @@ export class DeduplicationService {
     }
 
     // Save detected duplicates
-    await db.beginBatch()
-    try {
+    await db.withBatch(async () => {
       const operations: (() => Promise<void>)[] = []
 
       for (const [key, ids] of movieGroups.entries()) {
@@ -97,11 +96,7 @@ export class DeduplicationService {
         return []
       })
 
-      await db.endBatch()
-    } catch (err) {
-      await db.rollbackBatch()
-      throw err
-    }
+    })
 
     await db.tvShows.mergeDuplicateShows(sourceId)
 

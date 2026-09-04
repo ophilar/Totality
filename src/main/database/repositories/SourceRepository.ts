@@ -115,8 +115,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
   ): Promise<void> {
     if (libraries.length === 0) return
 
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const chunkSize = 100
       for (let i = 0; i < libraries.length; i += chunkSize) {
         const chunk = libraries.slice(i, i + chunkSize)
@@ -143,11 +142,7 @@ export class SourceRepository extends BaseRepository<typeof schema.mediaSources>
             },
           })
       }
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   async getEnabledSources(): Promise<MediaSource[]> {

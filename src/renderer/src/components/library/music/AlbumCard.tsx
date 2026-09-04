@@ -59,7 +59,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
       <div className="aspect-square bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {/* 3-dot menu button - appears on hover */}
         {onAnalyze && (
-          <div ref={menuRef} className="absolute top-2 left-2 z-20">
+          <div ref={menuRef} className="absolute top-2 right-2 z-20">
             <button
               onClick={handleMenuClick}
               className={`w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white transition-opacity ${
@@ -75,7 +75,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
 
             {/* Dropdown menu */}
             {showMenu && (
-              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
@@ -106,7 +106,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
           const isHiRes = isLossless && ((album.best_bit_depth || 0) > 16 || (album.best_sample_rate || 0) > 48000)
           if (!isLossless && !isHiRes) return null
           return (
-            <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 items-end">
+            <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 items-start">
               {isHiRes && (
                 <span className="px-1.5 py-0.5 text-xs font-bold bg-purple-600 text-white rounded shadow-sm">Hi-Res</span>
               )}

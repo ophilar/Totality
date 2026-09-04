@@ -900,8 +900,6 @@ export class LocalFolderProvider extends BaseMediaProvider {
     for (let i = 0; i < groups.length; i += BATCH_SIZE) {
       const batch = groups.slice(i, i + BATCH_SIZE)
       
-      await db.beginBatch()
-      try {
         for (const group of batch) {
           try {
             const canonicalMetadata = group[0].metadata; const plexId = this.generateCanonicalPlexId(canonicalMetadata)
@@ -930,10 +928,6 @@ export class LocalFolderProvider extends BaseMediaProvider {
             result.itemsScanned++; if (existingMediaItem) result.itemsUpdated++; else result.itemsAdded++
           } catch (error: unknown) { result.errors.push(`Failed to save group ${group.map(g => path.basename(g.metadata.filePath || '')).join(', ')}: ${getErrorMessage(error)}`) }
         }
-      } finally {
-        await db.endBatch()
-      }
-      
       // Yield to keep UI responsive
       await new Promise(r => setTimeout(r, 0))
     }

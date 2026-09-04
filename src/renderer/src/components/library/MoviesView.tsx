@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback, memo, useRef } from 'react'
 import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap, Film } from 'lucide-react'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { QualityBadges } from '@/components/library/QualityBadges'
-import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { MoviePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { LibraryEmptyState } from '@/components/library/browser/LibraryEmptyState'
@@ -11,6 +10,12 @@ import { useSources } from '@/contexts/SourceContext'
 import { providerColors, calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
+import { EfficiencyDisplay } from '@/components/library/EfficiencyDisplay'
+import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
+import { EvidenceStatusBadge } from '@/components/library/EvidenceStatusBadge'
+import { OptimizationMetrics } from '@/components/library/OptimizationMetrics'
+import { MediaMetricsRow } from '@/components/library/MediaMetricsRow'
+import { calculateOptimizationSummary } from '@/components/library/optimizationSummary'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {
@@ -31,7 +36,7 @@ export function MoviesView({
   sortBy,
   sortOrder,
   onSortChange,
-  slimDown,
+  slimDown: _slimDown,
   onSelectMovie,
   onSelectCollection,
   viewType,
@@ -50,9 +55,9 @@ export function MoviesView({
   isAnalyzing = false
 }: {
   movies?: MediaItem[]
-  sortBy: 'title' | 'year' | 'efficiency' | 'waste' | 'size'
+  sortBy: 'title' | 'year' | 'efficiency' | 'recoverable' | 'size'
   sortOrder: 'asc' | 'desc'
-  onSortChange: (sort: 'title' | 'year' | 'efficiency' | 'waste' | 'size') => void
+  onSortChange: (sort: 'title' | 'year' | 'efficiency' | 'recoverable' | 'size') => void
   slimDown: boolean
   onSelectMovie: (id: number, movie: MediaItem) => void
   onSelectCollection: (collection: MovieCollectionData) => void
@@ -136,7 +141,7 @@ export function MoviesView({
         const effB = b.type === 'movie' ? b.movie.efficiency_score : undefined
         if (effA == null || effB == null) return effA == null ? (effB == null ? 0 : 1) : -1
         if (effA !== effB) return (effA - effB) * (sortOrder === 'asc' ? 1 : -1)
-      } else if (sortBy === 'waste') {
+      } else if (sortBy === 'recoverable') {
         const wasteA = a.type === 'movie' ? a.movie.storage_debt_bytes : undefined
         const wasteB = b.type === 'movie' ? b.movie.storage_debt_bytes : undefined
         if (wasteA == null || wasteB == null) return wasteA == null ? (wasteB == null ? 0 : 1) : -1
@@ -156,10 +161,25 @@ export function MoviesView({
     return items
   }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, groupByCollections, sortBy, sortOrder])
 
+  const optimizationSummary = useMemo(
+    () => calculateOptimizationSummary(
+      movies?.map(m => ({
+        file_size: m.file_size,
+        storage_debt_bytes: m.storage_debt_bytes,
+        efficiency_score: m.efficiency_score,
+      })),
+      totalMovieCount
+    ),
+    [movies, totalMovieCount]
+  )
+
   const statsBar = (
     <div className="flex items-center justify-between pb-4 px-1">
       <div className="flex items-center gap-6 text-sm text-muted-foreground font-medium">
         <span>{totalMovieCount.toLocaleString()} Movies</span>
+        {optimizationSummary && (
+          <OptimizationMetrics summary={optimizationSummary} />
+        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -216,8 +236,6 @@ export function MoviesView({
     />
   )
 
-  const isSlimDownActive = slimDown || sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size'
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <MediaGridView
@@ -231,8 +249,7 @@ export function MoviesView({
         listHeader={listHeader}
         emptyState={emptyState}
         scrollKey="movies"
-        banner={isSlimDownActive ? <SlimDownBanner className="mb-4" /> : undefined}
-      renderGridItem={(item) => (
+        renderGridItem={(item) => (
         item.type === 'collection' ? (
           <div key={`col-${item.collection.tmdb_collection_id}`}>
             <CollectionCard
@@ -419,7 +436,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
     >
       <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
         {showMenuButton && (
-          <div ref={menuRef} className="absolute top-2 left-2 z-20">
+          <div ref={menuRef} className="absolute top-2 right-2 z-20">
             <button
               onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }}
               className={`w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity ${isRescanning || showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
@@ -427,7 +444,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
               {isRescanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
             </button>
             {showMenu && !isRescanning && (
-              <div className="absolute top-8 left-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
                 {onToggleOptimize && (
                   <button onClick={handleToggleOptimize} className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}>
                     <Zap className="w-3.5 h-3.5" /> {isExpanded ? 'Hide Optimization' : 'Optimize...'}
@@ -454,7 +471,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         )}
 
         {movie.version_count && movie.version_count > 1 && (
-          <div className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground text-[0.625rem] font-bold px-1.5 py-0.5 rounded shadow-md">{movie.version_count}x</div>
+          <div className="absolute top-2 left-2 z-10 bg-primary text-primary-foreground text-[0.625rem] font-bold px-1.5 py-0.5 rounded shadow-md">{movie.version_count}x</div>
         )}
 
         {showSourceBadge && movie.source_type && (
@@ -485,6 +502,12 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
             <span>{movie.year}</span>
             {movie.resolution && <><span className="text-muted-foreground/30">•</span><span>{movie.resolution}</span></>}
           </div>
+          <MediaMetricsRow
+            fileSize={movie.file_size}
+            storageDebtBytes={movie.storage_debt_bytes}
+            efficiencyScore={movie.efficiency_score}
+            evidenceStatus={movie.evidence_status}
+          />
         </div>
         <div className="shrink-0 flex items-center gap-1 mt-0.5">
           {collectionData && (
@@ -528,6 +551,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
             <h4 className="font-medium text-sm truncate">{movie.title}</h4>
             <div className="flex items-center gap-2 mt-0.5">
               <QualityBadges item={movie} whiteBg={false} />
+              {movie.evidence_status && <EvidenceStatusBadge status={movie.evidence_status} />}
               {collectionData && <span className="text-[0.65rem] text-muted-foreground bg-muted/50 px-1 rounded flex items-center gap-1"><Layers className="w-2.5 h-2.5" />{collectionData.owned_movies}/{collectionData.total_movies}</span>}
             </div>
           </div>
@@ -538,14 +562,10 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="text-right text-sm text-muted-foreground font-mono">{movie.video_bitrate != null ? formatBitrate(movie.video_bitrate) : 'Unavailable'}</div>
         <div className="text-right text-sm text-muted-foreground font-mono">{movie.file_size != null ? formatBytes(movie.file_size) : 'Unavailable'}</div>
         <div className="text-center">
-          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${movie.efficiency_score == null ? 'text-muted-foreground' : movie.efficiency_score >= 85 ? 'bg-green-500/20 text-green-500' : movie.efficiency_score >= 60 ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'}`}>
-            {movie.efficiency_score == null ? 'Unavailable' : `${movie.efficiency_score}%`}
-          </div>
+          <EfficiencyDisplay score={movie.efficiency_score} />
         </div>
         <div className="text-right">
-          <span className={`text-xs font-medium ${movie.storage_debt_bytes == null ? 'text-muted-foreground' : movie.storage_debt_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
-            {movie.storage_debt_bytes == null ? 'Unavailable' : movie.storage_debt_bytes > 0 ? formatBytes(movie.storage_debt_bytes) : 'None'}
-          </span>
+          <RecoverableWasteDisplay bytes={movie.storage_debt_bytes} />
         </div>
         <div className="relative flex justify-center">
           {showMenuButton && (

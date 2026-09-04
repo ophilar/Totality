@@ -4,15 +4,11 @@ import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
+import { EvidenceStatusBadge } from '@/components/library/EvidenceStatusBadge'
+import { EfficiencyDisplay } from '@/components/library/EfficiencyDisplay'
+import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
 
-// Utility to format bytes into readable strings
-const formatBytes = (bytes: number) => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
+
 
 export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow }: {
   show: TVShowSummary
@@ -109,28 +105,21 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         )}
       </div>
 
+      {/* Evidence status badge */}
+      {show.evidence_status && (
+        <div className="shrink-0 flex items-center">
+          <EvidenceStatusBadge status={show.evidence_status} />
+        </div>
+      )}
+
       {/* Recoverable */}
       <div className="w-32 text-left shrink-0">
-        <span className={`text-xs font-medium ${show.total_recoverable_bytes && show.total_recoverable_bytes > 0 ? 'text-orange-500' : 'text-muted-foreground'}`}>
-          {show.total_recoverable_bytes && show.total_recoverable_bytes > 0 ? formatBytes(show.total_recoverable_bytes) : 'None'}
-        </span>
+        <RecoverableWasteDisplay bytes={show.total_recoverable_bytes} />
       </div>
 
       {/* Weighted Efficiency */}
       <div className="w-32 text-left shrink-0">
-        {show.weighted_efficiency == null || show.weighted_efficiency === 0 ? (
-          <span className="text-xs text-muted-foreground">Unscored</span>
-        ) : (
-          <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
-            show.weighted_efficiency >= 85
-              ? 'bg-green-500/20 text-green-500'
-              : show.weighted_efficiency >= 60
-              ? 'bg-yellow-500/20 text-yellow-500'
-              : 'bg-red-500/20 text-red-500'
-          }`}>
-            {Math.round(show.weighted_efficiency)}%
-          </div>
-        )}
+        <EfficiencyDisplay score={show.weighted_efficiency} />
       </div>
 
       {/* 3-dot menu */}

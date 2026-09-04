@@ -71,14 +71,10 @@ describe('Database Lifecycle (Initialization + Operations)', () => {
 
     it('should support batch operations (Transactions)', async () => {
       await service.initialize(testDbPath)
-      await service.beginBatch()
-      await service.sources.upsertSource({ 
-        source_id: 's1', source_type: 'local', display_name: 'S1', connection_config: '{}', is_enabled: 1 
+      await service.withBatch(async () => {
+        await service.sources.upsertSource({ source_id: 's1', source_type: 'local', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
+        await service.sources.upsertSource({ source_id: 's2', source_type: 'local', display_name: 'S2', connection_config: '{}', is_enabled: 1 })
       })
-      await service.sources.upsertSource({ 
-        source_id: 's2', source_type: 'local', display_name: 'S2', connection_config: '{}', is_enabled: 1 
-      })
-      await service.endBatch()
 
       const sources = await service.sources.getSources()
       expect(sources).toHaveLength(2)

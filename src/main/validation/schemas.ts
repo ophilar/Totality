@@ -414,7 +414,7 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'debt', 'completeness']).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'debt', 'completeness', 'waste', 'weighted_efficiency']).optional(),
 
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),

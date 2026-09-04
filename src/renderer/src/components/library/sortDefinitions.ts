@@ -2,7 +2,18 @@ export type SortDirection = 'asc' | 'desc'
 export type LibrarySortType = 'movie' | 'tv' | 'music'
 export interface SortOption { key: string; label: string }
 
-export const descendingSortColumns = new Set(['efficiency', 'weighted_efficiency', 'waste', 'storage_debt', 'recoverable', 'size'])
+export const descendingSortColumns = new Set([
+  'efficiency',
+  'efficiency_score',
+  'weighted_efficiency',
+  'waste',
+  'storage_debt',
+  'storage_debt_bytes',
+  'recoverable',
+  'recoverable_waste_bytes',
+  'size',
+  'completeness'
+])
 
 export function nextSortDirection(
   currentColumn: string,
@@ -13,18 +24,29 @@ export function nextSortDirection(
   return descendingSortColumns.has(nextColumn) ? 'desc' : 'asc'
 }
 
-export const movieSortColumns = ['title', 'year', 'efficiency', 'waste', 'size'] as const
+export const movieSortColumns = ['title', 'year', 'efficiency', 'recoverable', 'size'] as const
 export const tvSortColumns = ['title', 'recoverable', 'weighted_efficiency'] as const
-export const mediaSortColumns = ['title', 'efficiency', 'waste', 'size'] as const
+export const mediaSortColumns = ['title', 'efficiency', 'recoverable', 'size'] as const
 
 const sortOptions: Record<LibrarySortType, SortOption[]> = {
-  movie: movieSortColumns.map(key => ({ key, label: key === 'efficiency' ? 'Efficiency' : key[0].toUpperCase() + key.slice(1) })),
+  movie: [
+    { key: 'title', label: 'Title' },
+    { key: 'year', label: 'Year' },
+    { key: 'efficiency', label: 'Efficiency' },
+    { key: 'recoverable', label: 'Recoverable' },
+    { key: 'size', label: 'Size' },
+  ],
   tv: [
     { key: 'title', label: 'Title' },
     { key: 'recoverable', label: 'Recoverable' },
     { key: 'weighted_efficiency', label: 'Weighted efficiency' },
   ],
-  music: mediaSortColumns.map(key => ({ key, label: key[0].toUpperCase() + key.slice(1) })),
+  music: [
+    { key: 'title', label: 'Title' },
+    { key: 'efficiency', label: 'Efficiency' },
+    { key: 'recoverable', label: 'Recoverable' },
+    { key: 'size', label: 'Size' },
+  ],
 }
 
 export function getSortOptions(type: LibrarySortType): SortOption[] {

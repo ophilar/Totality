@@ -98,19 +98,16 @@ export class SourceScannerService {
             const BATCH_SIZE = 50
             for (let i = 0; i < albums.length; i += BATCH_SIZE) {
               const batch = albums.slice(i, i + BATCH_SIZE)
-              const scores = []
+              const scores: ReturnType<typeof analyzer.analyzeMusicAlbum>[] = []
               for (const album of batch) {
                 const tracks = tracksByAlbum.get(album.id!) || []
                 const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
                 scores.push(qualityScore)
               }
 
-              await this.db.beginBatch()
-              try {
+              await this.db.withBatch(async () => {
                 await this.db.music.upsertQualityScores(scores)
-              } finally {
-                await this.db.endBatch()
-              }
+              })
               // Yield to allow other IPCs
               await new Promise(r => setTimeout(r, 0))
             }

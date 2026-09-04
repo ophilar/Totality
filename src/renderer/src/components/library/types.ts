@@ -25,7 +25,13 @@ import type {
   AlbumCompleteness as BaseAlbumCompleteness,
   MissingAlbum as BaseMissingAlbum,
   MissingTrack as BaseMissingTrack,
+  AnalysisStatus,
+  AnalysisDiagnostic,
+  AnalysisOutcome,
+  OptimizationMetricsSummary,
+  CalculationStatus,
 } from '@main/types/database'
+export type { AnalysisStatus, AnalysisDiagnostic, AnalysisOutcome, OptimizationMetricsSummary, CalculationStatus }
 import type { MediaSourceResponse } from '@preload/api/types'
 
 // Alias for MediaSourceResponse used in hooks

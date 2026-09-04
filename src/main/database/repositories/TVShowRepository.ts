@@ -1,6 +1,6 @@
 import { eq, and, sql, asc, desc, like } from 'drizzle-orm'
 import type { AnyColumn, SQL } from 'drizzle-orm'
-import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem } from '@main/types/database'
+import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem, OptimizationMetricsSummary, CalculationStatus } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
@@ -31,10 +31,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       'episodes': schema.seriesCompleteness.totalEpisodes,
       'season_count': schema.seriesCompleteness.totalSeasons,
       'storage_debt': schema.seriesCompleteness.storageDebtBytes,
+      'storage_debt_bytes': schema.seriesCompleteness.storageDebtBytes,
       'recoverable': schema.seriesCompleteness.storageDebtBytes,
+      'recoverable_waste_bytes': schema.seriesCompleteness.storageDebtBytes,
       'debt': schema.seriesCompleteness.storageDebtBytes,
       'waste': schema.seriesCompleteness.storageDebtBytes,
       'efficiency': schema.seriesCompleteness.efficiencyScore,
+      'efficiency_score': schema.seriesCompleteness.efficiencyScore,
       'weighted_efficiency': schema.seriesCompleteness.efficiencyScore,
       'size': schema.seriesCompleteness.totalSize,
     }
@@ -71,7 +74,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .from(schema.seriesCompleteness)
 
     if (conditions.length > 0) query.where(and(...conditions))
-    const requiresCalculatedSort = filters?.sortBy === 'weighted_efficiency'
+    const requiresCalculatedEfficiencySort = filters?.sortBy === 'weighted_efficiency' || filters?.sortBy === 'efficiency' || filters?.sortBy === 'efficiency_score'
+    const requiresCalculatedWasteSort = filters?.sortBy === 'waste' || filters?.sortBy === 'recoverable' || filters?.sortBy === 'storage_debt' || filters?.sortBy === 'storage_debt_bytes' || filters?.sortBy === 'recoverable_waste_bytes'
+    const requiresCalculatedSort = requiresCalculatedEfficiencySort || requiresCalculatedWasteSort
     if (!requiresCalculatedSort) {
       query.orderBy(sortOrder)
       if (filters?.limit) query.limit(filters.limit)
@@ -102,6 +107,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       weightedEfficiency: number | null
       scoredCount: number
       ownedCount: number
+      seasonCount: number
     }>()
 
     if (seriesTitles.length > 0) {
@@ -122,6 +128,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
         scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
         ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`,
+        seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} IS NOT NULL AND ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`,
         weightedEfficiency: sql<number>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`
       })
       .from(schema.mediaItems)
@@ -142,7 +149,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             : null,
           weightedEfficiency: agg.weightedEfficiency != null ? Math.round(Number(agg.weightedEfficiency)) : null,
           scoredCount: Number(agg.scoredCount) || 0,
-          ownedCount
+          ownedCount,
+          seasonCount: Number(agg.seasonCount) || 0
         })
       }
     }
@@ -167,6 +175,14 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         ? aggregate.scoredCount
         : (row.efficiency_score != null ? ownedCount : 0)
       const unscoredCount = Math.max(0, totalCount - scoredCount)
+      const seasonCount = (row.total_seasons && row.total_seasons > 0)
+        ? row.total_seasons
+        : ((row.owned_seasons && row.owned_seasons > 0)
+          ? row.owned_seasons
+          : (hasEpisodeAggregate && aggregate.seasonCount > 0 ? aggregate.seasonCount : 1))
+      const ownedSeasons = (row.owned_seasons && row.owned_seasons > 0)
+        ? row.owned_seasons
+        : (hasEpisodeAggregate && aggregate.seasonCount > 0 ? aggregate.seasonCount : 1)
 
       summaries.push({
         ...row,
@@ -175,7 +191,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         savings_basis: row.savings_basis as TVShowSummary['savings_basis'],
         poster_url: row.poster_url ?? undefined,
         episode_count: totalCount,
-        season_count: row.total_seasons,
+        season_count: seasonCount,
+        total_seasons: seasonCount,
+        total_episodes: totalCount,
+        owned_seasons: ownedSeasons,
+        owned_episodes: ownedCount,
         match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }),
         total_size: totalSize,
         total_recoverable_bytes: totalRecoverable,
@@ -191,14 +211,98 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     }
     if (requiresCalculatedSort) {
       summaries.sort((a, b) => {
-        const left = a.weighted_efficiency ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
-        const right = b.weighted_efficiency ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
+        const valA = requiresCalculatedEfficiencySort ? a.weighted_efficiency : a.total_recoverable_bytes
+        const valB = requiresCalculatedEfficiencySort ? b.weighted_efficiency : b.total_recoverable_bytes
+        const left = valA ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
+        const right = valB ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
         return filters?.sortOrder === 'desc' ? right - left : left - right
       })
       const offset = filters?.offset ?? 0
       return filters?.limit ? summaries.slice(offset, offset + filters.limit) : summaries.slice(offset)
     }
     return summaries
+  }
+
+  async getOptimizationMetricsSummary(
+    filters?: TVShowFilters & { completenessFilter?: string }
+  ): Promise<OptimizationMetricsSummary> {
+    const summaries = await this.getSummaries(filters)
+    const totalCount = summaries.length
+    if (totalCount === 0) {
+      return {
+        status: 'unknown',
+        calculationStatus: 'unavailable',
+        knownCount: 0,
+        totalCount: 0,
+        efficiency: null,
+        overallEfficiencyScore: null,
+        recoverableBytes: null,
+        recoverableWasteBytes: null,
+        wasteBytes: null,
+        totalStorageDebtBytes: null,
+        savingsBasis: null,
+        evidenceStatus: 'insufficient',
+        confidence: 'low',
+        confidenceScore: 0,
+      }
+    }
+
+    let knownCount = 0
+    let weightedEfficiencySum = 0
+    let weightedSizeSum = 0
+    let totalStorageDebtBytes = 0
+    let hasAnyDebt = false
+
+    let unweightedEfficiencySum = 0
+
+    for (const s of summaries) {
+      if (s.weighted_efficiency != null) {
+        knownCount++
+        unweightedEfficiencySum += s.weighted_efficiency
+        if (s.total_size != null && s.total_size > 0) {
+          weightedEfficiencySum += s.weighted_efficiency * s.total_size
+          weightedSizeSum += s.total_size
+        }
+      }
+      if (s.total_recoverable_bytes != null) {
+        totalStorageDebtBytes += s.total_recoverable_bytes
+        hasAnyDebt = true
+      }
+    }
+
+    let status: CalculationStatus = 'unknown'
+    let calculationStatus: CalculationStatus = 'unavailable'
+    if (totalCount > 0 && knownCount === totalCount) {
+      status = 'complete'
+      calculationStatus = 'measured'
+    } else if (knownCount > 0) {
+      status = 'partial'
+      calculationStatus = 'estimated'
+    }
+
+    const overallEfficiencyScore = knownCount > 0
+      ? Math.round(weightedSizeSum > 0 ? weightedEfficiencySum / weightedSizeSum : unweightedEfficiencySum / knownCount)
+      : null
+
+    const recoverableWasteBytes = hasAnyDebt ? totalStorageDebtBytes : null
+    const confidenceScore = totalCount > 0 ? Math.round((knownCount / totalCount) * 100) : 0
+
+    return {
+      status,
+      calculationStatus,
+      knownCount,
+      totalCount,
+      efficiency: overallEfficiencyScore,
+      overallEfficiencyScore,
+      recoverableBytes: recoverableWasteBytes,
+      recoverableWasteBytes,
+      wasteBytes: recoverableWasteBytes,
+      totalStorageDebtBytes: recoverableWasteBytes,
+      savingsBasis: hasAnyDebt ? 'measured' : null,
+      evidenceStatus: hasAnyDebt ? 'measured' : 'insufficient',
+      confidence: confidenceScore >= 80 ? 'high' : confidenceScore >= 40 ? 'medium' : 'low',
+      confidenceScore,
+    }
   }
 
   async count(filters?: TVShowFilters & { completenessFilter?: string }): Promise<number> {
@@ -317,20 +421,32 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
            OR ${schema.seriesCompleteness.seriesTitle} = ${clean.title})`
     ]
 
+    const targetConditions = [
+      eq(schema.seriesCompleteness.sourceId, record.sourceId),
+      eq(schema.seriesCompleteness.libraryId, record.libraryId),
+      sql`(${schema.seriesCompleteness.seriesIdentityKey} = ${record.seriesIdentityKey}
+           OR (${record.tmdbId} IS NOT NULL AND ${record.tmdbId} <> '' AND ${schema.seriesCompleteness.tmdbId} = ${record.tmdbId}))`
+    ]
+    const targetConflict = await this.drizzle.select().from(schema.seriesCompleteness).where(and(...targetConditions)).get()
     const existing = await this.drizzle.select().from(schema.seriesCompleteness).where(and(...conditions)).get()
 
     let id: number
-    if (existing) {
-      id = existing.id
+    const target = targetConflict || existing
+    if (target) {
+      id = target.id
+      if (existing && targetConflict && existing.id !== targetConflict.id && existing.userFixedMatch !== 1) {
+        await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.id, existing.id))
+      }
+
       await this.drizzle.update(schema.seriesCompleteness).set({
         ...record,
-        seriesTitle: existing.userFixedMatch === 1 ? existing.seriesTitle : record.seriesTitle,
-        tmdbId: existing.userFixedMatch === 1 ? existing.tmdbId : (record.tmdbId || existing.tmdbId),
-        tvdbId: existing.userFixedMatch === 1 ? existing.tvdbId : (record.tvdbId || existing.tvdbId),
-        posterUrl: existing.userFixedMatch === 1 ? existing.posterUrl : (record.posterUrl || existing.posterUrl),
-        userFixedMatch: existing.userFixedMatch === 1 ? 1 : record.userFixedMatch,
+        seriesTitle: target.userFixedMatch === 1 ? target.seriesTitle : record.seriesTitle,
+        tmdbId: target.userFixedMatch === 1 ? target.tmdbId : (record.tmdbId !== undefined ? record.tmdbId : target.tmdbId),
+        tvdbId: target.userFixedMatch === 1 ? target.tvdbId : (record.tvdbId !== undefined ? record.tvdbId : target.tvdbId),
+        posterUrl: target.userFixedMatch === 1 ? target.posterUrl : (record.posterUrl || target.posterUrl),
+        userFixedMatch: target.userFixedMatch === 1 ? 1 : record.userFixedMatch,
         updatedAt: sql`datetime('now')`
-      }).where(eq(schema.seriesCompleteness.id, existing.id))
+      }).where(eq(schema.seriesCompleteness.id, target.id))
     } else {
       id = await this.upsertWithProviderId(
         schema.seriesCompleteness,
@@ -339,8 +455,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         {
           ...record,
           seriesTitle: sql`CASE WHEN user_fixed_match = 1 THEN series_title ELSE excluded.series_title END`,
-          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE COALESCE(excluded.tmdb_id, series_completeness.tmdb_id) END`,
-          tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE COALESCE(excluded.tvdb_id, series_completeness.tvdb_id) END`,
+          tmdbId: sql`CASE WHEN user_fixed_match = 1 THEN tmdb_id ELSE excluded.tmdb_id END`,
+          tvdbId: sql`CASE WHEN user_fixed_match = 1 THEN tvdb_id ELSE excluded.tvdb_id END`,
           posterUrl: sql`CASE WHEN user_fixed_match = 1 THEN poster_url ELSE COALESCE(excluded.poster_url, series_completeness.poster_url) END`,
           userFixedMatch: sql`CASE WHEN user_fixed_match = 1 THEN 1 ELSE excluded.user_fixed_match END`,
         }
@@ -366,6 +482,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     }
 
     return id
+  }
+
+  async clearTmdbId(id: number): Promise<void> {
+    await this.drizzle.update(schema.seriesCompleteness).set({
+      tmdbId: null,
+      updatedAt: sql`datetime('now')`
+    }).where(eq(schema.seriesCompleteness.id, id))
   }
 
   async getAllCompleteness(sourceId?: string, libraryId?: string): Promise<SeriesCompleteness[]> {

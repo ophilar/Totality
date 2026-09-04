@@ -3,6 +3,7 @@ import type { AnyColumn, SQL } from 'drizzle-orm'
 import type {
   MediaItem,
   MediaItemFilters,
+
   MediaItemVersion,
   QualityScore,
   MediaItemType,
@@ -10,6 +11,8 @@ import type {
   MusicAlbum,
   MusicTrack,
   ProviderType,
+  OptimizationMetricsSummary,
+  CalculationStatus,
 } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { PathUtils } from '@main/services/utils/PathUtils'
@@ -99,7 +102,14 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       overall_score: schema.qualityScores.overallScore,
       size: schema.mediaItems.fileSize,
       storage_debt: schema.qualityScores.storageDebtBytes,
+      storage_debt_bytes: schema.qualityScores.storageDebtBytes,
+      recoverable: schema.qualityScores.storageDebtBytes,
+      recoverable_waste_bytes: schema.qualityScores.storageDebtBytes,
+      waste: schema.qualityScores.storageDebtBytes,
+      debt: schema.qualityScores.storageDebtBytes,
       efficiency: schema.qualityScores.efficiencyScore,
+      efficiency_score: schema.qualityScores.efficiencyScore,
+      weighted_efficiency: schema.qualityScores.efficiencyScore,
     }
 
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.mediaItems.title
@@ -130,6 +140,82 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
     const res = await query.get()
     return res?.count || 0
+  }
+
+  async getOptimizationMetricsSummary(
+    filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }
+  ): Promise<OptimizationMetricsSummary> {
+    const conditions = this.buildFilters(filters)
+
+    const query = this.drizzle
+      .select({
+        totalCount: sql<number>`COUNT(${schema.mediaItems.id})`,
+        knownEfficiencyCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
+        measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
+        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
+        weightedEfficiencyNumerator: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL AND ${schema.mediaItems.fileSize} IS NOT NULL AND ${schema.mediaItems.fileSize} > 0 THEN ${schema.qualityScores.efficiencyScore} * ${schema.mediaItems.fileSize} ELSE 0 END)`,
+        weightedEfficiencyDenominator: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL AND ${schema.mediaItems.fileSize} IS NOT NULL AND ${schema.mediaItems.fileSize} > 0 THEN ${schema.mediaItems.fileSize} ELSE 0 END)`,
+        unweightedEfficiencySum: sql<number | null>`SUM(${schema.qualityScores.efficiencyScore})`,
+      })
+      .from(schema.mediaItems)
+      .leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+
+    if (conditions.length > 0) query.where(and(...conditions))
+    const agg = await query.get()
+
+    const totalCount = Number(agg?.totalCount) || 0
+    const knownCount = Number(agg?.knownEfficiencyCount) || 0
+    const measuredDebtCount = Number(agg?.measuredDebtCount) || 0
+
+    let status: CalculationStatus = 'unknown'
+    if (totalCount > 0 && knownCount === totalCount) {
+      status = 'complete'
+    } else if (knownCount > 0) {
+      status = 'partial'
+    }
+
+    let overallEfficiencyScore: number | null = null
+    if (knownCount > 0) {
+      const den = Number(agg?.weightedEfficiencyDenominator)
+      const num = Number(agg?.weightedEfficiencyNumerator)
+      if (den > 0) {
+        overallEfficiencyScore = Math.round(num / den)
+      } else if (agg?.unweightedEfficiencySum != null) {
+        overallEfficiencyScore = Math.round(Number(agg.unweightedEfficiencySum) / knownCount)
+      }
+    }
+
+    let totalStorageDebtBytes: number | null = null
+    let recoverableWasteBytes: number | null = null
+    if (measuredDebtCount > 0 && agg?.storageDebtBytes != null) {
+      totalStorageDebtBytes = Number(agg.storageDebtBytes)
+      recoverableWasteBytes = totalStorageDebtBytes
+    }
+
+    const confidenceScore = totalCount > 0 ? Math.round((knownCount / totalCount) * 100) : 0
+    let calculationStatus: CalculationStatus = 'unavailable'
+    if (status === 'complete') {
+      calculationStatus = 'measured'
+    } else if (status === 'partial') {
+      calculationStatus = 'estimated'
+    }
+
+    return {
+      status,
+      calculationStatus,
+      knownCount,
+      totalCount,
+      efficiency: overallEfficiencyScore,
+      overallEfficiencyScore,
+      recoverableBytes: recoverableWasteBytes,
+      recoverableWasteBytes,
+      wasteBytes: recoverableWasteBytes,
+      totalStorageDebtBytes,
+      savingsBasis: measuredDebtCount > 0 ? 'measured' : null,
+      evidenceStatus: measuredDebtCount > 0 ? 'measured' : 'insufficient',
+      confidence: confidenceScore >= 80 ? 'high' : confidenceScore >= 40 ? 'medium' : 'low',
+      confidenceScore,
+    }
   }
 
   private buildFilters(filters?: MediaItemFilters & { includeDisabledLibraries?: boolean }): SQL[] {
@@ -379,8 +465,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async deleteItem(id: number): Promise<void> {
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const item = await this.drizzle
         .select()
         .from(schema.mediaItems)
@@ -403,17 +488,12 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           await this.recalculateSeriesCompleteness([item])
         }
       }
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   async deleteItems(ids: number[]): Promise<void> {
     if (!ids.length) return
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const items = await this.drizzle
         .select()
         .from(schema.mediaItems)
@@ -437,11 +517,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           await this.recalculateSeriesCompleteness(episodeItems)
         }
       }
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   private async recalculateSeriesCompleteness(
@@ -506,8 +582,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async deleteItemsForSource(sourceId: string): Promise<void> {
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       const items = await this.drizzle
         .select({ id: schema.mediaItems.id })
         .from(schema.mediaItems)
@@ -535,11 +610,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       await this.drizzle
         .delete(schema.movieCollections)
         .where(eq(schema.movieCollections.sourceId, sourceId))
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   async updateSeriesMatch(
@@ -1010,8 +1081,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async syncItemVersions(mediaItemId: number, versions: Array<Omit<MediaItemVersion, 'id' | 'media_item_id'> & { original_language?: string | null; audio_language?: string | null }>): Promise<void> {
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       await this.drizzle
         .delete(schema.mediaItemVersions)
         .where(eq(schema.mediaItemVersions.mediaItemId, mediaItemId))
@@ -1039,11 +1109,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           updatedAt: sql`(datetime('now'))`,
         })
       }
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   async mergeItemVersion(
@@ -1082,8 +1148,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
   }
 
   async updateBestVersion(mediaItemId: number): Promise<void> {
-    await this.beginBatch()
-    try {
+    await this.withBatch(async () => {
       await this.drizzle
         .update(schema.mediaItemVersions)
         .set({ isBest: 0 })
@@ -1107,11 +1172,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
               .limit(1)
           )
         )
-      await this.endBatch()
-    } catch (err) {
-      await this.rollbackBatch()
-      throw err
-    }
+    })
   }
 
   async updateVersionQuality(id: number, score: VersionQualityUpdate): Promise<void> {

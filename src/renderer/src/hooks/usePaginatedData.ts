@@ -145,14 +145,21 @@ export function usePaginatedData<T, TFilters>({
   // Subscribe to library update events
   useEffect(() => {
     if (!enabled) return
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
     const unsubscribe = window.electronAPI.onLibraryUpdated?.((event) => {
       // If event has a sourceId, only refresh if it matches our active source
       // If activeSourceId is null (All Sources), we always refresh
       if (!event.sourceId || !activeSourceId || event.sourceId === activeSourceId) {
-        loadPage(true)
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(() => {
+          loadPage(true)
+        }, 400)
       }
     })
-    return () => unsubscribe?.()
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      unsubscribe?.()
+    }
   }, [activeSourceId, enabled, loadPage])
 
   return {

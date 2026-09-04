@@ -33,6 +33,9 @@ import {
   MusicAlbum,
   MusicTrack,
   AlbumType,
+  type AnalysisOutcome,
+  type AnalysisDiagnostic,
+  type AnalysisStatus,
 } from '@main/types/database'
 
 // MusicBrainz API response types
@@ -289,6 +292,11 @@ export class MusicBrainzService extends CancellableOperation {
       errorMessage.includes('503') ||
       errorMessage.includes('429')
     )
+  }
+
+  private isDatabaseError(error: unknown): boolean {
+    const message = getErrorMessage(error).toLowerCase()
+    return message.includes('sqlite') || message.includes('constraint') || message.includes('database')
   }
 
   /**
@@ -672,6 +680,7 @@ export class MusicBrainzService extends CancellableOperation {
       getLoggingService().info('[MusicBrainzService]', `Total tracks extracted: ${tracks.length}`)
       return { releaseId, tracks }
     } catch (error) {
+      if (this.isRetryableConnectionError(error)) throw error
       // 404 is expected when album isn't in MusicBrainz — log as warning without stack trace
       const is404 = error instanceof Error && error.message.includes('404')
       if (is404) {
@@ -751,6 +760,7 @@ export class MusicBrainzService extends CancellableOperation {
       }))
     } catch (error) {
       getLoggingService().error('[MusicBrainzService]', '[MusicBrainzService] Release search failed:', error)
+      if (this.isRetryableConnectionError(error)) throw error
       return []
     }
   }
@@ -1069,7 +1079,7 @@ export class MusicBrainzService extends CancellableOperation {
     onProgress?: (progress: MusicAnalysisProgress) => void,
     sourceId?: string,
     options: MusicAnalysisOptions = {}
-  ): Promise<{ completed: boolean; artistsAnalyzed: number; albumsAnalyzed: number; skipped: number }> {
+  ): Promise<AnalysisOutcome & { artistsAnalyzed: number; albumsAnalyzed: number; skipped: number; deferred: number }> {
     // Apply default options
     const {
       skipRecentlyAnalyzed = true,
@@ -1138,6 +1148,25 @@ export class MusicBrainzService extends CancellableOperation {
     let artistsAnalyzed = 0
     let albumsAnalyzed = 0
     let skipped = 0
+    let deferred = 0
+    let deferredArtists = 0
+    let deferredAlbums = 0
+    const errors: string[] = []
+    const diagnostics: AnalysisDiagnostic[] = []
+
+    // Send initial progress immediately so UI shows something right away
+    onProgress?.({
+      current: 0,
+      total: totalItems,
+      currentItem: 'Starting analysis...',
+      phase: 'artists',
+      percentage: 0,
+      artistsTotal: artists.length,
+      albumsTotal: allSourceAlbums.length,
+      phaseIndex: 0,
+      skipped: 0,
+    })
+
 
     // Send initial progress immediately so UI shows something right away
     onProgress?.({
@@ -1155,179 +1184,259 @@ export class MusicBrainzService extends CancellableOperation {
     let consecutiveNetworkErrors = 0
     const MAX_CONSECUTIVE_NETWORK_ERRORS = 5
 
-    await db.beginBatch()
-    try {
-      // Phase 1: Analyze artist completeness
-      getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
+    let circuitBroken = false
+    // Phase 1: Analyze artist completeness
+    getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
 
-      for (const artist of artists) {
-        if (this.isCancelled()) {
-          getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
-          return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+    for (let artistIdx = 0; artistIdx < artists.length; artistIdx++) {
+      const artist = artists[artistIdx]
+      if (this.isCancelled()) {
+        getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at artist ${currentItem + 1}/${totalItems}`)
+        deferred = (artists.length - artistIdx) + allSourceAlbums.length
+        const completedCount = artistsAnalyzed + albumsAnalyzed
+        return {
+          status: 'cancelled',
+          completedCount,
+          deferredCount: deferred,
+          failedCount: errors.length,
+          diagnostics,
+          artistsAnalyzed,
+          albumsAnalyzed,
+          skipped,
+          deferred,
+          completed: false,
+          errors,
         }
+      }
 
-        // Check if placeholder artist
-        if (isPlaceholderMusicTitle(artist.name)) {
+      // Check if placeholder artist
+      if (isPlaceholderMusicTitle(artist.name)) {
+        skipped++
+        currentItem++
+        continue
+      }
+
+      // Check if recently analyzed
+      if (skipRecentlyAnalyzed) {
+        const lastSync = existingArtistCompleteness.get(artist.name)
+        if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
           skipped++
           currentItem++
           continue
         }
+      }
 
-        // Check if recently analyzed
-        if (skipRecentlyAnalyzed) {
-          const lastSync = existingArtistCompleteness.get(artist.name)
-          if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
-            skipped++
-            currentItem++
-            continue
-          }
-        }
+      // Send progress BEFORE processing so user sees what's being analyzed
+      const artistIndex = currentItem + 1  // 1-based for display
+      onProgress?.({
+        current: currentItem,
+        total: totalItems,
+        currentItem: artist.name,
+        phase: 'artists',
+        percentage: (currentItem / totalItems) * 100,
+        artistsTotal: artists.length,
+        albumsTotal: allSourceAlbums.length,
+        phaseIndex: artistIndex,
+        skipped,
+      })
 
-        // Send progress BEFORE processing so user sees what's being analyzed
-        const artistIndex = currentItem + 1  // 1-based for display
-        onProgress?.({
-          current: currentItem,
-          total: totalItems,
-          currentItem: artist.name,
-          phase: 'artists',
-          percentage: (currentItem / totalItems) * 100,
-          artistsTotal: artists.length,
-          albumsTotal: allSourceAlbums.length,
-          phaseIndex: artistIndex,
-          skipped,
-        })
+      try {
+        const artistAlbums = albumsByArtist.get(artist.id!) || []
+        const ownedTitles = artistAlbums.map(a => a.title)
+        const ownedMbIds = artistAlbums
+          .filter(a => a.musicbrainz_id)
+          .map(a => a.musicbrainz_id!)
 
-        try {
-          const artistAlbums = albumsByArtist.get(artist.id!) || []
-          const ownedTitles = artistAlbums.map(a => a.title)
-          const ownedMbIds = artistAlbums
-            .filter(a => a.musicbrainz_id)
-            .map(a => a.musicbrainz_id!)
+        const completeness = await this.analyzeArtistCompleteness(
+          artist.name,
+          artist.musicbrainz_id,
+          ownedTitles,
+          ownedMbIds,
+          filterVinylOnly
+        )
 
-          const completeness = await this.analyzeArtistCompleteness(
-            artist.name,
-            artist.musicbrainz_id,
-            ownedTitles,
-            ownedMbIds,
-            filterVinylOnly
-          )
-
+        await db.withBatch(async () => {
           await db.music.upsertArtistCompleteness(completeness)
-
-          // Cache the found MBID if we discovered one (and artist doesn't already have one)
           if (completeness.foundMbId && !artist.musicbrainz_id && artist.id) {
-            try {
-              await db.music.updateMusicArtistMbid(artist.id, completeness.foundMbId)
-              getLoggingService().info('[MusicBrainzService]', `Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
-            } catch (e) {
-              // Silently ignore - method may not exist yet
-            }
+            await db.music.updateMusicArtistMbid(artist.id, completeness.foundMbId)
+            getLoggingService().info('[MusicBrainzService]', `Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
           }
+        })
 
-          artistsAnalyzed++
-          consecutiveNetworkErrors = 0
-        } catch (error) {
-          getLoggingService().error('[MusicBrainzService]', `Failed to analyze artist "${artist.name}":`, error)
-          if (this.isRetryableConnectionError(error)) {
-            consecutiveNetworkErrors++
-            if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
-              getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
-              break
-            }
+        artistsAnalyzed++
+        consecutiveNetworkErrors = 0
+      } catch (error) {
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze artist "${artist.name}":`, error)
+        const message = `artist "${artist.name}": ${getErrorMessage(error)}`
+        errors.push(message)
+        const isDb = this.isDatabaseError(error)
+        const isRetry = this.isRetryableConnectionError(error)
+        diagnostics.push({
+          itemType: 'artist',
+          itemId: artist.id,
+          itemName: artist.name,
+          category: isDb ? 'database' : 'provider',
+          code: isDb ? 'DATABASE_ERROR' : (isRetry ? 'PROVIDER_NETWORK_ERROR' : 'PROVIDER_ERROR'),
+          message,
+          cause: getErrorMessage(error),
+          provider: isDb ? undefined : 'musicbrainz',
+          identifier: artist.musicbrainz_id || undefined,
+          retryable: isRetry,
+          item: artist.name,
+          kind: isDb ? 'database' : 'provider',
+        } as AnalysisDiagnostic & { item?: string; kind?: string })
+
+        if (isRetry) {
+          consecutiveNetworkErrors++
+          if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
+            getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
+            circuitBroken = true
+            deferredArtists = artists.length - currentItem
+            break
           }
         }
-
-        currentItem++
       }
 
-      // Phase 2: Analyze album track completeness
-      getLoggingService().info('[MusicBrainzService]', `Phase 2: Analyzing ${allSourceAlbums.length} albums`)
+      currentItem++
+    }
 
-      for (const album of allSourceAlbums) {
-        if (this.isCancelled()) {
-          getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
-          return { completed: false, artistsAnalyzed, albumsAnalyzed, skipped }
+    if (circuitBroken) {
+      deferred = deferredArtists + allSourceAlbums.length
+      const completedCount = artistsAnalyzed + albumsAnalyzed
+      return {
+        status: completedCount > 0 ? 'partial' : 'deferred',
+        completedCount,
+        deferredCount: deferred,
+        failedCount: errors.length,
+        diagnostics,
+        artistsAnalyzed,
+        albumsAnalyzed,
+        skipped,
+        deferred,
+        completed: false,
+        errors,
+      }
+    }
+
+    // Phase 2: Analyze album track completeness
+    getLoggingService().info('[MusicBrainzService]', `Phase 2: Analyzing ${allSourceAlbums.length} albums`)
+
+    for (let albumIdx = 0; albumIdx < allSourceAlbums.length; albumIdx++) {
+      const album = allSourceAlbums[albumIdx]
+      if (this.isCancelled()) {
+        getLoggingService().info('[MusicBrainzService]', `Analysis cancelled at album ${currentItem + 1}/${totalItems}`)
+        deferred = allSourceAlbums.length - albumIdx
+        const completedCount = artistsAnalyzed + albumsAnalyzed
+        return {
+          status: 'cancelled',
+          completedCount,
+          deferredCount: deferred,
+          failedCount: errors.length,
+          diagnostics,
+          artistsAnalyzed,
+          albumsAnalyzed,
+          skipped,
+          deferred,
+          completed: false,
+          errors,
         }
+      }
 
-        // Check if placeholder album or artist
-        if (isPlaceholderMusicTitle(album.title) || isPlaceholderMusicTitle(album.artist_name)) {
+      // Check if placeholder album or artist
+      if (isPlaceholderMusicTitle(album.title) || isPlaceholderMusicTitle(album.artist_name)) {
+        skipped++
+        currentItem++
+        continue
+      }
+
+      // Check if recently analyzed
+      if (skipRecentlyAnalyzed && album.id) {
+        const lastSync = existingAlbumCompleteness.get(album.id)
+        if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
           skipped++
           currentItem++
           continue
         }
-
-        // Check if recently analyzed
-        if (skipRecentlyAnalyzed && album.id) {
-          const lastSync = existingAlbumCompleteness.get(album.id)
-          if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
-            skipped++
-            currentItem++
-            continue
-          }
-        }
-
-        // Send progress BEFORE processing
-        const albumIndex = currentItem - artists.length + 1  // 1-based within albums phase
-        onProgress?.({
-          current: currentItem,
-          total: totalItems,
-          currentItem: `${album.artist_name} - ${album.title}`,
-          phase: 'albums',
-          percentage: (currentItem / totalItems) * 100,
-          artistsTotal: artists.length,
-          albumsTotal: allSourceAlbums.length,
-          phaseIndex: albumIndex,
-          skipped,
-        })
-
-        try {
-          const tracks = tracksByAlbum.get(album.id!) || []
-          const ownedTrackTitles = tracks.map(t => t.title)
-
-          const completeness = await this.analyzeAlbumTrackCompleteness(
-            album.id!,
-            album.artist_name,
-            album.title,
-            album.musicbrainz_id,
-            ownedTrackTitles
-          )
-
-          if (completeness) {
-            await db.music.upsertAlbumCompleteness(completeness)
-
-            // Cache the found MBID if we discovered one (and album doesn't already have one)
-            if (completeness.foundMbId && !album.musicbrainz_id && album.id) {
-              try {
-                await db.music.updateMusicAlbumMbid(album.id, completeness.foundMbId)
-                getLoggingService().info('[MusicBrainzService]', `Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
-              } catch (e) {
-                // Silently ignore - method may not exist yet
-              }
-            }
-
-            // Update artwork for local sources if we found a MusicBrainz release group ID
-            if (updateArtwork && completeness.musicbrainz_release_group_id) {
-              await this.updateAlbumArtworkFromCoverArt(album, completeness.musicbrainz_release_group_id)
-            }
-          }
-          albumsAnalyzed++
-          consecutiveNetworkErrors = 0
-        } catch (error) {
-          getLoggingService().error('[MusicBrainzService]', `Failed to analyze album "${album.title}":`, error)
-          if (this.isRetryableConnectionError(error)) {
-            consecutiveNetworkErrors++
-            if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
-              getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
-              break
-            }
-          }
-        }
-
-        currentItem++
       }
-    } finally {
-      await db.endBatch()
+
+      // Send progress BEFORE processing
+      const albumIndex = currentItem - artists.length + 1  // 1-based within albums phase
+      onProgress?.({
+        current: currentItem,
+        total: totalItems,
+        currentItem: `${album.artist_name} - ${album.title}`,
+        phase: 'albums',
+        percentage: (currentItem / totalItems) * 100,
+        artistsTotal: artists.length,
+        albumsTotal: allSourceAlbums.length,
+        phaseIndex: albumIndex,
+        skipped,
+      })
+
+      try {
+        const tracks = tracksByAlbum.get(album.id!) || []
+        const ownedTrackTitles = tracks.map(t => t.title)
+
+        const completeness = await this.analyzeAlbumTrackCompleteness(
+          album.id!,
+          album.artist_name,
+          album.title,
+          album.musicbrainz_id,
+          ownedTrackTitles
+        )
+
+        if (completeness) {
+          await db.withBatch(async () => {
+            await db.music.upsertAlbumCompleteness(completeness)
+            if (completeness.foundMbId && !album.musicbrainz_id && album.id) {
+              await db.music.updateMusicAlbumMbid(album.id, completeness.foundMbId)
+              getLoggingService().info('[MusicBrainzService]', `Cached MBID for album "${album.title}": ${completeness.foundMbId}`)
+            }
+          })
+
+          // Update artwork for local sources if we found a MusicBrainz release group ID
+          if (updateArtwork && completeness.musicbrainz_release_group_id) {
+            await this.updateAlbumArtworkFromCoverArt(album, completeness.musicbrainz_release_group_id)
+          }
+        }
+        albumsAnalyzed++
+        consecutiveNetworkErrors = 0
+      } catch (error) {
+        getLoggingService().error('[MusicBrainzService]', `Failed to analyze album "${album.title}":`, error)
+        const message = `album "${album.title}": ${getErrorMessage(error)}`
+        errors.push(message)
+        const isDb = this.isDatabaseError(error)
+        const isRetry = this.isRetryableConnectionError(error)
+        diagnostics.push({
+          itemType: 'album',
+          itemId: album.id,
+          itemName: album.title,
+          category: isDb ? 'database' : 'provider',
+          code: isDb ? 'DATABASE_ERROR' : (isRetry ? 'PROVIDER_NETWORK_ERROR' : 'PROVIDER_ERROR'),
+          message,
+          cause: getErrorMessage(error),
+          provider: isDb ? undefined : 'musicbrainz',
+          identifier: album.musicbrainz_id || undefined,
+          retryable: isRetry,
+          item: album.title,
+          kind: isDb ? 'database' : 'provider',
+        } as AnalysisDiagnostic & { item?: string; kind?: string })
+
+        if (isRetry) {
+          consecutiveNetworkErrors++
+          if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
+            getLoggingService().warn('[MusicBrainzService]', `Circuit breaker tripped after ${MAX_CONSECUTIVE_NETWORK_ERRORS} consecutive network errors. Halting current music analysis run.`)
+            circuitBroken = true
+            deferredAlbums = allSourceAlbums.length - (currentItem - artists.length)
+            break
+          }
+        }
+      }
+
+      currentItem++
     }
+
+    if (circuitBroken) deferred = deferredArtists + deferredAlbums
 
     onProgress?.({
       current: totalItems,
@@ -1342,19 +1451,35 @@ export class MusicBrainzService extends CancellableOperation {
     })
 
     getLoggingService().info('[MusicBrainzService]', `Analysis complete: ${artistsAnalyzed} artists, ${albumsAnalyzed} albums analyzed, ${skipped} skipped (recently analyzed)`)
-    return { completed: true, artistsAnalyzed, albumsAnalyzed, skipped }
+    const completedCount = artistsAnalyzed + albumsAnalyzed
+    const deferredCount = deferred
+    const failedCount = errors.length
+    const status: AnalysisStatus = this.isCancelled()
+      ? 'cancelled'
+      : circuitBroken
+        ? ((deferredArtists > 0 ? artistsAnalyzed === 0 : albumsAnalyzed === 0) ? 'deferred' : 'partial')
+        : failedCount > 0
+          ? (completedCount > 0 ? 'partial' : 'failed')
+          : 'completed'
+
+    return {
+      status,
+      completedCount,
+      deferredCount,
+      failedCount,
+      diagnostics,
+      artistsAnalyzed,
+      albumsAnalyzed,
+      skipped,
+      deferred,
+      completed: status === 'completed',
+      errors,
+    }
   }
 
-  /**
-   * Update album artwork from Cover Art Archive
-   * Only fetches if album doesn't already have artwork (e.g., from embedded metadata)
-   * @param album The album to update
-   * @param releaseGroupId MusicBrainz release group ID
-   */
   private async updateAlbumArtworkFromCoverArt(album: MusicAlbum, releaseGroupId: string): Promise<void> {
     const db = getDatabase()
 
-    // Skip if album already has artwork (e.g., extracted from embedded metadata during scan)
     if (album.thumb_url || album.art_url) {
       return
     }
@@ -1370,7 +1495,6 @@ export class MusicBrainzService extends CancellableOperation {
         getLoggingService().info('[MusicBrainzService]', `Updated artwork for "${album.artist_name} - ${album.title}"`)
       }
     } catch (error) {
-      // Don't fail the whole analysis if artwork fetch fails
       getLoggingService().warn('[MusicBrainzService]', `Failed to fetch artwork for "${album.title}":`, error)
     }
   }

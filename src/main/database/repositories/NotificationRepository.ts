@@ -7,7 +7,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 
 export interface Notification {
   id?: number
-  type: 'info' | 'success' | 'warning' | 'error' | 'task_complete' | 'task_failed'
+  type: 'source_change' | 'scan_complete' | 'error' | 'info' | 'success' | 'warning' | 'task_complete' | 'task_failed'
   title: string
   message: string
   reference_id?: string
@@ -21,12 +21,34 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
   }
 
   async addNotification(notification: Omit<Notification, 'id' | 'is_read' | 'created_at'>): Promise<number> {
+    let dbType: 'source_change' | 'scan_complete' | 'error' | 'info'
+    switch (notification.type) {
+      case 'source_change':
+        dbType = 'source_change'
+        break
+      case 'scan_complete':
+      case 'success':
+      case 'task_complete':
+        dbType = 'scan_complete'
+        break
+      case 'error':
+      case 'task_failed':
+        dbType = 'error'
+        break
+      case 'info':
+      case 'warning':
+        dbType = 'info'
+        break
+      default:
+        throw new Error(`Unsupported notification type: ${(notification as { type: string }).type}`)
+    }
+
     const result = await this.drizzle.insert(schema.notifications)
       .values({
-        type: notification.type,
+        type: dbType,
         title: notification.title,
         message: notification.message,
-        referenceId: notification.reference_id || null,
+        referenceId: notification.reference_id ?? null,
         isRead: 0,
         createdAt: new Date().toISOString(),
       })
@@ -42,7 +64,11 @@ export class NotificationRepository extends BaseRepository<typeof schema.notific
       log.info('[Notification]', logMsg)
     }
 
-    return result[0]?.id || 0
+    const insertedId = result[0]?.id
+    if (insertedId == null) {
+      throw new Error('Failed to insert notification: no id returned from database')
+    }
+    return insertedId
   }
 
   async getUnreadCount(): Promise<number> {

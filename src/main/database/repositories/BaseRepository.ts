@@ -22,17 +22,9 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     protected table: TTable
   ) {}
 
-  protected async beginBatch(): Promise<void> {
+  protected async withBatch<R>(fn: () => Promise<R>): Promise<R> {
     const { getDatabase } = await import('@main/database/BetterSQLiteService')
-    await getDatabase().beginBatch()
-  }
-  protected async endBatch(): Promise<void> {
-    const { getDatabase } = await import('@main/database/BetterSQLiteService')
-    await getDatabase().endBatch()
-  }
-  protected async rollbackBatch(): Promise<void> {
-    const { getDatabase } = await import('@main/database/BetterSQLiteService')
-    await getDatabase().rollbackBatch()
+    return getDatabase().withBatch(fn)
   }
 
   public async processInChunks<T, R>(

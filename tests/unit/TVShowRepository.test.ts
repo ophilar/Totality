@@ -214,4 +214,31 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries).toHaveLength(1)
     expect(summaries[0].series_identity_key).toBe('tmdb:83867')
   })
+
+  it('accurately resolves season count and owned counts even when total_seasons is 0 or unanalyzed', async () => {
+    await repo.upsertCompleteness({
+      series_title: 'Unanalyzed Series',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 0,
+      total_episodes: 0,
+      owned_seasons: 0,
+      owned_episodes: 0,
+      completeness_percentage: null,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    } as SeriesCompleteness)
+
+    await mediaRepo.upsertItem(mockEpisode('Unanalyzed Series', 1, 1))
+    await mediaRepo.upsertItem(mockEpisode('Unanalyzed Series', 1, 2))
+    await mediaRepo.upsertItem(mockEpisode('Unanalyzed Series', 2, 1))
+
+    const summaries = await repo.getSummaries()
+    const summary = summaries.find(s => s.series_title === 'Unanalyzed Series')
+    expect(summary).toBeDefined()
+    expect(summary?.season_count).toBe(2)
+    expect(summary?.owned_seasons).toBe(2)
+    expect(summary?.owned_episodes).toBe(3)
+    expect(summary?.episode_count).toBe(3)
+  })
 })

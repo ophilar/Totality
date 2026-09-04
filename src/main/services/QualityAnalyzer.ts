@@ -668,15 +668,15 @@ export class QualityAnalyzer {
 
     getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
-    await db.beginBatch()
     try {
       for (const item of mediaItems) {
         if (isCancelled?.()) {
-          await db.rollbackBatch()
           return analyzed
         }
         const qualityScore = await this.analyzeMediaItem(item)
-        await db.media.upsertQualityScore(qualityScore)
+        await db.withBatch(async () => {
+          await db.media.upsertQualityScore(qualityScore)
+        })
 
         // Track distribution for verbose summary
         const tier = qualityScore.quality_tier || 'Unknown'
@@ -687,10 +687,9 @@ export class QualityAnalyzer {
         // Score individual versions and update best version selection
         if (item.id && item.version_count && item.version_count > 1) {
           const versions = await db.media.getItemVersions(item.id)
-          const updatePromises = []
+          const updatePromises: Promise<void>[] = []
           for (const version of versions) {
             if (isCancelled?.()) {
-              await db.rollbackBatch()
               return analyzed
             }
             if (version.id) {
@@ -699,7 +698,7 @@ export class QualityAnalyzer {
             }
           }
           if (updatePromises.length > 0) {
-            await Promise.all(updatePromises)
+            await db.withBatch(async () => { await Promise.all(updatePromises) })
           }
           await db.media.updateBestVersion(item.id)
         }
@@ -710,10 +709,8 @@ export class QualityAnalyzer {
           onProgress(analyzed, mediaItems.length)
         }
       }
-      await db.endBatch()
     } catch (error) {
-      await db.rollbackBatch()
-      getLoggingService().error('[QualityAnalyzer]', 'Analysis batch failed and was rolled back:', error)
+      getLoggingService().error('[QualityAnalyzer]', 'Analysis failed:', error)
       throw error
     }
 

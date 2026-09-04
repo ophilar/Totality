@@ -37,6 +37,7 @@ electronLanguages:
   - en-US
 
 win:
+  compression: maximum
   target:
     - target: nsis
       arch:

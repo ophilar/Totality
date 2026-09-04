@@ -1,7 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { MediaGridView } from '@/components/library/MediaGridView'
 import { Music, Disc3, User, RefreshCw } from 'lucide-react'
-import { SlimDownBanner } from '@/components/library/SlimDownBanner'
 import { ArtistCard } from '@/components/library/music/ArtistCard'
 import { AlbumCard } from '@/components/library/music/AlbumCard'
 import { TrackListItem } from '@/components/library/music/TrackListItem'
@@ -22,7 +21,7 @@ import type {
 } from '@/components/library/types'
 import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 
-type MusicSortKey = 'title' | 'efficiency' | 'waste' | 'size'
+type MusicSortKey = 'title' | 'efficiency' | 'recoverable' | 'size'
 
 export function MusicView({
   artists,
@@ -63,7 +62,7 @@ export function MusicView({
   sortBy,
   sortOrder,
   onSortChange,
-  slimDown,
+  slimDown: _slimDown,
   tracks,
   allTracks,
   tracksLoading,
@@ -117,9 +116,9 @@ export function MusicView({
   includeEps: boolean
   includeSingles: boolean
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
-  sortBy: 'title' | 'efficiency' | 'waste' | 'size'
+  sortBy: 'title' | 'efficiency' | 'recoverable' | 'size'
   sortOrder: 'asc' | 'desc'
-  onSortChange: (sort: 'title' | 'efficiency' | 'waste' | 'size') => void
+  onSortChange: (sort: 'title' | 'efficiency' | 'recoverable' | 'size') => void
   slimDown: boolean
 }) {
   const { scanProgress } = useSources()
@@ -129,10 +128,10 @@ export function MusicView({
   const sortedArtists = useMemo(() => {
     const items = [...artists]
     items.sort((a, b) => {
-      if (sortBy === 'efficiency' || sortBy === 'waste' || sortBy === 'size') {
+      if (sortBy === 'efficiency' || sortBy === 'recoverable' || sortBy === 'size') {
         const compA = artistCompleteness.get(a.name); const compB = artistCompleteness.get(b.name)
         if (sortBy === 'efficiency') { const effA = compA?.efficiency_score ?? 100; const effB = compB?.efficiency_score ?? 100; if (effA !== effB) return (effA - effB) * (sortOrder === 'asc' ? 1 : -1) }
-        else if (sortBy === 'waste') { const wA = compA?.storage_debt_bytes ?? 0; const wB = compB?.storage_debt_bytes ?? 0; if (wA !== wB) return (wB - wA) * (sortOrder === 'asc' ? 1 : -1) }
+        else if (sortBy === 'recoverable') { const wA = compA?.storage_debt_bytes ?? 0; const wB = compB?.storage_debt_bytes ?? 0; if (wA !== wB) return (wB - wA) * (sortOrder === 'asc' ? 1 : -1) }
         else if (sortBy === 'size') { const sA = compA?.total_size ?? 0; const sB = compB?.total_size ?? 0; if (sA !== sB) return (sB - sA) * (sortOrder === 'asc' ? 1 : -1) }
       }
       return (a.sort_name || a.name).localeCompare(b.sort_name || b.name)
@@ -212,7 +211,7 @@ export function MusicView({
       onTrackSortChange(column as typeof trackSortColumn, direction)
       return
     }
-    if (musicViewMode === 'artists' && ['title', 'efficiency', 'waste', 'size'].includes(column)) {
+    if (musicViewMode === 'artists' && ['title', 'efficiency', 'recoverable', 'size'].includes(column)) {
       onSortChange(column as typeof sortBy)
     }
   }
@@ -230,7 +229,6 @@ export function MusicView({
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {slimDown && <SlimDownBanner className="mb-4" />}
       {musicViewMode === 'artists' && (
         <MediaGridView
           items={sortedArtists} totalCount={totalArtistCount} viewType={viewType} loading={artistsLoading} onLoadMore={onLoadMoreArtists} posterMinWidth={posterMinWidth} banner={header}
@@ -238,7 +236,7 @@ export function MusicView({
           emptyState={<div className="py-20 text-center opacity-40"><User className="w-20 h-20 mx-auto mb-4" /><p>No artists found</p></div>}
           renderGridItem={(artist) => <ArtistCard artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} artistCompleteness={artistCompleteness} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
           renderListItem={(artist) => <ArtistListItem artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} completeness={artistCompleteness.get(artist.name)} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
-          listHeader={listHeader(['title', 'efficiency', 'waste', 'size'])}
+          listHeader={listHeader(['title', 'efficiency', 'recoverable', 'size'])}
         />
       )}
       {musicViewMode === 'albums' && (

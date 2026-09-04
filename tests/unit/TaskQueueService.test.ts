@@ -287,7 +287,15 @@ describe('TaskQueueService', () => {
 
   it('completes partial series analysis and records a warning notification', async () => {
     const seriesService = {
-      analyzeAllSeries: vi.fn().mockResolvedValue({ totalSeries: 2, analyzed: 1, complete: 0, incomplete: 1, errors: ['"Show B": metadata unavailable'], completed: true }),
+      analyzeAllSeries: vi.fn().mockResolvedValue({
+        status: 'partial',
+        totalCount: 2,
+        processedCount: 1,
+        deferredCount: 0,
+        completedCount: 1,
+        failedCount: 1,
+        diagnostics: [{ itemType: 'series', itemName: 'Show B', category: 'provider', code: 'UNAVAILABLE', message: '"Show B": metadata unavailable' }],
+      }),
     }
     const partialService = new TaskQueueService({ db, logging, seriesCompleteness: seriesService as never })
     partialService.pauseQueue()

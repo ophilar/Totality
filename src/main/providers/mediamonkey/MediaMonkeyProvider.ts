@@ -167,10 +167,8 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
       `).all() as unknown as MediaMonkeySongRow[]
 
       result.itemsScanned = songs.length
-      await db.beginBatch()
 
-      try {
-        const artistIdMap = new Map<number, number>() // MM5 Artist ID -> Totality Music Artist ID
+      const artistIdMap = new Map<number, number>() // MM5 Artist ID -> Totality Music Artist ID
         const albumIdMap = new Map<number, number>()  // MM5 Album ID -> Totality Music Album ID
         const albumTracksMap = new Map<number, MusicTrack[]>() // MM5 Album ID -> Totality MusicTrack[]
 
@@ -205,48 +203,56 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
           albumIdMap.set(album.ID, id)
         }
 
-        // Process Songs
-        for (const song of songs) {
+        // Process Songs in chunks
+        const CHUNK_SIZE = 500
+        for (let i = 0; i < songs.length; i += CHUNK_SIZE) {
           if (this.musicScanCancelled) break
+          const chunk = songs.slice(i, i + CHUNK_SIZE)
+          const trackDataList: MusicTrack[] = []
 
-          const audioCodec = (song.AudioCodec || '').toLowerCase()
-          
-          // Parse Mood (MM5 usually uses semicolon or null)
-          const moods = song.Mood ? song.Mood.split(';').map((m: string) => m.trim()).filter(Boolean) : []
+          for (const song of chunk) {
+            const audioCodec = (song.AudioCodec || '').toLowerCase()
 
-          const totalityTrack: MusicTrack = {
-            source_id: this.sourceId,
-            source_type: this.providerType,
-            library_id: libraryId,
-            provider_id: `track_${song.ID}`,
-            album_id: albumIdMap.get(song.IDAlbum),
-            artist_id: artistIdMap.get(song.IDArtist),
-            album_name: song.Album,
-            artist_name: song.Artist,
-            title: song.SongTitle,
-            track_number: song.TrackNumber,
-            disc_number: song.DiscNumber || 1,
-            duration: song.SongLength,
-            file_path: song.SongPath,
-            file_size: song.FileLength,
-            audio_codec: audioCodec,
-            audio_bitrate: song.Bitrate ? song.Bitrate / 1000 : undefined, // MM5 usually in bps
-            sample_rate: song.SampleRate,
-            channels: song.Channels,
-            is_lossless: isLosslessCodec(audioCodec),
-            is_hi_res: isHiRes(song.SampleRate, 0, isLosslessCodec(audioCodec)),
-            musicbrainz_id: song.MusicBrainzTrackID,
-            mood: JSON.stringify(moods),
-            added_at: song.DateAdded ? new Date(typeof song.DateAdded === 'number' ? song.DateAdded * 1000 : song.DateAdded).toISOString() : undefined
+            // Parse Mood (MM5 usually uses semicolon or null)
+            const moods = song.Mood ? song.Mood.split(';').map((m: string) => m.trim()).filter(Boolean) : []
+
+            const totalityTrack: MusicTrack = {
+              source_id: this.sourceId,
+              source_type: this.providerType,
+              library_id: libraryId,
+              provider_id: `track_${song.ID}`,
+              album_id: albumIdMap.get(song.IDAlbum),
+              artist_id: artistIdMap.get(song.IDArtist),
+              album_name: song.Album,
+              artist_name: song.Artist,
+              title: song.SongTitle,
+              track_number: song.TrackNumber,
+              disc_number: song.DiscNumber || 1,
+              duration: song.SongLength,
+              file_path: song.SongPath,
+              file_size: song.FileLength,
+              audio_codec: audioCodec,
+              audio_bitrate: song.Bitrate ? song.Bitrate / 1000 : undefined, // MM5 usually in bps
+              sample_rate: song.SampleRate,
+              channels: song.Channels,
+              is_lossless: isLosslessCodec(audioCodec),
+              is_hi_res: isHiRes(song.SampleRate, 0, isLosslessCodec(audioCodec)),
+              musicbrainz_id: song.MusicBrainzTrackID,
+              mood: JSON.stringify(moods),
+              added_at: song.DateAdded ? new Date(typeof song.DateAdded === 'number' ? song.DateAdded * 1000 : song.DateAdded).toISOString() : undefined
+            }
+
+            trackDataList.push(totalityTrack)
+
+            // Add to tracks map for album stat calculation
+            if (song.IDAlbum) {
+              if (!albumTracksMap.has(song.IDAlbum)) albumTracksMap.set(song.IDAlbum, [])
+              albumTracksMap.get(song.IDAlbum)!.push(totalityTrack)
+            }
           }
 
-          await musicRepo.upsertTrack(totalityTrack)
-
-          // Add to tracks map for album stat calculation
-          if (song.IDAlbum) {
-            if (!albumTracksMap.has(song.IDAlbum)) albumTracksMap.set(song.IDAlbum, [])
-            albumTracksMap.get(song.IDAlbum)!.push(totalityTrack)
-          }
+          await musicRepo.bulkUpsertTracks(trackDataList)
+          if (i + CHUNK_SIZE < songs.length) await new Promise(r => setTimeout(r, 0))
         }
 
         // 4. Update stats for artists and albums
@@ -285,10 +291,6 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
         await musicRepo.updateAllMusicArtistCounts(this.sourceId)
 
         result.success = true
-      } finally {
-        await db.endBatch()
-      }
-
       result.durationMs = Date.now() - startTime
       return result
     } catch (error: unknown) {

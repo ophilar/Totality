@@ -349,9 +349,7 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           }))
 
           // STEP 2: Write to DB synchronously
-          await db.beginBatch()
-          try {
-            for (const data of preparedBatch) {
+          for (const data of preparedBatch) {
               if (!data) continue
               
               itemIndex += data.groupSize
@@ -368,9 +366,6 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
                 onProgress({ current: itemIndex, total: totalItems, phase: 'processing', currentItem: data.name, percentage: (itemIndex / totalItems) * 100 })
               }
             }
-          } finally {
-            await db.endBatch()
-          }
           
           // Yield to keep UI responsive
           await new Promise(r => setTimeout(r, 0))
@@ -449,14 +444,11 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
         const stats = calculateAlbumStats(trackDataList)
         Object.assign(albumData, { ...stats })
         const albumId = await db.music.upsertAlbum(albumData)
-        scannedAlbumIds.add(jellyfinAlbum.Id)
-
-        await db.beginBatch()
-        for (const t of trackDataList) {
-          t.album_id = albumId
-          await db.music.upsertTrack(t)
-        }
-        await db.endBatch()
+          scannedAlbumIds.add(jellyfinAlbum.Id)
+          for (const t of trackDataList) {
+            t.album_id = albumId
+            await db.music.upsertTrack(t)
+          }
         result.itemsScanned += trackDataList.length
       }
 

@@ -5,14 +5,14 @@ import { ProviderType } from '@main/types/database'
 vi.mock('@main/database/BetterSQLiteService', () => {
     return {
         getDatabase: () => ({
-            beginBatch: vi.fn(),
-            endBatch: vi.fn(),
+            withBatch: vi.fn(async (fn: () => Promise<unknown>) => fn()),
             music: {
                 upsertArtist: vi.fn(),
                 upsertAlbum: vi.fn(),
                 upsertTrack: vi.fn(),
-                getArtistByProviderId: vi.fn().mockReturnValue({id: 1}),
-                getAlbumByProviderId: vi.fn().mockReturnValue({id: 2, artist_id: 1}),
+                bulkUpsertTracks: vi.fn(),
+                getArtistByProviderId: vi.fn().mockReturnValue({ id: 1 }),
+                getAlbumByProviderId: vi.fn().mockReturnValue({ id: 2, artist_id: 1 }),
             },
             sources: {
                 updateSourceScanTime: vi.fn()
@@ -34,7 +34,7 @@ describe('KodiSqlBaseProvider Music Sync', () => {
     test('scanMusicLibrary handles dbType music correctly', async () => {
         const provider = new KodiLocalProvider({ sourceId: 'src-1', displayName: 'Kodi', sourceType: ProviderType.KodiLocal, connectionConfig: {} })
 
-        provider['queryAll'] = vi.fn().mockImplementation(async (sql, params, dbType) => {
+        provider['queryAll'] = vi.fn().mockImplementation(async (sql, _params, dbType) => {
              expect(dbType).toBe('music')
              if (sql.includes('artist')) {
                  return [{ idArtist: 1, strArtist: 'Artist 1' }]

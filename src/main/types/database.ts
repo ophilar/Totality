@@ -512,7 +512,7 @@ export interface TVShowFilters {
   completenessFilter?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'weighted_efficiency' | 'size' | 'completeness' | 'waste'
+  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'weighted_efficiency' | 'size' | 'completeness' | 'waste' | 'storage_debt_bytes' | 'recoverable_waste_bytes' | 'efficiency_score'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -923,11 +923,66 @@ export interface TaskProgress {
   speed?: string
 }
 
+export type AnalysisStatus =
+  | 'completed'
+  | 'partial'
+  | 'deferred'
+  | 'failed'
+  | 'cancelled'
+
+export interface AnalysisDiagnostic {
+  itemType: 'artist' | 'album' | 'series' | 'movie'
+  itemId?: string | number
+  itemName: string
+  category: 'provider' | 'database' | 'identity' | 'unresolved' | 'cancelled'
+  code: string
+  message: string
+  cause?: string
+  provider?: 'musicbrainz' | 'tmdb' | 'imdb'
+  identifier?: string
+  retryable?: boolean
+}
+
+export interface AnalysisOutcome {
+  status: AnalysisStatus
+  completedCount?: number
+  deferredCount: number
+  failedCount?: number
+  diagnostics: AnalysisDiagnostic[]
+  completed?: boolean
+  processedCount?: number
+  totalCount?: number
+  errors?: string[]
+}
+
+export type CalculationStatus = 'measured' | 'estimated' | 'insufficient' | 'unanalyzed' | 'unavailable' | 'complete' | 'partial' | 'unknown'
+
+export interface OptimizationMetricsSummary {
+  recoverableBytes: number | null
+  wasteBytes: number | null
+  efficiency: number | null
+  savingsBasis: string | null
+  evidenceStatus: EvidenceStatus
+  confidence: EvidenceConfidence
+  calculationStatus: CalculationStatus
+  status?: CalculationStatus
+  knownCount?: number
+  totalCount?: number
+  overallEfficiencyScore?: number | null
+  totalStorageDebtBytes?: number | null
+  recoverableWasteBytes?: number | null
+  confidenceScore?: number
+}
+
 export interface TaskResult {
   itemsScanned?: number
   itemsAdded?: number
   itemsUpdated?: number
   itemsRemoved?: number
+  status?: AnalysisStatus
+  deferred?: number
+  diagnostics?: AnalysisDiagnostic[]
+  outcome?: AnalysisOutcome
   [key: string]: unknown
 }
 
@@ -956,11 +1011,6 @@ export interface TaskQueueState {
   isPaused: boolean
   completedTasks: QueuedTask[]
 }
-
-// ============================================================================
-// DASHBOARD TYPES
-// ============================================================================
-
 // ============================================================================
 // STATS AND COMPLETENESS DATA (Shared UI types)
 // ============================================================================

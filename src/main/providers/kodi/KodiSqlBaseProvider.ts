@@ -124,9 +124,6 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       const fileAnalyzer = getMediaFileAnalyzer()
       if (this.ffprobeAvailable === null) this.ffprobeAvailable = await fileAnalyzer.isAvailable()
 
-      await db.beginBatch()
-
-      try {
         const groups: MediaMetadata[][] = []
         if (libraryId === 'movies') {
           const groupMap = new Map<string, MediaMetadata[]>()
@@ -202,10 +199,6 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
             result.errors.push(`Failed to process ${group[0]?.title}: ${getErrorMessage(error)}`)
           }
         }
-      } finally {
-        await db.endBatch()
-      }
-
       if (scannedProviderIds.size > 0) {
         const itemType = libraryId === 'movies' ? 'movie' : 'episode'
         const existingItems = await db.media.getItems({ type: itemType, sourceId: this.sourceId, libraryId })
@@ -258,11 +251,8 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
       const totalItems = artists.length + albums.length + songs.length
       getLoggingService().info(`[${this.constructor.name}]`, `Scanning ${totalItems} music items...`)
 
-      await db.beginBatch()
-
       let itemIndex = 0
 
-      try {
         // Sync Artists
         for (const artist of artists) {
           if (this.scanCancelled) break
@@ -329,10 +319,6 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
              result.errors.push(`Failed to process song ${song.strTitle}: ${getErrorMessage(err)}`)
           }
         }
-
-      } finally {
-        await db.endBatch()
-      }
 
       await db.sources.updateSourceScanTime(this.sourceId)
       result.success = true
