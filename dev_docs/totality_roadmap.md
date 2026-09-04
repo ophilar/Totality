@@ -210,3 +210,15 @@
 - [x] Prevented UI freezes by debouncing `onLibraryUpdated` in `usePaginatedData.ts` (400ms) and yielding the main-thread event loop with `setImmediate` in `SeriesCompletenessService.analyzeAllSeries`.
 - [x] Fixed notification contract in `SeriesCompletenessService.ts` by returning `processedCount` and `totalCount`, eliminating `undefined analyzed` notices.
 - [x] Full regression test suite passing (166 test files, 1,259/1,259 tests passing, 100%).
+
+## Phase 26: Quality Metrics SSOT, Automated Currency & UI Convergence (Sub-Project 1) [In Progress]
+- [ ] Make `QualityAnalyzer` the sole producer of `efficiency_score`, `storage_debt_bytes`, and quality tiers for video items with defensible recoverable semantics.
+- [ ] Omit `efficiency_score` and `storage_debt_bytes` for music items in `QualityAnalyzer`, focusing strictly on quality fidelity tiers, completeness, and specs.
+- [ ] Remove duplicate TV dry-run aggregation from `ShowOptimizationMetricsService.ts` and renderer-side duplicate calculations.
+- [ ] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
+- [ ] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.
+- [ ] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
+- [ ] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
+- [ ] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
+- [ ] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering.
+- [ ] Verify 100% test pass rate across unit suites and production build.
