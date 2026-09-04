@@ -18,6 +18,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   isLibraryAnalyzing?: boolean
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
   const sourceType = show.source_type as ProviderType | undefined
@@ -81,7 +82,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
     <div
       ref={cardRef}
       tabIndex={0}
-      className="focus-poster-only cursor-pointer hover-scale relative group outline-hidden"
+      className={`focus-poster-only cursor-pointer hover-scale relative group outline-hidden ${isMenuOpen ? 'z-50' : ''}`}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -90,7 +91,31 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         }
       }}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative rounded-md shadow-lg shadow-black/30">
+        <div className="absolute inset-0 overflow-hidden rounded-md">
+          {show.poster_url ? (
+            <img
+              src={show.poster_url}
+              alt={show.series_title}
+              loading="lazy"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none'
+              }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-20 h-20 text-muted-foreground" /></div>
+          )}
+
+          {/* Analyzing Overlay */}
+          {completenessData && completenessData.efficiency_score === null && isLibraryAnalyzing && (
+            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
+              <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
+              <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
+            </div>
+          )}
+        </div>
+
         {show.match_status && show.match_status !== 'verified' && (
           <div className="absolute top-2 left-2 z-10 rounded bg-black/70 px-2 py-1 text-xs text-white">
             {show.match_status === 'manual' ? 'Manual match' : show.match_status === 'conflicting' ? 'Conflicting match' : 'Unresolved match'}
@@ -98,11 +123,12 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         )}
         {/* 3-dot menu button */}
         {menuItems.length > 0 && (
-          <div className="absolute top-2 right-2 z-20">
+          <div className="absolute top-2 right-2 z-30">
             <ActionMenu
               items={menuItems}
               isWorking={isAnalyzing}
               menuPosition="right"
+              onOpenChange={setIsMenuOpen}
             />
           </div>
         )}
@@ -114,28 +140,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
             title={sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
           >
             {sourceType.charAt(0).toUpperCase()}
-          </div>
-        )}
-
-        {show.poster_url ? (
-          <img
-            src={show.poster_url}
-            alt={show.series_title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-20 h-20 text-muted-foreground" /></div>
-        )}
-
-        {/* Analyzing Overlay */}
-        {completenessData && completenessData.efficiency_score === null && isLibraryAnalyzing && (
-          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
-            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
-            <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
           </div>
         )}
       </div>

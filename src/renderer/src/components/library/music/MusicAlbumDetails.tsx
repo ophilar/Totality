@@ -262,7 +262,7 @@ export function MusicAlbumDetails({
           return (
             <div
               key={track.id}
-              className={`flex items-center gap-4 py-3 px-2 transition-colors group ${track.isMissing ? 'opacity-40' : 'hover:bg-muted/30 cursor-pointer'}`}
+              className={`flex items-center gap-4 py-3 px-2 transition-colors group relative ${trackMenuOpen === track.id ? 'z-50' : ''} ${track.isMissing ? 'opacity-40' : 'hover:bg-muted/30 cursor-pointer'}`}
               onClick={() => {
                 if (!track.isMissing) {
                   setSelectedTrackForQuality({

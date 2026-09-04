@@ -38,7 +38,7 @@ export const MissingEpisodeRowWithArtwork = memo(({
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
+      className={`group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden relative ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -97,7 +97,7 @@ export const MissingEpisodeRowWithArtwork = memo(({
           </button>
 
           {showMenu && (
-            <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+            <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMenu(false); onDismiss() }}
                 className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"

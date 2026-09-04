@@ -55,7 +55,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
     <div
       ref={cardRef}
       tabIndex={0}
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
+      className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden relative ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -140,7 +140,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
 
         {/* Dropdown menu */}
         {showMenu && (
-          <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+          <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
             <button
               onClick={handleAnalyze}
               className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"

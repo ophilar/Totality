@@ -431,12 +431,28 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
   return (
     <div
       tabIndex={0}
-      className="focus-poster-only group cursor-pointer hover-scale outline-hidden relative"
+      className={`focus-poster-only group cursor-pointer hover-scale outline-hidden relative ${showMenu ? 'z-50' : ''}`}
       onClick={handleCardClick}
     >
-      <div className="aspect-2/3 bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-2/3 bg-muted relative rounded-md shadow-lg shadow-black/30">
+        <div className="absolute inset-0 overflow-hidden rounded-md">
+          {movie.poster_url ? (
+            <img src={movie.poster_url} alt={movie.title} loading="lazy" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-muted/50"><MoviePlaceholder className="w-20 h-20 text-muted-foreground" /></div>
+          )}
+
+          {/* Analyzing Overlay */}
+          {(movie.efficiency_score === null || movie.efficiency_score === undefined) && isAnalyzing && (
+            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
+              <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
+              <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
+            </div>
+          )}
+        </div>
+
         {showMenuButton && (
-          <div ref={menuRef} className="absolute top-2 right-2 z-20">
+          <div ref={menuRef} className="absolute top-2 right-2 z-30">
             <button
               onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }}
               className={`w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity ${isRescanning || showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
@@ -444,7 +460,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
               {isRescanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
             </button>
             {showMenu && !isRescanning && (
-              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
                 {onToggleOptimize && (
                   <button onClick={handleToggleOptimize} className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}>
                     <Zap className="w-3.5 h-3.5" /> {isExpanded ? 'Hide Optimization' : 'Optimize...'}
@@ -477,20 +493,6 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         {showSourceBadge && movie.source_type && (
           <div className={`absolute bottom-2 left-2 ${providerColors[movie.source_type] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}>
             {movie.source_type.charAt(0).toUpperCase()}
-          </div>
-        )}
-
-        {movie.poster_url ? (
-          <img src={movie.poster_url} alt={movie.title} loading="lazy" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/50"><MoviePlaceholder className="w-20 h-20 text-muted-foreground" /></div>
-        )}
-
-        {/* Analyzing Overlay */}
-        {(movie.efficiency_score === null || movie.efficiency_score === undefined) && isAnalyzing && (
-          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
-            <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
-            <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">Analyzing</span>
           </div>
         )}
       </div>
@@ -540,7 +542,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
   const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
-    <div tabIndex={0} className="group cursor-pointer rounded-md overflow-hidden bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10 flex items-center gap-4" onClick={onClick}>
+    <div tabIndex={0} className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10 flex items-center gap-4 relative ${showMenu ? 'z-50' : ''}`} onClick={onClick}>
       <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center flex-1">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 relative shadow-sm">

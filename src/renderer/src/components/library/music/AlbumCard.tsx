@@ -53,13 +53,29 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
 
   return (
     <div
-      className="cursor-pointer hover-scale group relative"
+      className={`cursor-pointer hover-scale group relative ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}
     >
-      <div className="aspect-square bg-muted relative overflow-hidden rounded-md shadow-lg shadow-black/30">
+      <div className="aspect-square bg-muted relative rounded-md shadow-lg shadow-black/30">
+        <div className="absolute inset-0 overflow-hidden rounded-md">
+          {album.thumb_url ? (
+            <img
+              src={album.thumb_url}
+              alt={album.title}
+              loading="lazy"
+              className="w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none' }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Disc3 className="w-1/3 h-1/3 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+
         {/* 3-dot menu button - appears on hover */}
         {onAnalyze && (
-          <div ref={menuRef} className="absolute top-2 right-2 z-20">
+          <div ref={menuRef} className="absolute top-2 right-2 z-30">
             <button
               onClick={handleMenuClick}
               className={`w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white transition-opacity ${
@@ -75,7 +91,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
 
             {/* Dropdown menu */}
             {showMenu && (
-              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
@@ -139,20 +155,6 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
                 <HardDrive className="w-3.5 h-3.5 text-blue-500" />
               </div>
             )}
-          </div>
-        )}
-
-        {album.thumb_url ? (
-          <img
-            src={album.thumb_url}
-            alt={album.title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => { e.currentTarget.style.display = 'none' }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Disc3 className="w-1/3 h-1/3 text-muted-foreground" />
           </div>
         )}
       </div>

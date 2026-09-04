@@ -16,20 +16,27 @@ export interface ActionMenuProps {
   isWorking?: boolean
   buttonClassName?: string
   menuPosition?: 'left' | 'right'
+  onOpenChange?: (isOpen: boolean) => void
 }
 
-export function ActionMenu({ items, isWorking = false, buttonClassName, menuPosition = 'right' }: ActionMenuProps) {
+export function ActionMenu({ items, isWorking = false, buttonClassName, menuPosition = 'right', onOpenChange }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const menuRef = useMenuClose({ isOpen, onClose: useCallback(() => setIsOpen(false), []) })
+  const handleClose = useCallback(() => {
+    setIsOpen(false)
+    onOpenChange?.(false)
+  }, [onOpenChange])
+  const menuRef = useMenuClose({ isOpen, onClose: handleClose })
 
   return (
-    <div ref={menuRef} className="relative z-20" onClick={(e) => e.stopPropagation()}>
+    <div ref={menuRef} className={`relative ${isOpen ? 'z-50' : 'z-20'}`} onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation()
           if (!isWorking) {
-            setIsOpen(!isOpen)
+            const next = !isOpen
+            setIsOpen(next)
+            onOpenChange?.(next)
           }
         }}
         className={buttonClassName || "w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"}
@@ -38,7 +45,7 @@ export function ActionMenu({ items, isWorking = false, buttonClassName, menuPosi
       </button>
 
       {isOpen && !isWorking && (
-        <div className={`absolute top-8 ${menuPosition === 'left' ? 'left-0' : 'right-0'} bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30`}>
+        <div className={`absolute top-8 ${menuPosition === 'left' ? 'left-0' : 'right-0'} bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50`}>
           {items.map((item) => {
             const Icon = item.icon
             return (

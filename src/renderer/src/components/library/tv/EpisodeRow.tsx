@@ -226,7 +226,7 @@ export const EpisodeRow = memo(({
             </button>
 
             {showMenu && !isRescanning && (
-              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-30">
+              <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
                 {onOptimize && episode.file_path && (
                   <button
                     onClick={(e) => {

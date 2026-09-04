@@ -52,8 +52,17 @@
   - `AlbumCard` (`AlbumCard.tsx`): Repositioned 3-dot action menu to `top-2 right-2` (menu opening to right: 0) and quality badges (Hi-Res/Lossless) to `top-2 left-2`.
   - `ArtistCard` (`ArtistCard.tsx`): Repositioned 3-dot action menu to `-top-1 -right-1` (menu opening to right: 0).
 
+### 6. Dropdown Menu Visibility, Unclipped Containment, and Stacking Context
+- Resolved dropdown menu clipping caused by parent `overflow-hidden` across media cards:
+  - `MovieCard` (`MoviesView.tsx`), `ShowCard` (`ShowCard.tsx`), and `AlbumCard` (`AlbumCard.tsx`): Moved `overflow-hidden rounded-md` from the outer aspect-ratio card container to an inner `absolute inset-0` artwork/overlay container. Action buttons and dropdown menus now reside on unclipped outer containers.
+  - `MovieListItem` (`MoviesView.tsx`): Removed `overflow-hidden` from the list row container so action dropdown menus opening downward are never cut off.
+- Resolved dropdown overlap and stacking order conflicts against neighboring cards and rows:
+  - Added dynamic `z-50` stacking context to parent card and list item roots when their dropdown menu is open (`MovieCard`, `ShowCard`, `AlbumCard`, `ArtistCard`, `MovieListItem`, `ShowListItem`, `ArtistListItem`, `MissingEpisodeRowWithArtwork`, and `MusicAlbumDetails`).
+  - Added `onOpenChange` support to `ActionMenu` component and elevated all dropdown menus to `z-50`.
+
 ---
 
 ## Verification
 - Unit test suite: `npx vitest run` passed (166 test files, 1259 tests).
 - Production build: `npm run build` cleanly passed without errors.
+
