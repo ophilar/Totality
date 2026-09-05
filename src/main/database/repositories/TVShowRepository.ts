@@ -100,7 +100,18 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
     })
     .from(schema.seriesCompleteness)
-    .leftJoin(episodeAggregates, sql`${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle} AND ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId} AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}`)
+    .leftJoin(episodeAggregates, sql`
+      ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId}
+      AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}
+      AND (
+        (${schema.seriesCompleteness.seriesIdentityKey} IS NOT NULL
+          AND ${episodeAggregates.seriesIdentityKey} IS ${schema.seriesCompleteness.seriesIdentityKey})
+        OR
+        (${schema.seriesCompleteness.seriesIdentityKey} IS NULL
+          AND ${episodeAggregates.seriesIdentityKey} IS NULL
+          AND ${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle})
+      )
+    `)
 
     if (conditions.length > 0) query.where(and(...conditions))
     query.orderBy(sortOrder, asc(schema.seriesCompleteness.id))
