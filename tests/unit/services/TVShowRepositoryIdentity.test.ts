@@ -1,0 +1,69 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+
+describe('TVShowRepository identity joins', () => {
+  beforeEach(async () => {
+    resetBetterSQLiteServiceForTesting()
+    process.env.TOTALITY_DB_PATH = ':memory:'
+    process.env.NODE_ENV = 'test'
+    const db = getDatabase()
+    await db.initialize(':memory:')
+    await db.sources.upsertSource({
+      source_id: 'src-identities',
+      source_type: 'local',
+      display_name: 'Identity Source',
+      connection_config: '{}',
+      is_enabled: 1,
+    })
+  })
+
+  it('returns one summary per identity when two series share a title', async () => {
+    const db = getDatabase()
+    const now = new Date().toISOString()
+
+    await db.db.execute(`
+      INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage,
+        tmdb_id, created_at, updated_at
+      ) VALUES
+        ('Shared Title', 'tmdb:101', 'src-identities', 'tv', 1, 1, 1, 1, '[]', '[]', 100, '101', '${now}', '${now}'),
+        ('Shared Title', 'tmdb:202', 'src-identities', 'tv', 1, 1, 1, 1, '[]', '[]', 100, '202', '${now}', '${now}')
+    `)
+
+    await db.media.upsertItem({
+      source_id: 'src-identities',
+      library_id: 'tv',
+      plex_id: 'episode-101',
+      type: 'episode',
+      title: 'Episode 1',
+      series_title: 'Shared Title',
+      series_identity_key: 'tmdb:101',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/tv/101/S01E01.mkv',
+      file_size: 1_000,
+    })
+    await db.media.upsertItem({
+      source_id: 'src-identities',
+      library_id: 'tv',
+      plex_id: 'episode-202',
+      type: 'episode',
+      title: 'Episode 1',
+      series_title: 'Shared Title',
+      series_identity_key: 'tmdb:202',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/tv/202/S01E01.mkv',
+      file_size: 2_000,
+    })
+
+    const summaries = await db.tvShows.getSummaries({ sourceId: 'src-identities', libraryId: 'tv' })
+
+    expect(summaries).toHaveLength(2)
+    expect(summaries.map(show => show.series_identity_key).sort()).toEqual(['tmdb:101', 'tmdb:202'])
+    expect(summaries.map(show => show.total_size).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([1_000, 2_000])
+    expect(await db.tvShows.count({ sourceId: 'src-identities', libraryId: 'tv' })).toBe(2)
+  })
+})
