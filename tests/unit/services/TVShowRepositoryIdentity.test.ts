@@ -118,4 +118,70 @@ describe('TVShowRepository identity joins', () => {
     expect(episodes101[0].series_identity_key).toBe('tmdb:101')
     expect(episodes101[0].file_size).toBe(1_000)
   })
+
+  it('does not let unresolved title fallback borrow a resolved identity aggregate', async () => {
+    const db = getDatabase()
+    const now = new Date().toISOString()
+
+    await db.db.execute(`
+      INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage,
+        tmdb_id, created_at, updated_at
+      ) VALUES
+        ('Legacy Shared', NULL, 'src-identities', 'tv', 1, 1, 1, 1, '[]', '[]', 100, NULL, '${now}', '${now}'),
+        ('Legacy Shared', 'tmdb:303', 'src-identities', 'tv', 1, 1, 1, 1, '[]', '[]', 100, '303', '${now}', '${now}')
+    `)
+
+    const unresolvedEpisode = await db.media.upsertItem({
+      source_id: 'src-identities',
+      library_id: 'tv',
+      plex_id: 'episode-unresolved',
+      type: 'episode',
+      title: 'Legacy Episode',
+      series_title: 'Legacy Shared',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/tv/legacy/S01E01.mkv',
+      file_size: 3_000,
+    })
+    const resolvedEpisode = await db.media.upsertItem({
+      source_id: 'src-identities',
+      library_id: 'tv',
+      plex_id: 'episode-303',
+      type: 'episode',
+      title: 'Resolved Episode',
+      series_title: 'Legacy Shared',
+      series_identity_key: 'tmdb:303',
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/tv/303/S01E01.mkv',
+      file_size: 4_000,
+    })
+
+    await db.media.upsertQualityScore({
+      media_item_id: unresolvedEpisode,
+      quality_tier: '1080p',
+      tier_quality: 'HIGH',
+      storage_debt_bytes: 300,
+      evidence_status: 'measured',
+    })
+    await db.media.upsertQualityScore({
+      media_item_id: resolvedEpisode,
+      quality_tier: '1080p',
+      tier_quality: 'HIGH',
+      storage_debt_bytes: 700,
+      evidence_status: 'measured',
+    })
+
+    const summaries = await db.tvShows.getSummaries({ sourceId: 'src-identities', libraryId: 'tv' })
+    const unresolved = summaries.find(show => show.series_identity_key == null)
+    const resolved = summaries.find(show => show.series_identity_key === 'tmdb:303')
+
+    expect(unresolved?.total_size).toBe(3_000)
+    expect(unresolved?.total_recoverable_bytes).toBe(300)
+    expect(resolved?.total_size).toBe(4_000)
+    expect(resolved?.total_recoverable_bytes).toBe(700)
+  })
 })
