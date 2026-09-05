@@ -13,7 +13,7 @@ import { promises as fs, createReadStream } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
-import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
+import { buildOptimizationDecision, resolveOptimizationPrimaryAction } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getTMDBService } from '@main/services/TMDBService'
 
@@ -111,21 +111,41 @@ export function registerOptimizationHandlers() {
       }
     }
     const dryRunResult = calculateDryRunMetrics(episodeMetrics, originalLanguage)
-    const audioAction = dryRunResult.trackDecisions.some(track => track.decision === 'review-required')
+    const hasReviewRequiredAudio = dryRunResult.trackDecisions.some(track => track.decision === 'review-required')
+    const trackRemovalStatus = hasReviewRequiredAudio
+      ? 'review-required' as const
+      : dryRunResult.audioPruningBytes > 0 ? 'executable' as const : 'blocked' as const
+    const videoTranscodeStatus = dryRunResult.videoDebtBytes > 0 ? 'review-required' as const : 'unavailable' as const
+    const primaryAction = resolveOptimizationPrimaryAction({
+      trackRemovalStatus,
+      audioTranscodeStatus: 'unavailable',
+      videoTranscodeStatus,
+    })
+    const audioAction = trackRemovalStatus === 'review-required'
       ? 'review-required'
-      : dryRunResult.recoverableBytes > 0 ? 'stream-pruning' : 'no-action'
-    const videoAction = dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0
-      ? 'transcode-video'
-      : 'no-action'
+      : trackRemovalStatus === 'executable' ? 'stream-pruning' : 'no-action'
+    const videoAction = videoTranscodeStatus === 'review-required' ? 'transcode-video' : 'no-action'
+    const action = primaryAction === 'review-language'
+      ? 'review-required'
+      : primaryAction === 'remove-audio-tracks'
+        ? 'stream-pruning'
+        : primaryAction === 'transcode-audio'
+          ? 'transcode-audio'
+          : primaryAction === 'transcode-video'
+            ? 'transcode-video'
+            : 'no-optimization'
 
     return {
       title,
       totalBytes: dryRunResult.totalBytes,
       recoverableBytes: dryRunResult.recoverableBytes,
+      audioPruningBytes: dryRunResult.audioPruningBytes,
       videoDebtBytes: dryRunResult.videoDebtBytes,
+      totalRecoverableBytes: dryRunResult.totalRecoverableBytes,
       totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
       audioAction,
       videoAction,
+      primaryAction,
       percentageSavings: dryRunResult.percentageSavings,
       totalEpisodes: dryRunResult.totalEpisodes,
       scoredEpisodes: dryRunResult.scoredEpisodes,
@@ -134,18 +154,18 @@ export function registerOptimizationHandlers() {
       trackDecisions: dryRunResult.trackDecisions,
       metrics: {
         totalSize: dryRunResult.totalBytes,
-        totalRecoverableBytes: dryRunResult.recoverableBytes,
+        totalRecoverableBytes: dryRunResult.totalRecoverableBytes,
+        audioPruningBytes: dryRunResult.audioPruningBytes,
         videoDebtBytes: dryRunResult.videoDebtBytes,
         totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
         audioAction,
         videoAction,
+        primaryAction,
         weightedEfficiency: dryRunResult.weightedEfficiency,
         scoredEpisodeCount: dryRunResult.scoredEpisodes,
         unscoredEpisodeCount: dryRunResult.unscoredEpisodes,
       },
-      action: dryRunResult.recoverableBytes > 0
-        ? 'review-required'
-        : (dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0 ? 'transcode-video' : 'no-optimization'),
+      action,
       optInRequired: true,
     }
   })
@@ -188,7 +208,8 @@ export function registerOptimizationHandlers() {
       originalLanguage: item.original_language,
       durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
       fileSize: analysis.fileSize || 0,
-      videoStorageDebtBytes: item.storage_debt_bytes,
+      videoStorageDebtBytes: null,
+      legacyTotalRecoverableBytes: item.storage_debt_bytes,
       audioTranscodeSavingsBytes: null,
       audioTracks: analysis.audioTracks.map(track => ({ index: track.index, language: track.language, title: track.title, codec: track.codec, channels: track.channels, channelLayout: track.channelLayout, bitrate: track.bitrate, isDefault: track.isDefault, hasObjectAudio: track.hasObjectAudio, reliableTag: !!track.language, isCommentary: track.isCommentary, isAudioDescription: track.isAudioDescription, isAccessibility: track.isAccessibility })),
     })
