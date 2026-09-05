@@ -8,7 +8,7 @@ import { MatchFixModal } from '@/components/library/MatchFixModal'
 import { WishlistPanel } from '@/components/wishlist/WishlistPanel'
 import { MoviesView } from '@/components/library/MoviesView'
 import { TVShowsView } from '@/components/library/TVShowsView'
-import { MusicView } from '@/components/library/MusicView'
+import { MusicView, type MusicSortKey } from '@/components/library/MusicView'
 import { WishlistView } from '@/components/library/WishlistView'
 import { DuplicatesView } from '@/components/library/DuplicatesView'
 import { TimelinesView } from '@/components/timelines/TimelinesView'
@@ -472,7 +472,7 @@ export function MediaBrowser({
             {view === 'music' && (
               <SectionErrorBoundary title="Music">
                 <MusicView
-                  sortBy={sortBy as 'title' | 'size' | 'efficiency' | 'recoverable'} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
+                  sortBy={sortBy as MusicSortKey} sortOrder={sortOrder} onSortChange={handleSortChange} slimDown={slimDown}
                   artists={musicArtists} totalArtistCount={totalArtistCount} artistsLoading={artistsLoading} onLoadMoreArtists={loadMoreArtists}
                   albums={musicAlbums} tracks={albumTracks} allTracks={allMusicTracks} totalTrackCount={totalTrackCount}
                   tracksLoading={tracksLoading} albumTracksLoading={albumTracksLoading} onLoadMoreTracks={loadMoreTracks} totalAlbumCount={totalAlbumCount}

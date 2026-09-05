@@ -28,6 +28,8 @@ export const movieSortColumns = ['title', 'year', 'efficiency', 'recoverable', '
 export const tvSortColumns = ['title', 'recoverable', 'weighted_efficiency'] as const
 export const mediaSortColumns = ['title', 'efficiency', 'recoverable', 'size'] as const
 
+export const musicSortColumns = ['title', 'artist', 'album', 'year', 'size', 'quality'] as const
+
 const sortOptions: Record<LibrarySortType, SortOption[]> = {
   movie: [
     { key: 'title', label: 'Title' },
@@ -43,9 +45,11 @@ const sortOptions: Record<LibrarySortType, SortOption[]> = {
   ],
   music: [
     { key: 'title', label: 'Title' },
-    { key: 'efficiency', label: 'Efficiency' },
-    { key: 'recoverable', label: 'Recoverable' },
+    { key: 'artist', label: 'Artist' },
+    { key: 'album', label: 'Album' },
+    { key: 'year', label: 'Year' },
     { key: 'size', label: 'Size' },
+    { key: 'quality', label: 'Quality' },
   ],
 }
 
@@ -54,5 +58,6 @@ export function getSortOptions(type: LibrarySortType): SortOption[] {
 }
 
 export function getSortLabel(type: LibrarySortType, key: string): string {
+  if (key === 'track_count' || key === 'trackCount') return 'Track Count'
   return getSortOptions(type).find(option => option.key === key)?.label ?? key
 }

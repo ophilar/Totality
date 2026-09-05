@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { CircleFadingArrowUp, Trash2, HardDrive } from 'lucide-react'
+import { CircleFadingArrowUp } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MusicTrack } from '@/components/library/types'
 
@@ -18,52 +18,19 @@ export const TrackListItem = memo(({ track, index, artistName, albumTitle, colum
   artistName?: string
   albumTitle?: string
   columnWidths?: { title: number; artist: number; album: number; quality: number; codec: number; duration: number }
-  onClickQuality: () => void
+  onClickQuality?: () => void
 }) => {
-  // Quality tier calculation
-  const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
-
-  const isLosslessCodec = (codec?: string): boolean => {
-    if (!codec) return false
-    const codecLower = codec.toLowerCase()
-    return LOSSLESS_CODECS.some(c => codecLower.includes(c))
-  }
-
-  const isAACCodec = (codec?: string): boolean => {
-    if (!codec) return false
-    return codec.toLowerCase().includes('aac')
-  }
-
-  const getQualityTier = (): 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null => {
-    const bitrateKbps = track.audio_bitrate || 0
-    const sampleRate = track.sample_rate || 0
-    const bitDepth = track.bit_depth || 16
-    const isLossless = track.is_lossless || isLosslessCodec(track.audio_codec)
-
-    if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) return 'ultra'
-    if (isLossless) return 'high'
-    if (bitrateKbps >= 256) return 'high-lossy'
-    if (isAACCodec(track.audio_codec)) {
-      if (bitrateKbps >= 128) return 'medium'
-    } else {
-      if (bitrateKbps >= 160) return 'medium'
-    }
-    if (bitrateKbps > 0) return 'low'
-    if (track.audio_codec) {
-      const codecLower = track.audio_codec.toLowerCase()
-      if (codecLower.includes('mp3') || codecLower.includes('aac') || codecLower.includes('ogg')) {
-        return 'medium'
-      }
-    }
-    return null
-  }
-
-  const qualityTier = getQualityTier()
+  const qualityTier = track.quality_tier || null
   const qualityTierConfig: Record<string, { label: string; color: string }> = {
+    HI_RES: { label: 'Hi-Res', color: 'bg-foreground text-background' },
     ultra: { label: 'Ultra', color: 'bg-foreground text-background' },
+    LOSSLESS: { label: 'Lossless', color: 'bg-foreground text-background' },
     high: { label: 'High', color: 'bg-foreground text-background' },
+    LOSSY_HIGH: { label: 'High', color: 'bg-foreground text-background' },
     'high-lossy': { label: 'High', color: 'bg-foreground text-background' },
+    LOSSY_MID: { label: 'Mid', color: 'bg-foreground text-background' },
     medium: { label: 'Mid', color: 'bg-foreground text-background' },
+    LOSSY_LOW: { label: 'Low', color: 'bg-foreground text-background' },
     low: { label: 'Low', color: 'bg-foreground text-background' }
   }
 
@@ -119,23 +86,24 @@ export const TrackListItem = memo(({ track, index, artistName, albumTitle, colum
 
       {/* Quality Badge */}
       <div className="flex items-center gap-2" style={{ width: widths.quality }}>
-        {qualityTier && (
+        {qualityTier && qualityTierConfig[qualityTier] ? (
           <span className={`px-2 py-0.5 text-xs font-bold rounded ${qualityTierConfig[qualityTier].color}`}>
             {qualityTierConfig[qualityTier].label}
           </span>
-        )}
-        {(qualityTier === 'low' || (track.efficiency_score != null && track.efficiency_score < 60)) && (
-          <span title={track.efficiency_score != null && track.efficiency_score < 60 ? `Low Efficiency (${track.efficiency_score}%). Upgrade recommended to save space.` : "Quality upgrade recommended"}>
-            {track.efficiency_score != null && track.efficiency_score < 60 ? (
-              <Trash2 className="w-4 h-4 text-orange-500" />
-            ) : (
-              <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
-            )}
+        ) : track.audio_bitrate ? (
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {Math.round(track.audio_bitrate)} kbps
           </span>
+        ) : (track.sample_rate || track.bit_depth) ? (
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {[track.bit_depth ? `${track.bit_depth}-bit` : null, track.sample_rate ? `${track.sample_rate}Hz` : null].filter(Boolean).join(' ')}
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">Unanalyzed</span>
         )}
-        {track.storage_debt_bytes != null && track.storage_debt_bytes > 100 * 1024 * 1024 && (
-          <span title={`Significant Storage Debt (${formatBytes(track.storage_debt_bytes)}). Re-encode to save space.`}>
-            <HardDrive className="w-4 h-4 text-blue-500" />
+        {(qualityTier === 'low' || qualityTier === 'LOSSY_LOW') && (
+          <span title="Quality upgrade recommended">
+            <CircleFadingArrowUp className="w-4 h-4 text-red-500" />
           </span>
         )}
         {track.file_size && (
@@ -174,7 +142,7 @@ export const TrackListItem = memo(({ track, index, artistName, albumTitle, colum
 
       {/* Add to Wishlist - for low quality tracks that need upgrade */}
       <div className="w-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
-        {qualityTier === 'low' && (
+        {(qualityTier === 'low' || qualityTier === 'LOSSY_LOW') && (
           <AddToWishlistButton
             mediaType="track"
             title={track.title}

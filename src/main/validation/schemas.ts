@@ -115,7 +115,7 @@ export const TVShowFiltersSchema = z.object({
   completenessFilter: z.string().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'weighted_efficiency', 'size', 'completeness', 'waste']).optional(),
+  sortBy: z.enum(['title', 'episode_count', 'episodes', 'season_count', 'storage_debt', 'recoverable', 'debt', 'efficiency', 'weighted_efficiency', 'size', 'completeness']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -138,7 +138,7 @@ export const MusicFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'size', 'album', 'artist', 'codec', 'duration', 'added_at', 'name', 'album_count', 'track_count', 'waste', 'recoverable', 'debt', 'quality']).or(z.string()).optional(),
+  sortBy: z.enum(['title', 'year', 'storage_debt', 'efficiency', 'size', 'album', 'artist', 'codec', 'duration', 'added_at', 'name', 'album_count', 'track_count', 'recoverable', 'quality']).or(z.string()).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   alphabetFilter: z.string().max(1).optional(),
 }).optional()
@@ -414,7 +414,7 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'debt', 'completeness', 'waste', 'weighted_efficiency']).optional(),
+  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'size', 'storage_debt', 'efficiency', 'recoverable', 'completeness', 'weighted_efficiency']).optional(),
 
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),

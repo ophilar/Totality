@@ -22,6 +22,7 @@ import type { MediaSourceTier } from './transcoding/TrashSourceClassifier'
 import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuilder'
 import { buildCandidateLadder, selectMeasuredCandidate, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { MeasuredOptimizationService } from './MeasuredOptimizationService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -193,46 +194,66 @@ export class TranscodingService {
 
     const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
       const label = `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
-      if (!episode.id || !episode.file_path || !episode.source_id) {
-        throw new Error(`Episode "${label}" has no local source identity`)
-      }
-      if (queuedMediaIds.has(episode.id)) {
-        throw new Error(`Episode "${label}" already has a queued or running transcode`)
-      }
-      await this.assertAuthorizedItem(episode.id)
-      const stat = await fs.stat(episode.file_path)
-      const analyzer = getMediaFileAnalyzer()
-      const analysis = await analyzer.analyzeFile(episode.file_path)
-      if (!analysis.success || !analysis.video) {
-        throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
-      }
-      analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
-      buildStreamSelectionPlan(analysis, request.options)
-      const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
-        ? await this.selectMeasuredParameters(episode.file_path, request.options)
-        : undefined
-      const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
-      return {
-        mediaItemId: episode.id,
-        label,
-        compatible: true,
-        hdrFormat: analysis.video.hdrFormat || 'SDR',
-        sourceSize: stat.size,
-        sourceMtimeMs: stat.mtimeMs,
-        recommendedAction: advice.action,
-        decisionStatus: advice.decisionStatus,
-        evidenceStatus: advice.evidence_status,
-        confidence: advice.confidence,
-        estimatedSavingsBytes: advice.estimatedSavingsBytes,
-        savingsBasis: advice.savings_basis,
-        sourceTier: advice.sourceTier,
-        adviceReason: advice.reason,
-        measuredParameters
+      const fallbackMediaItemId = episode.id || 0
+      try {
+        if (!episode.id || !episode.file_path || !episode.source_id) {
+          throw new Error(`Episode "${label}" has no local source identity`)
+        }
+        if (queuedMediaIds.has(episode.id)) {
+          throw new Error(`Episode "${label}" already has a queued or running transcode`)
+        }
+        await this.assertAuthorizedItem(episode.id)
+        const stat = await fs.stat(episode.file_path)
+        const analyzer = getMediaFileAnalyzer()
+        const analysis = await analyzer.analyzeFile(episode.file_path)
+        if (!analysis.success || !analysis.video) {
+          throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
+        }
+        analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
+        buildStreamSelectionPlan(analysis, request.options)
+        const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
+          ? await this.selectMeasuredParameters(episode.file_path, request.options)
+          : undefined
+        const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
+        return {
+          mediaItemId: episode.id,
+          label,
+          compatible: true,
+          hdrFormat: analysis.video.hdrFormat || 'SDR',
+          sourceSize: stat.size,
+          sourceMtimeMs: stat.mtimeMs,
+          recommendedAction: advice.action,
+          decisionStatus: advice.decisionStatus,
+          evidenceStatus: advice.evidence_status,
+          confidence: advice.confidence,
+          estimatedSavingsBytes: advice.estimatedSavingsBytes,
+          savingsBasis: advice.savings_basis,
+          sourceTier: advice.sourceTier,
+          adviceReason: advice.reason,
+          measuredParameters
+        }
+      } catch (error) {
+        const errorMsg = getErrorMessage(error)
+        getLoggingService().warn('[TranscodingService]', `Episode preflight incompatible: "${label}": ${errorMsg}`)
+        return {
+          mediaItemId: fallbackMediaItemId,
+          label,
+          compatible: false,
+          reason: errorMsg,
+          hdrFormat: 'Unknown',
+          sourceSize: 0,
+          sourceMtimeMs: 0,
+          recommendedAction: undefined,
+          decisionStatus: 'insufficient_evidence',
+          evidenceStatus: 'insufficient',
+          confidence: 'none',
+          savingsBasis: 'insufficient_data'
+        }
       }
     }
 
-    // Parallel preflight processing in concurrency batches of 8
-    const CONCURRENCY = 8
+    // Parallel preflight processing in concurrency batches of 4
+    const CONCURRENCY = 4
     const results: ShowTranscodePreflight['episodes'] = []
     for (let i = 0; i < episodes.length; i += CONCURRENCY) {
       const chunk = episodes.slice(i, i + CONCURRENCY)
@@ -240,7 +261,7 @@ export class TranscodingService {
       results.push(...chunkResults)
     }
 
-    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.every(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
+    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
     return result
@@ -264,7 +285,6 @@ export class TranscodingService {
       this.showPreflights.delete(preflightId)
       throw new Error('Show transcode preflight has expired; run preflight again')
     }
-    if (!preflight.result.compatible) throw new Error('Show transcode preflight has blocking episodes')
     const { getTaskQueueService } = await import('./TaskQueueService')
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
       episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) && episode.recommendedAction !== 'already_optimized'
@@ -897,9 +917,15 @@ export class TranscodingService {
       const builder = TranscodeCommandFactory.getBuilder(hardwareVendor, candidateOptions)
       return { ...candidate, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: builder.buildFFmpegArgs('<input>', '<output>', candidateOptions, analysis) }
     })
-    const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory: path.join(path.dirname(filePath), '.totality-measurements'), candidates })
-    const selected = selectMeasuredCandidate(options.qualityProfile as OptimizationQualityProfile, measured.candidates)
-    return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset }
+    const fileHash = createHash('sha256').update(filePath).digest('hex').slice(0, 12)
+    const outputDirectory = path.join(path.dirname(filePath), `.totality-measurements-${fileHash}`)
+    try {
+      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, candidates })
+      const selected = selectMeasuredCandidate(options.qualityProfile as OptimizationQualityProfile, measured.candidates)
+      return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset }
+    } finally {
+      await fs.rm(outputDirectory, { recursive: true, force: true }).catch(() => {})
+    }
   }
 
   async approveShowTranscode(preflightId: string): Promise<ShowTranscodePreflight> {

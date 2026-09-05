@@ -12,7 +12,8 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn().mockResolvedValue({ size: 4000, mtimeMs: 12345678 }),
   rename: vi.fn().mockResolvedValue(undefined),
   copyFile: vi.fn().mockResolvedValue(undefined),
-  unlink: vi.fn().mockResolvedValue(undefined)
+  unlink: vi.fn().mockResolvedValue(undefined),
+  rm: vi.fn().mockResolvedValue(undefined)
 }))
 
 vi.mock('node:fs', () => ({
@@ -571,6 +572,69 @@ describe('TranscodingService', () => {
       const result = await service.queueShowTranscode(preflightId)
 
       expect(result.queuedMediaItemIds).toEqual([2])
+    })
+
+    it('allows queueing when only a subset of episodes is compatible', async () => {
+      const preflightId = 'preflight-mixed-compatibility'
+      const internal = service as unknown as { showPreflights: Map<string, unknown> }
+      internal.showPreflights.set(preflightId, {
+        request: {
+          seriesTitle: 'Mixed Show',
+          sourceId: 'src1',
+          options: { transcodingEngine: 'ffmpeg', optimizationMode: 'smart' }
+        },
+        result: {
+          preflightId,
+          batchId: 'batch-mixed-compatibility',
+          seriesTitle: 'Mixed Show',
+          episodeCount: 2,
+          compatible: true,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          episodes: [
+            { mediaItemId: 101, label: 'E01 Corrupt', compatible: false, reason: 'Media analysis failed', hdrFormat: 'Unknown', sourceSize: 0, sourceMtimeMs: 0 },
+            { mediaItemId: 102, label: 'E02 Valid', compatible: true, hdrFormat: 'SDR', sourceSize: 200, sourceMtimeMs: 1, recommendedAction: 'stream_pruning', decisionStatus: 'actionable' }
+          ]
+        }
+      })
+
+      const result = await service.queueShowTranscode(preflightId)
+      expect(result.queuedMediaItemIds).toEqual([102])
+    })
+  })
+
+  describe('selectMeasuredParameters workspace isolation', () => {
+    it('cleans up isolated measurement workspace after measurement completes', async () => {
+      const mockMeasure = vi.fn().mockResolvedValue({
+        candidates: [
+          { encoder: 'nvenc_h265', quality: 22, preset: 'p6', outputBytes: 1000, vmafMean: 96, vmafP5: 93, cambiMean: 2 }
+        ],
+        vmafAvailable: true,
+        cambiAvailable: true
+      })
+      const internal = service as unknown as { measuredOptimizationService: { measure: typeof mockMeasure } }
+      internal.measuredOptimizationService = { measure: mockMeasure }
+      vi.spyOn(service, 'getCapabilities').mockResolvedValue({
+        ffmpegAvailable: true,
+        selectedGpuId: 'gpu-0',
+        gpus: [{ id: 'gpu-0', name: 'NVIDIA RTX', vendor: 'NVIDIA' }],
+        encoders: ['hevc_nvenc', 'libx265'],
+        detectedAt: new Date().toISOString()
+      })
+
+      const result = await service.selectMeasuredParameters('/media/episode.mkv', {
+        targetCodec: 'hevc',
+        qualityProfile: 'balanced',
+        encoderPolicy: 'hardware'
+      })
+
+      expect(result.encoder).toBe('nvenc_h265')
+      expect(mockMeasure).toHaveBeenCalledWith(expect.objectContaining({
+        outputDirectory: expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/)
+      }))
+      expect(fsPromises.rm).toHaveBeenCalledWith(
+        expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/),
+        { recursive: true, force: true }
+      )
     })
   })
 })

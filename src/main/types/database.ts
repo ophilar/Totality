@@ -452,7 +452,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency' | 'recoverable' | 'debt' | 'completeness' | 'waste'
+  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'size' | 'storage_debt' | 'efficiency' | 'recoverable' | 'completeness' | 'waste'
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -512,7 +512,7 @@ export interface TVShowFilters {
   completenessFilter?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'weighted_efficiency' | 'size' | 'completeness' | 'waste' | 'storage_debt_bytes' | 'recoverable_waste_bytes' | 'efficiency_score'
+  sortBy?: 'title' | 'episode_count' | 'episodes' | 'season_count' | 'storage_debt' | 'recoverable' | 'debt' | 'efficiency' | 'weighted_efficiency' | 'size' | 'completeness' | 'storage_debt_bytes' | 'recoverable_waste_bytes' | 'efficiency_score'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -796,7 +796,7 @@ export interface MusicFilters {
   mood?: string
   genre?: string
   // Sorting
-  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency' | 'size' | 'album_count' | 'track_count' | 'waste' | 'recoverable' | 'debt' | 'quality' | string
+  sortBy?: 'title' | 'artist' | 'album' | 'codec' | 'duration' | 'added_at' | 'name' | 'year' | 'storage_debt' | 'efficiency' | 'size' | 'album_count' | 'track_count' | 'recoverable' | 'quality' | string
   sortOrder?: 'asc' | 'desc'
   // Alphabet filter
   alphabetFilter?: string

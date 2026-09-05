@@ -476,7 +476,9 @@ export class QualityAnalyzer {
 
     // Efficiency Metrics
     const efficiencyScore = qualityTier !== 'Unknown' ? this.calculateEfficiencyScore(mediaItem, qualityTier) : null
-    const storageDebtBytes = null
+    const videoBloatBytes = this.calculateVideoBloatBytes(mediaItem, qualityTier)
+    const audioPruningBytes = this.getAudioPruningEvidence(mediaItem).estimatedSavingsBytes ?? 0
+    const storageDebtBytes = videoBloatBytes !== null ? videoBloatBytes + audioPruningBytes : null
 
     // Identify issues
     const issues: string[] = []
@@ -608,6 +610,23 @@ export class QualityAnalyzer {
     }
 
     return score
+  }
+
+  /**
+   * Calculate video bloat bytes when bitrate exceeds target for the quality tier.
+   * Returns null if evidence (bitrate, duration, or target) is missing or non-positive.
+   */
+  private calculateVideoBloatBytes(item: MediaItem, qualityTier: QualityTier | 'Unknown'): number | null {
+    if (qualityTier === 'Unknown') return null
+    const bitrate = item.video_bitrate
+    if (typeof bitrate !== 'number' || !Number.isFinite(bitrate) || bitrate <= 0) return null
+    if (typeof item.duration !== 'number' || !Number.isFinite(item.duration) || item.duration <= 0) return null
+
+    const targetBitrate = this.efficiencyThresholds[qualityTier]
+    if (targetBitrate == null) return null
+
+    const durationSec = item.duration / 1000
+    return Math.max(0, Math.round(((bitrate - targetBitrate) * 1000 * durationSec) / 8))
   }
 
   /**

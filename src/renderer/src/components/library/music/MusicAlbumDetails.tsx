@@ -102,45 +102,21 @@ export function MusicAlbumDetails({
     musicbrainz_id?: string
     source_id?: string
     library_id?: string
+    quality_tier?: string | null
     file_path?: string
     originalTrack?: MusicTrack
   }
 
-  type QualityTier = 'ultra' | 'high' | 'high-lossy' | 'medium' | 'low' | null
-  const LOSSLESS_CODECS = ['flac', 'alac', 'wav', 'aiff', 'pcm', 'dsd', 'ape', 'wavpack', 'wv']
-  const isLosslessCodec = (codec?: string): boolean => {
-    if (!codec) return false
-    return LOSSLESS_CODECS.some(c => codec.toLowerCase().includes(c))
-  }
-  const isAACCodec = (codec?: string): boolean => codec?.toLowerCase().includes('aac') ?? false
-
-  const getQualityTier = (track: UnifiedTrack): QualityTier => {
-    if (track.isMissing) return null
-    const bitrateKbps = track.bitrate || 0
-    const sampleRate = track.sample_rate || 0
-    const bitDepth = track.bit_depth || 16
-    const isLossless = track.is_lossless || isLosslessCodec(track.codec)
-    if (isLossless && (bitDepth >= 24 || sampleRate > 48000)) return 'ultra'
-    if (isLossless) return 'high'
-    if (bitrateKbps >= 256) return 'high-lossy'
-    if (isAACCodec(track.codec)) {
-      if (bitrateKbps >= 128) return 'medium'
-    } else if (bitrateKbps >= 160) {
-      return 'medium'
-    }
-    if (bitrateKbps > 0) return 'low'
-    if (track.codec) {
-      const cl = track.codec.toLowerCase()
-      if (cl.includes('mp3') || cl.includes('aac') || cl.includes('ogg')) return 'medium'
-    }
-    return null
-  }
-
   const qualityTierConfig: Record<string, { label: string; class: string; title: string }> = {
-    'ultra': { label: 'Ultra', class: 'bg-foreground text-background', title: 'Hi-Res lossless: 24-bit or >48kHz sample rate' },
-    'high': { label: 'High', class: 'bg-foreground text-background', title: 'CD-quality lossless: FLAC/ALAC/WAV at 16-bit/44.1-48kHz' },
+    'HI_RES': { label: 'Hi-Res', class: 'bg-foreground text-background', title: 'Hi-Res lossless: 24-bit or >48kHz sample rate' },
+    'ultra': { label: 'Hi-Res', class: 'bg-foreground text-background', title: 'Hi-Res lossless: 24-bit or >48kHz sample rate' },
+    'LOSSLESS': { label: 'Lossless', class: 'bg-foreground text-background', title: 'CD-quality lossless: FLAC/ALAC/WAV at 16-bit/44.1-48kHz' },
+    'high': { label: 'Lossless', class: 'bg-foreground text-background', title: 'CD-quality lossless: FLAC/ALAC/WAV at 16-bit/44.1-48kHz' },
+    'LOSSY_HIGH': { label: 'High', class: 'bg-foreground text-background', title: 'High bitrate lossy: 256+ kbps' },
     'high-lossy': { label: 'High', class: 'bg-foreground text-background', title: 'High bitrate lossy: 256+ kbps' },
-    'medium': { label: 'Medium', class: 'bg-foreground text-background', title: 'Transparent lossy: MP3 >=160kbps or AAC >=128kbps' },
+    'LOSSY_MID': { label: 'Standard', class: 'bg-foreground text-background', title: 'Standard lossy: MP3 >=160kbps or AAC >=128kbps' },
+    'medium': { label: 'Standard', class: 'bg-foreground text-background', title: 'Standard lossy: MP3 >=160kbps or AAC >=128kbps' },
+    'LOSSY_LOW': { label: 'Low', class: 'bg-foreground text-background', title: 'Low bitrate lossy: below transparent threshold' },
     'low': { label: 'Low', class: 'bg-foreground text-background', title: 'Low bitrate lossy: below transparent threshold' },
   }
 
@@ -157,6 +133,7 @@ export function MusicAlbumDetails({
       bit_depth: t.bit_depth,
       is_hi_res: t.is_hi_res,
       is_lossless: t.is_lossless,
+      quality_tier: t.quality_tier ?? selectedAlbum.quality_tier ?? null,
       isMissing: false,
       source_id: t.source_id,
       library_id: t.library_id,
@@ -173,6 +150,7 @@ export function MusicAlbumDetails({
       bitrate: undefined,
       is_hi_res: undefined,
       is_lossless: undefined,
+      quality_tier: null,
       isMissing: true,
       musicbrainz_id: t.musicbrainz_id
     }))
@@ -219,16 +197,38 @@ export function MusicAlbumDetails({
           {selectedAlbum.year && <p className="text-sm text-muted-foreground mt-1">{selectedAlbum.year}</p>}
           <div className="flex flex-wrap gap-2 mt-3">
             {(() => {
-              const codec = (selectedAlbum.best_audio_codec || '').toLowerCase()
-              const isLossless = LOSSLESS_CODECS.some(c => codec.includes(c))
-              const isHiRes = isLossless && ((selectedAlbum.best_bit_depth || 0) > 16 || (selectedAlbum.best_sample_rate || 0) > 48000)
-              return (
-                <>
-                  {isHiRes && <span className="px-2 py-1 text-xs font-bold bg-purple-600 text-white rounded">Hi-Res</span>}
-                  {isLossless && !isHiRes && <span className="px-2 py-1 text-xs font-bold bg-green-600 text-white rounded">Lossless</span>}
-                  {(selectedAlbum.best_bit_depth ?? 0) > 16 && <span className="px-2 py-1 text-xs font-bold bg-orange-600 text-white rounded">{selectedAlbum.best_bit_depth}-bit</span>}
-                </>
-              )
+              if (selectedAlbum.quality_tier) {
+                const tier = selectedAlbum.quality_tier.toUpperCase()
+                const tierLabels: Record<string, { label: string; bg: string }> = {
+                  'HI_RES': { label: 'Hi-Res', bg: 'bg-purple-600' },
+                  'ULTRA': { label: 'Hi-Res', bg: 'bg-purple-600' },
+                  'LOSSLESS': { label: 'Lossless', bg: 'bg-green-600' },
+                  'HIGH': { label: 'Lossless', bg: 'bg-green-600' },
+                  'LOSSY_HIGH': { label: 'High Quality', bg: 'bg-blue-600' },
+                  'HIGH-LOSSY': { label: 'High Quality', bg: 'bg-blue-600' },
+                  'LOSSY_MID': { label: 'Standard', bg: 'bg-yellow-600' },
+                  'MEDIUM': { label: 'Standard', bg: 'bg-yellow-600' },
+                  'LOSSY_LOW': { label: 'Low Quality', bg: 'bg-red-600' },
+                  'LOW': { label: 'Low Quality', bg: 'bg-red-600' },
+                }
+                const conf = tierLabels[tier] || { label: selectedAlbum.quality_tier, bg: 'bg-muted text-muted-foreground' }
+                return (
+                  <>
+                    <span className={`px-2 py-1 text-xs font-bold text-white rounded ${conf.bg}`}>{conf.label}</span>
+                    {(selectedAlbum.best_bit_depth ?? 0) > 16 && <span className="px-2 py-1 text-xs font-bold bg-orange-600 text-white rounded">{selectedAlbum.best_bit_depth}-bit</span>}
+                  </>
+                )
+              }
+              if (selectedAlbum.best_audio_codec || selectedAlbum.best_bit_depth || selectedAlbum.best_sample_rate) {
+                return (
+                  <>
+                    {selectedAlbum.best_audio_codec && <span className="px-2 py-1 text-xs font-bold bg-muted text-foreground rounded uppercase">{selectedAlbum.best_audio_codec}</span>}
+                    {(selectedAlbum.best_bit_depth ?? 0) > 0 && <span className="px-2 py-1 text-xs font-bold bg-muted text-foreground rounded">{selectedAlbum.best_bit_depth}-bit</span>}
+                    {(selectedAlbum.best_sample_rate ?? 0) > 0 && <span className="px-2 py-1 text-xs font-bold bg-muted text-foreground rounded">{((selectedAlbum.best_sample_rate || 0) / 1000).toFixed(1)} kHz</span>}
+                  </>
+                )
+              }
+              return <span className="px-2 py-1 text-xs font-bold bg-muted text-muted-foreground rounded">Unanalyzed</span>
             })()}
             {selectedAlbum.album_type && selectedAlbum.album_type !== 'album' && (
               <span className="px-2 py-1 text-xs font-bold bg-gray-600 text-white rounded capitalize">{selectedAlbum.album_type}</span>
@@ -257,7 +257,8 @@ export function MusicAlbumDetails({
           </div>
         ) : (
           unifiedTracks.map((track) => {
-          const qualityTier = getQualityTier(track)
+          const qualityTier = track.quality_tier || null
+          const isLow = qualityTier === 'low' || qualityTier === 'LOSSY_LOW'
           const tierConfig = qualityTier ? qualityTierConfig[qualityTier] : null
           return (
             <div
@@ -290,9 +291,10 @@ export function MusicAlbumDetails({
                       track.duration_ms ? `${Math.floor(track.duration_ms / 60000)}:${String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, '0')}` : null,
                       !track.isMissing && track.codec ? track.codec.toUpperCase() : null,
                       !track.isMissing && track.bitrate ? `${Math.round(track.bitrate)} kbps` : null,
+                      !track.isMissing && !track.quality_tier && !track.codec && !track.bitrate ? 'Unanalyzed' : null
                     ].filter(Boolean).join(' • ')}
                   </span>
-                  {tierConfig && qualityTier === 'low' && <span title={tierConfig.title}><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>}
+                  {isLow && <span title={tierConfig?.title || 'Quality upgrade recommended'}><CircleFadingArrowUp className="w-4 h-4 text-red-500 shrink-0" /></span>}
                 </div>
               </div>
               {!track.isMissing && track.file_path && onRescanTrack && (
@@ -330,19 +332,34 @@ export function MusicAlbumDetails({
       </div>
 
       {selectedTrackForQuality && (() => {
-        const tier = selectedTrackForQuality.qualityTier
+        const rawTier = selectedTrackForQuality.qualityTier
+        const tier = rawTier ? rawTier.toLowerCase() : null
         const bitrateKbps = selectedTrackForQuality.bitrate || 0
         const isLossy = !selectedTrackForQuality.is_lossless
         const isHighLossy = isLossy && bitrateKbps >= 256
-        const tierLabel = isHighLossy ? 'High' : tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'
-        const tierDescription = tier === 'ultra' ? 'Hi-Res Lossless' : tier === 'high' ? 'CD-Quality Lossless' : isHighLossy ? 'High Bitrate Lossy' : tier === 'medium' ? 'Transparent Lossy' : tier === 'low' ? 'Low Bitrate Lossy' : 'Unknown'
+        const tierLabel = tier === 'hi_res' || tier === 'ultra' ? 'Hi-Res' :
+          tier === 'lossless' || tier === 'high' ? 'Lossless' :
+          tier === 'lossy_high' || isHighLossy ? 'High' :
+          tier === 'lossy_mid' || tier === 'medium' ? 'Standard' :
+          tier === 'lossy_low' || tier === 'low' ? 'Low' :
+          tier ? tier.toUpperCase() : 'Unanalyzed'
+        const tierDescription = tier === 'hi_res' || tier === 'ultra' ? 'Hi-Res Lossless' :
+          tier === 'lossless' || tier === 'high' ? 'CD-Quality Lossless' :
+          tier === 'lossy_high' || isHighLossy ? 'High Bitrate Lossy' :
+          tier === 'lossy_mid' || tier === 'medium' ? 'Standard Lossy' :
+          tier === 'lossy_low' || tier === 'low' ? 'Low Bitrate Lossy' :
+          'Audio has not been analyzed yet'
         const sampleRate = selectedTrackForQuality.sample_rate || 44100
         const bitDepth = selectedTrackForQuality.bit_depth || 16
-        const tierScore = tier === 'ultra' ? 100 : tier === 'high' ? Math.round(70 + Math.min((sampleRate / 48000), 1) * 15 + Math.min((bitDepth / 24), 1) * 15) : isHighLossy ? Math.min(Math.round(90 + (bitrateKbps - 256) / 64 * 10), 100) : tier === 'medium' ? Math.round(40 + ((bitrateKbps - 128) / (256 - 128)) * 50) : tier === 'low' ? Math.round((bitrateKbps / 192) * 40) : 0
+        const tierScore = tier === 'hi_res' || tier === 'ultra' ? 100 :
+          tier === 'lossless' || tier === 'high' ? Math.round(70 + Math.min((sampleRate / 48000), 1) * 15 + Math.min((bitDepth / 24), 1) * 15) :
+          isHighLossy || tier === 'lossy_high' ? Math.min(Math.round(90 + (bitrateKbps - 256) / 64 * 10), 100) :
+          tier === 'lossy_mid' || tier === 'medium' ? Math.round(40 + ((bitrateKbps - 128) / (256 - 128)) * 50) :
+          tier === 'lossy_low' || tier === 'low' ? Math.round((bitrateKbps / 192) * 40) : 0
         const codec = (selectedTrackForQuality.codec || '').toLowerCase()
         const isAAC = codec.includes('aac')
         const bitrateLow = !selectedTrackForQuality.is_lossless && selectedTrackForQuality.bitrate && (isAAC ? selectedTrackForQuality.bitrate < 128 : selectedTrackForQuality.bitrate < 160)
-        const issueText = tier === 'low' ? `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps may have audible artifacts. Consider 256+ kbps for transparent quality, or lossless for archival.` : tier === 'medium' ? `Good for everyday listening. Lossless (FLAC) available for critical listening or archival.` : null
+        const issueText = (tier === 'low' || tier === 'lossy_low') ? `${Math.round(selectedTrackForQuality.bitrate || 0)} kbps may have audible artifacts. Consider 256+ kbps for transparent quality, or lossless for archival.` : (tier === 'medium' || tier === 'lossy_mid') ? `Good for everyday listening. Lossless (FLAC) available for critical listening or archival.` : null
 
         return createPortal(
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200] p-6" onClick={() => setSelectedTrackForQuality(null)}>

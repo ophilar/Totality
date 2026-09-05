@@ -325,6 +325,8 @@ export class SourceManager {
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!enabledLibraries.has(lib.id)) continue
 
+        tq.addTask({ type: TaskType.QualityAnalysis, label: `Post-scan Quality Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
+
         if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) {
           tq.addTask({ type: TaskType.SeriesCompleteness, label: `Post-scan Series Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
         }

@@ -3,7 +3,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
-import { ProviderType } from '@main/types/database'
+import { ProviderType, TaskType } from '@main/types/database'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
 
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 
@@ -64,5 +65,17 @@ describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
 
     // The wrapper should throw because the schema validation fails
     await expect(addHandler({}, invalidConfig)).rejects.toThrow()
+  })
+
+  it('should enqueue TaskType.QualityAnalysis when a quality_* setting is modified', async () => {
+    const setHandler = handlers.get(IPC_CHANNELS.DATABASE.SET_SETTING)!
+    const tq = getTaskQueueService()
+    await tq.clearQueue()
+
+    await setHandler({}, 'quality_target_video_bitrate_1080p', '6000')
+
+    const tasks = tq.getTasks()
+    const qualityTask = tasks.find(t => t.type === TaskType.QualityAnalysis && t.label === 'Recalculate Media Quality (Settings changed)')
+    expect(qualityTask).toBeDefined()
   })
 })

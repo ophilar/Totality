@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { parseMissingMovies, _parseMissingEpisodes, groupEpisodesBySeason } from '@/components/dashboard/dashboardUtils'
-import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getTrackQualityTier } from '@/components/library/mediaUtils'
+import { formatDuration, formatBitrate, formatFileSize, isLosslessCodec, getQualityTierColor, getQualityTierBgColor } from '@/components/library/mediaUtils'
 import type { MovieCollectionData, SeriesCompletenessData } from '@/components/library/types'
 
 describe('DashboardUtils (Renderer)', () => {
@@ -82,17 +82,15 @@ describe('MediaUtils (Renderer)', () => {
     })
   })
 
-  describe('getTrackQualityTier', () => {
-    it('should return ultra for high-res lossless', () => {
-      expect(getTrackQualityTier('flac', 24, 96000)).toBe('ultra')
-    })
-
-    it('should return high for standard lossless', () => {
-      expect(getTrackQualityTier('flac', 16, 44100)).toBe('high')
-    })
-
-    it('should return medium for high bitrate lossy', () => {
-      expect(getTrackQualityTier('mp3', undefined, undefined, 320)).toBe('medium')
+  describe('Quality tier formatters', () => {
+    it('should return appropriate color classes for canonical quality tiers', () => {
+      expect(getQualityTierColor('HI_RES')).toBe('text-purple-400')
+      expect(getQualityTierColor('LOSSLESS')).toBe('text-green-400')
+      expect(getQualityTierColor('LOSSY_MID')).toBe('text-yellow-400')
+      expect(getQualityTierColor('LOSSY_LOW')).toBe('text-red-400')
+      expect(getQualityTierBgColor('HI_RES')).toBe('bg-purple-500/20')
+      expect(getQualityTierBgColor('LOSSLESS')).toBe('bg-green-500/20')
+      expect(getQualityTierColor(null)).toBe('text-muted-foreground')
     })
   })
 })
