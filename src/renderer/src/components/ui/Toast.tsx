@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react'
-import { useToast, Toast as ToastType } from '@/contexts/ToastContext'
+import { useToast, Toast } from '@/contexts/ToastContext'
 
-function ToastItem({ toast, onRemove }: { toast: ToastType; onRemove: () => void }) {
+function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) {
   const [isVisible, setIsVisible] = useState(false)
 
   // Animate in on mount
