@@ -220,5 +220,5 @@
 - [x] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
 - [ ] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
 - [ ] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
-- [ ] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering.
+- [x] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering and converge UI sort vocabulary.
 - [ ] Verify 100% test pass rate across unit suites and production build.

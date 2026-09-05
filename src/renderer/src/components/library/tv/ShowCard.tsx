@@ -198,14 +198,4 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
       </div>
     </div>
   )
-}, (prevProps, nextProps) => {
-  return prevProps.show.series_title === nextProps.show.series_title &&
-         prevProps.show.poster_url === nextProps.show.poster_url &&
-         prevProps.show.episode_count === nextProps.show.episode_count &&
-         prevProps.show.season_count === nextProps.show.season_count &&
-         prevProps.showSourceBadge === nextProps.showSourceBadge &&
-         prevProps.completenessData?.id === nextProps.completenessData?.id &&
-         prevProps.completenessData?.completeness_percentage === nextProps.completenessData?.completeness_percentage &&
-         prevProps.onAnalyzeSeries === nextProps.onAnalyzeSeries &&
-         prevProps.isLibraryAnalyzing === nextProps.isLibraryAnalyzing
 })
