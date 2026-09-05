@@ -23,6 +23,8 @@ export interface OptimizationDecisionInput {
   durationSeconds?: number
   fileSize: number
   videoStorageDebtBytes?: number | null
+  /** Legacy combined recovery estimate that may already include removable audio. */
+  legacyTotalRecoverableBytes?: number | null
   audioTranscodeSavingsBytes?: number | null
   audioTracks: OptimizationDecisionAudioTrack[]
 }
@@ -120,7 +122,16 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const audioSavings = hasMeasuredAudioEvidence
     ? nonNegative(input.audioTranscodeSavingsBytes ?? (computedAudioSavings && computedAudioSavings > 0 ? computedAudioSavings : null))
     : null
-  const videoSavings = nonNegative(input.videoStorageDebtBytes)
+  const explicitVideoSavings = nonNegative(input.videoStorageDebtBytes)
+  const legacyRecoverable = nonNegative(input.legacyTotalRecoverableBytes)
+  const knownAudioRemovalSavings = trackRemovalStatus === 'executable'
+    ? trackSavings
+    : trackRemovalEvidenceStatus === 'measured' ? 0 : null
+  const videoSavings = explicitVideoSavings ?? (
+    legacyRecoverable != null && knownAudioRemovalSavings != null
+      ? Math.max(0, legacyRecoverable - knownAudioRemovalSavings)
+      : null
+  )
   const audioTranscode: OptimizationDecisionMechanism = {
     status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable',
     estimatedSavingsBytes: audioSavings,
