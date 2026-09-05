@@ -229,7 +229,14 @@ async function backfillMediaIdentities(db: Client): Promise<void> {
      SELECT 'album', id, 'musicbrainz', musicbrainz_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
      FROM music_albums WHERE musicbrainz_id IS NOT NULL AND musicbrainz_id <> ''`
   ]
-  for (const sql of statements) await db.execute(sql)
+  await db.execute('BEGIN IMMEDIATE')
+  try {
+    for (const sql of statements) await db.execute(sql)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
+  }
 }
 
 const EVIDENCE_COLUMNS = ['evidence_status', 'confidence', 'savings_basis'] as const
@@ -428,7 +435,14 @@ async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
        AND (confidence IS NULL OR confidence = 'none')
        AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
   ]
-  for (const statement of updates) await db.execute(statement)
+  await db.execute('BEGIN IMMEDIATE')
+  try {
+    for (const statement of updates) await db.execute(statement)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
+  }
 }
 
 /**

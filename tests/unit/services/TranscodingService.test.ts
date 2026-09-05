@@ -13,7 +13,8 @@ vi.mock('fs/promises', () => ({
   rename: vi.fn().mockResolvedValue(undefined),
   copyFile: vi.fn().mockResolvedValue(undefined),
   unlink: vi.fn().mockResolvedValue(undefined),
-  rm: vi.fn().mockResolvedValue(undefined)
+  rm: vi.fn().mockResolvedValue(undefined),
+  access: vi.fn().mockResolvedValue(undefined)
 }))
 
 vi.mock('node:fs', () => ({
@@ -635,6 +636,68 @@ describe('TranscodingService', () => {
         expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/),
         { recursive: true, force: true }
       )
+    })
+  })
+
+  describe('crash-consistent activation journal recovery', () => {
+    it('rolls back quarantined file to original input if crash occurred before target was placed', async () => {
+      mockDbInstance.config.getSettingsByPrefix.mockResolvedValueOnce({
+        'transcoding.activation.501': JSON.stringify({
+          mediaItemId: 501,
+          phase: 'source_quarantined',
+          inputPath: '/media/Movie.mkv',
+          targetPath: '/media/Movie.mkv',
+          quarantinePath: '/media/Movie.quarantine-123.mkv'
+        })
+      })
+
+      vi.mocked(fsPromises.access).mockImplementation(async (filePath) => {
+        if (filePath === '/media/Movie.quarantine-123.mkv') return undefined
+        throw new Error('ENOENT')
+      })
+
+      const internal = service as unknown as { recoverActivationJournals: () => Promise<void> }
+      await internal.recoverActivationJournals()
+
+      expect(fsPromises.rename).toHaveBeenCalledWith('/media/Movie.quarantine-123.mkv', '/media/Movie.mkv')
+      expect(mockDbInstance.config.deleteSetting).toHaveBeenCalledWith('transcoding.activation.501')
+    })
+
+    it('re-synchronizes media item database record if crash occurred after target was activated', async () => {
+      mockDbInstance.config.getSettingsByPrefix.mockResolvedValueOnce({
+        'transcoding.activation.502': JSON.stringify({
+          mediaItemId: 502,
+          phase: 'output_activated',
+          inputPath: '/media/Movie.mp4',
+          targetPath: '/media/Movie.mkv',
+          outputStats: {
+            fileSize: 850000000,
+            duration: 7200000,
+            video: { codec: 'hevc', width: 1920, height: 1080 },
+            audioTracks: [{ codec: 'aac', channels: 6 }]
+          }
+        })
+      })
+
+      vi.mocked(fsPromises.access).mockImplementation(async (filePath) => {
+        if (filePath === '/media/Movie.mkv') return undefined
+        throw new Error('ENOENT')
+      })
+
+      mockDbInstance.media.getItemById.mockResolvedValueOnce({
+        id: 502,
+        file_path: '/media/Movie.mp4'
+      } as unknown as Awaited<ReturnType<typeof mockDbInstance.media.getItemById>>)
+
+      const internal = service as unknown as { recoverActivationJournals: () => Promise<void> }
+      await internal.recoverActivationJournals()
+
+      expect(mockDbInstance.media.updatePathAndStats).toHaveBeenCalledWith(
+        502,
+        '/media/Movie.mkv',
+        expect.objectContaining({ fileSize: 850000000, duration: 7200000 })
+      )
+      expect(mockDbInstance.config.deleteSetting).toHaveBeenCalledWith('transcoding.activation.502')
     })
   })
 })

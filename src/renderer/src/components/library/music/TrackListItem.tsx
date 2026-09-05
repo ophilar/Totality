@@ -108,13 +108,7 @@ export const TrackListItem = memo(({ track, index, artistName, albumTitle, colum
         )}
         {track.file_size && (
           <span className="text-[10px] text-muted-foreground font-mono ml-1">
-            {(() => {
-              const bytes = track.file_size
-              const k = 1024
-              const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-              const i = Math.floor(Math.log(bytes) / Math.log(k))
-              return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]
-            })()}
+            {formatBytes(track.file_size)}
           </span>
         )}
       </div>
@@ -131,13 +125,7 @@ export const TrackListItem = memo(({ track, index, artistName, albumTitle, colum
 
       {/* Size */}
       <div className="w-20 text-right text-[10px] text-muted-foreground font-mono">
-        {track.file_size ? (() => {
-          const bytes = track.file_size
-          const k = 1024
-          const sizes = ['B', 'KB', 'MB', 'GB']
-          const i = Math.floor(Math.log(bytes) / Math.log(k))
-          return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]
-        })() : '-'}
+        {track.file_size ? formatBytes(track.file_size) : '-'}
       </div>
 
       {/* Add to Wishlist - for low quality tracks that need upgrade */}

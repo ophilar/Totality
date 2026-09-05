@@ -7,6 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { validateSenderFrame } from '@main/ipc/utils/createHandler'
+import type { IpcMainInvokeEvent } from 'electron'
 import {
   validateInput,
   safeValidateInput,
@@ -564,7 +566,46 @@ describe('IPC Validation Schemas', () => {
       expect(safeValidateInput(PositiveIntSchema, null)).toBeNull()
     })
   })
+
+  describe('validateSenderFrame security', () => {
+    it('accepts authorized local file frame URLs', () => {
+      const mockEvent = {
+        senderFrame: { url: 'file:///C:/Users/app/index.html' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).not.toThrow()
+    })
+
+    it('accepts localhost and local-artwork frame URLs', () => {
+      const localhostEvent = {
+        senderFrame: { url: 'http://localhost:5173/index.html' }
+      } as unknown as IpcMainInvokeEvent
+      expect(() => validateSenderFrame(localhostEvent, 'test:channel')).not.toThrow()
+
+      const artworkEvent = {
+        senderFrame: { url: 'local-artwork://artwork/123.jpg' }
+      } as unknown as IpcMainInvokeEvent
+      expect(() => validateSenderFrame(artworkEvent, 'test:channel')).not.toThrow()
+    })
+
+    it('rejects calls with untrusted remote origin URLs', () => {
+      const mockEvent = {
+        senderFrame: { url: 'https://evil.attacker.com/exploit.html' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).toThrow(
+        'Unauthorized IPC sender frame for test:channel: https://evil.attacker.com/exploit.html'
+      )
+    })
+
+    it('rejects calls with malformed or non-allowed protocols', () => {
+      const mockEvent = {
+        senderFrame: { url: 'javascript:alert(1)' }
+      } as unknown as IpcMainInvokeEvent
+
+      expect(() => validateSenderFrame(mockEvent, 'test:channel')).toThrow(
+        'Unauthorized IPC sender frame for test:channel: javascript:alert(1)'
+      )
+    })
+  })
 })
-
-
-

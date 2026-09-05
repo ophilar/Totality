@@ -616,6 +616,10 @@ export interface MusicAlbum {
   // User override flag
   user_fixed_match?: boolean
 
+  // Quality tier (denormalized or joined from quality score)
+  quality_tier?: MusicQualityTier | string
+  tier_quality?: string
+
   created_at?: string
   updated_at?: string
 }
@@ -661,6 +665,8 @@ export interface MusicTrack {
   // Quality flags
   is_lossless?: boolean
   is_hi_res?: boolean
+  quality_tier?: MusicQualityTier | string
+  tier_quality?: string
   // Metadata
   musicbrainz_id?: string
   genres?: string // JSON array

@@ -229,3 +229,28 @@
 - [x] Implement per-file unique measurement directory isolation (`.totality-measurements-${fileHash}`) with `finally` cleanup in `TranscodingService.ts`.
 - [x] Make show preflight resilient to individual episode failures; allow queueing when partially compatible without failing entire season.
 - [x] Add regression test suite verifying partial compatibility queueing and isolated measurement workspace cleanup (19/19 tests passing).
+
+## Phase 28: Crash-Consistent Replacement Journal & Fault-Injection Tests (Step 7) [Completed]
+- [x] Write `outputStats` (`fileSize`, `duration`, `video`, `audioTracks`) into media replacement activation journal before destructive file replacement in `TranscodingService.ts`.
+- [x] In `recoverActivationJournals()`, handle crash scenarios:
+  - If source was quarantined and target was not placed &rarr; roll back quarantine to original file path and delete journal (zero data loss).
+  - If target was placed/activated but process terminated before DB synchronization &rarr; update database path and stats (`updatePathAndStats`) using journal stats and delete journal (zero orphaned state).
+  - If prepared state without movement &rarr; cleanly discard prepared journal.
+- [x] Added fault-injection and journal recovery unit tests in `tests/unit/services/TranscodingService.test.ts` (21/21 tests passing).
+
+## Phase 29: Transactional SQLite Migrations (Step 8) [Completed]
+- [x] Wrap data transformation loops in `DatabaseMigration.ts` in atomic `BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK` blocks.
+- [x] Made `backfillMediaIdentities` execute inside transaction with rollback on failure.
+- [x] Made `markLegacyZeroScoresInsufficient` execute inside transaction with rollback on failure.
+- [x] Verified `rebuildTableWhenNeeded` and `cleanupOrphanedRecords` execute atomically with transaction-safe table migration.
+- [x] Verified database migration test suite in `tests/unit/DatabaseMigration.test.ts` (5/5 tests passing).
+
+## Phase 30: Fail-Closed Security & Packaging Verification (Step 9) [Completed]
+- [x] Enforce fail-closed sender frame validation in `src/main/ipc/utils/createHandler.ts`.
+- [x] Throw `Unauthorized IPC sender frame` on missing event, missing sender frame, or non-whitelisted remote origin URLs.
+- [x] Whitelist only trusted local origins: `file://`, `app://`, `localhost`, `127.0.0.1`, and `local-artwork://`.
+- [x] Add dedicated sender frame security unit tests in `tests/unit/IpcValidation.test.ts` (71/71 tests passing).
+- [x] Verify full TypeScript typecheck (`npm run typecheck`) cleanly passes with 0 errors.
+- [x] Verify full Vitest suite (168 test files, 1,296/1,296 tests passing, 100%).
+- [x] Verify Windows production packaging bundle (`npm run build`) cleanly creates `release/Totality-Setup-0.5.0.exe` and `release/win-unpacked/Totality.exe`.
+

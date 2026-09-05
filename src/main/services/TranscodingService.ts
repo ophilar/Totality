@@ -335,9 +335,17 @@ export class TranscodingService {
   }
 
   private async recoverActivationJournals(): Promise<void> {
-    const journals = await getDatabase().config.getSettingsByPrefix('transcoding.activation.')
+    const db = getDatabase()
+    const journals = await db.config.getSettingsByPrefix('transcoding.activation.')
     for (const [key, value] of Object.entries(journals)) {
-      const journal = JSON.parse(value) as { mediaItemId: number; phase: string; inputPath: string; targetPath?: string; quarantinePath?: string }
+      const journal = JSON.parse(value) as {
+        mediaItemId: number
+        phase: string
+        inputPath: string
+        targetPath?: string
+        quarantinePath?: string
+        outputStats?: { fileSize?: number; duration?: number; video?: any; audioTracks?: any[] }
+      }
       if (!journal.mediaItemId || !journal.phase || !journal.inputPath) throw new Error(`Invalid transcoding activation journal: ${key}`)
       const exists = async (filePath: string | undefined): Promise<boolean> => {
         if (!filePath) return false
@@ -346,15 +354,43 @@ export class TranscodingService {
       const inputExists = await exists(journal.inputPath)
       const targetExists = await exists(journal.targetPath)
       const quarantineExists = await exists(journal.quarantinePath)
+
+      // Crash occurred after source was quarantined but before target was placed
       if (journal.phase === 'source_quarantined' && !targetExists && quarantineExists && !inputExists) {
         await fs.rename(journal.quarantinePath!, journal.inputPath)
-        await getDatabase().config.deleteSetting(key)
+        await db.config.deleteSetting(key)
+        getLoggingService().info('[TranscodingService]', `Rollback completed for media item ${journal.mediaItemId} from quarantine`)
         continue
       }
-      if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined') && targetExists) {
-        await getDatabase().config.deleteSetting(key)
+
+      // Crash occurred after target file was successfully placed/activated
+      if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined') && targetExists && journal.targetPath) {
+        // Ensure database points to the newly activated target path
+        const currentItem = await db.media.getItemById(journal.mediaItemId)
+        if (currentItem && currentItem.file_path !== journal.targetPath) {
+          const stats = journal.outputStats || (await (async () => {
+            const analysis = await getMediaFileAnalyzer().analyzeFile(journal.targetPath!)
+            return {
+              fileSize: analysis.fileSize,
+              duration: analysis.duration,
+              video: analysis.video,
+              audioTracks: analysis.audioTracks
+            }
+          })())
+          await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, stats)
+        }
+        await db.config.deleteSetting(key)
+        getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
         continue
       }
+
+      // Crash in prepared phase where neither source was quarantined nor target placed
+      if (journal.phase === 'prepared' && inputExists && !targetExists) {
+        await db.config.deleteSetting(key)
+        getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
+        continue
+      }
+
       throw new Error(`Unresolved transcoding activation journal for media item ${journal.mediaItemId}; manual recovery is required`)
     }
   }
@@ -804,39 +840,42 @@ export class TranscodingService {
 
       if (effectiveOutputMode === 'replace') {
         getLoggingService().info('[TranscodingService]', `Directly replacing original file: ${inputPath}`)
-        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath })
-        if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
-          await fs.rename(tempPath, targetSamePath)
-        }
-        await this.writeActivationJournal(mediaItemId, { phase: 'output_activated', inputPath, targetPath: targetSamePath })
-        if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(inputPath)) {
-          await fs.unlink(inputPath)
-        }
-        await db.media.updatePathAndStats(mediaItemId, targetSamePath, {
+        const outputStats = {
           fileSize: outputAnalysis.fileSize,
           duration: outputAnalysis.duration,
           video: outputAnalysis.video,
           audioTracks: outputAnalysis.audioTracks,
-        })
+        }
+        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath, outputStats })
+        if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
+          await fs.rename(tempPath, targetSamePath)
+        }
+        await this.writeActivationJournal(mediaItemId, { phase: 'output_activated', inputPath, targetPath: targetSamePath, outputStats })
+        if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(inputPath)) {
+          await fs.unlink(inputPath)
+        }
+        await db.media.updatePathAndStats(mediaItemId, targetSamePath, outputStats)
         await db.config.deleteSetting(`transcoding.activation.${mediaItemId}`)
       } else if (effectiveOutputMode === 'quarantine-replace') {
         getLoggingService().info('[TranscodingService]', `Replacing with quarantine backup: ${inputPath}`)
         const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.quarantine-${Date.now()}${origExt}`)
-        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath, quarantinePath })
+        const outputStats = {
+          fileSize: outputAnalysis.fileSize,
+          duration: outputAnalysis.duration,
+          video: outputAnalysis.video,
+          audioTracks: outputAnalysis.audioTracks,
+        }
+        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats })
         await fs.rename(inputPath, quarantinePath)
-        await this.writeActivationJournal(mediaItemId, { phase: 'source_quarantined', inputPath, tempPath, targetPath: targetSamePath, quarantinePath })
+        await this.writeActivationJournal(mediaItemId, { phase: 'source_quarantined', inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats })
         try {
           if (path.resolve(tempPath) !== path.resolve(targetSamePath)) await fs.rename(tempPath, targetSamePath)
         } catch (error) {
           await fs.rename(quarantinePath, inputPath)
           throw error
         }
-        await db.media.updatePathAndStats(mediaItemId, targetSamePath, {
-          fileSize: outputAnalysis.fileSize,
-          duration: outputAnalysis.duration,
-          video: outputAnalysis.video,
-          audioTracks: outputAnalysis.audioTracks,
-        })
+        await this.writeActivationJournal(mediaItemId, { phase: 'output_activated', inputPath, targetPath: targetSamePath, quarantinePath, outputStats })
+        await db.media.updatePathAndStats(mediaItemId, targetSamePath, outputStats)
         await db.config.deleteSetting(`transcoding.activation.${mediaItemId}`)
       } else {
         // Sibling copy
