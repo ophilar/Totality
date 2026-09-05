@@ -98,6 +98,27 @@ describe('TVShowRepository (Real DB)', () => {
     expect(results[0].series_title).toBe('The Wire')
   })
 
+  it('deduplicates unresolved rows for the same scoped show title', async () => {
+    const unresolved = {
+      series_title: 'Duplicate Show',
+      source_id: 'src-1',
+      library_id: 'lib-1',
+      total_seasons: 1,
+      total_episodes: 1,
+      owned_seasons: 1,
+      owned_episodes: 1,
+      completeness_percentage: null,
+      missing_seasons: '[]',
+      missing_episodes: '[]',
+    } as SeriesCompleteness
+
+    await repo.upsertCompleteness(unresolved)
+    await repo.upsertCompleteness(unresolved)
+
+    const summaries = await repo.getSummaries({ sourceId: 'src-1', libraryId: 'lib-1' })
+    expect(summaries.filter(summary => summary.series_title === 'Duplicate Show')).toHaveLength(1)
+  })
+
   it('sorts TV summaries by weighted efficiency before applying pagination', async () => {
     const addShow = async (title: string, efficiency: number) => {
       await repo.upsertCompleteness({

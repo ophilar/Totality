@@ -100,14 +100,20 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
     })
     .from(schema.seriesCompleteness)
-    .leftJoin(episodeAggregates, sql`${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle} AND ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId} AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}`)
+    .leftJoin(episodeAggregates, sql`${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle} AND ${episodeAggregates.seriesIdentityKey} IS ${schema.seriesCompleteness.seriesIdentityKey} AND ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId} AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}`)
 
     if (conditions.length > 0) query.where(and(...conditions))
     query.orderBy(sortOrder, asc(schema.seriesCompleteness.id))
     if (filters?.limit) query.limit(filters.limit)
     if (filters?.offset) query.offset(filters.offset)
 
-    const rows = await query.all()
+    const rawRows = await query.all()
+    const rows = Array.from(rawRows.reduce((deduped, row) => {
+      const key = `${row.source_id}:${row.library_id}:${row.series_identity_key || `title:${row.series_title}`}`
+      const existing = deduped.get(key)
+      if (!existing || (row.id || 0) > (existing.id || 0)) deduped.set(key, row)
+      return deduped
+    }, new Map<string, (typeof rawRows)[number]>()).values())
     const summaries: TVShowSummary[] = []
 
     const seriesWithIds = rows
