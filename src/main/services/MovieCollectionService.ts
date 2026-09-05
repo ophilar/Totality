@@ -47,6 +47,7 @@ export class MovieCollectionService {
 
       for (let i = 0; i < allMovies.length; i += concurrency) {
         if (this.cancelRequested) break
+        await new Promise(r => setImmediate(r))
         const chunk = allMovies.slice(i, i + concurrency)
         
         await Promise.all(chunk.map(async (m: MediaItem) => {
@@ -162,6 +163,7 @@ export class MovieCollectionService {
       let currentIndex = 0
       for (let i = 0; i < collections.length; i += concurrency) {
         if (this.cancelRequested) break
+        await new Promise(r => setImmediate(r))
         const chunk = collections.slice(i, i + concurrency)
 
         await Promise.all(chunk.map(async c => {

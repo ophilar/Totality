@@ -51,6 +51,7 @@ export function usePaginatedData<T, TFilters>({
   const offsetRef = useRef(0)
   const hasInitialLoadRef = useRef(false)
   const loadingRef = useRef(false)
+  const requestGenerationRef = useRef(0)
 
   const loadPage = useCallback(async (isReset = false) => {
     if (!enabled) return
@@ -60,6 +61,8 @@ export function usePaginatedData<T, TFilters>({
     loadingRef.current = true
     setLoading(true)
     setError(null)
+
+    const currentGeneration = ++requestGenerationRef.current
 
     if (isReset) {
       offsetRef.current = 0
@@ -76,21 +79,31 @@ export function usePaginatedData<T, TFilters>({
       // Fetch count on reset or first load
       if (isReset || !hasInitialLoadRef.current) {
         const count = await countFn(currentFilters)
-        setTotalCount(count ?? 0)
+        if (currentGeneration === requestGenerationRef.current) {
+          setTotalCount(count ?? 0)
+        }
       }
 
       const fetched = await fetchFn(currentFilters)
+      if (currentGeneration !== requestGenerationRef.current) {
+        return
+      }
+
       const newItems = Array.isArray(fetched) ? fetched : []
       
       setItems(prev => isReset ? newItems : [...(prev || []), ...newItems])
       offsetRef.current += newItems.length
       hasInitialLoadRef.current = true
     } catch (err) {
-      window.electronAPI.log.error('usePaginatedData', 'Error loading data:', err)
-      setError('Failed to load data')
+      if (currentGeneration === requestGenerationRef.current) {
+        window.electronAPI.log.error('usePaginatedData', 'Error loading data:', err)
+        setError('Failed to load data')
+      }
     } finally {
-      loadingRef.current = false
-      setLoading(false)
+      if (currentGeneration === requestGenerationRef.current) {
+        loadingRef.current = false
+        setLoading(false)
+      }
     }
   }, [fetchFn, countFn, pageSize, activeSourceId, enabled])
 
@@ -115,6 +128,7 @@ export function usePaginatedData<T, TFilters>({
   }, [enabled, loadPage])
 
   const reset = useCallback(() => {
+    requestGenerationRef.current++
     setItems([])
     setTotalCount(0)
     offsetRef.current = 0
@@ -123,6 +137,7 @@ export function usePaginatedData<T, TFilters>({
   }, [loadPage])
 
   const externalSetItems = useCallback((newItems: T[] | ((prev: T[]) => T[])) => {
+    requestGenerationRef.current++
     setItems(prev => {
       const result = typeof newItems === 'function' ? newItems(prev) : newItems
       offsetRef.current = result.length

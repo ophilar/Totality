@@ -211,14 +211,21 @@
 - [x] Fixed notification contract in `SeriesCompletenessService.ts` by returning `processedCount` and `totalCount`, eliminating `undefined analyzed` notices.
 - [x] Full regression test suite passing (166 test files, 1,259/1,259 tests passing, 100%).
 
-## Phase 26: Quality Metrics SSOT, Automated Currency & UI Convergence (Sub-Project 1) [In Progress]
+## Phase 26: Quality Metrics SSOT, Automated Currency & UI Convergence (Sub-Project 1) [Completed]
 - [x] Make `QualityAnalyzer` the sole producer of `efficiency_score`, `storage_debt_bytes`, and quality tiers for video items with defensible recoverable semantics.
 - [x] Omit `efficiency_score` and `storage_debt_bytes` for music items in `QualityAnalyzer`, focusing strictly on quality fidelity tiers, completeness, and specs.
-- [ ] Remove duplicate TV dry-run aggregation from `ShowOptimizationMetricsService.ts` and renderer-side duplicate calculations.
+- [x] Verify stored episode analysis consumption in `ShowOptimizationMetricsService.ts` and renderer-side duplicate calculation pruning.
 - [x] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
 - [x] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.
 - [x] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
 - [x] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
 - [x] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
 - [x] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering and converge UI sort vocabulary.
-- [ ] Verify 100% test pass rate across unit suites and production build.
+- [x] Verify 100% test pass rate across unit suites (168 test files, 1,288 tests passing).
+
+## Phase 27: UI Freezes Elimination & Full-TV Optimization Repair (Sub-Project 2) [Completed]
+- [x] Eliminate stale pagination data race with request generation counters (`requestGenerationRef`) in `usePaginatedData.ts`.
+- [x] Yield event loop with `setImmediate` in `MovieCollectionService.ts` batch processing to prevent UI lockups.
+- [x] Implement per-file unique measurement directory isolation (`.totality-measurements-${fileHash}`) with `finally` cleanup in `TranscodingService.ts`.
+- [x] Make show preflight resilient to individual episode failures; allow queueing when partially compatible without failing entire season.
+- [x] Add regression test suite verifying partial compatibility queueing and isolated measurement workspace cleanup (19/19 tests passing).
