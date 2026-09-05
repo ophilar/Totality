@@ -64,8 +64,11 @@ export function registerOptimizationHandlers() {
       throw error
     }
   })
-  createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.DRY_RUN, z.tuple([z.string(), z.string().optional()]), async (title, sourceId) => {
-    const episodes = await db.tvShows.getEpisodes(title, sourceId)
+  createValidatedIpcHandler(
+    IPC_CHANNELS.OPTIMIZATION.DRY_RUN,
+    z.tuple([z.string(), z.string().optional(), z.string().optional(), z.string().optional()]),
+    async (title, sourceId, seriesIdentityKey, libraryId) => {
+    const episodes = await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
     const analyzer = getMediaFileAnalyzer()
     const analyzerAvailable = await analyzer.isAvailable()
 
@@ -98,10 +101,14 @@ export function registerOptimizationHandlers() {
     let originalLanguage = episodes.find(e => e.original_language)?.original_language ?? undefined
     if (!originalLanguage && title) {
       try {
-        const comp = await db.tvShows.getCompletenessByTitle(title, episodes[0]?.source_id || '', episodes[0]?.library_id || '')
-        if (comp?.tmdb_id) {
+        const directSeriesTmdbId = episodes.find(e => e.series_tmdb_id)?.series_tmdb_id
+        const comp = directSeriesTmdbId
+          ? null
+          : await db.tvShows.getCompletenessByTitle(title, episodes[0]?.source_id || '', episodes[0]?.library_id || '')
+        const tmdbId = directSeriesTmdbId || comp?.tmdb_id
+        if (tmdbId) {
           const tmdbService = getTMDBService()
-          const showDetails = await tmdbService.getTVShowDetails(comp.tmdb_id)
+          const showDetails = await tmdbService.getTVShowDetails(tmdbId)
           if (showDetails?.original_language) {
             originalLanguage = showDetails.original_language
           }
@@ -137,12 +144,15 @@ export function registerOptimizationHandlers() {
 
     return {
       title,
+      seriesIdentityKey,
+      libraryId,
       totalBytes: dryRunResult.totalBytes,
       recoverableBytes: dryRunResult.recoverableBytes,
       audioPruningBytes: dryRunResult.audioPruningBytes,
       videoDebtBytes: dryRunResult.videoDebtBytes,
       totalRecoverableBytes: dryRunResult.totalRecoverableBytes,
       totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+      coverage: dryRunResult.coverage,
       audioAction,
       videoAction,
       primaryAction,
@@ -158,6 +168,7 @@ export function registerOptimizationHandlers() {
         audioPruningBytes: dryRunResult.audioPruningBytes,
         videoDebtBytes: dryRunResult.videoDebtBytes,
         totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+        coverage: dryRunResult.coverage,
         audioAction,
         videoAction,
         primaryAction,
