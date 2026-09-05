@@ -21,7 +21,7 @@ import type {
 } from '@/components/library/types'
 import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 
-type MusicSortKey = 'title' | 'efficiency' | 'recoverable' | 'size'
+export type MusicSortKey = 'title' | 'artist' | 'album' | 'year' | 'size' | 'quality'
 
 export function MusicView({
   artists,
@@ -116,9 +116,9 @@ export function MusicView({
   includeEps: boolean
   includeSingles: boolean
   onDismissMissingAlbum?: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
-  sortBy: 'title' | 'efficiency' | 'recoverable' | 'size'
+  sortBy: MusicSortKey
   sortOrder: 'asc' | 'desc'
-  onSortChange: (sort: 'title' | 'efficiency' | 'recoverable' | 'size') => void
+  onSortChange: (sort: MusicSortKey) => void
   slimDown: boolean
 }) {
   const { scanProgress } = useSources()
@@ -128,13 +128,12 @@ export function MusicView({
   const sortedArtists = useMemo(() => {
     const items = [...artists]
     items.sort((a, b) => {
-      if (sortBy === 'efficiency' || sortBy === 'recoverable' || sortBy === 'size') {
+      if (sortBy === 'size') {
         const compA = artistCompleteness.get(a.name); const compB = artistCompleteness.get(b.name)
-        if (sortBy === 'efficiency') { const effA = compA?.efficiency_score ?? 100; const effB = compB?.efficiency_score ?? 100; if (effA !== effB) return (effA - effB) * (sortOrder === 'asc' ? 1 : -1) }
-        else if (sortBy === 'recoverable') { const wA = compA?.storage_debt_bytes ?? 0; const wB = compB?.storage_debt_bytes ?? 0; if (wA !== wB) return (wB - wA) * (sortOrder === 'asc' ? 1 : -1) }
-        else if (sortBy === 'size') { const sA = compA?.total_size ?? 0; const sB = compB?.total_size ?? 0; if (sA !== sB) return (sB - sA) * (sortOrder === 'asc' ? 1 : -1) }
+        const sA = compA?.total_size ?? 0; const sB = compB?.total_size ?? 0
+        if (sA !== sB) return (sB - sA) * (sortOrder === 'asc' ? -1 : 1)
       }
-      return (a.sort_name || a.name).localeCompare(b.sort_name || b.name)
+      return (a.sort_name || a.name).localeCompare(b.sort_name || b.name) * (sortOrder === 'asc' ? 1 : -1)
     })
     return items
   }, [artists, sortBy, sortOrder, artistCompleteness])
@@ -150,19 +149,14 @@ export function MusicView({
 
   const filteredAlbums = useMemo(() => selectedArtist ? albums.filter(a => a.artist_id === selectedArtist.id) : [], [albums, selectedArtist])
 
-  function getQualityTier(track: MusicTrack) {
-    const bitrate = track.audio_bitrate || 0; const isLossless = track.is_lossless || ['flac', 'alac', 'wav', 'aiff'].some(c => track.audio_codec?.toLowerCase().includes(c))
-    if (isLossless && ((track.bit_depth || 16) >= 24 || (track.sample_rate || 0) > 48000)) return 'ultra'
-    if (isLossless) return 'high'; if (bitrate >= 256) return 'high-lossy'; if (bitrate >= 160) return 'medium'; return 'low'
-  }
-
   const filteredTracks = useMemo(() => {
     if (qualityFilter === 'all') return allTracks
     return allTracks.filter(track => {
-      const tier = getQualityTier(track)
-      if (qualityFilter === 'high') return tier === 'ultra' || tier === 'high'
-      if (qualityFilter === 'medium') return tier === 'medium'
-      if (qualityFilter === 'low') return tier === 'low'
+      const tier = (track.quality_tier || '').toLowerCase()
+      if (!tier) return false
+      if (qualityFilter === 'high') return tier === 'ultra' || tier === 'high' || tier === 'hi_res' || tier === 'lossless'
+      if (qualityFilter === 'medium') return tier === 'medium' || tier === 'lossy_high' || tier === 'lossy_mid' || tier === 'high-lossy'
+      if (qualityFilter === 'low') return tier === 'low' || tier === 'lossy_low'
       return true
     })
   }, [allTracks, qualityFilter])
@@ -211,8 +205,8 @@ export function MusicView({
       onTrackSortChange(column as typeof trackSortColumn, direction)
       return
     }
-    if (musicViewMode === 'artists' && ['title', 'efficiency', 'recoverable', 'size'].includes(column)) {
-      onSortChange(column as typeof sortBy)
+    if (musicViewMode === 'artists' && ['title', 'artist', 'album', 'year', 'size', 'quality'].includes(column)) {
+      onSortChange(column as MusicSortKey)
     }
   }
 
@@ -220,7 +214,7 @@ export function MusicView({
     <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
       <span className="w-16 shrink-0">Artwork</span>
       {columns.map(column => (
-        <button key={column} className="flex-1 text-left hover:text-foreground" onClick={() => handleListSort(column)} aria-label={`Sort music by ${column}`}>
+        <button key={column} className="flex-1 text-left hover:text-foreground" onClick={() => handleListSort(column)} aria-label={`Sort music by ${getSortLabel('music', column)}`}>
           {getSortLabel('music', column)}
         </button>
       ))}
@@ -236,7 +230,7 @@ export function MusicView({
           emptyState={<div className="py-20 text-center opacity-40"><User className="w-20 h-20 mx-auto mb-4" /><p>No artists found</p></div>}
           renderGridItem={(artist) => <ArtistCard artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} artistCompleteness={artistCompleteness} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
           renderListItem={(artist) => <ArtistListItem artist={artist} onClick={() => onSelectArtist(artist)} showSourceBadge={showSourceBadge} completeness={artistCompleteness.get(artist.name)} onAnalyzeCompleteness={handleAnalyzeArtist} onFixMatch={onFixArtistMatch ? () => onFixArtistMatch(artist.id!, artist.name) : undefined} />}
-          listHeader={listHeader(['title', 'efficiency', 'recoverable', 'size'])}
+          listHeader={listHeader(['title', 'album', 'artist', 'year', 'size', 'track_count', 'quality'])}
         />
       )}
       {musicViewMode === 'albums' && (
@@ -254,7 +248,7 @@ export function MusicView({
           items={filteredTracks} totalCount={totalTrackCount} viewType="list" loading={tracksLoading} onLoadMore={onLoadMoreTracks} banner={header}
           scrollKey="music-tracks"
           emptyState={<div className="py-20 text-center opacity-40"><Music className="w-20 h-20 mx-auto mb-4" /><p>No tracks found</p></div>}
-          renderListItem={(track, index) => <TrackListItem track={track} index={index + 1} artistName={track.artist_name} albumTitle={track.album_name} onClickQuality={() => {}} />}
+          renderListItem={(track, index) => <TrackListItem track={track} index={index + 1} artistName={track.artist_name} albumTitle={track.album_name} />}
           listHeader={listHeader(['title', 'artist', 'album', 'codec', 'duration'])}
           renderGridItem={() => <div />}
         />

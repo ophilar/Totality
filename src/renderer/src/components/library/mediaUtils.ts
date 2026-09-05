@@ -119,48 +119,24 @@ export const isAACCodec = (codec?: string): boolean => {
 }
 
 /**
- * Get quality tier for a track
- */
-export const getTrackQualityTier = (
-  codec?: string,
-  bitDepth?: number,
-  sampleRate?: number,
-  bitrate?: number
-): 'ultra' | 'high' | 'medium' | 'low' | null => {
-  if (!codec) return null
-
-  const isLossless = isLosslessCodec(codec)
-
-  // Ultra: Lossless with high-res (24-bit or >48kHz)
-  if (isLossless && ((bitDepth && bitDepth >= 24) || (sampleRate && sampleRate > 48000))) {
-    return 'ultra'
-  }
-
-  // High: Lossless (CD quality or better)
-  if (isLossless) {
-    return 'high'
-  }
-
-  // For lossy codecs, check bitrate
-  if (bitrate) {
-    if (bitrate >= 256) return 'medium'
-    if (bitrate >= 128) return 'low'
-  }
-
-  return 'low'
-}
-
-/**
  * Get quality tier color
  */
-export const getQualityTierColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | null): string => {
-  switch (tier) {
+export const getQualityTierColor = (tier?: string | null): string => {
+  if (!tier) return 'text-muted-foreground'
+  const normalized = tier.toLowerCase()
+  switch (normalized) {
+    case 'hi_res':
     case 'ultra':
       return 'text-purple-400'
+    case 'lossless':
     case 'high':
       return 'text-green-400'
+    case 'lossy_high':
+    case 'high-lossy':
+    case 'lossy_mid':
     case 'medium':
       return 'text-yellow-400'
+    case 'lossy_low':
     case 'low':
       return 'text-red-400'
     default:
@@ -171,14 +147,22 @@ export const getQualityTierColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | 
 /**
  * Get quality tier background color
  */
-export const getQualityTierBgColor = (tier: 'ultra' | 'high' | 'medium' | 'low' | null): string => {
-  switch (tier) {
+export const getQualityTierBgColor = (tier?: string | null): string => {
+  if (!tier) return 'bg-muted/30'
+  const normalized = tier.toLowerCase()
+  switch (normalized) {
+    case 'hi_res':
     case 'ultra':
       return 'bg-purple-500/20'
+    case 'lossless':
     case 'high':
       return 'bg-green-500/20'
+    case 'lossy_high':
+    case 'high-lossy':
+    case 'lossy_mid':
     case 'medium':
       return 'bg-yellow-500/20'
+    case 'lossy_low':
     case 'low':
       return 'bg-red-500/20'
     default:
@@ -191,34 +175,6 @@ export const getQualityTierBgColor = (tier: 'ultra' | 'high' | 'medium' | 'low' 
  */
 export const isHighResTrack = (bitDepth?: number, sampleRate?: number): boolean => {
   return (bitDepth !== undefined && bitDepth >= 24) || (sampleRate !== undefined && sampleRate > 48000)
-}
-
-/**
- * Get badge text for audio quality
- */
-export const getAudioQualityBadge = (
-  codec?: string,
-  bitDepth?: number,
-  sampleRate?: number,
-  bitrate?: number
-): { text: string; color: string; bgColor: string } | null => {
-  const tier = getTrackQualityTier(codec, bitDepth, sampleRate, bitrate)
-  if (!tier) return null
-
-  let text = 'STANDARD'
-  if (tier === 'ultra') {
-    text = 'HI-RES'
-  } else if (tier === 'high') {
-    text = 'LOSSLESS'
-  } else if (tier === 'medium') {
-    text = 'HQ'
-  }
-
-  return {
-    text,
-    color: getQualityTierColor(tier),
-    bgColor: getQualityTierBgColor(tier)
-  }
 }
 
 // ============================================================================

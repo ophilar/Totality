@@ -218,7 +218,7 @@
 - [x] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
 - [x] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.
 - [x] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
-- [ ] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
-- [ ] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
+- [x] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
+- [x] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
 - [x] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering and converge UI sort vocabulary.
 - [ ] Verify 100% test pass rate across unit suites and production build.
