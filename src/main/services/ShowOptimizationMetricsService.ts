@@ -58,7 +58,11 @@ export interface EpisodeOptimizationMetric {
   sizeBytes: number | null | undefined
   /** Canonical video-only storage debt. */
   videoDebtBytes?: number | null | undefined
-  /** @deprecated Compatibility alias for videoDebtBytes while callers migrate. */
+  /**
+   * Legacy combined recovery estimate. Historically this may contain both
+   * video bloat and removable-audio savings, so dry-run must not add fresh
+   * audio pruning to it a second time.
+   */
   recoverableBytes?: number | null | undefined
   efficiency?: number | null | undefined
   audioStreams?: TrackStreamInfo[]
@@ -140,7 +144,7 @@ export function aggregateShowOptimizationMetrics(episodes: EpisodeOptimizationMe
   for (const episode of episodes) {
     const size = Math.max(0, episode.sizeBytes ?? 0)
     totalSize += size
-    totalRecoverableBytes += Math.max(0, episode.videoDebtBytes ?? episode.recoverableBytes ?? 0)
+    totalRecoverableBytes += Math.max(0, episode.recoverableBytes ?? episode.videoDebtBytes ?? 0)
     if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
       weightedNumerator += episode.efficiency * size
       totalEfficiency += episode.efficiency
@@ -172,11 +176,6 @@ export function calculateDryRunMetrics(
     const size = Math.max(0, episode.sizeBytes ?? 0)
     totalBytes += size
 
-    const episodeVideoDebt = episode.videoDebtBytes ?? episode.recoverableBytes
-    if (episodeVideoDebt != null && Number.isFinite(episodeVideoDebt)) {
-      videoDebtBytes += Math.max(0, episodeVideoDebt)
-    }
-
     if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
       scoredEpisodeCount++
       weightedNumerator += episode.efficiency * size
@@ -184,8 +183,8 @@ export function calculateDryRunMetrics(
       scoredSize += size
     }
 
+    let episodeAudioPruningBytes = 0
     if (episode.audioStreams && episode.audioStreams.length > 0) {
-      let episodeAudioPruningBytes = 0
       for (const stream of episode.audioStreams) {
         const streamIndex = stream.index ?? 0
         const codec = stream.codec ?? stream.codec_name ?? 'unknown'
@@ -213,7 +212,16 @@ export function calculateDryRunMetrics(
           reason: decision.reason,
         })
       }
-      audioPruningBytes += episodeAudioPruningBytes
+    }
+    audioPruningBytes += episodeAudioPruningBytes
+
+    if (episode.videoDebtBytes != null && Number.isFinite(episode.videoDebtBytes)) {
+      videoDebtBytes += Math.max(0, episode.videoDebtBytes)
+    } else if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
+      // Legacy storage_debt_bytes may already include removable audio. The best
+      // compatibility split is its nonnegative residual after fresh audio pruning;
+      // this preserves the legacy total without counting the same audio twice.
+      videoDebtBytes += Math.max(0, episode.recoverableBytes - episodeAudioPruningBytes)
     }
   }
 
