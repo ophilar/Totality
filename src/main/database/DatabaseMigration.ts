@@ -250,7 +250,7 @@ async function migrateNullableEvidenceScores(db: Client): Promise<void> {
 }
 
 async function hasNotNullColumn(db: Client, table: string, columns: readonly string[]): Promise<boolean> {
-  const result = await db.execute(`PRAGMA table_info(${table})`)
+  const result = await db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
   return result.rows.some(row => columns.includes(String(row.name)) && Number(row.notnull) === 1)
 }
 
@@ -268,10 +268,11 @@ async function rebuildTableWhenNeeded(
   getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so analysis evidence can be NULL`)
   await db.execute('BEGIN IMMEDIATE')
   try {
-    await db.execute(`ALTER TABLE ${table} RENAME TO ${legacyTable}`)
+    await db.execute(`ALTER TABLE "${table.replace(/"/g, '""')}" RENAME TO "${legacyTable.replace(/"/g, '""')}"`)
     await db.execute(createSql)
-    await db.execute(`INSERT INTO ${table} (${copyColumns.join(', ')}) SELECT ${copyColumns.join(', ')} FROM ${legacyTable}`)
-    await db.execute(`DROP TABLE ${legacyTable}`)
+    const escapedCopyCols = copyColumns.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')
+    await db.execute(`INSERT INTO "${table.replace(/"/g, '""')}" (${escapedCopyCols}) SELECT ${escapedCopyCols} FROM "${legacyTable.replace(/"/g, '""')}"`)
+    await db.execute(`DROP TABLE "${legacyTable.replace(/"/g, '""')}"`)
     for (const statement of createSupportingObjects) await db.execute(statement)
     await db.execute('COMMIT')
   } catch (error) {
@@ -452,10 +453,10 @@ async function ensureColumn(db: Client, table: string, column: string, definitio
   const tableExists = await db.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] })
   if (tableExists.rows.length === 0) return
 
-  const info = await db.execute(`PRAGMA table_info(${table})`)
+  const info = await db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
   if (!info.rows.some(c => c.name === column)) {
     getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
-    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    await db.execute(`ALTER TABLE "${table.replace(/"/g, '""')}" ADD COLUMN "${column.replace(/"/g, '""')}" ${definition}`)
   }
 }
 
