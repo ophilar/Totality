@@ -476,8 +476,13 @@ export interface TVShowSummary {
   season_count: number
   total_episodes: number // Alias for episode_count
   total_seasons: number  // Alias for season_count
-  owned_seasons?: number
-  owned_episodes?: number
+    owned_seasons?: number
+    owned_episodes?: number
+    owned_regular_seasons?: number
+    total_regular_seasons?: number | null
+    owned_regular_episodes?: number
+    total_regular_episodes?: number | null
+    special_episode_count?: number
   missing_seasons?: string
   missing_episodes?: string
   completeness_percentage?: number | null

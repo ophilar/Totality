@@ -34,6 +34,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       weightedEfficiency: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`.as('aggregate_efficiency'),
       ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`.as('aggregate_owned_count'),
       seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`.as('aggregate_season_count'),
+      regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`.as('aggregate_regular_episode_count'),
+      specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`.as('aggregate_special_episode_count'),
       scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`.as('aggregate_scored_count'),
       measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`.as('aggregate_measured_debt_count')
     }).from(schema.mediaItems).leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
@@ -92,6 +94,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       aggregate_efficiency: episodeAggregates.weightedEfficiency,
       aggregate_owned_count: episodeAggregates.ownedCount,
       aggregate_season_count: episodeAggregates.seasonCount,
+      aggregate_regular_episode_count: episodeAggregates.regularEpisodeCount,
+      aggregate_special_episode_count: episodeAggregates.specialEpisodeCount,
       aggregate_scored_count: episodeAggregates.scoredCount,
       aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
     })
@@ -128,6 +132,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       scoredCount: number
       ownedCount: number
       seasonCount: number
+      regularEpisodeCount: number
+      specialEpisodeCount: number
       evidenceStatus: 'measured' | 'estimated' | undefined
     }>()
 
@@ -151,6 +157,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
         ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`,
         seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} IS NOT NULL AND ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`,
+        regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`,
+        specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`,
         weightedEfficiency: sql<number>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`
       })
       .from(schema.mediaItems)
@@ -172,6 +180,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           scoredCount: Number(agg.scoredCount) || 0,
           ownedCount,
           seasonCount: Number(agg.seasonCount) || 0
+          , regularEpisodeCount: Number(agg.regularEpisodeCount) || 0
+          , specialEpisodeCount: Number(agg.specialEpisodeCount) || 0
           , evidenceStatus: measuredDebtCount === ownedCount && Number(agg.storageDebtBytes) >= 0
             ? (Number(agg.genuinelyMeasuredDebtCount) === ownedCount ? 'measured' as const : 'estimated' as const)
             : undefined
@@ -197,6 +207,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           scoredCount: Number(row.aggregate_scored_count) || 0,
           ownedCount: Number(row.aggregate_owned_count) || 0,
           seasonCount: Number(row.aggregate_season_count) || 0,
+          regularEpisodeCount: Number(row.aggregate_regular_episode_count) || 0,
+          specialEpisodeCount: Number(row.aggregate_special_episode_count) || 0,
           evidenceStatus: undefined,
         } : undefined)
       const hasEpisodeAggregate = aggregate !== undefined && aggregate.ownedCount > 0
@@ -236,6 +248,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         total_episodes: totalCount,
         owned_seasons: ownedSeasons,
         owned_episodes: ownedCount,
+        owned_regular_seasons: hasEpisodeAggregate ? aggregate.seasonCount : row.owned_seasons,
+        total_regular_seasons: row.total_seasons > 0 ? row.total_seasons : null,
+        owned_regular_episodes: hasEpisodeAggregate ? aggregate.regularEpisodeCount : row.owned_episodes,
+        total_regular_episodes: row.total_episodes > 0 ? row.total_episodes : null,
+        special_episode_count: hasEpisodeAggregate ? aggregate.specialEpisodeCount : 0,
         match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }),
         total_size: totalSize,
         total_recoverable_bytes: totalRecoverable,
