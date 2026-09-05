@@ -57,6 +57,16 @@ export function getSortOptions(type: LibrarySortType): SortOption[] {
   return sortOptions[type]
 }
 
+export function normalizeSortForType(
+  type: LibrarySortType,
+  sortBy: string | undefined,
+  sortOrder: SortDirection | undefined
+): { sortBy: string; sortOrder: SortDirection } {
+  const supported = sortBy != null && getSortOptions(type).some(option => option.key === sortBy)
+  if (!supported) return { sortBy: 'title', sortOrder: 'asc' }
+  return { sortBy: sortBy!, sortOrder: sortOrder ?? (descendingSortColumns.has(sortBy!) ? 'desc' : 'asc') }
+}
+
 export function getSortLabel(type: LibrarySortType, key: string): string {
   if (key === 'track_count' || key === 'trackCount') return 'Track Count'
   return getSortOptions(type).find(option => option.key === key)?.label ?? key
