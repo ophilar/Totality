@@ -153,7 +153,7 @@ export class LoggingService {
   private addEntry(level: LogLevel, source: string, message: unknown, details?: string): void {
     const formattedMessage = typeof message === 'string' ? message : String(message)
     const entry: LogEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       timestamp: new Date().toISOString(),
       level, source,
       message: this.sanitize(formattedMessage),
