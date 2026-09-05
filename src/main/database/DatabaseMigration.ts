@@ -250,7 +250,7 @@ async function migrateNullableEvidenceScores(db: Client): Promise<void> {
 }
 
 async function hasNotNullColumn(db: Client, table: string, columns: readonly string[]): Promise<boolean> {
-  const result = await db.execute(`PRAGMA table_info(${table})`)
+  const result = await db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
   return result.rows.some(row => columns.includes(String(row.name)) && Number(row.notnull) === 1)
 }
 
@@ -452,7 +452,7 @@ async function ensureColumn(db: Client, table: string, column: string, definitio
   const tableExists = await db.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] })
   if (tableExists.rows.length === 0) return
 
-  const info = await db.execute(`PRAGMA table_info(${table})`)
+  const info = await db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
   if (!info.rows.some(c => c.name === column)) {
     getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
     await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)

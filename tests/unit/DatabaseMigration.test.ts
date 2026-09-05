@@ -85,4 +85,10 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_recipe:unversioned')).toBe(JSON.stringify(unversioned))
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
+
+  it('runs migrations safely when tables exist and handles column schema checks with double-quote escaping', async () => {
+    // Create a table with special/unusual name to verify PRAGMA table_info double-quote escaping
+    await dbService.db.execute('CREATE TABLE IF NOT EXISTS "test_table""with_quotes" (id INTEGER PRIMARY KEY, col1 TEXT NOT NULL)')
+    await expect(runMigrations(dbService.db)).resolves.not.toThrow()
+  })
 })
