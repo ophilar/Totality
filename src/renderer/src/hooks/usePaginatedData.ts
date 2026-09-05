@@ -138,6 +138,8 @@ export function usePaginatedData<T, TFilters>({
 
   const externalSetItems = useCallback((newItems: T[] | ((prev: T[]) => T[])) => {
     requestGenerationRef.current++
+    loadingRef.current = false
+    setLoading(false)
     setItems(prev => {
       const result = typeof newItems === 'function' ? newItems(prev) : newItems
       offsetRef.current = result.length

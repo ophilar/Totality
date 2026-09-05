@@ -97,6 +97,10 @@ export class QualityAnalyzer {
         }
         return defaultVal
       }
+      const getPositiveNum = (key: string, defaultVal: number): number => {
+        const value = getNum(key, defaultVal)
+        return Number.isFinite(value) && value > 0 ? value : defaultVal
+      }
 
       // Load video bitrate thresholds
       this.videoThresholds = {
@@ -140,10 +144,10 @@ export class QualityAnalyzer {
 
       // Load efficiency target thresholds
       this.efficiencyThresholds = {
-        'SD': getNum('quality_efficiency_sd_target', DEFAULT_EFFICIENCY_TARGETS.SD),
-        '720p': getNum('quality_efficiency_720p_target', DEFAULT_EFFICIENCY_TARGETS['720p']),
-        '1080p': getNum('quality_efficiency_1080p_target', DEFAULT_EFFICIENCY_TARGETS['1080p']),
-        '4K': getNum('quality_efficiency_4k_target', DEFAULT_EFFICIENCY_TARGETS['4K']),
+        'SD': getPositiveNum('quality_efficiency_sd_target', DEFAULT_EFFICIENCY_TARGETS.SD),
+        '720p': getPositiveNum('quality_efficiency_720p_target', DEFAULT_EFFICIENCY_TARGETS['720p']),
+        '1080p': getPositiveNum('quality_efficiency_1080p_target', DEFAULT_EFFICIENCY_TARGETS['1080p']),
+        '4K': getPositiveNum('quality_efficiency_4k_target', DEFAULT_EFFICIENCY_TARGETS['4K']),
       }
 
       // Load bloat start thresholds
@@ -623,7 +627,7 @@ export class QualityAnalyzer {
     if (typeof item.duration !== 'number' || !Number.isFinite(item.duration) || item.duration <= 0) return null
 
     const targetBitrate = this.efficiencyThresholds[qualityTier]
-    if (targetBitrate == null) return null
+    if (targetBitrate == null || !Number.isFinite(targetBitrate) || targetBitrate <= 0) return null
 
     const durationSec = item.duration / 1000
     return Math.max(0, Math.round(((bitrate - targetBitrate) * 1000 * durationSec) / 8))
@@ -676,10 +680,11 @@ export class QualityAnalyzer {
   async analyzeAllMediaItems(
     onProgress?: (current: number, total: number) => void,
     isCancelled?: () => boolean,
-    sourceId?: string
+    sourceId?: string,
+    libraryId?: string
   ): Promise<number> {
     const db = getDatabase()
-    const mediaItems = await db.media.getItems(sourceId ? { sourceId } : undefined)
+    const mediaItems = await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
 
     let analyzed = 0
     const tierCounts: Record<string, number> = {}

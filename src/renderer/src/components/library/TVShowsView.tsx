@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { RefreshCw, Tv, HardDrive, Zap, X } from 'lucide-react'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
@@ -83,6 +83,7 @@ export function TVShowsView({
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
   const [dryRunReport, setDryRunReport] = useState<{ show: TVShowSummary; report: Awaited<ReturnType<typeof window.electronAPI.optimizationDryRun>> } | null>(null)
+  const detailScrollRef = useRef<HTMLDivElement>(null)
   const { isScanning, scanProgress } = useSources()
   const activeScan = Array.from(scanProgress.values())[0]
 
@@ -266,8 +267,8 @@ export function TVShowsView({
 
   if (selectedShow) {
     return (
-      <div className="h-full overflow-y-auto">
-        <TVShowDetails key={`${selectedShow}:${seriesCompleteness.get(selectedShow)?.tmdb_id ?? ''}`} selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
+      <div ref={detailScrollRef} className="h-full overflow-y-auto">
+        <TVShowDetails key={`${selectedShow}:${seriesCompleteness.get(selectedShow)?.tmdb_id ?? ''}`} scrollParentRef={detailScrollRef} selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
       </div>
     )
   }

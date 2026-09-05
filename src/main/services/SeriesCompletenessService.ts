@@ -198,7 +198,7 @@ export class SeriesCompletenessService {
         showDetails = await this.tmdb.getTVShowDetails(tmdbId)
       }
     } else {
-      const storedTmdbId = cachedTmdbId || persistedExisting?.tmdb_id || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id || episodes.find(e => e.tmdb_id)?.tmdb_id
+      const storedTmdbId = cachedTmdbId || persistedExisting?.tmdb_id || episodes.find(e => e.series_tmdb_id)?.series_tmdb_id
       if (storedTmdbId && this.tmdb.isConfigured()) {
         try {
           showDetails = await this.tmdb.getTVShowDetails(storedTmdbId)
@@ -263,7 +263,7 @@ export class SeriesCompletenessService {
         if (staleTmdbIdForCleanup && !isLocked) {
           for (const ep of episodes) {
             if (ep.id && !ep.user_fixed_match && (ep.series_tmdb_id === staleTmdbIdForCleanup || ep.tmdb_id === staleTmdbIdForCleanup)) {
-              await this.db.media.updateEpisodeMetadata(ep.id, { seriesTmdbId: undefined, tmdbId: undefined })
+              await this.db.media.updateEpisodeMetadata(ep.id, { seriesTmdbId: null })
             }
           }
         }

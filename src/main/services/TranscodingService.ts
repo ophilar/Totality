@@ -342,6 +342,7 @@ export class TranscodingService {
         mediaItemId: number
         phase: string
         inputPath: string
+        tempPath?: string
         targetPath?: string
         quarantinePath?: string
         outputStats?: { fileSize?: number; duration?: number; video?: any; audioTracks?: any[] }
@@ -354,6 +355,7 @@ export class TranscodingService {
       const inputExists = await exists(journal.inputPath)
       const targetExists = await exists(journal.targetPath)
       const quarantineExists = await exists(journal.quarantinePath)
+      const tempExists = await exists(journal.tempPath)
 
       // Crash occurred after source was quarantined but before target was placed
       if (journal.phase === 'source_quarantined' && !targetExists && quarantineExists && !inputExists) {
@@ -389,6 +391,19 @@ export class TranscodingService {
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
         continue
+      }
+
+      // Direct replacement can activate the target before the second journal write.
+      // If the staged output is gone and the target's size matches the recorded output,
+      // commit the same forward transition used by output_activated.
+      if (journal.phase === 'prepared' && targetExists && !tempExists && journal.targetPath && journal.outputStats?.fileSize != null) {
+        const targetStat = await fs.stat(journal.targetPath)
+        if (targetStat.size === journal.outputStats.fileSize) {
+          await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, journal.outputStats)
+          await db.config.deleteSetting(key)
+          getLoggingService().info('[TranscodingService]', `Committed interrupted direct activation for media item ${journal.mediaItemId}`)
+          continue
+        }
       }
 
       throw new Error(`Unresolved transcoding activation journal for media item ${journal.mediaItemId}; manual recovery is required`)
