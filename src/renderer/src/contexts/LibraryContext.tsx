@@ -1,6 +1,7 @@
 
 import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react'
 import type { MediaViewType, ViewType, QualityFilter } from '@/components/library/types'
+import { normalizeSortForType, type LibrarySortType } from '@/components/library/sortDefinitions'
 import type { MusicArtist, MusicAlbum } from '@main/types/database'
 import type { MediaDeepAnalysisResult } from '@preload/api/media'
 
@@ -45,6 +46,13 @@ interface LibraryContextType {
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined)
 
+function getLibrarySortType(view: MediaViewType): LibrarySortType | null {
+  if (view === 'movies') return 'movie'
+  if (view === 'tv') return 'tv'
+  if (view === 'music') return 'music'
+  return null
+}
+
 export function LibraryProvider({ children, initialTab }: { children: ReactNode, initialTab?: MediaViewType }) {
   const [view, setView] = useState<MediaViewType>(initialTab || 'movies')
   const [searchQuery, setSearchQuery] = useState('')
@@ -77,19 +85,28 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
 
   useEffect(() => {
     window.electronAPI.getSetting('library_view_prefs').then(val => {
-      if (val) {
-        try {
-          viewPrefsRef.current = JSON.parse(val)
-          const current = viewPrefsRef.current[view]
-          if (current) {
-            setViewTypeState(current.viewType)
-            setGridScaleState(current.gridScale)
-            if (current.sortBy) setSortBy(current.sortBy)
-            if (current.sortOrder) setSortOrder(current.sortOrder)
-            if (current.groupByCollections !== undefined) setGroupByCollectionsState(current.groupByCollections)
-          }
-        } catch (e) {
-          window.electronAPI.log.error('[LibraryContext]', 'Failed to parse view preferences:', e)
+      try {
+        if (val) viewPrefsRef.current = JSON.parse(val)
+        const current = viewPrefsRef.current[view]
+        if (current) {
+          setViewTypeState(current.viewType)
+          setGridScaleState(current.gridScale)
+          if (current.groupByCollections !== undefined) setGroupByCollectionsState(current.groupByCollections)
+        }
+
+        const sortType = getLibrarySortType(view)
+        if (sortType) {
+          const normalized = normalizeSortForType(sortType, current?.sortBy, current?.sortOrder)
+          setSortBy(normalized.sortBy)
+          setSortOrder(normalized.sortOrder)
+        }
+      } catch (e) {
+        window.electronAPI.log.error('[LibraryContext]', 'Failed to parse view preferences:', e)
+        const sortType = getLibrarySortType(view)
+        if (sortType) {
+          const normalized = normalizeSortForType(sortType, undefined, undefined)
+          setSortBy(normalized.sortBy)
+          setSortOrder(normalized.sortOrder)
         }
       }
     })
