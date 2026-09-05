@@ -172,7 +172,7 @@ describe('RealDryRunOptimizationCalculations', () => {
       const episodes = [
         {
           sizeBytes: 4000000000, // 4 GB
-          recoverableBytes: 600000000, // 600 MB removable audio
+          videoDebtBytes: 0,
           efficiency: 85,
           audioStreams: [
             { index: 1, codec: 'dts', language: 'en', channels: 6, bit_rate: '1509000', tags: { NUMBER_OF_BYTES: '679050000' } },
@@ -183,7 +183,7 @@ describe('RealDryRunOptimizationCalculations', () => {
         },
         {
           sizeBytes: 6000000000, // 6 GB
-          recoverableBytes: 900000000, // 900 MB removable audio
+          videoDebtBytes: 0,
           efficiency: 90,
           audioStreams: [
             { index: 1, codec: 'truehd', language: 'en', channels: 8, bit_rate: '4000000', tags: { NUMBER_OF_BYTES: '1800000000' } },
@@ -193,7 +193,7 @@ describe('RealDryRunOptimizationCalculations', () => {
         },
         {
           sizeBytes: 2000000000, // 2 GB unparsed / unscored
-          recoverableBytes: null,
+          videoDebtBytes: null,
           efficiency: null,
           audioStreams: [],
           durationSeconds: 3600,
@@ -207,6 +207,7 @@ describe('RealDryRunOptimizationCalculations', () => {
       // Removable tracks in ep 2: es (288,000,000) = 288,000,000
       // Total recoverable: 864,000,000 bytes
       expect(result.recoverableBytes).toBe(864000000)
+      expect(result.totalRecoverableBytes).toBe(864000000)
       // Percentage: (864,000,000 / 12,000,000,000) * 100 = 7.2%
       expect(result.percentageSavings).toBeCloseTo(7.2)
       expect(result.totalEpisodes).toBe(3)
@@ -232,6 +233,7 @@ describe('RealDryRunOptimizationCalculations', () => {
       const result = calculateDryRunMetrics([], 'en')
       expect(result.totalBytes).toBe(0)
       expect(result.recoverableBytes).toBe(0)
+      expect(result.totalRecoverableBytes).toBe(0)
       expect(result.percentageSavings).toBe(0)
       expect(result.totalEpisodes).toBe(0)
       expect(result.scoredEpisodes).toBe(0)
