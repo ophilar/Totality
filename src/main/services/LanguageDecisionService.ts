@@ -53,9 +53,14 @@ export interface LanguageDecision {
 }
 
 import { normalizeLanguage } from '@main/constants/languages'
-const normalize = normalizeLanguage
+import {
+  isAudioDescriptionTrack,
+  isAccessibilityTrack,
+  isCommentaryTrack,
+  isProtectedAudioTrack
+} from '@main/services/utils/audioTrackUtils'
 
-const protectedTitle = /commentary|comment|audio description|descriptive|accessib|narration/i
+const normalize = normalizeLanguage
 
 export class LanguageDecisionService {
   /**
@@ -92,18 +97,9 @@ export class LanguageDecisionService {
     const normLang = normalize(rawLanguage)
     const normOrig = normalize(originalLanguage)
 
-    const isCommentary =
-      stream.isCommentary === true ||
-      stream.disposition?.comment === 1 ||
-      /commentary|comment/i.test(stream.title ?? stream.tags?.title ?? '')
-    const isAudioDescription =
-      stream.isAudioDescription === true ||
-      stream.disposition?.visual_impaired === 1 ||
-      /audio description|descriptive/i.test(stream.title ?? stream.tags?.title ?? '')
-    const isAccessibility =
-      stream.isAccessibility === true ||
-      stream.disposition?.hearing_impaired === 1 ||
-      /accessib|hearing impaired|narration/i.test(stream.title ?? stream.tags?.title ?? '')
+    const isCommentary = isCommentaryTrack(stream)
+    const isAudioDescription = isAudioDescriptionTrack(stream)
+    const isAccessibility = isAccessibilityTrack(stream)
 
     const retainCommentary = config?.retainCommentary ?? true
     const retainAudioDesc = config?.retainAudioDescription ?? true
@@ -159,7 +155,7 @@ export class LanguageDecisionService {
     }
     for (const track of tracks) {
       const language = normalize(track.language)
-      const protectedTrack = track.isCommentary || track.isAudioDescription || track.isAccessibility || protectedTitle.test(track.title || '')
+      const protectedTrack = isProtectedAudioTrack(track)
       if (track.reliableTag) evidenceSources.push(`embedded-audio-tag:${track.index}`)
       if (!track.reliableTag || !language) {
         getLoggingService().warn('[LanguageDecision]', `Audio track ${track.index} has unknown or missing language tag`)

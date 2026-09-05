@@ -5,6 +5,7 @@ import { APP_CONFIG } from '@main/config'
 import { TrashSourceClassifier, MediaSourceTier } from '@main/services/transcoding/TrashSourceClassifier'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { normalizeLanguage } from '@main/constants/languages'
+import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -780,8 +781,7 @@ export class QualityAnalyzer {
     const hasStreamByteEvidence = analysis?.streamBytes !== undefined
     for (const track of tracks) {
       const title = metadataString(track.title, 'audio track title')
-      const protectedTrack = track.isCommentary === true || track.isAudioDescription === true || track.isAccessibility === true ||
-        track.hasObjectAudio === true || (title !== null && /commentary|comment|audio description|descriptive|accessib|narration/i.test(title))
+      const protectedTrack = isProtectedAudioTrack({ ...track, title })
       if (protectedTrack) continue
 
       const language = normalizeLanguage(track.language)
