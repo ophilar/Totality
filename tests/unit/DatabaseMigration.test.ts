@@ -85,4 +85,35 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_recipe:unversioned')).toBe(JSON.stringify(unversioned))
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
+
+  it('runs schema rebuilds for tables with nullable evidence safely', async () => {
+    await dbService.db.execute(`
+      CREATE TABLE IF NOT EXISTS quality_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_item_id INTEGER NOT NULL UNIQUE,
+        quality_tier TEXT NOT NULL DEFAULT 'SD',
+        tier_quality TEXT NOT NULL DEFAULT 'MEDIUM',
+        tier_score INTEGER NOT NULL,
+        bitrate_tier_score INTEGER,
+        audio_tier_score INTEGER,
+        overall_score INTEGER,
+        resolution_score INTEGER,
+        bitrate_score INTEGER,
+        audio_score INTEGER,
+        efficiency_score INTEGER,
+        storage_debt_bytes INTEGER,
+        estimated_savings_bytes INTEGER,
+        evidence_status TEXT,
+        confidence TEXT,
+        savings_basis TEXT,
+        is_low_quality INTEGER NOT NULL,
+        needs_upgrade INTEGER NOT NULL,
+        issues TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `)
+
+    await expect(runMigrations(dbService.db)).resolves.not.toThrow()
+  })
 })
