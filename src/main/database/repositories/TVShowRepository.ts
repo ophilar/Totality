@@ -74,14 +74,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     .from(schema.seriesCompleteness)
 
     if (conditions.length > 0) query.where(and(...conditions))
-    const requiresCalculatedEfficiencySort = filters?.sortBy === 'weighted_efficiency' || filters?.sortBy === 'efficiency' || filters?.sortBy === 'efficiency_score'
-    const requiresCalculatedWasteSort = filters?.sortBy === 'waste' || filters?.sortBy === 'recoverable' || filters?.sortBy === 'storage_debt' || filters?.sortBy === 'storage_debt_bytes' || filters?.sortBy === 'recoverable_waste_bytes'
-    const requiresCalculatedSort = requiresCalculatedEfficiencySort || requiresCalculatedWasteSort
-    if (!requiresCalculatedSort) {
-      query.orderBy(sortOrder)
-      if (filters?.limit) query.limit(filters.limit)
-      if (filters?.offset) query.offset(filters.offset)
-    }
+    query.orderBy(sortOrder)
+    if (filters?.limit) query.limit(filters.limit)
+    if (filters?.offset) query.offset(filters.offset)
 
     const rows = await query.all()
     const summaries: TVShowSummary[] = []
@@ -141,8 +136,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         if (!agg.seriesTitle) continue
         const ownedCount = Number(agg.ownedCount) || 0
         const measuredDebtCount = Number(agg.measuredDebtCount) || 0
-        const key = `${agg.seriesIdentityKey || agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`
-        aggregatedScoresMap.set(key, {
+        const aggData = {
           totalSize: Number(agg.totalSize) || 0,
           storageDebtBytes: measuredDebtCount === ownedCount && agg.storageDebtBytes !== null
             ? Number(agg.storageDebtBytes)
@@ -151,27 +145,33 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           scoredCount: Number(agg.scoredCount) || 0,
           ownedCount,
           seasonCount: Number(agg.seasonCount) || 0
-        })
+        }
+        if (agg.seriesIdentityKey) {
+          aggregatedScoresMap.set(`${agg.seriesIdentityKey}:${agg.sourceId}:${agg.libraryId}`, aggData)
+        }
+        if (agg.seriesTitle) {
+          aggregatedScoresMap.set(`${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`, aggData)
+        }
       }
     }
 
     for (const row of rows) {
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
-      const key = `${row.series_identity_key || row.series_title}:${row.source_id}:${row.library_id}`
-      const aggregate = aggregatedScoresMap.get(key)
+      const aggregate = (row.series_identity_key ? aggregatedScoresMap.get(`${row.series_identity_key}:${row.source_id}:${row.library_id}`) : undefined)
+        ?? (row.series_title ? aggregatedScoresMap.get(`${row.series_title}:${row.source_id}:${row.library_id}`) : undefined)
       const hasEpisodeAggregate = aggregate !== undefined && aggregate.ownedCount > 0
 
       const totalSize = hasEpisodeAggregate ? aggregate.totalSize : (row.total_size ?? 0)
-      const totalRecoverable = row.evidence_status === 'measured' && row.storage_debt_bytes != null
-        ? row.storage_debt_bytes
-        : (hasEpisodeAggregate ? (aggregate.storageDebtBytes ?? undefined) : undefined)
-      const weightedEfficiency = hasEpisodeAggregate && aggregate.weightedEfficiency !== null
+      const totalRecoverable = hasEpisodeAggregate
+        ? (aggregate.storageDebtBytes ?? undefined)
+        : (row.evidence_status === 'measured' && row.storage_debt_bytes != null ? row.storage_debt_bytes : undefined)
+      const weightedEfficiency = hasEpisodeAggregate
         ? aggregate.weightedEfficiency
         : (row.efficiency_score ?? null)
       const ownedCount = hasEpisodeAggregate ? aggregate.ownedCount : (row.owned_episodes || 0)
       const totalCount = row.total_episodes || ownedCount
-      const scoredCount = hasEpisodeAggregate && aggregate.scoredCount > 0
+      const scoredCount = hasEpisodeAggregate
         ? aggregate.scoredCount
         : (row.efficiency_score != null ? ownedCount : 0)
       const unscoredCount = Math.max(0, totalCount - scoredCount)
@@ -208,17 +208,6 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             ? 'review-required'
             : 'no-optimization'
       })
-    }
-    if (requiresCalculatedSort) {
-      summaries.sort((a, b) => {
-        const valA = requiresCalculatedEfficiencySort ? a.weighted_efficiency : a.total_recoverable_bytes
-        const valB = requiresCalculatedEfficiencySort ? b.weighted_efficiency : b.total_recoverable_bytes
-        const left = valA ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
-        const right = valB ?? (filters?.sortOrder === 'desc' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY)
-        return filters?.sortOrder === 'desc' ? right - left : left - right
-      })
-      const offset = filters?.offset ?? 0
-      return filters?.limit ? summaries.slice(offset, offset + filters.limit) : summaries.slice(offset)
     }
     return summaries
   }

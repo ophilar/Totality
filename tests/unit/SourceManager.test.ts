@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { SourceManager } from '@main/services/SourceManager'
-import { LibraryType, ProviderType } from '@main/types/database'
+import { LibraryType, ProviderType, TaskType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -113,6 +113,26 @@ describe('SourceManager (No Mocks)', () => {
     if (!result.success) {
       expect(result.errors.some(e => e.toLowerCase().includes('cancelled'))).toBe(true)
     }
+  })
+
+  it('enqueues TaskType.QualityAnalysis with sourceId during triggerPostScanAnalysis', async () => {
+    const source = await manager.addSource({
+      sourceType: ProviderType.Local,
+      displayName: 'Quality Scan Test',
+      connectionConfig: { folderPath: tempDir.path, mediaType: LibraryType.Movie },
+    })
+
+    await manager.initialize()
+    const libs = await manager.getLibraries(source.source_id)
+    await db.sources.setLibrariesEnabled(source.source_id, libs.map(l => ({ id: l.id, name: l.name, type: l.type, enabled: true })))
+    const taskQueue = (manager as any).getTaskQueue()
+    await taskQueue.clearQueue()
+
+    await manager.triggerPostScanAnalysis(source.source_id, 'movie')
+
+    const tasks = taskQueue.getTasks()
+    const qualityTask = tasks.find((t: any) => t.type === TaskType.QualityAnalysis && t.sourceId === source.source_id)
+    expect(qualityTask).toBeDefined()
   })
 })
 

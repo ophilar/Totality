@@ -134,6 +134,13 @@ export function registerDatabaseHandlers() {
       })
     }
 
+    if (key.startsWith('quality_')) {
+      await getTaskQueueService().addTask({
+        type: TaskType.QualityAnalysis,
+        label: 'Recalculate Media Quality (Settings changed)',
+      })
+    }
+
 
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.webContents.send('settings:changed', { key, hasValue: !!value })

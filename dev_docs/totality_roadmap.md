@@ -215,9 +215,9 @@
 - [x] Make `QualityAnalyzer` the sole producer of `efficiency_score`, `storage_debt_bytes`, and quality tiers for video items with defensible recoverable semantics.
 - [x] Omit `efficiency_score` and `storage_debt_bytes` for music items in `QualityAnalyzer`, focusing strictly on quality fidelity tiers, completeness, and specs.
 - [ ] Remove duplicate TV dry-run aggregation from `ShowOptimizationMetricsService.ts` and renderer-side duplicate calculations.
-- [ ] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
-- [ ] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.
-- [ ] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
+- [x] Derive TV show aggregate metrics (`total_size`, `total_recoverable_bytes`, `weighted_efficiency`) directly from child episode records in `TVShowRepository` without in-memory fallback arrays.
+- [x] Enforce automated currency across scan/rescan, metadata edit, transcode completion, and quality settings updates.
+- [x] Coerce analysis of existing unchanged files upon manual library scan by including `TaskType.QualityAnalysis` in `triggerPostScanAnalysis`.
 - [ ] Delete renderer-side `getQualityTier()` across `mediaUtils.ts`, `MusicView.tsx`, `TrackListItem.tsx`, and `MusicAlbumDetails.tsx`.
 - [ ] Remove misleading "Efficiency" and "Recoverable" headers and sort keys from `MusicView.tsx`, and remove empty `onClickQuality` callback.
 - [ ] Remove fragile custom memo comparator in `ShowCard.tsx` to fix stale React rendering.
