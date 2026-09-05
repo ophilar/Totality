@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type RefObject } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database, Zap } from 'lucide-react'
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
@@ -26,7 +26,8 @@ export function TVShowDetails({
   onMissingItemClick,
   onDismissMissingEpisode,
   onDismissMissingSeason,
-  onTranscodeShow
+  onTranscodeShow,
+  scrollParentRef
 }: {
   selectedShow: string
   selectedShowData: TVShow | null
@@ -45,6 +46,7 @@ export function TVShowDetails({
   onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
   onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
   onTranscodeShow?: (show: TVShowSummary) => void
+  scrollParentRef?: RefObject<HTMLDivElement | null>
 }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showOverviewExpanded, setShowOverviewExpanded] = useState(false)
@@ -317,7 +319,7 @@ export function TVShowDetails({
         <Virtuoso
           data={allSeasonNumbers}
           overscan={800}
-          style={{ height: 'min(70vh, 900px)' }}
+          customScrollParent={scrollParentRef?.current ?? undefined}
           itemContent={(_, seasonNumber) => {
           const season = selectedShowData.seasons.get(seasonNumber)
           const ownedEpisodes = season?.episodes.filter(filterItem) || []

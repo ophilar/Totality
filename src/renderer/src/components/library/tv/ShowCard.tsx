@@ -149,7 +149,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-sm line-clamp-2 break-words leading-tight" title={show.series_title}>{show.series_title}</h4>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {show.season_count} {show.season_count === 1 ? 'Season' : 'Seasons'} • {show.episode_count} {show.episode_count === 1 ? 'Episode' : 'Episodes'}
+            {show.owned_regular_seasons == null ? `${show.season_count} ${show.season_count === 1 ? 'Season' : 'Seasons'} • ${show.episode_count} ${show.episode_count === 1 ? 'Episode' : 'Episodes'}` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           </p>
           <MediaMetricsRow
             fileSize={show.total_size}

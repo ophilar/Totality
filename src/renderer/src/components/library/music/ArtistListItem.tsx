@@ -75,9 +75,6 @@ export const ArtistListItem = memo(({ artist, completeness, onClick, showSourceB
       {/* Info */}
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate">{artist.name}</h4>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {artist.album_count} {artist.album_count === 1 ? 'album' : 'albums'} • {artist.track_count} tracks
-        </p>
         {completeness && (
           <div className="mt-2 flex items-center gap-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -86,6 +83,8 @@ export const ArtistListItem = memo(({ artist, completeness, onClick, showSourceB
           </div>
         )}
       </div>
+      <div className="w-28 shrink-0 text-sm text-muted-foreground">{artist.album_count ?? 0}</div>
+      <div className="w-28 shrink-0 text-sm text-muted-foreground">{artist.track_count ?? 0}</div>
 
       {/* 3-dot menu */}
       {hasMenuActions && (

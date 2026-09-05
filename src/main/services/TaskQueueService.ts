@@ -661,7 +661,7 @@ export class TaskQueueService {
         percentage: total > 0 ? Math.round((current / total) * 100) : 100,
         phase: current >= total ? 'complete' : 'analyzing',
       })
-    }, () => this.cancelRequested, task.sourceId)
+    }, () => this.cancelRequested, task.sourceId, task.libraryId)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {

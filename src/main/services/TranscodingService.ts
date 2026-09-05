@@ -342,6 +342,7 @@ export class TranscodingService {
         mediaItemId: number
         phase: string
         inputPath: string
+        tempPath?: string
         targetPath?: string
         quarantinePath?: string
         outputStats?: { fileSize?: number; duration?: number; video?: any; audioTracks?: any[] }
@@ -354,6 +355,7 @@ export class TranscodingService {
       const inputExists = await exists(journal.inputPath)
       const targetExists = await exists(journal.targetPath)
       const quarantineExists = await exists(journal.quarantinePath)
+      const tempExists = await exists(journal.tempPath)
 
       // Crash occurred after source was quarantined but before target was placed
       if (journal.phase === 'source_quarantined' && !targetExists && quarantineExists && !inputExists) {
@@ -389,6 +391,19 @@ export class TranscodingService {
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
         continue
+      }
+
+      // Direct replacement can activate the target before the second journal write.
+      // If the staged output is gone and the target's size matches the recorded output,
+      // commit the same forward transition used by output_activated.
+      if (journal.phase === 'prepared' && targetExists && !tempExists && journal.targetPath && journal.outputStats?.fileSize != null) {
+        const targetStat = await fs.stat(journal.targetPath)
+        if (targetStat.size === journal.outputStats.fileSize) {
+          await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, journal.outputStats)
+          await db.config.deleteSetting(key)
+          getLoggingService().info('[TranscodingService]', `Committed interrupted direct activation for media item ${journal.mediaItemId}`)
+          continue
+        }
       }
 
       throw new Error(`Unresolved transcoding activation journal for media item ${journal.mediaItemId}; manual recovery is required`)
@@ -839,22 +854,30 @@ export class TranscodingService {
       const targetSamePath = path.join(path.dirname(inputPath), origBase + outputExt)
 
       if (effectiveOutputMode === 'replace') {
-        getLoggingService().info('[TranscodingService]', `Directly replacing original file: ${inputPath}`)
+        getLoggingService().info('[TranscodingService]', `Replacing original file through reversible activation: ${inputPath}`)
+        const quarantinePath = path.join(path.dirname(inputPath), `${origBase}.activation-${Date.now()}${origExt}`)
         const outputStats = {
           fileSize: outputAnalysis.fileSize,
           duration: outputAnalysis.duration,
           video: outputAnalysis.video,
           audioTracks: outputAnalysis.audioTracks,
         }
-        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath, outputStats })
-        if (path.resolve(tempPath) !== path.resolve(targetSamePath)) {
-          await fs.rename(tempPath, targetSamePath)
+        await this.writeActivationJournal(mediaItemId, { phase: 'prepared', inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: 'replace' })
+        await fs.rename(inputPath, quarantinePath)
+        await this.writeActivationJournal(mediaItemId, { phase: 'source_quarantined', inputPath, tempPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: 'replace' })
+        try {
+          if (path.resolve(tempPath) !== path.resolve(targetSamePath)) await fs.rename(tempPath, targetSamePath)
+        } catch (error) {
+          await fs.rename(quarantinePath, inputPath)
+          throw error
         }
-        await this.writeActivationJournal(mediaItemId, { phase: 'output_activated', inputPath, targetPath: targetSamePath, outputStats })
-        if (path.resolve(inputPath) !== path.resolve(targetSamePath) && existsSync(inputPath)) {
-          await fs.unlink(inputPath)
-        }
+        await this.writeActivationJournal(mediaItemId, { phase: 'output_activated', inputPath, targetPath: targetSamePath, quarantinePath, outputStats, mode: 'replace' })
         await db.media.updatePathAndStats(mediaItemId, targetSamePath, outputStats)
+        try {
+          await fs.unlink(quarantinePath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
         await db.config.deleteSetting(`transcoding.activation.${mediaItemId}`)
       } else if (effectiveOutputMode === 'quarantine-replace') {
         getLoggingService().info('[TranscodingService]', `Replacing with quarantine backup: ${inputPath}`)

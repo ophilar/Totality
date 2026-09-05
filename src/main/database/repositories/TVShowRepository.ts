@@ -24,22 +24,41 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
     const conditions = this.buildFilterConditions(filters)
 
-    const sortMap: Record<string, AnyColumn | SQL> = {
+    const episodeAggregates = this.drizzle.select({
+      seriesTitle: schema.mediaItems.seriesTitle,
+      seriesIdentityKey: schema.mediaItems.seriesIdentityKey,
+      sourceId: schema.mediaItems.sourceId,
+      libraryId: schema.mediaItems.libraryId,
+      totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`.as('aggregate_total_size'),
+      storageDebtBytes: sql<number | null>`CASE WHEN COUNT(${schema.mediaItems.id}) > 0 AND COUNT(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END) = COUNT(${schema.mediaItems.id}) THEN SUM(${schema.qualityScores.storageDebtBytes}) ELSE NULL END`.as('aggregate_storage_debt_bytes'),
+      weightedEfficiency: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`.as('aggregate_efficiency'),
+      ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`.as('aggregate_owned_count'),
+      seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`.as('aggregate_season_count'),
+      regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`.as('aggregate_regular_episode_count'),
+      specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`.as('aggregate_special_episode_count'),
+      scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`.as('aggregate_scored_count'),
+      measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`.as('aggregate_measured_debt_count')
+    }).from(schema.mediaItems).leftJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
+      .where(eq(schema.mediaItems.type, 'episode'))
+      .groupBy(schema.mediaItems.seriesTitle, schema.mediaItems.seriesIdentityKey, schema.mediaItems.sourceId, schema.mediaItems.libraryId)
+      .as('episode_aggregates')
+
+    const sortMap: Record<string, AnyColumn | SQL | SQL.Aliased> = {
       'title': schema.seriesCompleteness.seriesTitle,
       'completeness': schema.seriesCompleteness.completenessPercentage,
       'episode_count': schema.seriesCompleteness.totalEpisodes,
       'episodes': schema.seriesCompleteness.totalEpisodes,
       'season_count': schema.seriesCompleteness.totalSeasons,
-      'storage_debt': schema.seriesCompleteness.storageDebtBytes,
-      'storage_debt_bytes': schema.seriesCompleteness.storageDebtBytes,
-      'recoverable': schema.seriesCompleteness.storageDebtBytes,
-      'recoverable_waste_bytes': schema.seriesCompleteness.storageDebtBytes,
-      'debt': schema.seriesCompleteness.storageDebtBytes,
-      'waste': schema.seriesCompleteness.storageDebtBytes,
-      'efficiency': schema.seriesCompleteness.efficiencyScore,
-      'efficiency_score': schema.seriesCompleteness.efficiencyScore,
-      'weighted_efficiency': schema.seriesCompleteness.efficiencyScore,
-      'size': schema.seriesCompleteness.totalSize,
+      'storage_debt': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'storage_debt_bytes': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'recoverable': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'recoverable_waste_bytes': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'debt': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'waste': sql`COALESCE(${episodeAggregates.storageDebtBytes}, ${schema.seriesCompleteness.storageDebtBytes})`,
+      'efficiency': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'efficiency_score': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'weighted_efficiency': sql`COALESCE(${episodeAggregates.weightedEfficiency}, ${schema.seriesCompleteness.efficiencyScore})`,
+      'size': sql`COALESCE(${episodeAggregates.totalSize}, ${schema.seriesCompleteness.totalSize})`,
     }
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.seriesCompleteness.seriesTitle
     const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
@@ -69,12 +88,22 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       confidence: schema.seriesCompleteness.confidence,
       savings_basis: schema.seriesCompleteness.savingsBasis,
       total_size: schema.seriesCompleteness.totalSize,
-      current_episodes: schema.seriesCompleteness.ownedEpisodes
+      current_episodes: schema.seriesCompleteness.ownedEpisodes,
+      aggregate_total_size: episodeAggregates.totalSize,
+      aggregate_storage_debt_bytes: episodeAggregates.storageDebtBytes,
+      aggregate_efficiency: episodeAggregates.weightedEfficiency,
+      aggregate_owned_count: episodeAggregates.ownedCount,
+      aggregate_season_count: episodeAggregates.seasonCount,
+      aggregate_regular_episode_count: episodeAggregates.regularEpisodeCount,
+      aggregate_special_episode_count: episodeAggregates.specialEpisodeCount,
+      aggregate_scored_count: episodeAggregates.scoredCount,
+      aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
     })
     .from(schema.seriesCompleteness)
+    .leftJoin(episodeAggregates, sql`${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle} AND ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId} AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}`)
 
     if (conditions.length > 0) query.where(and(...conditions))
-    query.orderBy(sortOrder)
+    query.orderBy(sortOrder, asc(schema.seriesCompleteness.id))
     if (filters?.limit) query.limit(filters.limit)
     if (filters?.offset) query.offset(filters.offset)
 
@@ -103,6 +132,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       scoredCount: number
       ownedCount: number
       seasonCount: number
+      regularEpisodeCount: number
+      specialEpisodeCount: number
+      evidenceStatus: 'measured' | 'estimated' | undefined
     }>()
 
     if (seriesTitles.length > 0) {
@@ -119,11 +151,14 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         sourceId: schema.mediaItems.sourceId,
         libraryId: schema.mediaItems.libraryId,
         totalSize: sql<number>`SUM(COALESCE(${schema.mediaItems.fileSize}, 0))`,
-        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
-        measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
+        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
+        measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
+        genuinelyMeasuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
         scoredCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
         ownedCount: sql<number>`COUNT(${schema.mediaItems.id})`,
         seasonCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} IS NOT NULL AND ${schema.mediaItems.seasonNumber} > 0 THEN ${schema.mediaItems.seasonNumber} END)`,
+        regularEpisodeCount: sql<number>`COUNT(DISTINCT CASE WHEN ${schema.mediaItems.seasonNumber} > 0 AND ${schema.mediaItems.episodeNumber} IS NOT NULL THEN ${schema.mediaItems.seasonNumber} || ':' || ${schema.mediaItems.episodeNumber} END)`,
+        specialEpisodeCount: sql<number>`COUNT(CASE WHEN ${schema.mediaItems.seasonNumber} = 0 THEN 1 END)`,
         weightedEfficiency: sql<number>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN ${schema.qualityScores.efficiencyScore} * COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END) / NULLIF(SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL THEN COALESCE(${schema.mediaItems.fileSize}, 1) ELSE 0 END), 0)`
       })
       .from(schema.mediaItems)
@@ -145,6 +180,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
           scoredCount: Number(agg.scoredCount) || 0,
           ownedCount,
           seasonCount: Number(agg.seasonCount) || 0
+          , regularEpisodeCount: Number(agg.regularEpisodeCount) || 0
+          , specialEpisodeCount: Number(agg.specialEpisodeCount) || 0
+          , evidenceStatus: measuredDebtCount === ownedCount && Number(agg.storageDebtBytes) >= 0
+            ? (Number(agg.genuinelyMeasuredDebtCount) === ownedCount ? 'measured' as const : 'estimated' as const)
+            : undefined
         }
         if (agg.seriesIdentityKey) {
           aggregatedScoresMap.set(`${agg.seriesIdentityKey}:${agg.sourceId}:${agg.libraryId}`, aggData)
@@ -160,6 +200,17 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
       const aggregate = (row.series_identity_key ? aggregatedScoresMap.get(`${row.series_identity_key}:${row.source_id}:${row.library_id}`) : undefined)
         ?? (row.series_title ? aggregatedScoresMap.get(`${row.series_title}:${row.source_id}:${row.library_id}`) : undefined)
+        ?? (row.aggregate_owned_count != null ? {
+          totalSize: Number(row.aggregate_total_size) || 0,
+          storageDebtBytes: row.aggregate_storage_debt_bytes == null ? null : Number(row.aggregate_storage_debt_bytes),
+          weightedEfficiency: row.aggregate_efficiency == null ? null : Math.round(Number(row.aggregate_efficiency)),
+          scoredCount: Number(row.aggregate_scored_count) || 0,
+          ownedCount: Number(row.aggregate_owned_count) || 0,
+          seasonCount: Number(row.aggregate_season_count) || 0,
+          regularEpisodeCount: Number(row.aggregate_regular_episode_count) || 0,
+          specialEpisodeCount: Number(row.aggregate_special_episode_count) || 0,
+          evidenceStatus: undefined,
+        } : undefined)
       const hasEpisodeAggregate = aggregate !== undefined && aggregate.ownedCount > 0
 
       const totalSize = hasEpisodeAggregate ? aggregate.totalSize : (row.total_size ?? 0)
@@ -169,6 +220,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       const weightedEfficiency = hasEpisodeAggregate
         ? aggregate.weightedEfficiency
         : (row.efficiency_score ?? null)
+      const aggregateEvidenceStatus = hasEpisodeAggregate ? aggregate.evidenceStatus : row.evidence_status as TVShowSummary['evidence_status']
       const ownedCount = hasEpisodeAggregate ? aggregate.ownedCount : (row.owned_episodes || 0)
       const totalCount = row.total_episodes || ownedCount
       const scoredCount = hasEpisodeAggregate
@@ -179,14 +231,14 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         ? row.total_seasons
         : ((row.owned_seasons && row.owned_seasons > 0)
           ? row.owned_seasons
-          : (hasEpisodeAggregate && aggregate.seasonCount > 0 ? aggregate.seasonCount : 1))
+          : (hasEpisodeAggregate ? aggregate.seasonCount : 0))
       const ownedSeasons = (row.owned_seasons && row.owned_seasons > 0)
         ? row.owned_seasons
-        : (hasEpisodeAggregate && aggregate.seasonCount > 0 ? aggregate.seasonCount : 1)
+        : (hasEpisodeAggregate ? aggregate.seasonCount : 0)
 
       summaries.push({
         ...row,
-        evidence_status: row.evidence_status as TVShowSummary['evidence_status'],
+        evidence_status: aggregateEvidenceStatus,
         confidence: row.confidence as TVShowSummary['confidence'],
         savings_basis: row.savings_basis as TVShowSummary['savings_basis'],
         poster_url: row.poster_url ?? undefined,
@@ -196,6 +248,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         total_episodes: totalCount,
         owned_seasons: ownedSeasons,
         owned_episodes: ownedCount,
+        owned_regular_seasons: hasEpisodeAggregate ? aggregate.seasonCount : row.owned_seasons,
+        total_regular_seasons: row.total_seasons > 0 ? row.total_seasons : null,
+        owned_regular_episodes: hasEpisodeAggregate ? aggregate.regularEpisodeCount : row.owned_episodes,
+        total_regular_episodes: row.total_episodes > 0 ? row.total_episodes : null,
+        special_episode_count: hasEpisodeAggregate ? aggregate.specialEpisodeCount : 0,
         match_status: getMediaMatchStatus({ locked: row.user_fixed_match === 1, canonicalIds, conflictingEntityIds }),
         total_size: totalSize,
         total_recoverable_bytes: totalRecoverable,
@@ -516,9 +573,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       posterUrl?: string
       episodeThumbUrl?: string
       seasonPosterUrl?: string
-      seriesTmdbId?: string
-      tmdbId?: string
-      imdbId?: string
+      seriesTmdbId?: string | null
+      tmdbId?: string | null
+      imdbId?: string | null
       originalLanguage?: string
     }
   ): Promise<void> {

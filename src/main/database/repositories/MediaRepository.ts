@@ -725,9 +725,9 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       posterUrl?: string
       episodeThumbUrl?: string
       seasonPosterUrl?: string
-      seriesTmdbId?: string
-      tmdbId?: string
-      imdbId?: string
+      seriesTmdbId?: string | null
+      tmdbId?: string | null
+      imdbId?: string | null
       originalLanguage?: string
     }
   ): Promise<void> {
@@ -756,9 +756,9 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         posterUrl?: string
         episodeThumbUrl?: string
         seasonPosterUrl?: string
-        seriesTmdbId?: string
-        tmdbId?: string
-        imdbId?: string
+        seriesTmdbId?: string | null
+        tmdbId?: string | null
+        imdbId?: string | null
         originalLanguage?: string
       }
     }>

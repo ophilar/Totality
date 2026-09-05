@@ -93,7 +93,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
+          {show.owned_regular_seasons == null ? `${seasonCount} ${seasonCount === 1 ? 'Season' : 'Seasons'} • ${totalEpisodes} Episodes` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
         {completenessData && (
