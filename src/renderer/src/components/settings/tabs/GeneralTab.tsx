@@ -68,18 +68,18 @@ interface MediaSource {
 }
 
 import { ProviderType } from '@main/types/database'
-import { PROVIDERS as SHARED_PROVIDERS } from '@main/constants/providers'
+import { PROVIDERS } from '@main/constants/providers'
 
 const MONITORING_PROVIDERS: Array<{
   key: string
   name: string
   method: 'polling' | 'file-watching'
 }> = [
-  { key: ProviderType.Plex, name: SHARED_PROVIDERS[ProviderType.Plex].name, method: 'polling' },
-  { key: ProviderType.Jellyfin, name: SHARED_PROVIDERS[ProviderType.Jellyfin].name, method: 'polling' },
-  { key: ProviderType.Emby, name: SHARED_PROVIDERS[ProviderType.Emby].name, method: 'polling' },
-  { key: ProviderType.Kodi, name: SHARED_PROVIDERS[ProviderType.Kodi].name, method: 'polling' },
-  { key: ProviderType.Local, name: SHARED_PROVIDERS[ProviderType.Local].name, method: 'file-watching' },
+  { key: ProviderType.Plex, name: PROVIDERS[ProviderType.Plex].name, method: 'polling' },
+  { key: ProviderType.Jellyfin, name: PROVIDERS[ProviderType.Jellyfin].name, method: 'polling' },
+  { key: ProviderType.Emby, name: PROVIDERS[ProviderType.Emby].name, method: 'polling' },
+  { key: ProviderType.Kodi, name: PROVIDERS[ProviderType.Kodi].name, method: 'polling' },
+  { key: ProviderType.Local, name: PROVIDERS[ProviderType.Local].name, method: 'file-watching' },
 ]
 
 const INTERVAL_OPTIONS = [
