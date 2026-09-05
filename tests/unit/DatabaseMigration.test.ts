@@ -85,4 +85,17 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_recipe:unversioned')).toBe(JSON.stringify(unversioned))
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
+
+  it('safely handles incremental column migration without SQL injection', async () => {
+    await runMigrations(dbService.db)
+
+    const columnsBefore = await dbService.db.execute('PRAGMA table_info(media_items)')
+    const colCountBefore = columnsBefore.rows.length
+
+    await runMigrations(dbService.db)
+
+    const columnsAfter = await dbService.db.execute('PRAGMA table_info(media_items)')
+    expect(columnsAfter.rows.length).toBe(colCountBefore)
+    expect(columnsAfter.rows.some(r => r.name === 'deep_analysis_at')).toBe(true)
+  })
 })
