@@ -65,5 +65,10 @@ describe('TVShowRepository identity joins', () => {
     expect(summaries.map(show => show.series_identity_key).sort()).toEqual(['tmdb:101', 'tmdb:202'])
     expect(summaries.map(show => show.total_size).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([1_000, 2_000])
     expect(await db.tvShows.count({ sourceId: 'src-identities', libraryId: 'tv' })).toBe(2)
+
+    const episodes101 = await db.tvShows.getEpisodes('Shared Title', 'src-identities', 'tmdb:101', 'tv')
+    expect(episodes101).toHaveLength(1)
+    expect(episodes101[0].series_identity_key).toBe('tmdb:101')
+    expect(episodes101[0].file_size).toBe(1_000)
   })
 })
