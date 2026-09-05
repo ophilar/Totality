@@ -49,7 +49,6 @@ describe('buildOptimizationDecision', () => {
       durationSeconds: 8,
       videoStorageDebtBytes: 0,
       audioTranscodeSavingsBytes: null,
-      videoStorageDebtBytes: 2_000,
       audioTracks: [
         { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrate: 500, isDefault: true, hasObjectAudio: true, reliableTag: true },
         { index: 2, language: 'fr', title: 'Commentary', codec: 'aac', channels: 2, bitrate: 100, isDefault: false, hasObjectAudio: false, reliableTag: true },
@@ -65,7 +64,7 @@ describe('buildOptimizationDecision', () => {
     const result = buildOptimizationDecision({
       originalLanguage: 'en',
       fileSize: 50_000_000,
-      durationSeconds: 3600, // 1 hour
+      durationSeconds: 3600,
       videoStorageDebtBytes: 0,
       audioTranscodeSavingsBytes: null,
       audioTracks: [
@@ -124,5 +123,62 @@ describe('buildOptimizationDecision', () => {
     expect(result.videoTranscode.evidence_status).toBe('estimated')
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(12_000_000)
     expect(result.videoTranscode.savings_basis).toBe('video_sample_encode')
+  })
+
+  it('uses video transcode as the primary action when video is the only recoverable mechanism', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 50_000_000,
+      durationSeconds: 3600,
+      videoStorageDebtBytes: 12_000_000,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [],
+    })
+
+    expect(result.primaryAction).toBe('transcode-video')
+  })
+
+  it('excludes removable tracks from audio-transcode savings', () => {
+    const retainedTrack = { index: 1, language: 'en', codec: 'truehd', channels: 8, bitrate: 4800, isDefault: true, hasObjectAudio: false, reliableTag: true }
+    const removableTrack = { index: 2, language: 'fr', codec: 'truehd', channels: 8, bitrate: 4800, isDefault: false, hasObjectAudio: false, reliableTag: true }
+
+    const retainedOnly = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 50_000_000,
+      durationSeconds: 3600,
+      videoStorageDebtBytes: 0,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [retainedTrack],
+    })
+    const mixed = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 100_000_000,
+      durationSeconds: 3600,
+      videoStorageDebtBytes: 0,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [retainedTrack, removableTrack],
+    })
+
+    expect(mixed.trackRemoval.removableTrackIndexes).toEqual([2])
+    expect(mixed.audioTranscode.estimatedSavingsBytes).toBe(retainedOnly.audioTranscode.estimatedSavingsBytes)
+  })
+
+  it('derives video debt as the residual of legacy combined recoverable bytes', () => {
+    const result = buildOptimizationDecision({
+      originalLanguage: 'en',
+      fileSize: 1_000_000_000,
+      durationSeconds: 1_000,
+      videoStorageDebtBytes: null,
+      legacyTotalRecoverableBytes: 200_000_000,
+      audioTranscodeSavingsBytes: null,
+      audioTracks: [
+        { index: 1, language: 'en', codec: 'aac', channels: 2, bitrate: 192, isDefault: true, hasObjectAudio: false, reliableTag: true },
+        { index: 2, language: 'fr', codec: 'aac', channels: 2, bitrate: 800, isDefault: false, hasObjectAudio: false, reliableTag: true },
+      ],
+    })
+
+    expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000_000)
+    expect(result.videoTranscode.estimatedSavingsBytes).toBe(100_000_000)
+    expect(result.primaryAction).toBe('remove-audio-tracks')
   })
 })

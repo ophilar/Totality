@@ -1,4 +1,5 @@
 import { LanguageDecisionService } from './LanguageDecisionService'
+import { buildOptimizationSavingsBreakdown, type OptimizationSavingsCoverage } from './OptimizationSavingsService'
 
 export interface TrackStreamInfo {
   index?: number
@@ -56,6 +57,13 @@ export interface TrackDecision {
 
 export interface EpisodeOptimizationMetric {
   sizeBytes: number | null | undefined
+  /** Canonical video-only storage debt. */
+  videoDebtBytes?: number | null | undefined
+  /**
+   * Legacy combined recovery estimate. Historically this may contain both
+   * video bloat and removable-audio savings, so dry-run must not add fresh
+   * audio pruning to it a second time.
+   */
   recoverableBytes?: number | null | undefined
   efficiency?: number | null | undefined
   audioStreams?: TrackStreamInfo[]
@@ -72,16 +80,21 @@ export interface ShowOptimizationMetrics {
 
 export interface ShowDryRunResult {
   totalBytes: number
+  /** Removable-audio savings. Kept for compatibility with existing dry-run consumers. */
   recoverableBytes: number
+  audioPruningBytes: number
+  totalRecoverableBytes: number
   percentageSavings: number
+  coverage: OptimizationSavingsCoverage
   totalEpisodes: number
   scoredEpisodes: number
   unscoredEpisodes: number
   weightedEfficiency: number | null
   trackDecisions: TrackDecision[]
-  videoDebtBytes?: number
+  videoDebtBytes: number
   audioTranscodeSavingsBytes?: number
-  totalCombinedSavingsBytes?: number
+  /** Compatibility alias for totalRecoverableBytes. */
+  totalCombinedSavingsBytes: number
 }
 
 /**
@@ -95,7 +108,6 @@ export function calculateTrackByteSize(
   durationSeconds?: number | null,
   containerContext?: TrackContainerContext | null
 ): number {
-  // 1. Tag-based byte size
   const tags = stream.tags
   if (tags) {
     const rawTagBytes = tags.NUMBER_OF_BYTES ?? tags['NUMBER_OF_BYTES-eng'] ?? tags['number_of_bytes']
@@ -107,7 +119,6 @@ export function calculateTrackByteSize(
     }
   }
 
-  // 2. Bitrate * duration / 8
   const rawBitrate = stream.bit_rate ?? stream.bitrate
   const duration = durationSeconds != null && durationSeconds > 0 ? durationSeconds : null
   if (rawBitrate != null && duration != null) {
@@ -117,7 +128,6 @@ export function calculateTrackByteSize(
     }
   }
 
-  // 3. Container total bitrate and audio channels proportional slice
   if (containerContext?.totalBitrate != null && duration != null && stream.channels != null && stream.channels > 0) {
     const totalStreams = containerContext.totalStreams && containerContext.totalStreams > 0 ? containerContext.totalStreams : 1
     return Math.round(((containerContext.totalBitrate * duration) / 8) * (stream.channels / totalStreams))
@@ -136,7 +146,7 @@ export function aggregateShowOptimizationMetrics(episodes: EpisodeOptimizationMe
   for (const episode of episodes) {
     const size = Math.max(0, episode.sizeBytes ?? 0)
     totalSize += size
-    totalRecoverableBytes += Math.max(0, episode.recoverableBytes ?? 0)
+    totalRecoverableBytes += Math.max(0, episode.recoverableBytes ?? episode.videoDebtBytes ?? 0)
     if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
       weightedNumerator += episode.efficiency * size
       totalEfficiency += episode.efficiency
@@ -156,8 +166,10 @@ export function calculateDryRunMetrics(
 ): ShowDryRunResult {
   const languageService = new LanguageDecisionService()
   let totalBytes = 0
-  let totalRecoverableBytes = 0
+  let audioPruningBytes = 0
   let videoDebtBytes = 0
+  let hasVideoDebtEvidence = false
+  let hasAudioPruningEvidence = false
   let scoredSize = 0
   let weightedNumerator = 0
   let totalEfficiency = 0
@@ -168,21 +180,16 @@ export function calculateDryRunMetrics(
     const size = Math.max(0, episode.sizeBytes ?? 0)
     totalBytes += size
 
-    if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
-      videoDebtBytes += Math.max(0, episode.recoverableBytes)
+    if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
+      scoredEpisodeCount++
+      weightedNumerator += episode.efficiency * size
+      totalEfficiency += episode.efficiency
+      scoredSize += size
     }
 
-    const hasAudioStreams = Boolean(episode.audioStreams && episode.audioStreams.length > 0)
-    let episodeRecoverable = 0
-
-    if (hasAudioStreams && episode.audioStreams) {
-      scoredEpisodeCount++
-      if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
-        weightedNumerator += episode.efficiency * size
-        totalEfficiency += episode.efficiency
-        scoredSize += size
-      }
-
+    let episodeAudioPruningBytes = 0
+    if (episode.audioStreams) {
+      hasAudioPruningEvidence = true
       for (const stream of episode.audioStreams) {
         const streamIndex = stream.index ?? 0
         const codec = stream.codec ?? stream.codec_name ?? 'unknown'
@@ -192,7 +199,7 @@ export function calculateDryRunMetrics(
 
         const decision = languageService.decideAudioStream(stream, originalLanguage)
         if (decision.action === 'remove') {
-          episodeRecoverable += estimatedBytes
+          episodeAudioPruningBytes += estimatedBytes
         }
 
         trackDecisions.push({
@@ -210,14 +217,18 @@ export function calculateDryRunMetrics(
           reason: decision.reason,
         })
       }
-      totalRecoverableBytes += episodeRecoverable
-    } else {
-      if (episode.efficiency != null && Number.isFinite(episode.efficiency)) {
-        scoredEpisodeCount++
-        weightedNumerator += episode.efficiency * size
-        totalEfficiency += episode.efficiency
-        scoredSize += size
-      }
+    }
+    audioPruningBytes += episodeAudioPruningBytes
+
+    if (episode.videoDebtBytes != null && Number.isFinite(episode.videoDebtBytes)) {
+      hasVideoDebtEvidence = true
+      videoDebtBytes += Math.max(0, episode.videoDebtBytes)
+    } else if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
+      hasVideoDebtEvidence = true
+      // Legacy storage_debt_bytes may already include removable audio. The best
+      // compatibility split is its nonnegative residual after fresh audio pruning;
+      // this preserves the legacy total without counting the same audio twice.
+      videoDebtBytes += Math.max(0, episode.recoverableBytes - episodeAudioPruningBytes)
     }
   }
 
@@ -225,19 +236,26 @@ export function calculateDryRunMetrics(
   const weightedEfficiency = scoredEpisodeCount > 0
     ? (scoredSize > 0 ? weightedNumerator / scoredSize : totalEfficiency / scoredEpisodeCount)
     : null
-  const percentageSavings = totalBytes > 0 ? (totalRecoverableBytes / totalBytes) * 100 : 0
-  const totalCombinedSavingsBytes = totalRecoverableBytes + videoDebtBytes
+  const savings = buildOptimizationSavingsBreakdown({
+    totalBytes,
+    videoDebtBytes: hasVideoDebtEvidence ? videoDebtBytes : null,
+    audioPruningBytes: hasAudioPruningEvidence ? audioPruningBytes : null,
+    audioTranscodeBytes: null,
+  })
 
   return {
     totalBytes,
-    recoverableBytes: totalRecoverableBytes,
-    percentageSavings,
+    recoverableBytes: audioPruningBytes,
+    audioPruningBytes,
+    totalRecoverableBytes: savings.totalRecoverableBytes,
+    percentageSavings: savings.percentageSavings ?? 0,
+    coverage: savings.coverage,
     totalEpisodes: episodes.length,
     scoredEpisodes: scoredEpisodeCount,
     unscoredEpisodes: unscoredEpisodeCount,
     weightedEfficiency,
     trackDecisions,
     videoDebtBytes,
-    totalCombinedSavingsBytes,
+    totalCombinedSavingsBytes: savings.totalRecoverableBytes,
   }
 }

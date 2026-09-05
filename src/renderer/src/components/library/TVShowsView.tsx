@@ -20,6 +20,8 @@ const formatMB = (bytes?: number | null) => {
   return `${mb.toLocaleString()} MB`
 }
 
+const showIdentityKey = (show: TVShowSummary) => `${show.series_identity_key ?? show.series_title}:${show.source_id ?? ''}:${show.library_id ?? ''}`
+
 export function TVShowsView({
   shows,
   sortBy,
@@ -102,7 +104,12 @@ export function TVShowsView({
 
   const handleOptimizationDryRun = useCallback(async (show: TVShowSummary) => {
     if (onOptimizationDryRun) return onOptimizationDryRun(show)
-    const report = await window.electronAPI.optimizationDryRun(show.series_title, show.source_id)
+    const report = await window.electronAPI.optimizationDryRun(
+      show.series_title,
+      show.source_id,
+      show.series_identity_key ?? undefined,
+      show.library_id
+    )
     setDryRunReport({ show, report })
   }, [onOptimizationDryRun])
 
@@ -150,7 +157,7 @@ export function TVShowsView({
           }
           renderGridItem={(show) => (
             <ShowCard
-              key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
+              key={showIdentityKey(show)} show={show} onClick={() => onSelectShow(show.series_title)}
               completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
               onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
@@ -162,7 +169,7 @@ export function TVShowsView({
           )}
           renderListItem={(show) => (
             <ShowListItem
-              key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
+              key={showIdentityKey(show)} show={show} onClick={() => onSelectShow(show.series_title)}
               completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
               onAnalyzeSeries={async () => onAnalyzeSeries(show.series_title)}
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
@@ -205,13 +212,13 @@ export function TVShowsView({
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Estimated Recoverable</span>
                   <span className="text-base font-bold text-emerald-400">
-                    {formatMB(dryRunReport.report.totalCombinedSavingsBytes || dryRunReport.report.recoverableBytes)}
+                    {formatMB(dryRunReport.report.totalRecoverableBytes ?? dryRunReport.report.totalCombinedSavingsBytes ?? dryRunReport.report.recoverableBytes)}
                     {dryRunReport.report.percentageSavings > 0 && ` (${dryRunReport.report.percentageSavings.toFixed(1)}%)`}
                   </span>
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Audio Track Pruning</span>
-                  <span className="font-semibold">{formatMB(dryRunReport.report.recoverableBytes)}</span>
+                  <span className="font-semibold">{formatMB(dryRunReport.report.audioPruningBytes ?? dryRunReport.report.recoverableBytes)}</span>
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Video Transcode Debt</span>
@@ -223,6 +230,9 @@ export function TVShowsView({
                     {dryRunReport.report.scoredEpisodes} / {dryRunReport.report.totalEpisodes} scored
                     {dryRunReport.report.unscoredEpisodes > 0 && ` (${dryRunReport.report.unscoredEpisodes} unscored)`}
                   </span>
+                  {'coverage' in dryRunReport.report && dryRunReport.report.coverage && (
+                    <span className="block text-xs text-muted-foreground capitalize">Recovery evidence: {dryRunReport.report.coverage}</span>
+                  )}
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Weighted Efficiency</span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getSortOptions, nextSortDirection } from '@/components/library/sortDefinitions'
+import { getSortOptions, nextSortDirection, normalizeSortForType } from '@/components/library/sortDefinitions'
 import { dashboardSortOptions } from '@/components/dashboard/sortDefinitions'
 
 describe('library sort definitions', () => {
@@ -20,6 +20,11 @@ describe('library sort definitions', () => {
       { key: 'recoverable', label: 'Recoverable' },
       { key: 'weighted_efficiency', label: 'Weighted efficiency' },
     ])
+  })
+
+  it('resets unsupported cross-view sort state to title ascending', () => {
+    expect(normalizeSortForType('tv', 'year', 'desc')).toEqual({ sortBy: 'title', sortOrder: 'asc' })
+    expect(normalizeSortForType('tv', 'recoverable', 'desc')).toEqual({ sortBy: 'recoverable', sortOrder: 'desc' })
   })
 
   it('defines dashboard options once per dashboard column', () => {

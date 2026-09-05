@@ -100,7 +100,18 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       aggregate_measured_debt_count: episodeAggregates.measuredDebtCount
     })
     .from(schema.seriesCompleteness)
-    .leftJoin(episodeAggregates, sql`${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle} AND ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId} AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}`)
+    .leftJoin(episodeAggregates, sql`
+      ${episodeAggregates.sourceId} IS ${schema.seriesCompleteness.sourceId}
+      AND ${episodeAggregates.libraryId} IS ${schema.seriesCompleteness.libraryId}
+      AND (
+        (${schema.seriesCompleteness.seriesIdentityKey} IS NOT NULL
+          AND ${episodeAggregates.seriesIdentityKey} IS ${schema.seriesCompleteness.seriesIdentityKey})
+        OR
+        (${schema.seriesCompleteness.seriesIdentityKey} IS NULL
+          AND ${episodeAggregates.seriesIdentityKey} IS NULL
+          AND ${episodeAggregates.seriesTitle} IS ${schema.seriesCompleteness.seriesTitle})
+      )
+    `)
 
     if (conditions.length > 0) query.where(and(...conditions))
     query.orderBy(sortOrder, asc(schema.seriesCompleteness.id))
@@ -188,8 +199,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         }
         if (agg.seriesIdentityKey) {
           aggregatedScoresMap.set(`${agg.seriesIdentityKey}:${agg.sourceId}:${agg.libraryId}`, aggData)
-        }
-        if (agg.seriesTitle) {
+        } else {
           aggregatedScoresMap.set(`${agg.seriesTitle}:${agg.sourceId}:${agg.libraryId}`, aggData)
         }
       }
@@ -198,8 +208,9 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     for (const row of rows) {
       const canonicalIds = [row.tmdb_id, row.tvdb_id].filter((value): value is string => Boolean(value))
       const conflictingEntityIds = row.id ? (conflictMap.get(row.id) || []) : []
-      const aggregate = (row.series_identity_key ? aggregatedScoresMap.get(`${row.series_identity_key}:${row.source_id}:${row.library_id}`) : undefined)
-        ?? (row.series_title ? aggregatedScoresMap.get(`${row.series_title}:${row.source_id}:${row.library_id}`) : undefined)
+      const aggregate = (row.series_identity_key
+        ? aggregatedScoresMap.get(`${row.series_identity_key}:${row.source_id}:${row.library_id}`)
+        : (row.series_title ? aggregatedScoresMap.get(`${row.series_title}:${row.source_id}:${row.library_id}`) : undefined))
         ?? (row.aggregate_owned_count != null ? {
           totalSize: Number(row.aggregate_total_size) || 0,
           storageDebtBytes: row.aggregate_storage_debt_bytes == null ? null : Number(row.aggregate_storage_debt_bytes),
