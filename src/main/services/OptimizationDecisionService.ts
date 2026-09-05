@@ -82,7 +82,14 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     savings_basis: trackRemovalEvidenceStatus === 'measured' ? 'audio_stream_removal' : 'insufficient_data',
     evidenceSources: languageDecision.evidenceSources,
   }
-  const audioTracksEligibleForTranscode = input.audioTracks.filter(track => !track.hasObjectAudio && !track.isCommentary && !track.isAudioDescription && !track.isAccessibility)
+  const retainedTrackIndexes = new Set(languageDecision.retainedTrackIndexes)
+  const audioTracksEligibleForTranscode = input.audioTracks.filter(track =>
+    retainedTrackIndexes.has(track.index)
+    && !track.hasObjectAudio
+    && !track.isCommentary
+    && !track.isAudioDescription
+    && !track.isAccessibility
+  )
   const hasMeasuredAudioEvidence = input.durationSeconds != null && input.durationSeconds > 0 && audioTracksEligibleForTranscode.length > 0 &&
     audioTracksEligibleForTranscode.every(track => track.codec.trim().length > 0 && Number.isFinite(track.channels) && track.channels > 0 && Number.isFinite(track.bitrate) && track.bitrate != null && track.bitrate > 0)
   const computedAudioSavings = hasMeasuredAudioEvidence
@@ -105,7 +112,7 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   const audioTranscode: OptimizationDecisionMechanism = {
     status: audioSavings != null && audioSavings > 0 ? 'executable' : 'unavailable',
     estimatedSavingsBytes: audioSavings,
-    reason: !hasMeasuredAudioEvidence ? 'Measured codec, channel, bitrate, and duration evidence is required for audio transcoding' : audioSavings != null && audioSavings > 0 ? 'Measured audio streams exceed the configured target bitrate' : 'Measured audio streams are already efficient',
+    reason: !hasMeasuredAudioEvidence ? 'Measured codec, channel, bitrate, and duration evidence is required for audio transcoding' : audioSavings != null && audioSavings > 0 ? 'Measured retained audio streams exceed the configured target bitrate' : 'Measured retained audio streams are already efficient',
     evidence_status: hasMeasuredAudioEvidence ? 'estimated' : 'insufficient',
     confidence: hasMeasuredAudioEvidence ? 'medium' : 'none',
     savings_basis: hasMeasuredAudioEvidence ? 'audio_transcode_model' : 'insufficient_data',
@@ -119,6 +126,14 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
     confidence: videoSavings == null ? 'none' : 'medium',
     savings_basis: estimatedVideoSavings != null ? 'video_sample_encode' : 'insufficient_data',
   }
-  const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required' ? 'review-language' : trackRemovalStatus === 'executable' ? 'remove-audio-tracks' : audioTranscode.status === 'executable' ? 'transcode-audio' : 'no-action'
+  const primaryAction: OptimizationPrimaryAction = trackRemovalStatus === 'review-required'
+    ? 'review-language'
+    : trackRemovalStatus === 'executable'
+      ? 'remove-audio-tracks'
+      : audioTranscode.status === 'executable'
+        ? 'transcode-audio'
+        : videoTranscode.status === 'review-required'
+          ? 'transcode-video'
+          : 'no-action'
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }
 }
