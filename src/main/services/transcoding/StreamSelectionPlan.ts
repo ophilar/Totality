@@ -32,15 +32,15 @@ export type StreamSelectionPolicy =
     }
 
 import { normalizeLanguage } from '@main/constants/languages'
+import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
 export { normalizeLanguage }
 
 function resolvePolicyIndexes(analysis: FileAnalysisResult, policy: StreamSelectionPolicy): number[] {
   if (policy.audio === 'all') return analysis.audioTracks.map(track => track.index)
   const original = normalizeLanguage(policy.originalLanguage)
   if (!original) throw new Error('Original language is required for original-and-protected audio policy')
-  const protectedTitle = /commentary|comment|audio description|descriptive|accessib|narration/i
   const result = analysis.audioTracks.filter(track => {
-    const protectedTrack = track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility || protectedTitle.test(track.title || '')
+    const protectedTrack = isProtectedAudioTrack(track)
     const language = normalizeLanguage(track.language)
     if (!language && !protectedTrack) throw new Error(`Audio stream ${track.index} has no reliable language tag`)
     return protectedTrack || language === original
