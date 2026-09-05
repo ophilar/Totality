@@ -1,4 +1,5 @@
 import { LanguageDecisionService } from './LanguageDecisionService'
+import { buildOptimizationSavingsBreakdown, type OptimizationSavingsCoverage } from './OptimizationSavingsService'
 
 export interface TrackStreamInfo {
   index?: number
@@ -84,6 +85,7 @@ export interface ShowDryRunResult {
   audioPruningBytes: number
   totalRecoverableBytes: number
   percentageSavings: number
+  coverage: OptimizationSavingsCoverage
   totalEpisodes: number
   scoredEpisodes: number
   unscoredEpisodes: number
@@ -166,6 +168,8 @@ export function calculateDryRunMetrics(
   let totalBytes = 0
   let audioPruningBytes = 0
   let videoDebtBytes = 0
+  let hasVideoDebtEvidence = false
+  let hasAudioPruningEvidence = false
   let scoredSize = 0
   let weightedNumerator = 0
   let totalEfficiency = 0
@@ -184,7 +188,8 @@ export function calculateDryRunMetrics(
     }
 
     let episodeAudioPruningBytes = 0
-    if (episode.audioStreams && episode.audioStreams.length > 0) {
+    if (episode.audioStreams) {
+      hasAudioPruningEvidence = true
       for (const stream of episode.audioStreams) {
         const streamIndex = stream.index ?? 0
         const codec = stream.codec ?? stream.codec_name ?? 'unknown'
@@ -216,8 +221,10 @@ export function calculateDryRunMetrics(
     audioPruningBytes += episodeAudioPruningBytes
 
     if (episode.videoDebtBytes != null && Number.isFinite(episode.videoDebtBytes)) {
+      hasVideoDebtEvidence = true
       videoDebtBytes += Math.max(0, episode.videoDebtBytes)
     } else if (episode.recoverableBytes != null && Number.isFinite(episode.recoverableBytes)) {
+      hasVideoDebtEvidence = true
       // Legacy storage_debt_bytes may already include removable audio. The best
       // compatibility split is its nonnegative residual after fresh audio pruning;
       // this preserves the legacy total without counting the same audio twice.
@@ -229,21 +236,26 @@ export function calculateDryRunMetrics(
   const weightedEfficiency = scoredEpisodeCount > 0
     ? (scoredSize > 0 ? weightedNumerator / scoredSize : totalEfficiency / scoredEpisodeCount)
     : null
-  const totalRecoverableBytes = audioPruningBytes + videoDebtBytes
-  const percentageSavings = totalBytes > 0 ? (totalRecoverableBytes / totalBytes) * 100 : 0
+  const savings = buildOptimizationSavingsBreakdown({
+    totalBytes,
+    videoDebtBytes: hasVideoDebtEvidence ? videoDebtBytes : null,
+    audioPruningBytes: hasAudioPruningEvidence ? audioPruningBytes : null,
+    audioTranscodeBytes: null,
+  })
 
   return {
     totalBytes,
     recoverableBytes: audioPruningBytes,
     audioPruningBytes,
-    totalRecoverableBytes,
-    percentageSavings,
+    totalRecoverableBytes: savings.totalRecoverableBytes,
+    percentageSavings: savings.percentageSavings ?? 0,
+    coverage: savings.coverage,
     totalEpisodes: episodes.length,
     scoredEpisodes: scoredEpisodeCount,
     unscoredEpisodes: unscoredEpisodeCount,
     weightedEfficiency,
     trackDecisions,
     videoDebtBytes,
-    totalCombinedSavingsBytes: totalRecoverableBytes,
+    totalCombinedSavingsBytes: savings.totalRecoverableBytes,
   }
 }
