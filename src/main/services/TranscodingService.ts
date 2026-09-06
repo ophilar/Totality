@@ -186,6 +186,8 @@ export class TranscodingService {
 
   async preflightShowTranscode(request: ShowTranscodeRequest): Promise<ShowTranscodePreflight> {
     if (!request.seriesTitle.trim() || !request.sourceId.trim()) throw new Error('Show title and source ID are required')
+    if (!request.seriesIdentityKey?.trim()) throw new Error('TV series identity is required')
+    if (!request.libraryId?.trim()) throw new Error('TV series library is required')
     const episodes = await getDatabase().tvShows.getEpisodes(request.seriesTitle, request.sourceId, request.seriesIdentityKey, request.libraryId)
     if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -1004,8 +1006,8 @@ export class TranscodingService {
     return approved
   }
 
-  async listShowQuarantine(seriesTitle: string, sourceId: string, libraryId?: string): Promise<QuarantinedShowFile[]> {
-    const episodes = await getDatabase().tvShows.getEpisodes(seriesTitle, sourceId, undefined, libraryId)
+  async listShowQuarantine(seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): Promise<QuarantinedShowFile[]> {
+    const episodes = await getDatabase().tvShows.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId)
     const files: QuarantinedShowFile[] = []
     for (const episode of episodes) {
       if (!episode.id || !episode.file_path) continue
@@ -1022,8 +1024,8 @@ export class TranscodingService {
     return files
   }
 
-  async purgeShowQuarantine(seriesTitle: string, sourceId: string, libraryId?: string): Promise<{ purged: number }> {
-    const files = await this.listShowQuarantine(seriesTitle, sourceId, libraryId)
+  async purgeShowQuarantine(seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): Promise<{ purged: number }> {
+    const files = await this.listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId)
     const journals = await getDatabase().config.getSettingsByPrefix('transcoding.activation.')
     const journalPaths = new Set(Object.values(journals).flatMap(value => {
       const journal = JSON.parse(value) as { quarantinePath?: string }
