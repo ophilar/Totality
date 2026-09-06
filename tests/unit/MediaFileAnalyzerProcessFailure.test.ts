@@ -1,22 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
+import * as os from 'node:os'
+import * as path from 'node:path'
 
 vi.unmock('child_process')
 
 import { MediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 
-type AnalyzerProcessState = {
-  ffprobePath: string | null
-  ffprobeChecked: boolean
-}
-
 describe('MediaFileAnalyzer process failures', () => {
-  it.skipIf(process.platform === 'win32')('propagates a real nonzero FFprobe process exit', async () => {
+  it('propagates a nonzero exit from the discovered FFprobe process', async () => {
     const analyzer = new MediaFileAnalyzer()
-    const state = analyzer as unknown as AnalyzerProcessState
-    state.ffprobePath = '/usr/bin/false'
-    state.ffprobeChecked = true
+    expect(await analyzer.isAvailable()).toBe(true)
 
-    await expect(analyzer.deepAnalyzeFile('/tmp/nonexistent-media-file.mkv', { scanBitrate: true }))
-      .rejects.toThrow('FFprobe exited with code 1')
+    const missingFile = path.join(os.tmpdir(), 'totality-media-analyzer-process-failure', 'missing.mkv')
+    await expect(analyzer.deepAnalyzeFile(missingFile, { scanBitrate: true }))
+      .rejects.toThrow(/FFprobe exited with code [1-9]\d*/)
   })
 })
