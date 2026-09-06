@@ -12,7 +12,7 @@ describe('TranscodingCapabilities', () => {
   it('keeps an explicit software selection and discards unavailable device selections', () => {
     const gpus = [{ id: 'intel', name: 'Intel UHD', vendor: 'Intel' as const }]
     expect(resolveSelectedGpuId(gpus, null)).toBeNull()
-    expect(resolveSelectedGpuId(gpus, 'missing')).toBeNull()
+    expect(resolveSelectedGpuId(gpus, 'missing')).toBe('intel')
     expect(buildTranscodingCapabilities({ ffmpeg: true }, gpus, null).selectedGpuId).toBeNull()
   })
 

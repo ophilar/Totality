@@ -70,6 +70,10 @@ export class QualityAnalyzer {
   private musicThresholds = { ...DEFAULT_MUSIC_THRESHOLDS }
   private videoWeight = APP_CONFIG.quality.videoWeight
 
+  constructor() {
+    // Legacy constructor with custom thresholds removed
+  }
+
   /**
    * Load all configurable settings from database (cached after first load)
    * Optimized: Uses single batch query instead of multiple individual calls
@@ -167,14 +171,14 @@ export class QualityAnalyzer {
       }
 
       // Load video/audio weight
-      const rawWeight = getNum('quality_video_weight', APP_CONFIG.quality.videoWeight * 100)
+      const rawWeight = getNum('quality_video_weight', 70)
       this.videoWeight = Math.max(0, Math.min(100, rawWeight)) / 100
 
       // Load efficiency trash threshold
-      this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', APP_CONFIG.quality.minEfficiencyScore)
+      this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', 60)
 
       // Load video-only efficiency allowance.
-      this.hdrOverheadMultiplier = getNum('quality_efficiency_hdr_overhead', APP_CONFIG.quality.hdrOverheadMultiplier)
+      this.hdrOverheadMultiplier = getNum('quality_efficiency_hdr_overhead', 1.10)
 
       // Load music quality thresholds
       this.musicThresholds = {
@@ -201,38 +205,40 @@ export class QualityAnalyzer {
   /**
    * Get codec efficiency multiplier
    */
-  private getCodecEfficiency(codec: string): number | null {
+  private getCodecEfficiency(codec: string): number {
     const codecLower = codec.toLowerCase()
     for (const [key, efficiency] of Object.entries(this.codecEfficiency)) {
       if (codecLower.includes(key)) return efficiency
     }
-    return null
+    return 1.0
   }
 
   /**
    * Calculate total bitrate of audio tracks that are dubs (not original language).
    */
-  private calculateDubBitrate(item: MediaItem): number | null {
-    if (!item.audio_tracks || !item.original_language) return null
+  private calculateDubBitrate(item: MediaItem): number {
+    if (!item.audio_tracks || !item.original_language) return 0
 
     try {
-      const tracks: unknown = JSON.parse(item.audio_tracks)
-      if (!Array.isArray(tracks)) return null
+      const tracks: AudioTrack[] = JSON.parse(item.audio_tracks)
+      if (!Array.isArray(tracks)) return 0
 
       const origLang = item.original_language.toLowerCase()
       let dubBitrate = 0
 
-      for (const track of tracks as AudioTrack[]) {
-        if (!track.language) continue
-        const trackLang = track.language.toLowerCase()
-        if (trackLang === origLang || trackLang === 'und' || trackLang === 'unk') continue
-        if (!Number.isFinite(track.bitrate) || track.bitrate <= 0) return null
-        dubBitrate += track.bitrate
+      for (const track of tracks) {
+        if (track.language) {
+          const trackLang = track.language.toLowerCase()
+          // If language is known and NOT the original language, it's a dub
+          if (trackLang !== origLang && trackLang !== 'und' && trackLang !== 'unk') {
+            dubBitrate += track.bitrate || 0
+          }
+        }
       }
 
       return dubBitrate
     } catch {
-      return null
+      return 0
     }
   }
 
@@ -240,8 +246,9 @@ export class QualityAnalyzer {
    * Detect lossless audio codec
    */
   private isLosslessAudio(codec: string): boolean {
+    const lossless = ['truehd', 'dts-hd ma', 'dtshd_ma', 'flac', 'alac', 'pcm']
     const codecLower = codec.toLowerCase()
-    return APP_CONFIG.audioCodecs.lossless.some(losslessCodec => codecLower.includes(losslessCodec))
+    return lossless.some(lc => codecLower.includes(lc))
   }
 
   /**
@@ -250,8 +257,8 @@ export class QualityAnalyzer {
    */
   private calculateAudioTrackQualityScore(track: AudioTrack): number {
     let score = 0
-    const channels = track.channels ?? 0
-    const bitrate = track.bitrate ?? 0
+    const channels = track.channels || 2
+    const bitrate = track.bitrate || 0
     const isLossless = this.isLosslessAudio(track.codec)
 
     // Sanity check: lossy tracks with suspiciously low bitrate per channel are likely
@@ -296,7 +303,7 @@ export class QualityAnalyzer {
 
   /**
    * Find the best audio track from media data.
-   * Returns the track with highest quality score, or primary audio fields when no track list exists.
+   * Returns the track with highest quality score, or fallback to primary audio fields.
    */
   private getBestAudioTrack(input: QualityScoringInput): {
     codec: string
@@ -304,21 +311,23 @@ export class QualityAnalyzer {
     bitrate: number | null
     hasObjectAudio: boolean
   } {
-    const primaryAudio = {
+    // Default to the primary audio fields
+    const fallback = {
       codec: input.audio_codec || '',
-      channels: input.audio_channels ?? 0,
+      channels: input.audio_channels || 2,
       bitrate: typeof input.audio_bitrate === 'number' && input.audio_bitrate > 0 ? input.audio_bitrate : null,
-      hasObjectAudio: input.has_object_audio ?? false,
+      hasObjectAudio: input.has_object_audio || false,
     }
 
+    // Try to parse audio_tracks
     if (!input.audio_tracks) {
-      return primaryAudio
+      return fallback
     }
 
     try {
       const tracks: AudioTrack[] = JSON.parse(input.audio_tracks)
       if (!Array.isArray(tracks) || tracks.length === 0) {
-        return primaryAudio
+        return fallback
       }
 
       // Filter out commentary tracks for best-track selection
@@ -337,11 +346,12 @@ export class QualityAnalyzer {
         }
       }
 
+      const trackBitrate = typeof bestTrack.bitrate === 'number' && bestTrack.bitrate > 0 ? bestTrack.bitrate : fallback.bitrate
       return {
-        codec: bestTrack.codec || '',
-        channels: bestTrack.channels ?? 0,
-        bitrate: typeof bestTrack.bitrate === 'number' && bestTrack.bitrate > 0 ? bestTrack.bitrate : null,
-        hasObjectAudio: bestTrack.hasObjectAudio ?? false,
+        codec: bestTrack.codec || fallback.codec,
+        channels: bestTrack.channels || fallback.channels,
+        bitrate: trackBitrate,
+        hasObjectAudio: bestTrack.hasObjectAudio || false,
       }
     } catch {
       // Invalid stream metadata is not evidence for the primary audio fields.
@@ -425,9 +435,7 @@ export class QualityAnalyzer {
 
     const codecEfficiency = this.getCodecEfficiency(input.video_codec || '')
     const hasExplicitBitrate = typeof input.video_bitrate === 'number' && input.video_bitrate > 0
-    const effectiveBitrate = hasExplicitBitrate && codecEfficiency !== null
-      ? input.video_bitrate! * codecEfficiency
-      : null
+    const effectiveBitrate = hasExplicitBitrate ? input.video_bitrate! * codecEfficiency : null
 
     const bitrateTierScore = effectiveBitrate !== null ? this.calculateVideoTierScore(effectiveBitrate, qualityTier) : null
     const audioTierScore = this.calculateAudioTierScore(bestAudio, qualityTier)
@@ -489,7 +497,7 @@ export class QualityAnalyzer {
       if (!hasExplicitBitrate) {
         issues.push(`Bitrate unknown for ${qualityTier}`)
       } else if (effectiveBitrate !== null && effectiveBitrate < mediumThreshold && itemBitrate > 0) {
-        const codecName = codecEfficiency !== null && codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
+        const codecName = codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
         issues.push(
           `Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`
         )
@@ -512,7 +520,7 @@ export class QualityAnalyzer {
 
       // Audio issues (check best audio track)
       const { medium: audioMedium } = this.audioThresholds[qualityTier]
-      if (bestAudio.channels > 0 && bestAudio.channels < 2) {
+      if (bestAudio.channels < 2) {
         issues.push(`Mono audio`)
       } else if (bestAudio.bitrate === null) {
         issues.push('Audio bitrate unknown')
@@ -522,9 +530,8 @@ export class QualityAnalyzer {
     }
 
     // Dubbed audio check
-    const dubBitrate = this.calculateDubBitrate(mediaItem)
-    if (dubBitrate !== null && dubBitrate > 500) {
-      issues.push(`Dubbed audio bloat: ${this.formatBitrate(dubBitrate)} from non-original language tracks`)
+    if (this.calculateDubBitrate(mediaItem) > 500) {
+      issues.push(`Dubbed audio bloat: ${this.formatBitrate(this.calculateDubBitrate(mediaItem))} from non-original language tracks`)
     }
 
     const isLowQuality = tierQuality === 'LOW'
@@ -565,9 +572,7 @@ export class QualityAnalyzer {
     const bitrate = item.video_bitrate
     if (bitrate == null || bitrate <= 0 || item.duration == null || item.duration <= 0 || !item.video_codec) return null
 
-    const efficiencyMult = this.getCodecEfficiency(item.video_codec)
-    if (efficiencyMult === null) return null
-
+    const efficiencyMult = this.getCodecEfficiency(item.video_codec || '')
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
     const is10Bit = item.color_bit_depth && item.color_bit_depth >= 10
 
@@ -698,8 +703,8 @@ export class QualityAnalyzer {
         })
 
         // Track distribution for verbose summary
-        const tier = qualityScore.quality_tier
-        const quality = qualityScore.tier_quality
+        const tier = qualityScore.quality_tier || 'Unknown'
+        const quality = qualityScore.tier_quality || 'UNKNOWN'
         tierCounts[tier] = (tierCounts[tier] || 0) + 1
         qualityCounts[quality] = (qualityCounts[quality] || 0) + 1
 
@@ -771,12 +776,12 @@ const distribution = {
 }
 
     scores.forEach((score: QualityScore) => {
-      const tier = score.quality_tier
-      const quality = score.tier_quality.toLowerCase()
-      if (!(tier in distribution.byTier) || (quality !== 'low' && quality !== 'medium' && quality !== 'high')) return
+      const tier = (score.quality_tier || 'SD') as QualityTier
+      const quality = (score.tier_quality || 'MEDIUM').toLowerCase() as 'low' | 'medium' | 'high'
 
-      const knownTier = tier as QualityTier
-      distribution.byTier[knownTier][quality]++
+      if (distribution.byTier[tier]) {
+        distribution.byTier[tier][quality]++
+      }
       distribution.byQuality[quality]++
     })
 
@@ -964,34 +969,6 @@ const distribution = {
    */
   analyzeMusicAlbum(album: MusicAlbum, tracks: MusicTrack[]): MusicQualityScore {
     const issues: string[] = []
-    const hasTrackEvidence = tracks.some(track =>
-      Boolean(track.audio_codec) ||
-      (typeof track.audio_bitrate === 'number' && Number.isFinite(track.audio_bitrate) && track.audio_bitrate > 0) ||
-      track.is_lossless === true ||
-      track.is_hi_res === true
-    )
-    const hasAlbumBitrateEvidence = typeof album.avg_audio_bitrate === 'number' &&
-      Number.isFinite(album.avg_audio_bitrate) && album.avg_audio_bitrate > 0
-
-    if (!hasTrackEvidence && !hasAlbumBitrateEvidence) {
-      return {
-        album_id: album.id!,
-        quality_tier: 'UNKNOWN',
-        tier_quality: 'UNKNOWN',
-        tier_score: null,
-        codec_score: null,
-        bitrate_score: null,
-        efficiency_score: null,
-        storage_debt_bytes: null,
-        evidence_status: 'insufficient',
-        confidence: 'none',
-        savings_basis: 'insufficient_data',
-        needs_upgrade: false,
-        issues: JSON.stringify(issues),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-    }
 
     const qualityTier = this.determineMusicQualityTier(album, tracks)
     const codecScore = this.calculateMusicCodecScore(album, tracks)
@@ -1153,19 +1130,14 @@ const distribution = {
       'LOSSY_HIGH': 'High Quality',
       'LOSSLESS': 'Lossless',
       'HI_RES': 'Hi-Res',
-      'UNKNOWN': 'Unanalyzed',
     }
-    return displays[tier]
+    return displays[tier] || tier
   }
 
   /**
    * Get recommended music format for upgrade
    */
   getRecommendedMusicFormat(_album: MusicAlbum, score: MusicQualityScore): string {
-    if (score.quality_tier === 'UNKNOWN') {
-      return 'Insufficient evidence'
-    }
-
     if (score.quality_tier === 'HI_RES' && score.tier_quality === 'HIGH') {
       return 'No upgrade needed'
     }

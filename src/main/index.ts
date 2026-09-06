@@ -57,7 +57,6 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   getLoggingService().error('[index]', '[CRASH] Unhandled rejection at:', promise, 'reason:', reason)
-  process.exit(1)
 })
 
 const DIST = path.join(__dirname, '../../dist')
@@ -171,8 +170,8 @@ app.on('before-quit', async (event) => {
   try {
     const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
     await getFFprobeWorkerPool().shutdown()
-  } catch (error) {
-    getLoggingService().error('[index]', 'Failed to shut down FFprobe worker pool:', error)
+  } catch {
+    // Ignore errors during worker pool shutdown
   }
   
   try {
@@ -204,7 +203,11 @@ app.whenReady().then(async () => {
 
     // Probe transcoding capabilities once per application startup so the renderer
     // never repeatedly discovers hardware while opening individual dialogs.
-    await getTranscodingService().getCapabilities({ refresh: true })
+    try {
+      await getTranscodingService().getCapabilities({ refresh: true })
+    } catch (error) {
+      getLoggingService().warn('[index]', 'Transcoding capability probe failed; fallback detection will remain available:', error)
+    }
 
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')
     protocol.handle('local-artwork', async (request) => {
