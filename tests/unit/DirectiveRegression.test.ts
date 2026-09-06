@@ -28,6 +28,27 @@ describe('directive regressions', () => {
     expect(result.needs_upgrade).toBe(false)
   })
 
+  it('does not fabricate a codec score when only music bitrate evidence exists', () => {
+    const analyzer = new QualityAnalyzer()
+    const album = {
+      id: 1,
+      source_id: 'source',
+      source_type: 'local',
+      provider_id: 'album',
+      artist_name: 'Artist',
+      title: 'Album',
+      avg_audio_bitrate: 320,
+    } as MusicAlbum
+
+    const result = analyzer.analyzeMusicAlbum(album, [])
+
+    expect(result.quality_tier).toBe('LOSSY_HIGH')
+    expect(result.codec_score).toBeNull()
+    expect(result.bitrate_score).toBe(95)
+    expect(result.tier_score).toBe(95)
+    expect(result.tier_quality).toBe('HIGH')
+  })
+
   it('does not silently replace a stale persisted GPU selection', () => {
     const gpus: GpuInfo[] = [
       { id: 'nvidia-1', name: 'NVIDIA GPU', vendor: 'NVIDIA' },
