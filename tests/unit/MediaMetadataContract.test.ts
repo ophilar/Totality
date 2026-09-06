@@ -73,6 +73,27 @@ describe('media metadata contract', () => {
     expect(result.audio_tier_score).toBeNull()
   })
 
+  it('does not treat uppercase unknown language tags as foreign-language dubs', async () => {
+    const result = await new QualityAnalyzer().analyzeMediaItem(createMediaItem({
+      original_language: 'en',
+      audio_tracks: JSON.stringify([
+        { codec: 'aac', channels: 2, bitrate: 640, hasObjectAudio: false, language: 'UND' },
+      ]),
+    }))
+
+    expect(JSON.parse(result.issues)).not.toContainEqual(expect.stringContaining('Dubbed audio bloat'))
+  })
+
+  it('keeps audio quality unknown when every structured track is commentary', async () => {
+    const result = await new QualityAnalyzer().analyzeMediaItem(createMediaItem({
+      audio_tracks: JSON.stringify([
+        { codec: 'truehd', channels: 8, bitrate: 4000, hasObjectAudio: false, title: 'Director Commentary' },
+      ]),
+    }))
+
+    expect(result.audio_tier_score).toBeNull()
+  })
+
   it('rejects malformed structured audio metadata with a typed error', async () => {
     await expect(new QualityAnalyzer().analyzeMediaItem(createMediaItem({
       audio_tracks: '{not-json}',
