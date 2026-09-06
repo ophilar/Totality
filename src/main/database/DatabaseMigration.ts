@@ -249,8 +249,12 @@ async function migrateNullableEvidenceScores(db: Client): Promise<void> {
   await db.execute('UPDATE series_completeness SET completeness_percentage = NULL WHERE completeness_percentage < 0')
 }
 
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`
+}
+
 async function hasNotNullColumn(db: Client, table: string, columns: readonly string[]): Promise<boolean> {
-  const result = await db.execute(`PRAGMA table_info(${table})`)
+  const result = await db.execute(`PRAGMA table_info(${quoteIdentifier(table)})`)
   return result.rows.some(row => columns.includes(String(row.name)) && Number(row.notnull) === 1)
 }
 
@@ -268,10 +272,13 @@ async function rebuildTableWhenNeeded(
   getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so analysis evidence can be NULL`)
   await db.execute('BEGIN IMMEDIATE')
   try {
-    await db.execute(`ALTER TABLE ${table} RENAME TO ${legacyTable}`)
+    const quotedTable = quoteIdentifier(table)
+    const quotedLegacyTable = quoteIdentifier(legacyTable)
+    const quotedCopyColumns = copyColumns.map(quoteIdentifier).join(', ')
+    await db.execute(`ALTER TABLE ${quotedTable} RENAME TO ${quotedLegacyTable}`)
     await db.execute(createSql)
-    await db.execute(`INSERT INTO ${table} (${copyColumns.join(', ')}) SELECT ${copyColumns.join(', ')} FROM ${legacyTable}`)
-    await db.execute(`DROP TABLE ${legacyTable}`)
+    await db.execute(`INSERT INTO ${quotedTable} (${quotedCopyColumns}) SELECT ${quotedCopyColumns} FROM ${quotedLegacyTable}`)
+    await db.execute(`DROP TABLE ${quotedLegacyTable}`)
     for (const statement of createSupportingObjects) await db.execute(statement)
     await db.execute('COMMIT')
   } catch (error) {
@@ -452,10 +459,10 @@ async function ensureColumn(db: Client, table: string, column: string, definitio
   const tableExists = await db.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] })
   if (tableExists.rows.length === 0) return
 
-  const info = await db.execute(`PRAGMA table_info(${table})`)
+  const info = await db.execute(`PRAGMA table_info(${quoteIdentifier(table)})`)
   if (!info.rows.some(c => c.name === column)) {
     getLoggingService().info('[DatabaseMigration]', `Adding missing column ${column} to ${table}`)
-    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    await db.execute(`ALTER TABLE ${quoteIdentifier(table)} ADD COLUMN ${quoteIdentifier(column)} ${definition}`)
   }
 }
 

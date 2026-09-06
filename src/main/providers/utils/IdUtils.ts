@@ -12,5 +12,5 @@ import { ProviderType } from '@main/types/database'
  * Format: [type]_[timestamp]_[random]
  */
 export function generateSourceId(type: ProviderType): string {
-  return `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  return `${type}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
 }

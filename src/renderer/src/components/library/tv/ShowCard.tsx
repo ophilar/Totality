@@ -1,5 +1,6 @@
 import { useState, memo, useRef } from 'react'
-import { RefreshCw, Pencil, HardDrive, Tv as TvPlaceholder, Link2Off, Zap } from 'lucide-react'
+import { RefreshCw, Pencil, HardDrive, Link2Off, Zap } from 'lucide-react'
+import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
 import { providerColors } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'

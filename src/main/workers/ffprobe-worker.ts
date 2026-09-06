@@ -8,7 +8,7 @@
 import { parentPort, workerData } from 'worker_threads'
 import { spawn } from 'child_process'
 import * as path from 'path'
-import { detectHdrFormat as detectHdrFormatFromMetadata } from '../types/mediaContracts'
+import { detectHdrFormat } from '../types/mediaContracts'
 import type { HdrFormat } from '../types/mediaContracts'
 
 // Types mirrored from MediaFileAnalyzer (can't import due to worker isolation)
@@ -302,18 +302,6 @@ function extractBitDepth(stream: FFprobeStream): number | undefined {
 }
 
 /**
- * Detect HDR format from stream metadata
- */
-function detectHdrFormat(stream: FFprobeStream): HdrFormat {
-  return detectHdrFormatFromMetadata({
-    colorTransfer: stream.color_transfer,
-    colorPrimaries: stream.color_primaries,
-    colorSpace: stream.color_space,
-    sideDataTypes: stream.side_data_list?.map(item => item.side_data_type)
-  })
-}
-
-/**
  * Detect object-based audio (Atmos, DTS:X)
  */
 function detectObjectAudio(stream: FFprobeStream): boolean {
@@ -341,7 +329,13 @@ function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedV
   const bitrate = extractBitrate(stream, durationMs)
   const frameRate = parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
   const bitDepth = extractBitDepth(stream)
-  const hdrFormat = detectHdrFormat(stream)
+  const hdrFormat = detectHdrFormat({
+    colorTransfer: stream.color_transfer,
+    colorPrimaries: stream.color_primaries,
+    colorSpace: stream.color_space,
+    sideDataTypes: stream.side_data_list?.map(item => item.side_data_type),
+    profile: stream.profile,
+  })
 
   return {
     index: stream.index,

@@ -85,4 +85,10 @@ describe('timeline cache migration', () => {
     expect(await dbService.config.getSetting('timeline_recipe:unversioned')).toBe(JSON.stringify(unversioned))
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
+
+  it('successfully executes migrations and table rebuilds with quoted identifiers', async () => {
+    await runMigrations(dbService.db)
+    const tableInfo = await dbService.db.execute('PRAGMA table_info(quality_scores)')
+    expect(tableInfo.rows.length).toBeGreaterThan(0)
+  })
 })
