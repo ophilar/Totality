@@ -23,8 +23,8 @@ export function selectDefaultGpu(gpus: GpuInfo[]): GpuInfo | undefined {
 
 export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {
   if (persistedGpuId === null) return null
-  if (persistedGpuId && gpus.some(gpu => gpu.id === persistedGpuId)) return persistedGpuId
-  return selectDefaultGpu(gpus)?.id ?? null
+  if (persistedGpuId === undefined) return selectDefaultGpu(gpus)?.id ?? null
+  return gpus.some(gpu => gpu.id === persistedGpuId) ? persistedGpuId : null
 }
 
 export function buildTranscodingCapabilities(
