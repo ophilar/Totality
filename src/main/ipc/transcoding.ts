@@ -1,10 +1,18 @@
+import { z } from 'zod'
 import { getTranscodingService } from '@main/services/TranscodingService'
-import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, ShowQuarantineSchema } from '@main/validation/schemas'
+import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, NonEmptyStringSchema, SourceIdSchema, LibraryIdSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
 import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
+
+const ShowQuarantineIdentitySchema = z.tuple([
+  NonEmptyStringSchema,
+  SourceIdSchema,
+  NonEmptyStringSchema,
+  LibraryIdSchema,
+])
 
 async function authorizedMediaPath(mediaItemId: number): Promise<string> {
   const db = getDatabase()
@@ -33,7 +41,6 @@ export function registerTranscodingHandlers(): void {
     return await getTranscodingService().setSelectedGpu(gpuId)
   })
 
-
   createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsByMediaItemSchema, async (mediaItemId, options) => {
     const filePath = await authorizedMediaPath(mediaItemId)
     return await getTranscodingService().getTranscodeParameters(filePath, options as TranscodeOptions)
@@ -61,9 +68,8 @@ export function registerTranscodingHandlers(): void {
     return await getTranscodingService().approveShowTranscode(preflightId)
   })
 
-  createValidatedIpcHandler('transcoding:listShowQuarantine', ShowQuarantineSchema, async (seriesTitle, sourceId, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, libraryId))
-  createValidatedIpcHandler('transcoding:purgeShowQuarantine', ShowQuarantineSchema, async (seriesTitle, sourceId, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, libraryId))
+  createValidatedIpcHandler('transcoding:listShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
+  createValidatedIpcHandler('transcoding:purgeShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
 
   getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }
-
