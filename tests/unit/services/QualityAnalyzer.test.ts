@@ -46,7 +46,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       width: 1920,
       height: 1080,
       video_codec: item.video_codec!,
-      video_bitrate: 0,
+      video_bitrate: null,
       audio_codec: item.audio_codec!,
       audio_channels: item.audio_channels!,
       audio_bitrate: item.audio_bitrate!,
@@ -136,8 +136,8 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       title: 'Star Trek S01E01',
       type: 'episode',
       file_path: '/media/Star.Trek.S01E01.1080p.Remux.AVC.DTS-HD.MA.mkv',
-      file_size: 15 * 1024 * 1024 * 1024, // 15 GB
-      duration: 50 * 60 * 1000, // 50 mins
+      file_size: 15 * 1024 * 1024 * 1024,
+      duration: 50 * 60 * 1000,
       resolution: '1080p',
       video_codec: 'h264',
       video_bitrate: 35000,
@@ -166,8 +166,8 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       title: 'Strange New Worlds S01E01',
       type: 'episode',
       file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
-      file_size: 4 * 1024 * 1024 * 1024, // 4 GB
-      duration: 50 * 60 * 1000, // 50 mins = 3000 sec
+      file_size: 4 * 1024 * 1024 * 1024,
+      duration: 50 * 60 * 1000,
       resolution: '1080p',
       video_codec: 'h264',
       video_bitrate: 6000,
