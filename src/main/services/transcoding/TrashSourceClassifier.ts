@@ -14,9 +14,13 @@ const LEGACY_HIGH_BITRATE_CODECS = /^(h\.?264|x264|avc1?|vc-?1|mpeg-?2(video)?)$
 export class TrashSourceClassifier {
   /**
    * Classifies a media file into a standardized TRaSH Guides media source tier.
-   * Priority: Filename release tags -> Stream characteristics heuristic fallback -> Unknown
+   * Priority: Filename release tags -> Stream characteristics heuristic -> Unknown
    */
-  static classify(filePath: string, videoBitrateKbps?: number, codec?: string): MediaSourceTier {
+  static classify(
+    filePath: string | null | undefined,
+    videoBitrateKbps?: number | null,
+    codec?: string | null
+  ): MediaSourceTier {
     if (filePath) {
       // Normalize delimiters (e.g. underscores to spaces) for reliable word-boundary matching
       const normalizedPath = filePath.replace(/[._]/g, ' ')
@@ -59,10 +63,10 @@ export class TrashSourceClassifier {
       }
     }
 
-    // Stream characteristics fallback heuristic
-    if (videoBitrateKbps && videoBitrateKbps > 0) {
-      const normalizedCodec = codec?.trim() || ''
-      if (videoBitrateKbps > 25000 && LEGACY_HIGH_BITRATE_CODECS.test(normalizedCodec)) {
+    // Stream characteristics heuristic
+    if (videoBitrateKbps !== null && videoBitrateKbps !== undefined && videoBitrateKbps > 0) {
+      const normalizedCodec = codec?.trim()
+      if (videoBitrateKbps > 25000 && normalizedCodec && LEGACY_HIGH_BITRATE_CODECS.test(normalizedCodec)) {
         return 'Remux'
       }
 
