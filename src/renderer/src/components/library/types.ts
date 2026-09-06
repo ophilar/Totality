@@ -130,6 +130,7 @@ export interface MissingItemPopupData {
   tmdbId?: string
   imdbId?: string
   seriesTitle?: string
+  seriesMapKey?: string
 }
 
 export interface MatchFixModalData {
@@ -154,4 +155,3 @@ export type QualityFilter = 'all' | 'low' | 'medium' | 'high'
 export type ViewType = 'grid' | 'list'
 export type MediaViewType = 'movies' | 'tv' | 'music' | 'wishlist' | 'duplicates' | 'timelines'
 export type MusicViewMode = 'artists' | 'albums' | 'tracks'
-

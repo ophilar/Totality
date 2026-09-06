@@ -13,7 +13,7 @@ import { promises as fs, createReadStream } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
-import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
+import { buildOptimizationDecision, resolveOptimizationPrimaryAction } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getTMDBService } from '@main/services/TMDBService'
 
@@ -64,8 +64,11 @@ export function registerOptimizationHandlers() {
       throw error
     }
   })
-  createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.DRY_RUN, z.tuple([z.string(), z.string().optional()]), async (title, sourceId) => {
-    const episodes = await db.tvShows.getEpisodes(title, sourceId)
+  createValidatedIpcHandler(
+    IPC_CHANNELS.OPTIMIZATION.DRY_RUN,
+    z.tuple([z.string().min(1), z.string().max(200), z.string().min(1).max(1000), z.string().max(200)]),
+    async (title, sourceId, seriesIdentityKey, libraryId) => {
+    const episodes = await db.tvShows.getEpisodes(title, sourceId, seriesIdentityKey, libraryId)
     const analyzer = getMediaFileAnalyzer()
     const analyzerAvailable = await analyzer.isAvailable()
 
@@ -96,36 +99,57 @@ export function registerOptimizationHandlers() {
     )
 
     let originalLanguage = episodes.find(e => e.original_language)?.original_language ?? undefined
-    if (!originalLanguage && title) {
-      try {
-        const comp = await db.tvShows.getCompletenessByTitle(title, episodes[0]?.source_id || '', episodes[0]?.library_id || '')
-        if (comp?.tmdb_id) {
-          const tmdbService = getTMDBService()
-          const showDetails = await tmdbService.getTVShowDetails(comp.tmdb_id)
-          if (showDetails?.original_language) {
-            originalLanguage = showDetails.original_language
-          }
-        }
-      } catch {
-        // Fallback gracefully
+    if (!originalLanguage) {
+      const directSeriesTmdbId = episodes.find(e => e.series_tmdb_id)?.series_tmdb_id
+      const completeness = directSeriesTmdbId
+        ? null
+        : (await db.tvShows.getAllCompleteness(sourceId, libraryId))
+          .find(row => row.series_identity_key === seriesIdentityKey) ?? null
+      const tmdbId = directSeriesTmdbId || completeness?.tmdb_id
+      if (tmdbId) {
+        const showDetails = await getTMDBService().getTVShowDetails(tmdbId)
+        originalLanguage = showDetails?.original_language ?? undefined
       }
     }
     const dryRunResult = calculateDryRunMetrics(episodeMetrics, originalLanguage)
-    const audioAction = dryRunResult.trackDecisions.some(track => track.decision === 'review-required')
+    const hasReviewRequiredAudio = dryRunResult.trackDecisions.some(track => track.decision === 'review-required')
+    const trackRemovalStatus = hasReviewRequiredAudio
+      ? 'review-required' as const
+      : dryRunResult.audioPruningBytes > 0 ? 'executable' as const : 'blocked' as const
+    const videoTranscodeStatus = dryRunResult.videoDebtBytes > 0 ? 'review-required' as const : 'unavailable' as const
+    const primaryAction = resolveOptimizationPrimaryAction({
+      trackRemovalStatus,
+      audioTranscodeStatus: 'unavailable',
+      videoTranscodeStatus,
+    })
+    const audioAction = trackRemovalStatus === 'review-required'
       ? 'review-required'
-      : dryRunResult.recoverableBytes > 0 ? 'stream-pruning' : 'no-action'
-    const videoAction = dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0
-      ? 'transcode-video'
-      : 'no-action'
+      : trackRemovalStatus === 'executable' ? 'stream-pruning' : 'no-action'
+    const videoAction = videoTranscodeStatus === 'review-required' ? 'transcode-video' : 'no-action'
+    const action = primaryAction === 'review-language'
+      ? 'review-required'
+      : primaryAction === 'remove-audio-tracks'
+        ? 'stream-pruning'
+        : primaryAction === 'transcode-audio'
+          ? 'transcode-audio'
+          : primaryAction === 'transcode-video'
+            ? 'transcode-video'
+            : 'no-optimization'
 
     return {
       title,
+      seriesIdentityKey,
+      libraryId,
       totalBytes: dryRunResult.totalBytes,
       recoverableBytes: dryRunResult.recoverableBytes,
+      audioPruningBytes: dryRunResult.audioPruningBytes,
       videoDebtBytes: dryRunResult.videoDebtBytes,
+      totalRecoverableBytes: dryRunResult.totalRecoverableBytes,
       totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+      coverage: dryRunResult.coverage,
       audioAction,
       videoAction,
+      primaryAction,
       percentageSavings: dryRunResult.percentageSavings,
       totalEpisodes: dryRunResult.totalEpisodes,
       scoredEpisodes: dryRunResult.scoredEpisodes,
@@ -134,18 +158,19 @@ export function registerOptimizationHandlers() {
       trackDecisions: dryRunResult.trackDecisions,
       metrics: {
         totalSize: dryRunResult.totalBytes,
-        totalRecoverableBytes: dryRunResult.recoverableBytes,
+        totalRecoverableBytes: dryRunResult.totalRecoverableBytes,
+        audioPruningBytes: dryRunResult.audioPruningBytes,
         videoDebtBytes: dryRunResult.videoDebtBytes,
         totalCombinedSavingsBytes: dryRunResult.totalCombinedSavingsBytes,
+        coverage: dryRunResult.coverage,
         audioAction,
         videoAction,
+        primaryAction,
         weightedEfficiency: dryRunResult.weightedEfficiency,
         scoredEpisodeCount: dryRunResult.scoredEpisodes,
         unscoredEpisodeCount: dryRunResult.unscoredEpisodes,
       },
-      action: dryRunResult.recoverableBytes > 0
-        ? 'review-required'
-        : (dryRunResult.videoDebtBytes && dryRunResult.videoDebtBytes > 0 ? 'transcode-video' : 'no-optimization'),
+      action,
       optInRequired: true,
     }
   })
@@ -188,7 +213,8 @@ export function registerOptimizationHandlers() {
       originalLanguage: item.original_language,
       durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
       fileSize: analysis.fileSize || 0,
-      videoStorageDebtBytes: item.storage_debt_bytes,
+      videoStorageDebtBytes: null,
+      legacyTotalRecoverableBytes: item.storage_debt_bytes,
       audioTranscodeSavingsBytes: null,
       audioTracks: analysis.audioTracks.map(track => ({ index: track.index, language: track.language, title: track.title, codec: track.codec, channels: track.channels, channelLayout: track.channelLayout, bitrate: track.bitrate, isDefault: track.isDefault, hasObjectAudio: track.hasObjectAudio, reliableTag: !!track.language, isCommentary: track.isCommentary, isAudioDescription: track.isAudioDescription, isAccessibility: track.isAccessibility })),
     })

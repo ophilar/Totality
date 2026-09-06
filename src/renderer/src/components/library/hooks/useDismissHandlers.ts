@@ -23,6 +23,7 @@ interface MissingItemPopupState {
   tmdbId?: string
   imdbId?: string
   seriesTitle?: string
+  seriesMapKey?: string
 }
 
 interface ToastOptions {
@@ -49,17 +50,13 @@ interface UseDismissHandlersOptions {
 
 interface UseDismissHandlersReturn {
   handleDismissUpgrade: (item: MediaItem) => Promise<void>
-  handleDismissMissingEpisode: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => Promise<void>
-  handleDismissMissingSeason: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => Promise<void>
+  handleDismissMissingEpisode: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
+  handleDismissMissingSeason: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
   handleDismissCollectionMovie: (tmdbId: string, movieTitle: string) => Promise<void>
   handleDismissMissingAlbum: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
   handleDismissMissingItem: () => void
 }
 
-/**
- * Hook to manage dismiss/exclusion handlers for upgrades, missing episodes,
- * missing seasons, and missing collection movies.
- */
 export function useDismissHandlers({
   setPaginatedMovies,
   setSelectedShowEpisodes,
@@ -103,7 +100,9 @@ export function useDismissHandlers({
               setSelectedShowEpisodes(prev => prev.map(e =>
                 e.id === item.id ? { ...e, needs_upgrade: true } : e
               ))
-            } catch { /* ignore */ }
+            } catch (err) {
+              window.electronAPI.log.error('[useDismissHandlers]', 'Failed to undo dismissed upgrade:', err)
+            }
           },
         },
       })
@@ -112,29 +111,23 @@ export function useDismissHandlers({
     }
   }, [setPaginatedMovies, setSelectedShowEpisodes, addToast])
 
-  const handleDismissMissingEpisode = useCallback(async (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => {
+  const handleDismissMissingEpisode = useCallback(async (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => {
     try {
       const refKey = `S${episode.season_number}E${episode.episode_number}`
       const title = `${seriesTitle} ${refKey}`
       await window.electronAPI.addExclusion('series_episode', undefined, refKey, tmdbId || seriesTitle, title)
       setSeriesCompleteness(prev => {
         const next = new Map(prev)
-        const data = next.get(seriesTitle)
-        if (data?.missing_episodes) {
-          try {
-            const missing: MissingEpisode[] = JSON.parse(data.missing_episodes)
-            const filtered = missing.filter(e => !(e.season_number === episode.season_number && e.episode_number === episode.episode_number))
-            // Also update missing_seasons if no episodes remain for dismissed season
-            const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
-            const missSeasons: number[] = JSON.parse(data.missing_seasons || '[]')
-            const filteredSeasons = missSeasons.filter(s => remainingSeasonsWithMissing.has(s))
-            next.set(seriesTitle, {
-              ...data,
-              missing_episodes: JSON.stringify(filtered),
-              missing_seasons: JSON.stringify(filteredSeasons),
-            })
-          } catch { /* ignore */ }
-        }
+        const data = next.get(seriesMapKey)!
+        const missing: MissingEpisode[] = JSON.parse(data.missing_episodes)
+        const filtered = missing.filter(e => !(e.season_number === episode.season_number && e.episode_number === episode.episode_number))
+        const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
+        const missSeasons: number[] = JSON.parse(data.missing_seasons)
+        next.set(seriesMapKey, {
+          ...data,
+          missing_episodes: JSON.stringify(filtered),
+          missing_seasons: JSON.stringify(missSeasons.filter(s => remainingSeasonsWithMissing.has(s))),
+        })
         return next
       })
       addToast({ type: 'success', title: 'Item dismissed', message: `"${title}" removed from recommendations` })
@@ -143,11 +136,10 @@ export function useDismissHandlers({
     }
   }, [setSeriesCompleteness, addToast])
 
-  const handleDismissMissingSeason = useCallback(async (seasonNumber: number, seriesTitle: string, tmdbId?: string) => {
+  const handleDismissMissingSeason = useCallback(async (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => {
     try {
-      const data = seriesCompleteness.get(seriesTitle)
-      if (!data?.missing_episodes) return
-      const allMissing: MissingEpisode[] = JSON.parse(data.missing_episodes || '[]')
+      const data = seriesCompleteness.get(seriesMapKey)!
+      const allMissing: MissingEpisode[] = JSON.parse(data.missing_episodes)
       const seasonEpisodes = allMissing.filter(e => e.season_number === seasonNumber)
       await Promise.all(seasonEpisodes.map(ep => {
         const refKey = `S${ep.season_number}E${ep.episode_number}`
@@ -155,22 +147,16 @@ export function useDismissHandlers({
       }))
       setSeriesCompleteness(prev => {
         const next = new Map(prev)
-        const d = next.get(seriesTitle)
-        if (d?.missing_episodes) {
-          try {
-            const missing: MissingEpisode[] = JSON.parse(d.missing_episodes)
-            const filtered = missing.filter(e => e.season_number !== seasonNumber)
-            // Also remove the season from missing_seasons if no episodes remain for it
-            const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
-            const missSeasons: number[] = JSON.parse(d.missing_seasons || '[]')
-            const filteredSeasons = missSeasons.filter(s => remainingSeasonsWithMissing.has(s))
-            next.set(seriesTitle, {
-              ...d,
-              missing_episodes: JSON.stringify(filtered),
-              missing_seasons: JSON.stringify(filteredSeasons),
-            })
-          } catch { /* ignore */ }
-        }
+        const current = next.get(seriesMapKey)!
+        const missing: MissingEpisode[] = JSON.parse(current.missing_episodes)
+        const filtered = missing.filter(e => e.season_number !== seasonNumber)
+        const remainingSeasonsWithMissing = new Set(filtered.map(e => e.season_number))
+        const missSeasons: number[] = JSON.parse(current.missing_seasons)
+        next.set(seriesMapKey, {
+          ...current,
+          missing_episodes: JSON.stringify(filtered),
+          missing_seasons: JSON.stringify(missSeasons.filter(s => remainingSeasonsWithMissing.has(s))),
+        })
         return next
       })
       addToast({ type: 'success', title: 'Season dismissed', message: `${seasonEpisodes.length} missing episodes from Season ${seasonNumber} removed` })
@@ -240,16 +226,17 @@ export function useDismissHandlers({
   const handleDismissMissingItem = useCallback(() => {
     if (!selectedMissingItem) return
     const item = selectedMissingItem
-    if (item.type === 'episode' && item.seasonNumber !== undefined && item.episodeNumber !== undefined) {
-      handleDismissMissingEpisode(
+    if (item.type === 'episode' && item.seasonNumber !== undefined && item.episodeNumber !== undefined && item.seriesTitle && item.seriesMapKey) {
+      void handleDismissMissingEpisode(
         { season_number: item.seasonNumber, episode_number: item.episodeNumber, title: item.title, air_date: item.airDate },
-        item.seriesTitle || '',
-        item.tmdbId
+        item.seriesTitle,
+        item.tmdbId,
+        item.seriesMapKey
       )
-    } else if (item.type === 'season' && item.seasonNumber !== undefined) {
-      handleDismissMissingSeason(item.seasonNumber, item.seriesTitle || '', item.tmdbId)
+    } else if (item.type === 'season' && item.seasonNumber !== undefined && item.seriesTitle && item.seriesMapKey) {
+      void handleDismissMissingSeason(item.seasonNumber, item.seriesTitle, item.tmdbId, item.seriesMapKey)
     } else if (item.type === 'movie' && item.tmdbId) {
-      handleDismissCollectionMovie(item.tmdbId, item.title)
+      void handleDismissCollectionMovie(item.tmdbId, item.title)
     }
     setSelectedMissingItem(null)
   }, [selectedMissingItem, setSelectedMissingItem, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie])

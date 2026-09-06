@@ -180,7 +180,10 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
 
     // Series / Collections
     seriesGetAll: (sId: string) => invoke('series:getAll', sId),
-    seriesGetEpisodes: (t: string, sId: string) => invoke('series:getEpisodes', t, sId),
+    seriesGetEpisodesByIdentity: (t: string, sId: string, identityKey: string, lId: string) => invoke('series:getEpisodesByIdentity', t, sId, identityKey, lId),
+    seriesGetAudioLanguagesByIdentity: (t: string, sId: string, identityKey: string, lId: string) => invoke('series:getAudioLanguagesByIdentity', t, sId, identityKey, lId),
+    seriesAnalyzeByIdentity: (t: string, sId: string, identityKey: string, lId: string) => invoke('series:analyzeByIdentity', t, sId, identityKey, lId),
+    seriesFixMatch: (t: string, sId: string, identityKey: string, lId: string, providerId: string, externalId: string) => invoke('series:fixMatch', t, sId, identityKey, lId, providerId, externalId),
     collectionsGetAll: (sId: string) => invoke(IPC_CHANNELS.COLLECTIONS.GET_ALL, sId),
 
     // Wishlist

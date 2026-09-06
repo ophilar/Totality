@@ -64,7 +64,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         }
       }}
     >
-      {/* Poster Thumbnail */}
       <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {show.poster_url ? (
           <img
@@ -79,7 +78,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-8 h-8 text-muted-foreground" /></div>
         )}
-        {/* Source badge */}
         {showSourceBadge && sourceType && (
           <div
             className={`absolute bottom-0 right-0 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1 py-0.5 rounded`}
@@ -89,7 +87,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         )}
       </div>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-sm truncate">{show.series_title}</h4>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -105,24 +102,21 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
         )}
       </div>
 
-      {/* Evidence status badge */}
       {show.evidence_status && (
         <div className="shrink-0 flex items-center">
           <EvidenceStatusBadge status={show.evidence_status} />
         </div>
       )}
 
-      {/* Recoverable */}
+      {/* Total Debt */}
       <div className="w-32 text-left shrink-0">
         <RecoverableWasteDisplay bytes={show.total_recoverable_bytes} />
       </div>
 
-      {/* Weighted Efficiency */}
       <div className="w-32 text-left shrink-0">
         <EfficiencyDisplay score={show.weighted_efficiency} />
       </div>
 
-      {/* 3-dot menu */}
       <div ref={menuRef} className="w-8 shrink-0 flex justify-center relative">
         <button
           onClick={(e) => {
@@ -138,7 +132,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           )}
         </button>
 
-        {/* Dropdown menu */}
         {showMenu && (
           <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
             <button
