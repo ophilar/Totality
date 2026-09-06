@@ -154,7 +154,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
               {episodes.map((episode, idx: number) => (
                 <button
                   key={`episode-${episode.id}`}
-                  onClick={() => handleSearchResultClick('episode', episode.id, { series_title: episode.series_title })}
+                  onClick={() => handleSearchResultClick('episode', episode.id, {
+                    series_identity_key: episode.series_identity_key,
+                    source_id: episode.source_id,
+                    library_id: episode.library_id,
+                  })}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left focus:outline-hidden ${
                     searchResultIndex === (movies.length + tvShows.length + idx) ? 'bg-primary/20 ring-2 ring-inset ring-primary' : 'hover:bg-muted/50'
                   }`}
