@@ -110,4 +110,22 @@ describe('MediaFileAnalyzer Deep Analysis', () => {
     await expect(analyzer.deepAnalyzeFile('test.mkv', { detectVolume: true }))
       .rejects.toThrow('FFmpeg exited with code 1')
   })
+
+  it('handles FFprobe failure loudly', async () => {
+    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
+      const ee = new EventEmitter() as MockProcess
+      ee.stdout = new EventEmitter()
+      ee.stderr = new EventEmitter()
+
+      if (args.includes('-version')) {
+        process.nextTick(() => ee.emit('close', 0))
+      } else if (args.includes('packet=size,duration_time')) {
+        process.nextTick(() => ee.emit('close', 1))
+      }
+      return ee as unknown as ReturnType<typeof spawn>
+    })
+
+    await expect(analyzer.deepAnalyzeFile('test.mkv', { scanBitrate: true }))
+      .rejects.toThrow('FFprobe exited with code 1')
+  })
 })
