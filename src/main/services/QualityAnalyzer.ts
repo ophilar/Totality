@@ -257,14 +257,14 @@ export class QualityAnalyzer {
     }
 
     const tracks = parseAudioTracks(item.audio_tracks)
-    const origLang = metadataString(item.original_language, 'original_language')
-    if (origLang === null) return null
+    const originalLanguage = normalizeLanguage(item.original_language)
+    if (!originalLanguage || originalLanguage === 'und' || originalLanguage === 'unk') return null
 
     let dubBitrate = 0
     for (const track of tracks) {
-      const language = metadataString(track.language, 'audio track language')
-      if (language === null || language === 'und' || language === 'unk') return null
-      if (language.toLowerCase() === origLang.toLowerCase()) continue
+      const language = normalizeLanguage(track.language)
+      if (!language || language === 'und' || language === 'unk') return null
+      if (language === originalLanguage) continue
 
       const bitrate = metadataNumber(track.bitrate, 'audio track bitrate')
       if (bitrate === null) return null
@@ -342,7 +342,10 @@ export class QualityAnalyzer {
       const title = metadataString(track.title, 'audio track title')
       return title === null || !title.toLowerCase().includes('commentary')
     })
-    const candidates = nonCommentary.length > 0 ? nonCommentary : tracks
+    if (nonCommentary.length === 0) {
+      return { codec: null, channels: null, bitrate: null, hasObjectAudio: null }
+    }
+    const candidates = nonCommentary
 
     let bestTrack = candidates[0]
     let bestScore = this.calculateAudioTrackQualityScore(bestTrack)
