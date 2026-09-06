@@ -45,6 +45,7 @@ export interface VersionQualityResult {
   audio_tier_score: number | null
 }
 
+// Default thresholds and values loaded from configuration
 const DEFAULT_VIDEO_THRESHOLDS = APP_CONFIG.quality.videoBitrateThresholds
 const DEFAULT_AUDIO_THRESHOLDS = APP_CONFIG.quality.audioBitrateThresholds
 const DEFAULT_CODEC_EFFICIENCY = APP_CONFIG.quality.codecEfficiency
@@ -58,6 +59,7 @@ type TierQuality = 'LOW' | 'MEDIUM' | 'HIGH'
 export class QualityAnalyzer {
   private thresholdsLoaded = false
 
+  // Configurable settings loaded from database (with defaults from config)
   private videoThresholds = { ...DEFAULT_VIDEO_THRESHOLDS }
   private audioThresholds = { ...DEFAULT_AUDIO_THRESHOLDS }
   private efficiencyThresholds = { ...DEFAULT_EFFICIENCY_TARGETS }
@@ -79,6 +81,8 @@ export class QualityAnalyzer {
 
     try {
       const db = getDatabase()
+
+      // Batch load all quality settings in a single query
       const qualitySettings = await db.config.getSettingsByPrefix('quality_')
 
       const getNum = (key: string, defaultVal: number): number => {
@@ -94,6 +98,7 @@ export class QualityAnalyzer {
         return Number.isFinite(value) && value > 0 ? value : defaultVal
       }
 
+      // Load video bitrate thresholds
       this.videoThresholds = {
         'SD': {
           medium: getNum('quality_video_sd_medium', DEFAULT_VIDEO_THRESHOLDS.SD.medium),
@@ -113,6 +118,7 @@ export class QualityAnalyzer {
         },
       }
 
+      // Load audio bitrate thresholds
       this.audioThresholds = {
         'SD': {
           medium: getNum('quality_audio_sd_medium', DEFAULT_AUDIO_THRESHOLDS.SD.medium),
@@ -132,6 +138,7 @@ export class QualityAnalyzer {
         },
       }
 
+      // Load efficiency target thresholds
       this.efficiencyThresholds = {
         'SD': getPositiveNum('quality_efficiency_sd_target', DEFAULT_EFFICIENCY_TARGETS.SD),
         '720p': getPositiveNum('quality_efficiency_720p_target', DEFAULT_EFFICIENCY_TARGETS['720p']),
@@ -139,6 +146,7 @@ export class QualityAnalyzer {
         '4K': getPositiveNum('quality_efficiency_4k_target', DEFAULT_EFFICIENCY_TARGETS['4K']),
       }
 
+      // Load bloat start thresholds
       this.bloatThresholds = {
         'SD': getNum('quality_efficiency_sd_bloat', DEFAULT_BLOAT_THRESHOLDS.SD),
         '720p': getNum('quality_efficiency_720p_bloat', DEFAULT_BLOAT_THRESHOLDS['720p']),
@@ -146,6 +154,7 @@ export class QualityAnalyzer {
         '4K': getNum('quality_efficiency_4k_bloat', DEFAULT_BLOAT_THRESHOLDS['4K']),
       }
 
+      // Load codec efficiency multipliers
       const h264Eff = getNum('quality_codec_h264', DEFAULT_CODEC_EFFICIENCY.h264)
       const h265Eff = getNum('quality_codec_h265', DEFAULT_CODEC_EFFICIENCY.h265)
       const av1Eff = getNum('quality_codec_av1', DEFAULT_CODEC_EFFICIENCY.av1)
@@ -157,12 +166,17 @@ export class QualityAnalyzer {
         'vp9': vp9Eff,
       }
 
+      // Load video/audio weight
       const rawWeight = getNum('quality_video_weight', APP_CONFIG.quality.videoWeight * 100)
       this.videoWeight = Math.max(0, Math.min(100, rawWeight)) / 100
 
+      // Load efficiency trash threshold
       this.efficiencyTrashThreshold = getNum('quality_efficiency_trash_threshold', APP_CONFIG.quality.minEfficiencyScore)
+
+      // Load video-only efficiency allowance.
       this.hdrOverheadMultiplier = getNum('quality_efficiency_hdr_overhead', APP_CONFIG.quality.hdrOverheadMultiplier)
 
+      // Load music quality thresholds
       this.musicThresholds = {
         lowBitrate: getNum('quality_music_low_bitrate', DEFAULT_MUSIC_THRESHOLDS.lowBitrate),
         highBitrate: getNum('quality_music_high_bitrate', DEFAULT_MUSIC_THRESHOLDS.highBitrate),
@@ -177,10 +191,16 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Force reload of thresholds from database (call when settings change)
+   */
   invalidateThresholdsCache(): void {
     this.thresholdsLoaded = false
   }
 
+  /**
+   * Get codec efficiency multiplier
+   */
   private getCodecEfficiency(codec: string): number | null {
     const codecLower = codec.toLowerCase()
     for (const [key, efficiency] of Object.entries(this.codecEfficiency)) {
@@ -189,6 +209,9 @@ export class QualityAnalyzer {
     return null
   }
 
+  /**
+   * Calculate total bitrate of audio tracks that are dubs (not original language).
+   */
   private calculateDubBitrate(item: MediaItem): number | null {
     if (!item.audio_tracks || !item.original_language) return null
 
@@ -213,33 +236,46 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Detect lossless audio codec
+   */
   private isLosslessAudio(codec: string): boolean {
     const codecLower = codec.toLowerCase()
     return APP_CONFIG.audioCodecs.lossless.some(losslessCodec => codecLower.includes(losslessCodec))
   }
 
+  /**
+   * Calculate audio quality score for ranking tracks
+   * Higher score = better quality
+   */
   private calculateAudioTrackQualityScore(track: AudioTrack): number {
     let score = 0
     const channels = track.channels ?? 0
     const bitrate = track.bitrate ?? 0
     const isLossless = this.isLosslessAudio(track.codec)
 
-    const minBitratePerChannel = 32
+    // Sanity check: lossy tracks with suspiciously low bitrate per channel are likely
+    // corrupt or placeholder tracks — skip codec/channel bonuses entirely
+    const minBitratePerChannel = 32 // kbps — real AC3 5.1 is 64+ per channel
     const isSuspiciouslyLow = !isLossless && !track.hasObjectAudio &&
       bitrate > 0 && bitrate < channels * minBitratePerChannel
 
     if (isSuspiciouslyLow) {
+      // Only score on raw bitrate — no codec/channel bonuses
       return bitrate
     }
 
+    // Object audio (Atmos, DTS:X) gets highest priority
     if (track.hasObjectAudio) {
       score += 10000
     }
 
+    // Lossless codecs get high priority
     if (isLossless) {
       score += 5000
     }
 
+    // Premium lossy codecs
     const codecLower = track.codec.toLowerCase()
     if (codecLower.includes('eac3') || codecLower.includes('e-ac-3') || codecLower.includes('dd+')) {
       score += 3000
@@ -249,12 +285,19 @@ export class QualityAnalyzer {
       score += 1000
     }
 
+    // More channels = better (7.1 > 5.1 > stereo)
     score += channels * 100
+
+    // Higher bitrate = better
     score += bitrate
 
     return score
   }
 
+  /**
+   * Find the best audio track from media data.
+   * Returns the track with highest quality score, or primary audio fields when no track list exists.
+   */
   private getBestAudioTrack(input: QualityScoringInput): {
     codec: string
     channels: number
@@ -278,9 +321,11 @@ export class QualityAnalyzer {
         return primaryAudio
       }
 
+      // Filter out commentary tracks for best-track selection
       const nonCommentary = tracks.filter(t => !t.title?.toLowerCase().includes('commentary'))
       const candidates = nonCommentary.length > 0 ? nonCommentary : tracks
 
+      // Find the track with the highest quality score
       let bestTrack = candidates[0]
       let bestScore = this.calculateAudioTrackQualityScore(bestTrack)
 
@@ -299,10 +344,15 @@ export class QualityAnalyzer {
         hasObjectAudio: bestTrack.hasObjectAudio ?? false,
       }
     } catch {
+      // Invalid stream metadata is not evidence for the primary audio fields.
       return { codec: '', channels: 0, bitrate: null, hasObjectAudio: false }
     }
   }
 
+  /**
+   * Calculate continuous video tier score (0-100) based on effective bitrate
+   * relative to the tier's medium/high thresholds
+   */
   private calculateVideoTierScore(effectiveBitrate: number, tier: QualityTier): number {
     if (effectiveBitrate <= 0) return 0
     const { medium, high } = this.videoThresholds[tier]
@@ -313,11 +363,17 @@ export class QualityAnalyzer {
     return 50 + Math.round(((effectiveBitrate - medium) / (high - medium)) * 49)
   }
 
+  /**
+   * Calculate continuous audio tier score (0-100) from audio characteristics.
+   * Pure bitrate-based scoring against tier thresholds — no codec bonuses.
+   */
   private calculateAudioTierScore(
     bestAudio: { codec: string; channels: number; bitrate: number | null; hasObjectAudio: boolean },
     tier: QualityTier
   ): number | null {
+    // Object audio = perfect
     if (bestAudio.hasObjectAudio) return 100
+    // Lossless = perfect
     if (this.isLosslessAudio(bestAudio.codec)) return 100
     if (bestAudio.bitrate === null || bestAudio.bitrate === undefined) return null
     if (bestAudio.bitrate <= 0) return 0
@@ -330,6 +386,9 @@ export class QualityAnalyzer {
     return 50 + Math.round(((bestAudio.bitrate - medium) / (high - medium)) * 49)
   }
 
+  /**
+   * Format bitrate for display - uses kbps for low values, Mbps for high values
+   */
   private formatBitrate(kbps: number): string {
     if (kbps >= 1000) {
       return `${(kbps / 1000).toFixed(1)} Mbps`
@@ -337,6 +396,9 @@ export class QualityAnalyzer {
     return `${kbps} kbps`
   }
 
+  /**
+   * Core quality scoring logic shared by analyzeMediaItem and analyzeVersion.
+   */
   private scoreQuality(input: QualityScoringInput): {
     qualityTier: QualityTier | 'Unknown'
     tierQuality: TierQuality | 'UNKNOWN'
@@ -386,6 +448,10 @@ export class QualityAnalyzer {
     return { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio }
   }
 
+  /**
+   * Analyze a media item version and return lightweight quality scores.
+   * Used during scan and retroactive analysis to populate per-version quality data.
+   */
   analyzeVersion(version: MediaItemVersion): VersionQualityResult {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore } = this.scoreQuality(version)
     return {
@@ -397,18 +463,23 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Analyze a single media item and calculate quality scores
+   */
   async analyzeMediaItem(mediaItem: MediaItem): Promise<QualityScore> {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio } =
       this.scoreQuality(mediaItem)
 
+    // Efficiency Metrics
     const efficiencyScore = qualityTier !== 'Unknown' ? this.calculateEfficiencyScore(mediaItem, qualityTier) : null
     const videoBloatBytes = this.calculateVideoBloatBytes(mediaItem, qualityTier)
     const audioPruningBytes = this.getAudioPruningEvidence(mediaItem).estimatedSavingsBytes ?? 0
     const storageDebtBytes = videoBloatBytes !== null ? videoBloatBytes + audioPruningBytes : null
 
+    // Identify issues
     const issues: string[] = []
-    const hasExplicitBitrate = mediaItem.video_bitrate !== undefined && mediaItem.video_bitrate !== null && mediaItem.video_bitrate > 0
-    const itemBitrate = mediaItem.video_bitrate ?? 0
+    const hasExplicitBitrate = (mediaItem.video_bitrate !== undefined && mediaItem.video_bitrate !== null && mediaItem.video_bitrate > 0)
+    const itemBitrate = mediaItem.video_bitrate || 0
     const codecEfficiency = this.getCodecEfficiency(mediaItem.video_codec || '')
 
     if (qualityTier === 'Unknown') {
@@ -419,24 +490,30 @@ export class QualityAnalyzer {
         issues.push(`Bitrate unknown for ${qualityTier}`)
       } else if (effectiveBitrate !== null && effectiveBitrate < mediumThreshold && itemBitrate > 0) {
         const codecName = codecEfficiency !== null && codecEfficiency > 1.0 ? ` (${mediaItem.video_codec})` : ''
-        issues.push(`Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`)
+        issues.push(
+          `Low bitrate for ${qualityTier}: ${this.formatBitrate(itemBitrate)}${codecName}`
+        )
       }
 
       if (efficiencyScore != null && efficiencyScore < this.efficiencyTrashThreshold && efficiencyScore > 0) {
         issues.push(`Low efficiency score (${efficiencyScore}%): bitrate is high for this tier`)
       }
 
+      // HDR missing for 4K
       if (qualityTier === '4K' && (!mediaItem.hdr_format || mediaItem.hdr_format === 'None')) {
         issues.push('4K content without HDR')
       }
 
-      if (qualityTier === '4K' && (!mediaItem.color_bit_depth || mediaItem.color_bit_depth < 10)) {
+      // 8-bit for 4K content
+      if (qualityTier === '4K' &&
+          (!mediaItem.color_bit_depth || mediaItem.color_bit_depth < 10)) {
         issues.push('8-bit color (10-bit recommended)')
       }
 
+      // Audio issues (check best audio track)
       const { medium: audioMedium } = this.audioThresholds[qualityTier]
       if (bestAudio.channels > 0 && bestAudio.channels < 2) {
-        issues.push('Mono audio')
+        issues.push(`Mono audio`)
       } else if (bestAudio.bitrate === null) {
         issues.push('Audio bitrate unknown')
       } else if (bestAudio.channels === 2 && bestAudio.bitrate < audioMedium) {
@@ -444,6 +521,7 @@ export class QualityAnalyzer {
       }
     }
 
+    // Dubbed audio check
     const dubBitrate = this.calculateDubBitrate(mediaItem)
     if (dubBitrate !== null && dubBitrate > 500) {
       issues.push(`Dubbed audio bloat: ${this.formatBitrate(dubBitrate)} from non-original language tracks`)
@@ -477,6 +555,12 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Calculate Efficiency Score (0-100) based on grounded tier targets.
+   * Rewards modern codecs achieving high quality at efficient bitrates.
+   * Grants allowances for high-value features (Lossless Audio, HDR, 10-bit).
+   * Penalizes over-encoding (bloat) beyond visually transparent thresholds.
+   */
   private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number | null {
     const bitrate = item.video_bitrate
     if (bitrate == null || bitrate <= 0 || item.duration == null || item.duration <= 0 || !item.video_codec) return null
@@ -486,25 +570,40 @@ export class QualityAnalyzer {
 
     const isHdr = item.hdr_format && item.hdr_format !== 'None'
     const is10Bit = item.color_bit_depth && item.color_bit_depth >= 10
+
+    // Visual efficiency uses the measured video stream only. Audio and subtitle
+    // decisions have separate evidence and must not influence this score.
     const analysisBitrate = bitrate
+
     const effectiveBitrate = analysisBitrate * efficiencyMult
     const targetKbps = this.efficiencyThresholds[tier]
+
+    // HDR requires slightly more bitrate for the same visual transparency
     const bloatKbps = this.bloatThresholds[tier] * (isHdr ? this.hdrOverheadMultiplier : 1.0)
 
     let score: number
+
+    // 1. Perfect efficiency: achieves HIGH quality target with modern codec
     if (analysisBitrate <= targetKbps && efficiencyMult >= 2.0) {
       score = 100
-    } else if (effectiveBitrate <= targetKbps) {
+    }
+    // 2. Good efficiency: achieves target quality but slightly higher bitrate or older codec
+    else if (effectiveBitrate <= targetKbps) {
       score = Math.round(100 - (Math.max(0, analysisBitrate - targetKbps) / targetKbps) * 15)
-    } else if (analysisBitrate <= bloatKbps) {
+    }
+    // 3. Diminishing returns: bitrate exceeds efficient target but below bloat threshold
+    else if (analysisBitrate <= bloatKbps) {
       const range = bloatKbps - targetKbps
       const offset = analysisBitrate - targetKbps
-      score = Math.round(85 - (offset / range) * 25)
-    } else {
+      score = Math.round(85 - (offset / range) * 25) // Drops from 85 to 60
+    }
+    // 4. Bloated: bitrate exceeds the visually transparent limit
+    else {
       const overage = analysisBitrate - bloatKbps
       score = Math.max(0, Math.round(60 - (overage / bloatKbps) * 100))
     }
 
+    // 10-bit bonus: 10-bit is more efficient at preventing artifacts
     if (is10Bit && score < 100 && score > 0) {
       score = Math.min(100, score + 5)
     }
@@ -512,6 +611,10 @@ export class QualityAnalyzer {
     return score
   }
 
+  /**
+   * Calculate video bloat bytes when bitrate exceeds target for the quality tier.
+   * Returns null if evidence (bitrate, duration, or target) is missing or non-positive.
+   */
   private calculateVideoBloatBytes(item: MediaItem, qualityTier: QualityTier | 'Unknown'): number | null {
     if (qualityTier === 'Unknown') return null
     const bitrate = item.video_bitrate
@@ -525,6 +628,9 @@ export class QualityAnalyzer {
     return Math.max(0, Math.round(((bitrate - targetBitrate) * 1000 * durationSec) / 8))
   }
 
+  /**
+   * Classify media into quality tier using resolution string
+   */
   private classifyTier(resolution?: string | null, height?: number | null): QualityTier | 'Unknown' {
     if (!resolution && !height) return 'Unknown'
     const resLower = (resolution || '').toLowerCase().trim()
@@ -542,6 +648,7 @@ export class QualityAnalyzer {
       return 'SD'
     }
 
+    // Parse WxH format (e.g., "1920x1080")
     const wxhMatch = resLower.match(/(\d+)\s*x\s*(\d+)/i)
     if (wxhMatch) {
       const h = parseInt(wxhMatch[2], 10)
@@ -551,6 +658,7 @@ export class QualityAnalyzer {
       if (h > 0) return 'SD'
     }
 
+    // Fallback to height field if available
     if (height && height > 0) {
       if (height >= 2160) return '4K'
       if (height >= 1080) return '1080p'
@@ -561,6 +669,9 @@ export class QualityAnalyzer {
     return 'Unknown'
   }
 
+  /**
+   * Analyze all media items in the database
+   */
   async analyzeAllMediaItems(
     onProgress?: (current: number, total: number) => void,
     isCancelled?: () => boolean,
@@ -586,11 +697,13 @@ export class QualityAnalyzer {
           await db.media.upsertQualityScore(qualityScore)
         })
 
+        // Track distribution for verbose summary
         const tier = qualityScore.quality_tier
         const quality = qualityScore.tier_quality
         tierCounts[tier] = (tierCounts[tier] || 0) + 1
         qualityCounts[quality] = (qualityCounts[quality] || 0) + 1
 
+        // Score individual versions and update best version selection
         if (item.id && item.version_count && item.version_count > 1) {
           const versions = await db.media.getItemVersions(item.id)
           const updatePromises: Promise<void>[] = []
@@ -610,7 +723,10 @@ export class QualityAnalyzer {
         }
 
         analyzed++
-        onProgress?.(analyzed, mediaItems.length)
+
+        if (onProgress) {
+          onProgress(analyzed, mediaItems.length)
+        }
       }
     } catch (error) {
       getLoggingService().error('[QualityAnalyzer]', 'Analysis failed:', error)
@@ -625,6 +741,9 @@ export class QualityAnalyzer {
     return analyzed
   }
 
+  /**
+   * Get quality summary statistics
+   */
   async getQualityDistribution(): Promise<{
     byTier: {
       [tier: string]: { low: number; medium: number; high: number }
@@ -637,19 +756,19 @@ export class QualityAnalyzer {
   }> {
     const db = getDatabase()
     const scores = await db.media.getQualityScores()
-    const distribution = {
-      byTier: {
-        'SD': { low: 0, medium: 0, high: 0 },
-        '720p': { low: 0, medium: 0, high: 0 },
-        '1080p': { low: 0, medium: 0, high: 0 },
-        '4K': { low: 0, medium: 0, high: 0 }
-      },
-      byQuality: {
-        low: 0,
-        medium: 0,
-        high: 0
-      }
-    }
+const distribution = {
+  byTier: {
+    'SD': { low: 0, medium: 0, high: 0 },
+    '720p': { low: 0, medium: 0, high: 0 },
+    '1080p': { low: 0, medium: 0, high: 0 },
+    '4K': { low: 0, medium: 0, high: 0 }
+  },
+  byQuality: {
+    low: 0,
+    medium: 0,
+    high: 0
+  }
+}
 
     scores.forEach((score: QualityScore) => {
       const tier = score.quality_tier
@@ -664,17 +783,28 @@ export class QualityAnalyzer {
     return distribution
   }
 
+  /**
+   * Get recommended format for upgrade based on current quality
+   */
   getRecommendedFormat(mediaItem: MediaItem, currentScore: number): string {
-    const height = mediaItem.height ?? 0
+    const height = mediaItem.height || 0
     if (height >= 2160 && currentScore >= 90) {
       return 'No upgrade needed'
     }
     if (height >= 1080 && currentScore < 80) {
       return '4K UHD Blu-ray'
     }
+    if (height < 1080) {
+      return 'Blu-ray'
+    }
     return 'Blu-ray'
   }
 
+  /**
+   * Calculate removable foreign-audio bytes only from complete stream evidence.
+   * Subtitle estimates are deliberately excluded: stream metadata does not expose
+   * their byte sizes, so assigning a nominal value would be fabricated evidence.
+   */
   private getAudioPruningEvidence(item: MediaItem, analysis?: FileAnalysisResult): {
     status: 'measured' | 'estimated' | 'insufficient'
     estimatedSavingsBytes: number | null
@@ -747,6 +877,11 @@ export class QualityAnalyzer {
     return this.getAudioPruningEvidence(item, analysis).estimatedSavingsBytes
   }
 
+  /**
+   * Generates actionable recommendations only from the evidence owned by that
+   * action: measured video streams for transcodes, measured audio streams for
+   * stream pruning.
+   */
   getOptimizationAdvice(item: MediaItem, analysis?: FileAnalysisResult): OptimizationAdvice {
     const video = analysis?.video
     const hasFreshAnalysis = analysis !== undefined
@@ -819,6 +954,14 @@ export class QualityAnalyzer {
     }
   }
 
+
+  // ============================================================================
+  // MUSIC QUALITY ANALYSIS
+  // ============================================================================
+
+  /**
+   * Analyze a music album's quality
+   */
   analyzeMusicAlbum(album: MusicAlbum, tracks: MusicTrack[]): MusicQualityScore {
     const issues: string[] = []
     const hasTrackEvidence = tracks.some(track =>
@@ -855,6 +998,7 @@ export class QualityAnalyzer {
     const bitrateScore = this.calculateMusicBitrateScore(album, qualityTier)
     const tierScore = Math.round((codecScore + bitrateScore) / 2)
 
+    // Determine tier quality based on tier score
     let tierQuality: 'LOW' | 'MEDIUM' | 'HIGH'
     if (tierScore >= 75) {
       tierQuality = 'HIGH'
@@ -878,7 +1022,8 @@ export class QualityAnalyzer {
       }
     }
 
-    const needsUpgrade = qualityTier === 'LOSSY_LOW' || qualityTier === 'LOSSY_MID'
+    const needsUpgrade = qualityTier === 'LOSSY_LOW' ||
+      qualityTier === 'LOSSY_MID'
 
     return {
       album_id: album.id!,
@@ -899,6 +1044,9 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Determine music quality tier based on codec and specs
+   */
   private determineMusicQualityTier(album: MusicAlbum, tracks: MusicTrack[]): MusicQualityTier {
     const hasHiRes = tracks.some(t => t.is_hi_res)
     if (hasHiRes) {
@@ -917,7 +1065,7 @@ export class QualityAnalyzer {
       return 'LOSSLESS'
     }
 
-    const avgBitrate = album.avg_audio_bitrate ?? 0
+    const avgBitrate = album.avg_audio_bitrate || 0
 
     if (avgBitrate >= this.musicThresholds.highBitrate) {
       return 'LOSSY_HIGH'
@@ -928,6 +1076,9 @@ export class QualityAnalyzer {
     }
   }
 
+  /**
+   * Calculate codec score for music (0-100)
+   */
   private calculateMusicCodecScore(_album: MusicAlbum, tracks: MusicTrack[]): number {
     if (tracks.length === 0) return 50
 
@@ -968,8 +1119,11 @@ export class QualityAnalyzer {
     return Math.round(totalScore / tracks.length)
   }
 
+  /**
+   * Calculate bitrate score for music (0-100)
+   */
   private calculateMusicBitrateScore(album: MusicAlbum, tier: MusicQualityTier): number {
-    const avgBitrate = album.avg_audio_bitrate ?? 0
+    const avgBitrate = album.avg_audio_bitrate || 0
 
     if (tier === 'HI_RES') {
       return 100
@@ -989,6 +1143,9 @@ export class QualityAnalyzer {
     return 25
   }
 
+  /**
+   * Get music quality tier display name
+   */
   getMusicQualityTierDisplay(tier: MusicQualityTier): string {
     const displays: Record<MusicQualityTier, string> = {
       'LOSSY_LOW': 'Low Quality',
@@ -1001,6 +1158,9 @@ export class QualityAnalyzer {
     return displays[tier]
   }
 
+  /**
+   * Get recommended music format for upgrade
+   */
   getRecommendedMusicFormat(_album: MusicAlbum, score: MusicQualityScore): string {
     if (score.quality_tier === 'UNKNOWN') {
       return 'Insufficient evidence'
@@ -1022,6 +1182,7 @@ export class QualityAnalyzer {
   }
 }
 
+// Export singleton instance
 let analyzerInstance: QualityAnalyzer | null = null
 
 export function getQualityAnalyzer(): QualityAnalyzer {
