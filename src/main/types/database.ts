@@ -527,7 +527,7 @@ export interface TVShowFilters {
 // MUSIC TYPES
 // ============================================================================
 
-export type MusicQualityTier = 'LOSSY_LOW' | 'LOSSY_MID' | 'LOSSY_HIGH' | 'LOSSLESS' | 'HI_RES'
+export type MusicQualityTier = 'LOSSY_LOW' | 'LOSSY_MID' | 'LOSSY_HIGH' | 'LOSSLESS' | 'HI_RES' | 'UNKNOWN'
 export enum AlbumType {
   Album = 'album',
   EP = 'ep',
@@ -687,7 +687,7 @@ export interface MusicQualityScore {
   album_id: number
 
   quality_tier: MusicQualityTier
-  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
+  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score: number | null
 
   codec_score: number | null
