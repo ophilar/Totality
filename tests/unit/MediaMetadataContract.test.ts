@@ -85,12 +85,13 @@ describe('media metadata contract', () => {
   it('preserves valid zero and false track values instead of treating them as missing', async () => {
     const result = await new QualityAnalyzer().analyzeMediaItem(createMediaItem({
       video_bitrate: 0,
+      original_language: 'en',
       audio_codec: 'truehd',
       audio_channels: 8,
       audio_bitrate: 4000,
       has_object_audio: true,
       audio_tracks: JSON.stringify([
-        { codec: 'aac', channels: 0, bitrate: 0, hasObjectAudio: false },
+        { codec: 'aac', channels: 0, bitrate: 0, hasObjectAudio: false, language: 'en' },
       ]),
     }))
 
