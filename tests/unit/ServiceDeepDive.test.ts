@@ -69,7 +69,7 @@ describe('Service Deep Dive (No Mocks)', () => {
       
       const album = { id: 1, title: 'Hi-Res Album', avg_audio_bitrate: 5000 } as MusicAlbum
       const tracks = [
-        { is_hi_res: 1, sample_rate: 96000, bit_depth: 24, codec: 'flac', bitrate: 5000, is_lossless: 1 }
+        { is_hi_res: true, sample_rate: 96000, bit_depth: 24, audio_codec: 'flac', audio_bitrate: 5000, is_lossless: true }
       ] as MusicTrack[]
       
       const score = qualityAnalyzer.analyzeMusicAlbum(album, tracks)
@@ -80,23 +80,21 @@ describe('Service Deep Dive (No Mocks)', () => {
     it('should correctly identify HI_RES audio from tracks', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
       const album = { id: 1, avg_audio_bitrate: 3000 } as MusicAlbum
-      const tracks = [{ is_hi_res: 1, is_lossless: 1, codec: 'flac' }] as MusicTrack[]
+      const tracks = [{ is_hi_res: true, is_lossless: true, audio_codec: 'flac' }] as MusicTrack[]
       
-      const tier = (qualityAnalyzer as unknown as { determineMusicQualityTier: (album: MusicAlbum, tracks: MusicTrack[]) => string }).determineMusicQualityTier(album, tracks)
-      expect(tier).toBe('HI_RES')
+      expect(qualityAnalyzer.analyzeMusicAlbum(album, tracks).quality_tier).toBe('HI_RES')
     })
 
     it('should identify LOSSLESS when majority of tracks are lossless', async () => {
       await qualityAnalyzer.loadThresholdsFromDatabase()
       const album = { id: 1, avg_audio_bitrate: 1000 } as MusicAlbum
       const tracks = [
-        { is_hi_res: 0, is_lossless: 1, codec: 'flac' },
-        { is_hi_res: 0, is_lossless: 1, codec: 'flac' },
-        { is_hi_res: 0, is_lossless: 0, codec: 'mp3' }
+        { is_hi_res: false, is_lossless: true, audio_codec: 'flac' },
+        { is_hi_res: false, is_lossless: true, audio_codec: 'flac' },
+        { is_hi_res: false, is_lossless: false, audio_codec: 'mp3' }
       ] as MusicTrack[]
       
-      const tier = (qualityAnalyzer as unknown as { determineMusicQualityTier: (album: MusicAlbum, tracks: MusicTrack[]) => string }).determineMusicQualityTier(album, tracks)
-      expect(tier).toBe('LOSSLESS')
+      expect(qualityAnalyzer.analyzeMusicAlbum(album, tracks).quality_tier).toBe('LOSSLESS')
     })
   })
 
