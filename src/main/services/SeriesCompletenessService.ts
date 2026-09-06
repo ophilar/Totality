@@ -5,7 +5,6 @@ import { getErrorMessage, parseDatabaseError } from '@main/services/utils/errorU
 import { CompletenessEngine } from '@main/services/CompletenessEngine'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { getLoggingService } from '@main/services/LoggingService'
-import { getFileNameParser } from '@main/services/FileNameParser'
 import type { TMDBEpisode } from '@main/types/tmdb'
 
 export function isPlaceholderEpisodeTitle(title?: string | null): boolean {
@@ -52,38 +51,44 @@ export class SeriesCompletenessService {
     const source = await this.db.sources.getSourceById(sourceId || '')
     if (tmdbApiKey) await this.tmdb.initialize()
 
-    const parser = getFileNameParser()
     const allEpisodes = await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
-    const seriesByNormalizedTitle = new Map<string, { title: string; episodes: MediaItem[] }>()
+    const seriesByIdentity = new Map<string, { title: string; identityKey: string; sourceId: string; libraryId: string; episodes: MediaItem[] }>()
 
     for (const episode of allEpisodes) {
       if (!episode.series_title) continue
-      const normalizedTitle = parser.normalizeSeriesTitle(episode.series_title)
-      if (!normalizedTitle) continue
-      const seriesKey = episode.series_identity_key || normalizedTitle
+      const identityKey = episode.series_identity_key?.trim()
+      const episodeSourceId = episode.source_id?.trim()
+      const episodeLibraryId = episode.library_id?.trim()
+      if (!identityKey) throw new Error(`Episode "${episode.title}" is missing TV series identity`)
+      if (!episodeSourceId) throw new Error(`Episode "${episode.title}" is missing TV series source`)
+      if (!episodeLibraryId) throw new Error(`Episode "${episode.title}" is missing TV series library`)
+      const seriesKey = `${identityKey}\u001f${episodeSourceId}\u001f${episodeLibraryId}`
 
-      const series = seriesByNormalizedTitle.get(seriesKey)
+      const series = seriesByIdentity.get(seriesKey)
       if (series) {
         series.episodes.push(episode)
       } else {
-        seriesByNormalizedTitle.set(seriesKey, {
+        seriesByIdentity.set(seriesKey, {
           title: episode.series_title,
+          identityKey,
+          sourceId: episodeSourceId,
+          libraryId: episodeLibraryId,
           episodes: [episode],
         })
       }
     }
 
     const allCompleteness = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
-    const completenessByNormalizedTitle = new Map<string, SeriesCompleteness>()
+    const completenessByIdentity = new Map<string, SeriesCompleteness>()
     for (const completeness of allCompleteness) {
-      const normalizedTitle = parser.normalizeSeriesTitle(completeness.series_title)
-      if (normalizedTitle) {
-        const seriesKey = completeness.series_identity_key || normalizedTitle
-        completenessByNormalizedTitle.set(seriesKey, completeness)
-      }
+      const identityKey = completeness.series_identity_key?.trim()
+      const completenessSourceId = completeness.source_id?.trim()
+      const completenessLibraryId = completeness.library_id?.trim()
+      if (!identityKey || !completenessSourceId || !completenessLibraryId) continue
+      completenessByIdentity.set(`${identityKey}\u001f${completenessSourceId}\u001f${completenessLibraryId}`, completeness)
     }
 
-    const seriesToAnalyze = Array.from(seriesByNormalizedTitle.entries())
+    const seriesToAnalyze = Array.from(seriesByIdentity.entries())
     result.totalSeries = seriesToAnalyze.length
 
     try {
@@ -91,7 +96,7 @@ export class SeriesCompletenessService {
         if (this.cancelRequested) break
         await new Promise(r => setImmediate(r))
 
-        const [normalizedTitle, series] = seriesToAnalyze[i]
+        const [seriesKey, series] = seriesToAnalyze[i]
         onProgress?.({
           current: i + 1,
           total: seriesToAnalyze.length,
@@ -101,10 +106,11 @@ export class SeriesCompletenessService {
         })
 
         try {
-          const analysis = await this.analyzeSeries(series.title, sourceId, libraryId, undefined, series.episodes, {
+          const analysis = await this.analyzeSeries(series.title, series.sourceId, series.libraryId, undefined, series.episodes, {
             tmdbApiKey,
             source,
-            existingCompleteness: completenessByNormalizedTitle.get(normalizedTitle) ?? null,
+            existingCompleteness: completenessByIdentity.get(seriesKey) ?? null,
+            seriesIdentityKey: series.identityKey,
             returnConstructed: true,
           })
           if (analysis) {
@@ -170,20 +176,34 @@ export class SeriesCompletenessService {
       tmdbApiKey?: string | null;
       source?: SourceRecord;
       existingCompleteness?: SeriesCompleteness | null;
+      seriesIdentityKey?: string;
       returnConstructed?: boolean;
     }
   ): Promise<SeriesCompleteness | null> {
-    const episodes = providedEpisodes ?? (await this.db.tvShows.getEpisodes(seriesTitle, sourceId, undefined, libraryId))
+    const requestedIdentityKey = prefetchedData?.seriesIdentityKey?.trim()
+    if (!providedEpisodes && !requestedIdentityKey) throw new Error('TV series identity is required')
+    if (!providedEpisodes && !sourceId) throw new Error('TV series source is required')
+    if (!providedEpisodes && !libraryId) throw new Error('TV series library is required')
+
+    const episodes = providedEpisodes ?? (await this.db.tvShows.getEpisodes(seriesTitle, sourceId!, requestedIdentityKey!, libraryId!))
     if (episodes.length === 0) return null
 
-    const effectiveSourceId = sourceId || episodes[0]?.source_id || ''
-    const effectiveLibraryId = libraryId || episodes[0]?.library_id || ''
+    const effectiveSourceId = sourceId?.trim() || episodes[0]?.source_id?.trim()
+    const effectiveLibraryId = libraryId?.trim() || episodes[0]?.library_id?.trim()
+    const seriesIdentityKey = requestedIdentityKey || episodes[0]?.series_identity_key?.trim()
+    if (!effectiveSourceId) throw new Error('TV series source is required')
+    if (!effectiveLibraryId) throw new Error('TV series library is required')
+    if (!seriesIdentityKey) throw new Error('TV series identity is required')
+    if (episodes.some(episode => episode.series_identity_key !== seriesIdentityKey || episode.source_id !== effectiveSourceId || episode.library_id !== effectiveLibraryId)) {
+      throw new Error('TV series episodes do not share one scoped identity')
+    }
 
     const tmdbApiKey = prefetchedData?.tmdbApiKey !== undefined ? prefetchedData.tmdbApiKey : await this.db.config.getSetting('tmdb_api_key')
     const existing = prefetchedData?.existingCompleteness
     const imdbId = episodes.find(e => e.imdb_id)?.imdb_id
 
-    const persistedExisting = existing ?? await this.db.tvShows.getCompletenessByTitle(seriesTitle, effectiveSourceId, effectiveLibraryId)
+    const persistedExisting = existing ?? (await this.db.tvShows.getAllCompleteness(effectiveSourceId, effectiveLibraryId))
+      .find(row => row.series_identity_key === seriesIdentityKey) ?? null
     const existingIdentities = persistedExisting?.id ? await this.db.identities.getIdentities('series', persistedExisting.id) : []
     const tmdbIdent = existingIdentities.find(i => i.provider === 'tmdb')
     const isLocked = Boolean(tmdbIdent?.locked || persistedExisting?.user_fixed_match)
@@ -254,7 +274,7 @@ export class SeriesCompletenessService {
     }
 
     if (!tmdbId || !showDetails || !Array.isArray(showDetails.seasons) || !tmdbApiKey || !this.tmdb.isConfigured()) {
-      const unmatched = await this.createUnmatchedResult(seriesTitle, episodes, effectiveSourceId, effectiveLibraryId, prefetchedData?.existingCompleteness, staleTmdbIdForCleanup)
+      const unmatched = await this.createUnmatchedResult(seriesTitle, seriesIdentityKey, episodes, effectiveSourceId, effectiveLibraryId, persistedExisting, staleTmdbIdForCleanup)
       await this.db.withBatch(async () => {
         if (staleTmdbIdForCleanup && persistedExisting?.id && !isLocked) {
           await this.db.identities.deleteIdentity('series', persistedExisting.id, 'tmdb', staleTmdbIdForCleanup)
@@ -269,7 +289,9 @@ export class SeriesCompletenessService {
         }
         await this.db.tvShows.upsertCompleteness(unmatched)
       })
-      return prefetchedData?.returnConstructed ? unmatched : await this.db.tvShows.getCompletenessByTitle(seriesTitle, effectiveSourceId, effectiveLibraryId)
+      if (prefetchedData?.returnConstructed) return unmatched
+      return (await this.db.tvShows.getAllCompleteness(effectiveSourceId, effectiveLibraryId))
+        .find(row => row.series_identity_key === seriesIdentityKey) ?? null
     }
 
     const seasonNums = showDetails.seasons.filter(s => s.season_number > 0).map(s => s.season_number)
@@ -333,6 +355,7 @@ export class SeriesCompletenessService {
     const result: SeriesCompleteness = {
       id: persistedExisting?.id,
       series_title: seriesTitle,
+      series_identity_key: seriesIdentityKey,
       source_id: effectiveSourceId,
       library_id: effectiveLibraryId,
       total_seasons: showDetails.number_of_seasons,
@@ -478,11 +501,15 @@ export class SeriesCompletenessService {
       return cId
     })
 
-    return prefetchedData?.returnConstructed ? result : await this.db.tvShows.getCompletenessByTitle(seriesTitle, sourceId || '', libraryId || '')
+    if (prefetchedData?.returnConstructed) return result
+    return (await this.db.tvShows.getAllCompleteness(effectiveSourceId, effectiveLibraryId))
+      .find(row => row.series_identity_key === seriesIdentityKey) ?? null
   }
 
-  private async createUnmatchedResult(title: string, owned: MediaItem[], sourceId: string, libraryId: string, preFetchedExisting?: SeriesCompleteness | null, invalidTmdbId?: string): Promise<SeriesCompleteness> {
-    const existing = preFetchedExisting !== undefined ? preFetchedExisting : await this.db.tvShows.getCompletenessByTitle(title, sourceId, libraryId)
+  private async createUnmatchedResult(title: string, seriesIdentityKey: string, owned: MediaItem[], sourceId: string, libraryId: string, preFetchedExisting?: SeriesCompleteness | null, invalidTmdbId?: string): Promise<SeriesCompleteness> {
+    const existing = preFetchedExisting !== undefined
+      ? preFetchedExisting
+      : (await this.db.tvShows.getAllCompleteness(sourceId, libraryId)).find(row => row.series_identity_key === seriesIdentityKey) ?? null
 
     if (existing?.completeness_percentage != null && existing.tmdb_id !== invalidTmdbId) return existing
 
@@ -495,6 +522,7 @@ export class SeriesCompletenessService {
     return {
       id: existing?.id,
       series_title: title,
+      series_identity_key: seriesIdentityKey,
       source_id: sourceId,
       library_id: libraryId,
       total_seasons: new Set(owned.map(e => e.season_number)).size,

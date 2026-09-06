@@ -21,6 +21,9 @@ interface EpisodeSearchResult {
   id: number
   title: string
   series_title?: string | null
+  series_identity_key?: string | null
+  source_id?: string
+  library_id?: string
   season_number?: number | null
   episode_number?: number | null
   thumb_url?: string | null
@@ -56,6 +59,13 @@ interface TrackSearchResult {
   type: 'track'
 }
 
+interface SearchResultExtra {
+  series_identity_key?: string | null
+  source_id?: string
+  library_id?: string
+  album_id?: number
+}
+
 export interface GlobalSearchResults {
   movies: MovieSearchResult[]
   tvShows: TVSearchResult[]
@@ -68,19 +78,20 @@ export interface GlobalSearchResults {
 export interface FlattenedResult {
   type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track'
   id: number | string
-  extra?: { series_title?: string | null; album_id?: number }
+  extra?: SearchResultExtra
 }
 
 interface UseGlobalSearchOptions {
   items: MediaItem[]
+  /** TV shows keyed by stable renderer identity; show.title is the display/search title. */
   tvShows: Map<string, TVShow>
   musicArtists: MusicArtist[]
   musicAlbums: MusicAlbum[]
   allMusicTracks: MusicTrack[]
   searchInputRef: RefObject<HTMLInputElement | null>
   onNavigateToMovie: (id: number) => void
-  onNavigateToTVShow: (title: string) => void
-  onNavigateToEpisode: (id: number, seriesTitle?: string | null) => void
+  onNavigateToTVShow: (identityKey: string) => void
+  onNavigateToEpisode: (id: number, seriesIdentityKey?: string | null, sourceId?: string, libraryId?: string) => void
   onNavigateToArtist: (artist: MusicArtist) => void
   onNavigateToAlbum: (album: MusicAlbum) => void
   onNavigateToTrack: (albumId: number) => void
@@ -101,7 +112,7 @@ export interface UseGlobalSearchReturn {
   handleSearchResultClick: (
     type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track',
     id: number | string,
-    extra?: { series_title?: string | null; album_id?: number }
+    extra?: SearchResultExtra
   ) => void
 }
 
@@ -155,13 +166,13 @@ export function useGlobalSearch({
         type: 'movie' as const,
       }))
 
-    // Search TV shows (unique titles only)
+    // Search TV shows by display title while retaining the identity key as the result ID.
     const tvResults: TVSearchResult[] = Array.from(tvShows.entries())
-      .filter(([title]) => title.toLowerCase().includes(query))
+      .filter(([, show]) => show.title.toLowerCase().includes(query))
       .slice(0, maxResults)
-      .map(([title, show]) => ({
-        id: title,
-        title: title,
+      .map(([identityKey, show]) => ({
+        id: identityKey,
+        title: show.title,
         poster_url: show.poster_url,
         type: 'tv' as const,
       }))
@@ -179,6 +190,9 @@ export function useGlobalSearch({
         id: item.id!,
         title: item.title,
         series_title: item.series_title,
+        series_identity_key: item.series_identity_key,
+        source_id: item.source_id,
+        library_id: item.library_id,
         season_number: item.season_number,
         episode_number: item.episode_number,
         thumb_url: item.episode_thumb_url || item.season_poster_url || item.poster_url,
@@ -257,7 +271,15 @@ export function useGlobalSearch({
     globalSearchResults.movies.forEach((m) => results.push({ type: 'movie', id: m.id }))
     globalSearchResults.tvShows.forEach((s) => results.push({ type: 'tv', id: s.id }))
     globalSearchResults.episodes.forEach((e) =>
-      results.push({ type: 'episode', id: e.id, extra: { series_title: e.series_title } })
+      results.push({
+        type: 'episode',
+        id: e.id,
+        extra: {
+          series_identity_key: e.series_identity_key,
+          source_id: e.source_id,
+          library_id: e.library_id,
+        },
+      })
     )
     globalSearchResults.artists.forEach((a) => results.push({ type: 'artist', id: a.id }))
     globalSearchResults.albums.forEach((a) => results.push({ type: 'album', id: a.id }))
@@ -277,7 +299,6 @@ export function useGlobalSearch({
 
   // Handle clicking outside search results to close
   useEffect(() => {
-
     const handleClickOutside = (event: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
         setShowSearchResults(false)
@@ -292,7 +313,7 @@ export function useGlobalSearch({
     (
       type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track',
       id: number | string,
-      extra?: { series_title?: string | null; album_id?: number }
+      extra?: SearchResultExtra
     ) => {
       setShowSearchResults(false)
       setSearchInput('')
@@ -302,7 +323,7 @@ export function useGlobalSearch({
       } else if (type === 'tv') {
         onNavigateToTVShow(id as string)
       } else if (type === 'episode') {
-        onNavigateToEpisode(id as number, extra?.series_title)
+        onNavigateToEpisode(id as number, extra?.series_identity_key, extra?.source_id, extra?.library_id)
       } else if (type === 'artist') {
         const artist = musicArtists.find((a) => a.id === id)
         if (artist) onNavigateToArtist(artist)

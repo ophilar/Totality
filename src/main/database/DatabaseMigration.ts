@@ -7,6 +7,7 @@ import type { Client } from '@libsql/client'
 import { drizzle } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
+import { backfillSeriesIdentityKeys, enforceSeriesIdentityConstraints } from '@main/database/SeriesIdentityMigration'
 import { getLoggingService } from '@main/services/LoggingService'
 import { DATABASE_SCHEMA } from '@main/database/schema'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
@@ -47,6 +48,7 @@ export async function runMigrations(db: Client): Promise<void> {
     }
 
     for (const sql of statements) {
+      if (/^CREATE UNIQUE INDEX\b/i.test(sql) && /\bON\s+series_completeness\b/i.test(sql)) continue
       try {
         await db.execute(sql)
       } catch (err) {
@@ -187,7 +189,9 @@ export async function runMigrations(db: Client): Promise<void> {
   await migrateExistingItemsToVersions(db)
   await cleanupOrphanedRecords(db)
   await backfillMediaIdentities(db)
+  await backfillSeriesIdentityKeys(db)
   await mergeDuplicateSeriesCompleteness(db)
+  await enforceSeriesIdentityConstraints(db)
   await migrateStaleTimelineRecipes(db)
 
   getLoggingService().info('[DatabaseMigration]', 'Migrations completed successfully')
@@ -402,9 +406,6 @@ async function rebuildSeriesCompletenessForNullableEvidence(db: Client): Promise
       'CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completeness(tmdb_id) WHERE tmdb_id IS NOT NULL',
       'CREATE INDEX IF NOT EXISTS idx_series_completeness_title ON series_completeness(series_title)',
       'CREATE INDEX IF NOT EXISTS idx_series_completeness_library ON series_completeness(source_id, library_id)',
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != \'\'',
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != \'\'',
       'CREATE INDEX IF NOT EXISTS idx_series_completeness_title_pct ON series_completeness(series_title, completeness_percentage)',
       'CREATE INDEX IF NOT EXISTS idx_series_completeness_incomplete ON series_completeness(completeness_percentage) WHERE tmdb_id IS NOT NULL AND completeness_percentage < 100',
       `CREATE TRIGGER IF NOT EXISTS update_series_completeness_timestamp
@@ -559,16 +560,6 @@ export async function mergeDuplicateSeriesCompleteness(db: Client): Promise<void
   const drizzleDb = drizzle(db, { schema })
   const repo = new TVShowRepository(db, drizzleDb)
   await repo.mergeDuplicateShows()
-  await ensureSeriesUniquenessIndexes(db)
-}
-
-async function ensureSeriesUniquenessIndexes(db: Client): Promise<void> {
-  const indexes = [
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id)',
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tvdb ON series_completeness(source_id, library_id, tvdb_id) WHERE tvdb_id IS NOT NULL AND tvdb_id != ''`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_tmdb ON series_completeness(source_id, library_id, tmdb_id) WHERE tmdb_id IS NOT NULL AND tmdb_id != ''`
-  ]
-  for (const idx of indexes) await db.execute(idx)
 }
 
 async function migrateStaleTimelineRecipes(db: Client): Promise<void> {

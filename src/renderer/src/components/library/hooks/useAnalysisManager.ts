@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
-import type { AnalysisProgress, MediaSource } from '@/components/library/types'
+import { getTVShowIdentity } from '@/components/library/tv/showIdentity'
+import type { AnalysisProgress, MediaSource, TVShowSummary } from '@/components/library/types'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 
@@ -30,7 +31,7 @@ interface UseAnalysisManagerReturn {
   handleAnalyzeMusic: () => Promise<void>
   handleAnalyzeQuality: () => Promise<void>
   handleAnalyzeAll: (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => Promise<void>
-  handleAnalyzeSingleSeries: (seriesTitle: string) => Promise<void>
+  handleAnalyzeSingleSeries: (show: TVShowSummary) => Promise<void>
   handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
   checkTmdbApiKey: () => Promise<void>
 }
@@ -140,12 +141,17 @@ export function useAnalysisManager({
     if (hasMusic) await handleAnalyzeMusic()
   }, [handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeQuality, handleAnalyzeSeries])
 
-  // Analyze a single series for completeness
   const handleAnalyzeSingleSeries = useCallback(
-    async (seriesTitle: string) => {
+    async (show: TVShowSummary) => {
       try {
-        window.electronAPI.log.info('[useAnalysisManager]', `Analyzing series: ${seriesTitle}`)
-        await window.electronAPI.seriesAnalyze(seriesTitle)
+        const { sourceId, seriesIdentityKey, libraryId } = getTVShowIdentity(show)
+        window.electronAPI.log.info('[useAnalysisManager]', `Analyzing series: ${show.series_title}`)
+        await window.electronAPI.seriesAnalyzeByIdentity(
+          show.series_title,
+          sourceId,
+          seriesIdentityKey,
+          libraryId
+        )
         await loadCompletenessData()
       } catch (err) {
         window.electronAPI.log.error('[useAnalysisManager]', 'Single series analysis failed:', err)

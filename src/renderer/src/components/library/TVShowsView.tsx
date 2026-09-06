@@ -3,6 +3,7 @@ import { RefreshCw, Tv, HardDrive, Zap, X } from 'lucide-react'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import { ShowListItem } from '@/components/library/tv/ShowListItem'
 import { TVShowDetails } from '@/components/library/tv/TVShowDetails'
+import { getTVShowIdentity, getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
 import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 import { useSources } from '@/contexts/SourceContext'
 import { MediaGridView } from '@/components/library/MediaGridView'
@@ -55,10 +56,10 @@ export function TVShowsView({
   sortOrder: 'asc' | 'desc'
   onSortChange: (sort: string) => void
   slimDown: boolean
-  selectedShow: string | null
+  selectedShow: TVShowSummary | null
   selectedShowData: TVShow | null
   selectedShowLoading: boolean
-  onSelectShow: (seriesTitle: string | null) => void
+  onSelectShow: (show: TVShowSummary | null) => void
   onSelectEpisode: (id: number) => void
   filterItem: (item: MediaItem) => boolean
   gridScale: number
@@ -66,12 +67,12 @@ export function TVShowsView({
   seriesCompleteness: Map<string, SeriesCompletenessData>
   onMissingItemClick: (item: MissingItemPopupData) => void
   showSourceBadge: boolean
-  onAnalyzeSeries: (seriesTitle: string) => void
-  onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
+  onAnalyzeSeries: (show: TVShowSummary) => Promise<void> | void
+  onFixMatch?: (show: TVShowSummary, folderPath?: string) => void
   onDismissUpgrade: (item: MediaItem) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
-  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
-  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
+  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
+  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
   totalShowCount: number
   totalEpisodeCount?: number
   showsLoading: boolean
@@ -102,7 +103,13 @@ export function TVShowsView({
 
   const handleOptimizationDryRun = useCallback(async (show: TVShowSummary) => {
     if (onOptimizationDryRun) return onOptimizationDryRun(show)
-    const report = await window.electronAPI.optimizationDryRun(show.series_title, show.source_id)
+    const { sourceId, seriesIdentityKey, libraryId } = getTVShowIdentity(show)
+    const report = await window.electronAPI.optimizationDryRun(
+      show.series_title,
+      sourceId,
+      seriesIdentityKey,
+      libraryId
+    )
     setDryRunReport({ show, report })
   }, [onOptimizationDryRun])
 
@@ -150,24 +157,24 @@ export function TVShowsView({
           }
           renderGridItem={(show) => (
             <ShowCard
-              key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
-              completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
-              onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)}
+              key={getTVShowIdentityKey(show)} show={show} onClick={() => onSelectShow(show)}
+              completenessData={seriesCompleteness.get(getTVShowIdentityKey(show))} showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={() => onAnalyzeSeries(show)}
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
               onRequestOptimization={() => handleOptimizationRequest(show)}
               onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
-              onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
+              onFixMatch={onFixMatch ? (_sId, fp) => onFixMatch(show, fp) : undefined}
               isLibraryAnalyzing={!!activeScan || isAnalyzing}
             />
           )}
           renderListItem={(show) => (
             <ShowListItem
-              key={show.series_title} show={show} onClick={() => onSelectShow(show.series_title)}
-              completenessData={seriesCompleteness.get(show.series_title)} showSourceBadge={showSourceBadge}
-              onAnalyzeSeries={async () => onAnalyzeSeries(show.series_title)}
+              key={getTVShowIdentityKey(show)} show={show} onClick={() => onSelectShow(show)}
+              completenessData={seriesCompleteness.get(getTVShowIdentityKey(show))} showSourceBadge={showSourceBadge}
+              onAnalyzeSeries={async () => { await onAnalyzeSeries(show) }}
               onOptimizationDryRun={() => { void handleOptimizationDryRun(show) }}
               onRequestOptimization={() => handleOptimizationRequest(show)}
-              onFixMatch={onFixMatch ? (sId, fp) => onFixMatch(show.series_title, sId, fp) : undefined}
+              onFixMatch={onFixMatch ? (_sId, fp) => onFixMatch(show, fp) : undefined}
               onTranscodeShow={onTranscodeShow ? () => onTranscodeShow(show) : undefined}
             />
           )}
@@ -175,7 +182,7 @@ export function TVShowsView({
             <div className="mx-2 mb-2 flex items-center gap-4 rounded-md border-b border-border/50 bg-muted/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <span className="w-16 shrink-0">Poster</span>
               <button className="flex-1 text-left hover:text-foreground" onClick={() => onSortChange('title')} aria-label="Sort TV shows by title">{getSortLabel('tv', 'title')}</button>
-              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by recoverable bytes">{getSortLabel('tv', 'recoverable')}</button>
+              <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('recoverable')} aria-label="Sort TV shows by total debt">{getSortLabel('tv', 'recoverable')}</button>
               <button className="w-32 text-left hover:text-foreground" onClick={() => onSortChange('weighted_efficiency')} aria-label="Sort TV shows by weighted efficiency">{getSortLabel('tv', 'weighted_efficiency')}</button>
               <span className="w-8 shrink-0" />
             </div>
@@ -203,15 +210,15 @@ export function TVShowsView({
                   <span className="text-base font-bold">{formatMB(dryRunReport.report.totalBytes || dryRunReport.show.total_size)}</span>
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
-                  <span className="text-xs text-muted-foreground block">Estimated Recoverable</span>
+                  <span className="text-xs text-muted-foreground block">Estimated Total Debt</span>
                   <span className="text-base font-bold text-emerald-400">
-                    {formatMB(dryRunReport.report.totalCombinedSavingsBytes || dryRunReport.report.recoverableBytes)}
+                    {formatMB(dryRunReport.report.totalRecoverableBytes ?? dryRunReport.report.totalCombinedSavingsBytes ?? dryRunReport.report.recoverableBytes)}
                     {dryRunReport.report.percentageSavings > 0 && ` (${dryRunReport.report.percentageSavings.toFixed(1)}%)`}
                   </span>
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Audio Track Pruning</span>
-                  <span className="font-semibold">{formatMB(dryRunReport.report.recoverableBytes)}</span>
+                  <span className="font-semibold">{formatMB(dryRunReport.report.audioPruningBytes)}</span>
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Video Transcode Debt</span>
@@ -223,6 +230,9 @@ export function TVShowsView({
                     {dryRunReport.report.scoredEpisodes} / {dryRunReport.report.totalEpisodes} scored
                     {dryRunReport.report.unscoredEpisodes > 0 && ` (${dryRunReport.report.unscoredEpisodes} unscored)`}
                   </span>
+                  {'coverage' in dryRunReport.report && dryRunReport.report.coverage && (
+                    <span className="block text-xs text-muted-foreground capitalize">Recovery evidence: {dryRunReport.report.coverage}</span>
+                  )}
                 </div>
                 <div className="p-3 bg-muted/20 rounded-xl border border-border/30">
                   <span className="text-xs text-muted-foreground block">Weighted Efficiency</span>
@@ -266,9 +276,30 @@ export function TVShowsView({
   }
 
   if (selectedShow) {
+    const completenessData = seriesCompleteness.get(getTVShowIdentityKey(selectedShow))
     return (
       <div ref={detailScrollRef} className="h-full overflow-y-auto">
-        <TVShowDetails key={`${selectedShow}:${seriesCompleteness.get(selectedShow)?.tmdb_id ?? ''}`} scrollParentRef={detailScrollRef} selectedShow={selectedShow} selectedShowData={selectedShowData} selectedShowLoading={selectedShowLoading} seriesCompleteness={seriesCompleteness} onBack={handleBack} onAnalyzeSeries={onAnalyzeSeries} onFixMatch={onFixMatch ? (title, sId, fp) => onFixMatch(title, sId, fp) : undefined} filterItem={filterItem} onSelectEpisode={onSelectEpisode} onRescanEpisode={onRescanEpisode} onDismissUpgrade={onDismissUpgrade} expandedRecommendations={expandedRecommendations} onToggleOptimize={toggleRecommendation} onMissingItemClick={onMissingItemClick} onDismissMissingSeason={onDismissMissingSeason} onDismissMissingEpisode={onDismissMissingEpisode} onTranscodeShow={onTranscodeShow} />
+        <TVShowDetails
+          key={getTVShowIdentityKey(selectedShow)}
+          scrollParentRef={detailScrollRef}
+          selectedShow={selectedShow}
+          selectedShowData={selectedShowData}
+          selectedShowLoading={selectedShowLoading}
+          completenessData={completenessData}
+          onBack={handleBack}
+          onAnalyzeSeries={onAnalyzeSeries}
+          onFixMatch={onFixMatch}
+          filterItem={filterItem}
+          onSelectEpisode={onSelectEpisode}
+          onRescanEpisode={onRescanEpisode}
+          onDismissUpgrade={onDismissUpgrade}
+          expandedRecommendations={expandedRecommendations}
+          onToggleOptimize={toggleRecommendation}
+          onMissingItemClick={onMissingItemClick}
+          onDismissMissingSeason={onDismissMissingSeason}
+          onDismissMissingEpisode={onDismissMissingEpisode}
+          onTranscodeShow={onTranscodeShow}
+        />
       </div>
     )
   }

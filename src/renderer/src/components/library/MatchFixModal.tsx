@@ -57,6 +57,8 @@ interface MatchFixModalProps {
   filePath?: string    // File path for context
   artistName?: string  // For album searches
   sourceId?: string    // For series
+  seriesIdentityKey?: string
+  libraryId?: string
   mediaItemId?: number // For movies
   artistId?: number    // For artists
   albumId?: number     // For albums
@@ -72,6 +74,8 @@ export function MatchFixModal({
   filePath,
   artistName,
   sourceId,
+  seriesIdentityKey,
+  libraryId,
   mediaItemId,
   artistId,
   albumId,
@@ -180,16 +184,21 @@ export function MatchFixModal({
 
     try {
       switch (type) {
-        case 'series':
-          if (sourceId) {
-            await window.electronAPI.seriesFixMatch(
-              currentTitle,
-              sourceId,
-              (selectedResult as MetadataSearchResult).provider,
-              (selectedResult as MetadataSearchResult).id
-            )
+        case 'series': {
+          if (!sourceId || !seriesIdentityKey || !libraryId) {
+            throw new Error('TV series scoped identity is required to fix a match')
           }
+          const result = selectedResult as MetadataSearchResult
+          await window.electronAPI.seriesFixMatch(
+            currentTitle,
+            sourceId,
+            seriesIdentityKey,
+            libraryId,
+            result.provider,
+            result.id
+          )
           break
+        }
         case 'movie':
           if (mediaItemId !== undefined) {
             await window.electronAPI.movieFixMatch(
@@ -224,7 +233,7 @@ export function MatchFixModal({
     } finally {
       setIsFixing(false)
     }
-  }, [selectedResult, type, currentTitle, sourceId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
+  }, [selectedResult, type, currentTitle, sourceId, seriesIdentityKey, libraryId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {

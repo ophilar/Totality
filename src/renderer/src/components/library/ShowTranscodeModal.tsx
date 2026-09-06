@@ -29,6 +29,7 @@ import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, ShowTranscodePreflight } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
 import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
+import { getTVShowIdentity } from './tv/showIdentity'
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
 import { TaskType } from '@main/types/database'
 
@@ -135,6 +136,7 @@ function formatBytes(bytes?: number): string {
 
 export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onClose: () => void }) {
   const { addToast } = useToast()
+  const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
   const [optimizationMode, setOptimizationMode] = useState<'smart' | 'remux_only' | 'transcode'>('smart')
   const [codec, setCodec] = useState<'hevc' | 'av1'>('av1')
@@ -166,15 +168,13 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
 
   const loadQuarantine = async () => {
-    if (!show.source_id) throw new Error('Show source is unavailable')
-    const files = await window.electronAPI.listShowQuarantine(show.series_title, show.source_id, show.library_id)
+    const files = await window.electronAPI.listShowQuarantine(show.series_title, sourceId, seriesIdentityKey, libraryId)
     setQuarantineFiles(files)
   }
 
   const purgeQuarantine = async () => {
     if (quarantineFiles.length === 0 || !window.confirm(`Permanently delete ${quarantineFiles.length} quarantined original${quarantineFiles.length === 1 ? '' : 's'} for this show?`)) return
-    if (!show.source_id) throw new Error('Show source is unavailable')
-    const result = await window.electronAPI.purgeShowQuarantine(show.series_title, show.source_id, show.library_id)
+    const result = await window.electronAPI.purgeShowQuarantine(show.series_title, sourceId, seriesIdentityKey, libraryId)
     setQuarantineFiles([])
     addToast({ type: 'success', title: 'Quarantine Purged', message: `Deleted ${result.purged} quarantined original${result.purged === 1 ? '' : 's'}.` })
   }
@@ -188,19 +188,17 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       let fileLangs: string[] = []
 
       try {
-        if (window.electronAPI.seriesGetAudioLanguages) {
-          const res = await window.electronAPI.seriesGetAudioLanguages(show.series_title, show.source_id)
-          if (Array.isArray(res)) {
-            fileLangs = res
-          }
+        const res = await window.electronAPI.seriesGetAudioLanguagesByIdentity(show.series_title, sourceId, seriesIdentityKey, libraryId)
+        if (Array.isArray(res)) {
+          fileLangs = res
         }
       } catch (err) {
         console.error('Failed to get series audio languages:', err)
       }
 
       try {
-        if ((!provLang || fileLangs.length === 0) && window.electronAPI.seriesGetEpisodes) {
-          const episodes = await window.electronAPI.seriesGetEpisodes(show.series_title, show.source_id)
+        if (!provLang || fileLangs.length === 0) {
+          const episodes = await window.electronAPI.seriesGetEpisodesByIdentity(show.series_title, sourceId, seriesIdentityKey, libraryId)
           if (Array.isArray(episodes) && episodes.length > 0) {
             const detected = (episodes as MediaItem[]).find(e => e.original_language)?.original_language
             if (detected && !provLang) provLang = detected
@@ -244,7 +242,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
     loadLanguages()
     return () => { isMounted = false }
-  }, [show])
+  }, [show, sourceId, seriesIdentityKey, libraryId])
 
   // Load global subtitle preference
   useEffect(() => {
@@ -331,13 +329,14 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   }
 
   const runPreflight = async () => {
-    if (!show.source_id || !codec || !audio || !outputMode || (audio === 'original-and-protected' && !language.trim())) {
+    if (!codec || !audio || !outputMode || (audio === 'original-and-protected' && !language.trim())) {
       throw new Error('Please choose a video codec, audio policy, output mode, and original language.')
     }
     const preflight = await window.electronAPI.preflightShow({
       seriesTitle: show.series_title,
-      seriesIdentityKey: (show as TVShowSummary & { series_identity_key?: string }).series_identity_key,
-      sourceId: show.source_id,
+      seriesIdentityKey,
+      sourceId,
+      libraryId,
       options: getCleanOptions()
     })
     setPreflightData(preflight)
@@ -1229,5 +1228,4 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     document.body
   )
 }
-
 

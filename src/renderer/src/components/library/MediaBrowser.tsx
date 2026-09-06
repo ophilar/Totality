@@ -36,6 +36,7 @@ import { useAnalysisManager } from '@/components/library/hooks/useAnalysisManage
 import { useDismissHandlers } from '@/components/library/hooks/useDismissHandlers'
 import { useLibraryEventListeners } from '@/components/library/hooks/useLibraryEventListeners'
 import { useGlobalSearch } from '@/components/library/hooks/useGlobalSearch'
+import { getTVShowIdentity, getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
 
 import {
   MusicArtist,
@@ -146,6 +147,16 @@ export function MediaBrowser({
       setSortOrder(nextSortDirection(sortBy, nextSort, sortOrder))
     }
   }, [setSortBy, setSortOrder, sortBy, sortOrder])
+
+  const loadShowEpisodes = useCallback(async (show: TVShowSummary): Promise<MediaItem[]> => {
+    const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
+    return await window.electronAPI.seriesGetEpisodesByIdentity(
+      show.series_title,
+      sourceId,
+      seriesIdentityKey,
+      libraryId
+    )
+  }, [])
 
   // PAGINATION HOOKS
   const {
@@ -258,16 +269,33 @@ export function MediaBrowser({
 
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const showsByIdentity = useMemo(() => new Map(shows.map(show => [getTVShowIdentityKey(show), show])), [shows])
   const {
     showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex,
     searchContainerRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
   } = useGlobalSearch({
     items: movies,
-    tvShows: new Map(shows.map(s => [s.series_title, { title: s.series_title, poster_url: s.poster_url, seasons: new Map() }])),
+    tvShows: new Map(shows.map(s => [getTVShowIdentityKey(s), { title: s.series_title, poster_url: s.poster_url, seasons: new Map() }])),
     musicArtists, musicAlbums, allMusicTracks, searchInputRef,
     onNavigateToMovie: (id) => setSelectedMediaId(id, 'movie'),
-    onNavigateToTVShow: (title) => setSelectedShow(title),
-    onNavigateToEpisode: (id, title) => { if (title) setSelectedShow(title); setSelectedMediaId(id, 'episode') },
+    onNavigateToTVShow: (identityKey) => setSelectedShow(showsByIdentity.get(identityKey) ?? null),
+    onNavigateToEpisode: (id, seriesIdentityKey, sourceId, libraryId) => {
+      if (!seriesIdentityKey || !sourceId || !libraryId) {
+        addToast({
+          type: 'error',
+          title: 'TV series identity unavailable',
+          message: `Episode ${id} is missing scoped series identity.`,
+        })
+      } else {
+        const show = shows.find(candidate =>
+          candidate.series_identity_key === seriesIdentityKey
+          && candidate.source_id === sourceId
+          && candidate.library_id === libraryId
+        )
+        if (show) setSelectedShow(show)
+      }
+      setSelectedMediaId(id, 'episode')
+    },
     onNavigateToArtist: (a) => { setSelectedArtist(a); setMusicViewMode('albums'); setView('music') },
     onNavigateToAlbum: (a) => { setSelectedArtist(musicArtists.find(art => art.id === a.artist_id) || null); setSelectedAlbum(a); setMusicViewMode('albums'); setView('music') },
     onNavigateToTrack: (id) => { 
@@ -286,13 +314,27 @@ export function MediaBrowser({
 
   // Load episodes/tracks
   useEffect(() => {
-    if (selectedShow) {
-      queueMicrotask(() => { setSelectedShowEpisodesLoading(true) })
-      window.electronAPI.seriesGetEpisodes(selectedShow, activeSourceId || undefined)
-        .then(eps => { setSelectedShowEpisodes(eps as MediaItem[]); setSelectedShowEpisodesLoading(false) })
-        .catch(() => setSelectedShowEpisodesLoading(false))
-    } else queueMicrotask(() => { setSelectedShowEpisodes([]) })
-  }, [selectedShow, activeSourceId])
+    if (!selectedShow) {
+      queueMicrotask(() => { setSelectedShowEpisodes([]) })
+      return
+    }
+
+    queueMicrotask(() => { setSelectedShowEpisodesLoading(true) })
+    void loadShowEpisodes(selectedShow)
+      .then(eps => {
+        setSelectedShowEpisodes(eps)
+        setSelectedShowEpisodesLoading(false)
+      })
+      .catch(error => {
+        setSelectedShowEpisodes([])
+        setSelectedShowEpisodesLoading(false)
+        addToast({
+          type: 'error',
+          title: 'Failed to load TV episodes',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      })
+  }, [selectedShow, loadShowEpisodes, addToast])
 
   useEffect(() => {
     if (selectedAlbum) {
@@ -333,7 +375,7 @@ export function MediaBrowser({
       ])
       setMovieCollections((collectionsData as MovieCollectionData[]).filter(c => c.total_movies > 1))
       const sMap = new Map<string, SeriesCompletenessData>()
-      ;(seriesData as SeriesCompletenessData[]).forEach(s => sMap.set(s.series_title, s))
+      ;(seriesData as SeriesCompletenessData[]).forEach(s => sMap.set(getTVShowIdentityKey(s), s))
       setSeriesCompleteness(sMap)
     } catch { /* ignore */ }
   }, [activeSourceId])
@@ -368,10 +410,9 @@ export function MediaBrowser({
   const reloadMedia = useCallback(async () => {
     refreshMovies(); refreshShows()
     if (selectedShow) {
-      const eps = await window.electronAPI.seriesGetEpisodes(selectedShow, activeSourceId || undefined)
-      setSelectedShowEpisodes(eps as MediaItem[])
+      setSelectedShowEpisodes(await loadShowEpisodes(selectedShow))
     }
-  }, [refreshMovies, refreshShows, selectedShow, activeSourceId])
+  }, [refreshMovies, refreshShows, selectedShow, loadShowEpisodes])
 
   useLibraryEventListeners({
     activeSourceId, loadMedia: reloadMedia, loadStats, loadCompletenessData, loadMusicData: async () => {}, loadMusicCompletenessData,
@@ -398,7 +439,7 @@ export function MediaBrowser({
       if (!seasons.has(sn)) seasons.set(sn, { seasonNumber: sn, episodes: [], posterUrl: e.season_poster_url || undefined })
       seasons.get(sn)!.episodes.push(e)
     })
-    return { title: selectedShow, poster_url: selectedShowEpisodes[0]?.poster_url || undefined, seasons }
+    return { title: selectedShow.series_title, poster_url: selectedShowEpisodes[0]?.poster_url || selectedShow.poster_url || undefined, seasons }
   }, [selectedShow, selectedShowEpisodes])
 
   return (
@@ -459,7 +500,10 @@ export function MediaBrowser({
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onAnalyzeSeries={handleAnalyzeSingleSeries}
                   onTranscodeShow={(show) => setShowTranscodeTarget(show)}
-                  onFixMatch={(title: string, sId: string, fp?: string) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId: sId || undefined, filePath: fp || undefined })}
+                  onFixMatch={(show, fp) => {
+                    const { sourceId, seriesIdentityKey, libraryId } = getTVShowIdentity(show)
+                    setMatchFixModal({ isOpen: true, type: 'series', title: show.series_title, sourceId, seriesIdentityKey, libraryId, filePath: fp || undefined })
+                  }}
                   onRescanEpisode={async (e) => { if (e.source_id && e.file_path) await handleRescanItem(e.id!, e.source_id, e.library_id || null, e.file_path) }}
                   onDismissUpgrade={handleDismissUpgrade} onDismissMissingEpisode={handleDismissMissingEpisode}
 
@@ -571,6 +615,8 @@ export function MediaBrowser({
           filePath={matchFixModal.filePath}
           artistName={matchFixModal.artistName}
           sourceId={matchFixModal.sourceId}
+          seriesIdentityKey={matchFixModal.seriesIdentityKey}
+          libraryId={matchFixModal.libraryId}
           mediaItemId={matchFixModal.mediaItemId}
           artistId={matchFixModal.artistId}
           albumId={matchFixModal.albumId}

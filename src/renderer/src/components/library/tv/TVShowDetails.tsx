@@ -5,6 +5,7 @@ import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
+import { getTVShowIdentity } from '@/components/library/tv/showIdentity'
 import { getStatusBadge, formatSeasonLabel, formatLanguage } from '@/components/library/mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeriesCompletenessData, MissingEpisode } from '@/components/library/types'
 import type { TaskQueueState } from '@main/types/database'
@@ -13,7 +14,7 @@ export function TVShowDetails({
   selectedShow,
   selectedShowData,
   selectedShowLoading,
-  seriesCompleteness,
+  completenessData,
   onBack,
   onAnalyzeSeries,
   onFixMatch,
@@ -29,13 +30,13 @@ export function TVShowDetails({
   onTranscodeShow,
   scrollParentRef
 }: {
-  selectedShow: string
+  selectedShow: TVShowSummary
   selectedShowData: TVShow | null
   selectedShowLoading: boolean
-  seriesCompleteness: Map<string, SeriesCompletenessData>
+  completenessData?: SeriesCompletenessData
   onBack: () => void
-  onAnalyzeSeries: (seriesTitle: string) => Promise<void> | void
-  onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
+  onAnalyzeSeries: (show: TVShowSummary) => Promise<void> | void
+  onFixMatch?: (show: TVShowSummary, folderPath?: string) => void
   filterItem: (item: MediaItem) => boolean
   onSelectEpisode: (id: number) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
@@ -43,8 +44,8 @@ export function TVShowDetails({
   expandedRecommendations: Set<number>
   onToggleOptimize: (id: number) => void
   onMissingItemClick: (item: import('@/components/library/types').MissingItemPopupData) => void
-  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
-  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId?: string) => void
+  onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
+  onDismissMissingSeason?: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => void
   onTranscodeShow?: (show: TVShowSummary) => void
   scrollParentRef?: RefObject<HTMLDivElement | null>
 }) {
@@ -56,6 +57,7 @@ export function TVShowDetails({
   const [audioLanguages, setAudioLanguages] = useState<string[]>([])
   const [optimizingEpisodeId, setOptimizingEpisodeId] = useState<number | null>(null)
   const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
+  const { seriesIdentityKey, sourceId, libraryId, key: seriesMapKey } = getTVShowIdentity(selectedShow)
 
   useEffect(() => {
     const unsub = window.electronAPI.onTaskQueueUpdated?.((state) => {
@@ -69,37 +71,39 @@ export function TVShowDetails({
     }
   }, [])
 
-  const completenessData = seriesCompleteness.get(selectedShow)
   const tmdbId = completenessData?.tmdb_id
   const missingSeasonsStr = completenessData?.missing_seasons
   const missingEpisodesStr = completenessData?.missing_episodes
 
   useEffect(() => {
-    if (selectedShow) {
-      if (tmdbId) {
-        window.electronAPI.tmdbGetTVShowDetails(tmdbId)
-          .then(details => { if (details?.overview) setShowOverview(details.overview) })
-          .catch(() => { /* ignore */ })
-      }
+    setAudioLanguages([])
+    setShowOverview(null)
 
-      if (window.electronAPI.seriesGetAudioLanguages) {
-        window.electronAPI.seriesGetAudioLanguages(selectedShow)
-          .then(langs => { if (Array.isArray(langs) && langs.length > 0) setAudioLanguages(langs) })
-          .catch(() => { /* ignore */ })
-      }
+    if (tmdbId) {
+      window.electronAPI.tmdbGetTVShowDetails(tmdbId)
+        .then(details => { if (details?.overview) setShowOverview(details.overview) })
+        .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load TMDB show details', error))
     }
-  }, [selectedShow, tmdbId])
+
+    window.electronAPI.seriesGetAudioLanguagesByIdentity(
+      selectedShow.series_title,
+      sourceId,
+      seriesIdentityKey,
+      libraryId
+    )
+      .then(langs => { if (langs.length > 0) setAudioLanguages(langs) })
+      .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load series audio languages', error))
+  }, [selectedShow.series_title, sourceId, seriesIdentityKey, libraryId, tmdbId])
 
   useEffect(() => {
-    if (!selectedShow) return
     const diagnostics = [
       parseMissingSeasons(missingSeasonsStr).diagnostic,
       parseMissingEpisodes(missingEpisodesStr).diagnostic,
     ].filter((diagnostic): diagnostic is NonNullable<typeof diagnostic> => diagnostic !== undefined)
     for (const diagnostic of diagnostics) {
-      window.electronAPI.log.error('TVShowDetails', diagnostic.message, { seriesTitle: selectedShow, field: diagnostic.field })
+      window.electronAPI.log.error('TVShowDetails', diagnostic.message, { seriesTitle: selectedShow.series_title, seriesIdentityKey, field: diagnostic.field })
     }
-  }, [selectedShow, missingSeasonsStr, missingEpisodesStr])
+  }, [selectedShow.series_title, seriesIdentityKey, missingSeasonsStr, missingEpisodesStr])
 
   if (selectedShowLoading) {
     return (
@@ -149,7 +153,6 @@ export function TVShowDetails({
   const missingEpisodesResult = parseMissingEpisodes(completenessData?.missing_episodes)
   const parseDiagnostics = [missingSeasonsResult.diagnostic, missingEpisodesResult.diagnostic].filter(Boolean)
 
-  // Build combined list of owned and missing seasons
   const allSeasonNumbers = [...new Set([...ownedSeasons.map(s => s.seasonNumber), ...missingSeasonsResult.value])].sort((a, b) => a - b)
   const missingEpisodes = missingEpisodesResult.value
 
@@ -157,7 +160,6 @@ export function TVShowDetails({
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <button
         onClick={onBack}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
@@ -168,9 +170,7 @@ export function TVShowDetails({
         Back to TV Shows
       </button>
 
-      {/* Show Header */}
       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mb-6">
-        {/* Poster */}
         {selectedShowData.poster_url && (
           <div className="w-28 sm:w-44 aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30">
             <img
@@ -185,9 +185,7 @@ export function TVShowDetails({
           </div>
         )}
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
-          {/* Title */}
           <div className="flex items-center gap-1.5">
             <h3 className="text-2xl sm:text-3xl font-bold break-words">{selectedShowData.title}</h3>
             <button
@@ -204,7 +202,6 @@ export function TVShowDetails({
             </button>
           </div>
 
-          {/* Metadata line */}
           <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground flex-wrap">
             <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
             {firstEpisode?.original_language && (
@@ -227,11 +224,10 @@ export function TVShowDetails({
             )}
           </div>
 
-          {/* Action buttons row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3">
             <button
               onClick={async () => {
-                if (!selectedShow || isAnalyzing) return
+                if (isAnalyzing) return
                 setIsAnalyzing(true)
                 try {
                   await onAnalyzeSeries(selectedShow)
@@ -249,16 +245,12 @@ export function TVShowDetails({
             {onTranscodeShow && (
               <button
                 onClick={() => {
-                  if (!selectedShowData) return
                   const allSeasons = Array.from(selectedShowData.seasons.values())
-                  const firstEpisode = allSeasons[0]?.episodes[0]
                   const totalEpisodes = allSeasons.reduce((sum, s) => sum + s.episodes.length, 0)
                   const totalSeasons = selectedShowData.seasons.size
                   onTranscodeShow({
-                    series_title: selectedShowData.title,
-                    source_id: firstEpisode?.source_id || '',
+                    ...selectedShow,
                     poster_url: selectedShowData.poster_url,
-                    original_language: firstEpisode?.original_language || null,
                     season_count: totalSeasons,
                     episode_count: totalEpisodes,
                     total_seasons: totalSeasons,
@@ -274,7 +266,7 @@ export function TVShowDetails({
             )}
             {onFixMatch && (
               <button
-                onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                onClick={() => onFixMatch(selectedShow, undefined)}
                 className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                 title="Fix Match"
               >
@@ -289,7 +281,6 @@ export function TVShowDetails({
             )}
           </div>
 
-          {/* Overview */}
           {showOverview && (
             <div className="mt-3 max-w-2xl">
               <p className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
@@ -360,12 +351,29 @@ export function TVShowDetails({
                       )
                     }
                     return (
-                      <MissingEpisodeRowWithArtwork key={`missing-${item.missing.season_number}-${item.missing.episode_number}`} episode={item.missing} tmdbId={completenessData?.tmdb_id} fallbackPosterUrl={season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url} onClick={() => onMissingItemClick({ type: 'episode', title: item.missing.title || `Episode ${item.missing.episode_number}`, airDate: item.missing.air_date, seasonNumber: item.missing.season_number, episodeNumber: item.missing.episode_number, posterUrl: season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url, tmdbId: completenessData?.tmdb_id, seriesTitle: selectedShowData.title })} onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShowData.title, completenessData?.tmdb_id) : undefined} />
+                      <MissingEpisodeRowWithArtwork
+                        key={`missing-${item.missing.season_number}-${item.missing.episode_number}`}
+                        episode={item.missing}
+                        tmdbId={completenessData?.tmdb_id}
+                        fallbackPosterUrl={season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url}
+                        onClick={() => onMissingItemClick({
+                          type: 'episode',
+                          title: item.missing.title || `Episode ${item.missing.episode_number}`,
+                          airDate: item.missing.air_date,
+                          seasonNumber: item.missing.season_number,
+                          episodeNumber: item.missing.episode_number,
+                          posterUrl: season?.posterUrl || completenessData?.poster_url || selectedShowData.poster_url,
+                          tmdbId: completenessData?.tmdb_id,
+                          seriesTitle: selectedShow.series_title,
+                          seriesMapKey,
+                        })}
+                        onDismiss={onDismissMissingEpisode ? () => onDismissMissingEpisode(item.missing, selectedShow.series_title, completenessData?.tmdb_id, seriesMapKey) : undefined}
+                      />
                     )
                   })}
                 </div>
               ) : <p className="py-3 text-sm text-muted-foreground">No episodes available.</p>}
-              {!season && onDismissMissingSeason && <button type="button" className="mt-2 min-h-6 text-xs text-muted-foreground underline" onClick={() => onDismissMissingSeason(seasonNumber, selectedShowData.title, completenessData?.tmdb_id)}>Dismiss missing season</button>}
+              {!season && onDismissMissingSeason && <button type="button" className="mt-2 min-h-6 text-xs text-muted-foreground underline" onClick={() => onDismissMissingSeason(seasonNumber, selectedShow.series_title, completenessData?.tmdb_id, seriesMapKey)}>Dismiss missing season</button>}
             </section>
           )
           }}

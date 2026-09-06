@@ -108,7 +108,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
             <div className="w-full h-full flex items-center justify-center bg-muted/50"><TvPlaceholder className="w-20 h-20 text-muted-foreground" /></div>
           )}
 
-          {/* Analyzing Overlay */}
           {completenessData && completenessData.efficiency_score === null && isLibraryAnalyzing && (
             <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-500">
               <RefreshCw className="w-8 h-8 text-primary animate-spin mb-2" />
@@ -122,7 +121,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
             {show.match_status === 'manual' ? 'Manual match' : show.match_status === 'conflicting' ? 'Conflicting match' : 'Unresolved match'}
           </div>
         )}
-        {/* 3-dot menu button */}
         {menuItems.length > 0 && (
           <div className="absolute top-2 right-2 z-30">
             <ActionMenu
@@ -134,7 +132,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           </div>
         )}
 
-        {/* Source Badge */}
         {showSourceBadge && sourceType && (
           <div
             className={`absolute bottom-2 left-2 ${providerColors[sourceType] || 'bg-gray-500'} text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-md`}
@@ -145,13 +142,13 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
         )}
       </div>
 
-      {/* Title and info below poster */}
       <div className="pt-2 flex gap-2 items-start">
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-sm line-clamp-2 break-words leading-tight" title={show.series_title}>{show.series_title}</h4>
           <p className="text-xs text-muted-foreground mt-0.5">
             {show.owned_regular_seasons == null ? `${show.season_count} ${show.season_count === 1 ? 'Season' : 'Seasons'} • ${show.episode_count} ${show.episode_count === 1 ? 'Episode' : 'Episodes'}` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           </p>
+          {/* storageDebtBytes is the same canonical Total Debt value used by the TV list sort. */}
           <MediaMetricsRow
             fileSize={show.total_size}
             storageDebtBytes={show.total_recoverable_bytes}

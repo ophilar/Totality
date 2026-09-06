@@ -140,14 +140,14 @@ describe('MediaBrowser Lifecycle Integration', () => {
       completeness_percentage: 100,
     })
 
-    // Delay the episode fetching to see the loading state
+    // Delay the identity-scoped episode fetching to see the loading state
     let resolveEpisodes: ((value: unknown) => void) | undefined
     const delayedGetEpisodes = vi.fn().mockImplementation(() => new Promise(resolve => {
       resolveEpisodes = resolve
     }))
 
-    // Patch the bridge
-    api.seriesGetEpisodes = delayedGetEpisodes
+    // Patch the bridge method used by the TV detail path
+    api.seriesGetEpisodesByIdentity = delayedGetEpisodes
 
     render(<MediaBrowser />, { wrapper: TestProviders })
 
@@ -177,4 +177,3 @@ describe('MediaBrowser Lifecycle Integration', () => {
     }, { timeout: 20000 })
   }, 120000)
 })
-

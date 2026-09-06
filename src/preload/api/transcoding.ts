@@ -12,8 +12,8 @@ export const transcodingAPI = {
   preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
   queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke('transcoding:approveShow', preflightId),
-  listShowQuarantine: (seriesTitle: string, sourceId: string, libraryId?: string) => ipcRenderer.invoke('transcoding:listShowQuarantine', seriesTitle, sourceId, libraryId),
-  purgeShowQuarantine: (seriesTitle: string, sourceId: string, libraryId?: string) => ipcRenderer.invoke('transcoding:purgeShowQuarantine', seriesTitle, sourceId, libraryId),
+  listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:listShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:purgeShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   onProgress: (callback: (progress: TranscodeProgress & { mediaItemId: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TranscodeProgress & { mediaItemId: number }) => callback(progress)
     ipcRenderer.on('transcoding:progress', listener)

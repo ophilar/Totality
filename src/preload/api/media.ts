@@ -1,6 +1,6 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
-import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness } from '@main/types/database'
 
 export const mediaApi: MediaAPI = {
   // Quality Analysis
@@ -78,12 +78,15 @@ export const mediaApi: MediaAPI = {
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
-  seriesAnalyze: (seriesTitle: string) => ipcRenderer.invoke('series:analyze', seriesTitle),
+  seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:analyzeByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesGetAll: (sourceId?: string) => ipcRenderer.invoke('series:getAll', sourceId),
   seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('series:getIncomplete', sourceId),
   seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
-  seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesTitle, sourceId),
-  seriesGetAudioLanguages: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getAudioLanguages', seriesTitle, sourceId),
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:getEpisodesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
+    ipcRenderer.invoke('series:getAudioLanguagesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   mediaGetFileAudioLanguages: (mediaItemId: number) => ipcRenderer.invoke('media:getFileAudioLanguages', mediaItemId),
   seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
   seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) =>
@@ -101,8 +104,8 @@ export const mediaApi: MediaAPI = {
 
   // Series Match Fixing
   seriesSearchTMDB: (query: string) => ipcRenderer.invoke('series:searchTMDB', query),
-  seriesFixMatch: (seriesTitle: string, sourceId: string, providerId: string, externalId: string) =>
-    ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, providerId, externalId),
+  seriesFixMatch: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string, providerId: string, externalId: string) =>
+    ipcRenderer.invoke('series:fixMatch', seriesTitle, sourceId, seriesIdentityKey, libraryId, providerId, externalId),
 
   // Movie Match Fixing
   movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
@@ -248,7 +251,7 @@ export interface MediaAPI {
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ completed: boolean; analyzed: number }>
-  seriesAnalyze: (seriesTitle: string) => Promise<unknown | null>
+  seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<SeriesCompleteness | null>
   seriesGetAll: (sourceId?: string) => Promise<unknown[]>
   seriesGetIncomplete: (sourceId?: string) => Promise<unknown[]>
   seriesGetStats: () => Promise<{
@@ -258,8 +261,8 @@ export interface MediaAPI {
     totalMissingEpisodes: number
     averageCompleteness: number
   }>
-  seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => Promise<unknown[]>
-  seriesGetAudioLanguages: (seriesTitle: string, sourceId?: string) => Promise<string[]>
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<MediaItem[]>
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
   mediaGetFileAudioLanguages: (mediaItemId: number) => Promise<string[]>
   seriesDelete: (id: number) => Promise<boolean>
   seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) => Promise<{
@@ -282,7 +285,7 @@ export interface MediaAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  seriesFixMatch: (seriesTitle: string, sourceId: string, providerId: string, externalId: string) => Promise<{
+  seriesFixMatch: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string, providerId: string, externalId: string) => Promise<{
     success: boolean
     updatedEpisodes: number
     completeness: unknown
