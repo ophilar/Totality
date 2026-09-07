@@ -83,6 +83,25 @@ describe('MediaRepository (Real DB)', () => {
     expect(results[0].title).toBe('The Matrix')
   })
 
+  it('uses media identity as the descending pagination tie-breaker', async () => {
+    const ids: number[] = []
+    for (let index = 1; index <= 4; index += 1) {
+      ids.push(await repo.upsertItem({
+        source_id: 'src-1',
+        source_type: 'plex',
+        plex_id: `same-title-${index}`,
+        title: 'Same Title',
+        type: 'movie',
+        file_path: `/path/to/same-title-${index}.mkv`,
+      }))
+    }
+
+    const firstPage = await repo.getItems({ type: 'movie', sortBy: 'title', sortOrder: 'desc', limit: 2, offset: 0 })
+    const secondPage = await repo.getItems({ type: 'movie', sortBy: 'title', sortOrder: 'desc', limit: 2, offset: 2 })
+
+    expect([...firstPage, ...secondPage].map(item => item.id)).toEqual([...ids].sort((a, b) => b - a))
+  })
+
   it('includes calculated estimated recoverable debt in optimization summaries', async () => {
     const id = await repo.upsertItem({ ...mockItem('Recoverable Movie'), file_size: 4_000_000_000 })
     await repo.upsertQualityScore({
@@ -158,6 +177,3 @@ describe('MediaRepository (Real DB)', () => {
     ])
   })
 })
-
-
-
