@@ -756,12 +756,15 @@ export class PlexProvider extends BaseMediaProvider {
 
       const tracksByAlbum = new Map<string, PlexMusicTrack[]>()
       for (const track of tracks) {
-        const albumKey = track.parentRatingKey || ''
-        if (!tracksByAlbum.has(albumKey)) tracksByAlbum.set(albumKey, [])
-        tracksByAlbum.get(albumKey)!.push(track)
+        if (!track.parentRatingKey) {
+          throw new Error(`Plex music track "${track.title}" (${track.ratingKey}) is missing album parentRatingKey`)
+        }
+        const albumTracks = tracksByAlbum.get(track.parentRatingKey)
+        if (albumTracks) albumTracks.push(track)
+        else tracksByAlbum.set(track.parentRatingKey, [track])
       }
 
-      const artistIdMap = new Map<string, number>()
+      const artistMap = new Map<string, { id: number; name: string }>()
       const totalArtists = artists.length
       let processedArtists = 0
 
@@ -771,10 +774,9 @@ export class PlexProvider extends BaseMediaProvider {
           break
         }
         try {
-          const artistId = await db.music.upsertArtist(
-            this.convertToMusicArtist(plexArtist, libraryId)
-          )
-          artistIdMap.set(plexArtist.ratingKey, artistId)
+          const artistData = this.convertToMusicArtist(plexArtist, libraryId)
+          const artistId = await db.music.upsertArtist(artistData)
+          artistMap.set(plexArtist.ratingKey, { id: artistId, name: artistData.name })
           processedArtists++
           if (onProgress) {
             onProgress({
@@ -804,21 +806,56 @@ export class PlexProvider extends BaseMediaProvider {
           break
         }
         try {
-          const artistId = plexAlbum.parentRatingKey
-            ? artistIdMap.get(plexAlbum.parentRatingKey) || 0
-            : 0
-          const albumData = this.convertToMusicAlbum(plexAlbum, artistId, libraryId)
-          const albumTracks = tracksByAlbum.get(plexAlbum.ratingKey) || []
-          albumData.track_count = albumTracks.length
+          if (!plexAlbum.parentRatingKey) {
+            throw new Error(`Plex album "${plexAlbum.title}" (${plexAlbum.ratingKey}) is missing artist parentRatingKey`)
+          }
+          const artist = artistMap.get(plexAlbum.parentRatingKey)
+          if (!artist) {
+            throw new Error(
+              `Plex album "${plexAlbum.title}" (${plexAlbum.ratingKey}) references unknown artist ${plexAlbum.parentRatingKey}`
+            )
+          }
+          if (plexAlbum.parentTitle !== undefined && plexAlbum.parentTitle !== artist.name) {
+            throw new Error(
+              `Plex album "${plexAlbum.title}" (${plexAlbum.ratingKey}) has inconsistent artist identity: parentRatingKey ${plexAlbum.parentRatingKey} resolves to "${artist.name}" but parentTitle is "${plexAlbum.parentTitle}"`
+            )
+          }
+
+          const albumData = this.convertToMusicAlbum(plexAlbum, artist.id, artist.name, libraryId)
+          const albumTracks = tracksByAlbum.get(plexAlbum.ratingKey)
+          albumData.track_count = albumTracks?.length ?? 0
 
           const albumId = await db.music.upsertAlbum(albumData)
 
-          if (albumTracks.length > 0) {
-            const tracksData = albumTracks
-              .map((plexTrack: PlexMusicTrack) =>
-                this.convertToMusicTrack(plexTrack, albumId, artistId, libraryId)
+          if (albumTracks && albumTracks.length > 0) {
+            const tracksData = albumTracks.map((plexTrack: PlexMusicTrack) => {
+              if (
+                plexTrack.grandparentRatingKey !== undefined &&
+                plexTrack.grandparentRatingKey !== plexAlbum.parentRatingKey
+              ) {
+                throw new Error(
+                  `Plex track "${plexTrack.title}" (${plexTrack.ratingKey}) has inconsistent artist relationship: ${plexTrack.grandparentRatingKey} != ${plexAlbum.parentRatingKey}`
+                )
+              }
+              if (plexTrack.parentTitle !== undefined && plexTrack.parentTitle !== albumData.title) {
+                throw new Error(
+                  `Plex track "${plexTrack.title}" (${plexTrack.ratingKey}) has inconsistent album title: "${plexTrack.parentTitle}" != "${albumData.title}"`
+                )
+              }
+              if (plexTrack.grandparentTitle !== undefined && plexTrack.grandparentTitle !== artist.name) {
+                throw new Error(
+                  `Plex track "${plexTrack.title}" (${plexTrack.ratingKey}) has inconsistent artist title: "${plexTrack.grandparentTitle}" != "${artist.name}"`
+                )
+              }
+              return this.convertToMusicTrack(
+                plexTrack,
+                albumId,
+                artist.id,
+                artist.name,
+                albumData.title,
+                libraryId
               )
-              .filter(Boolean) as MusicTrack[]
+            })
 
             await db.music.upsertTracks(tracksData)
             result.itemsScanned += tracksData.length
@@ -867,6 +904,7 @@ export class PlexProvider extends BaseMediaProvider {
   private convertToMusicAlbum(
     item: PlexMusicAlbum,
     artistId: number,
+    artistName: string,
     libraryId: string
   ): MusicAlbum {
     return {
@@ -875,7 +913,7 @@ export class PlexProvider extends BaseMediaProvider {
       library_id: libraryId,
       provider_id: item.ratingKey,
       artist_id: artistId,
-      artist_name: item.parentTitle || 'Unknown Artist',
+      artist_name: artistName,
       title: item.title,
       year: item.year,
       thumb_url: item.thumb
@@ -890,11 +928,22 @@ export class PlexProvider extends BaseMediaProvider {
     item: PlexMusicTrack,
     albumId: number,
     artistId: number,
+    artistName: string,
+    albumTitle: string,
     libraryId: string
-  ): MusicTrack | null {
+  ): MusicTrack {
     const media = item.Media?.[0]
-    const part = media?.Part?.[0]
-    if (!media || !part) return null
+    if (!media) {
+      throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing Media metadata`)
+    }
+    const part = media.Part?.[0]
+    if (!part) {
+      throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing Part metadata`)
+    }
+    if (!media.audioCodec) {
+      throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing audio codec metadata`)
+    }
+
     return {
       source_id: this.sourceId,
       source_type: ProviderType.Plex,
@@ -902,20 +951,20 @@ export class PlexProvider extends BaseMediaProvider {
       provider_id: item.ratingKey,
       album_id: albumId,
       artist_id: artistId,
-      album_name: item.parentTitle,
-      artist_name: item.grandparentTitle || 'Unknown Artist',
+      album_name: albumTitle,
+      artist_name: artistName,
       title: item.title,
       track_number: item.index,
-      disc_number: item.parentIndex || 1,
+      disc_number: item.parentIndex,
       duration: item.duration,
       file_path: part.file,
       file_size: part.size,
       container: media.container,
-      audio_codec: media.audioCodec || 'unknown',
+      audio_codec: media.audioCodec,
       audio_bitrate: media.bitrate,
       channels: media.audioChannels,
       is_lossless: ['flac', 'alac', 'wav', 'dsd'].some((codec) =>
-        (media.audioCodec || '').toLowerCase().includes(codec)
+        media.audioCodec.toLowerCase().includes(codec)
       ),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
