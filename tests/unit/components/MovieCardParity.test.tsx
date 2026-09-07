@@ -8,6 +8,7 @@ import { MoviesView } from '@/components/library/MoviesView'
 import { useSources } from '@/contexts/SourceContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
+import type { OptimizationMetricsSummary } from '@main/types/database'
 
 vi.mock('@/contexts/SourceContext', () => ({
   useSources: vi.fn(),
@@ -64,6 +65,23 @@ describe('MoviesView and MovieCard Canonical Parity', () => {
       movies: [movie]
     }
 
+    const optimizationSummary: OptimizationMetricsSummary = {
+      recoverableBytes: 8000000000,
+      wasteBytes: 8000000000,
+      efficiency: 55,
+      savingsBasis: 'estimated',
+      evidenceStatus: 'measured',
+      confidence: 'high',
+      calculationStatus: 'measured',
+      status: 'measured',
+      knownCount: 1,
+      totalCount: 1,
+      overallEfficiencyScore: 55,
+      recoverableWasteBytes: 8000000000,
+      totalStorageDebtBytes: 8000000000,
+      confidenceScore: 100,
+    }
+
     render(
       <ScrollMemoryProvider>
         <MoviesView
@@ -83,6 +101,7 @@ describe('MoviesView and MovieCard Canonical Parity', () => {
           moviesLoading={false}
           onLoadMoreMovies={vi.fn()}
           groupByCollections={false}
+          optimizationSummary={optimizationSummary}
         />
       </ScrollMemoryProvider>
     )
