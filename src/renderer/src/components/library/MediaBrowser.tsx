@@ -53,7 +53,7 @@ import {
   AlbumCompletenessData,
   MediaBrowserProps,
 } from '@/components/library/types'
-import type { MediaItemFilters, TVShowFilters, MusicFilters } from '@main/types/database'
+import type { MediaItemFilters, TVShowFilters, MusicFilters, OptimizationMetricsSummary } from '@main/types/database'
 import type { MediaLibraryResponse } from '@preload/api/types'
 
 export function MediaBrowser({
@@ -115,6 +115,7 @@ export function MediaBrowser({
   }, [isAutoRefreshing, onAutoRefreshChange])
 
   const [stats, setStats] = useState<LibraryStats | null>(null)
+  const [movieOptimizationSummary, setMovieOptimizationSummary] = useState<OptimizationMetricsSummary | null>(null)
   const [hasMusic, setHasMusic] = useState(false)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
@@ -240,21 +241,21 @@ export function MediaBrowser({
   // Filters
   const [searchInput, setSearchInput] = useState('')
   const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters(searchInput)
+  const normalizedSortBy = (sortBy === 'waste' || sortBy === 'recoverable') ? 'recoverable' : (sortBy === 'weighted_efficiency' && view !== 'tv' ? 'efficiency' : sortBy)
+  const commonFilters = useMemo(() => ({
+    sortBy: normalizedSortBy,
+    sortOrder,
+    qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
+    tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
+    alphabetFilter: alphabetFilter || undefined,
+    searchQuery: searchInput.trim() || undefined,
+    libraryId: activeLibraryId || undefined,
+    slimDown: slimDown || undefined
+  }), [normalizedSortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown])
+  const movieFilters = useMemo(() => ({ ...commonFilters, type: 'movie' } as MediaItemFilters), [commonFilters])
 
   useEffect(() => {
-    const normalizedSortBy = (sortBy === 'waste' || sortBy === 'recoverable') ? 'recoverable' : (sortBy === 'weighted_efficiency' && view !== 'tv' ? 'efficiency' : sortBy)
-    const commonFilters = {
-      sortBy: normalizedSortBy,
-      sortOrder,
-      qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
-      tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
-      alphabetFilter: alphabetFilter || undefined,
-      searchQuery: searchInput.trim() || undefined,
-      libraryId: activeLibraryId || undefined,
-      slimDown: slimDown || undefined
-    }
-
-    if (view === 'movies') setMoviesFilters({ ...commonFilters, type: 'movie' } as MediaItemFilters)
+    if (view === 'movies') setMoviesFilters(movieFilters)
     else if (view === 'tv') setShowsFilters({ ...commonFilters } as TVShowFilters)
     else if (view === 'music') {
       const musicSortBy = normalizedSortBy
@@ -265,7 +266,24 @@ export function MediaBrowser({
       else if (musicViewMode === 'albums') setAlbumsFilters({ ...commonFilters, sortBy: albumOrTrackSort } as MusicFilters)
       else if (musicViewMode === 'tracks') setTracksFilters({ ...commonFilters, sortBy: albumOrTrackSort } as MusicFilters)
     }
-  }, [view, musicViewMode, sortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
+  }, [view, musicViewMode, sortBy, normalizedSortBy, commonFilters, movieFilters, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
+
+  const loadMovieOptimizationSummary = useCallback(async () => {
+    try {
+      const summary = await window.electronAPI.getMediaOptimizationSummary({
+        ...movieFilters,
+        sourceId: activeSourceId || undefined,
+      })
+      setMovieOptimizationSummary(summary)
+    } catch (error) {
+      setMovieOptimizationSummary(null)
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to load movie optimization summary:', error)
+    }
+  }, [movieFilters, activeSourceId])
+
+  useEffect(() => {
+    if (view === 'movies') void loadMovieOptimizationSummary()
+  }, [view, loadMovieOptimizationSummary])
 
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -409,10 +427,11 @@ export function MediaBrowser({
 
   const reloadMedia = useCallback(async () => {
     refreshMovies(); refreshShows()
+    if (view === 'movies') await loadMovieOptimizationSummary()
     if (selectedShow) {
       setSelectedShowEpisodes(await loadShowEpisodes(selectedShow))
     }
-  }, [refreshMovies, refreshShows, selectedShow, loadShowEpisodes])
+  }, [refreshMovies, refreshShows, view, loadMovieOptimizationSummary, selectedShow, loadShowEpisodes])
 
   useLibraryEventListeners({
     activeSourceId, loadMedia: reloadMedia, loadStats, loadCompletenessData, loadMusicData: async () => {}, loadMusicCompletenessData,
@@ -485,6 +504,7 @@ export function MediaBrowser({
                   onRescan={handleRescanItem} onDismissUpgrade={handleDismissUpgrade}
                   totalMovieCount={totalMovieCount} moviesLoading={moviesLoading} onLoadMoreMovies={loadMoreMovies}
                   isAnalyzing={isAnalyzing}
+                  optimizationSummary={movieOptimizationSummary}
                 />
               </SectionErrorBoundary>
             )}
