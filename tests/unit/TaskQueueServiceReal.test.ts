@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { TaskQueueService } from '@main/services/TaskQueueService'
+import { MusicBrainzService } from '@main/services/MusicBrainzService'
 import * as fs from 'fs'
 import * as path from 'path'
 import { getLoggingService } from '@main/services/LoggingService'
@@ -141,5 +142,37 @@ describe('TaskQueueService (No Mocks)', () => {
     expect(completedTask.error).toContain('Music database integrity error')
     expect(completedTask.error).toContain('stored as artist "Wrong Artist"')
     expect(completedTask.error).toContain('resolves to "Expected Artist"')
+  })
+
+  it('rejects inconsistent linked identity in direct album analysis before provider lookup', async () => {
+    const sourceId = 'direct-identity-integrity-source'
+    const artistId = await realDbWrapper.music.upsertArtist({
+      source_id: sourceId,
+      source_type: ProviderType.Local,
+      library_id: 'music',
+      provider_id: 'artist-direct',
+      name: 'Expected Artist',
+    })
+    const albumId = await realDbWrapper.music.upsertAlbum({
+      source_id: sourceId,
+      source_type: ProviderType.Local,
+      library_id: 'music',
+      provider_id: 'album-direct',
+      artist_id: artistId,
+      artist_name: 'Wrong Artist',
+      title: 'The Best of Enya',
+    })
+
+    const service = new MusicBrainzService()
+
+    await expect(
+      service.analyzeAlbumTrackCompleteness(
+        albumId,
+        'Wrong Artist',
+        'The Best of Enya',
+        undefined,
+        []
+      )
+    ).rejects.toThrow('Music database integrity error')
   })
 })
