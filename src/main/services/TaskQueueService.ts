@@ -580,9 +580,12 @@ export class TaskQueueService {
         },
         task.sourceId
       )
+      const completedCount = outcome.completedCount ?? 0
+      const failedCount = outcome.failedCount ?? 0
+      const totalCount = completedCount + failedCount + outcome.deferredCount + outcome.skipped
 
       task.result = {
-        itemsScanned: outcome.processedCount,
+        itemsScanned: completedCount,
         status: outcome.status,
         deferred: outcome.deferredCount,
         errors: outcome.diagnostics.map(d => d.message),
@@ -598,8 +601,8 @@ export class TaskQueueService {
         throw new Error(`Music analysis failed: ${firstError}`)
       }
       if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
-        const summary = `Music analysis ${outcome.status}: ${outcome.processedCount}/${outcome.totalCount} analyzed; ${outcome.deferredCount} deferred; ${outcome.diagnostics.length} issues`
-        this.logging.warn('[TaskQueue]', summary, { totalCount: outcome.totalCount, processedCount: outcome.processedCount, deferredCount: outcome.deferredCount })
+        const summary = `Music analysis ${outcome.status}: ${completedCount}/${totalCount} analyzed; ${outcome.deferredCount} deferred; ${outcome.diagnostics.length} issues`
+        this.logging.warn('[TaskQueue]', summary, { totalCount, completedCount, deferredCount: outcome.deferredCount })
         await db.notifications.addNotification({
           type: 'info',
           title: `Music analysis ${outcome.status}`,
@@ -610,7 +613,7 @@ export class TaskQueueService {
         await db.notifications.addNotification({
           type: 'scan_complete',
           title: 'Music analysis completed',
-          message: `Music analysis completed: ${outcome.processedCount} analyzed`,
+          message: `Music analysis completed: ${completedCount} analyzed`,
           reference_id: task.sourceId,
         })
       }
