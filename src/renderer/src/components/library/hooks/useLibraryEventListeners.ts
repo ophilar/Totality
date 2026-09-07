@@ -115,8 +115,11 @@ export function useLibraryEventListeners({
     // Listen for task queue task completion
     const cleanupTaskComplete = window.electronAPI.onTaskQueueTaskComplete?.((task: unknown) => {
       const t = task as { type: string; status: string }
-      // Refresh completeness data after completeness tasks (not scans — scans don't auto-reload)
       if (t.status === 'completed') {
+        if (t.type === 'quality-analysis') {
+          loadMedia()
+          loadStats(activeSourceId || undefined)
+        }
         if (t.type === 'series-completeness' || t.type === 'collection-completeness') {
           loadCompletenessData()
         }
@@ -260,7 +263,10 @@ export function useLibraryEventListeners({
       window.removeEventListener('exclusions-changed', handleExclusionsChanged)
     }
   }, [
+    activeSourceId,
     handleLibraryUpdate,
+    loadMedia,
+    loadStats,
     addToast,
     setActiveSource,
     markLibraryAsNew,
