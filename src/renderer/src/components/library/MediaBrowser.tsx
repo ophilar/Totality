@@ -357,16 +357,26 @@ export function MediaBrowser({
   useEffect(() => {
     if (selectedAlbum) {
       queueMicrotask(() => { setAlbumTracksLoading(true) })
-      Promise.all([
+      void Promise.all([
         window.electronAPI.musicGetTracksByAlbum(selectedAlbum.id!),
         window.electronAPI.musicGetAlbumCompleteness(selectedAlbum.id!)
       ]).then(([tracks, completeness]) => {
         setAlbumTracks(tracks as MusicTrack[])
         setSelectedAlbumCompleteness(completeness as AlbumCompletenessData)
         setAlbumTracksLoading(false)
-      }).catch(() => setAlbumTracksLoading(false))
+      }).catch(error => {
+        setAlbumTracks([])
+        setSelectedAlbumCompleteness(null)
+        setAlbumTracksLoading(false)
+        window.electronAPI.log.error('[MediaBrowser]', 'Failed to load selected album data:', error)
+        addToast({
+          type: 'error',
+          title: 'Failed to load album data',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      })
     } else queueMicrotask(() => { setAlbumTracks([]); setSelectedAlbumCompleteness(null) })
-  }, [selectedAlbum])
+  }, [selectedAlbum, addToast])
 
   const currentTypeLibraries = useMemo(() =>
     activeSourceLibraries.filter(lib => {
@@ -382,8 +392,17 @@ export function MediaBrowser({
       ])
       setStats(libraryStats)
       setHasMusic(artistCount > 0)
-    } catch { /* ignore */ }
-  }, [])
+    } catch (error) {
+      setStats(null)
+      setHasMusic(false)
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to load library statistics:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to load library statistics',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [addToast])
 
   const loadCompletenessData = useCallback(async () => {
     try {
@@ -395,8 +414,17 @@ export function MediaBrowser({
       const sMap = new Map<string, SeriesCompletenessData>()
       ;(seriesData as SeriesCompletenessData[]).forEach(s => sMap.set(getTVShowIdentityKey(s), s))
       setSeriesCompleteness(sMap)
-    } catch { /* ignore */ }
-  }, [activeSourceId])
+    } catch (error) {
+      setMovieCollections([])
+      setSeriesCompleteness(new Map())
+      window.electronAPI.log.error('[MediaBrowser]', 'Failed to load completeness data:', error)
+      addToast({
+        type: 'error',
+        title: 'Failed to load completeness data',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [activeSourceId, addToast])
 
   const { showCollectionModal, setShowCollectionModal, selectedCollection, setSelectedCollection, getCollectionForMovie, ownedMoviesForSelectedCollection } = useCollections(movies, movieCollections)
 
