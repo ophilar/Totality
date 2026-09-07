@@ -137,56 +137,114 @@ describe('timeline cache migration', () => {
     expect(result.rows[0]?.album_id).toBeNull()
   })
 
-  it('severs only provably invalid cross-library music relationships', async () => {
+  it('severs only music relationships that contradict stored identity', async () => {
     const artistId = await dbService.music.upsertArtist({
-      source_id: 'music-source',
+      source_id: 'source-a',
       source_type: 'local',
       library_id: 'library-a',
       provider_id: 'artist-a',
-      name: 'Artist',
+      name: 'Artist A',
     })
     const albumId = await dbService.music.upsertAlbum({
-      source_id: 'music-source',
+      source_id: 'source-a',
       source_type: 'local',
       library_id: 'library-a',
       provider_id: 'album-a',
       artist_id: artistId,
-      artist_name: 'Artist',
-      title: 'Album',
+      artist_name: 'Artist A',
+      title: 'Album A',
     })
-    const mismatchedAlbumId = await dbService.music.upsertAlbum({
-      source_id: 'music-source',
+    const validCrossLibraryAlbumId = await dbService.music.upsertAlbum({
+      source_id: 'source-a',
       source_type: 'local',
       library_id: 'library-b',
-      provider_id: 'album-b',
+      provider_id: 'album-cross-library',
       artist_id: artistId,
-      artist_name: 'Artist',
-      title: 'Other Album',
+      artist_name: 'Artist A',
+      title: 'Cross Library Album',
     })
-    await dbService.music.upsertTrack({
-      source_id: 'music-source',
+    const crossSourceAlbumId = await dbService.music.upsertAlbum({
+      source_id: 'source-b',
       source_type: 'local',
       library_id: 'library-b',
-      provider_id: 'cross-library-track',
+      provider_id: 'album-cross-source',
+      artist_id: artistId,
+      artist_name: 'Artist A',
+      title: 'Cross Source Album',
+    })
+    const wrongArtistNameAlbumId = await dbService.music.upsertAlbum({
+      source_id: 'source-a',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'album-wrong-artist-name',
+      artist_id: artistId,
+      artist_name: 'Wrong Artist',
+      title: 'Wrong Artist Album',
+    })
+
+    await dbService.music.upsertTrack({
+      source_id: 'source-a',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'valid-cross-library-track',
       album_id: albumId,
       artist_id: artistId,
-      artist_name: 'Artist',
-      album_name: 'Album',
-      title: 'Track',
-      file_path: '/music/cross-library/track.flac',
+      artist_name: 'Artist A',
+      album_name: 'Album A',
+      title: 'Valid Track',
+      file_path: '/music/valid/track.flac',
+      audio_codec: 'flac',
+    })
+    await dbService.music.upsertTrack({
+      source_id: 'source-b',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'cross-source-track',
+      album_id: albumId,
+      artist_id: artistId,
+      artist_name: 'Artist A',
+      album_name: 'Album A',
+      title: 'Cross Source Track',
+      file_path: '/music/cross-source/track.flac',
+      audio_codec: 'flac',
+    })
+    await dbService.music.upsertTrack({
+      source_id: 'source-a',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'wrong-name-track',
+      album_id: albumId,
+      artist_id: artistId,
+      artist_name: 'Wrong Artist',
+      album_name: 'Wrong Album',
+      title: 'Wrong Name Track',
+      file_path: '/music/wrong-name/track.flac',
       audio_codec: 'flac',
     })
 
     await runMigrations(dbService.db)
 
-    const albumResult = await dbService.db.execute({
-      sql: 'SELECT artist_id FROM music_albums WHERE id = ?',
-      args: [mismatchedAlbumId],
+    const albums = await dbService.db.execute({
+      sql: 'SELECT id, artist_id FROM music_albums WHERE id IN (?, ?, ?) ORDER BY id',
+      args: [validCrossLibraryAlbumId, crossSourceAlbumId, wrongArtistNameAlbumId],
     })
-    const trackResult = await dbService.db.execute("SELECT album_id, artist_id FROM music_tracks WHERE provider_id = 'cross-library-track'")
-    expect(albumResult.rows[0]?.artist_id).toBeNull()
-    expect(trackResult.rows[0]?.album_id).toBeNull()
-    expect(trackResult.rows[0]?.artist_id).toBeNull()
+    const tracks = await dbService.db.execute({
+      sql: "SELECT provider_id, album_id, artist_id FROM music_tracks WHERE provider_id IN ('valid-cross-library-track', 'cross-source-track', 'wrong-name-track') ORDER BY provider_id",
+      args: [],
+    })
+
+    const albumArtistIds = new Map(albums.rows.map(row => [Number(row.id), row.artist_id]))
+    expect(albumArtistIds.get(validCrossLibraryAlbumId)).toBe(artistId)
+    expect(albumArtistIds.get(crossSourceAlbumId)).toBeNull()
+    expect(albumArtistIds.get(wrongArtistNameAlbumId)).toBeNull()
+
+    const trackLinks = new Map(tracks.rows.map(row => [String(row.provider_id), row]))
+    expect(trackLinks.get('valid-cross-library-track')?.album_id).toBe(albumId)
+    expect(trackLinks.get('valid-cross-library-track')?.artist_id).toBe(artistId)
+    expect(trackLinks.get('cross-source-track')?.album_id).toBeNull()
+    expect(trackLinks.get('cross-source-track')?.artist_id).toBeNull()
+    expect(trackLinks.get('wrong-name-track')?.album_id).toBeNull()
+    expect(trackLinks.get('wrong-name-track')?.artist_id).toBeNull()
   })
 
   it('successfully executes migrations and table rebuilds with quoted identifiers', async () => {
