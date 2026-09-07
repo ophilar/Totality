@@ -1,6 +1,6 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
-import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
 
 export const mediaApi: MediaAPI = {
   // Quality Analysis
@@ -16,6 +16,7 @@ export const mediaApi: MediaAPI = {
   // Database - Media Items
   getMediaItems: (filters?: MediaItemFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
   countMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
+  getMediaOptimizationSummary: (filters?: MediaItemFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_OPTIMIZATION_SUMMARY, filters),
   mediaList: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, filters),
   mediaCount: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, filters),
   getTVShows: (filters?: TVShowFilters) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, filters),
@@ -182,6 +183,7 @@ export interface MediaAPI {
   // Database - Media Items
   getMediaItems: (filters?: MediaItemFilters) => Promise<MediaItem[]>
   countMediaItems: (filters?: unknown) => Promise<number>
+  getMediaOptimizationSummary: (filters?: MediaItemFilters) => Promise<OptimizationMetricsSummary>
   mediaList: (filters?: unknown) => Promise<unknown[]>
   mediaCount: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: TVShowFilters) => Promise<TVShowSummary[]>

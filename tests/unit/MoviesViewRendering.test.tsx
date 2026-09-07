@@ -10,7 +10,7 @@ import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/Te
 import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 import type { MediaItem } from '@/components/library/types'
-import type { TaskQueueState } from '@main/types/database'
+import type { OptimizationMetricsSummary, TaskQueueState } from '@main/types/database'
 
 describe('MoviesView Integrated Rendering (No Mocks)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
@@ -166,6 +166,56 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
 
     expect(screen.getByText('Analyzed Movie')).toBeTruthy()
     expect(screen.queryByText('Analyzing')).toBeNull()
+  })
+
+  it('uses the server optimization summary instead of deriving totals from the loaded page', () => {
+    const movie = {
+      id: 4,
+      title: 'Paged Movie',
+      type: 'movie',
+      file_size: 8 * 1024 ** 3,
+      storage_debt_bytes: 1024 ** 3,
+      efficiency_score: 70,
+    } as MediaItem
+    const optimizationSummary: OptimizationMetricsSummary = {
+      recoverableBytes: 5 * 1024 ** 3,
+      wasteBytes: 5 * 1024 ** 3,
+      efficiency: 75,
+      savingsBasis: 'estimated',
+      evidenceStatus: 'estimated',
+      confidence: 'medium',
+      calculationStatus: 'estimated',
+      status: 'partial',
+      knownCount: 8,
+      totalCount: 10,
+      overallEfficiencyScore: 75,
+      recoverableWasteBytes: 5 * 1024 ** 3,
+      confidenceScore: 80,
+    }
+
+    render(
+      <TestProviders>
+        <MoviesView
+          movies={[movie]}
+          sortBy="title"
+          onSortChange={() => {}}
+          slimDown={false}
+          onSelectMovie={() => {}}
+          onSelectCollection={() => {}}
+          viewType="grid"
+          gridScale={5}
+          getCollectionForMovie={() => undefined}
+          movieCollections={[]}
+          showSourceBadge={false}
+          totalMovieCount={10}
+          moviesLoading={false}
+          onLoadMoreMovies={() => {}}
+          optimizationSummary={optimizationSummary}
+        />
+      </TestProviders>
+    )
+
+    expect(screen.getByText('5 GB')).toBeTruthy()
   })
 
   it('sorts movies when a sortable list column header is clicked', () => {

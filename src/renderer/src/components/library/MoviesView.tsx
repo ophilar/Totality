@@ -9,13 +9,13 @@ import { useMenuClose } from '@/hooks/useMenuClose'
 import { useSources } from '@/contexts/SourceContext'
 import { providerColors, calculatePosterWidth } from '@/components/library/mediaUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
+import type { OptimizationMetricsSummary } from '@main/types/database'
 import { getSortLabel, getSortOptions } from '@/components/library/sortDefinitions'
 import { EfficiencyDisplay } from '@/components/library/EfficiencyDisplay'
 import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
 import { EvidenceStatusBadge } from '@/components/library/EvidenceStatusBadge'
 import { OptimizationMetrics } from '@/components/library/OptimizationMetrics'
 import { MediaMetricsRow } from '@/components/library/MediaMetricsRow'
-import { calculateOptimizationSummary } from '@/components/library/optimizationSummary'
 
 // Utility to format bytes into readable strings
 const formatBytes = (bytes: number) => {
@@ -52,7 +52,8 @@ export function MoviesView({
   onLoadMoreMovies,
   collectionsOnly = false,
   groupByCollections = true,
-  isAnalyzing = false
+  isAnalyzing = false,
+  optimizationSummary,
 }: {
   movies?: MediaItem[]
   sortBy: 'title' | 'year' | 'efficiency' | 'recoverable' | 'size'
@@ -75,6 +76,7 @@ export function MoviesView({
   collectionsOnly?: boolean
   groupByCollections?: boolean
   isAnalyzing?: boolean
+  optimizationSummary?: OptimizationMetricsSummary | null
 }) {
   const [expandedRecommendations, setExpandedRecommendations] = useState<Set<number>>(new Set())
 
@@ -160,18 +162,6 @@ export function MoviesView({
 
     return items
   }, [movies, movieCollections, getCollectionForMovie, collectionsOnly, groupByCollections, sortBy, sortOrder])
-
-  const optimizationSummary = useMemo(
-    () => calculateOptimizationSummary(
-      movies?.map(m => ({
-        file_size: m.file_size,
-        storage_debt_bytes: m.storage_debt_bytes,
-        efficiency_score: m.efficiency_score,
-      })),
-      totalMovieCount
-    ),
-    [movies, totalMovieCount]
-  )
 
   const statsBar = (
     <div className="flex items-center justify-between pb-4 px-1">
