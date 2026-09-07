@@ -580,8 +580,11 @@ export class TaskQueueService {
         },
         task.sourceId
       )
-      const completedCount = outcome.completedCount ?? 0
-      const failedCount = outcome.failedCount ?? 0
+      if (outcome.completedCount === undefined || outcome.failedCount === undefined) {
+        throw new Error('Music analysis returned incomplete outcome counts')
+      }
+      const completedCount = outcome.completedCount
+      const failedCount = outcome.failedCount
       const totalCount = completedCount + failedCount + outcome.deferredCount + outcome.skipped
 
       task.result = {
