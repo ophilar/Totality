@@ -151,8 +151,9 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       .select({
         totalCount: sql<number>`COUNT(${schema.mediaItems.id})`,
         knownEfficiencyCount: sql<number>`COUNT(${schema.qualityScores.efficiencyScore})`,
+        knownDebtCount: sql<number>`COUNT(${schema.qualityScores.storageDebtBytes})`,
         measuredDebtCount: sql<number>`COUNT(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' AND ${schema.qualityScores.storageDebtBytes} IS NOT NULL THEN 1 END)`,
-        storageDebtBytes: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.evidenceStatus} = 'measured' THEN ${schema.qualityScores.storageDebtBytes} ELSE NULL END)`,
+        storageDebtBytes: sql<number | null>`SUM(${schema.qualityScores.storageDebtBytes})`,
         weightedEfficiencyNumerator: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL AND ${schema.mediaItems.fileSize} IS NOT NULL AND ${schema.mediaItems.fileSize} > 0 THEN ${schema.qualityScores.efficiencyScore} * ${schema.mediaItems.fileSize} ELSE 0 END)`,
         weightedEfficiencyDenominator: sql<number | null>`SUM(CASE WHEN ${schema.qualityScores.efficiencyScore} IS NOT NULL AND ${schema.mediaItems.fileSize} IS NOT NULL AND ${schema.mediaItems.fileSize} > 0 THEN ${schema.mediaItems.fileSize} ELSE 0 END)`,
         unweightedEfficiencySum: sql<number | null>`SUM(${schema.qualityScores.efficiencyScore})`,
@@ -165,6 +166,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
     const totalCount = Number(agg?.totalCount) || 0
     const knownCount = Number(agg?.knownEfficiencyCount) || 0
+    const knownDebtCount = Number(agg?.knownDebtCount) || 0
     const measuredDebtCount = Number(agg?.measuredDebtCount) || 0
 
     let status: CalculationStatus = 'unknown'
@@ -187,11 +189,16 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
 
     let totalStorageDebtBytes: number | null = null
     let recoverableWasteBytes: number | null = null
-    if (measuredDebtCount > 0 && agg?.storageDebtBytes != null) {
+    if (knownDebtCount > 0 && agg?.storageDebtBytes != null) {
       totalStorageDebtBytes = Number(agg.storageDebtBytes)
       recoverableWasteBytes = totalStorageDebtBytes
     }
 
+    const debtEvidenceStatus = knownDebtCount === 0
+      ? 'insufficient'
+      : measuredDebtCount === knownDebtCount
+        ? 'measured'
+        : 'estimated'
     const confidenceScore = totalCount > 0 ? Math.round((knownCount / totalCount) * 100) : 0
     let calculationStatus: CalculationStatus = 'unavailable'
     if (status === 'complete') {
@@ -211,8 +218,8 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       recoverableWasteBytes,
       wasteBytes: recoverableWasteBytes,
       totalStorageDebtBytes,
-      savingsBasis: measuredDebtCount > 0 ? 'measured' : null,
-      evidenceStatus: measuredDebtCount > 0 ? 'measured' : 'insufficient',
+      savingsBasis: knownDebtCount > 0 ? debtEvidenceStatus : null,
+      evidenceStatus: debtEvidenceStatus,
       confidence: confidenceScore >= 80 ? 'high' : confidenceScore >= 40 ? 'medium' : 'low',
       confidenceScore,
     }
