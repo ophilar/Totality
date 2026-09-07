@@ -1,0 +1,1 @@
+Pagination regression RED verification is exercised on the temporary CI branch before production changes.
