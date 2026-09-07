@@ -1104,22 +1104,74 @@ export class MusicBrainzService extends CancellableOperation {
     const allSourceAlbums = (await db.music.getAlbums(albumFilters)) as MusicAlbum[]
     const allSourceTracks = await db.music.getTracks(albumFilters)
 
-    // Group albums by artist_id for fast lookup
-    const albumsByArtist = new Map<number, MusicAlbum[]>()
-    for (const album of allSourceAlbums) {
-      if (album.artist_id) {
-        if (!albumsByArtist.has(album.artist_id)) albumsByArtist.set(album.artist_id, [])
-        albumsByArtist.get(album.artist_id)!.push(album)
+    const artistsById = new Map<number, (typeof artists)[number]>()
+    for (const artist of artists) {
+      if (artist.id === undefined) {
+        throw new Error(`Music database integrity error: artist "${artist.name}" is missing its database id`)
       }
+      artistsById.set(artist.id, artist)
     }
 
-    // Group tracks by album_id for fast lookup
+    // Validate and group albums by their authoritative artist relation before any provider lookup.
+    const albumsByArtist = new Map<number, MusicAlbum[]>()
+    const albumsById = new Map<number, MusicAlbum>()
+    for (const album of allSourceAlbums) {
+      if (album.id === undefined) {
+        throw new Error(`Music database integrity error: album "${album.title}" is missing its database id`)
+      }
+      if (album.artist_id === undefined) {
+        throw new Error(`Music database integrity error: album "${album.title}" has no artist_id`)
+      }
+      const artist = artistsById.get(album.artist_id)
+      if (!artist) {
+        throw new Error(
+          `Music database integrity error: album "${album.title}" references missing artist_id ${album.artist_id}`
+        )
+      }
+      if (album.source_id !== artist.source_id) {
+        throw new Error(
+          `Music database integrity error: album "${album.title}" source ${album.source_id} does not match artist "${artist.name}" source ${artist.source_id}`
+        )
+      }
+      if (album.artist_name !== artist.name) {
+        throw new Error(
+          `Music database integrity error: album "${album.title}" is stored as artist "${album.artist_name}" but artist_id ${album.artist_id} resolves to "${artist.name}"`
+        )
+      }
+
+      const artistAlbums = albumsByArtist.get(album.artist_id)
+      if (artistAlbums) artistAlbums.push(album)
+      else albumsByArtist.set(album.artist_id, [album])
+      albumsById.set(album.id, album)
+    }
+
+    // Validate and group track ownership. A missing or cross-source album relation is corruption,
+    // not a reason to silently omit the track from completeness analysis.
     const tracksByAlbum = new Map<number, MusicTrack[]>()
     for (const track of allSourceTracks) {
-      if (track.album_id) {
-        if (!tracksByAlbum.has(track.album_id)) tracksByAlbum.set(track.album_id, [])
-        tracksByAlbum.get(track.album_id)!.push(track)
+      if (track.album_id === undefined) {
+        throw new Error(`Music database integrity error: track "${track.title}" has no album_id`)
       }
+      const album = albumsById.get(track.album_id)
+      if (!album) {
+        throw new Error(
+          `Music database integrity error: track "${track.title}" references missing album_id ${track.album_id}`
+        )
+      }
+      if (track.source_id !== album.source_id) {
+        throw new Error(
+          `Music database integrity error: track "${track.title}" source ${track.source_id} does not match album "${album.title}" source ${album.source_id}`
+        )
+      }
+      if (track.album_name !== undefined && track.album_name !== album.title) {
+        throw new Error(
+          `Music database integrity error: track "${track.title}" is stored under album "${track.album_name}" but album_id ${track.album_id} resolves to "${album.title}"`
+        )
+      }
+
+      const albumTracks = tracksByAlbum.get(track.album_id)
+      if (albumTracks) albumTracks.push(track)
+      else tracksByAlbum.set(track.album_id, [track])
     }
 
     // Pre-fetch existing completeness data to check for recently analyzed items
@@ -1152,20 +1204,6 @@ export class MusicBrainzService extends CancellableOperation {
     let deferredAlbums = 0
     const errors: string[] = []
     const diagnostics: AnalysisDiagnostic[] = []
-
-    // Send initial progress immediately so UI shows something right away
-    onProgress?.({
-      current: 0,
-      total: totalItems,
-      currentItem: 'Starting analysis...',
-      phase: 'artists',
-      percentage: 0,
-      artistsTotal: artists.length,
-      albumsTotal: allSourceAlbums.length,
-      phaseIndex: 0,
-      skipped: 0,
-    })
-
 
     // Send initial progress immediately so UI shows something right away
     onProgress?.({
