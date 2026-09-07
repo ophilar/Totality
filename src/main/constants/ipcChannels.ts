@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
     GET_DASHBOARD_SUMMARY: 'db:getDashboardSummary',
     MEDIA_LIST: 'db:media:list',
     MEDIA_COUNT: 'db:media:count',
+    MEDIA_OPTIMIZATION_SUMMARY: 'db:media:optimizationSummary',
     MEDIA_GET_ITEM: 'db:media:getItem',
     MEDIA_GET_BY_ID: 'db:getMediaItemById',
     MEDIA_UPSERT: 'db:upsertMediaItem',
