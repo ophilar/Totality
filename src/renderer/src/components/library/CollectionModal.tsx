@@ -47,14 +47,11 @@ export const CollectionModal = memo(function CollectionModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  // Parse missing movies from JSON
-  const missingMovies = useMemo<MissingMovie[]>(() => {
-    try {
-      return JSON.parse(collection.missing_movies || '[]')
-    } catch {
-      return []
-    }
-  }, [collection.missing_movies])
+  // Parse missing movies from validated repository data
+  const missingMovies = useMemo<MissingMovie[]>(
+    () => JSON.parse(collection.missing_movies || '[]') as MissingMovie[],
+    [collection.missing_movies]
+  )
 
   // Create a Set for O(1) lookup of missing movie tmdb_ids
   const missingMovieMap = useMemo(() => {
