@@ -78,6 +78,30 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     expect(analyzer.calculateDubBloatBytes(item)).toBeNull()
   })
 
+  it('preserves known video recoverable bytes when audio-pruning evidence is unavailable', async () => {
+    const score = await analyzer.analyzeMediaItem({
+      id: 13,
+      source_id: 'src1',
+      plex_id: 'p13',
+      title: 'Video-only recoverable evidence',
+      type: 'movie',
+      file_path: '/media/video-only-recoverable.mkv',
+      file_size: 20 * 1024 * 1024 * 1024,
+      duration: 2 * 60 * 60 * 1000,
+      resolution: '1080p',
+      video_codec: 'h264',
+      video_bitrate: 35_000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate: 192,
+      original_language: null,
+      audio_tracks: null,
+    })
+
+    expect(score.storage_debt_bytes).not.toBeNull()
+    expect(score.storage_debt_bytes).toBeGreaterThan(0)
+  })
+
   it('withholds a video transcode recommendation when the video stream bitrate is unknown', () => {
     const advice = analyzer.getOptimizationAdvice({
       id: 10,
