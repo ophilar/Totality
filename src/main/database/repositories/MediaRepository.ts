@@ -113,8 +113,10 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }
 
     const sortCol = sortMap[filters?.sortBy || 'title'] || schema.mediaItems.title
-    const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
-    query.orderBy(sortOrder)
+    const descending = filters?.sortOrder === 'desc'
+    const sortOrder = descending ? desc(sortCol) : asc(sortCol)
+    const identityOrder = descending ? desc(schema.mediaItems.id) : asc(schema.mediaItems.id)
+    query.orderBy(sortOrder, identityOrder)
 
     if (filters?.limit) query.limit(filters.limit)
     if (filters?.offset) query.offset(filters.offset)
@@ -497,7 +499,6 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       }
     })
   }
-
   async deleteItems(ids: number[]): Promise<void> {
     if (!ids.length) return
     await this.withBatch(async () => {
