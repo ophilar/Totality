@@ -57,6 +57,10 @@ export function registerDatabaseHandlers() {
   // MEDIA ITEMS
   // ============================================================================
 
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.MEDIA_OPTIMIZATION_SUMMARY, MediaItemFiltersSchema, async (filters) => {
+    return await db.media.getOptimizationMetricsSummary(filters as MediaItemFilters)
+  })
+
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, TVShowFiltersSchema, async (filters) => {
     return await db.media.count({ ...filters, type: MediaItemType.Episode } as MediaItemFilters)
   })
