@@ -158,7 +158,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     await renderShowTranscodeModal(mockSummary, handleClose)
 
-    expect(screen.getByText('Batch Optimize Series')).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: /batch optimize series/i })
+    expect(dialog.className).toContain('z-250')
+    expect((dialog.firstElementChild as HTMLElement).className).toContain('sm:max-h-[92vh]')
     expect(screen.getByText('AV1')).toBeTruthy()
     expect(screen.getByText('HEVC (H.265)')).toBeTruthy()
 
@@ -337,8 +339,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     expect(screen.getByText(/High bitrate AVC Remux benefits from video transcoding/i)).toBeTruthy()
     expect(screen.getByText(/Stream pruning preserves video quality/i)).toBeTruthy()
 
-    // Click Queue All Episodes
-    const queueEpisodesButton = screen.getByRole('button', { name: /queue all episodes \(3\)/i })
+    // Queue only backend-eligible episodes; the backend owns eligibility.
+    const queueEpisodesButton = screen.getByRole('button', { name: /queue eligible episodes/i })
     expect(queueEpisodesButton).toBeTruthy()
     await act(async () => {
       fireEvent.click(queueEpisodesButton)

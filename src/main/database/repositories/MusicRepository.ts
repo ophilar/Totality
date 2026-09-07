@@ -496,11 +496,13 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       track_count: schema.musicArtists.trackCount,
     }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicArtists.sortName
-    const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
+    const descending = filters?.sortOrder === 'desc'
+    const sortOrder = descending ? desc(sortCol) : asc(sortCol)
+    const identityOrder = descending ? desc(schema.musicArtists.id) : asc(schema.musicArtists.id)
 
     const query = this.drizzle.select().from(schema.musicArtists)
     if (conditions.length > 0) query.where(and(...conditions))
-    query.orderBy(sortOrder)
+    query.orderBy(sortOrder, identityOrder)
     if (filters?.limit) query.limit(filters.limit)
     if (filters?.offset) query.offset(filters.offset)
 
@@ -603,11 +605,13 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       storage_debt: schema.musicAlbums.totalSize,
     }
     const sortCol = sortMap[filters?.sortBy || ''] || schema.musicAlbums.artistName
-    const sortOrder = filters?.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol)
+    const descending = filters?.sortOrder === 'desc'
+    const sortOrder = descending ? desc(sortCol) : asc(sortCol)
+    const identityOrder = descending ? desc(schema.musicAlbums.id) : asc(schema.musicAlbums.id)
 
     const query = this.drizzle.select().from(schema.musicAlbums)
     if (conditions.length > 0) query.where(and(...conditions))
-    query.orderBy(sortOrder)
+    query.orderBy(sortOrder, identityOrder)
     if (filters?.limit) query.limit(filters.limit)
     if (filters?.offset) query.offset(filters.offset)
 
@@ -729,11 +733,19 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
 
     if (filters?.sortBy && sortMap[filters.sortBy]) {
       const sortCol = sortMap[filters.sortBy]
-      query.orderBy(filters.sortOrder === 'desc' ? desc(sortCol) : asc(sortCol))
+      const descending = filters.sortOrder === 'desc'
+      query.orderBy(
+        descending ? desc(sortCol) : asc(sortCol),
+        descending ? desc(schema.musicTracks.id) : asc(schema.musicTracks.id)
+      )
     } else if (filters?.albumId) {
-      query.orderBy(asc(schema.musicTracks.discNumber), asc(schema.musicTracks.trackNumber))
+      query.orderBy(
+        asc(schema.musicTracks.discNumber),
+        asc(schema.musicTracks.trackNumber),
+        asc(schema.musicTracks.id)
+      )
     } else {
-      query.orderBy(asc(schema.musicTracks.title))
+      query.orderBy(asc(schema.musicTracks.title), asc(schema.musicTracks.id))
     }
 
     if (filters?.limit) query.limit(filters.limit)
