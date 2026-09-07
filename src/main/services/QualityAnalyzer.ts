@@ -6,6 +6,7 @@ import { TrashSourceClassifier, MediaSourceTier } from '@main/services/transcodi
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { normalizeLanguage } from '@main/constants/languages'
 import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
+import { buildOptimizationSavingsBreakdown } from '@main/services/OptimizationSavingsService'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -466,9 +467,15 @@ export class QualityAnalyzer {
     const efficiencyScore = qualityTier !== 'Unknown' ? this.calculateEfficiencyScore(mediaItem, qualityTier) : null
     const videoBloatBytes = this.calculateVideoBloatBytes(mediaItem, qualityTier)
     const audioPruningEvidence = this.getAudioPruningEvidence(mediaItem)
-    const storageDebtBytes = videoBloatBytes !== null && audioPruningEvidence.estimatedSavingsBytes !== null
-      ? videoBloatBytes + audioPruningEvidence.estimatedSavingsBytes
-      : null
+    const savingsBreakdown = buildOptimizationSavingsBreakdown({
+      totalBytes: mediaItem.file_size,
+      videoDebtBytes: videoBloatBytes,
+      audioPruningBytes: audioPruningEvidence.estimatedSavingsBytes,
+      audioTranscodeBytes: null,
+    })
+    const storageDebtBytes = savingsBreakdown.coverage === 'insufficient'
+      ? null
+      : savingsBreakdown.totalRecoverableBytes
 
     const issues: string[] = []
     const itemBitrate = metadataNumber(mediaItem.video_bitrate, 'video_bitrate')
