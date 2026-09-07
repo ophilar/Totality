@@ -86,6 +86,57 @@ describe('timeline cache migration', () => {
     expect(getLoggingService().getLogs().some(log => log.level === 'warn' && log.message.includes('timeline_recipe:unversioned') && log.message.includes('unsupported recipe version'))).toBe(true)
   })
 
+  it('does not guess an album relationship from ambiguous denormalized names', async () => {
+    const firstArtistId = await dbService.music.upsertArtist({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'artist-a',
+      name: 'Shared Artist',
+    })
+    const secondArtistId = await dbService.music.upsertArtist({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'artist-b',
+      name: 'Shared Artist',
+    })
+    await dbService.music.upsertAlbum({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'album-a',
+      artist_id: firstArtistId,
+      artist_name: 'Shared Artist',
+      title: 'Shared Album',
+    })
+    await dbService.music.upsertAlbum({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'album-b',
+      artist_id: secondArtistId,
+      artist_name: 'Shared Artist',
+      title: 'Shared Album',
+    })
+    await dbService.music.upsertTrack({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'unlinked-track',
+      artist_name: 'Shared Artist',
+      album_name: 'Shared Album',
+      title: 'Track',
+      file_path: '/music/shared/track.flac',
+      audio_codec: 'flac',
+    })
+
+    await runMigrations(dbService.db)
+
+    const result = await dbService.db.execute("SELECT album_id FROM music_tracks WHERE provider_id = 'unlinked-track'")
+    expect(result.rows[0]?.album_id).toBeNull()
+  })
+
   it('successfully executes migrations and table rebuilds with quoted identifiers', async () => {
     await runMigrations(dbService.db)
     const tableInfo = await dbService.db.execute('PRAGMA table_info(quality_scores)')
