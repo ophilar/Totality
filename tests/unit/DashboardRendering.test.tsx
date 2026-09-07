@@ -118,6 +118,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
 
     await db.tvShows.upsertCompleteness({
       series_title: 'Test TV Series',
+      series_identity_key: 'unresolved:s1:1:test-tv-series',
       source_id: 's1',
       library_id: '1',
       total_seasons: 2,

@@ -122,6 +122,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
     // Important: we need a summary record for the count to be > 0 and the tab enabled
     await db.tvShows.upsertCompleteness({
         series_title: 'Test Show',
+        series_identity_key: 'unresolved:s1:2:test-show',
         source_id: 's1',
         library_id: '2',
         plex_id: 's1-show',
@@ -133,7 +134,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
     })
 
     await db.media.upsertItem({
-        source_id: 's1', library_id: '2', plex_id: 'ep1', title: 'Ep 1', type: 'episode', series_title: 'Test Show', file_path: 'e1.mkv'
+        source_id: 's1', library_id: '2', plex_id: 'ep1', title: 'Ep 1', type: 'episode', series_title: 'Test Show', series_identity_key: 'unresolved:s1:2:test-show', file_path: 'e1.mkv'
     })
 
     await renderBrowser()

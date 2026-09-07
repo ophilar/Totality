@@ -25,6 +25,7 @@ describe('TVShowRepository (Real DB)', () => {
     source_type: 'plex',
     library_id: 'lib-1',
     plex_id: `${series}-s${season}e${episode}`,
+    series_identity_key: `unresolved:src-1:lib-1:${series.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
     title: `Episode ${episode}`,
     series_title: series,
     season_number: season,
@@ -46,6 +47,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('should return TV show summaries with episode counts', async () => {
     await repo.upsertCompleteness({
       series_title: 'Breaking Bad',
+      series_identity_key: 'unresolved:src-1:lib-1:breaking-bad',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 5,
@@ -69,6 +71,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('should filter TV shows by search query', async () => {
     await repo.upsertCompleteness({
       series_title: 'The Wire',
+      series_identity_key: 'unresolved:src-1:lib-1:the-wire',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 5,
@@ -82,6 +85,7 @@ describe('TVShowRepository (Real DB)', () => {
     
     await repo.upsertCompleteness({
       series_title: 'Breaking Bad',
+      series_identity_key: 'unresolved:src-1:lib-1:breaking-bad',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 5,
@@ -101,6 +105,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('deduplicates unresolved rows for the same scoped show title', async () => {
     const unresolved = {
       series_title: 'Duplicate Show',
+      series_identity_key: 'unresolved:src-1:lib-1:duplicate-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -123,6 +128,7 @@ describe('TVShowRepository (Real DB)', () => {
     const addShow = async (title: string, efficiency: number) => {
       await repo.upsertCompleteness({
         series_title: title,
+        series_identity_key: `unresolved:src-1:lib-1:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         source_id: 'src-1',
         library_id: 'lib-1',
         total_seasons: 1,
@@ -151,6 +157,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('preserves unknown recoverable evidence instead of reporting zero optimization', async () => {
     await repo.upsertCompleteness({
       series_title: 'Unmeasured Show',
+      series_identity_key: 'unresolved:src-1:lib-1:unmeasured-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -180,6 +187,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('preserves a measured zero recoverable result as real evidence', async () => {
     await repo.upsertCompleteness({
       series_title: 'Measured Zero Show',
+      series_identity_key: 'unresolved:src-1:lib-1:measured-zero-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -220,6 +228,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('preserves a measured zero recoverable result from completeness row when episodes are absent', async () => {
     await repo.upsertCompleteness({
       series_title: 'Empty Measured Zero Show',
+      series_identity_key: 'unresolved:src-1:lib-1:empty-measured-zero-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -246,7 +255,7 @@ describe('TVShowRepository (Real DB)', () => {
     await mediaRepo.upsertItem(mockEpisode('Breaking Bad', 1, 1))
     await mediaRepo.upsertItem(mockEpisode('The Wire', 1, 1))
 
-    const episodes = await repo.getEpisodes('Breaking Bad')
+    const episodes = await repo.getEpisodes('Breaking Bad', 'src-1', 'unresolved:src-1:lib-1:breaking-bad', 'lib-1')
     expect(episodes).toHaveLength(1)
     expect(episodes[0].series_title).toBe('Breaking Bad')
   })
@@ -254,6 +263,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('replaces an identical unresolved summary when a verified identity arrives', async () => {
     const base = {
       series_title: 'Andor',
+      series_identity_key: 'unresolved:src-1:lib-1:andor',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 2,
@@ -266,7 +276,9 @@ describe('TVShowRepository (Real DB)', () => {
     } as SeriesCompleteness
 
     await repo.upsertCompleteness(base)
-    await repo.upsertCompleteness({ ...base, tmdb_id: '83867' })
+    await repo.upsertCompleteness({ ...base, tmdb_id: '83867', series_identity_key: 'tmdb:83867' })
+
+    await repo.mergeDuplicateShows('src-1', 'lib-1')
 
     const summaries = await repo.getSummaries()
     expect(summaries).toHaveLength(1)
@@ -276,6 +288,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('accurately resolves season count and owned counts even when total_seasons is 0 or unanalyzed', async () => {
     await repo.upsertCompleteness({
       series_title: 'Unanalyzed Series',
+      series_identity_key: 'unresolved:src-1:lib-1:unanalyzed-series',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 0,
@@ -303,6 +316,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('derives total_recoverable_bytes and weighted_efficiency directly from episode quality scores instead of competing row values', async () => {
     await repo.upsertCompleteness({
       series_title: 'Direct Derived Show',
+      series_identity_key: 'unresolved:src-1:lib-1:direct-derived-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -356,6 +370,7 @@ describe('TVShowRepository (Real DB)', () => {
   it('evaluates total_recoverable_bytes to undefined and weighted_efficiency to null when show has 0 analyzed episodes', async () => {
     await repo.upsertCompleteness({
       series_title: 'Unanalyzed Episode Show',
+      series_identity_key: 'unresolved:src-1:lib-1:unanalyzed-episode-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -385,6 +400,7 @@ describe('TVShowRepository (Real DB)', () => {
     const addShow = async (title: string, debt: number) => {
       await repo.upsertCompleteness({
         series_title: title,
+        series_identity_key: `unresolved:src-1:lib-1:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         source_id: 'src-1',
         library_id: 'lib-1',
         total_seasons: 1,

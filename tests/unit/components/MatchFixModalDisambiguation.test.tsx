@@ -210,6 +210,8 @@ describe('MatchFixModal Series Disambiguation Indicators', () => {
         type="series"
         currentTitle="Game of Thrones"
         sourceId="source-1"
+        seriesIdentityKey="tmdb:1399"
+        libraryId="lib-1"
         onMatchFixed={onMatchFixed}
       />
     )
@@ -235,6 +237,8 @@ describe('MatchFixModal Series Disambiguation Indicators', () => {
       expect(window.electronAPI.seriesFixMatch).toHaveBeenCalledWith(
         'Game of Thrones',
         'source-1',
+        'tmdb:1399',
+        'lib-1',
         'tmdb',
         '1399'
       )

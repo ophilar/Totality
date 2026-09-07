@@ -397,7 +397,9 @@ describe('TranscodingService', () => {
 
       const preflight = await service.preflightShowTranscode({
         seriesTitle: 'Star Trek Strange New Worlds',
+        seriesIdentityKey: 'tmdb:85552',
         sourceId: 'src1',
+        libraryId: 'tv',
         options: { optimizationMode: 'smart' }
       })
 

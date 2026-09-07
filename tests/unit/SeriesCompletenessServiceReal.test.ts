@@ -27,6 +27,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       audio_codec: 'aac',
       audio_channels: 2,
       audio_bitrate: 192,
+      series_identity_key: overrides.series_identity_key || (overrides.series_tmdb_id ? `tmdb:${overrides.series_tmdb_id}` : undefined),
       ...overrides
     }
   }
@@ -127,7 +128,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       series_tmdb_id: '1399'
     }))
 
-    const completeness = await service.analyzeSeries('Game of Thrones', 's1', 'tvshows', '1399')
+    const completeness = await service.analyzeSeries('Game of Thrones', 's1', 'tvshows', '1399', undefined, { seriesIdentityKey: 'tmdb:1399' })
     
     expect(completeness).not.toBeNull()
     expect(completeness!.series_title).toBe('Game of Thrones')
@@ -161,7 +162,7 @@ describe('SeriesCompletenessService (No Mocks)', () => {
       series_tmdb_id: '1399'
     }))
 
-    await service.analyzeSeries('Game of Thrones', 'local1', 'tvshows', '1399')
+    await service.analyzeSeries('Game of Thrones', 'local1', 'tvshows', '1399', undefined, { seriesIdentityKey: 'tmdb:1399' })
 
     const item = await db.media.getItemByProviderId('local-ep-1', 'local1')
     expect(item).not.toBeNull()

@@ -83,6 +83,7 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       // 1. Initial insert with unresolved key
       const id1 = await db.tvShows.upsertCompleteness({
         series_title: 'Breaking Bad',
+        series_identity_key: 'tmdb:1396',
         source_id: 'src1',
         library_id: 'lib1',
         total_seasons: 5,
@@ -99,6 +100,7 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       // 2. Second upsert from a scan with a slightly different title or season folder info
       const id2 = await db.tvShows.upsertCompleteness({
         series_title: 'Breaking Bad (2008)',
+        series_identity_key: 'tmdb:1396',
         source_id: 'src1',
         library_id: 'lib1',
         total_seasons: 5,
@@ -214,6 +216,7 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
     it('merges duplicate TV shows directly via TVShowRepository.mergeDuplicateShows', async () => {
       await db.tvShows.upsertCompleteness({
         series_title: 'Silo (2023)',
+        series_identity_key: 'tmdb:125988',
         source_id: 'src1',
         library_id: 'lib1',
         total_seasons: 1,

@@ -135,7 +135,7 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
 
   it('should render show cards when data is present', async () => {
     const shows = [
-      { series_title: 'Test Show', season_count: 1, episode_count: 10, source_id: 's1', source_type: 'local' }
+      { series_title: 'Test Show', series_identity_key: 'tmdb:999', library_id: 'lib-1', season_count: 1, episode_count: 10, source_id: 's1', source_type: 'local' }
     ]
 
     await act(async () => {

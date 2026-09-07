@@ -40,6 +40,7 @@ describe('series identity migration', () => {
       missing_seasons: '[]',
       missing_episodes: '[]',
       completeness_percentage: 100,
+      series_identity_key: 'unresolved:legacy-source:legacy-tv:unresolved-legacy-show',
     })
 
     const resolvedEpisodeId = await db.media.upsertItem({

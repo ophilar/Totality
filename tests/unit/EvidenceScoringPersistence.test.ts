@@ -120,6 +120,7 @@ describe('evidence-based score persistence', () => {
   it('round-trips aggregate series evidence metadata', async () => {
     await db.tvShows.upsertCompleteness({
       series_title: 'Evidence Series',
+      series_identity_key: 'unresolved:evidence-source:evidence-library:evidence-series',
       source_id: 'evidence-source',
       library_id: 'evidence-library',
       total_seasons: 1,
@@ -222,6 +223,7 @@ describe('evidence-based score persistence', () => {
   it('does not relabel an explicitly measured zero as legacy insufficient data', async () => {
     await db.tvShows.upsertCompleteness({
       series_title: 'Measured Zero Series',
+      series_identity_key: 'unresolved:measured-source:measured-library:measured-zero-series',
       source_id: 'measured-source',
       library_id: 'measured-library',
       total_seasons: 1,

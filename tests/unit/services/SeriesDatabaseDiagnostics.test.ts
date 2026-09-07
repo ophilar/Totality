@@ -102,6 +102,8 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
 
       expect(resultId).toBe(canonicalId)
 
+      await db.tvShows.mergeDuplicateShows('src-st', 'tv')
+
       const allRows = await db.tvShows.getAllCompleteness('src-st', 'tv')
       expect(allRows.length).toBe(1)
       expect(allRows[0].id).toBe(canonicalId)

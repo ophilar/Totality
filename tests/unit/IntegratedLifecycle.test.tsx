@@ -49,6 +49,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
     await mediaRepo.upsertItem({
       plex_id: 'local_s1e1',
       series_title: seriesTitle,
+      series_identity_key: 'unresolved:src-1:lib-1:local-show',
       title: 'Episode 1',
       season_number: 1,
       episode_number: 1,
@@ -70,6 +71,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
 
     await tvRepo.upsertCompleteness({
       series_title: seriesTitle,
+      series_identity_key: 'unresolved:src-1:lib-1:local-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,
@@ -122,6 +124,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
     await db.media.upsertItem({
       plex_id: 'local_s2e1',
       series_title: 'Slow Show',
+      series_identity_key: 'unresolved:src-1:lib-1:slow-show',
       title: 'Episode 1',
       type: 'episode',
       source_id: 'src-1',
@@ -131,6 +134,7 @@ describe('MediaBrowser Lifecycle Integration', () => {
     
     await tvRepo.upsertCompleteness({
       series_title: 'Slow Show',
+      series_identity_key: 'unresolved:src-1:lib-1:slow-show',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 1,

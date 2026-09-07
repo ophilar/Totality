@@ -25,6 +25,7 @@ describe('Show Analysis & Metadata Integrity', () => {
       title: 'Episode 1',
       type: MediaItemType.Episode,
       series_title: 'Unmatched Show',
+      series_identity_key: 'unresolved:s1:2:unmatched-show',
       season_number: 1,
       episode_number: 1,
       file_path: '/path/to/ep1.mkv',
@@ -32,7 +33,7 @@ describe('Show Analysis & Metadata Integrity', () => {
     })
 
     await db.config.setSetting('tmdb_api_key', '')
-    const analysis = await service.analyzeSeries('Unmatched Show', 's1', '2')
+    const analysis = await service.analyzeSeries('Unmatched Show', 's1', '2', undefined, undefined, { seriesIdentityKey: 'unresolved:s1:2:unmatched-show' })
 
     expect(analysis).not.toBeNull()
     expect(analysis!.total_episodes).toBe(1)
@@ -49,6 +50,7 @@ describe('Show Analysis & Metadata Integrity', () => {
 
     await db.tvShows.upsertCompleteness({
       series_title: 'Matched Show',
+      series_identity_key: 'tmdb:12345',
       source_id: 's1',
       library_id: '2',
       total_seasons: 5,
@@ -69,13 +71,14 @@ describe('Show Analysis & Metadata Integrity', () => {
       title: 'Ep 1',
       type: MediaItemType.Episode,
       series_title: 'Matched Show',
+      series_identity_key: 'tmdb:12345',
       season_number: 1,
       episode_number: 1,
       file_path: '/p2.mkv'
     })
 
     await db.config.setSetting('tmdb_api_key', '')
-    const analysis = await service.analyzeSeries('Matched Show', 's1', '2')
+    const analysis = await service.analyzeSeries('Matched Show', 's1', '2', '12345', undefined, { seriesIdentityKey: 'tmdb:12345' })
 
     expect(analysis!.tmdb_id).toBe('12345')
     expect(analysis!.poster_url).toBe('existing-poster-url')

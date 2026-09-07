@@ -170,6 +170,7 @@ describe('Unified Optimization Metrics Calculations', () => {
     it('returns unknown status when shows have no efficiency scored', async () => {
       await db.tvShows.upsertCompleteness({
         series_title: 'Unscored Series',
+        series_identity_key: 'unresolved:src-opt:tv:unscored-series',
         source_id: 'src-opt',
         library_id: 'tv',
         total_seasons: 1,
@@ -191,6 +192,7 @@ describe('Unified Optimization Metrics Calculations', () => {
     it('returns partial and complete status as efficiency scores populate', async () => {
       await db.tvShows.upsertCompleteness({
         series_title: 'Series A',
+        series_identity_key: 'unresolved:src-opt:tv:series-a',
         source_id: 'src-opt',
         library_id: 'tv',
         total_seasons: 1,
@@ -206,6 +208,7 @@ describe('Unified Optimization Metrics Calculations', () => {
 
       await db.tvShows.upsertCompleteness({
         series_title: 'Series B',
+        series_identity_key: 'unresolved:src-opt:tv:series-b',
         source_id: 'src-opt',
         library_id: 'tv',
         total_seasons: 1,
@@ -227,6 +230,7 @@ describe('Unified Optimization Metrics Calculations', () => {
       // Update Series B
       await db.tvShows.upsertCompleteness({
         series_title: 'Series B',
+        series_identity_key: 'unresolved:src-opt:tv:series-b',
         source_id: 'src-opt',
         library_id: 'tv',
         total_seasons: 1,

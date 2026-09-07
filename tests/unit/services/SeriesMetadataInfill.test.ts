@@ -13,10 +13,18 @@ describe('SeriesMetadataInfill', () => {
   let serverPort: number
 
   const createEpisode = (overrides: Record<string, unknown>) => {
+    const seriesTitle = (overrides.series_title as string) || 'show'
+    const sourceId = (overrides.source_id as string) || 'src1'
+    const libraryId = (overrides.library_id as string) || 'tv'
+    const tmdbId = overrides.series_tmdb_id ?? overrides.tmdb_id
+    const seriesIdentityKey = (overrides.series_identity_key as string) || (tmdbId ? `tmdb:${tmdbId}` : `unresolved:${sourceId}:${libraryId}:${seriesTitle.toLowerCase().replace(/\s+/g, '-')}`)
     return {
       type: 'episode',
+      source_id: sourceId,
+      library_id: libraryId,
+      series_identity_key: seriesIdentityKey,
       title: overrides.title !== undefined ? (overrides.title as string) : `Episode ${overrides.episode_number || 1}`,
-      file_path: `/path/to/${overrides.series_title || 'show'}/S${overrides.season_number || 1}E${overrides.episode_number || 1}.mkv`,
+      file_path: `/path/to/${seriesTitle}/S${overrides.season_number || 1}E${overrides.episode_number || 1}.mkv`,
       file_size: 500000000,
       duration: 1200000,
       resolution: '1080p',
@@ -170,7 +178,7 @@ describe('SeriesMetadataInfill', () => {
         episode_number: 1
       }))
 
-      const completeness = await service.analyzeSeries('Game of Thrones', 'src1', 'tv')
+      const completeness = await service.analyzeSeries('Game of Thrones', 'src1', 'tv', undefined, undefined, { seriesIdentityKey: 'unresolved:src1:tv:game-of-thrones' })
       expect(completeness).not.toBeNull()
       expect(completeness!.tmdb_id).toBe('1399')
       expect(completeness!.tvdb_id).toBe('121361')
@@ -192,7 +200,7 @@ describe('SeriesMetadataInfill', () => {
     it('resolves an IMDb-only series through TMDB find and verifies details', async () => {
       await db.sources.upsertSource({ source_id: 'imdb-src', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
       await db.media.upsertItem(createEpisode({ source_id: 'imdb-src', library_id: 'tv', plex_id: 'imdb-ep', series_title: 'Game of Thrones', season_number: 1, episode_number: 1, imdb_id: 'tt0944947', tmdb_id: null }))
-      const result = await service.analyzeSeries('Game of Thrones', 'imdb-src', 'tv')
+      const result = await service.analyzeSeries('Game of Thrones', 'imdb-src', 'tv', undefined, undefined, { seriesIdentityKey: 'unresolved:imdb-src:tv:game-of-thrones' })
       expect(result?.tmdb_id).toBe('1399')
       expect((await db.media.getItemByProviderId('imdb-ep', 'imdb-src'))?.series_tmdb_id).toBe('1399')
     })
@@ -200,14 +208,14 @@ describe('SeriesMetadataInfill', () => {
     it('replaces an unlocked stale TMDB identity only after verified details', async () => {
       await db.sources.upsertSource({ source_id: 'stale-src', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
       const episodeId = await db.media.upsertItem(createEpisode({ source_id: 'stale-src', library_id: 'tv', plex_id: 'stale-ep', series_title: 'Game of Thrones', season_number: 1, episode_number: 1, tmdb_id: '999999', series_tmdb_id: '999999', imdb_id: 'tt0944947' }))
-      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Game of Thrones', source_id: 'stale-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
+      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Game of Thrones', series_identity_key: 'tmdb:999999', source_id: 'stale-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
       await db.identities.upsertIdentity({ entityType: 'series', entityId: completenessId, provider: 'tmdb', externalId: '999999', locked: false })
       const details = vi.spyOn(tmdb, 'getTVShowDetails')
         .mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
         .mockImplementationOnce(async () => (await getTMDBService().getTVShowDetails('1399')))
       vi.spyOn(tmdb, 'findByExternalId').mockResolvedValue({ movie_results: [], tv_results: [{ id: 1399, name: 'Game of Thrones' }] })
 
-      const result = await service.analyzeSeries('Game of Thrones', 'stale-src', 'tv', '999999')
+      const result = await service.analyzeSeries('Game of Thrones', 'stale-src', 'tv', '999999', undefined, { seriesIdentityKey: 'tmdb:999999' })
       expect(result?.tmdb_id).toBe('1399')
       expect(details).toHaveBeenCalledWith('999999')
       expect(details).toHaveBeenCalledWith('1399')
@@ -217,13 +225,13 @@ describe('SeriesMetadataInfill', () => {
 
     it('clears stale TMDB identity and completeness ID when rematching fails', async () => {
       await db.sources.upsertSource({ source_id: 'unresolved-src', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
-      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Unknown Show', source_id: 'unresolved-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
+      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Unknown Show', series_identity_key: 'tmdb:999999', source_id: 'unresolved-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
       await db.identities.upsertIdentity({ entityType: 'series', entityId: completenessId, provider: 'tmdb', externalId: '999999', locked: false })
       await db.media.upsertItem(createEpisode({ source_id: 'unresolved-src', library_id: 'tv', plex_id: 'unresolved-ep', series_title: 'Unknown Show', season_number: 1, episode_number: 1, tmdb_id: '999999', series_tmdb_id: '999999', imdb_id: 'tt0000000' }))
       vi.spyOn(tmdb, 'getTVShowDetails').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
       vi.spyOn(tmdb, 'findByExternalId').mockResolvedValue({ movie_results: [], tv_results: [] })
 
-      const result = await service.analyzeSeries('Unknown Show', 'unresolved-src', 'tv', '999999')
+      const result = await service.analyzeSeries('Unknown Show', 'unresolved-src', 'tv', '999999', undefined, { seriesIdentityKey: 'tmdb:999999' })
       expect(result?.tmdb_id).toBeUndefined()
       expect((await db.tvShows.getCompletenessByTitle('Unknown Show', 'unresolved-src', 'tv'))?.tmdb_id ?? null).toBeNull()
       expect((await db.identities.getIdentities('series', completenessId)).some(i => i.externalId === '999999')).toBe(false)
@@ -233,20 +241,20 @@ describe('SeriesMetadataInfill', () => {
       await db.sources.upsertSource({ source_id: 'ambiguous-src', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
       await db.media.upsertItem(createEpisode({ source_id: 'ambiguous-src', library_id: 'tv', plex_id: 'ambiguous-ep', series_title: 'Duplicate Show', season_number: 1, episode_number: 1, tmdb_id: null, series_tmdb_id: null }))
       vi.spyOn(tmdb, 'searchTVShow').mockResolvedValue({ page: 1, total_pages: 1, total_results: 2, results: [{ id: 1, name: 'Duplicate Show' }, { id: 2, name: 'Duplicate Show' }] })
-      const result = await service.analyzeSeries('Duplicate Show', 'ambiguous-src', 'tv')
+      const result = await service.analyzeSeries('Duplicate Show', 'ambiguous-src', 'tv', undefined, undefined, { seriesIdentityKey: 'unresolved:ambiguous-src:tv:duplicate-show' })
       expect(result?.tmdb_id).toBeUndefined()
       expect((await db.media.getItemByProviderId('ambiguous-ep', 'ambiguous-src'))?.series_tmdb_id ?? null).toBeNull()
     })
 
     it('rolls back stale identity removal when unresolved persistence fails', async () => {
       await db.sources.upsertSource({ source_id: 'rollback-src', source_type: 'local', display_name: 'Local', connection_config: '{}', is_enabled: 1 })
-      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Rollback Show', source_id: 'rollback-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
+      const completenessId = await db.tvShows.upsertCompleteness({ series_title: 'Rollback Show', series_identity_key: 'tmdb:999999', source_id: 'rollback-src', library_id: 'tv', total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1, missing_seasons: '[]', missing_episodes: '[]', completeness_percentage: 50, tmdb_id: '999999' })
       await db.identities.upsertIdentity({ entityType: 'series', entityId: completenessId, provider: 'tmdb', externalId: '999999', locked: false })
       await db.media.upsertItem(createEpisode({ source_id: 'rollback-src', library_id: 'tv', plex_id: 'rollback-ep', series_title: 'Rollback Show', season_number: 1, episode_number: 1, tmdb_id: '999999', series_tmdb_id: '999999' }))
       vi.spyOn(tmdb, 'getTVShowDetails').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
       const upsert = vi.spyOn(db.tvShows, 'upsertCompleteness').mockRejectedValueOnce(new Error('SQLite constraint failed'))
 
-      await expect(service.analyzeSeries('Rollback Show', 'rollback-src', 'tv', '999999')).rejects.toThrow('SQLite constraint failed')
+      await expect(service.analyzeSeries('Rollback Show', 'rollback-src', 'tv', '999999', undefined, { seriesIdentityKey: 'tmdb:999999' })).rejects.toThrow('SQLite constraint failed')
       expect(upsert).toHaveBeenCalled()
       expect((await db.identities.getIdentities('series', completenessId)).some(i => i.externalId === '999999')).toBe(true)
       expect((await db.tvShows.getCompletenessByTitle('Rollback Show', 'rollback-src', 'tv'))?.tmdb_id).toBe('999999')
@@ -277,7 +285,7 @@ describe('SeriesMetadataInfill', () => {
         tmdb_id: null
       }))
 
-      await service.analyzeSeries('Game of Thrones', 'src2', 'tv', '1399')
+      await service.analyzeSeries('Game of Thrones', 'src2', 'tv', '1399', undefined, { seriesIdentityKey: 'unresolved:src2:tv:game-of-thrones' })
 
       const updatedItem = await db.media.getItemByProviderId('got-ep-1', 'src2')
       expect(updatedItem).not.toBeNull()
@@ -313,7 +321,7 @@ describe('SeriesMetadataInfill', () => {
         user_fixed_match: 1
       }))
 
-      await service.analyzeSeries('Game of Thrones', 'src3', 'tv', '1399')
+      await service.analyzeSeries('Game of Thrones', 'src3', 'tv', '1399', undefined, { seriesIdentityKey: 'unresolved:src3:tv:game-of-thrones' })
 
       const item = await db.media.getItemByProviderId('got-ep-locked', 'src3')
       expect(item).not.toBeNull()
@@ -333,6 +341,7 @@ describe('SeriesMetadataInfill', () => {
       // Create existing completeness with user fixed match and custom locked identity
       const id = await db.tvShows.upsertCompleteness({
         series_title: 'Game of Thrones',
+        series_identity_key: 'tmdb:999999',
         source_id: 'src4',
         library_id: 'tv',
         total_seasons: 1,
@@ -365,7 +374,7 @@ describe('SeriesMetadataInfill', () => {
         series_tmdb_id: '999999'
       }))
 
-      await service.analyzeSeries('Game of Thrones', 'src4', 'tv', '1399')
+      await service.analyzeSeries('Game of Thrones', 'src4', 'tv', '1399', undefined, { seriesIdentityKey: 'tmdb:999999' })
 
       const identities = await db.identities.getIdentities('series', id)
       const tmdbIdent = identities.find(i => i.provider === 'tmdb')

@@ -45,6 +45,10 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
         seriesGetEpisodes: vi.fn().mockResolvedValue([
           { id: 101, title: 'Episode 1', original_language: 'ja' }
         ]),
+        seriesGetAudioLanguagesByIdentity: vi.fn().mockResolvedValue(['ja', 'en']),
+        seriesGetEpisodesByIdentity: vi.fn().mockResolvedValue([
+          { id: 101, title: 'Episode 1', original_language: 'ja' }
+        ]),
         preflightShow: vi.fn().mockResolvedValue({
           preflightId: 'pref-123',
           batchId: 'batch-123',
@@ -77,6 +81,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
   const mockShowData: TVShow = {
     title: 'Star Trek: Strange New Worlds',
+    series_identity_key: 'tmdb:103768',
+    source_id: 'src_local',
+    library_id: 'lib_local',
     poster_url: 'https://image.tmdb.org/poster.jpg',
     seasons: new Map([
       [
@@ -105,7 +112,12 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     render(
       <TVShowDetails
-        selectedShow="Star Trek: Strange New Worlds"
+        selectedShow={{
+          series_title: 'Star Trek: Strange New Worlds',
+          series_identity_key: 'tmdb:103768',
+          source_id: 'src_local',
+          library_id: 'lib_local'
+        }}
         selectedShowData={mockShowData}
         selectedShowLoading={false}
         seriesCompleteness={new Map()}
@@ -137,7 +149,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
       series_title: 'Star Trek: Strange New Worlds',
+      series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
+      library_id: 'lib_local',
       season_count: 1,
       episode_count: 1
     }
@@ -179,7 +193,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
       series_title: 'Star Trek: Strange New Worlds',
+      series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
+      library_id: 'lib_local',
       season_count: 1,
       episode_count: 1
     }
@@ -279,7 +295,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
       series_title: 'Star Trek: Strange New Worlds',
+      series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
+      library_id: 'lib_local',
       season_count: 1,
       episode_count: 3
     }

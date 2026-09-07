@@ -101,9 +101,9 @@ describe('Service Deep Dive (No Mocks)', () => {
   describe('SeriesCompletenessService Logic', () => {
     it('should calculate completeness for a simple show', async () => {
       await dbService.db.execute({
-        sql: `INSERT INTO series_completeness (series_title, total_seasons, total_episodes, owned_seasons, owned_episodes, completeness_percentage, source_id, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        args: ['Test Show', 2, 20, 1, 10, 50, 's1']
+        sql: `INSERT INTO series_completeness (series_title, series_identity_key, total_seasons, total_episodes, owned_seasons, owned_episodes, completeness_percentage, source_id, library_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        args: ['Test Show', 'unresolved:s1:lib1:test-show', 2, 20, 1, 10, 50, 's1', 'lib1']
       })
       
       const row = (await dbService.db.execute({

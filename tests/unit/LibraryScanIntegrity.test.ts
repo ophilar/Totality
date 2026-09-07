@@ -135,6 +135,7 @@ describe('Library Issues Fixes (Deep Dive)', () => {
       await db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'Plex', connection_config: '{}', is_enabled: 1 })
       await db.tvShows.upsertCompleteness({
         series_title: 'Unmatched Show',
+        series_identity_key: 'unresolved:s1:2:unmatched-show',
         source_id: 's1',
         library_id: '2',
         total_seasons: 0,

@@ -83,8 +83,13 @@ describe('Renderer UI Deep Dive 2 (Integrated Stack)', () => {
       await act(async () => {
         renderWithProviders(
             <TVShowDetails 
-                selectedShow="Breaking Bad"
-                selectedShowData={showData}
+                selectedShow={{
+                  series_title: 'Breaking Bad',
+                  series_identity_key: 'tmdb:1396',
+                  source_id: 's1',
+                  library_id: 'l1'
+                }}
+                selectedShowData={showData as unknown as Parameters<typeof TVShowDetails>[0]['selectedShowData']}
                 selectedShowLoading={false}
                 seriesCompleteness={completenessMap}
                 onBack={() => {}}

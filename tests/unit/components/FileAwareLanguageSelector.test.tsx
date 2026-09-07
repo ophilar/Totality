@@ -43,7 +43,11 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
           engines: ['ffmpeg']
         }),
         seriesGetAudioLanguages: vi.fn().mockResolvedValue(['ja', 'en', 'und']),
+        seriesGetAudioLanguagesByIdentity: vi.fn().mockResolvedValue(['ja', 'en', 'und']),
         seriesGetEpisodes: vi.fn().mockResolvedValue([
+          { id: 1, title: 'Ep 1', original_language: 'ja', audio_language: 'ja' }
+        ]),
+        seriesGetEpisodesByIdentity: vi.fn().mockResolvedValue([
           { id: 1, title: 'Ep 1', original_language: 'ja', audio_language: 'ja' }
         ]),
         preflightShow: vi.fn().mockResolvedValue({ compatible: true, preflightId: 'p1', episodes: [] }),
@@ -83,7 +87,9 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
     it('dynamically populates dropdown with in-file audio languages under "Available in files" optgroup', async () => {
       const show: TVShowSummary = {
         series_title: 'Attack on Titan',
+        series_identity_key: 'tmdb:1429',
         source_id: 'src-1',
+        library_id: 'lib-1',
         season_count: 4,
         episode_count: 87
       }
@@ -95,7 +101,7 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
       )
 
       await waitFor(() => {
-        expect(window.electronAPI.seriesGetAudioLanguages).toHaveBeenCalledWith('Attack on Titan', 'src-1')
+        expect(window.electronAPI.seriesGetAudioLanguagesByIdentity).toHaveBeenCalledWith('Attack on Titan', 'src-1', 'tmdb:1429', 'lib-1')
       })
 
       const select = (await screen.findByLabelText(/original language/i)) as HTMLSelectElement
@@ -116,7 +122,9 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
     it('pre-selects the provider canonical original language and marks it clearly with Provider Default', async () => {
       const show: TVShowSummary = {
         series_title: 'Attack on Titan',
+        series_identity_key: 'tmdb:1429',
         source_id: 'src-1',
+        library_id: 'lib-1',
         season_count: 4,
         episode_count: 87
       }
@@ -137,14 +145,16 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
     })
 
     it('falls back to standard language list when no in-file languages are detected', async () => {
-      ;(window.electronAPI.seriesGetAudioLanguages as ReturnType<typeof vi.fn>).mockResolvedValue([])
-      ;(window.electronAPI.seriesGetEpisodes as ReturnType<typeof vi.fn>).mockResolvedValue([
+      ;(window.electronAPI.seriesGetAudioLanguagesByIdentity as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(window.electronAPI.seriesGetEpisodesByIdentity as ReturnType<typeof vi.fn>).mockResolvedValue([
         { id: 1, title: 'Ep 1', original_language: 'fr' }
       ])
 
       const show: TVShowSummary = {
         series_title: 'Lupin',
+        series_identity_key: 'tmdb:96677',
         source_id: 'src-1',
+        library_id: 'lib-1',
         season_count: 2,
         episode_count: 10
       }
@@ -169,6 +179,9 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
     it('surfaces original language and detected file audio languages in metadata header', async () => {
       const mockShowData: TVShow = {
         title: 'Attack on Titan',
+        series_identity_key: 'tmdb:1429',
+        source_id: 'src-1',
+        library_id: 'lib-1',
         poster_url: 'https://image.tmdb.org/poster.jpg',
         seasons: new Map([
           [
@@ -195,7 +208,12 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
 
       render(
         <TVShowDetails
-          selectedShow="Attack on Titan"
+          selectedShow={{
+            series_title: 'Attack on Titan',
+            series_identity_key: 'tmdb:1429',
+            source_id: 'src-1',
+            library_id: 'lib-1'
+          }}
           selectedShowData={mockShowData}
           selectedShowLoading={false}
           seriesCompleteness={new Map()}
