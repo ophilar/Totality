@@ -38,7 +38,6 @@ import {
   type AnalysisStatus,
 } from '@main/types/database'
 
-// MusicBrainz API response types
 interface MBReleaseGroup {
   id: string
   title: string
@@ -56,14 +55,12 @@ interface MBRelease {
   }>
 }
 
-// Digital media formats we want to include (exclude vinyl)
 const DIGITAL_FORMATS = [
   'CD', 'Digital Media', 'Enhanced CD', 'CD-R', 'HDCD', 'DualDisc',
   'SACD', 'Hybrid SACD', 'SHM-CD', 'Blu-spec CD', 'Blu-spec CD2',
   'USB Flash Drive', 'slotMusic', 'UMD', 'Cassette', '8cm CD'
 ]
 
-// Vinyl formats we want to exclude
 const VINYL_FORMATS = [
   'Vinyl', '7" Vinyl', '10" Vinyl', '12" Vinyl', 'Flexi-disc',
   'Shellac', 'Acetate', 'Lathe Cut'
@@ -90,7 +87,6 @@ interface MBArtistSearchResult {
   artists: MBArtist[]
 }
 
-/** Progress phases for music analysis */
 export type MusicAnalysisPhase = 'artists' | 'albums' | 'complete'
 
 export interface MusicAnalysisProgress {
@@ -99,31 +95,22 @@ export interface MusicAnalysisProgress {
   currentItem: string
   phase: MusicAnalysisPhase
   percentage: number
-  // Detailed counts for better progress display
   artistsTotal: number
   albumsTotal: number
-  phaseIndex: number  // Current item index within the phase (1-based)
-  // Additional context
-  skipped?: number  // Number of items skipped (already analyzed)
+  phaseIndex: number
+  skipped?: number
 }
 
 export interface MusicAnalysisOptions extends AnalysisOptions {
-  /** Check if releases are available digitally - slower but more accurate (default: false) */
   filterVinylOnly?: boolean
 }
 
-/**
- * Validates whether an artist or album name is an untagged placeholder or invalid string
- * that should not be queried against MusicBrainz.
- */
 export function isPlaceholderMusicTitle(text?: string | null): boolean {
   if (!text) return true
   const trimmed = text.trim()
   if (!trimmed || trimmed.length === 0) return true
-  // If string contains no alphanumeric characters (e.g. "?????", "---", "...")
   if (!/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u0590-\u05FF\u3040-\u30FF\u4E00-\u9FFF]/.test(trimmed)) return true
 
-  // Strip common noisy wrappers and dates
   const normalized = trimmed
     .toLowerCase()
     .replace(/[[\]()]/g, ' ')
@@ -163,27 +150,21 @@ export function isPlaceholderMusicTitle(text?: string | null): boolean {
   if (/^disc\s*\d+$/i.test(normalized)) return true
   if (/^disk\s*\d+$/i.test(normalized)) return true
   if (/^side\s*[a-z0-9]+$/i.test(normalized)) return true
-  // Check for timestamp/date-only album titles like "05_02_04 18_41_19" or "8/12/2006 2:17:18 PM"
   if (/^unknown\s*album\s*\d.*$/i.test(normalized)) return true
-  // Check for corrupted encoding unknown album placeholders (e.g. Hebrew 'אלבום לא ידוע' in CP1255/1252)
   if (normalized.includes('àìáåí ìà éãåò') || normalized.includes('אלבום לא ידוע')) return true
-  // Check for month/year only titles like "Nov 2002"
   if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}$/i.test(normalized)) return true
   return false
 }
 
 export class MusicBrainzService extends CancellableOperation {
   private api: AxiosInstance
-
-  // Rate limiting - MusicBrainz requires max 1 req/sec
-  // We use 1.5 seconds to be safe and comply with guidelines
   private rateLimiter: SimpleDelayRateLimiter = RateLimiters.createMusicBrainzLimiter()
   private readonly MAX_RETRIES = 3
   private readonly RETRY_DELAY_MS = 5000
 
   private baseURL: string = 'https://musicbrainz.org/ws/2'
   private missingCoverArtCache = new Map<string, number>()
-  private static readonly NEGATIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // Cache negative results for 24 hours
+  private static readonly NEGATIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
   private async getBaseUrl(): Promise<string> {
     const db = getDatabase()
@@ -194,7 +175,6 @@ export class MusicBrainzService extends CancellableOperation {
     return `Totality/${app.getVersion()} (https://github.com/totality-app/totality)`
   }
 
-  // Cover Art Archive base URL
   private static readonly COVER_ART_BASE_URL = 'https://coverartarchive.org'
 
   constructor() {
@@ -204,23 +184,15 @@ export class MusicBrainzService extends CancellableOperation {
         'User-Agent': this.userAgent,
         'Accept': 'application/json',
       },
-      timeout: 60000, // Increased from 30s to 60s
+      timeout: 60000,
     })
   }
 
-  /**
-   * Initialize service by loading settings
-   */
   async initialize(): Promise<void> {
     this.baseURL = await this.getBaseUrl()
     this.api.defaults.baseURL = this.baseURL
   }
 
-  /**
-   * Build Cover Art Archive URL for album artwork
-   * @param releaseGroupId MusicBrainz release group ID
-   * @param size 'front' for full size, '250' for small, '500' for medium, '1200' for large
-   */
   buildCoverArtUrl(releaseGroupId: string, size: 'front' | '250' | '500' | '1200' = 'front'): string {
     if (size === 'front') {
       return `${MusicBrainzService.COVER_ART_BASE_URL}/release-group/${releaseGroupId}/front`
@@ -228,10 +200,6 @@ export class MusicBrainzService extends CancellableOperation {
     return `${MusicBrainzService.COVER_ART_BASE_URL}/release-group/${releaseGroupId}/front-${size}`
   }
 
-  /**
-   * Check if cover art exists for a release group
-   * Returns the artwork URL if available, null otherwise
-   */
   async getCoverArtUrl(releaseGroupId: string): Promise<string | null> {
     const now = Date.now()
     const cachedTime = this.missingCoverArtCache.get(releaseGroupId)
@@ -240,7 +208,6 @@ export class MusicBrainzService extends CancellableOperation {
     }
 
     try {
-      // Try to get the cover art info from Cover Art Archive
       const response = await axios.head(
         `${MusicBrainzService.COVER_ART_BASE_URL}/release-group/${releaseGroupId}/front`,
         {
@@ -251,15 +218,12 @@ export class MusicBrainzService extends CancellableOperation {
       )
 
       if (response.status === 200 || response.status === 307 || response.status === 302) {
-        // Cover art exists - return the URL (with 500px size for reasonable quality)
         return this.buildCoverArtUrl(releaseGroupId, '500')
       }
 
-      // Negative cache the 404 status
       this.missingCoverArtCache.set(releaseGroupId, now)
       return null
     } catch (error) {
-      // Cover art not available or request failed
       if (axios.isAxiosError(error) && error.response?.status === 404) {
         this.missingCoverArtCache.set(releaseGroupId, now)
       }
@@ -267,17 +231,10 @@ export class MusicBrainzService extends CancellableOperation {
     }
   }
 
-  /**
-   * Rate limit - ensures compliance with MusicBrainz 1 req/sec limit
-   * Uses shared SimpleDelayRateLimiter (1.5s between requests)
-   */
   private async rateLimit(): Promise<void> {
     await this.rateLimiter.waitForSlot()
   }
 
-  /**
-   * Check if an error is a retryable connection error
-   */
   private isRetryableConnectionError(error: unknown): boolean {
     const errorCode = isNodeError(error) ? error.code : undefined
     const errorMessage = getErrorMessage(error) || ''
@@ -299,9 +256,6 @@ export class MusicBrainzService extends CancellableOperation {
     return message.includes('sqlite') || message.includes('constraint') || message.includes('database')
   }
 
-  /**
-   * Make a request with retry logic using exponential backoff
-   */
   private async requestWithRetry<T>(
     requestFn: () => Promise<T>,
     context: string
@@ -315,7 +269,6 @@ export class MusicBrainzService extends CancellableOperation {
             this.rateLimiter.recordSuccess()
             return data
           } catch (error: unknown) {
-            // Check status code for rate limiting / overload
             if (axios.isAxiosError(error)) {
               const status = error.response?.status
               if (status === 429 || status === 503) {
@@ -330,11 +283,9 @@ export class MusicBrainzService extends CancellableOperation {
               }
             }
 
-            // Re-throw retryable errors so retry logic can handle them
             if (this.isRetryableConnectionError(error)) {
               throw error
             }
-            // For non-retryable errors, wrap with a marker so retry stops
             const wrappedError = new Error(getErrorMessage(error)) as Error & { nonRetryable: boolean }
             wrappedError.nonRetryable = true
             throw wrappedError
@@ -360,16 +311,11 @@ export class MusicBrainzService extends CancellableOperation {
     }
   }
 
-  /**
-   * Search for an artist by name
-   */
   async searchArtist(name: string): Promise<MBArtist[]> {
     if (isPlaceholderMusicTitle(name)) {
       return []
     }
 
-    // Sanitize name: replace '&' with 'AND' for better Lucene matching if needed,
-    // but first try exact name search in quotes.
     const cleanName = name.replace(/[&]/g, 'AND').replace(/[+]/g, ' ').trim()
 
     return this.requestWithRetry(async () => {
@@ -384,9 +330,6 @@ export class MusicBrainzService extends CancellableOperation {
     }, `searchArtist(${name})`)
   }
 
-  /**
-   * Check if a release group has any digital/CD releases (not vinyl-only)
-   */
   private async hasDigitalRelease(releaseGroupId: string): Promise<boolean> {
     try {
       const releases = await this.requestWithRetry(async () => {
@@ -400,24 +343,19 @@ export class MusicBrainzService extends CancellableOperation {
         return response.data.releases || []
       }, `checkDigitalRelease(${releaseGroupId})`)
 
-      // Check if any release has a digital/CD format
       for (const release of releases) {
         if (!release.media || release.media.length === 0) {
-          // No format info - assume it's available digitally
           return true
         }
 
         for (const medium of release.media) {
           const format = medium.format || ''
 
-          // Check if it's a digital format
           if (DIGITAL_FORMATS.some(f => format.toLowerCase().includes(f.toLowerCase()))) {
             return true
           }
 
-          // Check if format is not explicitly vinyl
           if (!VINYL_FORMATS.some(f => format.toLowerCase().includes(f.toLowerCase()))) {
-            // Unknown format that's not vinyl - include it
             if (format && !format.toLowerCase().includes('vinyl')) {
               return true
             }
@@ -425,19 +363,14 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      // If we only found vinyl releases, exclude this release group
       getLoggingService().info('[MusicBrainzService]', `Excluding vinyl-only release group: ${releaseGroupId}`)
       return false
     } catch (error) {
-      // On error, include the release group (don't exclude based on failed API call)
       getLoggingService().warn('[MusicBrainzService]', `Failed to check format for ${releaseGroupId}, including by default`)
       return true
     }
   }
 
-  /**
-   * Get artist details by MusicBrainz ID
-   */
   async getArtistDetails(musicbrainzId: string): Promise<MBArtist | null> {
     return this.requestWithRetry(async () => {
       try {
@@ -454,18 +387,12 @@ export class MusicBrainzService extends CancellableOperation {
     }, `getArtistDetails(${musicbrainzId})`)
   }
 
-  /**
-   * Get artist discography (all releases)
-   * @param musicbrainzId MusicBrainz artist ID
-   * @param filterVinylOnly If true, excludes vinyl-only releases (much slower due to extra API calls)
-   */
   async getArtistDiscography(musicbrainzId: string, filterVinylOnly: boolean = false): Promise<{
     artist: MBArtist
     albums: MBReleaseGroup[]
     eps: MBReleaseGroup[]
     singles: MBReleaseGroup[]
   }> {
-    // Get artist info with release groups in a single call for efficiency
     const artist = await this.requestWithRetry(async () => {
       try {
         const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
@@ -493,11 +420,9 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Use release groups from artist response if available, otherwise fetch separately
     let releaseGroups = artist['release-groups'] || []
 
     if (releaseGroups.length === 0) {
-      // Fallback: fetch release groups separately if not included
       releaseGroups = await this.requestWithRetry(async () => {
         const response = await this.api.get<{ 'release-groups': MBReleaseGroup[] }>(
           `/release-group`,
@@ -513,7 +438,6 @@ export class MusicBrainzService extends CancellableOperation {
       }, `getReleaseGroups(${musicbrainzId})`)
     }
 
-    // Categorize by type - only official studio albums (exclude compilations, live, soundtracks)
     const allAlbums = releaseGroups.filter(rg =>
       rg['primary-type'] === 'Album' &&
       !rg['secondary-types']?.includes('Compilation') &&
@@ -524,7 +448,6 @@ export class MusicBrainzService extends CancellableOperation {
     const allEps = releaseGroups.filter(rg => rg['primary-type'] === 'EP')
     const allSingles = releaseGroups.filter(rg => rg['primary-type'] === 'Single')
 
-    // Only filter for digital availability if explicitly requested (slow operation)
     if (filterVinylOnly) {
       getLoggingService().info('[MusicBrainzService]', `Filtering ${allAlbums.length} albums for digital availability (sequential to respect rate limit)...`)
 
@@ -547,17 +470,12 @@ export class MusicBrainzService extends CancellableOperation {
       return { artist, albums, eps, singles }
     }
 
-    // Default: include all releases (much faster - 2 API calls vs potentially 50+)
     getLoggingService().verbose('[MusicBrainzService]',
       `Discography for "${artist.name}": ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
     getLoggingService().info('[MusicBrainzService]', `Found ${allAlbums.length} albums, ${allEps.length} EPs, ${allSingles.length} singles`)
     return { artist, albums: allAlbums, eps: allEps, singles: allSingles }
   }
 
-  /**
-   * Get track list for a release from MusicBrainz
-   * Optimized to fetch releases with media+recordings in a single API call
-   */
   async getReleaseTracklist(releaseGroupId: string, expectedTrackCount?: number): Promise<{
     releaseId: string
     tracks: Array<{
@@ -569,7 +487,6 @@ export class MusicBrainzService extends CancellableOperation {
     }>
   } | null> {
     try {
-      // Get releases with media and recordings in a single call (optimization)
       let releases = await this.requestWithRetry(async () => {
         try {
           const response = await this.api.get(`/release`, {
@@ -578,7 +495,7 @@ export class MusicBrainzService extends CancellableOperation {
               fmt: 'json',
               limit: 5,
               status: 'official',
-              inc: 'media+recordings',  // Include tracks in the same request
+              inc: 'media+recordings',
             },
           })
           interface MBReleasesResponse { releases?: MBRelease[] }
@@ -592,7 +509,6 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }, `getReleases(${releaseGroupId})`)
 
-      // If no official releases, try without status filter
       if (releases.length === 0) {
         getLoggingService().info('[MusicBrainzService]', `No official releases found, trying all releases...`)
         releases = await this.requestWithRetry(async () => {
@@ -601,7 +517,7 @@ export class MusicBrainzService extends CancellableOperation {
               'release-group': releaseGroupId,
               fmt: 'json',
               limit: 5,
-              inc: 'media+recordings',  // Include tracks in the same request
+              inc: 'media+recordings',
             },
           })
           interface MBReleasesResponse { releases?: MBRelease[] }
@@ -614,7 +530,6 @@ export class MusicBrainzService extends CancellableOperation {
         return null
       }
 
-      // Find the best release — prefer one whose track count matches expected
       interface MBReleaseWithMedia {
         id: string
         title: string
@@ -633,7 +548,6 @@ export class MusicBrainzService extends CancellableOperation {
       let release: MBReleaseWithMedia
 
       if (expectedTrackCount && releasesWithMedia.length > 1) {
-        // Rank releases by closest track count to expected
         const ranked = releasesWithMedia.map(r => ({
           release: r,
           trackCount: r.media!.reduce((sum, m) => sum + (m.tracks?.length || 0), 0),
@@ -656,7 +570,6 @@ export class MusicBrainzService extends CancellableOperation {
         duration_ms?: number
       }> = []
 
-      // Extract tracks from media (discs)
       const media = release.media || []
       getLoggingService().info('[MusicBrainzService]', `Release has ${media.length} media/discs`)
 
@@ -680,7 +593,6 @@ export class MusicBrainzService extends CancellableOperation {
       return { releaseId, tracks }
     } catch (error) {
       if (this.isRetryableConnectionError(error)) throw error
-      // 404 is expected when album isn't in MusicBrainz — log as warning without stack trace
       const is404 = error instanceof Error && error.message.includes('404')
       if (is404) {
         getLoggingService().warn('[MusicBrainzService]', 'Track list not found in MusicBrainz (404)')
@@ -691,24 +603,14 @@ export class MusicBrainzService extends CancellableOperation {
     }
   }
 
-  /**
-   * Clean album title for MusicBrainz search
-   * Strips common suffixes that aren't part of the canonical title
-   */
   private cleanAlbumTitleForSearch(title: string): string {
     return title
-      // Remove year in parentheses at end: "Album (1996)" -> "Album"
       .replace(/\s*\(\d{4}\)\s*$/, '')
-      // Remove common edition markers
       .replace(/\s*\((Deluxe|Remaster(ed)?|Anniversary|Expanded|Special|Limited)\s*(Edition|Version)?\)\s*$/i, '')
-      // Remove disc indicators
       .replace(/\s*\[?(Disc|CD)\s*\d+\]?\s*$/i, '')
       .trim()
   }
 
-  /**
-   * Search for a release by artist and album title
-   */
   async searchRelease(artistName: string, albumTitle: string): Promise<Array<{
     id: string
     title: string
@@ -722,7 +624,6 @@ export class MusicBrainzService extends CancellableOperation {
     }
 
     try {
-      // Clean the album title to improve MusicBrainz matching
       const cleanedTitle = this.cleanAlbumTitleForSearch(albumTitle)
       if (isPlaceholderMusicTitle(cleanedTitle)) {
         return []
@@ -750,7 +651,7 @@ export class MusicBrainzService extends CancellableOperation {
       }, `searchRelease(${artistName} - ${albumTitle})`)
 
       return releaseGroups.map((rg) => ({
-        id: rg.id,  // MusicBrainz release group ID
+        id: rg.id,
         title: rg.title,
         artist_credit: rg['artist-credit']?.[0]?.name || artistName,
         date: rg['first-release-date'] || undefined,
@@ -764,10 +665,6 @@ export class MusicBrainzService extends CancellableOperation {
     }
   }
 
-  /**
-   * Analyze artist completeness by comparing owned albums against MusicBrainz discography
-   * @returns Object with completeness data and foundMbId if a new MBID was discovered
-   */
   async analyzeArtistCompleteness(
     artistName: string,
     musicbrainzId: string | undefined,
@@ -797,7 +694,6 @@ export class MusicBrainzService extends CancellableOperation {
     let mbId = musicbrainzId
     let foundMbId: string | undefined
 
-    // If no MusicBrainz ID, try to find one
     if (!mbId) {
       const searchResults = await this.searchArtist(artistName)
       if (searchResults.length > 0) {
@@ -805,12 +701,11 @@ export class MusicBrainzService extends CancellableOperation {
           a.name.toLowerCase() === artistName.toLowerCase()
         )
         mbId = exactMatch?.id || searchResults[0].id
-        foundMbId = mbId  // Mark that we found a new MBID to cache
+        foundMbId = mbId
       }
     }
 
     if (!mbId) {
-      // Cannot find artist in MusicBrainz
       return {
         artist_name: artistName,
         total_albums: 0,
@@ -829,19 +724,13 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Get discography (vinyl filtering disabled by default for speed)
     const discography = await this.getArtistDiscography(mbId, filterVinylOnly)
 
-    // Normalize titles for comparison - strip years, editions, and punctuation
     const normalizeTitle = (title: string) => {
       return title
-        // Remove year in parentheses: "Album (1996)" -> "Album"
         .replace(/\s*\(\d{4}\)\s*/g, ' ')
-        // Remove common edition markers
         .replace(/\s*\((Deluxe|Remaster(ed)?|Anniversary|Expanded|Special|Limited|Explicit)\s*(Edition|Version)?\)\s*/gi, ' ')
-        // Remove disc indicators
         .replace(/\s*\[?(Disc|CD)\s*\d+\]?\s*/gi, ' ')
-        // Now normalize: lowercase and remove remaining punctuation
         .toLowerCase()
         .replace(/[^\w\s]/g, '')
         .replace(/\s+/g, ' ')
@@ -864,7 +753,6 @@ export class MusicBrainzService extends CancellableOperation {
       return isNaN(year) || year < 1800 || year > 2100 ? undefined : year
     }
 
-    // Find missing albums
     const missingAlbums: MissingAlbum[] = []
     for (const album of discography.albums) {
       const normalizedTitle = normalizeTitle(album.title)
@@ -880,7 +768,6 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Find missing EPs
     const missingEps: MissingAlbum[] = []
     for (const ep of discography.eps) {
       const normalizedTitle = normalizeTitle(ep.title)
@@ -896,7 +783,6 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Find missing singles
     const missingSingles: MissingAlbum[] = []
     for (const single of discography.singles) {
       const normalizedTitle = normalizeTitle(single.title)
@@ -912,14 +798,10 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Calculate owned counts
-    // Use the actual number of albums the user has in their library, not just MusicBrainz matches
     const ownedAlbumsCount = ownedAlbumTitles.length
     const ownedEpsCount = discography.eps.length - missingEps.length
     const ownedSinglesCount = discography.singles.length - missingSingles.length
 
-    // Calculate completeness (albums weighted more heavily)
-    // Read settings for whether to include EPs and singles
     const db = getDatabase()
     const includeEps = await db.config.getSetting('completeness_include_eps') !== 'false'
     const includeSingles = await db.config.getSetting('completeness_include_singles') !== 'false'
@@ -960,14 +842,50 @@ export class MusicBrainzService extends CancellableOperation {
       last_sync_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      foundMbId,  // Return newly discovered MBID for caching
+      foundMbId,
     }
   }
 
-  /**
-   * Analyze track completeness for a single album
-   * @returns Object with completeness data and foundMbId if a new MBID was discovered
-   */
+  private async validateStoredAlbumIdentity(
+    albumId: number,
+    artistName: string,
+    albumTitle: string
+  ): Promise<void> {
+    const db = getDatabase()
+    const album = await db.music.getAlbumById(albumId)
+    if (!album) {
+      throw new Error(`Music database integrity error: album_id ${albumId} does not exist`)
+    }
+    if (album.title !== albumTitle) {
+      throw new Error(
+        `Music database integrity error: album_id ${albumId} is stored as "${album.title}" but analysis requested "${albumTitle}"`
+      )
+    }
+    if (album.artist_name !== artistName) {
+      throw new Error(
+        `Music database integrity error: album "${album.title}" is stored as artist "${album.artist_name}" but analysis requested "${artistName}"`
+      )
+    }
+    if (album.artist_id === undefined) return
+
+    const artist = await db.music.getArtistById(album.artist_id)
+    if (!artist) {
+      throw new Error(
+        `Music database integrity error: album "${album.title}" references missing artist_id ${album.artist_id}`
+      )
+    }
+    if (album.source_id !== artist.source_id) {
+      throw new Error(
+        `Music database integrity error: album "${album.title}" source ${album.source_id} does not match artist "${artist.name}" source ${artist.source_id}`
+      )
+    }
+    if (album.artist_name !== artist.name) {
+      throw new Error(
+        `Music database integrity error: album "${album.title}" is stored as artist "${album.artist_name}" but artist_id ${album.artist_id} resolves to "${artist.name}"`
+      )
+    }
+  }
+
   async analyzeAlbumTrackCompleteness(
     albumId: number,
     artistName: string,
@@ -979,33 +897,29 @@ export class MusicBrainzService extends CancellableOperation {
       return null
     }
 
+    await this.validateStoredAlbumIdentity(albumId, artistName, albumTitle)
+
     getLoggingService().info('[MusicBrainzService]', `analyzeAlbumTrackCompleteness: "${artistName}" - "${albumTitle}" (mbid: ${musicbrainzReleaseGroupId || 'none'})`)
 
     let tracklist: Awaited<ReturnType<typeof this.getReleaseTracklist>> = null
     let foundMbId: string | undefined
     const originalMbId = musicbrainzReleaseGroupId
-
-    // Use owned track count as hint for selecting the best MusicBrainz release
     const expectedTrackCount = ownedTrackTitles.length || undefined
 
-    // Try stored MBID first if available
     if (musicbrainzReleaseGroupId) {
       getLoggingService().info('[MusicBrainzService]', `Trying stored MBID: ${musicbrainzReleaseGroupId}`)
       tracklist = await this.getReleaseTracklist(musicbrainzReleaseGroupId, expectedTrackCount)
     }
 
-    // If no tracklist from stored MBID, search MusicBrainz
     if (!tracklist || tracklist.tracks.length === 0) {
       getLoggingService().info('[MusicBrainzService]', `Stored MBID didn't work, searching MusicBrainz for "${artistName}" - "${albumTitle}"...`)
       const searchResults = await this.searchRelease(artistName, albumTitle)
 
-      // Try each search result until we find one with tracks
       for (const result of searchResults) {
         getLoggingService().info('[MusicBrainzService]', `Trying search result: ${result.id} (${result.title})`)
         tracklist = await this.getReleaseTracklist(result.id, expectedTrackCount)
         if (tracklist && tracklist.tracks.length > 0) {
           musicbrainzReleaseGroupId = result.id
-          // Mark as found if we didn't have an MBID before
           if (!originalMbId) {
             foundMbId = result.id
           }
@@ -1021,13 +935,11 @@ export class MusicBrainzService extends CancellableOperation {
     }
     getLoggingService().info('[MusicBrainzService]', `Using tracklist with ${tracklist.tracks.length} tracks`)
 
-    // Normalize titles for comparison
     const normalizeTitle = (title: string) =>
       title.toLowerCase().replace(/[^\w\s]/g, '').trim()
 
     const ownedNormalized = new Set(ownedTrackTitles.map(normalizeTitle))
 
-    // Find missing tracks
     const missingTracks: MissingTrack[] = []
     for (const track of tracklist.tracks) {
       const normalizedTitle = normalizeTitle(track.title)
@@ -1060,43 +972,25 @@ export class MusicBrainzService extends CancellableOperation {
       last_sync_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      foundMbId,  // Return newly discovered MBID for caching
+      foundMbId,
     }
   }
 
-
-  /**
-   * Unified analysis: Analyze all artists AND all albums in one pass
-   * Phase 1: Analyze artist completeness (missing albums/EPs/singles)
-   * Phase 2: Analyze album track completeness (missing tracks)
-   *
-   * @param onProgress Progress callback
-   * @param sourceId Optional source ID to scope analysis and enable artwork updates for local sources
-   * @param options Analysis options for performance tuning
-   */
   async analyzeAllMusic(
     onProgress?: (progress: MusicAnalysisProgress) => void,
     sourceId?: string,
     options: MusicAnalysisOptions = {}
   ): Promise<AnalysisOutcome & { artistsAnalyzed: number; albumsAnalyzed: number; skipped: number; deferred: number }> {
-    // Apply default options
     const {
       skipRecentlyAnalyzed = true,
       reanalyzeAfterDays = 7,
       filterVinylOnly = false,
     } = options
 
-    // Reset cancellation flag at start
     this.resetCancellation()
 
     const db = getDatabase()
-
-    // Enable Cover Art Archive as fallback for albums without artwork
-    // The updateAlbumArtworkFromCoverArt() method already checks if album has
-    // existing artwork (thumb_url/art_url) and skips if so, preserving embedded/folder art
     const updateArtwork = true
-
-    // Get artists and albums, optionally filtered by source
     const artistFilters = sourceId ? { sourceId } : undefined
     const albumFilters = sourceId ? { sourceId } : undefined
 
@@ -1112,16 +1006,16 @@ export class MusicBrainzService extends CancellableOperation {
       artistsById.set(artist.id, artist)
     }
 
-    // Validate and group albums by their authoritative artist relation before any provider lookup.
     const albumsByArtist = new Map<number, MusicAlbum[]>()
     const albumsById = new Map<number, MusicAlbum>()
     for (const album of allSourceAlbums) {
       if (album.id === undefined) {
         throw new Error(`Music database integrity error: album "${album.title}" is missing its database id`)
       }
-      if (album.artist_id === undefined) {
-        throw new Error(`Music database integrity error: album "${album.title}" has no artist_id`)
-      }
+      albumsById.set(album.id, album)
+
+      if (album.artist_id === undefined) continue
+
       const artist = artistsById.get(album.artist_id)
       if (!artist) {
         throw new Error(
@@ -1142,11 +1036,8 @@ export class MusicBrainzService extends CancellableOperation {
       const artistAlbums = albumsByArtist.get(album.artist_id)
       if (artistAlbums) artistAlbums.push(album)
       else albumsByArtist.set(album.artist_id, [album])
-      albumsById.set(album.id, album)
     }
 
-    // Validate and group track ownership. A missing or cross-source album relation is corruption,
-    // not a reason to silently omit the track from completeness analysis.
     const tracksByAlbum = new Map<number, MusicTrack[]>()
     for (const track of allSourceTracks) {
       if (track.album_id === undefined) {
@@ -1174,9 +1065,8 @@ export class MusicBrainzService extends CancellableOperation {
       else tracksByAlbum.set(track.album_id, [track])
     }
 
-    // Pre-fetch existing completeness data to check for recently analyzed items
-    const existingArtistCompleteness = new Map<string, string>()  // artist_name -> last_sync_at
-    const existingAlbumCompleteness = new Map<number, string>()   // album_id -> last_sync_at
+    const existingArtistCompleteness = new Map<string, string>()
+    const existingAlbumCompleteness = new Map<number, string>()
 
     if (skipRecentlyAnalyzed) {
       const allArtistCompleteness = await db.music.getAllArtistCompleteness()
@@ -1205,7 +1095,6 @@ export class MusicBrainzService extends CancellableOperation {
     const errors: string[] = []
     const diagnostics: AnalysisDiagnostic[] = []
 
-    // Send initial progress immediately so UI shows something right away
     onProgress?.({
       current: 0,
       total: totalItems,
@@ -1222,7 +1111,6 @@ export class MusicBrainzService extends CancellableOperation {
     const MAX_CONSECUTIVE_NETWORK_ERRORS = 5
 
     let circuitBroken = false
-    // Phase 1: Analyze artist completeness
     getLoggingService().info('[MusicBrainzService]', `Phase 1: Analyzing ${artists.length} artists (skipRecent=${skipRecentlyAnalyzed}, vinylFilter=${filterVinylOnly})`)
 
     for (let artistIdx = 0; artistIdx < artists.length; artistIdx++) {
@@ -1246,14 +1134,12 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      // Check if placeholder artist
       if (isPlaceholderMusicTitle(artist.name)) {
         skipped++
         currentItem++
         continue
       }
 
-      // Check if recently analyzed
       if (skipRecentlyAnalyzed) {
         const lastSync = existingArtistCompleteness.get(artist.name)
         if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
@@ -1263,8 +1149,7 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      // Send progress BEFORE processing so user sees what's being analyzed
-      const artistIndex = currentItem + 1  // 1-based for display
+      const artistIndex = currentItem + 1
       onProgress?.({
         current: currentItem,
         total: totalItems,
@@ -1355,7 +1240,6 @@ export class MusicBrainzService extends CancellableOperation {
       }
     }
 
-    // Phase 2: Analyze album track completeness
     getLoggingService().info('[MusicBrainzService]', `Phase 2: Analyzing ${allSourceAlbums.length} albums`)
 
     for (let albumIdx = 0; albumIdx < allSourceAlbums.length; albumIdx++) {
@@ -1379,14 +1263,12 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      // Check if placeholder album or artist
       if (isPlaceholderMusicTitle(album.title) || isPlaceholderMusicTitle(album.artist_name)) {
         skipped++
         currentItem++
         continue
       }
 
-      // Check if recently analyzed
       if (skipRecentlyAnalyzed && album.id) {
         const lastSync = existingAlbumCompleteness.get(album.id)
         if (wasRecentlyAnalyzed(lastSync, reanalyzeAfterDays)) {
@@ -1396,8 +1278,7 @@ export class MusicBrainzService extends CancellableOperation {
         }
       }
 
-      // Send progress BEFORE processing
-      const albumIndex = currentItem - artists.length + 1  // 1-based within albums phase
+      const albumIndex = currentItem - artists.length + 1
       onProgress?.({
         current: currentItem,
         total: totalItems,
@@ -1431,7 +1312,6 @@ export class MusicBrainzService extends CancellableOperation {
             }
           })
 
-          // Update artwork for local sources if we found a MusicBrainz release group ID
           if (updateArtwork && completeness.musicbrainz_release_group_id) {
             await this.updateAlbumArtworkFromCoverArt(album, completeness.musicbrainz_release_group_id)
           }
@@ -1537,7 +1417,6 @@ export class MusicBrainzService extends CancellableOperation {
   }
 }
 
-// Export singleton instance
 let musicBrainzInstance: MusicBrainzService | null = null
 
 export function getMusicBrainzService(): MusicBrainzService {
