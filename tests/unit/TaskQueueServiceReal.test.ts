@@ -1,10 +1,10 @@
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { TaskQueueService } from '@main/services/TaskQueueService'
 import * as fs from 'fs'
 import * as path from 'path'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { TaskStatus, TaskType } from '@main/types/database'
 
 describe('TaskQueueService (No Mocks)', () => {
   const dbPath = path.join(__dirname, 'task-queue.db')
@@ -14,17 +14,14 @@ describe('TaskQueueService (No Mocks)', () => {
   beforeEach(async () => {
     resetBetterSQLiteServiceForTesting()
     if (fs.existsSync(dbPath)) {
-      try { fs.unlinkSync(dbPath) } catch { /* already absent */ }
+      fs.unlinkSync(dbPath)
     }
-    
-    // We need a real DB wrapper
+
     realDbWrapper = getDatabase()
     await realDbWrapper.initialize(dbPath)
-    
-    // Create a real logging service that doesn't output to console during tests
+
     const logging = getLoggingService()
 
-    // Using real instances
     taskQueue = new TaskQueueService({ db: realDbWrapper, logging })
     await taskQueue.clearTaskHistory()
   })
@@ -32,17 +29,16 @@ describe('TaskQueueService (No Mocks)', () => {
   afterEach(async () => {
     realDbWrapper?.close()
     if (fs.existsSync(dbPath)) {
-      try { fs.unlinkSync(dbPath) } catch { /* already absent */ }
+      fs.unlinkSync(dbPath)
     }
   })
 
   it('should queue multiple tasks', async () => {
-    // Pause queue so we can inspect it without background process running
-    taskQueue.pause()
-    
+    await taskQueue.pause()
+
     const id1 = await taskQueue.addTask({ type: 'library-scan', label: 'Task 1' })
     const id2 = await taskQueue.addTask({ type: 'source-scan', label: 'Task 2' })
-    
+
     const queue = taskQueue.getState().queue
     expect(queue.length).toBe(2)
     expect(queue[0].id).toBe(id1)
@@ -50,33 +46,57 @@ describe('TaskQueueService (No Mocks)', () => {
   })
 
   it('should remove a queued task', async () => {
-    taskQueue.pause()
+    await taskQueue.pause()
     await taskQueue.addTask({ type: 'library-scan', label: 'Task 1' })
     const id2 = await taskQueue.addTask({ type: 'source-scan', label: 'Task 2' })
-    
+
     const removed = await taskQueue.removeTask(id2)
     expect(removed).toBe(true)
     expect(taskQueue.getState().queue.length).toBe(1)
   })
 
   it('should handle pause and resume', async () => {
-    taskQueue.pause()
+    await taskQueue.pause()
     await taskQueue.addTask({ type: 'library-scan', label: 'Task 1', sourceId: 's1', libraryId: 'l1' })
-    
+
     expect(taskQueue.getState().currentTask).toBeNull()
     expect(taskQueue.getState().queue.length).toBe(1)
 
     await taskQueue.resume()
-    
-    // Once resumed, the task moves from queue to currentTask (or completed if it's very fast)
+
     const state = taskQueue.getState()
     expect(state.queue.length).toBe(0)
-    // It should either be current or already completed
     expect(state.currentTask !== null || taskQueue.getTaskHistory().length > 0).toBe(true)
   })
 
   it('should clear history', async () => {
     await taskQueue.clearTaskHistory()
     expect(taskQueue.getTaskHistory().length).toBe(0)
+  })
+
+  it('reports concrete music analysis counts with real services', async () => {
+    await taskQueue.pause()
+    const taskId = await taskQueue.addTask({
+      type: TaskType.MusicCompleteness,
+      label: 'Analyze empty music library'
+    })
+
+    await taskQueue.resume()
+
+    let completedTask = taskQueue.getTaskHistory().find(task => task.id === taskId)
+    for (let attempt = 0; attempt < 50 && !completedTask; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      completedTask = taskQueue.getTaskHistory().find(task => task.id === taskId)
+    }
+
+    if (!completedTask) {
+      throw new Error(`Music completeness task did not complete: ${taskId}`)
+    }
+
+    expect(completedTask.status, completedTask.error).toBe(TaskStatus.Completed)
+    expect(completedTask.result?.itemsScanned).toBe(0)
+    expect(completedTask.result?.outcome?.completedCount).toBe(0)
+    expect(completedTask.result?.outcome?.failedCount).toBe(0)
+    expect(completedTask.result?.outcome?.deferredCount).toBe(0)
   })
 })

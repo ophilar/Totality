@@ -347,7 +347,6 @@ export class MusicBrainzService extends CancellableOperation {
           backoffFactor: 2,
           retryableStatuses: [429, 500, 502, 503, 504],
           onRetry: (attempt, error, delay) => {
-            getLoggingService().verbose('[MusicBrainzService]', `${context} — retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
             getLoggingService().warn('[MusicBrainzService]', `${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
           }
         }
