@@ -137,6 +137,58 @@ describe('timeline cache migration', () => {
     expect(result.rows[0]?.album_id).toBeNull()
   })
 
+  it('severs only provably invalid cross-library music relationships', async () => {
+    const artistId = await dbService.music.upsertArtist({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'artist-a',
+      name: 'Artist',
+    })
+    const albumId = await dbService.music.upsertAlbum({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-a',
+      provider_id: 'album-a',
+      artist_id: artistId,
+      artist_name: 'Artist',
+      title: 'Album',
+    })
+    const mismatchedAlbumId = await dbService.music.upsertAlbum({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'album-b',
+      artist_id: artistId,
+      artist_name: 'Artist',
+      title: 'Other Album',
+    })
+    await dbService.music.upsertTrack({
+      source_id: 'music-source',
+      source_type: 'local',
+      library_id: 'library-b',
+      provider_id: 'cross-library-track',
+      album_id: albumId,
+      artist_id: artistId,
+      artist_name: 'Artist',
+      album_name: 'Album',
+      title: 'Track',
+      file_path: '/music/cross-library/track.flac',
+      audio_codec: 'flac',
+    })
+
+    await runMigrations(dbService.db)
+
+    const albumResult = await dbService.db.execute({
+      sql: 'SELECT artist_id FROM music_albums WHERE id = ?',
+      args: [mismatchedAlbumId],
+    })
+    const trackResult = await dbService.db.execute("SELECT album_id, artist_id FROM music_tracks WHERE provider_id = 'cross-library-track'")
+    expect(albumResult.rows[0]?.artist_id).toBeNull()
+    expect(trackResult.rows[0]?.album_id).toBeNull()
+    expect(trackResult.rows[0]?.artist_id).toBeNull()
+  })
+
   it('successfully executes migrations and table rebuilds with quoted identifiers', async () => {
     await runMigrations(dbService.db)
     const tableInfo = await dbService.db.execute('PRAGMA table_info(quality_scores)')
