@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   Zap, 
@@ -25,6 +25,7 @@ import {
   Trash2
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, ShowTranscodePreflight } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
@@ -155,6 +156,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string }>>([])
+  const modalRef = useRef<HTMLDivElement>(null!)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<TaskQueueState>({
@@ -164,8 +166,18 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     completedTasks: []
   })
 
+  useFocusTrap(true, modalRef)
+
   const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [busy, onClose])
 
   const loadQuarantine = async () => {
     const files = await window.electronAPI.listShowQuarantine(show.series_title, sourceId, seriesIdentityKey, libraryId)
@@ -502,11 +514,15 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="show-transcode-modal-title"
+      className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={busy ? undefined : onClose}
     >
       <div 
-        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        ref={modalRef}
+        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-2xl w-full h-dvh sm:h-auto sm:max-h-[92vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -516,7 +532,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               {mode === 'monitoring' ? <Activity className="w-5 h-5 animate-pulse" /> : <Zap className="w-5 h-5 fill-current" />}
             </div>
             <div>
-              <h3 className="text-lg font-bold leading-tight flex items-center gap-2">
+              <h3 id="show-transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
                 {mode === 'monitoring' ? 'Live Series Optimization' : mode === 'preview' ? 'Optimization Plan Preview' : 'Batch Optimize Series'}
               </h3>
               <p className="text-xs text-muted-foreground truncate max-w-[420px]">{show.series_title}</p>
@@ -1174,7 +1190,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Queue All Episodes ({preflightData?.episodes.length || 0})</span>
+                    <span>Queue Eligible Episodes</span>
                   </>
                 )}
               </button>
