@@ -4,7 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
-import { TaskStatus, TaskType } from '@main/types/database'
+import { ProviderType, TaskStatus, TaskType } from '@main/types/database'
 
 describe('TaskQueueService (No Mocks)', () => {
   const dbPath = path.join(__dirname, 'task-queue.db')
@@ -98,5 +98,48 @@ describe('TaskQueueService (No Mocks)', () => {
     expect(completedTask.result?.outcome?.completedCount).toBe(0)
     expect(completedTask.result?.outcome?.failedCount).toBe(0)
     expect(completedTask.result?.outcome?.deferredCount).toBe(0)
+  })
+
+  it('fails before provider lookup when album artist identity is inconsistent', async () => {
+    const sourceId = 'identity-integrity-source'
+    const artistId = await realDbWrapper.music.upsertArtist({
+      source_id: sourceId,
+      source_type: ProviderType.Local,
+      library_id: 'music',
+      provider_id: 'artist-1',
+      name: 'Expected Artist',
+    })
+    await realDbWrapper.music.upsertAlbum({
+      source_id: sourceId,
+      source_type: ProviderType.Local,
+      library_id: 'music',
+      provider_id: 'album-1',
+      artist_id: artistId,
+      artist_name: 'Wrong Artist',
+      title: 'The Best of Enya',
+    })
+
+    await taskQueue.pause()
+    const taskId = await taskQueue.addTask({
+      type: TaskType.MusicCompleteness,
+      label: 'Reject corrupt music identity',
+      sourceId,
+    })
+    await taskQueue.resume()
+
+    let completedTask = taskQueue.getTaskHistory().find(task => task.id === taskId)
+    for (let attempt = 0; attempt < 50 && !completedTask; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      completedTask = taskQueue.getTaskHistory().find(task => task.id === taskId)
+    }
+
+    if (!completedTask) {
+      throw new Error(`Music identity task did not complete: ${taskId}`)
+    }
+
+    expect(completedTask.status).toBe(TaskStatus.Failed)
+    expect(completedTask.error).toContain('Music database integrity error')
+    expect(completedTask.error).toContain('stored as artist "Wrong Artist"')
+    expect(completedTask.error).toContain('resolves to "Expected Artist"')
   })
 })
