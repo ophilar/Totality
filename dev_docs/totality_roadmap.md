@@ -254,3 +254,12 @@
 - [x] Verify full Vitest suite (168 test files, 1,296/1,296 tests passing, 100%).
 - [x] Verify Windows production packaging bundle (`npm run build`) cleanly creates `release/Totality-Setup-0.5.0.exe` and `release/win-unpacked/Totality.exe`.
 
+## Phase 31: Audio Track Protection SSOT & Remote Branch Hygiene [Completed]
+- [x] Port applicable import alias cleanups from `fix/remove-unused-import-alias-6756725909868916101` and `remove-unused-toast-type-import-1694350168243227804` onto `master`.
+- [x] Prune 15 merged, closed, superseded, and obsolete remote branches on `origin` after verifying non-default status.
+- [x] Retain and clean-port PR #152 (`refactor/extract-audio-track-utils-1449766582793748380`) onto latest `master`.
+- [x] Centralize audio track protection logic into `src/main/services/utils/audioTrackUtils.ts` (`isCommentaryTrack`, `isAudioDescriptionTrack`, `isAccessibilityTrack`, `isProtectedAudioTrack`).
+- [x] Preserve existing audio-protection behavior and strict metadata contracts (`metadataString` validation in `QualityAnalyzer.ts`).
+- [x] Verify TypeScript typecheck (0 errors) and unit test suite (38/38 audio tests passing).
+
+
