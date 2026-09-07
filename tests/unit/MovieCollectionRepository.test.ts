@@ -50,4 +50,22 @@ describe('MovieCollectionRepository (Real DB)', () => {
     
     expect(await repo.getCollections('s1')).toHaveLength(0)
   })
+
+  it.each([
+    ['missing_movies', { missing_movies: 'not-json', owned_movie_ids: '[]' }],
+    ['owned_movie_ids', { missing_movies: '[]', owned_movie_ids: '{"unexpected":true}' }],
+  ])('rejects invalid persisted %s collection data instead of treating it as empty', async (field, jsonFields) => {
+    await repo.upsertCollection({
+      tmdb_collection_id: `corrupt-${field}`,
+      collection_name: `Corrupt ${field}`,
+      total_movies: 2,
+      owned_movies: 1,
+      completeness_percentage: 50,
+      source_id: 's1',
+      library_id: 'l1',
+      ...jsonFields,
+    })
+
+    await expect(repo.getCollections('s1')).rejects.toThrow(new RegExp(`${field}.*JSON array`, 'i'))
+  })
 })
