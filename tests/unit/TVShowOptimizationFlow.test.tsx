@@ -339,8 +339,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     expect(screen.getByText(/High bitrate AVC Remux benefits from video transcoding/i)).toBeTruthy()
     expect(screen.getByText(/Stream pruning preserves video quality/i)).toBeTruthy()
 
-    // Click Queue All Episodes
-    const queueEpisodesButton = screen.getByRole('button', { name: /queue all episodes \(3\)/i })
+    // Queue only backend-eligible episodes; the backend owns eligibility.
+    const queueEpisodesButton = screen.getByRole('button', { name: /queue eligible episodes/i })
     expect(queueEpisodesButton).toBeTruthy()
     await act(async () => {
       fireEvent.click(queueEpisodesButton)
