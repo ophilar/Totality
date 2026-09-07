@@ -185,6 +185,7 @@ export async function runMigrations(db: Client): Promise<void> {
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
   await createIndexes(db)
+  await repairInvalidMusicRelationships(db)
   await migrateExistingItemsToVersions(db)
   await cleanupOrphanedRecords(db)
   await backfillMediaIdentities(db)
@@ -499,6 +500,49 @@ async function createIndexes(db: Client): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
   for (const idx of indexes) await db.execute(idx)
+}
+
+async function repairInvalidMusicRelationships(db: Client): Promise<void> {
+  await db.execute('BEGIN IMMEDIATE')
+  try {
+    await db.execute(`
+      UPDATE music_albums
+      SET artist_id = NULL
+      WHERE artist_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM music_artists artist
+          WHERE artist.id = music_albums.artist_id
+            AND artist.source_id = music_albums.source_id
+            AND artist.name = music_albums.artist_name
+        )
+    `)
+    await db.execute(`
+      UPDATE music_tracks
+      SET album_id = NULL
+      WHERE album_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM music_albums album
+          WHERE album.id = music_tracks.album_id
+            AND album.source_id = music_tracks.source_id
+            AND (music_tracks.album_name IS NULL OR album.title = music_tracks.album_name)
+        )
+    `)
+    await db.execute(`
+      UPDATE music_tracks
+      SET artist_id = NULL
+      WHERE artist_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM music_artists artist
+          WHERE artist.id = music_tracks.artist_id
+            AND artist.source_id = music_tracks.source_id
+            AND (music_tracks.artist_name IS NULL OR artist.name = music_tracks.artist_name)
+        )
+    `)
+    await db.execute('COMMIT')
+  } catch (error) {
+    await db.execute('ROLLBACK')
+    throw error
+  }
 }
 
 async function migrateExistingItemsToVersions(db: Client): Promise<void> {
