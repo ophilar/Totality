@@ -49,6 +49,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
 
   const { addToast } = useToast()
+  const failureReportedRef = useRef(false)
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -105,7 +106,10 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         if (p.status === 'failed') {
           setStatus('failed')
           setActiveTab('monitor')
-          addToast({ title: `Transcode failed: ${p.error || 'Unknown error'}`, type: 'error' })
+          if (!failureReportedRef.current) {
+            failureReportedRef.current = true
+            addToast({ title: `Transcode failed: ${p.error || 'Unknown error'}`, type: 'error' })
+          }
         }
       }
     })
@@ -163,6 +167,8 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
 
   const startTranscode = async () => {
     if (!media) return
+    failureReportedRef.current = false
+    setProgress(null)
     setStatus('encoding')
     setActiveTab('monitor')
     try {
@@ -171,9 +177,18 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
         addToast({ title: 'Transcode complete', type: 'success' })
       }
     } catch (err: unknown) {
-      if (status !== 'idle') {
-        addToast({ title: `Transcode failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
-        setStatus('failed')
+      const message = err instanceof Error ? err.message : String(err)
+      setStatus('failed')
+      setActiveTab('monitor')
+      setProgress(current => current?.status === 'failed' ? current : {
+        mediaItemId: media.id!,
+        status: 'failed',
+        percent: 0,
+        error: message
+      })
+      if (!failureReportedRef.current) {
+        failureReportedRef.current = true
+        addToast({ title: `Transcode failed: ${message}`, type: 'error' })
       }
     }
   }
