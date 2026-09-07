@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { formatHdrLabel, QualityBadges } from '@/components/library/QualityBadges'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
+import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
 import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
@@ -226,6 +227,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   }
 
   const bestAudioBitrate = toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate)
+  const storageDebtBytes = sv?.storage_debt_bytes ?? media.storage_debt_bytes
   const videoWeight = 70
 
   return createPortal(
@@ -358,14 +360,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Storage Debt</span>
-                    <span className={`font-bold ${(sv?.storage_debt_bytes ?? 0) > 0 ? 'text-orange-500' : 'text-green-500'}`}>
-                      {toSafeNumber(sv?.storage_debt_bytes ?? media.storage_debt_bytes) > 0 ? formatFileSize(toSafeNumber(sv?.storage_debt_bytes ?? media.storage_debt_bytes)) : 'None'}
-                    </span>
+                    <RecoverableWasteDisplay bytes={storageDebtBytes} className="text-sm" />
                   </div>
                   <p className="text-[11px] text-muted-foreground/70 leading-normal">
-                    {toSafeNumber(sv?.storage_debt_bytes ?? media.storage_debt_bytes) > 0 
-                      ? `Based on its quality, this file is ${formatFileSize(toSafeNumber(sv?.storage_debt_bytes ?? media.storage_debt_bytes))} larger than a perfectly optimized encode would be.`
-                      : 'This file is perfectly optimized for its quality tier. No storage waste detected.'}
+                    {storageDebtBytes == null
+                      ? 'Recoverable storage waste has not been calculated for this file.'
+                      : storageDebtBytes > 0
+                        ? `Based on its quality, this file is ${formatFileSize(storageDebtBytes)} larger than a perfectly optimized encode would be.`
+                        : 'No recoverable storage waste was detected for this file.'}
                   </p>
                 </div>
               </div>
