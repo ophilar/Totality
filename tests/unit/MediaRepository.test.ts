@@ -83,6 +83,36 @@ describe('MediaRepository (Real DB)', () => {
     expect(results[0].title).toBe('The Matrix')
   })
 
+  it('includes calculated estimated recoverable debt in optimization summaries', async () => {
+    const id = await repo.upsertItem({ ...mockItem('Recoverable Movie'), file_size: 4_000_000_000 })
+    await repo.upsertQualityScore({
+      media_item_id: id,
+      quality_tier: '1080p',
+      tier_quality: 'HIGH',
+      tier_score: 80,
+      bitrate_tier_score: 80,
+      audio_tier_score: 80,
+      overall_score: 80,
+      resolution_score: 80,
+      bitrate_score: 80,
+      audio_score: 80,
+      efficiency_score: 80,
+      storage_debt_bytes: 750_000_000,
+      evidence_status: 'estimated',
+      confidence: 'medium',
+      savings_basis: 'insufficient_data',
+      is_low_quality: false,
+      needs_upgrade: false,
+      issues: '[]',
+    })
+
+    const summary = await repo.getOptimizationMetricsSummary({ type: 'movie' })
+
+    expect(summary.recoverableWasteBytes).toBe(750_000_000)
+    expect(summary.recoverableBytes).toBe(750_000_000)
+    expect(summary.evidenceStatus).toBe('estimated')
+  })
+
   it('should delete a media item and its cascade data', async () => {
     const id = await repo.upsertItem(mockItem())
     await repo.deleteItem(id)
