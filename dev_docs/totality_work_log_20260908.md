@@ -2,8 +2,11 @@
 
 ## Remaining UI integrity and optimization cleanup
 
-- Began evidence-first investigation of duplicate library items.
-- Confirmed renderer list/grid components render supplied rows directly; no renderer-side deduplication will be added.
-- Identified offset pagination in movie and music repositories that orders by non-unique user-selected columns without a unique identity tie-breaker; TV summary pagination already includes `series_completeness.id` as a secondary order.
-- Added real-SQLite regression coverage for deterministic movie, artist, album, and track pagination before production changes.
-- Reviewed the existing 2026-08-17 optimization UI / TV-series optimization plan. Stale parameter-preview sequencing, live progress-log throttling, Optimize Series action wiring, and TV detail scroll-parent handling are already present. Remaining concrete plan gaps are being verified before changes.
+- Traced duplicate movie/music library items to offset pagination ordered only by non-unique user-selected fields. Added stable entity-ID tie-breakers in the owning repositories; no renderer-side deduplication was added. TV summary pagination already had a stable ID tie-breaker.
+- Added real-SQLite regressions for deterministic movie, artist, album, and track pagination.
+- Removed the legacy startup migration that guessed missing track-to-album relationships from artist/title strings with `LIMIT 1`.
+- Added conservative startup repair for persisted music relationships that provably contradict stored identity: dangling, cross-source, or denormalized-name conflicts are unlinked, never guessed, merged, or deleted. Same-source cross-library relationships remain valid.
+- Verified the existing whole-series optimization flow, stale preview sequencing, live progress throttling, and TV detail scrolling were already implemented and retained.
+- Aligned the series optimizer with the established modal contract: dialog semantics, focus trap, Escape close when idle, correct modal layer, and bounded viewport.
+- Changed the preview action from `Queue All Episodes` to `Queue Eligible Episodes`; backend preflight remains the single source of truth for eligibility.
+- No LocalFolderProvider or `MusicRepository.buildAlbumConditions` changes were made because the investigation did not establish them as causes of the reported corruption.
