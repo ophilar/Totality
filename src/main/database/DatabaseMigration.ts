@@ -185,7 +185,6 @@ export async function runMigrations(db: Client): Promise<void> {
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
   await createIndexes(db)
-  await fixMusicTrackAlbumReferences(db)
   await migrateExistingItemsToVersions(db)
   await cleanupOrphanedRecords(db)
   await backfillMediaIdentities(db)
@@ -500,21 +499,6 @@ async function createIndexes(db: Client): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
   for (const idx of indexes) await db.execute(idx)
-}
-
-async function fixMusicTrackAlbumReferences(db: Client): Promise<void> {
-  await db.execute(`
-    UPDATE music_tracks SET album_id = (
-      SELECT a.id FROM music_albums a
-      WHERE a.title = music_tracks.album_name
-        AND a.artist_name = music_tracks.artist_name
-        AND a.source_id = music_tracks.source_id
-      LIMIT 1
-    )
-    WHERE album_id IS NULL OR NOT EXISTS (
-      SELECT 1 FROM music_albums a WHERE a.id = music_tracks.album_id
-    )
-  `)
 }
 
 async function migrateExistingItemsToVersions(db: Client): Promise<void> {
