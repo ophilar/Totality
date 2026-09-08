@@ -13,6 +13,7 @@ const formatBytes = (value: number | null) => {
 
 type EvidenceKind = 'measured' | 'estimated' | 'insufficient'
 type EvidenceMechanism = OptimizationDecisionMechanism & { evidence?: EvidenceKind }
+type DecisionState = { mediaId: number; decision: OptimizationDecision | null; error: string | null }
 
 const getEvidenceKind = (mechanism: EvidenceMechanism): EvidenceKind => {
   if (mechanism.evidence) return mechanism.evidence
@@ -55,28 +56,30 @@ function getOptimizationDecision(mediaId: number): Promise<OptimizationDecision>
 }
 
 export function ConversionRecommendation({ item, compact = false }: { item: MediaItem; compact?: boolean }) {
-  const [decision, setDecision] = useState<OptimizationDecision | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(Boolean(item.id))
+  const [decisionState, setDecisionState] = useState<DecisionState | null>(null)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [remuxing, setRemuxing] = useState(false)
   const [remuxError, setRemuxError] = useState<string | null>(null)
+  const mediaId = item.id
+  const currentState = mediaId != null && decisionState?.mediaId === mediaId ? decisionState : null
+  const decision = currentState?.decision ?? null
+  const error = currentState?.error ?? null
+  const loading = mediaId != null && currentState == null
 
   useEffect(() => {
     if (!item.id) return
-    const mediaId = item.id
+    const requestMediaId = item.id
     let active = true
-    setDecision(null)
-    setError(null)
-    setLoading(true)
-    void getOptimizationDecision(mediaId).then(decision => {
-      if (active) {
-        setDecision(decision)
-      }
+    void getOptimizationDecision(requestMediaId).then(nextDecision => {
+      if (active) setDecisionState({ mediaId: requestMediaId, decision: nextDecision, error: null })
     }).catch(reason => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason))
-    }).finally(() => {
-      if (active) setLoading(false)
+      if (active) {
+        setDecisionState({
+          mediaId: requestMediaId,
+          decision: null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
+      }
     })
     return () => { active = false }
   }, [item.id])
@@ -89,11 +92,12 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
   const removeTracks = canExecute(decision.trackRemoval)
   const transcode = canExecute(decision.audioTranscode) || canExecute(decision.videoTranscode)
   const requestRemux = async () => {
+    if (!mediaId) return
     setRemuxing(true)
     setRemuxError(null)
     try {
-      await window.electronAPI.optimizationRequestLocalRemux(item.id!, true)
-      setDecision(await getOptimizationDecision(item.id!))
+      await window.electronAPI.optimizationRequestLocalRemux(mediaId, true)
+      setDecisionState({ mediaId, decision: await getOptimizationDecision(mediaId), error: null })
     } catch (reason) {
       setRemuxError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -117,6 +121,6 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
       <div className="mt-2">Language confidence: {decision.trackRemoval.confidence}</div>
     </div>}
     {!removeTracks && !transcode && <div className="pt-2 text-muted-foreground">No executable disk optimization is available.</div>}
-    {showTranscodeModal && <TranscodeModal mediaId={item.id!} onClose={() => setShowTranscodeModal(false)} />}
+    {showTranscodeModal && mediaId && <TranscodeModal mediaId={mediaId} onClose={() => setShowTranscodeModal(false)} />}
   </div>
 }
