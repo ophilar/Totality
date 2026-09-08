@@ -6,6 +6,18 @@ import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
+function assertJsonArray(value: string, field: 'missing_movies' | 'owned_movie_ids', collectionName: string): void {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error(`Invalid ${field} JSON array for collection "${collectionName}"`)
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Invalid ${field} JSON array for collection "${collectionName}"`)
+  }
+}
+
 export class MovieCollectionRepository extends BaseRepository<typeof schema.movieCollections> {
   constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'movie_collections', drizzle, schema.movieCollections)
@@ -85,21 +97,25 @@ export class MovieCollectionRepository extends BaseRepository<typeof schema.movi
   }
 
   private mapDrizzleToCollection(rows: (typeof schema.movieCollections.$inferSelect)[]): MovieCollection[] {
-    return rows.map(r => ({
-      id: r.id,
-      tmdb_collection_id: r.tmdbCollectionId,
-      collection_name: r.collectionName,
-      source_id: r.sourceId,
-      library_id: r.libraryId,
-      total_movies: r.totalMovies,
-      owned_movies: r.ownedMovies,
-      missing_movies: r.missingMovies,
-      owned_movie_ids: r.ownedMovieIds,
-      completeness_percentage: r.completenessPercentage,
-      poster_url: r.posterUrl || undefined,
-      backdrop_url: r.backdropUrl || undefined,
-      created_at: r.createdAt,
-      updated_at: r.updatedAt
-    }))
+    return rows.map(r => {
+      assertJsonArray(r.missingMovies, 'missing_movies', r.collectionName)
+      assertJsonArray(r.ownedMovieIds, 'owned_movie_ids', r.collectionName)
+      return {
+        id: r.id,
+        tmdb_collection_id: r.tmdbCollectionId,
+        collection_name: r.collectionName,
+        source_id: r.sourceId,
+        library_id: r.libraryId,
+        total_movies: r.totalMovies,
+        owned_movies: r.ownedMovies,
+        missing_movies: r.missingMovies,
+        owned_movie_ids: r.ownedMovieIds,
+        completeness_percentage: r.completenessPercentage,
+        poster_url: r.posterUrl || undefined,
+        backdrop_url: r.backdropUrl || undefined,
+        created_at: r.createdAt,
+        updated_at: r.updatedAt
+      }
+    })
   }
 }

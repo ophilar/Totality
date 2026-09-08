@@ -63,4 +63,39 @@ describe('ConversionRecommendation evidence rendering', () => {
     expect(screen.queryByRole('button', { name: /audio tracks|transcode/i })).toBeNull()
     expect(screen.getByText('No executable disk optimization is available.')).toBeTruthy()
   })
+
+  it('coalesces concurrent decision requests for the same media item', async () => {
+    let resolveDecision!: (value: OptimizationDecision) => void
+    const pendingDecision = new Promise<OptimizationDecision>((resolve) => {
+      resolveDecision = resolve
+    })
+    vi.mocked(window.electronAPI.optimizationGetDecision).mockReturnValue(pendingDecision)
+
+    render(<>
+      <ConversionRecommendation item={{ ...item, id: 903 }} />
+      <ConversionRecommendation item={{ ...item, id: 903 }} />
+    </>)
+
+    await waitFor(() => expect(window.electronAPI.optimizationGetDecision).toHaveBeenCalledTimes(1))
+    resolveDecision(decision())
+    await waitFor(() => expect(screen.getAllByText('No executable disk optimization is available.')).toHaveLength(2))
+  })
+
+  it('does not reuse a resolved decision after the component remounts', async () => {
+    vi.mocked(window.electronAPI.optimizationGetDecision).mockResolvedValueOnce(decision())
+
+    const first = render(<ConversionRecommendation item={{ ...item, id: 904 }} />)
+    await waitFor(() => expect(screen.getByText('No executable disk optimization is available.')).toBeTruthy())
+    first.unmount()
+
+    vi.mocked(window.electronAPI.optimizationGetDecision).mockResolvedValueOnce(decision({
+      primaryAction: 'transcode-video',
+      videoTranscode: { status: 'executable', estimatedSavingsBytes: 4096, reason: 'Fresh analysis supports transcoding' },
+    }))
+
+    render(<ConversionRecommendation item={{ ...item, id: 904 }} />)
+
+    await waitFor(() => expect(window.electronAPI.optimizationGetDecision).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: 'Transcode video' })).toBeTruthy()
+  })
 })

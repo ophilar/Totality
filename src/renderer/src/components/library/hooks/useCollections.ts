@@ -25,42 +25,39 @@ export function useCollections(
   items: MediaItem[],
   movieCollections: MovieCollectionData[]
 ): UseCollectionsReturn {
-  // Collection modal state
   const [showCollectionModal, setShowCollectionModal] = useState(false)
   const [selectedCollection, setSelectedCollection] = useState<MovieCollectionData | null>(null)
 
-  // Get collection data for a movie by checking owned_movie_ids
+  const collectionByMovieId = useMemo(() => {
+    const index = new Map<string, MovieCollectionData>()
+    for (const collection of movieCollections) {
+      const ownedIds = JSON.parse(collection.owned_movie_ids || '[]') as string[]
+      for (const tmdbId of ownedIds) {
+        // Preserve the previous Array.find semantics when bad data places a movie in multiple collections.
+        if (!index.has(tmdbId)) index.set(tmdbId, collection)
+      }
+    }
+    return index
+  }, [movieCollections])
+
   const getCollectionForMovie = useCallback(
     (movie: MediaItem): MovieCollectionData | undefined => {
       if (!movie.tmdb_id) return undefined
-      return movieCollections.find((c) => {
-        try {
-          const ownedIds = JSON.parse(c.owned_movie_ids || '[]')
-          return ownedIds.includes(movie.tmdb_id)
-        } catch {
-          return false
-        }
-      })
+      return collectionByMovieId.get(movie.tmdb_id)
     },
-    [movieCollections]
+    [collectionByMovieId]
   )
 
-  // Get owned movies for a collection
   const getOwnedMoviesForCollection = useCallback(
     (collection: MovieCollectionData): MediaItem[] => {
-      try {
-        const ownedIds = new Set(JSON.parse(collection.owned_movie_ids || '[]'))
-        return items.filter(
-          (item) => item.type === 'movie' && item.tmdb_id && ownedIds.has(item.tmdb_id)
-        )
-      } catch {
-        return []
-      }
+      const ownedIds = new Set(JSON.parse(collection.owned_movie_ids || '[]') as string[])
+      return items.filter(
+        (item) => item.type === 'movie' && item.tmdb_id && ownedIds.has(item.tmdb_id)
+      )
     },
     [items]
   )
 
-  // Memoize owned movies for the selected collection to avoid recalculating on every render
   const ownedMoviesForSelectedCollection = useMemo(() => {
     if (!selectedCollection) return []
     return getOwnedMoviesForCollection(selectedCollection)

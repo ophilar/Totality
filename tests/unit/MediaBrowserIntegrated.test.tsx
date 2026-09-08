@@ -7,7 +7,7 @@ import { MediaBrowser } from '@/components/library/MediaBrowser'
 import { SourceProvider } from '@/contexts/SourceContext'
 import { LibraryProvider } from '@/contexts/LibraryContext'
 import { WishlistProvider } from '@/contexts/WishlistContext'
-import { ToastProvider } from '@/contexts/ToastContext'
+import { ToastProvider, useToast } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { registerDatabaseHandlers } from '@main/ipc/database'
@@ -19,9 +19,13 @@ import { registerSeriesHandlers } from '@main/ipc/series'
 import { registerMusicHandlers } from '@main/ipc/music'
 import { registerLoggingHandlers } from '@main/ipc/logging'
 import { registerMonitoringHandlers } from '@main/ipc/monitoring'
-import { _ProviderType, _LibraryType } from '@main/types/database'
 import React from 'react'
 type TestDb = Awaited<ReturnType<typeof setupTestDb>>
+
+function ToastProbe() {
+  const { toasts } = useToast()
+  return <>{toasts.map(toast => <div key={toast.id}>{toast.title}{toast.message ? `: ${toast.message}` : ''}</div>)}</>
+}
 
 describe('MediaBrowser (Integrated Stack)', () => {
   let db: TestDb
@@ -60,6 +64,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
     await act(async () => {
         result = render(
             <ToastProvider>
+                <ToastProbe />
                 <SourceProvider>
                 <LibraryProvider>
                     <WishlistProvider>
@@ -154,5 +159,25 @@ describe('MediaBrowser (Integrated Stack)', () => {
         expect(screen.getByText(/1 shows/i)).toBeTruthy()
         expect(screen.getByText('Test Show')).toBeTruthy()
     })
+  })
+
+  it('surfaces malformed collection data instead of silently treating completeness as unavailable', async () => {
+    await db.movieCollections.upsertCollection({
+      tmdb_collection_id: 'corrupt-collection',
+      collection_name: 'Corrupt Collection',
+      source_id: 's1',
+      library_id: '1',
+      total_movies: 2,
+      owned_movies: 1,
+      completeness_percentage: 50,
+      missing_movies: 'not-json',
+      owned_movie_ids: '[]',
+    })
+
+    await renderBrowser()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load completeness data: Invalid missing_movies JSON array/i)).toBeTruthy()
+    }, { timeout: 5000 })
   })
 })
