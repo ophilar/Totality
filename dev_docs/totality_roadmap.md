@@ -262,4 +262,23 @@
 - [x] Preserve existing audio-protection behavior and strict metadata contracts (`metadataString` validation in `QualityAnalyzer.ts`).
 - [x] Verify TypeScript typecheck (0 errors) and unit test suite (38/38 audio tests passing).
 
+## Phase 32: Safe Operational Vertical Slice & Architectural Directives [Completed]
+- [x] Implemented and verified the 6-stage safe optimization operational vertical slice in `SafeOptimizationSliceService.ts`:
+  1. `getReadOnlyInventory`: Discovers media state with explicit scope; unavailable sources never masked as empty collections.
+  2. `generateProposedActions`: Transparent, inspectable proposals explaining what and why with explicit evidence metrics.
+  3. `executeDryRun`: Dry-run planning pipeline classifying executable, blocked, and invalid without mutations.
+  4. `verifyRecoverability`: Verified quarantine writeability and atomic rollback guarantee prior to mutation.
+  5. `executeBoundedOptimization`: Strictly bounded batch (max 1 item); zero silent software/GPU fallback; real atomic swap with rollback.
+  6. `recordAuditLog`: Append-only JSONL execution audit log with inputs, proposal, actual outcome, and recovery evidence.
+- [x] Verified full 10/10 test suite in `tests/unit/services/SafeOptimizationSliceService.test.ts`.
+- [x] Aligned TV completeness contract (TOT-BUG-05) and episode exclusion keying (`StatsRepository.ts`, `Dashboard.tsx`).
+- [x] Unified Show and Mixed library capabilities in `Sidebar.tsx`.
+- [x] Enforced strict fail-fast migration policy without catch-and-continue (TOT-BUG-07).
+- [x] Hardened evidence correctness: missing metrics remain `null`, insufficient evidence blocks optimization (TOT-BUG-08).
+- [x] Centralized IPC sender frame verification across all handlers including `app:openExternal`, `plex:selectServer`, and `APP.GET_VERSION` (TOT-BUG-10).
+- [x] Standardized ordered shutdown coordinator (stop work &rarr; settle operations &rarr; persist state &rarr; checkpoint WAL &rarr; close DB &rarr; exit) (TOT-BUG-11).
+- [x] Enforced explicit partial-failure semantics on source scans and completeness analysis (TOT-BUG-12).
+- [x] Removed guessed `'ffmpeg'` executable fallback in `MediaFileAnalyzer.ts`.
+- [x] Consolidated optimization vertical slice into canonical `LanguageRemuxService.ts` and eliminated redundant 880-line `SafeOptimizationSliceService.ts` wrapper layer for net-negative lines of code.
+- [x] Updated `Totality — Active Project.md` to reference projection, establishing Command Center as mutable operational SSOT.
 

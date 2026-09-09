@@ -49,6 +49,7 @@ CLAUDE.md
 # Jules / Gemini CLI
 .jules/
 .gemini/
+.superpowers/
 dev_docs/
 
 # Test coverage
