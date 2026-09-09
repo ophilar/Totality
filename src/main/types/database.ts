@@ -966,6 +966,26 @@ export interface AnalysisOutcome {
   errors?: string[]
 }
 
+export interface CompletenessScope {
+  sourceId: string
+  libraryId: string
+  sourceType?: ProviderType
+}
+
+export type CompletenessState =
+  | 'loading'
+  | 'not_analysed'
+  | 'all_complete'
+  | 'incomplete'
+  | 'unavailable'
+  | 'error'
+
+export interface AggregateScanOutcome {
+  successfulScopes: CompletenessScope[]
+  failedScopes: Array<CompletenessScope & { error: string }>
+  overallResult: 'success' | 'partial' | 'failed'
+}
+
 export type CalculationStatus = 'measured' | 'estimated' | 'insufficient' | 'unanalyzed' | 'unavailable' | 'complete' | 'partial' | 'unknown'
 
 export interface OptimizationMetricsSummary {

@@ -266,14 +266,14 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
 
       // Queue analysis tasks for this source based on library types present
       const libraryTypes = new Set(libraries.map(l => l.type))
-      if (libraryTypes.has(LibraryType.Show)) {
+      if (libraryTypes.has(LibraryType.Show) || libraryTypes.has(LibraryType.Mixed)) {
         await window.electronAPI.taskQueueAddTask({
           type: 'series-completeness',
           label: `Analyze TV Series (${sourceName})`,
           sourceId,
         })
       }
-      if (libraryTypes.has(LibraryType.Movie)) {
+      if (libraryTypes.has(LibraryType.Movie) || libraryTypes.has(LibraryType.Mixed)) {
         await window.electronAPI.taskQueueAddTask({
           type: 'collection-completeness',
           label: `Analyze Collections (${sourceName})`,

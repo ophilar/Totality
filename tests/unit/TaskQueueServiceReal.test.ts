@@ -8,15 +8,16 @@ import { getDatabase, resetBetterSQLiteServiceForTesting } from '@main/database/
 import { ProviderType, TaskStatus, TaskType } from '@main/types/database'
 
 describe('TaskQueueService (No Mocks)', () => {
-  const dbPath = path.join(__dirname, 'task-queue.db')
+  let dbPath: string
   let taskQueue: TaskQueueService
   let realDbWrapper: ReturnType<typeof getDatabase>
 
   beforeEach(async () => {
     resetBetterSQLiteServiceForTesting()
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath)
-    }
+    const workerId = process.env.VITEST_WORKER_ID || process.pid
+    const dbDir = path.resolve(process.cwd(), 'tests/tmp', `worker-${workerId}`)
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
+    dbPath = path.join(dbDir, `task-queue-${Date.now()}-${Math.random().toString(36).substring(7)}.db`)
 
     realDbWrapper = getDatabase()
     await realDbWrapper.initialize(dbPath)
@@ -28,10 +29,8 @@ describe('TaskQueueService (No Mocks)', () => {
   })
 
   afterEach(async () => {
-    realDbWrapper?.close()
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath)
-    }
+    await taskQueue.pause()
+    resetBetterSQLiteServiceForTesting()
   })
 
   it('should queue multiple tasks', async () => {

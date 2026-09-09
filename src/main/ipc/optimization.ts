@@ -3,19 +3,17 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { ArrIntegrationService } from '@main/services/ArrIntegrationService'
-import { LanguageDecisionService } from '@main/services/LanguageDecisionService'
 import { calculateDryRunMetrics } from '@main/services/ShowOptimizationMetricsService'
-import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { spawn } from 'node:child_process'
-import { app } from 'electron'
-import { promises as fs, createReadStream } from 'node:fs'
-import path from 'node:path'
-import crypto from 'node:crypto'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { buildOptimizationDecision, resolveOptimizationPrimaryAction } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getTMDBService } from '@main/services/TMDBService'
+import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
+import { app } from 'electron'
+import { promises as fs, createReadStream } from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
 
 const config = z.object({ baseUrl: z.string().url(), apiKey: z.string().min(1), timeoutMs: z.number().int().positive().optional() })
 const pendingRecord = z.object({ requestedAt: z.string(), seriesId: z.number().int().positive(), commandId: z.number().int().nullable(), state: z.literal('awaiting-rescan') })
@@ -26,30 +24,108 @@ export function registerOptimizationHandlers() {
     if (!optIn) throw new Error('Opt-in is required before local remux')
     const item = await db.media.getItemById(mediaItemId)
     if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
-    const filePath = item.file_path
     const source = await db.sources.getSourceById(item.source_id)
     if (!source) throw new Error('Media source was not found')
     MediaPathAuthorization.assertMediaAuthorized(item, source)
     const stat = await fs.stat(item.file_path)
     const sourceSha256 = await new Promise<string>((resolve, reject) => {
       const hash = crypto.createHash('sha256')
-      const stream = createReadStream(filePath)
-      stream.on('data', chunk => hash.update(chunk)); stream.on('error', reject); stream.on('end', () => resolve(hash.digest('hex')))
+      const stream = createReadStream(item.file_path!)
+      stream.on('data', chunk => hash.update(chunk))
+      stream.on('error', reject)
+      stream.on('end', () => resolve(hash.digest('hex')))
     })
     const analyzer = getMediaFileAnalyzer()
-    if (!(await analyzer.isAvailable()) || !analyzer.getFFmpegPath() || !analyzer.getFFprobePath()) throw new Error('Verified FFmpeg and FFprobe are required for local remux')
+    const ffmpegPath = analyzer.getFFmpegPath()
+    const ffprobePath = analyzer.getFFprobePath()
+    if (!(await analyzer.isAvailable()) || !ffmpegPath || !ffprobePath) {
+      throw new Error('Verified FFmpeg and FFprobe are required for local remux')
+    }
     const analysis = await analyzer.analyzeFile(item.file_path)
     if (!analysis.success || !analysis.audioTracks.length) throw new Error('Fresh media analysis is required before local remux')
-    const decision = new LanguageDecisionService().decide(item.original_language, analysis.audioTracks.map(track => ({ index: track.index, language: track.language, title: track.title, reliableTag: !!track.language, isCommentary: track.isCommentary, isAudioDescription: track.isAudioDescription, isAccessibility: track.isAccessibility })))
-    if (decision.status !== 'approved') throw new Error(decision.reason)
-    if (decision.removableTrackIndexes.length === 0) throw new Error('No removable audio tracks were identified')
+    const decision = buildOptimizationDecision({
+      originalLanguage: item.original_language,
+      durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
+      fileSize: analysis.fileSize || stat.size,
+      videoStorageDebtBytes: null,
+      audioTracks: analysis.audioTracks.map(track => ({
+        index: track.index,
+        language: track.language,
+        title: track.title,
+        codec: track.codec,
+        channels: track.channels,
+        channelLayout: track.channelLayout,
+        bitrate: track.bitrate,
+        isDefault: track.isDefault,
+        hasObjectAudio: track.hasObjectAudio,
+        reliableTag: Boolean(track.language),
+        isCommentary: track.isCommentary,
+        isAudioDescription: track.isAudioDescription,
+        isAccessibility: track.isAccessibility,
+      })),
+    })
+    if (decision.primaryAction !== 'remove-audio-tracks') {
+      throw new Error(decision.trackRemoval.reason || 'No removable audio tracks were identified')
+    }
+    if (decision.trackRemoval.removableTrackIndexes.length === 0) {
+      throw new Error('No removable audio tracks were identified')
+    }
     const quarantineDirectory = path.join(app.getPath('userData'), 'quarantine', String(mediaItemId))
-    const run = (binary: string, args: string[], output = false) => new Promise<unknown>((resolve, reject) => { const child = spawn(binary, args, { stdio: output ? ['ignore', 'pipe', 'pipe'] : 'ignore' }); let stdout = ''; let stderr = ''; child.stdout?.on('data', d => { stdout += d }); child.stderr?.on('data', d => { stderr += d }); child.on('error', reject); child.on('close', code => code === 0 ? resolve(output ? JSON.parse(stdout) : undefined) : reject(new Error(stderr || `${binary} exited with ${code}`))) })
-    const remux = new LanguageRemuxService({ run: args => run(analyzer.getFFmpegPath()!, args).then(() => undefined), probe: filePath => run(analyzer.getFFprobePath()!, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', filePath], true).then(value => { const p = value as { streams?: unknown[]; format?: { duration?: string; size?: string } }; const durationSeconds = Number(p.format?.duration); return { streams: (p.streams || []) as never[], duration: Number.isFinite(durationSeconds) ? durationSeconds * 1000 : undefined, size: Number(p.format?.size) } }) })
-    const jobId = await db.mediaRemuxJobs.create({ mediaItemId, operationKind: 'remux', status: 'planned', sourcePath: item.file_path, sourceSize: stat.size, sourceMtimeMs: Math.trunc(stat.mtimeMs), sourceSha256, decisionSnapshot: JSON.stringify(decision), streamSignatures: JSON.stringify(analysis.audioTracks), quarantinePath: path.join(quarantineDirectory, path.basename(item.file_path)), error: null, predictedOutputBytes: null, actualOutputBytes: null, bytesSaved: null, sourceDurationMs: analysis.duration ?? null, outputDurationMs: null, encoderProfile: null, sourceAnalysis: JSON.stringify(analysis), outputAnalysis: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    const auditLogDirectory = path.join(app.getPath('userData'), 'audit_logs')
+    const remuxRunner = LanguageRemuxService.createDefaultRunner(ffmpegPath, ffprobePath)
+    const remux = new LanguageRemuxService(remuxRunner)
+    const jobId = await db.mediaRemuxJobs.create({
+      mediaItemId,
+      operationKind: 'remux',
+      status: 'planned',
+      sourcePath: item.file_path,
+      sourceSize: stat.size,
+      sourceMtimeMs: Math.trunc(stat.mtimeMs),
+      sourceSha256,
+      decisionSnapshot: JSON.stringify(decision),
+      streamSignatures: JSON.stringify(analysis.audioTracks),
+      quarantinePath: path.join(quarantineDirectory, path.basename(item.file_path)),
+      error: null,
+      predictedOutputBytes: decision.trackRemoval.estimatedSavingsBytes ? stat.size - decision.trackRemoval.estimatedSavingsBytes : null,
+      actualOutputBytes: null,
+      bytesSaved: null,
+      sourceDurationMs: analysis.duration ?? null,
+      outputDurationMs: null,
+      encoderProfile: null,
+      sourceAnalysis: JSON.stringify(analysis),
+      outputAnalysis: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
     await db.mediaRemuxJobs.update(jobId, { status: 'running' })
     try {
-      const result = await remux.remux(item.file_path, { quarantineDirectory, retainedAudioIndexes: decision.retainedTrackIndexes, sourceAudioStreams: analysis.audioTracks.map(track => ({ index: track.index, codec_type: 'audio', codec_name: track.codec, profile: track.profile, channel_layout: track.channelLayout, hasObjectAudio: track.hasObjectAudio, tags: { language: track.language, title: track.title }, disposition: { default: track.isDefault ? 1 : 0 } })), sourceFingerprint: { size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs), sha256: sourceSha256 }, fingerprint: async filePath => { const current = await fs.stat(filePath); const hash = crypto.createHash('sha256'); const stream = createReadStream(filePath); await new Promise<void>((resolve, reject) => { stream.on('data', chunk => hash.update(chunk)); stream.on('error', reject); stream.on('end', resolve) }); return { size: current.size, mtimeMs: Math.trunc(current.mtimeMs), sha256: hash.digest('hex') } } })
+      const result = await remux.remux(item.file_path, {
+        quarantineDirectory,
+        auditLogDirectory,
+        retainedAudioIndexes: decision.trackRemoval.retainedTrackIndexes,
+        sourceAudioStreams: analysis.audioTracks.map(track => ({
+          index: track.index,
+          codec_type: 'audio',
+          codec_name: track.codec,
+          profile: track.profile,
+          channel_layout: track.channelLayout,
+          hasObjectAudio: track.hasObjectAudio,
+          tags: { language: track.language, title: track.title },
+          disposition: { default: track.isDefault ? 1 : 0 },
+        })),
+        sourceFingerprint: { size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs), sha256: sourceSha256 },
+        fingerprint: async filePath => {
+          const current = await fs.stat(filePath)
+          const hash = crypto.createHash('sha256')
+          const stream = createReadStream(filePath)
+          await new Promise<void>((resolve, reject) => {
+            stream.on('data', chunk => hash.update(chunk))
+            stream.on('error', reject)
+            stream.on('end', resolve)
+          })
+          return { size: current.size, mtimeMs: Math.trunc(current.mtimeMs), sha256: hash.digest('hex') }
+        },
+      })
       await db.media.updateActivatedPathAndStats(mediaItemId, result.activePath, result.verifiedProbe.size || 0, result.verifiedProbe.duration || 0)
       await db.mediaRemuxJobs.update(jobId, {
         status: 'promoted',

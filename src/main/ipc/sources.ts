@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
  * Handles all source-related IPC calls from the renderer process.
  */
 
-import { ipcMain, dialog, shell, IpcMainInvokeEvent } from 'electron'
+import { dialog, shell, IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { getSourceManager } from '@main/services/SourceManager'
@@ -33,7 +33,6 @@ import {
   LocalFolderConfigSchema,
   LocalFolderWithLibrariesSchema,
   FilePathSchema,
-  validateInput,
 } from '@main/validation/schemas'
 import { z } from 'zod'
 import { KodiMySQLProvider } from '@main/providers/kodi/KodiMySQLProvider'
@@ -70,8 +69,7 @@ export function registerSourceHandlers(): void {
    * Open a URL in the default browser
    * SECURITY: Only allows https:// and http:// URLs
    */
-  ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
-    const validUrl = validateInput(SafeUrlSchema, url, 'app:openExternal')
+  createValidatedIpcHandler('app:openExternal', SafeUrlSchema, async (validUrl) => {
     getLoggingService().info('[IPC app:openExternal]', validUrl)
     await shell.openExternal(validUrl)
   })
@@ -141,7 +139,7 @@ export function registerSourceHandlers(): void {
     return await manager.plexAuthenticateAndDiscover(token, displayName)
   })
 
-  ipcMain.handle('plex:selectServer', async (_event, sourceIdOrServerId: string, serverId?: string) => {
+  createIpcHandler('plex:selectServer', async (sourceIdOrServerId: string, serverId?: string) => {
     if (serverId) return await manager.plexSelectServer(sourceIdOrServerId, serverId)
     const plexSources = await manager.getSources(ProviderType.Plex)
     if (plexSources.length > 0) return await manager.plexSelectServer(plexSources[0].source_id, sourceIdOrServerId)

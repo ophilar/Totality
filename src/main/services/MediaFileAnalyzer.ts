@@ -261,10 +261,14 @@ export class MediaFileAnalyzer {
   }
 
   private async detectAudioVolume(filePath: string, requestId?: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
+    if (!this.ffmpegPath) {
+      throw new Error('FFmpeg executable is unavailable: zero-fallback directive prohibits guessing "ffmpeg"')
+    }
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
+    const actualFFmpegPath = PathUtils.resolveExecutablePath(this.ffmpegPath)
     return new Promise((resolve, reject) => {
       const args = ['-i', `file:${sanitizedPath}`, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-']
-      const proc = spawn(this.ffmpegPath || 'ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
+      const proc = spawn(actualFFmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
       if (requestId) this.deepProcesses.set(requestId, proc)
       
       let stderr = ''

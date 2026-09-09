@@ -35,6 +35,7 @@ import { registerMediaHandlers } from '@main/ipc/media'
 import { registerArrHandlers } from '@main/ipc/arr'
 import { registerOptimizationHandlers } from '@main/ipc/optimization'
 import { registerTimelinesHandlers } from '@main/ipc/timelines'
+import { createIpcHandler } from '@main/ipc/utils/createHandler'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 
 import { getTaskQueueService } from '@main/services/TaskQueueService'
@@ -164,22 +165,39 @@ app.on('before-quit', async (event) => {
   isQuitting = true
   event.preventDefault()
   
+  // 1. Stop accepting work / live monitoring events
   getLiveMonitoringService().stop()
   getAutoUpdateService().cleanup()
   
+  // 2. Settle/cancel active background tasks and worker pool
+  const taskQueue = getTaskQueueService()
+  await taskQueue.pause()
+
   try {
     const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
     await getFFprobeWorkerPool().shutdown()
-  } catch {
-    // Ignore errors during worker pool shutdown
+  } catch (err) {
+    getLoggingService().warn('[index]', 'Worker pool shutdown notice:', err)
   }
   
+  // 3. Persist interruption state synchronously before closing
   try {
-    await getTaskQueueService().persistInterruptedTasks()
+    await taskQueue.persistInterruptedTasks()
   } catch (err) {
-    getLoggingService().warn('[index]', 'Failed to persist interrupted tasks during shutdown:', err)
+    getLoggingService().error('[index]', 'Failed to persist interrupted tasks during shutdown:', err)
   }
 
+  // 4. Flush database WAL
+  try {
+    const db = getDatabase()
+    if (db.isInitialized) {
+      await db.db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    }
+  } catch (err) {
+    getLoggingService().warn('[index]', 'WAL checkpoint notice during shutdown:', err)
+  }
+
+  // 5. Flush logging service and close database
   await getLoggingService().shutdown()
   getDatabase().close()
   app.exit()
@@ -195,7 +213,7 @@ app.whenReady().then(async () => {
     
     // Register essential app info early
     const version = app.getVersion()
-    ipcMain.handle(IPC_CHANNELS.APP.GET_VERSION, () => version)
+    createIpcHandler(IPC_CHANNELS.APP.GET_VERSION, async () => version)
 
     // Explicit Database Initialization
     const dbPath = resolveDatabasePath(app.getPath('userData'))

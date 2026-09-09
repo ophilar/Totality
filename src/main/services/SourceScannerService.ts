@@ -166,7 +166,17 @@ export class SourceScannerService {
           }
         } catch (error) {
           if (this.scanCancelled) break
+          const errorMsg = error instanceof Error ? error.message : String(error)
           this.logging.error('[SourceScannerService]', `Failed to scan source ${source.source_id}:`, error)
+          results.set(`${source.source_id}:*`, {
+            success: false,
+            itemsScanned: 0,
+            itemsAdded: 0,
+            itemsUpdated: 0,
+            itemsRemoved: 0,
+            errors: [errorMsg],
+            durationMs: 0,
+          })
         }
       }
       return results

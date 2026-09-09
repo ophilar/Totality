@@ -14,12 +14,97 @@ export interface RemuxOptions {
   fingerprint?: (filePath: string) => Promise<RemuxFingerprint>
   fileOps?: RemuxFileOps
   logger?: (message: string) => void
+  auditLogDirectory?: string
+  statfsProvider?: (dirPath: string) => Promise<{ bavail: number; bsize: number }>
+}
+
+export interface OptimizationAuditEntry {
+  timestamp: string
+  action: string
+  sourcePath: string
+  quarantinePath?: string
+  status: 'succeeded' | 'failed'
+  bytesSaved?: number
+  error?: string
 }
 
 export class LanguageRemuxService {
   constructor(private readonly ffmpeg: RemuxRunner) {}
 
+  static async assertRecoverability(
+    filePath: string,
+    quarantineDirectory: string,
+    statfsProvider?: (dirPath: string) => Promise<{ bavail: number; bsize: number }>
+  ): Promise<void> {
+    const stat = await fs.stat(filePath)
+    await fs.mkdir(quarantineDirectory, { recursive: true })
+    const testFile = path.join(quarantineDirectory, `.write-test-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`)
+    await fs.writeFile(testFile, '')
+    await fs.rm(testFile, { force: true })
+
+    const provider = statfsProvider || (typeof fs.statfs === 'function' ? (p: string) => fs.statfs(p) : undefined)
+    if (provider) {
+      const stats = await provider(quarantineDirectory)
+      const freeSpace = stats.bavail * stats.bsize
+      const requiredHeadroom = stat.size * 1.2
+      if (freeSpace < requiredHeadroom) {
+        throw new Error(`Insufficient disk headroom for quarantine: requires ~${Math.round(requiredHeadroom / 1024 / 1024)}MB, available: ${Math.round(freeSpace / 1024 / 1024)}MB`)
+      }
+    } else {
+      throw new Error('Filesystem statfs is unavailable; cannot prove recoverability headroom')
+    }
+  }
+
+  static async recordAuditLog(entry: OptimizationAuditEntry, auditLogDirectory: string): Promise<void> {
+    await fs.mkdir(auditLogDirectory, { recursive: true })
+    const dateStr = new Date().toISOString().slice(0, 10)
+    const logFile = path.join(auditLogDirectory, `optimization_audit_${dateStr}.jsonl`)
+    await fs.appendFile(logFile, JSON.stringify(entry) + '\n', 'utf-8')
+  }
+
+  static createDefaultRunner(ffmpegPath: string, ffprobePath: string): RemuxRunner {
+    return {
+      run: async (args: string[]) => {
+        const { spawn } = await import('node:child_process')
+        return new Promise<void>((resolve, reject) => {
+          const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+          let stderr = ''
+          child.stderr?.on('data', (d) => { stderr += d.toString() })
+          child.on('error', reject)
+          child.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr || `FFmpeg exited with code ${code}`)))
+        })
+      },
+      probe: async (filePath: string) => {
+        const { spawn } = await import('node:child_process')
+        return new Promise<RemuxProbe>((resolve, reject) => {
+          const child = spawn(ffprobePath, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', filePath], { stdio: ['ignore', 'pipe', 'pipe'] })
+          let stdout = '', stderr = ''
+          child.stdout?.on('data', (d) => { stdout += d.toString() })
+          child.stderr?.on('data', (d) => { stderr += d.toString() })
+          child.on('error', reject)
+          child.on('close', (code) => {
+            if (code !== 0) return reject(new Error(stderr || `FFprobe exited with code ${code}`))
+            try {
+              const parsed = JSON.parse(stdout) as { streams?: RemuxStream[]; format?: { duration?: string; size?: string } }
+              const durationSeconds = Number(parsed.format?.duration)
+              resolve({
+                streams: parsed.streams || [],
+                duration: Number.isFinite(durationSeconds) ? durationSeconds * 1000 : undefined,
+                size: Number(parsed.format?.size),
+              })
+            } catch (err) {
+              reject(err)
+            }
+          })
+        })
+      },
+    }
+  }
+
   async remux(filePath: string, options: RemuxOptions): Promise<{ activePath: string; quarantinePath: string; verifiedProbe: RemuxProbe }> {
+    if (options.auditLogDirectory) {
+      await LanguageRemuxService.assertRecoverability(filePath, options.quarantineDirectory, options.statfsProvider)
+    }
     const directory = path.dirname(filePath)
     const temporaryPath = path.join(directory, `.${path.basename(filePath)}.totality-remux.tmp`)
     const quarantinePath = path.join(options.quarantineDirectory, path.basename(filePath))
@@ -51,10 +136,30 @@ export class LanguageRemuxService {
         await fileOps.rename(quarantinePath, filePath)
         throw error
       }
+      if (options.auditLogDirectory) {
+        const outputStat = await fs.stat(filePath)
+        await LanguageRemuxService.recordAuditLog({
+          timestamp: new Date().toISOString(),
+          action: 'language-remux',
+          sourcePath: filePath,
+          quarantinePath,
+          status: 'succeeded',
+          bytesSaved: (options.sourceFingerprint?.size ?? 0) - outputStat.size,
+        }, options.auditLogDirectory)
+      }
       log(`Activated verified language remux and quarantined original: ${filePath}`)
       return { activePath: filePath, quarantinePath, verifiedProbe: output }
     } catch (error) {
       await fileOps.remove(temporaryPath)
+      if (options.auditLogDirectory) {
+        await LanguageRemuxService.recordAuditLog({
+          timestamp: new Date().toISOString(),
+          action: 'language-remux',
+          sourcePath: filePath,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        }, options.auditLogDirectory)
+      }
       log(`Language remux failed; active source retained: ${error instanceof Error ? error.message : String(error)}`)
       throw error
     }

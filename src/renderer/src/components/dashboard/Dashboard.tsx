@@ -118,12 +118,13 @@ export function Dashboard({
   }, [musicUpgrades, setMusicUpgrades])
 
   const dismissSeriesEpisode = useCallback((_index: number, episode: MissingEpisode) => {
-    if (episode.tmdb_id) {
+    const parentKey = episode.tmdb_id ? episode.tmdb_id.toString() : episode.series_title
+    if (parentKey) {
       window.electronAPI.addExclusion(
         'series_episode',
         undefined,
         `${episode.season_number}x${episode.episode_number}`,
-        episode.tmdb_id.toString(),
+        parentKey,
         episode.episode_title || `${episode.series_title} S${episode.season_number}E${episode.episode_number}`
       )
       loadDashboardData()
