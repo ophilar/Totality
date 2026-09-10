@@ -1,11 +1,11 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
-import { 
-  ConnectionTestResult, 
-  DiscoveredServerResponse, 
-  MediaLibraryResponse, 
-  MediaSourceResponse, 
-  ScanResultResponse, 
+import {
+  ConnectionTestResult,
+  DiscoveredServerResponse,
+  MediaLibraryResponse,
+  MediaSourceResponse,
+  ScanResultResponse,
   ServerInstanceResponse,
   LibraryType
 } from '@preload/api/types'
@@ -133,7 +133,6 @@ export const sourcesApi = {
     connectionTimeout?: number
   }) => ipcRenderer.invoke('kodi:testMySQLConnection', config),
 
-
   kodiAuthenticateMySQL: (config: {
     host: string
     port?: number
@@ -166,28 +165,6 @@ export const sourcesApi = {
   // Check if FFprobe is available for a specific source (with reason)
   ffprobeIsAvailableForSource: (sourceId: string) =>
     ipcRenderer.invoke('ffprobe:isAvailableForSource', sourceId),
-
-  // Check if FFprobe can be auto-installed on this platform
-  ffprobeCanInstall: () => ipcRenderer.invoke('ffprobe:canInstall'),
-
-  // Install FFprobe automatically
-  ffprobeInstall: () => ipcRenderer.invoke('ffprobe:install'),
-
-  // Uninstall bundled FFprobe
-  ffprobeUninstall: () => ipcRenderer.invoke('ffprobe:uninstall'),
-
-  // Check if current FFprobe is the bundled version
-  ffprobeIsBundled: () => ipcRenderer.invoke('ffprobe:isBundled'),
-
-  // Check for FFprobe updates
-  ffprobeCheckForUpdate: () => ipcRenderer.invoke('ffprobe:checkForUpdate'),
-
-  // Listen for FFprobe install progress
-  onFFprobeInstallProgress: (callback: (progress: { stage: string; percent: number }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, progress: { stage: string; percent: number }) => callback(progress)
-    ipcRenderer.on('ffprobe:installProgress', handler)
-    return () => ipcRenderer.removeListener('ffprobe:installProgress', handler)
-  },
 
   // ============================================================================
   // LOCAL FOLDER SOURCE
@@ -436,33 +413,6 @@ export interface SourcesAPI {
     version?: string | null
     reason?: string | null
   }>
-
-  // Check if FFprobe can be auto-installed on this platform
-  ffprobeCanInstall: () => Promise<boolean>
-
-  // Install FFprobe automatically
-  ffprobeInstall: () => Promise<{
-    success: boolean
-    error?: string
-    path?: string
-  }>
-
-  // Uninstall bundled FFprobe
-  ffprobeUninstall: () => Promise<{ success: boolean; error?: string }>
-
-  // Check if current FFprobe is the bundled version
-  ffprobeIsBundled: () => Promise<boolean>
-
-  // Check for FFprobe updates
-  ffprobeCheckForUpdate: () => Promise<{
-    currentVersion: string | null
-    latestVersion: string | null
-    updateAvailable: boolean
-    error?: string
-  }>
-
-  // Listen for FFprobe install progress
-  onFFprobeInstallProgress: (callback: (progress: { stage: string; percent: number }) => void) => () => void
 
   // ============================================================================
   // LOCAL FOLDER SOURCE
