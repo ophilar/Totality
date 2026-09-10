@@ -64,8 +64,9 @@ describe('ApplicationShutdown', () => {
     }
 
     expect(failure).toBeInstanceOf(ApplicationShutdownError)
-    expect((failure as ApplicationShutdownError).stage).toBe(failingStage)
-    expect((failure as Error).cause).toBe(cause)
+    const shutdownError = failure as ApplicationShutdownError
+    expect(shutdownError.stage).toBe(failingStage)
+    expect(shutdownError.cause).toBe(cause)
     expect(calls).toEqual(orderedStages.slice(0, orderedStages.indexOf(failingStage) + 1))
   })
 })
