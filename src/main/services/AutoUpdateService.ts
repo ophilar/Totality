@@ -56,6 +56,7 @@ export class AutoUpdateService {
     // Configure autoUpdater
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.allowDowngrade = false
     autoUpdater.logger = null // We handle logging ourselves
 
     // Wire up events

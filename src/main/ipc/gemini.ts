@@ -35,8 +35,16 @@ function formatError(error: unknown) {
   return { error: error instanceof Error ? error.message : String(error) }
 }
 
-const wrapAi = <TArgs extends unknown[], TResult>(handler: (...args: TArgs) => Promise<TResult>) => async (...args: TArgs): Promise<TResult> => {
-  try { return await handler(...args) } catch (e) { throw formatError(e) }
+const wrapAi = <TArgs extends unknown[], TResult>(handler: (...args: TArgs) => Promise<TResult>) => async (...args: TArgs): Promise<TResult | { error: string; rateLimited: boolean; retryAfterSeconds?: number }> => {
+  try {
+    return await handler(...args)
+  } catch (e) {
+    const formatted = formatError(e)
+    if ('rateLimited' in formatted && formatted.rateLimited) {
+      return formatted
+    }
+    throw formatted
+  }
 }
 
 export function registerGeminiHandlers() {
