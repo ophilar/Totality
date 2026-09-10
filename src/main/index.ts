@@ -44,6 +44,7 @@ import { getGeminiService } from '@main/services/GeminiService'
 import { getAutoUpdateService } from '@main/services/AutoUpdateService'
 import { getWishlistCompletionService } from '@main/services/WishlistCompletionService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { ApplicationShutdown } from '@main/services/ApplicationShutdown'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 
@@ -69,6 +70,7 @@ process.env.VITE_PUBLIC = VITE_PUBLIC
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let shutdownStarted = false
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 
 function createWindow() {
@@ -162,45 +164,40 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async (event) => {
-  isQuitting = true
   event.preventDefault()
-  
-  // 1. Stop accepting work / live monitoring events
-  getLiveMonitoringService().stop()
-  getAutoUpdateService().cleanup()
-  
-  // 2. Settle/cancel active background tasks and worker pool
+  isQuitting = true
+  if (shutdownStarted) return
+  shutdownStarted = true
+
   const taskQueue = getTaskQueueService()
-  await taskQueue.pause()
+  const db = getDatabase()
+  const shutdown = new ApplicationShutdown({
+    stopAcceptingWork: () => {
+      getLiveMonitoringService().stop()
+      getAutoUpdateService().cleanup()
+    },
+    pauseTaskQueue: () => taskQueue.pause(),
+    shutdownWorkerPool: async () => {
+      const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
+      await getFFprobeWorkerPool().shutdown()
+    },
+    persistInterruptedTasks: () => taskQueue.persistInterruptedTasks(),
+    checkpointWal: async () => {
+      if (db.isInitialized) {
+        await db.db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+      }
+    },
+    shutdownLogging: () => getLoggingService().shutdown(),
+    closeDatabase: () => db.close(),
+  })
 
   try {
-    const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
-    await getFFprobeWorkerPool().shutdown()
-  } catch (err) {
-    getLoggingService().warn('[index]', 'Worker pool shutdown notice:', err)
+    await shutdown.execute()
+    app.exit(0)
+  } catch (error) {
+    getLoggingService().error('[index]', 'Durable shutdown failed:', error)
+    app.exit(1)
   }
-  
-  // 3. Persist interruption state synchronously before closing
-  try {
-    await taskQueue.persistInterruptedTasks()
-  } catch (err) {
-    getLoggingService().error('[index]', 'Failed to persist interrupted tasks during shutdown:', err)
-  }
-
-  // 4. Flush database WAL
-  try {
-    const db = getDatabase()
-    if (db.isInitialized) {
-      await db.db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-    }
-  } catch (err) {
-    getLoggingService().warn('[index]', 'WAL checkpoint notice during shutdown:', err)
-  }
-
-  // 5. Flush logging service and close database
-  await getLoggingService().shutdown()
-  getDatabase().close()
-  app.exit()
 })
 
 app.on('activate', () => {
@@ -224,7 +221,7 @@ app.whenReady().then(async () => {
     try {
       await getTranscodingService().getCapabilities({ refresh: true })
     } catch (error) {
-      getLoggingService().warn('[index]', 'Transcoding capability probe failed; fallback detection will remain available:', error)
+      getLoggingService().error('[index]', 'Transcoding capability probe failed; no capability snapshot was established:', error)
     }
 
     const artworkBasePath = path.join(app.getPath('userData'), 'artwork')

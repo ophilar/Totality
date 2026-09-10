@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type { TimelineRecipeSummary, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
@@ -93,7 +93,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const listHandler = handlers.get(IPC_CHANNELS.TIMELINES.LIST_RECIPES)!
     expect(listHandler).toBeDefined()
 
-    const recipes = (await listHandler({})) as TimelineRecipeSummary[]
+    const recipes = (await listHandler(createAuthorizedIpcEvent())) as TimelineRecipeSummary[]
     expect(recipes).toBeDefined()
     expect(recipes.length).toBeGreaterThanOrEqual(1)
 
@@ -106,7 +106,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const getRecipeHandler = handlers.get(IPC_CHANNELS.TIMELINES.GET_RECIPE)!
     expect(getRecipeHandler).toBeDefined()
 
-    const timeline = (await getRecipeHandler({}, 'star-trek-chronological')) as TimelineDefinition
+    const timeline = (await getRecipeHandler(createAuthorizedIpcEvent(), 'star-trek-chronological')) as TimelineDefinition
     expect(timeline).toBeDefined()
     expect(timeline.id).toBe('star-trek-chronological')
     expect(timeline.items.length).toBeGreaterThan(0)
@@ -132,7 +132,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
     expect(resolveHandler).toBeDefined()
 
-    const result = (await resolveHandler({}, 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
     expect(result).toBeDefined()
     expect(result.totalCount).toBeGreaterThan(0)
     expect(result.matchedCount).toBeGreaterThanOrEqual(1)
@@ -157,7 +157,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     } as never)
 
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
-    const result = (await resolveHandler({}, 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
 
     const khanItem = result.items.find((i) => i.title.includes('Wrath of Khan'))
     expect(khanItem).toBeDefined()
@@ -182,7 +182,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     } as never)
 
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
-    const result = (await resolveHandler({}, 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
 
     const tosItem = result.items.find((i) => i.title === 'Star Trek: The Original Series' || i.seriesTitle === 'Star Trek: The Original Series')
     expect(tosItem).toBeDefined()

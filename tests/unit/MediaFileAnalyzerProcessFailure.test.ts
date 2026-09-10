@@ -7,7 +7,7 @@ vi.unmock('child_process')
 import { MediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 
 describe('MediaFileAnalyzer process failures', () => {
-  it('propagates a nonzero exit from the discovered FFprobe process', async () => {
+  it('propagates a nonzero exit from the system FFprobe process', async () => {
     const analyzer = new MediaFileAnalyzer()
     expect(await analyzer.isAvailable()).toBe(true)
 

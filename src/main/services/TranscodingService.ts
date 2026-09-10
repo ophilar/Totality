@@ -422,7 +422,7 @@ export class TranscodingService {
     await this.ensureInitialized()
 
     const analyzer = getMediaFileAnalyzer()
-    const ffmpegAvailable = await analyzer.isAvailable()
+    const ffmpegAvailable = await analyzer.isFFmpegAvailable()
 
     return { ffmpeg: ffmpegAvailable }
   }
@@ -805,8 +805,8 @@ export class TranscodingService {
       const success = await this.runFFmpeg(inputPath, tempPath, params, options, (p) => {
           onProgress?.({ 
             percent: p.percent, 
-            fps: p.fps, 
-            eta: p.eta, 
+            fps: p.fps,
+            eta: p.eta,
             status: 'encoding' 
           })
         }, controller.signal)

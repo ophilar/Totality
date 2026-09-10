@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, createTempDir, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, createTempDir, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { registerSourceHandlers } from '@main/ipc/sources'
 import { ProviderType, LibraryType } from '@main/types/database'
 import * as fs from 'node:fs'
@@ -50,7 +50,7 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
       fs.mkdirSync(otherDir)
       fs.writeFileSync(path.join(tempDir.path, 'file.txt'), 'content')
 
-      const result = await handler({}, tempDir.path) as DetectSubfoldersResult
+      const result = await handler(createAuthorizedIpcEvent(), tempDir.path) as DetectSubfoldersResult
       
       expect(result.subfolders).toHaveLength(4)
       
@@ -72,7 +72,7 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
       fs.mkdirSync(path.join(tempDir.path, '.hidden'))
       fs.mkdirSync(path.join(tempDir.path, '@eadir'))
       
-      const result = await handler({}, tempDir.path) as DetectSubfoldersResult
+      const result = await handler(createAuthorizedIpcEvent(), tempDir.path) as DetectSubfoldersResult
       expect(result.subfolders).toHaveLength(0)
     })
   })
@@ -93,7 +93,7 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
             { id: 'new-id', name: 'New Lib', type: LibraryType.Movie }
         ])
 
-        const result = await handler({}, sourceId) as LibraryStatus[]
+        const result = await handler(createAuthorizedIpcEvent(), sourceId) as LibraryStatus[]
         expect(result).toHaveLength(2)
         
         const existing = result.find(l => l.id === 'movies-id')

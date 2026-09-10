@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import * as path from 'node:path'
 import { PathUtils } from '../../src/main/services/utils/PathUtils'
 
@@ -100,53 +100,6 @@ describe('PathUtils', () => {
 
     it('should return the tool name if it does not contain separators', () => {
       expect(PathUtils.resolveExecutablePath('tool')).toBe('tool')
-    })
-  })
-
-  describe('getPossibleExecutablePaths', () => {
-    const originalPlatform = process.platform
-
-    afterEach(() => {
-      Object.defineProperty(process, 'platform', { value: originalPlatform })
-    })
-
-    it('should generate paths for win32', () => {
-      Object.defineProperty(process, 'platform', { value: 'win32' })
-      const paths = PathUtils.getPossibleExecutablePaths('ffmpeg', 'bundled/ffmpeg.exe', ['C:\\Custom\\ffmpeg.exe'])
-      expect(paths).toContain('bundled/ffmpeg.exe')
-      expect(paths).toContain('ffmpeg.exe')
-      expect(paths).toContain('C:\\Program Files\\ffmpeg\\ffmpeg.exe')
-      expect(paths).toContain('C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe')
-      expect(paths).toContain('C:\\ffmpeg\\bin\\ffmpeg.exe')
-      expect(paths).toContain('C:\\Custom\\ffmpeg.exe')
-
-      const noBundled = PathUtils.getPossibleExecutablePaths('ffmpeg')
-      expect(noBundled).toContain('ffmpeg.exe')
-    })
-
-    it('should generate paths for darwin (macOS)', () => {
-      Object.defineProperty(process, 'platform', { value: 'darwin' })
-      const paths = PathUtils.getPossibleExecutablePaths('ffmpeg', '/bundled/ffmpeg')
-      expect(paths).toContain('/bundled/ffmpeg')
-      expect(paths).toContain('ffmpeg')
-      expect(paths).toContain('/usr/local/bin/ffmpeg')
-      expect(paths).toContain('/opt/homebrew/bin/ffmpeg')
-    })
-
-    it('should generate paths for linux (other)', () => {
-      Object.defineProperty(process, 'platform', { value: 'linux' })
-      const paths = PathUtils.getPossibleExecutablePaths('ffmpeg', '/bundled/ffmpeg')
-      expect(paths).toContain('/bundled/ffmpeg')
-      expect(paths).toContain('ffmpeg')
-      expect(paths).toContain('/usr/bin/ffmpeg')
-      expect(paths).toContain('/usr/local/bin/ffmpeg')
-    })
-
-    it('should deduplicate paths', () => {
-      Object.defineProperty(process, 'platform', { value: 'linux' })
-      const paths = PathUtils.getPossibleExecutablePaths('ffmpeg', '/usr/bin/ffmpeg')
-      const count = paths.filter(p => p === '/usr/bin/ffmpeg').length
-      expect(count).toBe(1)
     })
   })
 })

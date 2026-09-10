@@ -7,7 +7,6 @@ import {
   CheckCircle,
   XCircle,
   Trash2,
-  Download,
   RefreshCw,
   Plus,
   ChevronDown,
@@ -177,19 +176,8 @@ export function ServicesTab() {
 
   // FFprobe state
   const [ffprobeAvailable, setFfprobeAvailable] = useState<boolean | null>(null)
-  const [ffprobeBundled, setFfprobeBundled] = useState(false)
   const [ffprobeVersion, setFfprobeVersion] = useState<string | null>(null)
   const [ffprobeEnabled, setFfprobeEnabled] = useState(false)
-  const [isInstalling, setIsInstalling] = useState(false)
-  const [isUninstalling, setIsUninstalling] = useState(false)
-  const [installProgress, setInstallProgress] = useState<{ stage: string; percent: number } | null>(
-    null
-  )
-  const [ffprobeError, setFfprobeError] = useState<string | null>(null)
-  const [latestVersion, setLatestVersion] = useState<string | null>(null)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [checkingUpdate, setCheckingUpdate] = useState(false)
-
 
   // NFS Mappings state
   const [nfsMappings, setNfsMappings] = useState<Record<string, string>>({})
@@ -263,20 +251,12 @@ export function ServicesTab() {
     setHasChanges(tmdbChanged || nfsChanged || geminiChanged || musicbrainzChanged || omdbChanged || tvdbChanged || arrChanged || metadataProviderPreferences !== originalMetadataProviderPreferences)
   }, [tmdbApiKey, originalTmdb, nfsMappings, originalNfsMappings, geminiApiKey, originalGemini, geminiModel, originalGeminiModel, musicbrainzBaseUrl, originalMusicbrainzBaseUrl, omdbApiKey, originalOmdb, tvdbApiKey, originalTvdbApiKey, tvdbPin, originalTvdbPin, sonarrUrl, sonarrKey, radarrUrl, radarrKey, originalSonarrUrl, originalSonarrKey, originalRadarrUrl, originalRadarrKey, metadataProviderPreferences, originalMetadataProviderPreferences])
 
-  useEffect(() => {
-    const cleanup = window.electronAPI.onFFprobeInstallProgress?.((progress: unknown) => {
-      setInstallProgress(progress as { stage: string; percent: number })
-    })
-    return () => cleanup?.()
-  }, [])
-
   const loadSettings = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [allSettings, ffAvailable, ffBundled, ffVersion, nfsMaps] = await Promise.all([
+      const [allSettings, ffAvailable, ffVersion, nfsMaps] = await Promise.all([
         window.electronAPI.getAllSettings(),
         window.electronAPI.ffprobeIsAvailable(),
-        window.electronAPI.ffprobeIsBundled(),
         window.electronAPI.ffprobeGetVersion().catch(() => null),
         window.electronAPI.getNfsMappings(),
       ])
@@ -337,7 +317,6 @@ export function ServicesTab() {
       setAiEnabled(allSettings.ai_enabled !== 'false')
 
       setFfprobeAvailable(ffAvailable)
-      setFfprobeBundled(ffBundled)
       setFfprobeVersion(ffVersion)
       setFfprobeEnabled(allSettings.ffprobe_enabled !== 'false' && ffAvailable)
 
@@ -538,7 +517,6 @@ export function ServicesTab() {
     }
   }
 
-
   const handleToggleFFprobe = async () => {
     const newValue = !ffprobeEnabled
     setFfprobeEnabled(newValue)
@@ -547,61 +525,6 @@ export function ServicesTab() {
     } catch (error) {
       window.electronAPI.log.error('[ServicesTab]', 'Failed to save FFprobe setting:', error)
       setFfprobeEnabled(!newValue)
-    }
-  }
-
-
-  const handleInstallFFprobe = async () => {
-    setIsInstalling(true)
-    setFfprobeError(null)
-    setInstallProgress({ stage: 'Starting...', percent: 0 })
-    try {
-      await window.electronAPI.ffprobeInstall()
-      setUpdateAvailable(false)
-      setLatestVersion(null)
-      await loadSettings()
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to install FFprobe')
-    } finally {
-      setIsInstalling(false)
-      setInstallProgress(null)
-    }
-  }
-
-  const handleUninstallFFprobe = async () => {
-    if (!confirm('Are you sure you want to uninstall FFprobe?')) return
-    setIsUninstalling(true)
-    setFfprobeError(null)
-    try {
-      await window.electronAPI.ffprobeUninstall()
-      setUpdateAvailable(false)
-      setLatestVersion(null)
-      await loadSettings()
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to uninstall FFprobe')
-    } finally {
-      setIsUninstalling(false)
-    }
-  }
-
-  const handleCheckForUpdate = async () => {
-    setCheckingUpdate(true)
-    setFfprobeError(null)
-    try {
-      const result = await window.electronAPI.ffprobeCheckForUpdate()
-      if (result.error) {
-        setFfprobeError(result.error)
-      } else {
-        setLatestVersion(result.latestVersion)
-        setUpdateAvailable(result.updateAvailable)
-        if (result.currentVersion) {
-          setFfprobeVersion(result.currentVersion)
-        }
-      }
-    } catch (err: unknown) {
-      setFfprobeError((err as Error).message || 'Failed to check for updates')
-    } finally {
-      setCheckingUpdate(false)
     }
   }
 
@@ -618,8 +541,8 @@ export function ServicesTab() {
   const geminiConfigured = !!geminiApiKey.trim() && aiEnabled
 
   const getFFprobeStatusText = () => {
-    if (!ffprobeAvailable) return 'Not installed'
-    if (!ffprobeEnabled) return 'Installed but disabled'
+    if (!ffprobeAvailable) return 'Not found on PATH'
+    if (!ffprobeEnabled) return 'Available but disabled'
     return ffprobeVersion ? `v${ffprobeVersion}` : 'Enabled'
   }
 
@@ -879,119 +802,24 @@ export function ServicesTab() {
         enableToggle={ffprobeAvailable ? { enabled: ffprobeEnabled, onToggle: handleToggleFFprobe, id: toggleId } : undefined}
       >
         <div className="space-y-3">
-
-          {/* Installation controls */}
-          <div className="flex items-center justify-between">
-            {ffprobeVersion && (
-              <span className="text-xs text-muted-foreground">v{ffprobeVersion}</span>
-            )}
-            {!ffprobeVersion && <span />}
-            <div className="flex items-center gap-2">
-              {ffprobeAvailable && (
-                <button
-                  onClick={handleCheckForUpdate}
-                  disabled={checkingUpdate || isInstalling}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded transition-colors disabled:opacity-50 ${
-                    latestVersion && !updateAvailable
-                      ? 'text-green-500'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                  title="Check for updates"
-                >
-                  {checkingUpdate ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : latestVersion && !updateAvailable ? (
-                    <CheckCircle className="w-3.5 h-3.5" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
-                  {checkingUpdate
-                    ? 'Checking...'
-                    : latestVersion && !updateAvailable
-                      ? 'Up to date'
-                      : 'Check for updates'}
-                </button>
-              )}
-              {ffprobeAvailable && ffprobeBundled ? (
-                <button
-                  onClick={handleUninstallFFprobe}
-                  disabled={isUninstalling || isInstalling}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
-                >
-                  {isUninstalling ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                  Uninstall
-                </button>
-              ) : ffprobeAvailable && !ffprobeBundled ? (
-                <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground">
-                  System installed
-                </span>
-              ) : (
-                <button
-                  onClick={handleInstallFFprobe}
-                  disabled={isInstalling}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {isInstalling ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5" />
-                  )}
-                  Install (~80MB)
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Update Available */}
-          {updateAvailable && latestVersion && (
-            <div className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-              <div className="flex items-center gap-2 text-amber-400">
-                <RefreshCw className="w-4 h-4" />
-                <span className="text-sm">Update available: v{latestVersion}</span>
+          {ffprobeAvailable ? (
+            <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium">System FFprobe available</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Totality invokes <code>ffprobe</code> through the process PATH. Installation and updates are owned by the operating system.
+                </p>
               </div>
-              <button
-                onClick={handleInstallFFprobe}
-                disabled={isInstalling}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 text-black font-medium rounded hover:bg-amber-400 transition-colors disabled:opacity-50"
-              >
-                {isInstalling ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
-                Update
-              </button>
+              {ffprobeVersion && <span className="text-xs text-muted-foreground">v{ffprobeVersion}</span>}
+            </div>
+          ) : (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <p className="text-sm font-medium text-amber-500">FFprobe not found on PATH</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Install FFmpeg with your operating system package manager and restart Totality. Totality does not download or manage its own FFmpeg/FFprobe copy.
+              </p>
             </div>
           )}
-
-          {/* Install Progress */}
-          {isInstalling && installProgress && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{installProgress.stage}</span>
-                <span>{installProgress.percent}%</span>
-              </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${installProgress.percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-
-          {/* Error */}
-          {ffprobeError && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400">
-              {ffprobeError}
-            </div>
-          )}
-
         </div>
       </ServiceCard>
 

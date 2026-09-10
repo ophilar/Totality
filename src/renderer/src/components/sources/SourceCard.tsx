@@ -123,9 +123,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
   const [ffprobeEnabled, setFfprobeEnabled] = useState(false)
   const [ffprobeLoading, setFfprobeLoading] = useState(false)
   const [ffprobeError, setFfprobeError] = useState<string | null>(null)
-  const [ffprobeCanInstall, setFfprobeCanInstall] = useState(false)
-  const [ffprobeInstalling, setFfprobeInstalling] = useState(false)
-  const [ffprobeInstallProgress, setFfprobeInstallProgress] = useState<{ stage: string; percent: number } | null>(null)
   const providerType = source.source_type as ProviderType
   const providerMetadata = PROVIDERS[providerType]
   const color = providerMetadata?.color || 'bg-gray-500'
@@ -228,7 +225,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     }
   }
 
-
   // Load FFprobe status function
   const loadFFprobeStatus = useCallback(async () => {
     setFfprobeLoading(true)
@@ -241,14 +237,9 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         setFfprobeError(status.reason)
       }
 
-      // Also check if it's currently enabled
       if (status.available) {
         const enabled = await window.electronAPI.ffprobeIsEnabled(source.source_id)
         setFfprobeEnabled(enabled)
-      } else {
-        // Check if we can auto-install
-        const canInstall = await window.electronAPI.ffprobeCanInstall()
-        setFfprobeCanInstall(canInstall)
       }
     } catch (err: unknown) {
       window.electronAPI.log.error('[SourceCard]', 'Failed to load FFprobe status:', err)
@@ -257,41 +248,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
       setFfprobeLoading(false)
     }
   }, [source.source_id])
-
-  // Handle FFprobe installation
-  const handleInstallFFprobe = async () => {
-    setFfprobeInstalling(true)
-    setFfprobeInstallProgress({ stage: 'Starting...', percent: 0 })
-
-    // Listen for progress updates
-    const unsubscribe = window.electronAPI.onFFprobeInstallProgress((progress) => {
-      setFfprobeInstallProgress(progress)
-    })
-
-    try {
-      const result = await window.electronAPI.ffprobeInstall()
-
-      if (result.success) {
-        // Reload status to reflect the new installation
-        setFfprobeAvailable(true)
-        setFfprobeInstallProgress({ stage: 'Complete!', percent: 100 })
-        // Get the version
-        const version = await window.electronAPI.ffprobeGetVersion()
-        setFfprobeVersion(version)
-        setFfprobeError(null)
-      } else {
-        setFfprobeError(result.error || 'Installation failed')
-        setFfprobeInstallProgress(null)
-      }
-    } catch (err: unknown) {
-      window.electronAPI.log.error('[SourceCard]', 'Failed to install FFprobe:', err)
-      setFfprobeError(err instanceof Error ? err.message : 'Installation failed')
-      setFfprobeInstallProgress(null)
-    } finally {
-      unsubscribe()
-      setFfprobeInstalling(false)
-    }
-  }
 
   // Load FFprobe status when expanded (for kodi-local sources)
   useEffect(() => {
@@ -510,26 +466,6 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
 
               {ffprobeLoading ? (
                 <div className="text-sm text-muted-foreground">Checking FFprobe availability...</div>
-              ) : ffprobeInstalling ? (
-                <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-primary animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span className="text-sm font-medium">{ffprobeInstallProgress?.stage || 'Installing...'}</span>
-                    </div>
-                    {ffprobeInstallProgress && (
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all duration-300"
-                          style={{ width: `${ffprobeInstallProgress.percent}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
               ) : !ffprobeAvailable ? (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <div className="flex items-start gap-2">
@@ -539,48 +475,15 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-amber-500">FFprobe Not Available</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        FFprobe enables accurate file analysis for bitrate, audio tracks, and HDR data. Without it, quality data is estimated from Kodi's metadata.
+                        Totality uses the system FFprobe executable from PATH. Install or update FFmpeg through your operating system, then restart Totality.
                       </p>
-
-                      {ffprobeCanInstall ? (
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleInstallFFprobe()
-                              }}
-                              className="px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                            >
-                              Install FFprobe
-                            </button>
-                            <span className="text-xs text-muted-foreground">~30-80 MB download</span>
-                          </div>
-                          {ffprobeError && (
-                            <p className="text-xs text-destructive">
-                              Installation failed: {ffprobeError}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          <span className="font-medium">Manual installation:</span>
-                          {' '}
-                          <a
-                            href="https://ffmpeg.org/download.html"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            ffmpeg.org/download.html
-                          </a>
-                        </p>
+                      {ffprobeError && (
+                        <p className="text-xs text-destructive mt-2">{ffprobeError}</p>
                       )}
                     </div>
                   </div>
                 </div>
-              ) : ffprobeAvailable ? (
+              ) : (
                 <div className="p-3 rounded-lg bg-muted/50">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -622,7 +525,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
                     </div>
                   )}
                 </div>
-              ) : null}
+              )}
             </div>
           )}
 

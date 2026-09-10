@@ -91,6 +91,7 @@ const mockAnalyzerInstance = {
     subtitleTracks: []
   }),
   isAvailable: vi.fn().mockResolvedValue(true),
+  isFFmpegAvailable: vi.fn().mockResolvedValue(true),
   getFFmpegPath: vi.fn().mockReturnValue('ffmpeg')
   ,measureStreamBytes: vi.fn().mockResolvedValue({ 1: 24000000, 2: 24000000, 3: 24000000, 4: 24000000 })
 }

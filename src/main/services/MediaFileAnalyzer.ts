@@ -2,15 +2,6 @@ import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip from 'adm-zip'
-import * as https from 'https'
-import * as http from 'http'
-import * as crypto from 'crypto'
-import { app } from 'electron'
-import { createWriteStream, mkdirSync, copyFileSync, readdirSync, readFileSync, rmSync, chmodSync } from 'fs'
-import { pipeline } from 'stream/promises'
-import { execFile } from 'child_process'
-import { getErrorMessage } from '@main/services/utils/errorUtils'
 import {
   normalizeVideoCodec,
   normalizeResolution,
@@ -25,6 +16,9 @@ import type { HdrFormat } from '@main/types/mediaContracts'
 import { parsePacketByteOutput, toStreamByteMap } from '@main/services/transcoding/StreamByteAccounting'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
+
+const SYSTEM_FFPROBE_COMMAND = 'ffprobe'
+const SYSTEM_FFMPEG_COMMAND = 'ffmpeg'
 
 // FFprobe JSON output types
 interface FFprobeStream {
@@ -120,7 +114,6 @@ export class MediaFileAnalyzer {
   private ffprobeChecked: boolean = false
   private availabilityPromise: Promise<boolean> | null = null
   private cachedVersion: string | null | undefined = undefined
-  private cachedIsBundledVersion: boolean | undefined = undefined
 
   /**
    * Get FFprobe version string
@@ -134,22 +127,24 @@ export class MediaFileAnalyzer {
     }
 
     this.cachedVersion = await new Promise<string | null>((resolve) => {
-      const actualPath = PathUtils.resolveExecutablePath(this.ffprobePath || 'ffprobe')
-      const proc = spawn(actualPath, ['-version'])
+      const proc = spawn(this.requireFFprobePath(), ['-version'])
       let output = ''
       proc.stdout.on('data', (data) => { output += data.toString() })
       proc.on('close', () => {
         const match = output.match(/ffprobe version (\S+)/)
         resolve(match ? (match[1].match(/^\d+(?:\.\d+){0,3}/)?.[0] || match[1]) : 'unknown')
       })
-      proc.on('error', () => resolve(null))
+      proc.on('error', (error) => {
+        getLoggingService().warn('[MediaFileAnalyzer]', 'Failed to query system FFprobe version:', error)
+        resolve(null)
+      })
     })
 
     return this.cachedVersion || null
   }
 
   /**
-   * Check if FFprobe and FFmpeg are available on the system
+   * Check whether system FFprobe is available to the Totality process.
    */
   async isAvailable(): Promise<boolean> {
     if (this.ffprobeChecked && this.ffprobePath) return true
@@ -163,71 +158,60 @@ export class MediaFileAnalyzer {
     }
   }
 
-  private async checkAvailability(): Promise<boolean> {
-    const possibleFFprobePaths = PathUtils.getPossibleExecutablePaths('ffprobe', this.getBundledPath('ffprobe'))
-    const possibleFFmpegPaths = PathUtils.getPossibleExecutablePaths('ffmpeg', this.getBundledPath('ffmpeg'))
-
-    // Find ffprobe
-    for (const probePath of possibleFFprobePaths) {
-      if (await this.testBinary(probePath)) {
-        this.ffprobePath = probePath
-        this.ffprobeChecked = true
-        break
-      }
-    }
-
-    // Find ffmpeg
-    for (const ffmpegPath of possibleFFmpegPaths) {
-      if (await this.testBinary(ffmpegPath)) {
-        this.ffmpegPath = ffmpegPath
-        break
-      }
-    }
-
-    if (this.ffprobePath) {
-      getLoggingService().info('[MediaFileAnalyzer]', `Found FFprobe at: ${this.ffprobePath}`)
-    }
-    if (this.ffmpegPath) {
-      getLoggingService().info('[MediaFileAnalyzer]', `Found FFmpeg at: ${this.ffmpegPath}`)
-    }
-
-    this.ffprobeChecked = true
-    return !!this.ffprobePath
+  /**
+   * Check whether system FFmpeg is available to the Totality process.
+   */
+  async isFFmpegAvailable(): Promise<boolean> {
+    await this.isAvailable()
+    return this.ffmpegPath !== null
   }
 
-  private async testBinary(binaryPath: string): Promise<boolean> {
+  private async checkAvailability(): Promise<boolean> {
+    const [ffprobeAvailable, ffmpegAvailable] = await Promise.all([
+      this.testBinary(SYSTEM_FFPROBE_COMMAND),
+      this.testBinary(SYSTEM_FFMPEG_COMMAND),
+    ])
+
+    this.ffprobePath = ffprobeAvailable ? SYSTEM_FFPROBE_COMMAND : null
+    this.ffmpegPath = ffmpegAvailable ? SYSTEM_FFMPEG_COMMAND : null
+    this.ffprobeChecked = true
+
+    if (ffprobeAvailable) {
+      getLoggingService().info('[MediaFileAnalyzer]', 'System FFprobe is available through the process PATH')
+    }
+    if (ffmpegAvailable) {
+      getLoggingService().info('[MediaFileAnalyzer]', 'System FFmpeg is available through the process PATH')
+    }
+
+    return ffprobeAvailable
+  }
+
+  private async testBinary(command: string): Promise<boolean> {
     return new Promise((resolve) => {
-      try {
-        const actualPath = PathUtils.resolveExecutablePath(binaryPath)
-        const proc = spawn(actualPath, ['-version'], { stdio: 'ignore', timeout: 5000 })
-        proc.on('close', (code) => resolve(code === 0))
-        proc.on('error', (err: NodeJS.ErrnoException) => {
-          if (err.code === 'ENOENT') {
-            getLoggingService().debug('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
-          } else {
-            getLoggingService().warn('[MediaFileAnalyzer]', `Failed to spawn ${actualPath}: ${err.message}`)
-          }
-          resolve(false)
-        })
-      } catch (err) {
-        getLoggingService().warn('[MediaFileAnalyzer]', `Invalid path ${binaryPath}`)
+      const proc = spawn(command, ['-version'], { stdio: 'ignore', timeout: 5000 })
+      proc.on('close', (code) => resolve(code === 0))
+      proc.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') {
+          getLoggingService().debug('[MediaFileAnalyzer]', `${command} is unavailable through the process PATH`)
+        } else {
+          getLoggingService().warn('[MediaFileAnalyzer]', `Failed to execute ${command}: ${error.message}`)
+        }
         resolve(false)
-      }
+      })
     })
   }
 
-  getBundledPath(binaryName: string): string {
-    const isWin = process.platform === 'win32'
-    const ext = isWin ? '.exe' : ''
-    const userDataPath = app.getPath('userData')
-    return path.join(userDataPath, 'ffprobe', binaryName + ext) // Bundled usually installs together
-  }
-
-  getBundledFFprobePath(): string {
-    return this.getBundledPath('ffprobe')
-  }
-
   getFFmpegPath(): string | null {
+    return this.ffmpegPath
+  }
+
+  private requireFFprobePath(): string {
+    if (!this.ffprobePath) throw new Error('FFprobe is unavailable through the system PATH')
+    return this.ffprobePath
+  }
+
+  private requireFFmpegPath(): string {
+    if (!this.ffmpegPath) throw new Error('FFmpeg is unavailable through the system PATH')
     return this.ffmpegPath
   }
 
@@ -235,15 +219,15 @@ export class MediaFileAnalyzer {
    * Perform deep analysis of a media file (bitrate variance, volume peaks)
    */
   async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<Partial<FileAnalysisResult>> {
-    if (!await this.isAvailable()) throw new Error('FFmpeg/FFprobe not available')
-    
+    if (!await this.isAvailable()) throw new Error('FFprobe is unavailable through the system PATH')
+
     const results: Partial<FileAnalysisResult> = { success: true, filePath, audioTracks: [], subtitleTracks: [], deepAnalysis: {} }
     const deepAnalysis = results.deepAnalysis ?? (results.deepAnalysis = {})
     const startTime = Date.now()
 
-    if (options.detectVolume && this.ffmpegPath) {
+    if (options.detectVolume) {
       const vol = await this.detectAudioVolume(filePath, options.requestId)
-        results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }] // Simplified for first track for now
+      results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }]
     }
 
     if (options.scanBitrate) {
@@ -261,23 +245,20 @@ export class MediaFileAnalyzer {
   }
 
   private async detectAudioVolume(filePath: string, requestId?: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
-    if (!this.ffmpegPath) {
-      throw new Error('FFmpeg executable is unavailable: zero-fallback directive prohibits guessing "ffmpeg"')
-    }
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
-    const actualFFmpegPath = PathUtils.resolveExecutablePath(this.ffmpegPath)
+    const ffmpegCommand = this.requireFFmpegPath()
     return new Promise((resolve, reject) => {
       const args = ['-i', `file:${sanitizedPath}`, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-']
-      const proc = spawn(actualFFmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
+      const proc = spawn(ffmpegCommand, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
       if (requestId) this.deepProcesses.set(requestId, proc)
-      
+
       let stderr = ''
       proc.stderr.on('data', (d) => { stderr += d.toString() })
-      
+
       proc.on('close', (code) => {
         if (requestId) this.deepProcesses.delete(requestId)
         if (code !== 0) return reject(new Error(`FFmpeg exited with code ${code}`))
-        
+
         const maxVolumeMatch = stderr.match(/max_volume:\s+(-?[0-9.]+)\s+dB/)
         const meanVolumeMatch = stderr.match(/mean_volume:\s+(-?[0-9.]+)\s+dB/)
         if (maxVolumeMatch && meanVolumeMatch) {
@@ -295,26 +276,27 @@ export class MediaFileAnalyzer {
 
   private async analyzeBitrateVariance(filePath: string, requestId?: string): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
+    const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       // Use ffprobe to get packet sizes for the first video stream
       const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0:nk=1', `file:${sanitizedPath}`]
-      const proc = spawn(this.ffprobePath || 'ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 })
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 })
       if (requestId) this.deepProcesses.set(requestId, proc)
-      
+
       let stdout = ''
       proc.stdout.on('data', (d) => { stdout += d.toString() })
-      
+
       proc.on('close', (code) => {
         if (requestId) this.deepProcesses.delete(requestId)
         if (code !== 0) return reject(new Error(`FFprobe exited with code ${code}`))
-        
+
         const lines = stdout.trim().split('\n')
         if (lines.length < 10) return reject(new Error('Insufficient data for bitrate analysis'))
-        
+
         let totalBytes = 0
         let totalDuration = 0
         let maxBitrate = 0
-        
+
         // Windowed bitrate calculation (1-second sliding window)
         const windowSize = 1.0 // seconds
         let currentWindowBytes = 0
@@ -349,7 +331,7 @@ export class MediaFileAnalyzer {
         }
 
         const avgBitrate = (totalBytes * 8) / totalDuration / 1000
-        
+
         // Calculate variance
         const squareDiffs = bitrates.map(b => Math.pow(b - avgBitrate, 2))
         const variance = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length
@@ -367,226 +349,22 @@ export class MediaFileAnalyzer {
   }
 
   /**
-   * Check the latest available FFprobe version
-   */
-  async checkLatestVersion(): Promise<string | null> {
-    const platform = process.platform
-    try {
-      if (platform === 'win32') return await this.fetchLatestVersionWindows()
-      if (platform === 'darwin') return await this.fetchLatestVersionMacOS()
-      if (platform === 'linux') return await this.fetchLatestVersionLinux()
-    } catch (error) {
-      getLoggingService().error('[MediaFileAnalyzer]', '[MediaFileAnalyzer] Failed to check latest version:', error)
-    }
-    return null
-  }
-
-  private fetchLatestVersionWindows(): Promise<string | null> {
-    return new Promise((resolve) => {
-      https.get('https://www.gyan.dev/ffmpeg/builds/release-version', (res) => {
-        if (res.statusCode !== 200) { resolve(null); return }
-        let data = ''; res.on('data', (c) => { data += c }); res.on('end', () => resolve(data.trim() || null))
-      }).on('error', () => resolve(null))
-    })
-  }
-
-  private fetchLatestVersionMacOS(): Promise<string | null> {
-    return new Promise((resolve) => {
-      const req = https.request('https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip', { method: 'HEAD' }, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-          const loc = res.headers.location
-          if (loc) { const m = loc.match(/ffprobe-([0-9.]+)\.zip/); if (m) { resolve(m[1]); return } }
-        }
-        resolve(null)
-      })
-      req.on('error', () => resolve(null)); req.end()
-    })
-  }
-
-  private fetchLatestVersionLinux(): Promise<string | null> {
-    return new Promise((resolve) => {
-      https.get('https://johnvansickle.com/ffmpeg/release-readme.txt', (res) => {
-        if (res.statusCode !== 200) { resolve(null); return }
-        let data = ''; res.on('data', (c) => { data += c }); res.on('end', () => {
-          const m = data.match(/version:\s*([0-9.]+)/i); resolve(m ? m[1] : null)
-        })
-      }).on('error', () => resolve(null))
-    })
-  }
-
-  async checkForUpdate(): Promise<{ currentVersion: string | null; latestVersion: string | null; updateAvailable: boolean }> {
-    const currentVersion = await this.getVersion()
-    const latestVersion = await this.checkLatestVersion()
-    const updateAvailable = currentVersion && latestVersion ? this.compareVersions(latestVersion, currentVersion) > 0 : false
-    getLoggingService().info('[MediaFileAnalyzer]', `FFmpeg update check: current=${currentVersion || 'unavailable'}, latest=${latestVersion || 'unavailable'}, available=${updateAvailable}`)
-    return { currentVersion, latestVersion, updateAvailable }
-  }
-
-  private normalizeVersion(version: string): string {
-    return version.match(/^\d+(?:\.\d+)*/)?.[0] || version
-  }
-
-  private compareVersions(a: string, b: string): number {
-    const left = this.normalizeVersion(a).split('.').map(Number)
-    const right = this.normalizeVersion(b).split('.').map(Number)
-    for (let i = 0; i < Math.max(left.length, right.length); i++) {
-      const difference = (left[i] || 0) - (right[i] || 0)
-      if (difference !== 0) return difference > 0 ? 1 : -1
-    }
-    return 0
-  }
-
-  async installFFprobe(onProgress?: (p: { stage: string; percent: number }) => void): Promise<{ success: boolean; error?: string; path?: string }> {
-    const downloadInfo = this.getDownloadInfo()
-    if (!downloadInfo) {
-      const error = `FFmpeg installation is unsupported on ${process.platform}`
-      getLoggingService().error('[MediaFileAnalyzer]', error)
-      return { success: false, error }
-    }
-    const ffprobeDir = path.join(app.getPath('userData'), 'ffprobe')
-    const tempDir = path.join(app.getPath('userData'), 'ffprobe-temp')
-    try {
-      mkdirSync(ffprobeDir, { recursive: true })
-      rmSync(tempDir, { recursive: true, force: true })
-      mkdirSync(tempDir, { recursive: true })
-      const archivePath = path.join(tempDir, 'download' + (downloadInfo.isZip ? '.zip' : '.tar.xz'))
-      await this.downloadFile(downloadInfo.url, archivePath, (p) => onProgress?.({ stage: 'Downloading...', percent: Math.round(p) }))
-      const checksumText = await this.downloadText(downloadInfo.checksumUrl)
-      const expectedChecksum = checksumText.match(/\b[a-f0-9]{64}\b/i)?.[0]?.toLowerCase()
-      if (!expectedChecksum) throw new Error('Vendor did not provide a SHA-256 checksum for the FFmpeg archive')
-      const actualChecksum = crypto.createHash('sha256').update(readFileSync(archivePath)).digest('hex').toLowerCase()
-      if (actualChecksum !== expectedChecksum) throw new Error('FFmpeg archive SHA-256 verification failed')
-      if (downloadInfo.isZip) {
-        const zip = new AdmZip(archivePath)
-        zip.extractAllTo(tempDir, true)
-      } else {
-        await new Promise<void>((resolve, reject) => execFile('tar', ['-xJf', archivePath, '-C', tempDir], (error) => error ? reject(error) : resolve()))
-      }
-      const findExtracted = (name: string): string | null => {
-        const visit = (dir: string): string | null => {
-          for (const entry of readdirSync(dir, { withFileTypes: true })) {
-            const candidate = path.join(dir, entry.name)
-            if (entry.isDirectory()) { const found = visit(candidate); if (found) return found }
-            else if (entry.name.toLowerCase() === `${name}.exe` || entry.name.toLowerCase() === name) return candidate
-          }
-          return null
-        }
-        return visit(tempDir)
-      }
-      const extractedProbe = findExtracted('ffprobe')
-      const extractedFfmpeg = findExtracted('ffmpeg')
-      if (!extractedProbe) throw new Error('Downloaded archive did not contain ffprobe')
-      const finalProbePath = this.getBundledFFprobePath()
-      copyFileSync(extractedProbe, finalProbePath)
-      if (extractedFfmpeg) copyFileSync(extractedFfmpeg, this.getBundledPath('ffmpeg'))
-      if (process.platform !== 'win32') {
-        chmodSync(finalProbePath, 0o755)
-        if (extractedFfmpeg) chmodSync(this.getBundledPath('ffmpeg'), 0o755)
-      }
-      const binarySize = readFileSync(finalProbePath).byteLength
-      if (binarySize < 1_000_000) throw new Error(`FFprobe binary is suspiciously small (${binarySize} bytes)`)
-      if (!await this.verifyInstalledBinary(finalProbePath, 'ffprobe')) throw new Error('Installed FFprobe failed verification')
-      getLoggingService().info('[MediaFileAnalyzer]', `FFprobe SHA-256: ${crypto.createHash('sha256').update(readFileSync(finalProbePath)).digest('hex')}`)
-      this.ffprobePath = this.getBundledFFprobePath()
-      this.ffmpegPath = extractedFfmpeg ? this.getBundledPath('ffmpeg') : this.ffmpegPath
-      this.ffprobeChecked = true
-      this.cachedVersion = undefined
-      this.cachedIsBundledVersion = undefined
-      getLoggingService().info('[MediaFileAnalyzer]', `Installed FFmpeg tools: ffprobe=${this.ffprobePath}, ffmpeg=${this.ffmpegPath || 'not included'}`)
-      rmSync(tempDir, { recursive: true, force: true })
-      return { success: true, path: this.ffprobePath }
-    } catch (e) {
-      const error = getErrorMessage(e)
-      getLoggingService().error('[MediaFileAnalyzer]', 'FFmpeg tool installation failed:', error)
-      rmSync(tempDir, { recursive: true, force: true })
-      return { success: false, error }
-    }
-  }
-
-  private verifyInstalledBinary(binaryPath: string, expectedName: string): Promise<boolean> {
-    return new Promise(resolve => {
-      const proc = spawn(binaryPath, ['-version'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 })
-      let output = ''
-      proc.stdout?.on('data', data => { output += data.toString() })
-      proc.stderr?.on('data', data => { output += data.toString() })
-      proc.on('close', code => resolve(code === 0 && output.toLowerCase().includes(expectedName)))
-      proc.on('error', () => resolve(false))
-    })
-  }
-
-  private getDownloadInfo(): { url: string; checksumUrl: string; isZip: boolean } | null {
-    if (process.platform === 'win32') return { url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip', checksumUrl: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256', isZip: true }
-    return null
-  }
-
-  private async downloadText(url: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const request = (requestUrl: string, redirects = 0): void => {
-        if (redirects > 5) { reject(new Error('Too many redirects')); return }
-        const client = requestUrl.startsWith('https:') ? https : http
-        client.get(requestUrl, response => {
-          if ([301, 302, 303, 307, 308].includes(response.statusCode || 0) && response.headers.location) { response.resume(); request(new URL(response.headers.location, requestUrl).toString(), redirects + 1); return }
-          if (response.statusCode !== 200) { response.resume(); reject(new Error(`Checksum download failed with status ${response.statusCode}`)); return }
-          let body = ''; response.setEncoding('utf8'); response.on('data', chunk => { body += chunk }); response.on('end', () => resolve(body))
-        }).on('error', reject)
-      }
-      request(url)
-    })
-  }
-
-  private async downloadFile(url: string, dest: string, onProgress: (p: number) => void): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = (requestUrl: string, redirects = 0): void => {
-        if (redirects > 5) { reject(new Error('Too many redirects')); return }
-        const client = requestUrl.startsWith('https:') ? https : http
-        client.get(requestUrl, (res) => {
-          if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
-            res.resume()
-            request(new URL(res.headers.location, requestUrl).toString(), redirects + 1)
-            return
-          }
-          if (res.statusCode !== 200) { res.resume(); reject(new Error(`Download failed with status ${res.statusCode}`)); return }
-        const total = parseInt(res.headers['content-length'] || '0', 10)
-        let downloaded = 0
-        const file = createWriteStream(dest)
-        res.on('data', (c) => { downloaded += c.length; if (total) onProgress((downloaded / total) * 100) })
-        pipeline(res, file).then(() => resolve()).catch(reject)
-        }).on('error', reject)
-      }
-      request(url)
-    })
-  }
-
-  async uninstallFFprobe(): Promise<boolean> {
-    const p = this.getBundledFFprobePath()
-    if (fs.existsSync(p)) fs.unlinkSync(p); this.ffprobePath = null; this.ffprobeChecked = false; return true
-  }
-
-  async isBundledVersion(): Promise<boolean> {
-    if (this.cachedIsBundledVersion !== undefined) return this.cachedIsBundledVersion
-    if (!this.ffprobePath) await this.isAvailable()
-    this.cachedIsBundledVersion = this.ffprobePath === this.getBundledFFprobePath()
-    return this.cachedIsBundledVersion
-  }
-
-  /**
    * Extract embedded artwork from an audio file
    */
   async extractArtwork(audioFilePath: string, outputPath: string): Promise<boolean> {
     if (!this.ffprobePath || !this.ffmpegPath) await this.isAvailable()
-    if (!this.ffmpegPath) throw new Error('FFmpeg is required to extract artwork')
+    const ffmpegCommand = this.requireFFmpegPath()
 
     try {
       const sanitizedInput = PathUtils.sanitizeAbsolutePath(audioFilePath)
       const sanitizedOutput = PathUtils.sanitizeAbsolutePath(outputPath)
-      const actualFFmpegPath = PathUtils.resolveExecutablePath(this.ffmpegPath)
 
       return new Promise((resolve, reject) => {
         const outputDir = path.dirname(sanitizedOutput)
-        if (!fs.existsSync(outputDir)) mkdirSync(outputDir, { recursive: true })
+        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
 
         const args = ['-i', `file:${sanitizedInput}`, '-an', '-vcodec', 'copy', '-y', sanitizedOutput]
-        const proc = spawn(actualFFmpegPath, args, { stdio: 'ignore', timeout: 30000 })
+        const proc = spawn(ffmpegCommand, args, { stdio: 'ignore', timeout: 30000 })
 
         proc.on('close', (code) => {
           if (code === 0 && fs.existsSync(sanitizedOutput) && fs.statSync(sanitizedOutput).size > 0) resolve(true)
@@ -603,16 +381,12 @@ export class MediaFileAnalyzer {
     }
   }
 
-  canInstall(): boolean {
-    return process.arch === 'x64' && (process.platform === 'win32' || process.platform === 'darwin' || process.platform === 'linux')
-  }
-
   /**
    * Analyze a media file and return detailed metadata
    */
   async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
     if (!await this.isAvailable()) {
-      throw new Error('FFprobe is not installed or available on this system')
+      throw new Error('FFprobe is unavailable through the system PATH')
     }
 
     if (!fs.existsSync(filePath)) {
@@ -625,7 +399,7 @@ export class MediaFileAnalyzer {
 
   async measureStreamBytes(filePath: string): Promise<Record<number, number>> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
-    const actualPath = PathUtils.resolveExecutablePath(this.ffprobePath || 'ffprobe')
+    const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'error',
@@ -633,7 +407,7 @@ export class MediaFileAnalyzer {
         '-of', 'csv=p=0',
         `file:${sanitizedPath}`,
       ]
-      const proc = spawn(actualPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
       const timeout = setTimeout(() => {
@@ -672,19 +446,19 @@ export class MediaFileAnalyzer {
     if (!await this.isAvailable()) {
       const results = new Map<string, FileAnalysisResult>()
       for (const filePath of filePaths) {
-        results.set(filePath, { success: false, error: 'FFprobe not installed', filePath, audioTracks: [], subtitleTracks: [] })
+        results.set(filePath, { success: false, error: 'FFprobe unavailable through system PATH', filePath, audioTracks: [], subtitleTracks: [] })
       }
       return results
     }
 
     const { getFFprobeWorkerPool } = await import('./FFprobeWorkerPool')
     const pool = getFFprobeWorkerPool()
-    await pool.initialize(this.ffprobePath!)
+    await pool.initialize(this.requireFFprobePath())
     return await pool.analyzeFiles(filePaths, onProgress, signal)
   }
 
   /**
-   * Get the current FFprobe path
+   * Get the current FFprobe executable reference.
    */
   getFFprobePath(): string | null {
     return this.ffprobePath
@@ -821,8 +595,7 @@ export class MediaFileAnalyzer {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     return new Promise((resolve, reject) => {
       const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', `file:${sanitizedPath}`]
-      const actualPath = PathUtils.resolveExecutablePath(this.ffprobePath || 'ffprobe')
-      const proc = spawn(actualPath, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
+      const proc = spawn(this.requireFFprobePath(), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
       let stdout = ''
       let stderr = ''
       proc.stdout.on('data', (data) => { stdout += data.toString() })
@@ -846,7 +619,7 @@ export class MediaFileAnalyzer {
       result.fileSize = output.format.size ? parseInt(output.format.size, 10) : undefined
       result.duration = output.format.duration ? Math.round(parseFloat(output.format.duration) * 1000) : undefined
       result.overallBitrate = output.format.bit_rate ? Math.round(parseInt(output.format.bit_rate, 10) / 1000) : undefined
-      
+
       if (output.format.tags) {
         const t = output.format.tags
         result.embeddedMetadata = {
@@ -860,7 +633,7 @@ export class MediaFileAnalyzer {
     }
 
     for (const stream of output.streams) {
-    if (stream.codec_type === 'video' && !result.video) {
+      if (stream.codec_type === 'video' && !result.video) {
         result.video = {
           index: stream.index,
           codec: stream.codec_name || 'unknown',

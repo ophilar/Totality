@@ -387,28 +387,7 @@ export function registerSourceHandlers(): void {
     const capabilities = getKodiLocalCapabilities(provider)
     const available = await capabilities.isFFprobeAvailable()
     const version = available ? await capabilities.getFFprobeVersion() : null
-    return { available, version, reason: available ? null : 'FFprobe not found' }
-  })
-
-  createIpcHandler('ffprobe:canInstall', async () => {
-    return getMediaFileAnalyzer().canInstall()
-  })
-
-  createValidatedIpcHandlerWithEvent('ffprobe:install', z.unknown().optional(), async (event: IpcMainInvokeEvent) => {
-    const win = getWindowFromEvent(event)
-    return await getMediaFileAnalyzer().installFFprobe((p) => safeSend(win, 'ffprobe:installProgress', p))
-  })
-
-  createIpcHandler('ffprobe:uninstall', async () => {
-    return { success: await getMediaFileAnalyzer().uninstallFFprobe() }
-  })
-
-  createIpcHandler('ffprobe:checkForUpdate', async () => {
-    return await getMediaFileAnalyzer().checkForUpdate()
-  })
-
-  createIpcHandler('ffprobe:isBundled', async () => {
-    return await getMediaFileAnalyzer().isBundledVersion()
+    return { available, version, reason: available ? null : 'FFprobe not found in the system PATH' }
   })
 
   // ============================================================================
