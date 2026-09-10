@@ -28,20 +28,6 @@ export interface HandlerOptions {
  * Enforces fail-closed security: missing events, missing sender frames, or missing URLs are rejected.
  */
 export function validateSenderFrame(event: IpcMainInvokeEvent, channel: string): void {
-  // Vitest / testing environment passes mock events without real Electron webContents
-  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
-    if (event?.senderFrame?.url) {
-      const frameUrl = event.senderFrame.url
-      const isAllowedDev = frameUrl.startsWith('http://localhost:') || frameUrl.startsWith('http://127.0.0.1:')
-      const isAllowedApp = frameUrl.startsWith('file://') || frameUrl.startsWith('app://') || frameUrl.startsWith('local-artwork://')
-      if (!isAllowedDev && !isAllowedApp) {
-        getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel} from frame URL: ${frameUrl}`)
-        throw new Error(`Unauthorized IPC sender frame for ${channel}: ${frameUrl}`)
-      }
-    }
-    return
-  }
-
   if (!event || !event.senderFrame) {
     getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel}: missing event or senderFrame`)
     throw new Error(`Unauthorized IPC request on ${channel}: missing sender frame`)
