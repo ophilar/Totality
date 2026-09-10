@@ -18,12 +18,15 @@ export interface ApplicationShutdownOperations {
 }
 
 export class ApplicationShutdownError extends Error {
+  public readonly cause: unknown
+
   constructor(
     public readonly stage: ApplicationShutdownStage,
     cause: unknown
   ) {
-    super(`Application shutdown failed during ${stage}`, { cause })
+    super(`Application shutdown failed during ${stage}`)
     this.name = 'ApplicationShutdownError'
+    this.cause = cause
   }
 }
 
