@@ -3,7 +3,7 @@ import { _BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase }
 import * as _dbFuncs from '@main/database/BetterSQLiteService'
 import path from 'node:path'
 import fs from 'node:fs'
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 
 /**
  * Setup a clean test database
@@ -34,6 +34,13 @@ export async function setupTestDb() {
  */
 export function cleanupTestDb() {
   resetBetterSQLiteServiceForTesting()
+}
+
+export function createAuthorizedIpcEvent(): IpcMainInvokeEvent {
+  return {
+    sender: { send: vi.fn() },
+    senderFrame: { url: 'file:///totality-test/index.html' },
+  } as unknown as IpcMainInvokeEvent
 }
 
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
@@ -93,8 +100,7 @@ const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
       throw new Error(`IPC Invoke: No handler registered for channel "${channel}"`)
     }
 
-    const event = { sender: { send: vi.fn() } }
-    return await handler(event, ...args)
+    return await handler(createAuthorizedIpcEvent(), ...args)
   }
 
   // Create an exhaustive API object that matches preload scripts
@@ -150,7 +156,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     musicAlbumCount: (f: unknown) => invoke('music:albums:count', f),
     musicGetTracks: (f: unknown) => invoke('music:tracks:list', f),
     musicTrackList: (f: unknown) => invoke('music:tracks:list', f),
-    musicTrackCount: (f: unknown) => invoke('music:tracks:count', f),
+    musicTrackCount: (f: unknown) => invoke('music:tracks:list', f),
     musicGetTracksByAlbum: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_TRACKS_BY_ALBUM, id),
     musicGetAlbumCompleteness: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, id),
     musicGetAllArtistCompleteness: (sId: string) => invoke(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, sId),
