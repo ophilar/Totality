@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getTranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
@@ -97,7 +97,7 @@ describe('Transcoding Integration (Service + IPC)', () => {
       await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: testFile, file_size: 5, duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null } satisfies MediaItem)
 
       const handler = handlers.get('transcoding:getParameters')!
-      const result = await handler({} as IpcMainInvokeEvent, 1, { targetCodec: 'av1', encoder: 'svt_av1', crf: 25, preset: 'fast', qualityProfile: 'balanced', encoderPolicy: 'software' }) as { summary: string }
+      const result = await handler(createAuthorizedIpcEvent(), 1, { targetCodec: 'av1', encoder: 'svt_av1', crf: 25, preset: 'fast', qualityProfile: 'balanced', encoderPolicy: 'software' }) as { summary: string }
       
       expect(result.summary).toBe('Explicit measured transcoding parameters')
     })
