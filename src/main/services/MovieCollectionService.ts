@@ -9,7 +9,7 @@ import type { TMDBCollectionPart } from '@main/types/tmdb'
 
 interface CollectionProgress { current: number; total: number; phase: string; currentItem: string }
 interface CollectionAnalysis { totalMovies: number; ownedMovies: number; missingMovies: string[]; completenessPercentage: number; posterUrl?: string; backdropUrl?: string }
-interface CollectionMovie { title: string; year: string; tmdb_id: string; owned: boolean }
+interface CollectionMovie { title: string; year?: string; tmdb_id: string; owned: boolean; release_date?: string }
 
 export class MovieCollectionService {
   private cancelRequested = false
@@ -205,7 +205,13 @@ export class MovieCollectionService {
     const movies: CollectionMovie[] = details.parts.map((p: TMDBCollectionPart) => {
       const id = String(p.id)
       const isOwned = ownedMap.has(id)
-      return { title: p.title, year: p.release_date?.substring(0, 4), tmdb_id: id, owned: isOwned }
+      return {
+        title: p.title,
+        year: p.release_date?.substring(0, 4),
+        tmdb_id: id,
+        owned: isOwned,
+        release_date: p.release_date || undefined
+      }
     })
 
     const ownedCount = movies.filter(m => m.owned).length

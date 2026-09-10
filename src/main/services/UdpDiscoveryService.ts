@@ -1,6 +1,6 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import * as dgram from 'dgram'
-import axios from 'axios'
+import { fetchJSON } from '@main/services/utils/httpClient'
 import { getLoggingService } from '@main/services/LoggingService'
 
 /**
@@ -121,16 +121,19 @@ export class UdpDiscoveryService {
     error?: string
   }> {
     try {
-      const response = await axios.get(`${url.replace(/\/$/, '')}/System/Info/Public`, {
-        timeout: 5000,
-        headers: { Accept: 'application/json' },
-      })
+      const data = await fetchJSON<{ ServerName?: string; Id?: string; Version?: string }>(
+        `${url.replace(/\/$/, '')}/System/Info/Public`,
+        {
+          timeoutMs: 5000,
+          headers: { Accept: 'application/json' },
+        }
+      )
 
       return {
         success: true,
-        serverName: response.data.ServerName,
-        serverId: response.data.Id,
-        version: response.data.Version,
+        serverName: data.ServerName,
+        serverId: data.Id,
+        version: data.Version,
       }
     } catch (error: unknown) {
       return {

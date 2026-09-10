@@ -112,20 +112,32 @@ export function useLibraryEventListeners({
       setIsAutoRefreshing(false)
     })
 
+    // Debounced task queue task completion handler to prevent render storms during batch scans
+    let taskCompleteTimer: NodeJS.Timeout | null = null
+    const pendingTaskTypes = new Set<string>()
+
+    const flushCompletedTasks = () => {
+      if (pendingTaskTypes.has('quality-analysis')) {
+        loadMedia()
+        loadStats(activeSourceId || undefined)
+      }
+      if (pendingTaskTypes.has('series-completeness') || pendingTaskTypes.has('collection-completeness')) {
+        loadCompletenessData()
+      }
+      if (pendingTaskTypes.has('music-completeness')) {
+        loadMusicCompletenessData()
+      }
+      pendingTaskTypes.clear()
+      taskCompleteTimer = null
+    }
+
     // Listen for task queue task completion
     const cleanupTaskComplete = window.electronAPI.onTaskQueueTaskComplete?.((task: unknown) => {
       const t = task as { type: string; status: string }
       if (t.status === 'completed') {
-        if (t.type === 'quality-analysis') {
-          loadMedia()
-          loadStats(activeSourceId || undefined)
-        }
-        if (t.type === 'series-completeness' || t.type === 'collection-completeness') {
-          loadCompletenessData()
-        }
-        if (t.type === 'music-completeness') {
-          loadMusicCompletenessData()
-        }
+        pendingTaskTypes.add(t.type)
+        if (taskCompleteTimer) clearTimeout(taskCompleteTimer)
+        taskCompleteTimer = setTimeout(flushCompletedTasks, 250)
       }
     })
 
@@ -256,6 +268,7 @@ export function useLibraryEventListeners({
       cleanupAutoRefreshStarted?.()
       cleanupAutoRefreshComplete?.()
       cleanupTaskComplete?.()
+      if (taskCompleteTimer) clearTimeout(taskCompleteTimer)
       cleanupTaskQueueUpdated?.()
       cleanupSettingsChanged?.()
       cleanupWishlistAutoCompleted?.()

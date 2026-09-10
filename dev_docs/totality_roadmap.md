@@ -282,3 +282,16 @@
 - [x] Consolidated optimization vertical slice into canonical `LanguageRemuxService.ts` and eliminated redundant 880-line `SafeOptimizationSliceService.ts` wrapper layer for net-negative lines of code.
 - [x] Updated `Totality — Active Project.md` to reference projection, establishing Command Center as mutable operational SSOT.
 
+## Phase 33: Upstream Feature Porting & Acceptance Integration [Completed]
+- [x] Consolidate remote branches and PRs: prune 10 stale remote branches (`origin/fix/*`), merge `feat/totality-safe-operational-slice`, audit PR #166 and prune merged branch `remotes/origin/totality-safety-contracts-fix`, ensuring `master` is the sole clean branch.
+- [x] Implement native fetch `httpClient.ts` replacing `axios` in `UdpDiscoveryService.ts`.
+- [x] Implement 30s task execution watchdog in `FFprobeWorkerPool.ts` to terminate hung child processes.
+- [x] Enforce fail-closed credential encryption in `CredentialEncryptionService.ts`.
+- [x] Preserve `release_date` on collection movies in `MovieCollectionService.ts`, `database.ts`, and `CompletenessEngine.ts`.
+- [x] Establish shared setting keys SSOT under `@shared/settingKeys` with tsconfig, vite, and vitest path aliases.
+- [x] Add "Dismiss all missing" in `CollectionModal.tsx`, integrate into `useDismissHandlers.ts` and `MediaBrowser.tsx`.
+- [x] Add TV empty seasons and movie theatrical lag settings controls to `LibrarySettingsTab.tsx`.
+- [x] Debounce library task completion events (250ms trailing) in `useLibraryEventListeners.ts` to prevent UI render storms.
+- [x] Implement integration acceptance test suite `tests/integration/CriticalFlowsAcceptance.test.ts` verifying privileged IPC authorization, database persistence, safe remux recoverability and audit logs, and completeness invariants.
+- [x] Verify full TypeScript typecheck (`npx tsc --noEmit`) clean 0 errors.
+

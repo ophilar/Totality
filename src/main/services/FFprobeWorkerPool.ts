@@ -38,7 +38,11 @@ interface WorkerInfo {
   busy: boolean
   currentTask: QueuedTask | null
   lastBusyTime: number
+  taskTimeout: NodeJS.Timeout | null
 }
+
+const FFPROBE_TASK_TIMEOUT_MS = 30_000
+
 
 // Singleton instance
 let poolInstance: FFprobeWorkerPool | null = null
@@ -268,6 +272,7 @@ export class FFprobeWorkerPool {
         busy: false,
         currentTask: null,
         lastBusyTime: Date.now(),
+        taskTimeout: null,
       }
 
       worker.on('message', (result: WorkerResult) => {
@@ -301,6 +306,25 @@ export class FFprobeWorkerPool {
     workerInfo.busy = true
     workerInfo.currentTask = task
 
+    // Guard against hung ffprobe processes that never respond
+    workerInfo.taskTimeout = setTimeout(() => {
+      if (workerInfo.currentTask?.taskId !== task.taskId) return
+      getLoggingService().warn('[FFprobeWorkerPool]', `Task timed out after ${FFPROBE_TASK_TIMEOUT_MS}ms: ${task.filePath}`)
+      workerInfo.currentTask = null
+      workerInfo.taskTimeout = null
+      task.abortCleanup?.()
+      task.resolve({
+        success: false,
+        error: 'FFprobe analysis timed out',
+        filePath: task.filePath,
+        audioTracks: [],
+        subtitleTracks: [],
+      })
+      this.removeWorker(workerInfo)
+      workerInfo.worker.terminate()
+      this.processQueue()
+    }, FFPROBE_TASK_TIMEOUT_MS)
+
     const message: WorkerTask = {
       taskId: task.taskId,
       filePath: task.filePath,
@@ -313,6 +337,10 @@ export class FFprobeWorkerPool {
    * Handle worker result
    */
   private handleWorkerResult(workerInfo: WorkerInfo, result: WorkerResult): void {
+    if (workerInfo.taskTimeout) {
+      clearTimeout(workerInfo.taskTimeout)
+      workerInfo.taskTimeout = null
+    }
     const task = workerInfo.currentTask
     if (task && task.taskId === result.taskId) {
       task.abortCleanup?.()
@@ -332,6 +360,10 @@ export class FFprobeWorkerPool {
    * Handle worker error
    */
   private handleWorkerError(workerInfo: WorkerInfo, error: unknown): void {
+    if (workerInfo.taskTimeout) {
+      clearTimeout(workerInfo.taskTimeout)
+      workerInfo.taskTimeout = null
+    }
     const task = workerInfo.currentTask
     if (task) {
       task.abortCleanup?.()

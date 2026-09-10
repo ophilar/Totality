@@ -19,6 +19,7 @@ interface CollectionModalProps {
   onClose: () => void
   onMovieClick: (movieId: number) => void
   onDismissCollectionMovie?: (tmdbId: string, movieTitle: string) => void
+  onDismissAllMissingInCollection?: () => void
 }
 
 export const CollectionModal = memo(function CollectionModal({
@@ -26,7 +27,8 @@ export const CollectionModal = memo(function CollectionModal({
   ownedMovies,
   onClose,
   onMovieClick,
-  onDismissCollectionMovie
+  onDismissCollectionMovie,
+  onDismissAllMissingInCollection,
 }: CollectionModalProps) {
   const [selectedMissing, setSelectedMissing] = useState<MissingMovie | null>(null)
   const modalRef = useRef<HTMLDivElement>(null!)
@@ -123,12 +125,24 @@ export const CollectionModal = memo(function CollectionModal({
                 </span>
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {onDismissAllMissingInCollection && missingMovies.length > 1 && (
+                <button
+                  onClick={onDismissAllMissingInCollection}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50"
+                  title="Dismiss all missing films in this collection"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                  Dismiss all missing
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Content */}

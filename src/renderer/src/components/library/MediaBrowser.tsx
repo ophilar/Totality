@@ -37,6 +37,7 @@ import { useDismissHandlers } from '@/components/library/hooks/useDismissHandler
 import { useLibraryEventListeners } from '@/components/library/hooks/useLibraryEventListeners'
 import { useGlobalSearch } from '@/components/library/hooks/useGlobalSearch'
 import { getTVShowIdentity, getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
+import { SETTING_KEYS } from '@shared/settingKeys'
 
 import {
   MusicArtist,
@@ -406,13 +407,96 @@ export function MediaBrowser({
 
   const loadCompletenessData = useCallback(async () => {
     try {
-      const [seriesData, collectionsData] = await Promise.all([
+      const [
+        seriesData,
+        collectionsData,
+        collectionExclusions,
+        seriesExclusions,
+        emptySeasonsSetting,
+        theatricalLagSetting,
+      ] = await Promise.all([
         window.electronAPI.seriesGetAll(activeSourceId || undefined),
         window.electronAPI.collectionsGetAll(activeSourceId || undefined),
+        window.electronAPI.getExclusions('collection_movie'),
+        window.electronAPI.getExclusions('series_episode'),
+        window.electronAPI.getSetting(SETTING_KEYS.exclude_empty_seasons),
+        window.electronAPI.getSetting(SETTING_KEYS.collection_theatrical_lag_days),
       ])
-      setMovieCollections((collectionsData as MovieCollectionData[]).filter(c => c.total_movies > 1))
+
+      const excludeEmptySeasons = emptySeasonsSetting === 'true'
+      const theatricalLagDays = parseInt((theatricalLagSetting as string) || '0', 10) || 0
+
+      // Build exclusion lookup sets
+      const excludedCollectionMovies = new Set(
+        collectionExclusions.map((e: { parent_key: string | null; reference_key: string | null }) => `${e.parent_key}:${e.reference_key}`)
+      )
+      const excludedSeriesEpisodes = new Set(
+        seriesExclusions.map((e: { parent_key: string | null; reference_key: string | null }) => `${e.parent_key}:${e.reference_key}`)
+      )
+
+      // Filter collections: remove excluded missing movies + theatrical-only films, adjust totals
+      const theatricalCutoff = theatricalLagDays > 0
+        ? (() => {
+            const d = new Date()
+            d.setDate(d.getDate() - theatricalLagDays)
+            return d.toISOString().split('T')[0]
+          })()
+        : null
+
+      const filteredCollections = (collectionsData as MovieCollectionData[])
+        .map(c => {
+          try {
+            const rawMissing = JSON.parse(c.missing_movies || '[]') as Array<{ tmdb_id: string; release_date?: string }>
+            let filtered = rawMissing.filter(m => !excludedCollectionMovies.has(`${c.tmdb_collection_id}:${m.tmdb_id}`))
+            if (theatricalCutoff) {
+              filtered = filtered.filter(m => !m.release_date || m.release_date <= theatricalCutoff)
+            }
+            if (filtered.length !== rawMissing.length) {
+              const excludedCount = rawMissing.length - filtered.length
+              const newTotal = c.total_movies - excludedCount
+              return {
+                ...c,
+                missing_movies: JSON.stringify(filtered),
+                total_movies: newTotal,
+                completeness_percentage: newTotal > 0 ? Math.round((c.owned_movies / newTotal) * 100) : 100,
+              }
+            }
+          } catch { /* keep original */ }
+          return c
+        })
+        .filter(c => c.total_movies > 1)
+      setMovieCollections(filteredCollections)
+
       const sMap = new Map<string, SeriesCompletenessData>()
-      ;(seriesData as SeriesCompletenessData[]).forEach(s => sMap.set(getTVShowIdentityKey(s), s))
+      ;(seriesData as SeriesCompletenessData[]).forEach(s => {
+        try {
+          const rawMissing = JSON.parse(s.missing_episodes || '[]') as Array<{ season_number: number; episode_number: number }>
+          const parentKey = s.series_identity_key || s.tmdb_id || s.series_title
+          let filtered = rawMissing.filter(ep =>
+            !excludedSeriesEpisodes.has(`${parentKey}:S${ep.season_number}E${ep.episode_number}`)
+          )
+
+          if (excludeEmptySeasons) {
+            const emptySeasons = new Set<number>(JSON.parse(s.missing_seasons || '[]'))
+            filtered = filtered.filter(ep => !emptySeasons.has(ep.season_number))
+          }
+
+          const excludedCount = rawMissing.length - filtered.length
+          if (excludedCount > 0) {
+            const newTotal = Math.max(s.owned_episodes, s.total_episodes - excludedCount)
+            sMap.set(getTVShowIdentityKey(s), {
+              ...s,
+              missing_episodes: JSON.stringify(filtered),
+              total_episodes: newTotal,
+              completeness_percentage: newTotal > 0
+                ? Math.round((s.owned_episodes / newTotal) * 100)
+                : 100,
+            })
+            return
+          }
+        } catch { /* keep original */ }
+        sMap.set(getTVShowIdentityKey(s), s)
+      })
       setSeriesCompleteness(sMap)
     } catch (error) {
       setMovieCollections([])
@@ -473,7 +557,7 @@ export function MediaBrowser({
 
   const { matchFixModal, setMatchFixModal, selectedMissingItem, setSelectedMissingItem, handleRescanItem } = useMediaActions({ selectedMediaId, loadMedia: reloadMedia, setDetailRefreshKey })
 
-  const { handleDismissUpgrade, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie, handleDismissMissingAlbum, handleDismissMissingItem } = useDismissHandlers({
+  const { handleDismissUpgrade, handleDismissMissingEpisode, handleDismissMissingSeason, handleDismissCollectionMovie, handleDismissAllMissingInCollection, handleDismissMissingAlbum, handleDismissMissingItem } = useDismissHandlers({
     setPaginatedMovies: setMovies, setSelectedShowEpisodes, seriesCompleteness, setSeriesCompleteness,
     selectedCollection, setSelectedCollection, setMovieCollections, setArtistCompleteness, selectedMissingItem, setSelectedMissingItem, addToast,
   })
@@ -652,7 +736,7 @@ export function MediaBrowser({
       />
       <WishlistPanel isOpen={showWishlistPanel} onClose={() => setShowWishlistPanel(false)} />
 
-      {showCollectionModal && selectedCollection && <CollectionModal collection={selectedCollection} ownedMovies={ownedMoviesForSelectedCollection} onClose={() => setShowCollectionModal(false)} onMovieClick={setSelectedMediaId} onDismissCollectionMovie={handleDismissCollectionMovie} />}
+      {showCollectionModal && selectedCollection && <CollectionModal collection={selectedCollection} ownedMovies={ownedMoviesForSelectedCollection} onClose={() => setShowCollectionModal(false)} onMovieClick={setSelectedMediaId} onDismissCollectionMovie={handleDismissCollectionMovie} onDismissAllMissingInCollection={handleDismissAllMissingInCollection} />}
       {selectedMissingItem && <MissingItemPopup {...selectedMissingItem} onClose={() => setSelectedMissingItem(null)} onDismiss={handleDismissMissingItem} />}
       {matchFixModal && (
         <MatchFixModal

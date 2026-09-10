@@ -427,6 +427,7 @@ export interface MissingMovie {
   title: string
   year?: number
   poster_path?: string
+  release_date?: string
 }
 
 export interface MissingEpisode {

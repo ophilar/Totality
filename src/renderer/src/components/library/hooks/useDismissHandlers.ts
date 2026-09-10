@@ -53,6 +53,7 @@ interface UseDismissHandlersReturn {
   handleDismissMissingEpisode: (episode: MissingEpisode, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
   handleDismissMissingSeason: (seasonNumber: number, seriesTitle: string, tmdbId: string | undefined, seriesMapKey: string) => Promise<void>
   handleDismissCollectionMovie: (tmdbId: string, movieTitle: string) => Promise<void>
+  handleDismissAllMissingInCollection: () => Promise<void>
   handleDismissMissingAlbum: (album: MissingAlbum, artistName: string, artistMusicbrainzId?: string) => Promise<void>
   handleDismissMissingItem: () => void
 }
@@ -223,6 +224,43 @@ export function useDismissHandlers({
     }
   }, [setArtistCompleteness, addToast])
 
+  const handleDismissAllMissingInCollection = useCallback(async () => {
+    if (!selectedCollection) return
+    try {
+      const missing = JSON.parse(selectedCollection.missing_movies || '[]') as Array<{ tmdb_id: string; title: string }>
+      if (missing.length === 0) return
+      const collectionId = selectedCollection.tmdb_collection_id
+      const collectionName = selectedCollection.collection_name
+      await Promise.all(missing.map(m =>
+        window.electronAPI.addExclusion('collection_movie', undefined, m.tmdb_id, collectionId, m.title)
+      ))
+      const markComplete = (c: MovieCollectionData): MovieCollectionData => ({
+        ...c,
+        missing_movies: '[]',
+        total_movies: c.owned_movies,
+        completeness_percentage: 100,
+      })
+      setSelectedCollection(prev => prev ? markComplete(prev) : prev)
+      setMovieCollections(prev =>
+        prev.map(c => c.tmdb_collection_id === collectionId ? markComplete(c) : c)
+            .filter(c => c.total_movies > 1 && c.completeness_percentage < 100)
+      )
+      window.dispatchEvent(new CustomEvent('exclusions-changed'))
+      addToast({
+        type: 'success',
+        title: 'Collection dismissed',
+        message: `${missing.length} missing film${missing.length !== 1 ? 's' : ''} removed from "${collectionName}"`,
+      })
+    } catch (err) {
+      window.electronAPI.log.error('[useDismissHandlers]', 'Failed to dismiss all collection movies:', err)
+      addToast({
+        type: 'error',
+        title: 'Dismiss failed',
+        message: 'Could not dismiss collection movies'
+      })
+    }
+  }, [selectedCollection, setSelectedCollection, setMovieCollections, addToast])
+
   const handleDismissMissingItem = useCallback(() => {
     if (!selectedMissingItem) return
     const item = selectedMissingItem
@@ -246,6 +284,7 @@ export function useDismissHandlers({
     handleDismissMissingEpisode,
     handleDismissMissingSeason,
     handleDismissCollectionMovie,
+    handleDismissAllMissingInCollection,
     handleDismissMissingAlbum,
     handleDismissMissingItem,
   }

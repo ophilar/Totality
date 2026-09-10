@@ -28,7 +28,7 @@ export class CompletenessEngine {
   /**
    * Calculate completeness for a simple set of items (e.g. Movies in a Collection).
    */
-  static calculateSimple<T extends { tmdb_id: string; title: string; year?: number; poster_path?: string }>(
+  static calculateSimple<T extends { tmdb_id: string; title: string; year?: number; poster_path?: string; release_date?: string }>(
     targetSet: T[],
     ownedIds: Set<string>
   ): CompletenessResult<MissingMovie> {
@@ -38,7 +38,8 @@ export class CompletenessEngine {
         tmdb_id: item.tmdb_id,
         title: item.title,
         year: item.year,
-        poster_path: item.poster_path
+        poster_path: item.poster_path,
+        release_date: item.release_date
       }))
 
     const total = targetSet.length

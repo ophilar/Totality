@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { MediaSourceResponse, MediaLibraryResponse } from '@preload/api/types'
+import { SETTING_KEYS } from '@shared/settingKeys'
 import {
   Music,
   Film,
@@ -20,6 +21,15 @@ import {
   Circle,
   Lock,
 } from 'lucide-react'
+
+const THEATRICAL_LAG_OPTIONS = [
+  { value: '0', label: 'None (show all)' },
+  { value: '30', label: '30 days' },
+  { value: '60', label: '60 days' },
+  { value: '90', label: '90 days' },
+  { value: '180', label: '6 months' },
+  { value: '365', label: '1 year' },
+]
 
 interface ExclusionRecord {
   id: number
@@ -135,6 +145,12 @@ export function LibrarySettingsTab() {
   const [includeEps, setIncludeEps] = useState(true)
   const [includeSingles, setIncludeSingles] = useState(true)
 
+  // TV Shows settings
+  const [excludeEmptySeasons, setExcludeEmptySeasons] = useState(false)
+
+  // Movie collection settings
+  const [theatricalLagDays, setTheatricalLagDays] = useState('0')
+
   // Exclusions
   const [exclusions, setExclusions] = useState<Record<string, ExclusionRecord[]>>({
     media_upgrade: [],
@@ -200,13 +216,17 @@ export function LibrarySettingsTab() {
         const [
           epsVal,
           singlesVal,
+          emptySeasonVal,
+          theatricalLagVal,
           mediaUpgrade,
           collectionMovie,
           seriesEpisode,
           artistAlbum,
         ] = await Promise.all([
-          window.electronAPI.getSetting('completeness_include_eps'),
-          window.electronAPI.getSetting('completeness_include_singles'),
+          window.electronAPI.getSetting(SETTING_KEYS.completeness_include_eps),
+          window.electronAPI.getSetting(SETTING_KEYS.completeness_include_singles),
+          window.electronAPI.getSetting(SETTING_KEYS.exclude_empty_seasons),
+          window.electronAPI.getSetting(SETTING_KEYS.collection_theatrical_lag_days),
           window.electronAPI.getExclusions('media_upgrade'),
           window.electronAPI.getExclusions('collection_movie'),
           window.electronAPI.getExclusions('series_episode'),
@@ -215,6 +235,8 @@ export function LibrarySettingsTab() {
 
         setIncludeEps((epsVal as string) !== 'false')
         setIncludeSingles((singlesVal as string) !== 'false')
+        setExcludeEmptySeasons((emptySeasonVal as string) === 'true')
+        setTheatricalLagDays((theatricalLagVal as string) || '0')
         setExclusions({
           media_upgrade: mediaUpgrade as ExclusionRecord[],
           collection_movie: collectionMovie as ExclusionRecord[],
@@ -386,11 +408,69 @@ export function LibrarySettingsTab() {
                   onChange={async (checked) => {
                     setIncludeSingles(checked)
                     await window.electronAPI.setSetting(
-                      'completeness_include_singles',
+                      SETTING_KEYS.completeness_include_singles,
                       String(checked)
                     )
                   }}
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* TV Shows */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">TV Shows</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-start justify-between px-4 py-3 gap-4">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-foreground">Exclude seasons I have nothing of</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Seasons where you own 0 episodes are removed from completion counts. Takes effect immediately.
+                  </p>
+                </div>
+                <Toggle
+                  checked={excludeEmptySeasons}
+                  onChange={async (checked) => {
+                    setExcludeEmptySeasons(checked)
+                    await window.electronAPI.setSetting(
+                      SETTING_KEYS.exclude_empty_seasons,
+                      String(checked)
+                    )
+                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Movie Collections */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">Movie Collections</p>
+            <div className="bg-background/50 rounded-lg divide-y divide-border/30">
+              <div className="flex items-start justify-between px-4 py-3 gap-4">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-foreground">Exclude recently released films</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Films released within this window (e.g. still in cinemas) are hidden from missing lists.
+                  </p>
+                </div>
+                <select
+                  value={theatricalLagDays}
+                  onChange={async (e) => {
+                    const val = e.target.value
+                    setTheatricalLagDays(val)
+                    await window.electronAPI.setSetting(
+                      SETTING_KEYS.collection_theatrical_lag_days,
+                      val
+                    )
+                    window.dispatchEvent(new CustomEvent('exclusions-changed'))
+                  }}
+                  className="shrink-0 text-sm bg-background border border-border/50 rounded-md px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {THEATRICAL_LAG_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

@@ -61,6 +61,7 @@ import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { registerNotificationHandlers } from '@main/ipc/notifications'
 import { registerJellyfinHandlers } from '@main/ipc/jellyfin'
 import { registerTimelinesHandlers } from '@main/ipc/timelines'
+import { registerOptimizationHandlers } from '@main/ipc/optimization'
 
 /**
  * Sets up a real bridge between Renderer and Main process handlers.
@@ -92,6 +93,7 @@ const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
   registerNotificationHandlers()
   registerJellyfinHandlers()
   registerTimelinesHandlers()
+  registerOptimizationHandlers()
 
   // Helper to invoke a handler with no fallbacks and loud errors
   const invoke = async (channel: string, ...args: unknown[]) => {
@@ -129,8 +131,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l),
     getFileLoggingSettings: () => invoke(IPC_CHANNELS.LOGGING.GET_FILE_SETTINGS),
     setFileLoggingSettings: (s: unknown) => invoke(IPC_CHANNELS.LOGGING.SET_FILE_SETTINGS, s),
-    optimizationGetDecision: () => Promise.resolve(null),
-    optimizationRequestLocalRemux: () => Promise.resolve(undefined),
+    optimizationGetDecision: (mediaItemId: number) => invoke(IPC_CHANNELS.OPTIMIZATION.GET_DECISION, mediaItemId),
+    optimizationRequestLocalRemux: (mediaItemId: number, optIn: boolean) => invoke(IPC_CHANNELS.OPTIMIZATION.LOCAL_REMUX, mediaItemId, optIn),
+    optimizationGetRemuxJob: (mediaItemId: number) => invoke(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, mediaItemId),
     monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
     monitoringSetConfig: (c: unknown) => invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, c),
     

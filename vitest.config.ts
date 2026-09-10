@@ -71,6 +71,7 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, 'src/renderer/src'),
       '@main': path.resolve(import.meta.dirname, 'src/main'),
       '@preload': path.resolve(import.meta.dirname, 'src/preload'),
+      '@shared': path.resolve(import.meta.dirname, 'src/shared'),
       '@tests': path.resolve(import.meta.dirname, 'tests'),
       'node:sqlite': path.resolve(import.meta.dirname, 'tests/mocks/node-sqlite.ts'),
     },
