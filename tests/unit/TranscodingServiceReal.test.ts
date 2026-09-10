@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { _getTranscodingService, TranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -57,7 +57,7 @@ describe('TranscodingService (No Mocks)', () => {
 
     it('should correctly expose availability via IPC', async () => {
       const handler = handlers.get('transcoding:checkAvailability')!
-      const availability = await handler({})
+      const availability = await handler(createAuthorizedIpcEvent())
       expect(availability.ffmpeg).toBe(true)
     })
 
@@ -76,7 +76,7 @@ describe('TranscodingService (No Mocks)', () => {
         audioTracks: [], subtitleTracks: []
       })
 
-      await expect(handler({}, 1, { targetCodec: 'av1' })).rejects.toThrow('Quality profile must be explicitly selected')
+      await expect(handler(createAuthorizedIpcEvent(), 1, { targetCodec: 'av1' })).rejects.toThrow('Quality profile must be explicitly selected')
     })
   })
 })
