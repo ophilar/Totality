@@ -92,49 +92,4 @@ export class PathUtils {
     }
     return toolPath
   }
-
-  /**
-   * Generates a list of possible paths for a given executable binary,
-   * allowing services to test and automatically find system dependencies.
-   * @param binaryName Base name of the binary (e.g. 'ffmpeg', 'HandBrakeCLI')
-   * @param bundledPath Optional path to a bundled version of the binary
-   * @param extraWindowsPaths Additional expected install locations on Windows
-   */
-  static getPossibleExecutablePaths(
-    binaryName: string,
-    bundledPath?: string,
-    extraWindowsPaths: string[] = []
-  ): string[] {
-    const isWin = process.platform === 'win32'
-    const ext = isWin ? '.exe' : ''
-    const fullName = binaryName + ext
-
-    const paths: string[] = []
-    if (bundledPath) {
-      paths.push(bundledPath)
-    }
-
-    // Always include bare binary name to rely on system PATH
-    paths.push(fullName)
-
-    if (isWin) {
-      // Common Windows installation paths
-      paths.push(`C:\\Program Files\\${binaryName}\\${fullName}`)
-      paths.push(`C:\\Program Files\\${binaryName}\\bin\\${fullName}`)
-      paths.push(`C:\\${binaryName}\\bin\\${fullName}`)
-      // Custom extra paths provided by caller
-      for (const p of extraWindowsPaths) {
-        paths.push(p)
-      }
-    } else if (process.platform === 'darwin') {
-      paths.push(`/usr/local/bin/${binaryName}`)
-      paths.push(`/opt/homebrew/bin/${binaryName}`)
-    } else {
-      paths.push(`/usr/bin/${binaryName}`)
-      paths.push(`/usr/local/bin/${binaryName}`)
-    }
-
-    // Deduplicate array
-    return Array.from(new Set(paths))
-  }
 }
