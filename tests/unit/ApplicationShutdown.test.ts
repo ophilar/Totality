@@ -12,8 +12,8 @@ const orderedStages: ApplicationShutdownStage[] = [
   'shutdown-worker-pool',
   'persist-interrupted-tasks',
   'checkpoint-wal',
-  'shutdown-logging',
   'close-database',
+  'shutdown-logging',
 ]
 
 function createOperations(failingStage?: ApplicationShutdownStage) {
@@ -34,11 +34,11 @@ function createOperations(failingStage?: ApplicationShutdownStage) {
     shutdownWorkerPool: () => execute('shutdown-worker-pool'),
     persistInterruptedTasks: () => execute('persist-interrupted-tasks'),
     checkpointWal: () => execute('checkpoint-wal'),
-    shutdownLogging: () => execute('shutdown-logging'),
     closeDatabase: () => {
       calls.push('close-database')
       if (failingStage === 'close-database') throw cause
     },
+    shutdownLogging: () => execute('shutdown-logging'),
   }
 
   return { calls, cause, operations }
