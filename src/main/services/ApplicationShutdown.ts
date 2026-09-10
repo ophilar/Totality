@@ -4,8 +4,8 @@ export type ApplicationShutdownStage =
   | 'shutdown-worker-pool'
   | 'persist-interrupted-tasks'
   | 'checkpoint-wal'
-  | 'shutdown-logging'
   | 'close-database'
+  | 'shutdown-logging'
 
 export interface ApplicationShutdownOperations {
   stopAcceptingWork: () => void
@@ -13,8 +13,8 @@ export interface ApplicationShutdownOperations {
   shutdownWorkerPool: () => Promise<void>
   persistInterruptedTasks: () => Promise<void>
   checkpointWal: () => Promise<void>
-  shutdownLogging: () => Promise<void>
   closeDatabase: () => void
+  shutdownLogging: () => Promise<void>
 }
 
 export class ApplicationShutdownError extends Error {
@@ -36,8 +36,8 @@ export class ApplicationShutdown {
     await this.run('shutdown-worker-pool', this.operations.shutdownWorkerPool)
     await this.run('persist-interrupted-tasks', this.operations.persistInterruptedTasks)
     await this.run('checkpoint-wal', this.operations.checkpointWal)
-    await this.run('shutdown-logging', this.operations.shutdownLogging)
     await this.run('close-database', () => this.operations.closeDatabase())
+    await this.run('shutdown-logging', this.operations.shutdownLogging)
   }
 
   private async run(stage: ApplicationShutdownStage, operation: () => void | Promise<void>): Promise<void> {
