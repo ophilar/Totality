@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { ProviderType, TaskType } from '@main/types/database'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
 
@@ -32,11 +32,11 @@ describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
       connectionConfig: { folderPath: 'C:\\Real\\Path' }
     }
 
-    const source = await addHandler({}, config)
+    const source = await addHandler(createAuthorizedIpcEvent(), config)
     expect(source).toBeDefined()
     expect(source.display_name).toBe('Real IPC Test')
 
-    const list = await listHandler({})
+    const list = await listHandler(createAuthorizedIpcEvent())
     expect(list).toHaveLength(1)
     expect(list[0].source_id).toBe(source.source_id)
   })
@@ -45,13 +45,13 @@ describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
     const setHandler = handlers.get(IPC_CHANNELS.DATABASE.SET_SETTING)!
     const getHandler = handlers.get(IPC_CHANNELS.DATABASE.GET_SETTING)!
     
-    await setHandler({}, 'test_key', 'test_value')
+    await setHandler(createAuthorizedIpcEvent(), 'test_key', 'test_value')
     
     // Check real DB
     const stored = await db.config.getSetting('test_key')
     expect(stored).toBe('test_value')
 
-    const fromApi = await getHandler({}, 'test_key')
+    const fromApi = await getHandler(createAuthorizedIpcEvent(), 'test_key')
     expect(fromApi).toBe('test_value')
   })
 
@@ -64,7 +64,7 @@ describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
     }
 
     // The wrapper should throw because the schema validation fails
-    await expect(addHandler({}, invalidConfig)).rejects.toThrow()
+    await expect(addHandler(createAuthorizedIpcEvent(), invalidConfig)).rejects.toThrow()
   })
 
   it('should enqueue TaskType.QualityAnalysis when a quality_* setting is modified', async () => {
@@ -72,7 +72,7 @@ describe('IPC Refactor Verification (Real Integrated Bridge)', () => {
     const tq = getTaskQueueService()
     await tq.clearQueue()
 
-    await setHandler({}, 'quality_target_video_bitrate_1080p', '6000')
+    await setHandler(createAuthorizedIpcEvent(), 'quality_target_video_bitrate_1080p', '6000')
 
     const tasks = tq.getTasks()
     const qualityTask = tasks.find(t => t.type === TaskType.QualityAnalysis && t.label === 'Recalculate Media Quality (Settings changed)')
