@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ipcMain } from 'electron'
-import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { setupTestDb, cleanupTestDb, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 import { getLoggingService } from '@main/services/LoggingService'
@@ -56,17 +56,17 @@ describe('IPC Handler Registration', () => {
 
   it('db:media:getItem validates input', async () => {
     const handler = handlers.get('db:media:getItem')!
-    await expect(handler(undefined as never, -1)).rejects.toThrow()
+    await expect(handler(createAuthorizedIpcEvent(), -1)).rejects.toThrow()
   })
 
   it('db:getSetting validates input', async () => {
     const handler = handlers.get('db:getSetting')!
-    await expect(handler(undefined as never, '')).rejects.toThrow()
+    await expect(handler(createAuthorizedIpcEvent(), '')).rejects.toThrow()
   })
 
   it('db:setSetting persists value to real database', async () => {
     const handler = handlers.get('db:setSetting')!
-    await handler({ sender: { send: vi.fn() } } as never, 'test_setting', 'test_value')
+    await handler(createAuthorizedIpcEvent(), 'test_setting', 'test_value')
 
     expect(await db.config.getSetting('test_setting')).toBe('test_value')
 
