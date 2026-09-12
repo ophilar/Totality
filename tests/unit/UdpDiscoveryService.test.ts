@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/services/UdpDiscoveryService'
 import * as dgram from 'dgram'
-import axios from 'axios'
 
-const { mockSocket } = vi.hoisted(() => {
+const { mockSocket, mockFetchJSON } = vi.hoisted(() => {
   const mockSocket = {
     on: vi.fn(),
     bind: vi.fn(),
@@ -11,7 +10,8 @@ const { mockSocket } = vi.hoisted(() => {
     send: vi.fn(),
     close: vi.fn(),
   }
-  return { mockSocket }
+  const mockFetchJSON = vi.fn()
+  return { mockSocket, mockFetchJSON }
 })
 
 vi.mock('dgram', () => {
@@ -23,13 +23,9 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('axios', () => {
-  return {
-    default: {
-      get: vi.fn(),
-    }
-  }
-})
+vi.mock('@main/services/utils/httpClient', () => ({
+  fetchJSON: mockFetchJSON,
+}))
 
 vi.mock('@main/services/LoggingService', () => {
   return {
@@ -296,12 +292,10 @@ describe('UdpDiscoveryService', () => {
 
   describe('testServerUrl', () => {
     it('should return server info on successful request', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: {
-          ServerName: 'Test Server',
-          Id: 'test-id-123',
-          Version: '10.8.10'
-        }
+      mockFetchJSON.mockResolvedValueOnce({
+        ServerName: 'Test Server',
+        Id: 'test-id-123',
+        Version: '10.8.10'
       })
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
@@ -312,49 +306,43 @@ describe('UdpDiscoveryService', () => {
         serverId: 'test-id-123',
         version: '10.8.10'
       })
-      expect(axios.get).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeout: 5000,
+      expect(mockFetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+        timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should handle trailing slash in url', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: {
-          ServerName: 'Test Server',
-          Id: 'test-id-123',
-          Version: '10.8.10'
-        }
+      mockFetchJSON.mockResolvedValueOnce({
+        ServerName: 'Test Server',
+        Id: 'test-id-123',
+        Version: '10.8.10'
       })
 
       await service.testServerUrl('http://192.168.1.100:8096/')
 
-      expect(axios.get).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeout: 5000,
+      expect(mockFetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+        timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should return failure info on request error', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Network error'))
+      mockFetchJSON.mockRejectedValueOnce(new Error('Network error'))
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
       expect(result).toEqual({
         success: false,
-        error: 'Network error', // getErrorMessage will extract this
+        error: 'Network error',
       })
     })
 
     it('should return default failure info on missing error message', async () => {
-      // getErrorMessage falls back to String(error) which will return "[object Object]"
-      // when passing an empty object, so it will not return an empty string and fallback to "Failed to connect"
-      // Therefore, I will mock getErrorMessage to return empty string to test the fallback,
-      // Or I can test an object with custom toString that returns empty string.
       const errorObj = {
         toString: () => ''
       }
-      vi.mocked(axios.get).mockRejectedValueOnce(errorObj)
+      mockFetchJSON.mockRejectedValueOnce(errorObj)
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
