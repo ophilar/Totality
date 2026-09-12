@@ -20,6 +20,8 @@ describe('GeneralTab Component', () => {
     }
   }
 
+  let originalElectronAPI: Record<string, unknown>
+
   beforeEach(() => {
     mockElectronAPI = {
       getSetting: vi.fn().mockImplementation((key: string) => {
@@ -54,11 +56,13 @@ describe('GeneralTab Component', () => {
       },
     }
 
-    Object.assign(window, { electronAPI: mockElectronAPI })
+    originalElectronAPI = { ...((window as unknown as { electronAPI?: Record<string, unknown> }).electronAPI || {}) }
+    Object.assign(window.electronAPI, mockElectronAPI)
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+    Object.assign(window.electronAPI, originalElectronAPI)
   })
 
   it('renders loading indicator initially and then displays settings cards once loaded', async () => {
