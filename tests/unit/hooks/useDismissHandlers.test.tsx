@@ -216,7 +216,7 @@ describe('useDismissHandlers', () => {
       expect(setSeriesCompleteness).toHaveBeenCalledTimes(1)
       const mapUpdater = setSeriesCompleteness.mock.calls[0][0]
       const nextMap = mapUpdater(seriesMap)
-      const updatedData = nextMap.get('show-1')
+      const updatedData = nextMap.get('show-1')!
 
       expect(JSON.parse(updatedData.missing_episodes)).toEqual([{ season_number: 1, episode_number: 2, title: 'Ep 2' }])
       expect(JSON.parse(updatedData.missing_seasons)).toEqual([1])
@@ -285,7 +285,7 @@ describe('useDismissHandlers', () => {
       expect(setSeriesCompleteness).toHaveBeenCalledTimes(1)
       const mapUpdater = setSeriesCompleteness.mock.calls[0][0]
       const nextMap = mapUpdater(seriesMap)
-      const updatedData = nextMap.get('show-1')
+      const updatedData = nextMap.get('show-1')!
 
       expect(JSON.parse(updatedData.missing_episodes)).toEqual([{ season_number: 2, episode_number: 1 }])
       // Season 1 should now be removed from missing_seasons because no season 1 episodes remain
