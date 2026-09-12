@@ -45,11 +45,16 @@ describe('useLibraryEventListeners', () => {
       addToast: vi.fn(),
     }))
 
+    vi.useFakeTimers()
+
     await act(async () => {
       taskCompleteListener?.({ type: 'quality-analysis', status: 'completed' } as never)
+      vi.advanceTimersByTime(250)
     })
 
     expect(loadMedia).toHaveBeenCalledTimes(1)
     expect(loadStats).toHaveBeenCalledWith('src-1')
+
+    vi.useRealTimers()
   })
 })
