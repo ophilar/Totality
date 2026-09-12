@@ -47,7 +47,6 @@ describe('useLibraryEventListeners', () => {
 
     await act(async () => {
       taskCompleteListener?.({ type: 'quality-analysis', status: 'completed' } as never)
-      await new Promise(resolve => setTimeout(resolve, 300))
     })
 
     expect(loadMedia).toHaveBeenCalledTimes(1)
