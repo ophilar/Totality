@@ -216,6 +216,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     aiCompressionAdvice: (p: unknown) => invoke(IPC_CHANNELS.AI.COMPRESSION_ADVICE, p),
     aiExplainQuality: (p: unknown) => invoke(IPC_CHANNELS.AI.EXPLAIN_QUALITY, p),
     
+    // Exclusions
+    getExclusions: (type?: string, parentKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, type, parentKey),
+
     // Database Management
     dbReset: () => invoke(IPC_CHANNELS.DATABASE.RESET),
     dbImport: (d: unknown) => invoke(IPC_CHANNELS.DATABASE.IMPORT, d),
