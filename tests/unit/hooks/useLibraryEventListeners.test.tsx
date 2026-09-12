@@ -49,7 +49,9 @@ describe('useLibraryEventListeners', () => {
       taskCompleteListener?.({ type: 'quality-analysis', status: 'completed' } as never)
     })
 
-    expect(loadMedia).toHaveBeenCalledTimes(1)
-    expect(loadStats).toHaveBeenCalledWith('src-1')
+    await vi.waitFor(() => {
+      expect(loadMedia).toHaveBeenCalledTimes(1)
+      expect(loadStats).toHaveBeenCalledWith('src-1')
+    })
   })
 })
