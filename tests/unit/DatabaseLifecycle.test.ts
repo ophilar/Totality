@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { BetterSQLiteService, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
+import { BetterSQLiteService, getDatabaseBackend, resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
 import { _setupTestDb, _cleanupTestDb } from '@tests/TestUtils'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -29,6 +29,17 @@ describe('Database Lifecycle (Initialization + Operations)', () => {
         // Ignore EBUSY if file is locked
       }
     }
+  })
+
+  describe('Database Backend Identification', () => {
+    it('should return libsql as the current database backend type', () => {
+      expect(getDatabaseBackend()).toBe('libsql')
+    })
+
+    it('should return libsql backend regardless of database initialization or reset state', () => {
+      resetBetterSQLiteServiceForTesting()
+      expect(getDatabaseBackend()).toBe('libsql')
+    })
   })
 
   describe('Startup & Migrations', () => {
