@@ -225,6 +225,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     dbOptimize: () => invoke(IPC_CHANNELS.DATABASE.OPTIMIZE),
     dbRematchItem: (id: number, t: unknown) => invoke(IPC_CHANNELS.DATABASE.REMATCH_ITEM, id, t),
     dbIgnoreDuplicate: (sId: string, eId: string, t: string) => invoke(IPC_CHANNELS.DATABASE.IGNORE_DUPLICATE, sId, eId, t),
+    getExclusions: (t?: string, pKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pKey),
 
     // Task Queue
     taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || api.__taskState),

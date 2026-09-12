@@ -8,10 +8,12 @@ import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/Te
 
 describe('useLibraryEventListeners', () => {
   beforeEach(async () => {
+    vi.useFakeTimers()
     await setupTestDb()
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     cleanupTestDb()
   })
 
@@ -45,8 +47,9 @@ describe('useLibraryEventListeners', () => {
       addToast: vi.fn(),
     }))
 
-    await act(async () => {
+    act(() => {
       taskCompleteListener?.({ type: 'quality-analysis', status: 'completed' } as never)
+      vi.advanceTimersByTime(300)
     })
 
     expect(loadMedia).toHaveBeenCalledTimes(1)
