@@ -123,6 +123,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     tvShowCount: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, f),
     countTVEpisodes: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.TV_EPISODES_COUNT, f),
     getLibraryStats: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sId),
+    getExclusions: (t?: string, pKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pKey),
     getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k),
     setSetting: (k: string, v: string) => invoke(IPC_CHANNELS.DATABASE.SET_SETTING, k, v),
     getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
