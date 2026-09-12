@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useLibraryEventListeners } from '@/components/library/hooks/useLibraryEventListeners'
 import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
 
@@ -49,7 +49,9 @@ describe('useLibraryEventListeners', () => {
       taskCompleteListener?.({ type: 'quality-analysis', status: 'completed' } as never)
     })
 
-    expect(loadMedia).toHaveBeenCalledTimes(1)
-    expect(loadStats).toHaveBeenCalledWith('src-1')
+    await waitFor(() => {
+      expect(loadMedia).toHaveBeenCalledTimes(1)
+      expect(loadStats).toHaveBeenCalledWith('src-1')
+    })
   })
 })
