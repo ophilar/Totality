@@ -27,26 +27,20 @@ describe('QualitySettingsTab Component Tests', () => {
     taskCompleteListener = null
     progressListener = null
 
-    // Extend electronAPI with required listeners and mocks for QualitySettingsTab
-    const mockApi = {
-      ...bridge.api,
-      onTaskQueueTaskComplete: vi.fn().mockImplementation((cb: (task: { type: string }) => void) => {
-        taskCompleteListener = cb
-        return () => {
-          taskCompleteListener = null
-        }
-      }),
-      onQualityAnalysisProgress: vi.fn().mockImplementation((cb: (progress: { current: number; total: number }) => void) => {
-        progressListener = cb
-        return () => {
-          progressListener = null
-        }
-      }),
-      taskQueueAddTask: vi.fn().mockImplementation(bridge.api.taskQueueAddTask || (async () => ({}))),
-    }
+    // Mutate existing window.electronAPI object directly to prevent destroying global references
+    bridge.api.onTaskQueueTaskComplete = vi.fn().mockImplementation((cb: (task: { type: string }) => void) => {
+      taskCompleteListener = cb
+      return () => {
+        taskCompleteListener = null
+      }
+    }) as never
 
-    Object.assign(window, { electronAPI: mockApi })
-    Object.assign(globalThis, { electronAPI: mockApi })
+    bridge.api.onQualityAnalysisProgress = vi.fn().mockImplementation((cb: (progress: { current: number; total: number }) => void) => {
+      progressListener = cb
+      return () => {
+        progressListener = null
+      }
+    }) as never
   })
 
   afterEach(async () => {
