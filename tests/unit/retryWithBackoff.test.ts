@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
+import { retryWithBackoff, createRetryFetch, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
 
 describe('retryWithBackoff', () => {
   it('should succeed on first try without retry', async () => {
@@ -176,5 +176,98 @@ describe('getRateLimitRetryAfter', () => {
   })
 })
 
+describe('createRetryFetch', () => {
+  it('should make successful fetch request without retry on 200 OK', async () => {
+    const mockResponse = new Response('ok', { status: 200, statusText: 'OK' })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
+
+    const retryFetch = createRetryFetch({ initialDelay: 10 })
+    const res = await retryFetch('https://example.com/api', { headers: { Authorization: 'Bearer test' } })
+
+    expect(res).toBe(mockResponse)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith('https://example.com/api', { headers: { Authorization: 'Bearer test' } })
+
+    fetchSpy.mockRestore()
+  })
+
+  it('should retry on retryable HTTP error (e.g., 500) and succeed when fetch recovers', async () => {
+    const errorResponse = new Response('error', { status: 500, statusText: 'Internal Server Error' })
+    const successResponse = new Response('ok', { status: 200, statusText: 'OK' })
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(successResponse)
+
+    const onRetry = vi.fn()
+    const retryFetch = createRetryFetch({ maxRetries: 2, initialDelay: 10, onRetry })
+    const res = await retryFetch('https://example.com/api')
+
+    expect(res).toBe(successResponse)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(onRetry).toHaveBeenCalledTimes(1)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('should throw error after exhausting max retries on retryable HTTP error', async () => {
+    const errorResponse = new Response('error', { status: 503, statusText: 'Service Unavailable' })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse)
+
+    const retryFetch = createRetryFetch({ maxRetries: 2, initialDelay: 10 })
+
+    await expect(retryFetch('https://example.com/api')).rejects.toThrow('HTTP 503: Service Unavailable')
+    expect(fetchSpy).toHaveBeenCalledTimes(3) // 1 initial + 2 retries
+
+    fetchSpy.mockRestore()
+  })
+
+  it('should not retry on non-retryable HTTP error (e.g., 404) and return response', async () => {
+    const notFoundResponse = new Response('not found', { status: 404, statusText: 'Not Found' })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(notFoundResponse)
+
+    const retryFetch = createRetryFetch({ maxRetries: 3, initialDelay: 10 })
+    const res = await retryFetch('https://example.com/api')
+
+    expect(res).toBe(notFoundResponse)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('should respect custom retryableStatuses options', async () => {
+    const badRequestResponse = new Response('bad request', { status: 400, statusText: 'Bad Request' })
+    const successResponse = new Response('ok', { status: 200, statusText: 'OK' })
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(badRequestResponse)
+      .mockResolvedValueOnce(successResponse)
+
+    const retryFetch = createRetryFetch({ maxRetries: 2, initialDelay: 10, retryableStatuses: [400] })
+    const res = await retryFetch('https://example.com/api')
+
+    expect(res).toBe(successResponse)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('should retry on network fetch failure (TypeError)', async () => {
+    const networkError = new TypeError('fetch failed')
+    const successResponse = new Response('ok', { status: 200, statusText: 'OK' })
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(networkError)
+      .mockResolvedValueOnce(successResponse)
+
+    const retryFetch = createRetryFetch({ maxRetries: 2, initialDelay: 10 })
+    const res = await retryFetch('https://example.com/api')
+
+    expect(res).toBe(successResponse)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+    fetchSpy.mockRestore()
+  })
+})
 
 
