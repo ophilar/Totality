@@ -30,12 +30,11 @@ describe('TranscodingHardwareCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    Object.assign(window, {
-      electronAPI: {
-        getCapabilities: mockGetCapabilities,
-        refreshCapabilities: mockRefreshCapabilities,
-        setSelectedGpu: mockSetSelectedGpu
-      }
+    const api = window.electronAPI || ({} as typeof window.electronAPI)
+    window.electronAPI = Object.assign(api, {
+      getCapabilities: mockGetCapabilities,
+      refreshCapabilities: mockRefreshCapabilities,
+      setSelectedGpu: mockSetSelectedGpu
     })
   })
 
