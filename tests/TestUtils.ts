@@ -228,6 +228,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
 
     // Task Queue
     taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || api.__taskState),
+    taskQueueAddTask: (def: unknown) => invoke('taskQueue:addTask', def),
     onTaskQueueUpdated: (cb: (state: unknown) => void) => {
       api.__taskListeners = api.__taskListeners || []
       api.__taskListeners.push(cb)
