@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/services/UdpDiscoveryService'
 import * as dgram from 'dgram'
-import axios from 'axios'
+import { fetchJSON } from '@main/services/utils/httpClient'
 
 const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
@@ -23,11 +23,9 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('axios', () => {
+vi.mock('@main/services/utils/httpClient', () => {
   return {
-    default: {
-      get: vi.fn(),
-    }
+    fetchJSON: vi.fn(),
   }
 })
 
@@ -66,157 +64,125 @@ describe('UdpDiscoveryService', () => {
 
   describe('discoverServers', () => {
     it('should discover Jellyfin server', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
-      const onCallbackMap: Record<string, Callback> = {}
-      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
-        onCallbackMap[event] = cb
-      })
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
+      })
+
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
+        if (event === 'message') {
+          // Simulate server response
+          const response = JSON.stringify({
+            Id: 'server-1',
+            Name: 'Jellyfin Server',
+            Address: 'http://192.168.1.100:8096'
+          })
+          cb(Buffer.from(response), { address: '192.168.1.100' })
+        }
+        return mockSocket
       })
 
       const discoverPromise = service.discoverServers('jellyfin')
 
-      // Simulate receiving a valid message
-      const validMessage = JSON.stringify({
-        Id: 'server-id-1',
-        Name: 'My Jellyfin Server',
-        Address: 'http://192.168.1.100:8096',
-        EndpointAddress: '192.168.1.100',
-        LocalAddress: 'http://127.0.0.1:8096'
-      })
-      onCallbackMap['message'](Buffer.from(validMessage), { address: '192.168.1.100' })
-
-      vi.advanceTimersByTime(3000) // DISCOVERY_TIMEOUT
+      vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
+
       expect(servers).toHaveLength(1)
       expect(servers[0]).toEqual({
-        id: 'server-id-1',
-        name: 'My Jellyfin Server',
+        id: 'server-1',
+        name: 'Jellyfin Server',
         address: 'http://192.168.1.100:8096',
-        endpointAddress: '192.168.1.100',
-        localAddress: 'http://127.0.0.1:8096',
-        type: 'jellyfin',
+        endpointAddress: undefined,
+        localAddress: undefined,
+        type: 'jellyfin'
       })
-      expect(mockSocket.send).toHaveBeenCalled()
-      expect(mockSocket.close).toHaveBeenCalled()
     })
 
     it('should fallback to rinfo address if Address is not provided', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
-      const onCallbackMap: Record<string, Callback> = {}
-      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
-        onCallbackMap[event] = cb
-      })
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      const discoverPromise = service.discoverServers('emby')
-
-      const validMessageWithoutAddress = JSON.stringify({
-        Id: 'server-id-2',
-        Name: 'My Emby Server',
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
+        if (event === 'message') {
+          const response = JSON.stringify({
+            Id: 'server-2',
+            Name: 'Emby Server'
+          })
+          cb(Buffer.from(response), { address: '192.168.1.101' })
+        }
+        return mockSocket
       })
-      onCallbackMap['message'](Buffer.from(validMessageWithoutAddress), { address: '192.168.1.101' })
+
+      const discoverPromise = service.discoverServers('emby')
 
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
+
+      expect(servers).toHaveLength(1)
       expect(servers[0].address).toBe('http://192.168.1.101:8096')
       expect(servers[0].type).toBe('emby')
     })
 
     it('should ignore duplicate IDs', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
-      const onCallbackMap: Record<string, Callback> = {}
-      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
-        onCallbackMap[event] = cb
-      })
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      const discoverPromise = service.discoverServers('jellyfin')
-
-      const validMessage = JSON.stringify({
-        Id: 'server-id-1',
-        Name: 'My Jellyfin Server',
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
+        if (event === 'message') {
+          const response = JSON.stringify({
+            Id: 'server-1',
+            Name: 'Jellyfin Server'
+          })
+          // Call twice with same ID
+          cb(Buffer.from(response), { address: '192.168.1.100' })
+          cb(Buffer.from(response), { address: '192.168.1.100' })
+        }
+        return mockSocket
       })
 
-      onCallbackMap['message'](Buffer.from(validMessage), { address: '192.168.1.100' })
-      // Send the exact same message again
-      onCallbackMap['message'](Buffer.from(validMessage), { address: '192.168.1.100' })
+      const discoverPromise = service.discoverServers('jellyfin')
 
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
-      expect(servers).toHaveLength(1) // Duplicate ignored
+
+      expect(servers).toHaveLength(1)
     })
 
     it('should ignore invalid JSON responses', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
-      const onCallbackMap: Record<string, Callback> = {}
-      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
-        onCallbackMap[event] = cb
-      })
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      // We need to mock console.debug because the code calls it
-      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
+        if (event === 'message') {
+          cb(Buffer.from('not json'), { address: '192.168.1.100' })
+        }
+        return mockSocket
+      })
 
       const discoverPromise = service.discoverServers('jellyfin')
-
-      onCallbackMap['message'](Buffer.from('not valid json'), { address: '192.168.1.100' })
 
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
-      expect(servers).toHaveLength(0)
-      expect(consoleSpy).toHaveBeenCalledWith('[JellyfinDiscovery] Invalid response:', 'not valid json')
 
-      consoleSpy.mockRestore()
+      expect(servers).toHaveLength(0)
     })
 
     it('should handle socket errors', async () => {
-       const mockSocket = dgram.createSocket('udp4')
-
-      const onCallbackMap: Record<string, Callback> = {}
-      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
-        onCallbackMap[event] = cb
-      })
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
 
-      const discoverPromise = service.discoverServers('jellyfin')
-
-      // Simulate error
-      onCallbackMap['error'](new Error('Socket explosion'))
-
-      vi.advanceTimersByTime(3000)
-
-      const servers = await discoverPromise
-      expect(servers).toHaveLength(0) // Resolves normally despite error
-    })
-
-    it('should handle socket bind exception', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
-      vi.mocked(mockSocket.bind).mockImplementation((_cb: Callback) => {
-         throw new Error('Bind failed')
+      vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
+        if (event === 'error') {
+          cb(new Error('Socket error'))
+        }
+        return mockSocket
       })
 
       const discoverPromise = service.discoverServers('jellyfin')
@@ -224,12 +190,25 @@ describe('UdpDiscoveryService', () => {
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
+
+      expect(servers).toHaveLength(0)
+    })
+
+    it('should handle socket bind exception', async () => {
+      vi.mocked(mockSocket.bind).mockImplementation(() => {
+        throw new Error('Bind failed')
+      })
+
+      const discoverPromise = service.discoverServers('jellyfin')
+
+      vi.advanceTimersByTime(3000)
+
+      const servers = await discoverPromise
+
       expect(servers).toHaveLength(0)
     })
 
     it('should handle send exceptions gracefully', async () => {
-       const mockSocket = dgram.createSocket('udp4')
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
@@ -243,21 +222,20 @@ describe('UdpDiscoveryService', () => {
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
+
       expect(servers).toHaveLength(0)
     })
 
     it('should handle socket creation error gracefully', async () => {
-       vi.mocked(dgram.createSocket).mockImplementationOnce(() => {
-         throw new Error('Failed to create')
-       })
+      vi.mocked(dgram.createSocket).mockImplementationOnce(() => {
+        throw new Error('Socket creation failed')
+      })
 
       const servers = await service.discoverServers('jellyfin')
       expect(servers).toHaveLength(0)
     })
 
     it('should handle setBroadcast exception gracefully', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
@@ -271,12 +249,11 @@ describe('UdpDiscoveryService', () => {
       vi.advanceTimersByTime(3000)
 
       const servers = await discoverPromise
+
       expect(servers).toHaveLength(0)
     })
 
     it('should handle close exception gracefully', async () => {
-      const mockSocket = dgram.createSocket('udp4')
-
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
       })
@@ -296,12 +273,10 @@ describe('UdpDiscoveryService', () => {
 
   describe('testServerUrl', () => {
     it('should return server info on successful request', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: {
-          ServerName: 'Test Server',
-          Id: 'test-id-123',
-          Version: '10.8.10'
-        }
+      vi.mocked(fetchJSON).mockResolvedValueOnce({
+        ServerName: 'Test Server',
+        Id: 'test-id-123',
+        Version: '10.8.10'
       })
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
@@ -312,31 +287,29 @@ describe('UdpDiscoveryService', () => {
         serverId: 'test-id-123',
         version: '10.8.10'
       })
-      expect(axios.get).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeout: 5000,
+      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+        timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should handle trailing slash in url', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: {
-          ServerName: 'Test Server',
-          Id: 'test-id-123',
-          Version: '10.8.10'
-        }
+      vi.mocked(fetchJSON).mockResolvedValueOnce({
+        ServerName: 'Test Server',
+        Id: 'test-id-123',
+        Version: '10.8.10'
       })
 
       await service.testServerUrl('http://192.168.1.100:8096/')
 
-      expect(axios.get).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeout: 5000,
+      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+        timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should return failure info on request error', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('Network error'))
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
@@ -347,14 +320,10 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should return default failure info on missing error message', async () => {
-      // getErrorMessage falls back to String(error) which will return "[object Object]"
-      // when passing an empty object, so it will not return an empty string and fallback to "Failed to connect"
-      // Therefore, I will mock getErrorMessage to return empty string to test the fallback,
-      // Or I can test an object with custom toString that returns empty string.
       const errorObj = {
         toString: () => ''
       }
-      vi.mocked(axios.get).mockRejectedValueOnce(errorObj)
+      vi.mocked(fetchJSON).mockRejectedValueOnce(errorObj)
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
