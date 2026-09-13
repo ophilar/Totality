@@ -340,7 +340,7 @@ describe('UdpDiscoveryService', () => {
 
       expect(result).toEqual({
         success: false,
-        error: 'Network error', // getErrorMessage will extract this
+        error: 'Network error',
       })
     })
 
