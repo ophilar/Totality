@@ -3,10 +3,6 @@ import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/serv
 import * as dgram from 'dgram'
 import { fetchJSON } from '@main/services/utils/httpClient'
 
-vi.mock('@main/services/utils/httpClient', () => ({
-  fetchJSON: vi.fn(),
-}))
-
 const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
     on: vi.fn(),
@@ -24,6 +20,12 @@ vi.mock('dgram', () => {
     default: {
       createSocket: vi.fn(() => mockSocket),
     }
+  }
+})
+
+vi.mock('@main/services/utils/httpClient', () => {
+  return {
+    fetchJSON: vi.fn(),
   }
 })
 
@@ -186,7 +188,7 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should handle socket errors', async () => {
-      const mockSocket = dgram.createSocket('udp4')
+       const mockSocket = dgram.createSocket('udp4')
 
       const onCallbackMap: Record<string, Callback> = {}
       vi.mocked(mockSocket.on).mockImplementation((event: string, cb: Callback) => {
@@ -212,7 +214,7 @@ describe('UdpDiscoveryService', () => {
       const mockSocket = dgram.createSocket('udp4')
 
       vi.mocked(mockSocket.bind).mockImplementation((_cb: Callback) => {
-        throw new Error('Bind failed')
+         throw new Error('Bind failed')
       })
 
       const discoverPromise = service.discoverServers('jellyfin')
@@ -224,7 +226,7 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should handle send exceptions gracefully', async () => {
-      const mockSocket = dgram.createSocket('udp4')
+       const mockSocket = dgram.createSocket('udp4')
 
       vi.mocked(mockSocket.bind).mockImplementation((cb: Callback) => {
         cb()
@@ -243,9 +245,9 @@ describe('UdpDiscoveryService', () => {
     })
 
     it('should handle socket creation error gracefully', async () => {
-      vi.mocked(dgram.createSocket).mockImplementationOnce(() => {
-        throw new Error('Failed to create')
-      })
+       vi.mocked(dgram.createSocket).mockImplementationOnce(() => {
+         throw new Error('Failed to create')
+       })
 
       const servers = await service.discoverServers('jellyfin')
       expect(servers).toHaveLength(0)
@@ -291,6 +293,10 @@ describe('UdpDiscoveryService', () => {
   })
 
   describe('testServerUrl', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
     it('should return server info on successful request', async () => {
       vi.mocked(fetchJSON).mockResolvedValueOnce({
         ServerName: 'Test Server',
@@ -334,7 +340,7 @@ describe('UdpDiscoveryService', () => {
 
       expect(result).toEqual({
         success: false,
-        error: 'Network error',
+        error: 'Network error', // getErrorMessage will extract this
       })
     })
 
