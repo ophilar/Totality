@@ -126,6 +126,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k),
     setSetting: (k: string, v: string) => invoke(IPC_CHANNELS.DATABASE.SET_SETTING, k, v),
     getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
+    getExclusions: (t?: string, pK?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pK),
+    addExclusion: (t: string, rK?: string, pK?: string, mI?: number, rT?: string) => invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, t, rK, pK, mI, rT),
+    removeExclusion: (id: number) => invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
     isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE),
     setVerboseLogging: (e: boolean) => invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, e),
     getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l),
@@ -216,6 +219,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     aiCompressionAdvice: (p: unknown) => invoke(IPC_CHANNELS.AI.COMPRESSION_ADVICE, p),
     aiExplainQuality: (p: unknown) => invoke(IPC_CHANNELS.AI.EXPLAIN_QUALITY, p),
     
+    // Exclusions
+    getExclusions: (type?: string, parentKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, type, parentKey),
+
     // Database Management
     dbReset: () => invoke(IPC_CHANNELS.DATABASE.RESET),
     dbImport: (d: unknown) => invoke(IPC_CHANNELS.DATABASE.IMPORT, d),
@@ -225,6 +231,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     dbOptimize: () => invoke(IPC_CHANNELS.DATABASE.OPTIMIZE),
     dbRematchItem: (id: number, t: unknown) => invoke(IPC_CHANNELS.DATABASE.REMATCH_ITEM, id, t),
     dbIgnoreDuplicate: (sId: string, eId: string, t: string) => invoke(IPC_CHANNELS.DATABASE.IGNORE_DUPLICATE, sId, eId, t),
+    getExclusions: (t?: string, pKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pKey),
 
     // Task Queue
     taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || api.__taskState),
