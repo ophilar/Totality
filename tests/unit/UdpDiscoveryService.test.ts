@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/services/UdpDiscoveryService'
 import * as dgram from 'dgram'
-import { fetchJSON } from '../../src/main/services/utils/httpClient'
+import { fetchJSON } from '@main/services/utils/httpClient'
 
 const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
@@ -23,7 +23,7 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('../../src/main/services/utils/httpClient', () => {
+vi.mock('@main/services/utils/httpClient', () => {
   return {
     fetchJSON: vi.fn(),
   }
@@ -340,7 +340,7 @@ describe('UdpDiscoveryService', () => {
 
       expect(result).toEqual({
         success: false,
-        error: 'Network error', // getErrorMessage will extract this
+        error: 'Network error',
       })
     })
 
