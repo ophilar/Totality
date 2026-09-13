@@ -296,6 +296,7 @@ describe('UdpDiscoveryService', () => {
     beforeEach(() => {
       vi.useRealTimers()
     })
+
     it('should return server info on successful request', async () => {
       vi.mocked(fetchJSON).mockResolvedValueOnce({
         ServerName: 'Test Server',
