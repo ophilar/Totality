@@ -272,6 +272,10 @@ describe('UdpDiscoveryService', () => {
   })
 
   describe('testServerUrl', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
     it('should return server info on successful request', async () => {
       vi.mocked(fetchJSON).mockResolvedValueOnce({
         ServerName: 'Test Server',
@@ -315,7 +319,7 @@ describe('UdpDiscoveryService', () => {
 
       expect(result).toEqual({
         success: false,
-        error: 'Network error', // getErrorMessage will extract this
+        error: 'Network error',
       })
     })
 
