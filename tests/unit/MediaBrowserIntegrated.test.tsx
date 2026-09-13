@@ -76,6 +76,7 @@ describe('MediaBrowser (Integrated Stack)', () => {
                 </SourceProvider>
             </ToastProvider>
         )
+        await new Promise(r => setTimeout(r, 50))
     })
     return result
   }
