@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/services/UdpDiscoveryService'
 import * as dgram from 'dgram'
+import { fetchJSON } from '@main/services/utils/httpClient'
 
-const { mockSocket, mockFetchJSON } = vi.hoisted(() => {
+const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
     on: vi.fn(),
     bind: vi.fn(),
@@ -10,8 +11,7 @@ const { mockSocket, mockFetchJSON } = vi.hoisted(() => {
     send: vi.fn(),
     close: vi.fn(),
   }
-  const mockFetchJSON = vi.fn()
-  return { mockSocket, mockFetchJSON }
+  return { mockSocket }
 })
 
 vi.mock('dgram', () => {
@@ -23,9 +23,11 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('@main/services/utils/httpClient', () => ({
-  fetchJSON: mockFetchJSON,
-}))
+vi.mock('@main/services/utils/httpClient', () => {
+  return {
+    fetchJSON: vi.fn(),
+  }
+})
 
 vi.mock('@main/services/LoggingService', () => {
   return {
@@ -291,8 +293,12 @@ describe('UdpDiscoveryService', () => {
   })
 
   describe('testServerUrl', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
     it('should return server info on successful request', async () => {
-      mockFetchJSON.mockResolvedValueOnce({
+      vi.mocked(fetchJSON).mockResolvedValueOnce({
         ServerName: 'Test Server',
         Id: 'test-id-123',
         Version: '10.8.10'
@@ -306,14 +312,14 @@ describe('UdpDiscoveryService', () => {
         serverId: 'test-id-123',
         version: '10.8.10'
       })
-      expect(mockFetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
         timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should handle trailing slash in url', async () => {
-      mockFetchJSON.mockResolvedValueOnce({
+      vi.mocked(fetchJSON).mockResolvedValueOnce({
         ServerName: 'Test Server',
         Id: 'test-id-123',
         Version: '10.8.10'
@@ -321,14 +327,14 @@ describe('UdpDiscoveryService', () => {
 
       await service.testServerUrl('http://192.168.1.100:8096/')
 
-      expect(mockFetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
+      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
         timeoutMs: 5000,
         headers: { Accept: 'application/json' },
       })
     })
 
     it('should return failure info on request error', async () => {
-      mockFetchJSON.mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('Network error'))
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
@@ -342,7 +348,7 @@ describe('UdpDiscoveryService', () => {
       const errorObj = {
         toString: () => ''
       }
-      mockFetchJSON.mockRejectedValueOnce(errorObj)
+      vi.mocked(fetchJSON).mockRejectedValueOnce(errorObj)
 
       const result = await service.testServerUrl('http://192.168.1.100:8096')
 
