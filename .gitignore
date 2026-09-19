@@ -66,3 +66,6 @@ repomix-output.txt
 .eslintcache
 
 test-results/
+
+# Local timeline data is user-owned and is never committed.
+data/timelines/*.json

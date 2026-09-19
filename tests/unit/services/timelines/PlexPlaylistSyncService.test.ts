@@ -25,7 +25,7 @@ describe('PlexPlaylistSyncService', () => {
       {
         order: 1,
         type: 'movie',
-        title: 'Star Trek I',
+        title: 'Example Saga I',
         identifiers: { tmdbId: 152 },
         status: 'missing',
       },
@@ -36,7 +36,7 @@ describe('PlexPlaylistSyncService', () => {
         serverUri: 'http://127.0.0.1:32400',
         accessToken: 'plex-token',
         machineIdentifier: 'mach-123',
-        playlistTitle: 'Star Trek Complete',
+        playlistTitle: 'Example Saga Complete',
         items,
       })
     ).rejects.toThrow(/No matched items found/)
@@ -47,7 +47,7 @@ describe('PlexPlaylistSyncService', () => {
       {
         order: 1,
         type: 'movie',
-        title: 'Star Trek I',
+        title: 'Example Saga I',
         identifiers: { tmdbId: 152 },
         status: 'matched',
         matchedMediaItem: {
@@ -55,7 +55,7 @@ describe('PlexPlaylistSyncService', () => {
           plexId: '1001',
           sourceId: 'src-1',
           sourceType: 'plex',
-          title: 'Star Trek I',
+          title: 'Example Saga I',
           filePath: '/movies/st1.mkv',
           resolution: '1080p',
           videoCodec: 'h264',
@@ -65,14 +65,14 @@ describe('PlexPlaylistSyncService', () => {
       {
         order: 2,
         type: 'movie',
-        title: 'Star Trek II',
+        title: 'Example Saga II',
         identifiers: { tmdbId: 154 },
         status: 'missing',
       },
       {
         order: 3,
         type: 'movie',
-        title: 'Star Trek III',
+        title: 'Example Saga III',
         identifiers: { tmdbId: 157 },
         status: 'matched',
         matchedMediaItem: {
@@ -80,7 +80,7 @@ describe('PlexPlaylistSyncService', () => {
           plexId: '1003',
           sourceId: 'src-1',
           sourceType: 'plex',
-          title: 'Star Trek III',
+          title: 'Example Saga III',
           filePath: '/movies/st3.mkv',
           resolution: '1080p',
           videoCodec: 'h264',
@@ -102,7 +102,7 @@ describe('PlexPlaylistSyncService', () => {
     mockAxiosInstance.post.mockResolvedValueOnce({
       data: {
         MediaContainer: {
-          Metadata: [{ ratingKey: 'playlist-999', title: 'Star Trek Complete' }],
+          Metadata: [{ ratingKey: 'playlist-999', title: 'Example Saga Complete' }],
         },
       },
     })
@@ -114,7 +114,7 @@ describe('PlexPlaylistSyncService', () => {
       serverUri: 'http://127.0.0.1:32400',
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
-      playlistTitle: 'Star Trek Complete',
+      playlistTitle: 'Example Saga Complete',
       items,
     })
 
@@ -130,7 +130,7 @@ describe('PlexPlaylistSyncService', () => {
       expect.objectContaining({
         params: {
           type: 'video',
-          title: 'Star Trek Complete',
+          title: 'Example Saga Complete',
           smart: 0,
           uri: 'server://mach-123/com.plexapp.plugins.library/library/metadata/1001',
         },
@@ -154,7 +154,7 @@ describe('PlexPlaylistSyncService', () => {
       {
         order: 1,
         type: 'movie',
-        title: 'Star Trek I',
+        title: 'Example Saga I',
         identifiers: { tmdbId: 152 },
         status: 'matched',
         matchedMediaItem: {
@@ -162,7 +162,7 @@ describe('PlexPlaylistSyncService', () => {
           plexId: '1001',
           sourceId: 'src-1',
           sourceType: 'plex',
-          title: 'Star Trek I',
+          title: 'Example Saga I',
           filePath: '/movies/st1.mkv',
           resolution: '1080p',
           videoCodec: 'h264',
@@ -175,7 +175,7 @@ describe('PlexPlaylistSyncService', () => {
     mockAxiosInstance.get.mockResolvedValueOnce({
       data: {
         MediaContainer: {
-          Metadata: [{ ratingKey: 'old-playlist-123', title: 'Star Trek Complete' }],
+          Metadata: [{ ratingKey: 'old-playlist-123', title: 'Example Saga Complete' }],
         },
       },
     })
@@ -184,7 +184,7 @@ describe('PlexPlaylistSyncService', () => {
     mockAxiosInstance.post.mockResolvedValueOnce({
       data: {
         MediaContainer: {
-          Metadata: [{ ratingKey: 'playlist-1000', title: 'Star Trek Complete' }],
+          Metadata: [{ ratingKey: 'playlist-1000', title: 'Example Saga Complete' }],
         },
       },
     })
@@ -193,7 +193,7 @@ describe('PlexPlaylistSyncService', () => {
       serverUri: 'http://127.0.0.1:32400',
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
-      playlistTitle: 'Star Trek Complete',
+      playlistTitle: 'Example Saga Complete',
       items,
     })
 
@@ -221,7 +221,7 @@ describe('PlexPlaylistSyncService', () => {
             },
             {
               ratingKey: 'p-2',
-              title: 'Star Wars Complete',
+              title: 'Example Galaxy Complete',
               playlistType: 'video',
               leafCount: 11,
               duration: 90000,
@@ -242,6 +242,6 @@ describe('PlexPlaylistSyncService', () => {
       composite: '/thumb.jpg',
       updatedAt: undefined,
     })
-    expect(playlists[1].title).toBe('Star Wars Complete')
+    expect(playlists[1].title).toBe('Example Galaxy Complete')
   })
 })

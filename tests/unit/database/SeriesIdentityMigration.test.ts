@@ -195,12 +195,12 @@ describe('series identity migration', () => {
       plex_id: 'ep-1',
       type: 'episode',
       title: 'Episode 1',
-      series_title: 'Andor',
+      series_title: 'Example Series',
       series_tmdb_id: seriesTmdbId,
       series_identity_key: 'tmdb:3745389', // individual episode 1 ID
       season_number: 1,
       episode_number: 1,
-      file_path: '/media/Andor/S01E01.mkv',
+      file_path: '/media/Example Series/S01E01.mkv',
     })
     const ep2Id = await db.media.upsertItem({
       source_id: sourceId,
@@ -208,12 +208,12 @@ describe('series identity migration', () => {
       plex_id: 'ep-2',
       type: 'episode',
       title: 'Episode 2',
-      series_title: 'Andor',
+      series_title: 'Example Series',
       series_tmdb_id: seriesTmdbId,
       series_identity_key: 'tmdb:3745391', // individual episode 2 ID
       season_number: 1,
       episode_number: 2,
-      file_path: '/media/Andor/S01E02.mkv',
+      file_path: '/media/Example Series/S01E02.mkv',
     })
     const ep3Id = await db.media.upsertItem({
       source_id: sourceId,
@@ -221,12 +221,12 @@ describe('series identity migration', () => {
       plex_id: 'ep-3',
       type: 'episode',
       title: 'Episode 3',
-      series_title: 'Andor',
+      series_title: 'Example Series',
       series_tmdb_id: seriesTmdbId,
       series_identity_key: 'tmdb:5747440', // individual episode 3 ID
       season_number: 2,
       episode_number: 1,
-      file_path: '/media/Andor/S02E01.mkv',
+      file_path: '/media/Example Series/S02E01.mkv',
     })
 
     // Simulate series_completeness having only episode 3's key
@@ -239,11 +239,11 @@ describe('series identity migration', () => {
         missing_seasons, missing_episodes, completeness_percentage,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, 2, 24, 1, 1, '[]', '[]', 4, ?, ?)`,
-      args: ['Andor', 'tmdb:5747440', sourceId, libraryId, seriesTmdbId, now, now],
+      args: ['Example Series', 'tmdb:5747440', sourceId, libraryId, seriesTmdbId, now, now],
     })
 
     // Before migration, querying with series_completeness's key returns ONLY 1 episode
-    const episodesBefore = await db.tvShows.getEpisodes('Andor', sourceId, 'tmdb:5747440', libraryId)
+    const episodesBefore = await db.tvShows.getEpisodes('Example Series', sourceId, 'tmdb:5747440', libraryId)
     expect(episodesBefore).toHaveLength(1)
 
     // Run migration
@@ -251,19 +251,19 @@ describe('series identity migration', () => {
 
     // After migration, series_identity_key for all 3 episodes is aligned to tmdb:83867
     const canonicalKey = `tmdb:${seriesTmdbId}`
-    const episodesAfter = await db.tvShows.getEpisodes('Andor', sourceId, canonicalKey, libraryId)
+    const episodesAfter = await db.tvShows.getEpisodes('Example Series', sourceId, canonicalKey, libraryId)
     expect(episodesAfter).toHaveLength(3)
     expect(episodesAfter.map(e => e.id)).toEqual([ep1Id, ep2Id, ep3Id])
 
     // Series completeness row is also updated to the canonical key
     const compRows = (await db.tvShows.getAllCompleteness(sourceId, libraryId))
-      .filter(r => r.series_title === 'Andor')
+      .filter(r => r.series_title === 'Example Series')
     expect(compRows).toHaveLength(1)
     expect(compRows[0].series_identity_key).toBe(canonicalKey)
 
     // Summaries returns all 3 owned episodes
     const summaries = await db.tvShows.getSummaries({ sourceId, libraryId })
-    const andorSummary = summaries.find(s => s.series_title === 'Andor')
-    expect(andorSummary?.owned_episodes).toBe(3)
+    const exampleSeriesSummary = summaries.find(s => s.series_title === 'Example Series')
+    expect(exampleSeriesSummary?.owned_episodes).toBe(3)
   })
 })

@@ -18,7 +18,7 @@ describe('MovieCollectionRepository (Real DB)', () => {
   it('should upsert and retrieve collections', async () => {
     const col = {
       tmdb_collection_id: 'col-123',
-      collection_name: 'Marvel Cinematic Universe',
+      collection_name: 'Example Universe',
       total_movies: 20,
       owned_movies: 5,
       completeness_percentage: 25,
@@ -30,7 +30,7 @@ describe('MovieCollectionRepository (Real DB)', () => {
     
     const collections = await repo.getCollections('s1')
     expect(collections).toHaveLength(1)
-    expect(collections[0].collection_name).toBe('Marvel Cinematic Universe')
+    expect(collections[0].collection_name).toBe('Example Universe')
   })
 
   it('should get incomplete collections', async () => {

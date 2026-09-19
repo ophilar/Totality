@@ -30,16 +30,16 @@ describe('TimelinesView Master-Detail Layout', () => {
     api.timelinesListRecipes = vi.fn().mockResolvedValue([
       {
         id: 'star-trek-chronological',
-        name: 'Star Trek (The Chronology Project Order)',
-        franchise: 'Star Trek',
+        name: 'Example Saga (The Chronology Project Order)',
+        franchise: 'Example Saga',
         description: 'In-universe narrative chronological viewing order',
         totalItems: 18,
         sourceType: 'preset',
       },
       {
         id: 'star-wars-canon',
-        name: 'Star Wars Canon Timeline',
-        franchise: 'Star Wars',
+        name: 'Example Galaxy Canon Timeline',
+        franchise: 'Example Galaxy',
         description: 'Complete canon viewing order',
         totalItems: 25,
         sourceType: 'web',
@@ -51,8 +51,8 @@ describe('TimelinesView Master-Detail Layout', () => {
         return {
           timeline: {
             id: 'star-wars-canon',
-            name: 'Star Wars Canon Timeline',
-            franchise: 'Star Wars',
+            name: 'Example Galaxy Canon Timeline',
+            franchise: 'Example Galaxy',
             description: 'Complete canon viewing order',
             version: 1,
             sourceUrl: 'https://starwars.example.com/canon',
@@ -84,7 +84,7 @@ describe('TimelinesView Master-Detail Layout', () => {
                 sourceId: 'plex-1',
                 sourceType: 'plex',
                 title: 'The Phantom Menace',
-                filePath: '/media/movies/Star Wars TPM.mkv',
+                filePath: '/media/movies/Example Galaxy TPM.mkv',
                 resolution: '4k',
                 videoCodec: 'hevc',
                 duration: 8100,
@@ -97,8 +97,8 @@ describe('TimelinesView Master-Detail Layout', () => {
       return {
         timeline: {
           id: 'star-trek-chronological',
-          name: 'Star Trek (The Chronology Project Order)',
-          franchise: 'Star Trek',
+          name: 'Example Saga (The Chronology Project Order)',
+          franchise: 'Example Saga',
           description: 'In-universe narrative chronological viewing order',
           version: 1,
           items: [
@@ -106,7 +106,7 @@ describe('TimelinesView Master-Detail Layout', () => {
               order: 1,
               type: 'episode',
               title: 'Broken Bow',
-              seriesTitle: 'Star Trek: Enterprise',
+              seriesTitle: 'Example Saga: Enterprise',
               seasonNumber: 1,
               episodeNumber: 1,
               timelineEra: '2151 (22nd Century)',
@@ -116,7 +116,7 @@ describe('TimelinesView Master-Detail Layout', () => {
               order: 2,
               type: 'episode',
               title: 'The Vulcan Hello',
-              seriesTitle: 'Star Trek: Discovery',
+              seriesTitle: 'Example Saga: Discovery',
               seasonNumber: 1,
               episodeNumber: 1,
               timelineEra: '2256',
@@ -133,7 +133,7 @@ describe('TimelinesView Master-Detail Layout', () => {
             order: 1,
             type: 'episode',
             title: 'Broken Bow',
-            seriesTitle: 'Star Trek: Enterprise',
+            seriesTitle: 'Example Saga: Enterprise',
             seasonNumber: 1,
             episodeNumber: 1,
             timelineEra: '2151 (22nd Century)',
@@ -155,7 +155,7 @@ describe('TimelinesView Master-Detail Layout', () => {
             order: 2,
             type: 'episode',
             title: 'The Vulcan Hello',
-            seriesTitle: 'Star Trek: Discovery',
+            seriesTitle: 'Example Saga: Discovery',
             seasonNumber: 1,
             episodeNumber: 1,
             timelineEra: '2256',
@@ -186,8 +186,8 @@ describe('TimelinesView Master-Detail Layout', () => {
 
     // Wait for recipes to load in master pane
     await waitFor(() => {
-      expect(screen.getAllByText('Star Trek (The Chronology Project Order)').length).toBeGreaterThanOrEqual(1)
-      expect(screen.getByText('Star Wars Canon Timeline')).toBeTruthy()
+      expect(screen.getAllByText('Example Saga (The Chronology Project Order)').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText('Example Galaxy Canon Timeline')).toBeTruthy()
     })
 
     // Verify master search input
@@ -195,16 +195,16 @@ describe('TimelinesView Master-Detail Layout', () => {
     expect(recipeSearchInput).toBeTruthy()
 
     // Filter master recipes
-    fireEvent.change(recipeSearchInput, { target: { value: 'Star Wars' } })
-    expect(screen.queryByRole('heading', { level: 3, name: 'Star Trek (The Chronology Project Order)' })).toBeNull()
-    expect(screen.getByRole('heading', { level: 3, name: 'Star Wars Canon Timeline' })).toBeTruthy()
+    fireEvent.change(recipeSearchInput, { target: { value: 'Example Galaxy' } })
+    expect(screen.queryByRole('heading', { level: 3, name: 'Example Saga (The Chronology Project Order)' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Example Galaxy Canon Timeline' })).toBeTruthy()
 
-    // Clear search and select Star Wars
+    // Clear search and select Example Galaxy
     fireEvent.change(recipeSearchInput, { target: { value: '' } })
-    const starWarsBtn = screen.getByRole('heading', { level: 3, name: 'Star Wars Canon Timeline' })
+    const starWarsBtn = screen.getByRole('heading', { level: 3, name: 'Example Galaxy Canon Timeline' })
     fireEvent.click(starWarsBtn)
 
-    // Verify detail view updates with Star Wars timeline details
+    // Verify detail view updates with Example Galaxy timeline details
     await waitFor(() => {
       expect(screen.getByText('The Phantom Menace')).toBeTruthy()
       expect(screen.getByText(/32 BBY/i)).toBeTruthy()

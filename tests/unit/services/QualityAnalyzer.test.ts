@@ -157,7 +157,7 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
       id: 1,
       source_id: 'src1',
       plex_id: 'p1',
-      title: 'Star Trek S01E01',
+      title: 'Example Saga S01E01',
       type: 'episode',
       file_path: '/media/Star.Trek.S01E01.1080p.Remux.AVC.DTS-HD.MA.mkv',
       file_size: 15 * 1024 * 1024 * 1024,

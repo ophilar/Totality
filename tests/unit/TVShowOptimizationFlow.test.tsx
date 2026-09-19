@@ -80,7 +80,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
   }
 
   const mockShowData: TVShow = {
-    title: 'Star Trek: Strange New Worlds',
+    title: 'Example Saga: Strange New Worlds',
     series_identity_key: 'tmdb:103768',
     source_id: 'src_local',
     library_id: 'lib_local',
@@ -113,7 +113,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     render(
       <TVShowDetails
         selectedShow={{
-          series_title: 'Star Trek: Strange New Worlds',
+          series_title: 'Example Saga: Strange New Worlds',
           series_identity_key: 'tmdb:103768',
           source_id: 'src_local',
           library_id: 'lib_local'
@@ -139,7 +139,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     expect(handleTranscodeShow).toHaveBeenCalledTimes(1)
     expect(handleTranscodeShow).toHaveBeenCalledWith(
       expect.objectContaining({
-        series_title: 'Star Trek: Strange New Worlds',
+        series_title: 'Example Saga: Strange New Worlds',
         source_id: 'src_local'
       })
     )
@@ -148,7 +148,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
   it('renders ShowTranscodeModal with preset choices and triggers preflight + queue', async () => {
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
-      series_title: 'Star Trek: Strange New Worlds',
+      series_title: 'Example Saga: Strange New Worlds',
       series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
       library_id: 'lib_local',
@@ -194,7 +194,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
   it('allows selecting optimization modes (Smart, Remux Only, Full Transcode) and configures subtitle whitelist', async () => {
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
-      series_title: 'Star Trek: Strange New Worlds',
+      series_title: 'Example Saga: Strange New Worlds',
       series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
       library_id: 'lib_local',
@@ -296,7 +296,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     const handleClose = vi.fn()
     const mockSummary: TVShowSummary = {
-      series_title: 'Star Trek: Strange New Worlds',
+      series_title: 'Example Saga: Strange New Worlds',
       series_identity_key: 'tmdb:103768',
       source_id: 'src_local',
       library_id: 'lib_local',

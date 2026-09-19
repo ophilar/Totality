@@ -239,9 +239,9 @@ describe('TMDBService', () => {
     it('should fetch collection details', async () => {
       const mockCollection = {
         id: 10,
-        name: 'Star Wars Collection',
+        name: 'Example Galaxy Collection',
         parts: [
-          { id: 11, title: 'Star Wars' },
+          { id: 11, title: 'Example Galaxy' },
           { id: 1891, title: 'The Empire Strikes Back' },
         ],
         poster_path: '/something.jpg',
@@ -254,7 +254,7 @@ describe('TMDBService', () => {
 
       const result = await service.getCollectionDetails('10')
 
-      expect(result.name).toBe('Star Wars Collection')
+      expect(result.name).toBe('Example Galaxy Collection')
       expect(result.parts).toHaveLength(2)
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/collection/10'),

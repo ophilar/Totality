@@ -23,8 +23,8 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
 
     const mockRecipe: TimelineDefinition = {
       id: 'star-trek-chronological',
-      franchise: 'Star Trek',
-      name: 'Star Trek: Chronological Order',
+      franchise: 'Example Saga',
+      name: 'Example Saga: Chronological Order',
       description: 'Complete universe chronological order',
       version: 1,
       items: [
@@ -32,7 +32,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
           order: 1,
           type: 'episode',
           title: 'Broken Bow',
-          seriesTitle: 'Star Trek: Enterprise',
+          seriesTitle: 'Example Saga: Enterprise',
           seasonNumber: 1,
           episodeNumber: 1,
           timelineEra: '2151',
@@ -41,15 +41,15 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
         {
           order: 2,
           type: 'show',
-          title: 'Star Trek: The Original Series',
-          seriesTitle: 'Star Trek: The Original Series',
+          title: 'Example Saga: The Original Series',
+          seriesTitle: 'Example Saga: The Original Series',
           timelineEra: '2265-2269',
           identifiers: { tmdbId: 253, tvdbId: 77271 },
         },
         {
           order: 3,
           type: 'movie',
-          title: 'Star Trek II: The Wrath of Khan',
+          title: 'Example Saga II: The Wrath of Khan',
           timelineEra: '2285',
           identifiers: { tmdbId: 154, imdbId: 'tt0084726' },
         },
@@ -59,8 +59,8 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const mockManifest: TimelineRecipeSummary[] = [
       {
         id: 'star-trek-chronological',
-        name: 'Star Trek: Chronological Order',
-        franchise: 'Star Trek',
+        name: 'Example Saga: Chronological Order',
+        franchise: 'Example Saga',
         description: 'Complete chronological order',
         totalItems: 3,
         sourceType: 'remote',
@@ -99,7 +99,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
 
     const starTrekChrono = recipes.find((r) => r.id === 'star-trek-chronological')
     expect(starTrekChrono).toBeDefined()
-    expect(starTrekChrono?.franchise).toBe('Star Trek')
+    expect(starTrekChrono?.franchise).toBe('Example Saga')
   })
 
   it('retrieves a timeline recipe definition via IPC', async () => {
@@ -118,12 +118,12 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
       source_type: 'plex',
       plex_id: '1001',
       title: 'Broken Bow',
-      series_title: 'Star Trek: Enterprise',
+      series_title: 'Example Saga: Enterprise',
       type: 'episode',
       season_number: 1,
       episode_number: 1,
       series_identity_key: 'tmdb:1478',
-      file_path: 'D:/TV/Star Trek Enterprise/S01E01.mkv',
+      file_path: 'D:/TV/Example Saga Enterprise/S01E01.mkv',
       resolution: '1080p',
       video_codec: 'h264',
       duration: 5400,
@@ -142,15 +142,15 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     expect(firstItem.matchedMediaItem?.plexId).toBe('1001')
   })
 
-  it('matches Star Trek movies by title variations without explicit tmdb/imdb IDs', async () => {
+  it('matches Example Saga movies by title variations without explicit tmdb/imdb IDs', async () => {
     await db.media.upsertItem({
       source_id: 'src-plex',
       source_type: 'plex',
       plex_id: '1002',
-      title: 'Star Trek II - The Wrath of Khan',
+      title: 'Example Saga II - The Wrath of Khan',
       type: 'movie',
       year: 1982,
-      file_path: 'D:/Movies/Star Trek II The Wrath of Khan (1982)/movie.mkv',
+      file_path: 'D:/Movies/Example Saga II The Wrath of Khan (1982)/movie.mkv',
       resolution: '4K',
       video_codec: 'hevc',
       duration: 6800,
@@ -165,17 +165,17 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     expect(khanItem?.matchedMediaItem?.plexId).toBe('1002')
   })
 
-  it('matches Star Trek episodes by series alias without external IDs', async () => {
+  it('matches Example Saga episodes by series alias without external IDs', async () => {
     await db.media.upsertItem({
       source_id: 'src-plex',
       source_type: 'plex',
       plex_id: '1003',
       title: 'The Man Trap',
-      series_title: 'Star Trek', // Alias for 'Star Trek: The Original Series'
+      series_title: 'Example Saga', // Alias for 'Example Saga: The Original Series'
       type: 'episode',
       season_number: 1,
       episode_number: 1,
-      file_path: 'D:/TV/Star Trek/S01E01.mkv',
+      file_path: 'D:/TV/Example Saga/S01E01.mkv',
       resolution: '1080p',
       video_codec: 'h264',
       duration: 3000,
@@ -184,7 +184,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
     const result = (await resolveHandler(createAuthorizedIpcEvent(), 'star-trek-chronological', 'src-plex')) as ResolvedTimelineResult
 
-    const tosItem = result.items.find((i) => i.title === 'Star Trek: The Original Series' || i.seriesTitle === 'Star Trek: The Original Series')
+    const tosItem = result.items.find((i) => i.title === 'Example Saga: The Original Series' || i.seriesTitle === 'Example Saga: The Original Series')
     expect(tosItem).toBeDefined()
     expect(tosItem?.status).toBe('matched')
     expect(tosItem?.matchedMediaItem?.plexId).toBe('1003')

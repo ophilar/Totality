@@ -1,10 +1,12 @@
 import { z } from 'zod'
+import path from 'node:path'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getSourceManager } from '@main/services/SourceManager'
 import { getLoggingService } from '@main/services/LoggingService'
 import { RemoteRegistryRecipeProvider } from '@main/services/timelines/RemoteRegistryRecipeProvider'
+import { LocalTimelineRecipeProvider } from '@main/services/timelines/LocalTimelineRecipeProvider'
 import { TraktRecipeProvider } from '@main/services/timelines/TraktRecipeProvider'
 import { TMDBRecipeProvider } from '@main/services/timelines/TMDBRecipeProvider'
 import { WebGuideRecipeProvider } from '@main/services/timelines/WebGuideRecipeProvider'
@@ -15,6 +17,7 @@ import type { TimelineDefinition, TimelineRecipeSummary } from '@main/services/t
 
 const webGuideProvider = new WebGuideRecipeProvider()
 const registryProvider = new RemoteRegistryRecipeProvider()
+const localProvider = new LocalTimelineRecipeProvider(path.resolve(process.cwd(), 'data/timelines'))
 const traktProvider = new TraktRecipeProvider()
 const tmdbProvider = new TMDBRecipeProvider()
 const syncService = new PlexPlaylistSyncService()
@@ -31,20 +34,7 @@ async function fetchTimelineRecipe(recipeId: string): Promise<TimelineDefinition
     return await webGuideProvider.fetchTimeline(trimmed)
   }
 
-  // Try registry provider (handles cached, custom URLs, and bundled presets)
-  try {
-    return await registryProvider.fetchTimeline(trimmed)
-  } catch (err) {
-    // If not found in presets/remote, try web/AI/TMDB search if prompt is meaningful
-    if (trimmed.length >= 3) {
-      try {
-        return await webGuideProvider.fetchTimeline(trimmed)
-      } catch {
-        // Fall back to original error
-      }
-    }
-    throw err
-  }
+  try { return await localProvider.fetchTimeline(trimmed) } catch { return await registryProvider.fetchTimeline(trimmed) }
 }
 
 const ResolveTimelineSchema = z.tuple([
@@ -62,11 +52,11 @@ const SyncPlexPlaylistSchema = z.tuple([
 
 export function registerTimelinesHandlers(): void {
   createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_RECIPES, async () => {
-    const [remoteRecipes, tmdbRecipes] = await Promise.all([
-      registryProvider.listAvailableRecipes().catch(() => []),
-      tmdbProvider.listAvailableRecipes().catch(() => []),
+    const [localRecipes, tmdbRecipes] = await Promise.all([
+      localProvider.listAvailableRecipes(),
+      tmdbProvider.listAvailableRecipes(),
     ])
-    const combined = [...remoteRecipes, ...tmdbRecipes]
+    const combined = [...localRecipes, ...tmdbRecipes]
     const unique = new Map<string, TimelineRecipeSummary>()
     for (const r of combined) {
       if (!unique.has(r.id)) {

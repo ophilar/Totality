@@ -100,7 +100,7 @@ describe('MetadataMatchingService & selectAutomaticMatch', () => {
     it('normalizes Roman numerals to arabic digits', () => {
       expect(normalizeTitleForMatching('Pirates II')).toBe('pirates 2')
       expect(normalizeTitleForMatching('Rocky IV')).toBe('rocky 4')
-      expect(normalizeTitleForMatching('Star Wars Episode VI')).toBe('star wars episode 6')
+      expect(normalizeTitleForMatching('Example Galaxy Episode VI')).toBe('example galaxy episode 6')
     })
 
     it('strips adult and scene noise tokens', () => {

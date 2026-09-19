@@ -30,17 +30,17 @@ describe('TimelinesView Rendering & Interactions', () => {
     api.timelinesListRecipes = vi.fn().mockResolvedValue([
       {
         id: 'star-trek-chronological',
-        name: 'Star Trek (The Chronology Project Order)',
-        franchise: 'Star Trek',
+        name: 'Example Saga (The Chronology Project Order)',
+        franchise: 'Example Saga',
         description: 'In-universe narrative chronological viewing order',
         totalItems: 18,
         sourceType: 'preset',
       },
       {
         id: 'star-trek-airdate',
-        name: 'Star Trek (Air-Date / Release Order)',
-        franchise: 'Star Trek',
-        description: 'Star Trek TV episodes and movies in the order they originally aired',
+        name: 'Example Saga (Air-Date / Release Order)',
+        franchise: 'Example Saga',
+        description: 'Example Saga TV episodes and movies in the order they originally aired',
         totalItems: 18,
         sourceType: 'preset',
       },
@@ -49,8 +49,8 @@ describe('TimelinesView Rendering & Interactions', () => {
     api.timelinesResolveTimeline = vi.fn().mockResolvedValue({
       timeline: {
         id: 'star-trek-chronological',
-        name: 'Star Trek (The Chronology Project Order)',
-        franchise: 'Star Trek',
+        name: 'Example Saga (The Chronology Project Order)',
+        franchise: 'Example Saga',
         description: 'In-universe narrative chronological viewing order',
         version: 1,
         items: [
@@ -58,7 +58,7 @@ describe('TimelinesView Rendering & Interactions', () => {
             order: 1,
             type: 'episode',
             title: 'Broken Bow',
-            seriesTitle: 'Star Trek: Enterprise',
+            seriesTitle: 'Example Saga: Enterprise',
             seasonNumber: 1,
             episodeNumber: 1,
             timelineEra: '2151 (22nd Century)',
@@ -68,7 +68,7 @@ describe('TimelinesView Rendering & Interactions', () => {
             order: 2,
             type: 'episode',
             title: 'The Vulcan Hello',
-            seriesTitle: 'Star Trek: Discovery',
+            seriesTitle: 'Example Saga: Discovery',
             seasonNumber: 1,
             episodeNumber: 1,
             timelineEra: '2256',
@@ -85,7 +85,7 @@ describe('TimelinesView Rendering & Interactions', () => {
           order: 1,
           type: 'episode',
           title: 'Broken Bow',
-          seriesTitle: 'Star Trek: Enterprise',
+          seriesTitle: 'Example Saga: Enterprise',
           seasonNumber: 1,
           episodeNumber: 1,
           timelineEra: '2151 (22nd Century)',
@@ -107,7 +107,7 @@ describe('TimelinesView Rendering & Interactions', () => {
           order: 2,
           type: 'episode',
           title: 'The Vulcan Hello',
-          seriesTitle: 'Star Trek: Discovery',
+          seriesTitle: 'Example Saga: Discovery',
           seasonNumber: 1,
           episodeNumber: 1,
           timelineEra: '2256',
@@ -119,7 +119,7 @@ describe('TimelinesView Rendering & Interactions', () => {
 
     api.timelinesSyncPlexPlaylist = vi.fn().mockResolvedValue({
       success: true,
-      playlistTitle: 'Star Trek (The Chronology Project Order)',
+      playlistTitle: 'Example Saga (The Chronology Project Order)',
       playlistRatingKey: '9999',
       totalItemsInTimeline: 2,
       matchedItemsSynced: 1,

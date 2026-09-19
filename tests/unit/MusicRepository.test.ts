@@ -139,7 +139,7 @@ describe('MusicRepository (Real DB)', () => {
       plex_id: 'episode-1',
       type: 'episode',
       title: 'Episode 1',
-      series_title: 'Andor',
+      series_title: 'Example Series',
       series_tmdb_id: '83867',
       file_path: '/path/to/episode.mkv',
     })

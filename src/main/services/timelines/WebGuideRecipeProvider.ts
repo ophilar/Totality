@@ -213,7 +213,7 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
       if (cleanTitle.length > 2 && !seenTitles.has(cleanTitle.toLowerCase())) {
         seenTitles.add(cleanTitle.toLowerCase())
 
-        // Check for episode notation: e.g. "Star Trek: Enterprise 1x01 - Broken Bow" or "S01E01"
+        // Check for standard episode notation such as "Series 1x01 - Episode" or "S01E01".
         const seMatch = cleanTitle.match(/(?:S(\d+)\s*E(\d+)|(\d+)x(\d+))/i)
         let seasonNumber: number | undefined
         let episodeNumber: number | undefined

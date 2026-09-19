@@ -21,7 +21,7 @@ describe('TrashSourceClassifier', () => {
     it('correctly classifies WEB-DL releases and streaming service tags', () => {
       expect(TrashSourceClassifier.classify('Stranger.Things.S04E01.WEB-DL.2160p.NF.mkv')).toBe('WEB-DL')
       expect(TrashSourceClassifier.classify('House.of.the.Dragon.S01E01.2160p.HMAX.WEB-DL.DDP5.1.Atmos.H.265-FLUX.mkv')).toBe('WEB-DL')
-      expect(TrashSourceClassifier.classify('The.Mandalorian.S03E01.2160p.DSNP.WEB-DL.DDP5.1.Atmos.H.265.mkv')).toBe('WEB-DL')
+      expect(TrashSourceClassifier.classify('Example.Series.S03E01.2160p.DSNP.WEB-DL.DDP5.1.Atmos.H.265.mkv')).toBe('WEB-DL')
       expect(TrashSourceClassifier.classify('Foundation.S02E01.1080p.ATVP.webdl.mkv')).toBe('WEB-DL')
       expect(TrashSourceClassifier.classify('The.Boys.S04E01.1080p.AMZN.web.mkv')).toBe('WEB-DL')
       expect(TrashSourceClassifier.classify('Loki.S02E01.1080p.Disney.mkv')).toBe('WEB-DL')

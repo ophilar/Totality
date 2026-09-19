@@ -70,53 +70,6 @@ export function normalizeMediaTitle(str: string): string {
     .trim()
 }
 
-export const CANONICAL_SHOW_EPISODES: Record<number, { title: string; seasons: Record<number, number> }> = {
-  // Star Trek: Enterprise
-  1478: { title: 'Star Trek: Enterprise', seasons: { 1: 26, 2: 26, 3: 24, 4: 22 } },
-  // Star Trek: Discovery
-  67198: { title: 'Star Trek: Discovery', seasons: { 1: 15, 2: 14, 3: 13, 4: 13, 5: 10 } },
-  // Star Trek: Short Treks
-  82894: { title: 'Star Trek: Short Treks', seasons: { 1: 4, 2: 6 } },
-  // Star Trek: Strange New Worlds
-  103516: { title: 'Star Trek: Strange New Worlds', seasons: { 1: 10, 2: 10 } },
-  // Star Trek: The Original Series
-  253: { title: 'Star Trek: The Original Series', seasons: { 1: 29, 2: 26, 3: 24 } },
-  // Star Trek: The Animated Series
-  1992: { title: 'Star Trek: The Animated Series', seasons: { 1: 16, 2: 6 } },
-  // Star Trek: The Next Generation
-  655: { title: 'Star Trek: The Next Generation', seasons: { 1: 26, 2: 22, 3: 26, 4: 26, 5: 26, 6: 26, 7: 26 } },
-  // Star Trek: Deep Space Nine
-  580: { title: 'Star Trek: Deep Space Nine', seasons: { 1: 20, 2: 26, 3: 26, 4: 26, 5: 26, 6: 26, 7: 26 } },
-  // Star Trek: Voyager
-  1855: { title: 'Star Trek: Voyager', seasons: { 1: 16, 2: 26, 3: 26, 4: 26, 5: 26, 6: 26, 7: 26 } },
-  // Star Trek: Lower Decks
-  85949: { title: 'Star Trek: Lower Decks', seasons: { 1: 10, 2: 10, 3: 10, 4: 10, 5: 10 } },
-  // Star Trek: Prodigy
-  106393: { title: 'Star Trek: Prodigy', seasons: { 1: 20, 2: 20 } },
-  // Star Trek: Picard
-  85948: { title: 'Star Trek: Picard', seasons: { 1: 10, 2: 10, 3: 10 } },
-  // Star Wars: The Clone Wars
-  41727: { title: 'Star Wars: The Clone Wars', seasons: { 1: 22, 2: 22, 3: 22, 4: 22, 5: 20, 6: 13, 7: 12 } },
-  // Star Wars: The Bad Batch
-  105971: { title: 'Star Wars: The Bad Batch', seasons: { 1: 16, 2: 16, 3: 15 } },
-  // Star Wars Rebels
-  60554: { title: 'Star Wars Rebels', seasons: { 1: 15, 2: 22, 3: 22, 4: 16 } },
-  // Andor
-  83867: { title: 'Andor', seasons: { 1: 12, 2: 12 } },
-  // Obi-Wan Kenobi
-  92783: { title: 'Obi-Wan Kenobi', seasons: { 1: 6 } },
-  // The Mandalorian
-  82856: { title: 'The Mandalorian', seasons: { 1: 8, 2: 8, 3: 8 } },
-  // The Book of Boba Fett
-  115036: { title: 'The Book of Boba Fett', seasons: { 1: 7 } },
-  // Ahsoka
-  114461: { title: 'Ahsoka', seasons: { 1: 8 } },
-  // The Acolyte
-  114478: { title: 'The Acolyte', seasons: { 1: 8 } },
-  // Skeleton Crew
-  202879: { title: 'Star Wars: Skeleton Crew', seasons: { 1: 8 } },
-}
-
 export class TimelineResolutionEngine {
   constructor(private readonly db: LibSQLDatabase<typeof schema>) {}
 

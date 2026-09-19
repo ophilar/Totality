@@ -261,8 +261,8 @@ describe('TVShowRepository (Real DB)', () => {
 
   it('replaces an identical unresolved summary when a verified identity arrives', async () => {
     const base = {
-      series_title: 'Andor',
-      series_identity_key: 'unresolved:src-1:lib-1:andor',
+      series_title: 'Example Series',
+      series_identity_key: 'unresolved:src-1:lib-1:example-series',
       source_id: 'src-1',
       library_id: 'lib-1',
       total_seasons: 2,

@@ -397,7 +397,7 @@ describe('TranscodingService', () => {
       } as unknown as Awaited<ReturnType<typeof fsPromises.stat>>)
 
       const preflight = await service.preflightShowTranscode({
-        seriesTitle: 'Star Trek Strange New Worlds',
+        seriesTitle: 'Example Saga Strange New Worlds',
         seriesIdentityKey: 'tmdb:85552',
         sourceId: 'src1',
         libraryId: 'tv',

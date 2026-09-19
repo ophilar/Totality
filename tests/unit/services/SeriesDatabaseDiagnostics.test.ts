@@ -47,18 +47,18 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
     })
   })
 
-  describe('Star Trek unique constraint conflict resolution in TVShowRepository', () => {
+  describe('Example Saga unique constraint conflict resolution in TVShowRepository', () => {
     it('updates target and resolves conflict without throwing UNIQUE constraint failed', async () => {
       await db.sources.upsertSource({
         source_id: 'src-st',
         source_type: 'local',
-        display_name: 'Star Trek Source',
+        display_name: 'Example Saga Source',
         connection_config: '{}',
         is_enabled: 1
       })
 
       const unresolvedId = await db.tvShows.upsertCompleteness({
-        series_title: 'Star Trek (1966)',
+        series_title: 'Example Saga (1966)',
         source_id: 'src-st',
         library_id: 'tv',
         total_seasons: 3,
@@ -71,7 +71,7 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
       })
 
       const canonicalId = await db.tvShows.upsertCompleteness({
-        series_title: 'Star Trek: The Original Series',
+        series_title: 'Example Saga: The Original Series',
         source_id: 'src-st',
         library_id: 'tv',
         total_seasons: 3,
@@ -87,7 +87,7 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
       expect(unresolvedId).not.toBe(canonicalId)
 
       const resultId = await db.tvShows.upsertCompleteness({
-        series_title: 'Star Trek (1966)',
+        series_title: 'Example Saga (1966)',
         source_id: 'src-st',
         library_id: 'tv',
         total_seasons: 3,

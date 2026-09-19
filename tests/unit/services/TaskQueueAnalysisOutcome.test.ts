@@ -72,7 +72,7 @@ describe('TaskQueue Analysis Outcome & Consolidated Notifications', () => {
       diagnostics: [
         {
           itemType: 'series',
-          itemName: 'Star Trek: Unresolved',
+          itemName: 'Example Saga: Unresolved',
           category: 'identity',
           code: 'UNRESOLVED_IDENTITY',
           message: 'Could not resolve identity for series'

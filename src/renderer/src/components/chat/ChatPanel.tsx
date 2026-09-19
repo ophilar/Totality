@@ -73,7 +73,7 @@ export function ChatPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSett
         case 'movies':
           return [
             'What 4K upgrades am I missing?',
-            'Which Marvel movies am I missing?',
+            'Which example movies am I missing?',
             'Find me some great sci-fi I don\'t have',
           ]
         case 'tv':
