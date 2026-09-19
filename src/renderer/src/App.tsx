@@ -29,7 +29,7 @@ type AppView = 'dashboard' | 'library'
 import { usePanel } from '@/contexts/PanelContext'
 
 function AppContent() {
-  const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
+  const { isLoading, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
   const [showAddSourceModal, setShowAddSourceModal] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -128,63 +128,19 @@ function AppContent() {
 
   // Analysis handlers
   const handleAnalyzeSeries = async (_libraryId?: string) => {
-    try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'series-completeness',
-        label: `Analyze TV Series (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[App]', 'Failed to queue series analysis:', err)
-    }
+    await window.electronAPI.mediaAnalyze(_libraryId ? { kind: 'library', libraryId: _libraryId } : { kind: 'all-libraries' })
   }
 
   const handleAnalyzeCollections = async (_libraryId?: string) => {
-    try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'collection-completeness',
-        label: `Analyze Collections (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[App]', 'Failed to queue collections analysis:', err)
-    }
+    await window.electronAPI.mediaAnalyze(_libraryId ? { kind: 'library', libraryId: _libraryId } : { kind: 'all-libraries' })
   }
 
   const handleAnalyzeMusic = async () => {
-    try {
-      const sourceName = activeSourceId
-        ? sources.find(s => s.source_id === activeSourceId)?.display_name
-        : 'All Sources'
-      await window.electronAPI.taskQueueAddTask({
-        type: 'music-completeness',
-        label: `Analyze Music (${sourceName || 'All Sources'})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[App]', 'Failed to queue music analysis:', err)
-    }
-  }
-
-  const handleAnalyzeQuality = async () => {
-    await window.electronAPI.taskQueueAddTask({
-      type: 'quality-analysis',
-      label: `Recalculate Media Quality (${activeSourceId ? sources.find(s => s.source_id === activeSourceId)?.display_name || 'Selected Source' : 'All Sources'})`,
-      sourceId: activeSourceId || undefined,
-    })
+    await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
   }
 
   const handleAnalyzeAll = async () => {
-    await handleAnalyzeQuality()
-    if (hasTV) await handleAnalyzeSeries()
-    if (hasMovies) await handleAnalyzeCollections()
-    if (hasMusic) await handleAnalyzeMusic()
+    if (hasTV || hasMovies || hasMusic) await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
   }
 
   const handleCancelAnalysis = async () => {

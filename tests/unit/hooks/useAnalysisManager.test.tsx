@@ -10,6 +10,7 @@ describe('useAnalysisManager', () => {
   const mockGetSetting = vi.fn()
   const mockTaskQueueAddTask = vi.fn()
   const mockSeriesAnalyzeByIdentity = vi.fn()
+  const mockMediaAnalyze = vi.fn()
   const mockTaskQueueCancelCurrent = vi.fn()
   const mockLogWarn = vi.fn()
   const mockLogError = vi.fn()
@@ -34,6 +35,7 @@ describe('useAnalysisManager', () => {
         getSetting: mockGetSetting,
         taskQueueAddTask: mockTaskQueueAddTask,
         seriesAnalyzeByIdentity: mockSeriesAnalyzeByIdentity,
+        mediaAnalyze: mockMediaAnalyze,
         taskQueueCancelCurrent: mockTaskQueueCancelCurrent,
         log: {
           warn: mockLogWarn,
@@ -405,6 +407,7 @@ describe('useAnalysisManager', () => {
 
   describe('handleAnalyzeSingleSeries', () => {
     const showSummary: TVShowSummary = {
+      id: 1396,
       series_title: 'Breaking Bad',
       source_id: 'src-1',
       series_identity_key: 'tmdb:1396',
@@ -415,8 +418,8 @@ describe('useAnalysisManager', () => {
       completion_percentage: 100,
     }
 
-    it('calls seriesAnalyzeByIdentity and reloads completeness data on success', async () => {
-      mockSeriesAnalyzeByIdentity.mockResolvedValue(undefined)
+    it('calls the unified show analysis action and reloads completeness data on success', async () => {
+      mockMediaAnalyze.mockResolvedValue(undefined)
       mockLoadCompletenessData.mockResolvedValue(undefined)
 
       const { result } = renderHook(() =>
@@ -436,18 +439,13 @@ describe('useAnalysisManager', () => {
         '[useAnalysisManager]',
         'Analyzing series: Breaking Bad'
       )
-      expect(mockSeriesAnalyzeByIdentity).toHaveBeenCalledWith(
-        'Breaking Bad',
-        'src-1',
-        'tmdb:1396',
-        'lib-1'
-      )
+      expect(mockMediaAnalyze).toHaveBeenCalledWith({ kind: 'show', showId: '1396' })
       expect(mockLoadCompletenessData).toHaveBeenCalledTimes(1)
     })
 
     it('logs error if handleAnalyzeSingleSeries fails', async () => {
       const error = new Error('Single series analysis failed')
-      mockSeriesAnalyzeByIdentity.mockRejectedValue(error)
+      mockMediaAnalyze.mockRejectedValue(error)
 
       const { result } = renderHook(() =>
         useAnalysisManager({
@@ -514,5 +512,32 @@ describe('useAnalysisManager', () => {
         error
       )
     })
+  })
+
+  it('dispatches every user-facing analysis scope through one action', async () => {
+    mockMediaAnalyze.mockResolvedValue(undefined)
+    const { result } = renderHook(() =>
+      useAnalysisManager({
+        sources: defaultSources,
+        activeSourceId: 'src-1',
+        activeSourceLibraries: defaultLibraries,
+        loadCompletenessData: mockLoadCompletenessData,
+      })
+    )
+
+    const scopes = [
+      { kind: 'all-libraries' as const },
+      { kind: 'library' as const, libraryId: 'lib-1' },
+      { kind: 'collection' as const, collectionId: '12' },
+      { kind: 'show' as const, showId: '13' },
+      { kind: 'album' as const, albumId: '14' },
+      { kind: 'item' as const, mediaId: 15 },
+    ]
+    for (const scope of scopes) {
+      await act(async () => { await result.current.analyze(scope) })
+    }
+
+    expect(mockMediaAnalyze).toHaveBeenCalledTimes(scopes.length)
+    expect(mockMediaAnalyze.mock.calls.map(([scope]) => scope)).toEqual(scopes)
   })
 })

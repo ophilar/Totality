@@ -1,19 +1,15 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   X, 
   Film, 
   RefreshCw, 
-  Pencil, 
   Clock, 
   HardDrive, 
   Database,
-  ExternalLink,
-  EyeOff
+  ChevronDown
 } from 'lucide-react'
-import { formatHdrLabel, QualityBadges } from '@/components/library/QualityBadges'
-import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
-import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
+import { formatHdrLabel } from '@/components/library/QualityBadges'
 import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
 import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
@@ -25,26 +21,18 @@ import { PlaybackCompatibilityPanel } from '@/components/library/PlaybackCompati
 interface MediaDetailsProps {
   mediaId: number
   onClose: () => void
-  onRescan?: (mediaItemId: number, sourceId: string, libraryId: string | null, filePath: string) => Promise<void>
   onFixMatch?: (mediaItemId: number, title: string, year?: number, filePath?: string) => void
-  onDismissUpgrade?: (mediaId: number, title: string) => void
 }
 
-const LowIndicator = () => <span className="ml-1.5 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-1 rounded">LOW</span>
-
-export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismissUpgrade }: MediaDetailsProps) {
+export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [versions, setVersions] = useState<MediaItemVersion[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isRescanning, setIsRescanning] = useState(false)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
-  const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
-  const [isDeepAnalyzing, setIsDeepAnalyzing] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
-  const [isComparingProvider, setIsComparingProvider] = useState(false)
-  const [providerDifferences, setProviderDifferences] = useState<Array<{ field: string; local: unknown; provider: unknown }> | null>(null)
-  const deepRequestId = useRef<string | null>(null)
+  const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -52,7 +40,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
       setLoading(true)
       const [item, itemVersions] = await Promise.all([
         window.electronAPI.getMediaItem(mediaId),
-        window.electronAPI.getMediaItemVersions(mediaId)
+        window.electronAPI.getMediaItemVersions(mediaId),
       ])
       
       if (item) {
@@ -84,84 +72,14 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     return () => { active = false }
   }, [loadData])
 
-  useEffect(() => () => {
-    if (deepRequestId.current) void window.electronAPI.mediaCancelDeepAnalyze(deepRequestId.current)
-  }, [])
-
-  const handleRescan = async () => {
-    if (!media || !media.source_id || !media.file_path || !onRescan) return
-    setIsRescanning(true)
-    try {
-      await onRescan(media.id!, media.source_id, media.library_id || null, media.file_path)
-      await loadData()
-      addToast({ title: 'Analysis updated', type: 'success' })
-    } catch (err) {
-      addToast({ title: 'Rescan failed', type: 'error' })
-    } finally {
-      setIsRescanning(false)
-    }
-  }
-
-  const handleDismiss = () => {
-    if (!media || !onDismissUpgrade) return
-    onDismissUpgrade(media.id!, media.title)
-    onClose()
-  }
-
-  const handleDeepAnalysis = async () => {
-    const filePath = media?.file_path
-    if (!filePath) return
-    setIsDeepAnalyzing(true)
-    const requestId = `deep-${Date.now()}-${media.id}`
-    deepRequestId.current = requestId
-    try {
-      const result = await window.electronAPI.mediaDeepAnalyze({ filePath, requestId })
-      if (!result.success) throw new Error(result.error || 'Deep analysis failed')
-      setDeepAnalysis(result.deepAnalysis || null)
-      addToast({ title: 'Deep analysis completed', type: 'success' })
-    } catch (error) {
-      addToast({ title: error instanceof Error ? error.message : 'Deep analysis failed', type: 'error' })
-    } finally {
-      if (deepRequestId.current === requestId) deepRequestId.current = null
-      setIsDeepAnalyzing(false)
-    }
-  }
-
-  const handleProviderComparison = async () => {
+  const handleAnalyze = async () => {
     if (!media?.id) return
-    setIsComparingProvider(true)
     try {
-      const result = await window.electronAPI.mediaCompareProvider(media.id)
-      setProviderDifferences(result.differences)
-      addToast({ title: result.differences.length ? `${result.differences.length} provider differences found` : 'Provider metadata matches', type: result.differences.length ? 'error' : 'success' })
-    } catch (error) {
-      addToast({ title: error instanceof Error ? error.message : 'Provider comparison failed', type: 'error' })
+      setIsAnalyzing(true)
+      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
+      if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
     } finally {
-      setIsComparingProvider(false)
-    }
-  }
-
-  const handleRadarrSearch = async () => {
-    if (!media?.tmdb_id || !isMovie) return
-    const baseUrl = await window.electronAPI.getSetting('radarr_url')
-    const apiKey = await window.electronAPI.getSetting('radarr_api_key')
-    if (!baseUrl || !apiKey) {
-      addToast({ title: 'Radarr is not configured', type: 'error' })
-      return
-    }
-    if (!window.confirm(`Ask Radarr to search for a better release of “${media.title}”?`)) return
-    setArrStatus('working')
-    try {
-      const managed = await window.electronAPI.arrFindManagedMovie({ baseUrl, apiKey }, Number(media.tmdb_id)) as { id?: number } | null
-      if (!managed?.id) throw new Error('This movie is not managed by Radarr')
-      const command = await window.electronAPI.arrSearchMovie({ baseUrl, apiKey }, managed.id) as { id?: number }
-      if (!command.id) throw new Error('Radarr did not return a command ID')
-      await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
-      setArrStatus('success')
-      addToast({ title: 'Radarr search completed', type: 'success' })
-    } catch (error) {
-      setArrStatus('error')
-      addToast({ title: error instanceof Error ? error.message : 'Radarr search failed', type: 'error' })
+      setIsAnalyzing(false)
     }
   }
 
@@ -177,7 +95,6 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
   if (!media) return null
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
-  const displayItem: MediaItem = media
   const isMovie = media.type === 'movie'
   
   const formatFileSize = (bytes: number) => {
@@ -196,48 +113,15 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
     return `${kbps} kbps`
   }
 
-  const getVideoThresholdRange = (tier: string) => {
-    switch(tier) {
-      case 'ULTRA_PREMIUM': return '60-100 Mbps'
-      case 'PREMIUM': return '25-60 Mbps'
-      case 'HIGH': return '12-25 Mbps'
-      case 'MID': return '5-12 Mbps'
-      case 'SD': return '1.5-5 Mbps'
-      default: return 'N/A'
-    }
-  }
-
-  const getAudioThresholdRange = (tier: string) => {
-    switch(tier) {
-      case 'ULTRA_PREMIUM': return '3000+ kbps'
-      case 'PREMIUM': return '1500+ kbps'
-      case 'HIGH': return '640+ kbps'
-      case 'MID': return '384+ kbps'
-      case 'SD': return '192+ kbps'
-      default: return 'N/A'
-    }
-  }
-
-  const isAudioBitrateRawLow = (br: number, tier: string) => {
-    if (tier === 'ULTRA_PREMIUM') return br < 3000
-    if (tier === 'PREMIUM') return br < 1500
-    if (tier === 'HIGH') return br < 640
-    return br < 384
-  }
-
-  const bestAudioBitrate = toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate)
-  const storageDebtBytes = sv?.storage_debt_bytes ?? media.storage_debt_bytes
-  const videoWeight = 70
-
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div 
-        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row animate-in zoom-in-95 duration-200"
+        className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Left: Poster/Backdrop Area */}
-        <div className="w-full md:w-[320px] shrink-0 bg-muted relative">
-          <div className="aspect-2/3 w-full h-full relative group">
+        <div className="w-full h-[220px] shrink-0 bg-muted relative">
+          <div className="w-full h-full relative group">
             {media.poster_url ? (
               <img src={media.poster_url} alt="" className="w-full h-full object-cover shadow-2xl" />
             ) : (
@@ -307,261 +191,58 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
               </div>
             )}
 
-            {/* Quality Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-muted/30 border border-border/50 rounded-2xl p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Overall Health</div>
-                  <QualityBadges item={displayItem} />
+            {/* Analysis and compact details */}
+            <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span className={`h-2.5 w-2.5 rounded-full ${deepAnalysis ? 'bg-green-500' : 'bg-amber-400'}`} />
+                    {deepAnalysis ? 'Analysis complete' : 'Not analyzed yet'}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">Episode scope · file, media quality, storage, and metadata</div>
                 </div>
-                <PlaybackCompatibilityPanel mediaId={mediaId} />
-                
-                <div className="flex gap-6">
-                  {toSafeNumber(sv?.tier_score ?? media.tier_score) > 0 && (
-                    <div className="flex-1">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-sm text-muted-foreground">Video</span>
-                        <span className="text-sm font-medium tabular-nums">{toSafeNumber(sv?.bitrate_tier_score ?? media.bitrate_tier_score)}</span>
-                        <span className="text-xs text-muted-foreground/60">· {videoWeight}%</span>
-                      </div>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${toSafeNumber(sv?.bitrate_tier_score ?? media.bitrate_tier_score)}%` }} />
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-0.5">
-                        {formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))} · Target: {getVideoThresholdRange(toSafeString(sv?.quality_tier ?? media.quality_tier))}
-                      </div>
-                    </div>
-                  )}
-                  {toSafeNumber(sv?.audio_tier_score ?? media.audio_tier_score) > 0 && (
-                    <div className="flex-1">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-sm text-muted-foreground">Audio</span>
-                        <span className="text-sm font-medium tabular-nums">{Math.min(toSafeNumber(sv?.audio_tier_score ?? media.audio_tier_score), 100)}</span>
-                        <span className="text-xs text-muted-foreground/60">· {100 - videoWeight}%</span>
-                      </div>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden mt-1">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(toSafeNumber(sv?.audio_tier_score ?? media.audio_tier_score), 100)}%` }} />
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-0.5">
-                        {formatBitrate(bestAudioBitrate)} · Target: {getAudioThresholdRange(toSafeString(sv?.quality_tier ?? media.quality_tier))}
-                      </div>
-                    </div>
-                  )}
+                <div className="flex shrink-0 items-center gap-2">
+                  <button onClick={handleAnalyze} disabled={isAnalyzing} className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                    <RefreshCw className={`h-4 w-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                    Analyze
+                  </button>
+                  <button disabled={!onFixMatch} onClick={() => onFixMatch?.(media.id!, media.title, media.year ?? undefined, media.file_path ?? undefined)} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50">Fix match</button>
                 </div>
               </div>
-
-              <div className="bg-muted/30 border border-border/50 rounded-2xl p-5 flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Storage Efficiency</div>
-                  <div className={`text-xl font-black ${(sv?.efficiency_score ?? 0) >= 85 ? 'text-green-500' : (sv?.efficiency_score ?? 0) >= 60 ? 'text-yellow-500' : 'text-orange-500'}`}>
-                    {toSafeNumber(sv?.efficiency_score ?? media.efficiency_score)}%
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Storage Debt</span>
-                    <RecoverableWasteDisplay bytes={storageDebtBytes} className="text-sm" />
-                  </div>
-                  <p className="text-[11px] text-muted-foreground/70 leading-normal">
-                    {storageDebtBytes == null
-                      ? 'Recoverable storage waste has not been calculated for this file.'
-                      : storageDebtBytes > 0
-                        ? `Based on its quality, this file is ${formatFileSize(storageDebtBytes)} larger than a perfectly optimized encode would be.`
-                        : 'No recoverable storage waste was detected for this file.'}
-                  </p>
-                </div>
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-border/40 bg-background/20 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Actions after analysis</span>
+                <button onClick={() => setShowTranscodeModal(true)} disabled={!deepAnalysis} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Zap className="h-3.5 w-3.5" /> Optimize
+                </button>
               </div>
             </div>
 
-            {/* Recommendations */}
-            {(media.needs_upgrade || media.tier_quality === 'LOW' || (toSafeNumber(sv?.efficiency_score ?? media.efficiency_score) < 60)) && (
-              <div className="animate-in slide-in-from-bottom-2 duration-300">
-                <ConversionRecommendation item={displayItem} />
-              </div>
-            )}
-
-            {/* Technical Specs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
-                  <Film className="w-3.5 h-3.5" />
-                  Video Details
+            <div className="space-y-1.5">
+              {[
+                { id: 'playback' as const, label: 'Playback & compatibility', icon: <Clock className="h-4 w-4" />, summary: 'Compatibility analysis' },
+                { id: 'video' as const, label: 'Video details', icon: <Film className="h-4 w-4" />, summary: `${toSafeString(sv?.video_codec ?? media.video_codec).toUpperCase()} · ${toSafeString(sv?.resolution ?? media.resolution ?? media.quality_tier ?? media.tier_quality)} · ${formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}` },
+                { id: 'audio' as const, label: 'Audio & subtitles', icon: <Clock className="h-4 w-4" />, summary: `${toSafeString(sv?.audio_codec ?? media.audio_codec).toUpperCase()} ${formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}` },
+                { id: 'file' as const, label: 'File & identifiers', icon: <HardDrive className="h-4 w-4" />, summary: `${formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))} · ${media.match_status ?? 'Match status unknown'}` },
+                { id: 'analysis' as const, label: 'Analysis history', icon: <Database className="h-4 w-4" />, summary: deepAnalysis ? 'Deep bitrate scan available' : 'No analysis recorded' },
+              ].map(section => (
+                <div key={section.id} className="overflow-hidden rounded-lg border border-border/50 bg-muted/10">
+                  <button onClick={() => setExpandedSection(expandedSection === section.id ? null : section.id)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/30">
+                    {section.icon}<span className="text-sm font-semibold">{section.label}</span><span className="ml-auto truncate text-xs text-muted-foreground">{section.summary}</span><ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expandedSection === section.id ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expandedSection === section.id && <div className="border-t border-border/40 px-3 py-2.5 text-xs text-muted-foreground">
+                    {section.id === 'playback' && <PlaybackCompatibilityPanel mediaId={mediaId} />}
+                    {section.id === 'video' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Codec <b className="float-right text-foreground uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)}</b></span><span>Resolution <b className="float-right text-foreground">{toSafeString(sv?.resolution ?? media.resolution ?? media.quality_tier)}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}</b></span><span>HDR <b className="float-right text-foreground">{formatHdrLabel(media.hdr_format) || '—'}</b></span></div>}
+                    {section.id === 'audio' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Audio <b className="float-right text-foreground uppercase">{toSafeString(sv?.audio_codec ?? media.audio_codec)} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate))}</b></span><span>Object audio <b className="float-right text-foreground">{media.has_object_audio ? 'Atmos / DTS:X' : '—'}</b></span></div>}
+                    {section.id === 'file' && <div className="space-y-1"><div>Size <b className="float-right text-foreground">{formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))}</b></div><div>Path <b className="ml-2 font-mono text-foreground" title={toSafeString(sv?.file_path ?? media.file_path)}>{toSafeString(sv?.file_path ?? media.file_path)}</b></div><div>Match <b className="float-right text-foreground">{media.match_status ?? 'unknown'}</b></div></div>}
+                    {section.id === 'analysis' && <div>{deepAnalysis ? `Average bitrate ${Math.round((deepAnalysis.avgBitrate || 0) / 1000)} kbps${deepAnalysis.peakBitrate ? ` · peak ${Math.round(deepAnalysis.peakBitrate / 1000)} kbps` : ''}` : 'Run Analyze to collect analysis details.'}</div>}
+                  </div>}
                 </div>
-                <div className="space-y-3 px-1">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Codec</span>
-                    <span className="font-medium uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Resolution</span>
-                    <span className="font-medium">{toSafeString(sv?.resolution ?? media.resolution)}</span>
-                  </div>
-                  {toSafeNumber(sv?.video_bitrate ?? media.video_bitrate) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bitrate</span>
-                      <span className="font-medium">{formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}</span>
-                    </div>
-                  )}
-                  {formatHdrLabel(media.hdr_format) && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">HDR</span>
-                      <span className="font-medium text-primary">{formatHdrLabel(media.hdr_format)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
-                  <Clock className="w-3.5 h-3.5" />
-                  Audio & Subs
-                </div>
-                <div className="space-y-3 px-1">
-                  <div className="flex justify-between items-start">
-                    <span className="text-muted-foreground">Audio</span>
-                    <div className="text-sm text-right">
-                      <div className="font-medium">{toSafeString(sv?.audio_codec ?? media.audio_codec).toUpperCase()} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</div>
-                      <div className="text-xs text-muted-foreground flex items-center justify-end">
-                        <span>{formatBitrate(toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate))}</span>
-                        {isAudioBitrateRawLow(toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate), toSafeString(sv?.quality_tier ?? media.quality_tier)) && <LowIndicator />}
-                      </div>
-                    </div>
-                  </div>
-                  {media.has_object_audio && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Object Audio</span>
-                      <span className="font-bold text-blue-400 text-xs bg-blue-400/10 px-1.5 rounded">ATMOS / DTS:X</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              ))}
             </div>
 
-            {/* File Path Area */}
-            <div className="pt-6 border-t border-border/10 space-y-3">
-              <div className="flex justify-between items-center">
-                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Location & Identifiers</div>
-                <div className="flex gap-2">
-                  {media.tmdb_id && (
-                    <a 
-                      href={`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.tmdb_id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
-                    >
-                      TMDB <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
-              <div className="bg-muted/20 p-3 rounded-xl border border-border/30 flex items-center gap-3 overflow-hidden group">
-                <HardDrive className="w-4 h-4 text-muted-foreground shrink-0" />
-                <span className="font-mono text-xs text-muted-foreground truncate flex-1 select-all" title={toSafeString(sv?.file_path ?? media.file_path)}>
-                  {toSafeString(sv?.file_path ?? media.file_path)}
-                </span>
-              </div>
-            </div>
-          </div>
 
-          {/* Footer Actions */}
-          <div className="p-6 bg-muted/10 border-t border-border/10 flex flex-wrap gap-3">
-            <button 
-              onClick={handleRescan}
-              disabled={isRescanning}
-              className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
-            >
-              {isRescanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              Full Rescan
-            </button>
-
-            {Boolean(media.file_path) && (
-              <button
-                onClick={handleDeepAnalysis}
-                disabled={isDeepAnalyzing}
-                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
-              >
-                {isDeepAnalyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                {isDeepAnalyzing ? 'Deep analysis...' : 'Deep Analysis'}
-              </button>
-            )}
-
-            {Boolean(media.source_id && media.plex_id) && (
-              <button
-                onClick={handleProviderComparison}
-                disabled={isComparingProvider}
-                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
-              >
-                {isComparingProvider ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                {isComparingProvider ? 'Comparing...' : providerDifferences === null ? 'Compare Provider' : `Provider Differences: ${providerDifferences.length}`}
-              </button>
-            )}
-            {providerDifferences && providerDifferences.length > 0 && (
-              <div className="basis-full text-xs text-muted-foreground space-y-1">
-                {providerDifferences.map(difference => (
-                  <div key={difference.field} className="flex gap-2">
-                    <span className="font-semibold">{difference.field}:</span>
-                    <span>local {String(difference.local ?? '—')}</span>
-                    <span>provider {String(difference.provider ?? '—')}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {deepAnalysis && (
-              <div className="basis-full text-xs text-muted-foreground">
-                Bitrate: {deepAnalysis.avgBitrate ? `${Math.round(deepAnalysis.avgBitrate / 1000)} kbps average` : 'unavailable'}
-                {deepAnalysis.peakBitrate ? `, ${Math.round(deepAnalysis.peakBitrate / 1000)} kbps peak` : ''}
-                {deepAnalysis.scanDurationMs ? ` (${Math.round(deepAnalysis.scanDurationMs / 1000)}s)` : ''}
-              </div>
-            )}
-
-            {Boolean(media.file_path) && (
-              <button 
-                onClick={() => setShowTranscodeModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-sm font-bold transition-all cursor-pointer"
-              >
-                <Zap className="w-4 h-4" />
-                Optimize...
-              </button>
-            )}
-
-            {media.match_status && (
-              <div className="text-xs text-muted-foreground">
-                Match: {media.match_status === 'manual' ? 'manual' : media.match_status === 'verified' ? 'verified' : media.match_status}
-              </div>
-            )}
-            {isMovie && media.tmdb_id && (media.match_status === 'unresolved' || media.match_status === 'conflicting') && (
-              <button
-                onClick={handleRadarrSearch}
-                disabled={arrStatus === 'working'}
-                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
-              >
-                {arrStatus === 'working' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                {arrStatus === 'working' ? 'Searching in Radarr...' : 'Search in Radarr'}
-              </button>
-            )}
-
-            {onFixMatch && (
-              <button 
-                onClick={() => onFixMatch(media.id!, media.title, media.year ?? undefined, media.file_path ?? undefined)}
-                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-sm font-semibold transition-all"
-              >
-                <Pencil className="w-4 h-4" />
-                Fix Match
-              </button>
-            )}
-            <div className="flex-1" />
-            {onDismissUpgrade && (media.needs_upgrade || media.tier_quality === 'LOW') && (
-              <button 
-                onClick={handleDismiss}
-                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-red-500/10 hover:text-red-500 rounded-xl text-sm font-semibold transition-all"
-              >
-                <EyeOff className="w-4 h-4" />
-                Dismiss Upgrade
-              </button>
-            )}
-          </div>
         </div>
+      </div>
       </div>
 
       {showTranscodeModal && (

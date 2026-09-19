@@ -210,16 +210,6 @@ export function Dashboard({
         <MediaDetails
           mediaId={selectedMediaId}
           onClose={() => setSelectedMediaId(null)}
-          onDismissUpgrade={(mediaId) => {
-            const mIdx = movieUpgrades.findIndex(m => m.id === mediaId)
-            if (mIdx !== -1) { dismissMovieUpgrade(mIdx); setSelectedMediaId(null); return }
-            const tIdx = tvUpgrades.findIndex(e => e.id === mediaId)
-            if (tIdx !== -1) { dismissTvUpgrade(tIdx); setSelectedMediaId(null); return }
-            const muIdx = musicUpgrades.findIndex(m => m.id === mediaId)
-            if (muIdx !== -1) { dismissMusicUpgrade(muIdx); setSelectedMediaId(null); return }
-            window.electronAPI.addExclusion('media_upgrade', mediaId)
-            setSelectedMediaId(null)
-          }}
         />
       )}
     </div>

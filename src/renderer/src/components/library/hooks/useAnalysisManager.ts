@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react'
-import { getTVShowIdentity } from '@/components/library/tv/showIdentity'
 import type { AnalysisProgress, MediaSource, TVShowSummary } from '@/components/library/types'
 
 type AnalysisType = 'series' | 'collections' | 'music'
@@ -144,14 +143,9 @@ export function useAnalysisManager({
   const handleAnalyzeSingleSeries = useCallback(
     async (show: TVShowSummary) => {
       try {
-        const { sourceId, seriesIdentityKey, libraryId } = getTVShowIdentity(show)
         window.electronAPI.log.info('[useAnalysisManager]', `Analyzing series: ${show.series_title}`)
-        await window.electronAPI.seriesAnalyzeByIdentity(
-          show.series_title,
-          sourceId,
-          seriesIdentityKey,
-          libraryId
-        )
+        if (!show.id) throw new Error('Show has no persisted identity')
+        await window.electronAPI.mediaAnalyze({ kind: 'show', showId: String(show.id) })
         await loadCompletenessData()
       } catch (err) {
         window.electronAPI.log.error('[useAnalysisManager]', 'Single series analysis failed:', err)

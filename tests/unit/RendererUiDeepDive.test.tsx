@@ -91,7 +91,7 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Details Movie')).toBeTruthy()
-        expect(screen.getByText('4K')).toBeTruthy()
+        expect(screen.getByText('Video details')).toBeTruthy()
       })
     })
   })

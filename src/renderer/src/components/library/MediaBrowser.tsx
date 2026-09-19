@@ -24,7 +24,6 @@ import { nextSortDirection } from '@/components/library/sortDefinitions'
 import { useWishlist } from '@/contexts/WishlistContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useLibrary } from '@/contexts/LibraryContext'
-import { emitDismissUpgrade } from '@/utils/dismissEvents'
 import { usePaginatedData } from '@/hooks/usePaginatedData'
 
 import { useThemeAccent } from '@/components/library/hooks/useThemeAccent'
@@ -681,8 +680,8 @@ export function MediaBrowser({
                   onBack={() => selectedAlbum ? setSelectedAlbum(null) : setSelectedArtist(null)}
                   gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
                   showSourceBadge={!activeSourceId && sources.length > 1}
-                  onAnalyzeAlbum={async (id) => { await window.electronAPI.musicAnalyzeAlbumTrackCompleteness(id); loadMusicCompletenessData() }}
-                  onAnalyzeArtist={async (id) => { await window.electronAPI.taskQueueAddTask({ type: 'music-completeness', label: 'Analyze Artist', artistId: id }) }}
+                  onAnalyzeAlbum={async (id) => { await window.electronAPI.mediaAnalyze({ kind: 'album', albumId: String(id) }); loadMusicCompletenessData() }}
+                  onAnalyzeArtist={async () => { await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' }) }}
                   onArtistCompletenessUpdated={loadMusicCompletenessData}
                   onFixArtistMatch={(id, n) => setMatchFixModal({ isOpen: true, type: 'artist', title: n, artistId: id })}
                   onFixAlbumMatch={(id, t, n) => setMatchFixModal({ isOpen: true, type: 'album', title: t, artistName: n, albumId: id })}
@@ -720,14 +719,7 @@ export function MediaBrowser({
           key={`${selectedMediaId}-${detailRefreshKey}`}
           mediaId={selectedMediaId}
           onClose={() => setSelectedMediaId(null)}
-          onRescan={handleRescanItem}
           onFixMatch={(mediaItemId, title, year, filePath) => setMatchFixModal({ isOpen: true, type: 'movie', title, year, filePath, mediaItemId })}
-          onDismissUpgrade={(mediaId, title) => {
-            const item = movies.find(m => m.id === mediaId) || selectedShowEpisodes.find(e => e.id === mediaId)
-            if (item) handleDismissUpgrade(item)
-            else window.electronAPI.addExclusion('media_upgrade', mediaId, undefined, undefined, title)
-            emitDismissUpgrade({ mediaId })
-          }}
         />
       )}
       <CompletenessPanel
