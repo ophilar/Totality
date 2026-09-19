@@ -28,12 +28,4 @@ export function registerPlaybackTargetProfileHandlers(): void {
   })
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_UPDATE, z.object({ id: idInput, ...profileInput.shape }), async input => { await db.playbackTargetProfiles.update(input.id, input.name, input.definition as PlaybackTargetDefinition, new Date().toISOString()); return db.playbackTargetProfiles.get(input.id) })
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_DELETE, idInput, async id => { await db.playbackTargetProfiles.delete(id); return true })
-  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_DUPLICATE, z.object({ id: idInput, name: z.string().trim().min(1) }), async input => {
-    const source = await db.playbackTargetProfiles.get(input.id)
-    if (!source) throw new Error('Playback target profile was not found')
-    const now = new Date().toISOString()
-    const copy: PlaybackTargetProfile = { id: crypto.randomUUID(), name: input.name, definition: source.definition, isBuiltin: false, createdAt: now, updatedAt: now }
-    await db.playbackTargetProfiles.duplicate(input.id, copy)
-    return copy
-  })
 }

@@ -23,7 +23,7 @@ export function TimelinesView() {
   const { addToast } = useToast()
 
   const [recipes, setRecipes] = useState<TimelineRecipeSummary[]>([])
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('star-trek-chronological')
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('')
   const [selectedTimelineResult, setSelectedTimelineResult] = useState<ResolvedTimelineResult | null>(null)
   const [existingPlaylists, setExistingPlaylists] = useState<PlexPlaylistSummary[]>([])
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false)
@@ -103,7 +103,7 @@ export function TimelinesView() {
     return () => {
       isMounted = false
     }
-  }, [selectedRecipeId, addToast])
+  }, [addToast])
 
   useEffect(() => {
     if (!selectedRecipeId) return
