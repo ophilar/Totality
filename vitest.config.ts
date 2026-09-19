@@ -36,7 +36,7 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
     deps: {
       optimizer: {
-        web: {
+        client: {
           include: ['vitest-canvas-mock']
         }
       }

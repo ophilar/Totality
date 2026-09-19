@@ -233,14 +233,7 @@ async function backfillMediaIdentities(db: Client): Promise<void> {
      SELECT 'album', id, 'musicbrainz', musicbrainz_id, COALESCE(user_fixed_match, 0), CASE WHEN COALESCE(user_fixed_match, 0) = 1 THEN 'legacy' END
      FROM music_albums WHERE musicbrainz_id IS NOT NULL AND musicbrainz_id <> ''`
   ]
-  await db.execute('BEGIN IMMEDIATE')
-  try {
-    for (const sql of statements) await db.execute(sql)
-    await db.execute('COMMIT')
-  } catch (error) {
-    await db.execute('ROLLBACK')
-    throw error
-  }
+  await db.batch(statements.map(sql => ({ sql, args: [] })), 'write')
 }
 
 const EVIDENCE_COLUMNS = ['evidence_status', 'confidence', 'savings_basis'] as const
@@ -443,14 +436,7 @@ async function markLegacyZeroScoresInsufficient(db: Client): Promise<void> {
        AND (confidence IS NULL OR confidence = 'none')
        AND (savings_basis IS NULL OR savings_basis = 'insufficient_data')`,
   ]
-  await db.execute('BEGIN IMMEDIATE')
-  try {
-    for (const statement of updates) await db.execute(statement)
-    await db.execute('COMMIT')
-  } catch (error) {
-    await db.execute('ROLLBACK')
-    throw error
-  }
+  await db.batch(updates.map(sql => ({ sql, args: [] })), 'write')
 }
 
 /**
@@ -503,9 +489,8 @@ async function createIndexes(db: Client): Promise<void> {
 }
 
 async function repairInvalidMusicRelationships(db: Client): Promise<void> {
-  await db.execute('BEGIN IMMEDIATE')
-  try {
-    await db.execute(`
+  const statements = [
+    `
       UPDATE music_albums
       SET artist_id = NULL
       WHERE artist_id IS NOT NULL
@@ -515,8 +500,8 @@ async function repairInvalidMusicRelationships(db: Client): Promise<void> {
             AND artist.source_id = music_albums.source_id
             AND artist.name = music_albums.artist_name
         )
-    `)
-    await db.execute(`
+    `,
+    `
       UPDATE music_tracks
       SET album_id = NULL
       WHERE album_id IS NOT NULL
@@ -526,8 +511,8 @@ async function repairInvalidMusicRelationships(db: Client): Promise<void> {
             AND album.source_id = music_tracks.source_id
             AND (music_tracks.album_name IS NULL OR album.title = music_tracks.album_name)
         )
-    `)
-    await db.execute(`
+    `,
+    `
       UPDATE music_tracks
       SET artist_id = NULL
       WHERE artist_id IS NOT NULL
@@ -537,12 +522,9 @@ async function repairInvalidMusicRelationships(db: Client): Promise<void> {
             AND artist.source_id = music_tracks.source_id
             AND (music_tracks.artist_name IS NULL OR artist.name = music_tracks.artist_name)
         )
-    `)
-    await db.execute('COMMIT')
-  } catch (error) {
-    await db.execute('ROLLBACK')
-    throw error
-  }
+    `,
+  ]
+  await db.batch(statements.map(sql => ({ sql, args: [] })), 'write')
 }
 
 async function migrateExistingItemsToVersions(db: Client): Promise<void> {
@@ -561,12 +543,11 @@ async function migrateExistingItemsToVersions(db: Client): Promise<void> {
 }
 
 async function cleanupOrphanedRecords(db: Client): Promise<void> {
-  await db.execute('BEGIN IMMEDIATE')
-  try {
-    await db.execute('DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-    await db.execute('DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-    await db.execute('DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)')
-    await db.execute(`DELETE FROM series_completeness
+  await db.batch([
+    { sql: 'DELETE FROM quality_scores WHERE media_item_id NOT IN (SELECT id FROM media_items)', args: [] },
+    { sql: 'DELETE FROM media_item_versions WHERE media_item_id NOT IN (SELECT id FROM media_items)', args: [] },
+    { sql: 'DELETE FROM media_item_collections WHERE media_item_id NOT IN (SELECT id FROM media_items)', args: [] },
+    { sql: `DELETE FROM series_completeness
       WHERE library_id = ''
         AND source_id <> ''
         AND NOT EXISTS (
@@ -575,12 +556,8 @@ async function cleanupOrphanedRecords(db: Client): Promise<void> {
             AND media_items.source_id = series_completeness.source_id
             AND COALESCE(media_items.library_id, '') = ''
             AND media_items.series_title = series_completeness.series_title
-        )`)
-    await db.execute('COMMIT')
-  } catch (error) {
-    await db.execute('ROLLBACK')
-    throw error
-  }
+        )`, args: [] },
+  ], 'write')
 }
 
 export async function mergeDuplicateSeriesCompleteness(db: Client): Promise<void> {
