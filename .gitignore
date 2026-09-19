@@ -64,3 +64,5 @@ repomix-output.txt
 # Build and IDE
 *.tsbuildinfo
 .eslintcache
+
+test-results/
