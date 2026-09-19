@@ -1,0 +1,16 @@
+{
+  "id": "builtin:plex-webos-4-lg-b8",
+  "name": "Plex webOS 4 / LG B8",
+  "isBuiltin": true,
+  "definition": {
+    "containers": ["matroska", "mp4", "mpegts"],
+    "video": { "codecs": ["h264", "hevc"], "profiles": ["Main", "High", "Main 10"], "levels": [41, 51, 52], "maxWidth": 3840, "maxHeight": 2160, "maxFrameRate": 60, "bitDepths": [8, 10] },
+    "hdr": { "formats": ["HDR10", "HLG"], "fallbackRequired": true },
+    "audio": { "codecs": ["aac", "ac3", "eac3"], "maxChannels": 8, "objectAudio": false, "outputPath": "device" },
+    "subtitles": { "formats": ["srt", "ass", "ssa", "webvtt", "mov_text"], "embedded": true, "external": true, "burnIn": false },
+    "network": { "sustainableBitrate": 100000000 },
+    "providers": { "plex": { "clientProduct": "Plex for LG", "clientPlatform": "webOS", "clientVersion": "4" } }
+  },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z"
+}

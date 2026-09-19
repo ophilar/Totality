@@ -31,6 +31,12 @@ export const IPC_CHANNELS = {
     GET_DECISION: 'optimization:getDecision'
   },
   DATABASE: {
+    PLAYBACK_TARGET_PROFILES_LIST: 'db:playbackTargetProfiles:list',
+    PLAYBACK_TARGET_PROFILES_CREATE: 'db:playbackTargetProfiles:create',
+    PLAYBACK_TARGET_PROFILES_UPDATE: 'db:playbackTargetProfiles:update',
+    PLAYBACK_TARGET_PROFILES_DELETE: 'db:playbackTargetProfiles:delete',
+    PLAYBACK_TARGET_PROFILES_DUPLICATE: 'db:playbackTargetProfiles:duplicate',
+    PLAYBACK_COMPATIBILITY_ANALYZE: 'db:playbackCompatibility:analyze',
     GET_SETTING: 'db:getSetting',
     SET_SETTING: 'db:setSetting',
     GET_ALL_SETTINGS: 'db:getAllSettings',

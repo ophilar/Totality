@@ -1,5 +1,5 @@
 import { useState, useCallback, useId, useRef, useEffect } from 'react'
-import { X, Settings, Sliders, Wrench, Palette, Database, Bug, ArrowUpCircle, Library } from 'lucide-react'
+import { X, Settings, Sliders, Wrench, Palette, Database, Bug, ArrowUpCircle, Library, Monitor } from 'lucide-react'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { GeneralTab } from '@/components/settings/tabs/GeneralTab'
 import { QualitySettingsTab } from '@/components/settings/tabs/QualitySettingsTab'
@@ -9,8 +9,9 @@ import { DataManagementTab } from '@/components/settings/tabs/DataManagementTab'
 import { TroubleshootTab } from '@/components/settings/tabs/TroubleshootTab'
 import { UpdateTab } from '@/components/settings/tabs/UpdateTab'
 import { LibrarySettingsTab } from '@/components/settings/tabs/LibrarySettingsTab'
+import { PlaybackTargetProfilesTab } from '@/components/settings/tabs/PlaybackTargetProfilesTab'
 
-type TabId = 'general' | 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot'
+type TabId = 'general' | 'library' | 'quality' | 'services' | 'appearance' | 'data' | 'update' | 'troubleshoot' | 'playback'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -27,6 +28,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'library', label: 'Library', icon: Library },
+  { id: 'playback', label: 'Playback targets', icon: Monitor },
   { id: 'quality', label: 'Quality', icon: Sliders },
   { id: 'services', label: 'Services', icon: Wrench },
   { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -119,6 +121,8 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
         return <GeneralTab />
       case 'library':
         return <LibrarySettingsTab />
+      case 'playback':
+        return <PlaybackTargetProfilesTab />
       case 'quality':
         return <QualitySettingsTab />
       case 'services':

@@ -36,6 +36,8 @@ import { registerArrHandlers } from '@main/ipc/arr'
 import { registerOptimizationHandlers } from '@main/ipc/optimization'
 import { registerTimelinesHandlers } from '@main/ipc/timelines'
 import { registerSearchHandlers } from '@main/ipc/search'
+import { registerPlaybackTargetProfileHandlers } from '@main/ipc/playbackTargetProfiles'
+import { registerPlaybackCompatibilityHandlers } from '@main/ipc/playbackCompatibility'
 import { createIpcHandler } from '@main/ipc/utils/createHandler'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 
@@ -333,6 +335,8 @@ app.whenReady().then(async () => {
     registerOptimizationHandlers()
     registerTimelinesHandlers()
     registerSearchHandlers()
+    registerPlaybackTargetProfileHandlers()
+    registerPlaybackCompatibilityHandlers()
 
 
     await getLiveMonitoringService().initialize()

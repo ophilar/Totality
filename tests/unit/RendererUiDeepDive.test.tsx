@@ -34,6 +34,14 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
     
     Object.assign(window, { electronAPI: bridge.api })
     Object.assign(globalThis, { electronAPI: bridge.api })
+    Object.assign(bridge.api, {
+      listPlaybackTargetProfiles: vi.fn().mockResolvedValue([]),
+      analyzePlaybackCompatibility: vi.fn().mockResolvedValue(null),
+      sourcesList: vi.fn().mockResolvedValue([]),
+      sourcesGetStats: vi.fn().mockResolvedValue({ totalSources: 0, enabledSources: 0, totalItems: 0, bySource: [] }),
+      sourcesGetSupportedProviders: vi.fn().mockResolvedValue(['plex']),
+      sourcesTestConnection: vi.fn().mockResolvedValue({ success: true }),
+    })
 
     registerDatabaseHandlers()
     registerSourceHandlers()

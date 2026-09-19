@@ -208,7 +208,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
   useEffect(() => {
     if (sources.length > 0) {
       // Check immediately
-      queueMicrotask(() => { void checkAllConnections() })
+      void checkAllConnections()
 
       // Check every 30 seconds
       const interval = setInterval(checkAllConnections, 30000)
@@ -310,11 +310,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Load sources on mount
   useEffect(() => {
-    queueMicrotask(() => {
-      void refreshSources()
-      void loadSupportedProviders()
-      void loadStats()
-    })
+    void refreshSources()
+    void loadSupportedProviders()
+    void loadStats()
     const handleProgress = (progress: ScanProgress) => {
       setScanProgress(prev => {
         const existing = prev.get(progress.sourceId)

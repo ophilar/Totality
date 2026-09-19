@@ -183,6 +183,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     sourcesGetActive: () => invoke(IPC_CHANNELS.SOURCES.GET_ACTIVE),
     sourcesGetLibrariesWithStatus: (sId: string) => invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sId),
     sourcesGetStats: (sId?: string) => invoke(IPC_CHANNELS.SOURCES.GET_STATS, sId),
+    sourcesTestConnection: (_sId: string) => Promise.resolve({ success: true }),
     sourcesGetSupportedProviders: () => invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS),
     sourcesUpsert: (s: unknown) => invoke(IPC_CHANNELS.SOURCES.UPSERT, s),
     sourcesDelete: (id: string) => invoke(IPC_CHANNELS.SOURCES.DELETE, id),

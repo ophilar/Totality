@@ -20,6 +20,7 @@ import {
 } from '@main/providers/base/MediaProvider'
 import { LibraryType, ProviderType, MediaItemType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
+import type { PlexPlaybackDecisionResponse } from '@main/providers/plex/PlexPlaybackDecisionProvider'
 
 import type {
   PlexAuthPin,
@@ -296,6 +297,29 @@ export class PlexProvider extends BaseMediaProvider {
 
   hasSelectedServer(): boolean {
     return this.selectedServer !== null
+  }
+
+  async requestPlaybackDecision(plexId: string, client: { clientProduct: string; clientPlatform: string; clientVersion: string }): Promise<PlexPlaybackDecisionResponse> {
+    if (!this.selectedServer) throw new Error('No Plex server selected')
+    if (!plexId) throw new Error('Plex media identifier is required')
+    const response = await this.api.get(`${this.selectedServer.uri}/video/:/transcode/universal/decision`, {
+      headers: {
+        'X-Plex-Token': this.selectedServer.accessToken,
+        'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
+        'X-Plex-Client-Profile-Name': client.clientProduct,
+        'X-Plex-Platform': client.clientPlatform,
+        'X-Plex-Platform-Version': client.clientVersion,
+        'X-Plex-Device': client.clientProduct,
+      },
+      params: { path: `/library/metadata/${encodeURIComponent(plexId)}`, mediaIndex: -1, partIndex: -1 },
+    })
+    const container = response.data?.MediaContainer
+    const decisionText = String(container?.transcodeDecisionText || container?.generalDecisionText || '').toLowerCase()
+    const decisionCode = Number(container?.transcodeDecisionCode ?? container?.generalDecisionCode)
+    const directPlay = decisionCode === 1000 || decisionText.includes('direct play available')
+    const overall = directPlay ? 'direct-play' : decisionText.includes('direct stream') ? 'direct-stream' : decisionText.includes('transcod') || decisionCode > 0 ? 'transcode' : undefined
+    if (!overall) throw new Error('Plex returned no recognizable playback decision')
+    return { overall, video: overall, audio: overall, subtitle: overall, evidence: String(container?.transcodeDecisionText || container?.generalDecisionText || `decision code ${decisionCode}`) }
   }
 
   async testConnection(): Promise<ConnectionTestResult> {

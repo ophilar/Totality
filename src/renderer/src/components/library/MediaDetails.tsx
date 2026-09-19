@@ -20,6 +20,7 @@ import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { formatDuration } from '@/components/library/mediaUtils'
 import { Zap } from 'lucide-react'
 import type { MediaItem, MediaItemVersion } from '@main/types/database'
+import { PlaybackCompatibilityPanel } from '@/components/library/PlaybackCompatibilityPanel'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -79,9 +80,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
 
   useEffect(() => {
     let active = true
-    queueMicrotask(() => {
-      if (active) void loadData()
-    })
+    if (active) void loadData()
     return () => { active = false }
   }, [loadData])
 
@@ -315,6 +314,7 @@ export function MediaDetails({ mediaId, onClose, onRescan, onFixMatch, onDismiss
                   <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Overall Health</div>
                   <QualityBadges item={displayItem} />
                 </div>
+                <PlaybackCompatibilityPanel mediaId={mediaId} />
                 
                 <div className="flex gap-6">
                   {toSafeNumber(sv?.tier_score ?? media.tier_score) > 0 && (

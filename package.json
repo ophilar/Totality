@@ -1,6 +1,6 @@
 {
     "name": "totality",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "type": "module",
     "description": "Analyze media library quality and safely optimize media",
     "main": "dist-electron/main/index.cjs",

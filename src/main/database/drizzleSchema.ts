@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 
+
 // --- Media Sources ---
 export const mediaSources = sqliteTable('media_sources', {
   id: integer('id').primaryKey({ autoIncrement: true }),
