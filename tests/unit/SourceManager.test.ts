@@ -125,13 +125,13 @@ describe('SourceManager (No Mocks)', () => {
     await manager.initialize()
     const libs = await manager.getLibraries(source.source_id)
     await db.sources.setLibrariesEnabled(source.source_id, libs.map(l => ({ id: l.id, name: l.name, type: l.type, enabled: true })))
-    const taskQueue = (manager as any).getTaskQueue()
+    const taskQueue = (manager as unknown as { getTaskQueue: () => { clearQueue: () => Promise<void>; getTasks: () => Array<{ type: TaskType; sourceId: string }> } }).getTaskQueue()
     await taskQueue.clearQueue()
 
     await manager.triggerPostScanAnalysis(source.source_id, 'movie')
 
     const tasks = taskQueue.getTasks()
-    const qualityTask = tasks.find((t: any) => t.type === TaskType.QualityAnalysis && t.sourceId === source.source_id)
+    const qualityTask = tasks.find((t) => t.type === TaskType.QualityAnalysis && t.sourceId === source.source_id)
     expect(qualityTask).toBeDefined()
   })
 })

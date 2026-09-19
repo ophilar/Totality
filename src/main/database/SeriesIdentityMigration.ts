@@ -38,22 +38,101 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
     await db.execute(`DROP INDEX IF EXISTS ${index.name}`)
   }
 
-  const completenessRows = await db.execute(`
-    SELECT id, series_title, source_id, library_id, tmdb_id, tvdb_id
-    FROM series_completeness
-    WHERE series_identity_key IS NULL OR TRIM(series_identity_key) = ''
-  `)
-  const episodeRows = await db.execute(`
-    SELECT id, series_title, source_id, library_id, series_tmdb_id
-    FROM media_items
-    WHERE type = 'episode'
-      AND series_title IS NOT NULL
-      AND series_title <> ''
-      AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')
-  `)
-
   await db.execute('BEGIN IMMEDIATE')
   try {
+    // 1. Align episode identities where series_tmdb_id is known
+    await db.execute(`
+      UPDATE media_items
+      SET series_identity_key = 'tmdb:' || series_tmdb_id
+      WHERE type = 'episode'
+        AND series_tmdb_id IS NOT NULL AND series_tmdb_id != ''
+        AND (series_identity_key IS NULL OR series_identity_key != ('tmdb:' || series_tmdb_id))
+    `)
+
+    // 2. Link episodes missing series_tmdb_id to series_completeness records that have a TMDB ID
+    await db.execute(`
+      UPDATE media_items
+      SET series_tmdb_id = (
+        SELECT s.tmdb_id FROM series_completeness s
+        WHERE s.series_title = media_items.series_title
+          AND s.source_id = media_items.source_id
+          AND COALESCE(s.library_id, '') = COALESCE(media_items.library_id, '')
+          AND s.tmdb_id IS NOT NULL AND s.tmdb_id != ''
+        LIMIT 1
+      ),
+      series_identity_key = 'tmdb:' || (
+        SELECT s.tmdb_id FROM series_completeness s
+        WHERE s.series_title = media_items.series_title
+          AND s.source_id = media_items.source_id
+          AND COALESCE(s.library_id, '') = COALESCE(media_items.library_id, '')
+          AND s.tmdb_id IS NOT NULL AND s.tmdb_id != ''
+        LIMIT 1
+      )
+      WHERE type = 'episode'
+        AND (series_tmdb_id IS NULL OR series_tmdb_id = '')
+        AND EXISTS (
+          SELECT 1 FROM series_completeness s
+          WHERE s.series_title = media_items.series_title
+            AND s.source_id = media_items.source_id
+            AND COALESCE(s.library_id, '') = COALESCE(media_items.library_id, '')
+            AND s.tmdb_id IS NOT NULL AND s.tmdb_id != ''
+        )
+    `)
+
+    // 3. Align series_completeness identities where tmdb_id is known
+    await db.execute(`
+      UPDATE series_completeness
+      SET series_identity_key = 'tmdb:' || tmdb_id
+      WHERE tmdb_id IS NOT NULL AND tmdb_id != ''
+        AND (series_identity_key IS NULL OR series_identity_key != ('tmdb:' || tmdb_id))
+    `)
+
+    // 4. Backfill series_completeness missing tmdb_id from child episodes with series_tmdb_id
+    await db.execute(`
+      UPDATE series_completeness
+      SET tmdb_id = (
+        SELECT m.series_tmdb_id FROM media_items m
+        WHERE m.type = 'episode'
+          AND m.series_title = series_completeness.series_title
+          AND m.source_id = series_completeness.source_id
+          AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '')
+          AND m.series_tmdb_id IS NOT NULL AND m.series_tmdb_id != ''
+        LIMIT 1
+      ),
+      series_identity_key = 'tmdb:' || (
+        SELECT m.series_tmdb_id FROM media_items m
+        WHERE m.type = 'episode'
+          AND m.series_title = series_completeness.series_title
+          AND m.source_id = series_completeness.source_id
+          AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '')
+          AND m.series_tmdb_id IS NOT NULL AND m.series_tmdb_id != ''
+        LIMIT 1
+      )
+      WHERE (tmdb_id IS NULL OR tmdb_id = '')
+        AND EXISTS (
+          SELECT 1 FROM media_items m
+          WHERE m.type = 'episode'
+            AND m.series_title = series_completeness.series_title
+            AND m.source_id = series_completeness.source_id
+            AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '')
+            AND m.series_tmdb_id IS NOT NULL AND m.series_tmdb_id != ''
+        )
+    `)
+
+    const completenessRows = await db.execute(`
+      SELECT id, series_title, source_id, library_id, tmdb_id, tvdb_id
+      FROM series_completeness
+      WHERE series_identity_key IS NULL OR TRIM(series_identity_key) = ''
+    `)
+    const episodeRows = await db.execute(`
+      SELECT id, series_title, source_id, library_id, series_tmdb_id
+      FROM media_items
+      WHERE type = 'episode'
+        AND series_title IS NOT NULL
+        AND series_title <> ''
+        AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')
+    `)
+
     for (const rawRow of completenessRows.rows) {
       const row = rawRow as unknown as SeriesCompletenessIdentityRow
       const identityKey = deriveSeriesIdentityKey({

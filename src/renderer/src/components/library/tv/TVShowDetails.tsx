@@ -76,23 +76,25 @@ export function TVShowDetails({
   const missingEpisodesStr = completenessData?.missing_episodes
 
   useEffect(() => {
-    setAudioLanguages([])
-    setShowOverview(null)
+    queueMicrotask(() => {
+      setAudioLanguages([])
+      setShowOverview(null)
 
-    if (tmdbId) {
-      window.electronAPI.tmdbGetTVShowDetails(tmdbId)
-        .then(details => { if (details?.overview) setShowOverview(details.overview) })
-        .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load TMDB show details', error))
-    }
+      if (tmdbId) {
+        window.electronAPI.tmdbGetTVShowDetails(tmdbId)
+          .then(details => { if (details?.overview) setShowOverview(details.overview) })
+          .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load TMDB show details', error))
+      }
 
-    window.electronAPI.seriesGetAudioLanguagesByIdentity(
-      selectedShow.series_title,
-      sourceId,
-      seriesIdentityKey,
-      libraryId
-    )
-      .then(langs => { if (langs.length > 0) setAudioLanguages(langs) })
-      .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load series audio languages', error))
+      window.electronAPI.seriesGetAudioLanguagesByIdentity(
+        selectedShow.series_title,
+        sourceId,
+        seriesIdentityKey,
+        libraryId
+      )
+        .then(langs => { if (langs.length > 0) setAudioLanguages(langs) })
+        .catch(error => window.electronAPI.log.error('TVShowDetails', 'Failed to load series audio languages', error))
+    })
   }, [selectedShow.series_title, sourceId, seriesIdentityKey, libraryId, tmdbId])
 
   useEffect(() => {
@@ -157,6 +159,10 @@ export function TVShowDetails({
   const missingEpisodes = missingEpisodesResult.value
 
   const totalSeasons = completenessData?.total_seasons || ownedSeasons.length
+
+  // The virtualization library requires the concrete parent element; this ref is an external DOM handle.
+  // eslint-disable-next-line react-hooks/refs
+  const scrollParent = scrollParentRef?.current
 
   return (
     <div className="space-y-6">
@@ -310,7 +316,7 @@ export function TVShowDetails({
         <Virtuoso
           data={allSeasonNumbers}
           overscan={800}
-          customScrollParent={scrollParentRef?.current ?? undefined}
+          customScrollParent={scrollParent ?? undefined}
           itemContent={(_, seasonNumber) => {
           const season = selectedShowData.seasons.get(seasonNumber)
           const ownedEpisodes = season?.episodes.filter(filterItem) || []

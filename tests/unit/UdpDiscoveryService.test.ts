@@ -23,11 +23,9 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('@main/services/utils/httpClient', () => {
-  return {
-    fetchJSON: vi.fn(),
-  }
-})
+vi.mock('@main/services/utils/httpClient', () => ({
+  fetchJSON: vi.fn(),
+}))
 
 vi.mock('@main/services/LoggingService', () => {
   return {

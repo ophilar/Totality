@@ -425,6 +425,7 @@ export class SeriesCompletenessService {
           episodeThumbUrl?: string
           seasonPosterUrl?: string
           seriesTmdbId?: string
+          seriesIdentityKey?: string
           tmdbId?: string
           imdbId?: string
           originalLanguage?: string
@@ -474,9 +475,13 @@ export class SeriesCompletenessService {
           needsUpdate = true
         }
 
-        // 7. Backfill series TMDB ID
+        // 7. Backfill series TMDB ID and series identity key
         if (result.tmdb_id && ep.series_tmdb_id !== result.tmdb_id) {
           updates.seriesTmdbId = result.tmdb_id
+          needsUpdate = true
+        }
+        if (result.series_identity_key && ep.series_identity_key !== result.series_identity_key) {
+          updates.seriesIdentityKey = result.series_identity_key
           needsUpdate = true
         }
 

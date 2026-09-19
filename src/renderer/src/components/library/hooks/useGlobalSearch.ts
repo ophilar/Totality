@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef, RefObject } from 'react'
-import type { MediaItem, MusicArtist, MusicAlbum, MusicTrack, TVShow } from '@/components/library/types'
 
 interface MovieSearchResult {
   id: number
@@ -82,18 +81,12 @@ export interface FlattenedResult {
 }
 
 interface UseGlobalSearchOptions {
-  items: MediaItem[]
-  /** TV shows keyed by stable renderer identity; show.title is the display/search title. */
-  tvShows: Map<string, TVShow>
-  musicArtists: MusicArtist[]
-  musicAlbums: MusicAlbum[]
-  allMusicTracks: MusicTrack[]
   searchInputRef: RefObject<HTMLInputElement | null>
   onNavigateToMovie: (id: number) => void
   onNavigateToTVShow: (identityKey: string) => void
   onNavigateToEpisode: (id: number, seriesIdentityKey?: string | null, sourceId?: string, libraryId?: string) => void
-  onNavigateToArtist: (artist: MusicArtist) => void
-  onNavigateToAlbum: (album: MusicAlbum) => void
+  onNavigateToArtist: (artistId: number) => void
+  onNavigateToAlbum: (albumId: number) => void
   onNavigateToTrack: (albumId: number) => void
 }
 
@@ -116,21 +109,7 @@ export interface UseGlobalSearchReturn {
   ) => void
 }
 
-/**
- * Hook to manage global search functionality
- *
- * Provides search across all media types (movies, TV, music) with keyboard
- * navigation support and result selection handling.
- *
- * @param options Search configuration and navigation callbacks
- * @returns Search state and handlers
- */
 export function useGlobalSearch({
-  items,
-  tvShows,
-  musicArtists,
-  musicAlbums,
-  allMusicTracks,
   searchInputRef,
   onNavigateToMovie,
   onNavigateToTVShow,
@@ -144,118 +123,24 @@ export function useGlobalSearch({
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
-  // Global search results for live preview (searches all content types)
-  const globalSearchResults = useMemo((): GlobalSearchResults => {
+  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResults>({
+    movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: []
+  })
+
+  useEffect(() => {
     if (!searchInput.trim() || searchInput.length < 2) {
-      return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
+      setGlobalSearchResults({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
+      return
     }
 
-    const query = searchInput.toLowerCase()
-    const maxResults = 5 // Max results per category
+    const timer = setTimeout(() => {
+      window.electronAPI.searchGlobal(searchInput)
+        .then(results => setGlobalSearchResults(results))
+        .catch(err => console.error('Global search failed:', err))
+    }, 250)
 
-    // Search movies
-    const movieResults: MovieSearchResult[] = items
-      .filter((item) => item.type === 'movie' && item.title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map((item) => ({
-        id: item.id!,
-        title: item.title,
-        year: item.year,
-        poster_url: item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'movie' as const,
-      }))
-
-    // Search TV shows by display title while retaining the identity key as the result ID.
-    const tvResults: TVSearchResult[] = Array.from(tvShows.entries())
-      .filter(([, show]) => show.title.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map(([identityKey, show]) => ({
-        id: identityKey,
-        title: show.title,
-        poster_url: show.poster_url,
-        type: 'tv' as const,
-      }))
-
-    // Search episodes
-    const episodeResults: EpisodeSearchResult[] = items
-      .filter(
-        (item) =>
-          item.type === 'episode' &&
-          (item.title.toLowerCase().includes(query) ||
-            (item.series_title && item.series_title.toLowerCase().includes(query)))
-      )
-      .slice(0, maxResults)
-      .map((item) => ({
-        id: item.id!,
-        title: item.title,
-        series_title: item.series_title,
-        series_identity_key: item.series_identity_key,
-        source_id: item.source_id,
-        library_id: item.library_id,
-        season_number: item.season_number,
-        episode_number: item.episode_number,
-        thumb_url: item.episode_thumb_url || item.season_poster_url || item.poster_url,
-        needs_upgrade: item.needs_upgrade || item.tier_quality === 'LOW',
-        type: 'episode' as const,
-      }))
-
-    // Search music artists
-    const artistResults: ArtistSearchResult[] = musicArtists
-      .filter((artist) => artist.name.toLowerCase().includes(query))
-      .slice(0, maxResults)
-      .map((artist) => ({
-        id: artist.id!,
-        title: artist.name,
-        thumb_url: artist.thumb_url,
-        type: 'artist' as const,
-      }))
-
-    // Search music albums
-    const albumResults: AlbumSearchResult[] = musicAlbums
-      .filter(
-        (album) =>
-          album.title.toLowerCase().includes(query) ||
-          album.artist_name.toLowerCase().includes(query)
-      )
-      .slice(0, maxResults)
-      .map((album) => ({
-        id: album.id!,
-        title: album.title,
-        subtitle: album.artist_name,
-        year: album.year,
-        thumb_url: album.thumb_url,
-        needs_upgrade: false,
-        type: 'album' as const,
-      }))
-
-    // Search music tracks (include album info) - only include tracks with album_id
-    const trackResults: TrackSearchResult[] = allMusicTracks
-      .filter((track) => track.title.toLowerCase().includes(query) && track.album_id != null)
-      .slice(0, maxResults)
-      .map((track) => {
-        const album = musicAlbums.find((a) => a.id === track.album_id)
-        return {
-          id: track.id!,
-          title: track.title,
-          album_id: track.album_id!,
-          album_title: album?.title,
-          artist_name: album?.artist_name,
-          thumb_url: album?.thumb_url,
-          needs_upgrade: !track.is_lossless && !track.is_hi_res,
-          type: 'track' as const,
-        }
-      })
-
-    return {
-      movies: movieResults,
-      tvShows: tvResults,
-      episodes: episodeResults,
-      artists: artistResults,
-      albums: albumResults,
-      tracks: trackResults,
-    }
-  }, [searchInput, items, tvShows, musicArtists, musicAlbums, allMusicTracks])
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
   const hasSearchResults =
     globalSearchResults.movies.length > 0 ||
@@ -265,7 +150,6 @@ export function useGlobalSearch({
     globalSearchResults.albums.length > 0 ||
     globalSearchResults.tracks.length > 0
 
-  // Flatten search results for keyboard navigation
   const flattenedResults = useMemo(() => {
     const results: FlattenedResult[] = []
     globalSearchResults.movies.forEach((m) => results.push({ type: 'movie', id: m.id }))
@@ -291,13 +175,11 @@ export function useGlobalSearch({
 
   const [prevSearchInput, setPrevSearchInput] = useState(searchInput)
 
-  // Adjust search result index when search input changes (React 19 recommended pattern instead of useEffect)
   if (searchInput !== prevSearchInput) {
     setPrevSearchInput(searchInput)
     setSearchResultIndex(-1)
   }
 
-  // Handle clicking outside search results to close
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
@@ -308,7 +190,6 @@ export function useGlobalSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Handle search result selection
   const handleSearchResultClick = useCallback(
     (
       type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track',
@@ -325,21 +206,18 @@ export function useGlobalSearch({
       } else if (type === 'episode') {
         onNavigateToEpisode(id as number, extra?.series_identity_key, extra?.source_id, extra?.library_id)
       } else if (type === 'artist') {
-        const artist = musicArtists.find((a) => a.id === id)
-        if (artist) onNavigateToArtist(artist)
+        onNavigateToArtist(id as number)
       } else if (type === 'album') {
-        const album = musicAlbums.find((a) => a.id === id)
-        if (album) onNavigateToAlbum(album)
+        onNavigateToAlbum(id as number)
       } else if (type === 'track') {
         if (extra?.album_id) {
           onNavigateToTrack(extra.album_id)
         }
       }
     },
-    [musicArtists, musicAlbums, onNavigateToMovie, onNavigateToTVShow, onNavigateToEpisode, onNavigateToArtist, onNavigateToAlbum, onNavigateToTrack]
+    [onNavigateToMovie, onNavigateToTVShow, onNavigateToEpisode, onNavigateToArtist, onNavigateToAlbum, onNavigateToTrack]
   )
 
-  // Keyboard navigation for search results
   const handleSearchKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!showSearchResults || !hasSearchResults) return

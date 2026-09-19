@@ -19,6 +19,7 @@ import { DuplicateRepository } from '@main/database/repositories/DuplicateReposi
 import { MovieCollectionRepository } from '@main/database/repositories/MovieCollectionRepository'
 import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
 import { MediaRemuxJobRepository } from '@main/database/repositories/MediaRemuxJobRepository'
+import { GlobalSearchRepository } from '@main/database/repositories/GlobalSearchRepository'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 let serviceInstance: BetterSQLiteService | null = null
@@ -67,6 +68,7 @@ export class BetterSQLiteService {
     movieCollections: MovieCollectionRepository
     identities: IdentityRepository
     mediaRemuxJobs: MediaRemuxJobRepository
+    globalSearch: GlobalSearchRepository
   }> = {}
   private _lock: Promise<void> = Promise.resolve()
 
@@ -152,6 +154,7 @@ export class BetterSQLiteService {
   public get movieCollections() { return this.repos.movieCollections ??= new MovieCollectionRepository(this.db, this.drizzle) }
   public get identities() { return this.repos.identities ??= new IdentityRepository(this.db) }
   public get mediaRemuxJobs() { return this.repos.mediaRemuxJobs ??= new MediaRemuxJobRepository(this.db, this.drizzle) }
+  public get globalSearch() { return this.repos.globalSearch ??= new GlobalSearchRepository(this.db) }
 
   // Transaction API
   /**

@@ -180,4 +180,90 @@ describe('series identity migration', () => {
       args: ['Duplicate Show Again', identityKey, 'legacy-source', 'legacy-tv', now, now],
     })).rejects.toThrow()
   })
+
+  it('realigns mismatched per-episode identity keys to canonical series key and recovers all episodes', async () => {
+    const db = getDatabase()
+    const sourceId = 'src-plex'
+    const libraryId = '2'
+    const seriesTmdbId = '83867'
+    const now = new Date().toISOString()
+
+    // Simulate scanned episodes where each episode got its own individual episode TMDB ID as series_identity_key
+    const ep1Id = await db.media.upsertItem({
+      source_id: sourceId,
+      library_id: libraryId,
+      plex_id: 'ep-1',
+      type: 'episode',
+      title: 'Episode 1',
+      series_title: 'Andor',
+      series_tmdb_id: seriesTmdbId,
+      series_identity_key: 'tmdb:3745389', // individual episode 1 ID
+      season_number: 1,
+      episode_number: 1,
+      file_path: '/media/Andor/S01E01.mkv',
+    })
+    const ep2Id = await db.media.upsertItem({
+      source_id: sourceId,
+      library_id: libraryId,
+      plex_id: 'ep-2',
+      type: 'episode',
+      title: 'Episode 2',
+      series_title: 'Andor',
+      series_tmdb_id: seriesTmdbId,
+      series_identity_key: 'tmdb:3745391', // individual episode 2 ID
+      season_number: 1,
+      episode_number: 2,
+      file_path: '/media/Andor/S01E02.mkv',
+    })
+    const ep3Id = await db.media.upsertItem({
+      source_id: sourceId,
+      library_id: libraryId,
+      plex_id: 'ep-3',
+      type: 'episode',
+      title: 'Episode 3',
+      series_title: 'Andor',
+      series_tmdb_id: seriesTmdbId,
+      series_identity_key: 'tmdb:5747440', // individual episode 3 ID
+      season_number: 2,
+      episode_number: 1,
+      file_path: '/media/Andor/S02E01.mkv',
+    })
+
+    // Simulate series_completeness having only episode 3's key
+    await db.db.execute('DROP TRIGGER IF EXISTS trg_series_completeness_identity_insert')
+    await db.db.execute('DROP TRIGGER IF EXISTS trg_series_completeness_identity_update')
+    await db.db.execute({
+      sql: `INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 2, 24, 1, 1, '[]', '[]', 4, ?, ?)`,
+      args: ['Andor', 'tmdb:5747440', sourceId, libraryId, seriesTmdbId, now, now],
+    })
+
+    // Before migration, querying with series_completeness's key returns ONLY 1 episode
+    const episodesBefore = await db.tvShows.getEpisodes('Andor', sourceId, 'tmdb:5747440', libraryId)
+    expect(episodesBefore).toHaveLength(1)
+
+    // Run migration
+    await runMigrations(db.db)
+
+    // After migration, series_identity_key for all 3 episodes is aligned to tmdb:83867
+    const canonicalKey = `tmdb:${seriesTmdbId}`
+    const episodesAfter = await db.tvShows.getEpisodes('Andor', sourceId, canonicalKey, libraryId)
+    expect(episodesAfter).toHaveLength(3)
+    expect(episodesAfter.map(e => e.id)).toEqual([ep1Id, ep2Id, ep3Id])
+
+    // Series completeness row is also updated to the canonical key
+    const compRows = (await db.tvShows.getAllCompleteness(sourceId, libraryId))
+      .filter(r => r.series_title === 'Andor')
+    expect(compRows).toHaveLength(1)
+    expect(compRows[0].series_identity_key).toBe(canonicalKey)
+
+    // Summaries returns all 3 owned episodes
+    const summaries = await db.tvShows.getSummaries({ sourceId, libraryId })
+    const andorSummary = summaries.find(s => s.series_title === 'Andor')
+    expect(andorSummary?.owned_episodes).toBe(3)
+  })
 })

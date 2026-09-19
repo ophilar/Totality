@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AnalysisStatus, AnalysisDiagnostic, AnalysisOutcome } from '@main/types/database'
+import type { AnalysisDiagnostic, AnalysisOutcome } from '@main/types/database'
 
 describe('Analysis Contracts', () => {
   it('constructs a valid AnalysisDiagnostic record', () => {

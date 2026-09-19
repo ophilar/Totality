@@ -85,7 +85,7 @@ export async function fetchJSON<T>(
   const response = await fetchWithTimeout(finalUrl, init, timeoutMs)
 
   if (!response.ok && !allowStatuses?.includes(response.status)) {
-    let data: unknown = null
+    let data: unknown
     try {
       data = await response.json()
     } catch {

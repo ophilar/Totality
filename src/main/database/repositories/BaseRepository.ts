@@ -97,6 +97,13 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     const idColumn = (this.table as TTable & { id: SQLiteColumn }).id
     const existing = await this.drizzle.select({ id: idColumn, providerId: providerIdField })
       .from(this.table).where(whereClause).all()
+
+    if (existing.length > 0 && validProviderIds.size === 0) {
+      const { getLoggingService } = await import('@main/services/LoggingService')
+      getLoggingService().warn('[BaseRepository]', 'reconcileStaleItems aborted: provider returned 0 items but local database has items. Preventing potential wipe due to API failure.')
+      return 0
+    }
+
     const staleIds = existing.filter(item => !validProviderIds.has(String(item.providerId))).map(item => item.id)
     if (staleIds.length > 0) {
       const batchSize = 500

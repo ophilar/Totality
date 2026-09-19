@@ -105,7 +105,7 @@ describe('MusicBrainzService (No Mocks)', () => {
       await db.music.upsertAlbum({ source_id: 'src', source_type: 'local', provider_id: `al${i}`, artist_name: `Artist ${i}`, title: `Album ${i}` })
     }
 
-    ;(service as any).analyzeArtistCompleteness = async () => { throw new Error('503 provider unavailable') }
+    ;(service as unknown as { analyzeArtistCompleteness: () => Promise<never> }).analyzeArtistCompleteness = async () => { throw new Error('503 provider unavailable') }
     const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
 
     expect(result.status).toBe('deferred')
@@ -122,7 +122,7 @@ describe('MusicBrainzService (No Mocks)', () => {
     for (let i = 0; i < 6; i++) {
       await db.music.upsertAlbum({ source_id: 'src', source_type: 'local', provider_id: `album${i}`, artist_id: artistId, artist_name: 'Radiohead', title: `Album ${i}` })
     }
-    ;(service as any).analyzeAlbumTrackCompleteness = async () => { throw new Error('503 provider unavailable') }
+    ;(service as unknown as { analyzeAlbumTrackCompleteness: () => Promise<never> }).analyzeAlbumTrackCompleteness = async () => { throw new Error('503 provider unavailable') }
     const result = await service.analyzeAllMusic(undefined, undefined, { skipRecentlyAnalyzed: false })
     expect(result.status).toBe('deferred')
     expect(result.deferred).toBe(2)
@@ -135,7 +135,7 @@ describe('MusicBrainzService (No Mocks)', () => {
     await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'a2', name: 'Radiohead 2', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
     const original = service.analyzeArtistCompleteness.bind(service)
     let calls = 0
-    ;(service as any).analyzeArtistCompleteness = async (...args: unknown[]) => {
+    ;(service as unknown as { analyzeArtistCompleteness: (...args: unknown[]) => Promise<unknown> }).analyzeArtistCompleteness = async (...args: unknown[]) => {
       const value = await original(...args as Parameters<MusicBrainzService['analyzeArtistCompleteness']>)
       calls++
       if (calls === 1) service.cancel()
@@ -153,7 +153,7 @@ describe('MusicBrainzService (No Mocks)', () => {
     }
     const original = service.analyzeArtistCompleteness.bind(service)
     let calls = 0
-    ;(service as any).analyzeArtistCompleteness = async (...args: unknown[]) => {
+    ;(service as unknown as { analyzeArtistCompleteness: (...args: unknown[]) => Promise<unknown> }).analyzeArtistCompleteness = async (...args: unknown[]) => {
       calls++
       if (calls !== 2) throw new Error('503 provider unavailable')
       return original(...args as Parameters<MusicBrainzService['analyzeArtistCompleteness']>)

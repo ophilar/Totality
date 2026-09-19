@@ -61,10 +61,8 @@ export default defineConfig({
       ],
     },
     testTimeout: 30000,
-    forks: {
-      maxForks: 4,
-      minForks: 1,
-    },
+    pool: 'forks',
+    maxWorkers: 4,
   },
   resolve: {
     alias: {

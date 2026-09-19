@@ -35,6 +35,7 @@ import { registerMediaHandlers } from '@main/ipc/media'
 import { registerArrHandlers } from '@main/ipc/arr'
 import { registerOptimizationHandlers } from '@main/ipc/optimization'
 import { registerTimelinesHandlers } from '@main/ipc/timelines'
+import { registerSearchHandlers } from '@main/ipc/search'
 import { createIpcHandler } from '@main/ipc/utils/createHandler'
 import { getLiveMonitoringService } from '@main/services/LiveMonitoringService'
 
@@ -82,6 +83,7 @@ function createWindow() {
     icon: path.join(VITE_PUBLIC, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
@@ -330,6 +332,7 @@ app.whenReady().then(async () => {
     registerArrHandlers()
     registerOptimizationHandlers()
     registerTimelinesHandlers()
+    registerSearchHandlers()
 
 
     await getLiveMonitoringService().initialize()

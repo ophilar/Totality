@@ -774,18 +774,47 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async deleteMusicTrack(id: number): Promise<void> {
-    await this.drizzle.delete(schema.musicTracks).where(eq(schema.musicTracks.id, id))
+    await this.withBatch(async () => {
+      const track = await this.drizzle.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, id)).get()
+      if (!track) return
+
+      await this.drizzle.delete(schema.musicTracks).where(eq(schema.musicTracks.id, id))
+
+      if (track.albumId) {
+        await this.drizzle.run(sql`UPDATE music_albums SET track_count = (SELECT COUNT(*) FROM music_tracks WHERE album_id = ${track.albumId}), total_duration = (SELECT SUM(duration) FROM music_tracks WHERE album_id = ${track.albumId}), total_size = (SELECT SUM(file_size) FROM music_tracks WHERE album_id = ${track.albumId}), updated_at = datetime('now') WHERE id = ${track.albumId}`)
+      }
+      if (track.artistId) {
+        await this.updateMusicArtistCountsBatch([track.artistId])
+      }
+    })
   }
 
   async deleteMusicTracks(ids: number[]): Promise<void> {
     if (!ids || ids.length === 0) return
-    const chunkSize = 500
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize)
-      await this.drizzle
-        .delete(schema.musicTracks)
-        .where(inArray(schema.musicTracks.id, chunk))
-    }
+    await this.withBatch(async () => {
+      const tracks = await this.drizzle.select({ albumId: schema.musicTracks.albumId, artistId: schema.musicTracks.artistId }).from(schema.musicTracks).where(inArray(schema.musicTracks.id, ids)).all()
+      if (tracks.length === 0) return
+
+      const albumIds = new Set<number>()
+      const artistIds = new Set<number>()
+      for (const t of tracks) {
+        if (t.albumId) albumIds.add(t.albumId)
+        if (t.artistId) artistIds.add(t.artistId)
+      }
+
+      const chunkSize = 500
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize)
+        await this.drizzle.delete(schema.musicTracks).where(inArray(schema.musicTracks.id, chunk))
+      }
+
+      for (const albumId of Array.from(albumIds)) {
+        await this.drizzle.run(sql`UPDATE music_albums SET track_count = (SELECT COUNT(*) FROM music_tracks WHERE album_id = ${albumId}), total_duration = (SELECT SUM(duration) FROM music_tracks WHERE album_id = ${albumId}), total_size = (SELECT SUM(file_size) FROM music_tracks WHERE album_id = ${albumId}), updated_at = datetime('now') WHERE id = ${albumId}`)
+      }
+      if (artistIds.size > 0) {
+        await this.updateMusicArtistCountsBatch(Array.from(artistIds))
+      }
+    })
   }
 
   async updateMusicArtistCounts(

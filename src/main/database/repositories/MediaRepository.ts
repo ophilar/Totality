@@ -734,6 +734,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
       episodeThumbUrl?: string
       seasonPosterUrl?: string
       seriesTmdbId?: string | null
+      seriesIdentityKey?: string | null
       tmdbId?: string | null
       imdbId?: string | null
       originalLanguage?: string
@@ -747,6 +748,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     if (metadata.episodeThumbUrl !== undefined) data.episodeThumbUrl = metadata.episodeThumbUrl
     if (metadata.seasonPosterUrl !== undefined) data.seasonPosterUrl = metadata.seasonPosterUrl
     if (metadata.seriesTmdbId !== undefined) data.seriesTmdbId = metadata.seriesTmdbId
+    if (metadata.seriesIdentityKey !== undefined) data.seriesIdentityKey = metadata.seriesIdentityKey
     if (metadata.tmdbId !== undefined) data.tmdbId = metadata.tmdbId
     if (metadata.imdbId !== undefined) data.imdbId = metadata.imdbId
     if (metadata.originalLanguage !== undefined) data.originalLanguage = metadata.originalLanguage
@@ -765,6 +767,7 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         episodeThumbUrl?: string
         seasonPosterUrl?: string
         seriesTmdbId?: string | null
+        seriesIdentityKey?: string | null
         tmdbId?: string | null
         imdbId?: string | null
         originalLanguage?: string

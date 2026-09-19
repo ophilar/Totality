@@ -71,7 +71,6 @@ export interface PlexCollection {
 }
 
 const PLEX_API_URL = 'https://plex.tv/api/v2'
-const PLEX_TV_URL = 'https://plex.tv'
 const CLIENT_IDENTIFIER = 'totality'
 const PRODUCT_NAME = 'Totality'
 
@@ -116,9 +115,7 @@ export class PlexProvider extends BaseMediaProvider {
 
   async requestAuthPin(): Promise<PlexAuthPin> {
     try {
-      const response = await this.api.post(`${this.plexApiUrl}/pins`, {
-        strong: true,
-      })
+      const response = await this.api.post(`${this.plexApiUrl}/pins?strong=true`)
       return response.data as PlexAuthPin
     } catch (error) {
       getLoggingService().error('[PlexProvider]', 'Failed to request auth PIN:', error)
@@ -159,7 +156,7 @@ export class PlexProvider extends BaseMediaProvider {
   async authenticate(credentials: ProviderCredentials): Promise<AuthResult> {
     try {
       if (credentials.token) {
-        const response = await this.api.get(`${PLEX_TV_URL}/users/account`, {
+        const response = await this.api.get(`${this.plexApiUrl}/user`, {
           headers: {
             'X-Plex-Token': credentials.token,
           },
@@ -384,7 +381,7 @@ export class PlexProvider extends BaseMediaProvider {
     try {
       const db = getDatabase()
       const url = `${this.selectedServer.uri}/library/sections/${libraryId}/all`
-      const params: Record<string, unknown> = {}
+      const params: Record<string, unknown> = { includeGuids: 1 }
 
       getLoggingService().info('[PlexProvider]', `Fetching items for library ${libraryId}...`)
       const libraryInfo = (await this.getLibraries()).find((l) => l.id === libraryId)
@@ -413,7 +410,10 @@ export class PlexProvider extends BaseMediaProvider {
             batch.map(async (plexItem) => {
               try {
                 if (plexItem.type === 'show') {
-                  const episodes = await this.getShowEpisodes(plexItem.ratingKey, this.scanAbortController?.signal)
+                  const [episodes, showDetail] = await Promise.all([
+                    this.getShowEpisodes(plexItem.ratingKey, this.scanAbortController?.signal),
+                    this.getItemMetadataDetailed(plexItem.ratingKey, this.scanAbortController?.signal),
+                  ])
                   const detailedEpisodes: PlexMediaItem[] = []
                   for (let k = 0; k < episodes.length; k += PlexProvider.EPISODE_METADATA_BATCH_SIZE) {
                     const chunk = episodes.slice(k, k + PlexProvider.EPISODE_METADATA_BATCH_SIZE)
@@ -422,7 +422,7 @@ export class PlexProvider extends BaseMediaProvider {
                     )
                     detailedEpisodes.push(...chunkDetails.filter((d): d is PlexMediaItem => d !== null))
                   }
-                  return { type: 'show' as const, plexItem, detailedEpisodes }
+                  return { type: 'show' as const, plexItem: showDetail || plexItem, detailedEpisodes }
                 }
 
                 const detail = await this.getItemMetadataDetailed(plexItem.ratingKey, this.scanAbortController?.signal)

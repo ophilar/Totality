@@ -155,7 +155,7 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
         return {
           series_title: 'Show B',
           completeness_percentage: 100
-        } as any
+        } as unknown as ReturnType<typeof service.analyzeAllSeries>
       })
 
       const outcome = await service.analyzeAllSeries('src-multi', 'tv')

@@ -145,7 +145,7 @@ export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
-  private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
+  private analysisCache = new Map<string, { analysis: Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>, size: number, mtimeMs: number }>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
 
@@ -211,7 +211,7 @@ export class TranscodingService {
         if (!analysis.success || !analysis.video) {
           throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
         }
-        analysis.streamBytes = await analyzer.measureStreamBytes(episode.file_path)
+        this.analysisCache.set(episode.file_path, { analysis, size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) })
         buildStreamSelectionPlan(analysis, request.options)
         const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
           ? await this.selectMeasuredParameters(episode.file_path, request.options)
@@ -347,7 +347,12 @@ export class TranscodingService {
         tempPath?: string
         targetPath?: string
         quarantinePath?: string
-        outputStats?: { fileSize?: number; duration?: number; video?: any; audioTracks?: any[] }
+        outputStats?: {
+          fileSize?: number
+          duration?: number
+          video?: { resolution?: string; width?: number; height?: number; codec?: string; bitrate?: number }
+          audioTracks?: Array<{ codec?: string; channels?: number; bitrate?: number }>
+        }
       }
       if (!journal.mediaItemId || !journal.phase || !journal.inputPath) throw new Error(`Invalid transcoding activation journal: ${key}`)
       const exists = async (filePath: string | undefined): Promise<boolean> => {
@@ -496,12 +501,14 @@ export class TranscodingService {
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
-    let analysis = this.analysisCache.get(filePath)
-    if (!analysis) {
+    const stat = await fs.stat(filePath)
+    let cacheEntry = this.analysisCache.get(filePath)
+    let analysis = cacheEntry?.analysis
+    if (!cacheEntry || cacheEntry.size !== stat.size || cacheEntry.mtimeMs !== Math.trunc(stat.mtimeMs)) {
       analysis = await analyzer.analyzeFile(filePath)
-      if (analysis.success) this.analysisCache.set(filePath, analysis)
+      if (analysis.success) this.analysisCache.set(filePath, { analysis, size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) })
     }
-    if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
+    if (!analysis || !analysis.success) throw new Error(`Failed to analyze file: ${analysis?.error}`)
     const effectiveOptions: TranscodeOptions = { ...options }
 
     if (effectiveOptions.optimizationMode === 'smart') {
@@ -1009,12 +1016,22 @@ export class TranscodingService {
   async listShowQuarantine(seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string): Promise<QuarantinedShowFile[]> {
     const episodes = await getDatabase().tvShows.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId)
     const files: QuarantinedShowFile[] = []
+    const directoryCache = new Map<string, import('fs').Dirent[]>()
     for (const episode of episodes) {
       if (!episode.id || !episode.file_path) continue
       const extension = path.extname(episode.file_path)
       const base = path.basename(episode.file_path, extension)
       const directory = path.dirname(episode.file_path)
-      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      let entries = directoryCache.get(directory)
+      if (!entries) {
+        try {
+          entries = await fs.readdir(directory, { withFileTypes: true })
+          directoryCache.set(directory, entries)
+        } catch {
+          continue
+        }
+      }
+      for (const entry of entries) {
         if (!entry.isFile() || !entry.name.startsWith(`${base}.quarantine-`) || !entry.name.endsWith(extension)) continue
         const quarantinePath = path.join(directory, entry.name)
         const stat = await fs.stat(quarantinePath)

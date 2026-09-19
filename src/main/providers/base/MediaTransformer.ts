@@ -248,7 +248,6 @@ export class MediaTransformer {
 
     let imdbId: string | undefined
     let tmdbId: string | undefined
-    let tvdbId: string | undefined
 
     const guids = [...(item.Guid ?? [])]
     if (item.guid) {
@@ -261,12 +260,8 @@ export class MediaTransformer {
         imdbId = id.split('imdb://')[1]?.split('?')[0]
       } else if (id.includes('tmdb://')) {
         tmdbId = id.split('tmdb://')[1]?.split('?')[0]
-      } else if (id.includes('tvdb://')) {
-        tvdbId = id.split('tvdb://')[1]?.split('?')[0]
       } else if (id.includes('themoviedb://')) {
         tmdbId = id.split('themoviedb://')[1]?.split('?')[0]
-      } else if (id.includes('thetvdb://')) {
-        tvdbId = id.split('thetvdb://')[1]?.split('?')[0]
       }
     }
 
@@ -282,30 +277,30 @@ export class MediaTransformer {
       }
     }
 
-    return {
-      mediaItem: {
-        source_id: sourceId,
-        source_type: ProviderType.Plex,
-        plex_id: item.ratingKey,
-        title: item.title,
-        sort_title: item.type === 'episode' ? undefined : (item.titleSort || undefined),
-        year: item.year,
-        type: item.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
-        series_title: item.grandparentTitle,
-        imdb_id: imdbId,
-        tmdb_id: tmdbId,
-        series_identity_key: item.type === 'episode' && item.grandparentTitle
-          ? deriveSeriesIdentityKey({
-              sourceId,
-              libraryId: '',
-              folderRelativePath: item.grandparentTitle,
-              tmdbId,
-              tvdbId,
-            })
-          : undefined,
-        season_number: item.parentIndex,
-        episode_number: item.index,
-        file_path: best.file_path,
+
+
+      return {
+        mediaItem: {
+          source_id: sourceId,
+          source_type: ProviderType.Plex,
+          plex_id: item.ratingKey,
+          title: item.title,
+          sort_title: item.type === 'episode' ? undefined : (item.titleSort || undefined),
+          year: item.year,
+          type: item.type === 'episode' ? MediaItemType.Episode : MediaItemType.Movie,
+          series_title: item.grandparentTitle,
+          imdb_id: imdbId,
+          tmdb_id: tmdbId,
+          series_identity_key: item.type === 'episode' && item.grandparentTitle
+            ? deriveSeriesIdentityKey({
+                sourceId,
+                libraryId: '',
+                folderRelativePath: item.grandparentTitle,
+              })
+            : undefined,
+          season_number: item.parentIndex,
+          episode_number: item.index,
+          file_path: best.file_path,
         file_size: best.file_size,
         duration: best.duration,
         resolution: best.resolution,
@@ -472,7 +467,6 @@ export class MediaTransformer {
 
     const itemImdb = getProviderId(itemProviderIds, 'Imdb', 'IMDb', 'imdb')
     const itemTmdb = getProviderId(itemProviderIds, 'Tmdb', 'TMDb', 'tmdb', 'TheMovieDb')
-    const itemTvdb = getProviderId(itemProviderIds, 'Tvdb', 'TVDb', 'tvdb', 'TheTVDB')
 
     const seriesTmdbId = isEpisode ? getProviderId(seriesProviderIds, 'Tmdb', 'TMDb', 'tmdb', 'TheMovieDb') : undefined
     const seriesTvdbId = isEpisode ? getProviderId(seriesProviderIds, 'Tvdb', 'TVDb', 'tvdb', 'TheTVDB') : undefined
@@ -493,7 +487,7 @@ export class MediaTransformer {
               libraryId: '',
               folderRelativePath: item.SeriesName,
               tmdbId: seriesTmdbId,
-              tvdbId: seriesTvdbId || itemTvdb,
+              tvdbId: seriesTvdbId,
             })
           : undefined,
         season_number: item.ParentIndexNumber,
@@ -581,7 +575,6 @@ export class MediaTransformer {
 
     let imdbId: string | undefined
     let tmdbId: string | undefined
-    let tvdbId: string | undefined
 
     if (item.uniqueid) {
       for (const [key, rawVal] of Object.entries(item.uniqueid)) {
@@ -590,7 +583,6 @@ export class MediaTransformer {
         const val = String(rawVal)
         if (lower === 'imdb') imdbId = val.startsWith('tt') ? val : `tt${val}`
         else if (lower === 'tmdb') tmdbId = val
-        else if (lower === 'tvdb') tvdbId = val
       }
     }
 
@@ -655,14 +647,12 @@ export class MediaTransformer {
         version_count: 1,
         imdb_id: imdbId,
         tmdb_id: tmdbId,
-        series_tmdb_id: isEpisode ? tmdbId : undefined,
+        series_tmdb_id: undefined,
         series_identity_key: isEpisode && item.showtitle
           ? deriveSeriesIdentityKey({
               sourceId,
               libraryId: '',
               folderRelativePath: item.showtitle,
-              tmdbId,
-              tvdbId,
             })
           : undefined,
         poster_url: type === MediaItemType.Episode ? buildImageUrl(item.art?.['tvshow.poster'] || item.art?.['season.poster'] || '') : buildImageUrl(item.art?.poster || ''),

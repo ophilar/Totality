@@ -118,6 +118,21 @@ export class TaskQueueService {
    * Add a new task to the queue
    */
   async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
+    const existing = this.queue.find(t => 
+      t.type === definition.type && 
+      t.sourceId === definition.sourceId && 
+      t.libraryId === definition.libraryId
+    )
+    
+    if (existing) {
+      this.logging.info('[TaskQueue]', `Task deduplicated: ${definition.label} (matches ${existing.id})`)
+      return existing.id
+    }
+
+    if (this.queue.length >= 50) {
+      throw new Error('Task queue is at maximum capacity (50 tasks).')
+    }
+
     const task: QueuedTask = {
       ...definition,
       id: `task_${Date.now()}_${randomUUID()}`,
@@ -142,8 +157,25 @@ export class TaskQueueService {
   async addTasks(definitions: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>[]): Promise<string[]> {
     const ids: string[] = []
     const now = new Date().toISOString()
+    let addedCount = 0
 
     for (const definition of definitions) {
+      const existing = this.queue.find(t => 
+        t.type === definition.type && 
+        t.sourceId === definition.sourceId && 
+        t.libraryId === definition.libraryId
+      )
+      
+      if (existing) {
+        ids.push(existing.id)
+        continue
+      }
+
+      if (this.queue.length >= 50) {
+        this.logging.warn('[TaskQueue]', `Task queue cap reached (50). Dropped remaining ${definitions.length - addedCount} batch tasks.`)
+        break
+      }
+
       const task: QueuedTask = {
         ...definition,
         id: `task_${Date.now()}_${randomUUID()}_${ids.length}`,
@@ -152,13 +184,15 @@ export class TaskQueueService {
       }
       this.queue.push(task)
       ids.push(task.id)
+      addedCount++
     }
 
-    this.logging.info('[TaskQueue]', `Added ${definitions.length} batch tasks`)
-    
-    await this.saveState()
-    this.notifyListeners()
-    void this.processQueue()
+    if (addedCount > 0) {
+      this.logging.info('[TaskQueue]', `Added ${addedCount} batch tasks`)
+      await this.saveState()
+      this.notifyListeners()
+      void this.processQueue()
+    }
     
     return ids
   }

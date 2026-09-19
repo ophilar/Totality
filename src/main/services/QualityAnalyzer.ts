@@ -844,11 +844,11 @@ export class QualityAnalyzer {
     const isLegacyCodec = codec !== null && /^(h\.?264|x264|avc1?|vc-?1|mpeg-?2(video)?)$/i.test(codec)
     const isModernCodec = codec !== null && (codec.includes('hevc') || codec.includes('h265') || codec.includes('x265') || codec.includes('av1') || codec.includes('av01'))
 
-    if ((audioEvidence.status === 'measured' || (!hasFreshAnalysis && audioEvidence.status === 'estimated')) && audioSavings !== null && audioSavings > 150 * 1024 * 1024 &&
+    if (audioSavings !== null && audioSavings > 150 * 1024 * 1024 &&
       (sourceTier === 'WEB-DL' || sourceTier === 'WEBRip' || isModernCodec || !hasVideoEvidence)) {
       return {
         action: 'stream_pruning',
-        decisionStatus: audioEvidence.status === 'measured' ? 'actionable' : 'insufficient_evidence',
+        decisionStatus: 'actionable',
         sourceTier,
         reason: 'Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended to prune measured foreign audio streams without re-encoding video.',
         estimatedSavingsBytes: audioSavings,

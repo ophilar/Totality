@@ -139,6 +139,16 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     optimizationGetRemuxJob: (mediaItemId: number) => invoke(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, mediaItemId),
     monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
     monitoringSetConfig: (c: unknown) => invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, c),
+
+    // Exclusions
+    addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
+      invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, exclusionType, referenceId, referenceKey, parentKey, title),
+    batchAddExclusions: (exclusions: unknown[]) =>
+      invoke(IPC_CHANNELS.DATABASE.BATCH_ADD_EXCLUSIONS, exclusions),
+    removeExclusion: (id: number) =>
+      invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
+    getExclusions: (exclusionType?: string, parentKey?: string) =>
+      invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
     
     // Transcoding
     checkAvailability: () => invoke('transcoding:checkAvailability'),

@@ -58,6 +58,7 @@ describe('useLibraryEventListeners', () => {
   })
 
   afterEach(() => {
+    vi.clearAllTimers()
     vi.useRealTimers()
     cleanupTestDb()
   })

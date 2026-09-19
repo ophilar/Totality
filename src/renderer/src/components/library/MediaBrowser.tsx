@@ -283,50 +283,66 @@ export function MediaBrowser({
   }, [movieFilters, activeSourceId])
 
   useEffect(() => {
-    if (view === 'movies') void loadMovieOptimizationSummary()
+    if (view === 'movies') queueMicrotask(() => void loadMovieOptimizationSummary())
   }, [view, loadMovieOptimizationSummary])
 
   // Search
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const showsByIdentity = useMemo(() => new Map(shows.map(show => [getTVShowIdentityKey(show), show])), [shows])
   const {
     showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex,
     searchContainerRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
   } = useGlobalSearch({
-    items: movies,
-    tvShows: new Map(shows.map(s => [getTVShowIdentityKey(s), { title: s.series_title, poster_url: s.poster_url, seasons: new Map() }])),
-    musicArtists, musicAlbums, allMusicTracks, searchInputRef,
+    searchInputRef,
     onNavigateToMovie: (id) => setSelectedMediaId(id, 'movie'),
-    onNavigateToTVShow: (identityKey) => setSelectedShow(showsByIdentity.get(identityKey) ?? null),
+    onNavigateToTVShow: (identityKey) => {
+      window.electronAPI.getTVShows({ searchQuery: identityKey }).then(shows => {
+        const show = shows.find(s => s.series_identity_key === identityKey)
+        if (show) setSelectedShow(show)
+        setView('tv')
+      })
+    },
     onNavigateToEpisode: (id, seriesIdentityKey, sourceId, libraryId) => {
       if (!seriesIdentityKey || !sourceId || !libraryId) {
-        addToast({
-          type: 'error',
-          title: 'TV series identity unavailable',
-          message: `Episode ${id} is missing scoped series identity.`,
-        })
+        addToast({ type: 'error', title: 'TV series identity unavailable', message: `Episode ${id} is missing scoped series identity.` })
       } else {
-        const show = shows.find(candidate =>
-          candidate.series_identity_key === seriesIdentityKey
-          && candidate.source_id === sourceId
-          && candidate.library_id === libraryId
-        )
-        if (show) setSelectedShow(show)
+        window.electronAPI.getTVShows({ searchQuery: seriesIdentityKey }).then(shows => {
+          const show = shows.find(candidate =>
+            candidate.series_identity_key === seriesIdentityKey
+            && candidate.source_id === sourceId
+            && candidate.library_id === libraryId
+          )
+          if (show) setSelectedShow(show)
+          setSelectedMediaId(id, 'episode')
+          setView('tv')
+        })
       }
-      setSelectedMediaId(id, 'episode')
     },
-    onNavigateToArtist: (a) => { setSelectedArtist(a); setMusicViewMode('albums'); setView('music') },
-    onNavigateToAlbum: (a) => { setSelectedArtist(musicArtists.find(art => art.id === a.artist_id) || null); setSelectedAlbum(a); setMusicViewMode('albums'); setView('music') },
-    onNavigateToTrack: (id) => { 
-      const track = allMusicTracks.find(t => t.id === id);
-      if (track) {
-        const album = musicAlbums.find(alb => alb.id === track.album_id);
-        if (album) {
-          setSelectedArtist(musicArtists.find(art => art.id === album.artist_id) || null);
-          setSelectedAlbum(album);
-          setMusicViewMode('albums');
-          setView('music');
-        }
+    onNavigateToArtist: async (id) => {
+      const artist = await window.electronAPI.musicGetArtist(id)
+      if (artist) {
+        setSelectedArtist(artist as MusicArtist)
+        setMusicViewMode('albums')
+        setView('music')
+      }
+    },
+    onNavigateToAlbum: async (id) => {
+      const album = await window.electronAPI.musicGetAlbum(id) as MusicAlbum
+      if (album) {
+        const artist = await window.electronAPI.musicGetArtist(album.artist_id!)
+        if (artist) setSelectedArtist(artist as MusicArtist)
+        setSelectedAlbum(album)
+        setMusicViewMode('albums')
+        setView('music')
+      }
+    },
+    onNavigateToTrack: async (albumId) => {
+      const album = await window.electronAPI.musicGetAlbum(albumId) as MusicAlbum
+      if (album) {
+        const artist = await window.electronAPI.musicGetArtist(album.artist_id!)
+        if (artist) setSelectedArtist(artist as MusicArtist)
+        setSelectedAlbum(album)
+        setMusicViewMode('albums')
+        setView('music')
       }
     }
   })

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '../TestUtils'
+import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '../TestUtils'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 import { validateSenderFrame } from '@main/ipc/utils/createHandler'

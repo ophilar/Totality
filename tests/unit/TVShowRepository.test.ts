@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { TVShowRepository } from '@main/database/repositories/TVShowRepository'
 import { MediaRepository } from '@main/database/repositories/MediaRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
-import * as schema from '@main/database/drizzleSchema'
 import type { MediaItem, SeriesCompleteness } from '@main/types/database'
 
 describe('TVShowRepository (Real DB)', () => {

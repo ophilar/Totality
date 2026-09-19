@@ -293,5 +293,23 @@
 - [x] Add TV empty seasons and movie theatrical lag settings controls to `LibrarySettingsTab.tsx`.
 - [x] Debounce library task completion events (250ms trailing) in `useLibraryEventListeners.ts` to prevent UI render storms.
 - [x] Implement integration acceptance test suite `tests/integration/CriticalFlowsAcceptance.test.ts` verifying privileged IPC authorization, database persistence, safe remux recoverability and audit logs, and completeness invariants.
+- [x] Rectify test harnesses post-upstream merge: bind database exclusion channels to `tests/TestUtils.ts` bridge, update `UdpDiscoveryService.test.ts` to test `fetchJSON` contracts, and advance timers for debounced task queue completion in `useLibraryEventListeners.test.tsx`.
+- [x] Verify full test suite across entire repository (`npx vitest run`): 185/185 test files passing (1,394/1,394 tests, 0 errors, 0 unhandled rejections).
 - [x] Verify full TypeScript typecheck (`npx tsc --noEmit`) clean 0 errors.
+
+## Phase 34: TV Show Series Identity Key Realignment & Episode Inventory Recovery [Completed]
+- [x] Fixed root cause of TV shows not showing all episodes on disk (only 1 or 0 episodes appearing per show).
+- [x] Prevented individual episode TMDB/TVDB external IDs from being passed to `deriveSeriesIdentityKey` in `MediaTransformer.fromPlex`, `fromJellyfin`, and `fromKodi`.
+- [x] Enhanced `PlexProvider.scanLibrary` to request `includeGuids: 1` and fetch canonical show metadata so `showTmdbId` and `showTvdbId` are consistently propagated to all child episodes.
+- [x] Extended `updateEpisodeMetadata` and `updateBatchEpisodeMetadata` in `MediaRepository` and `TVShowRepository` to accept `seriesIdentityKey`.
+- [x] Backfilled `seriesIdentityKey` synchronously when updating episode metadata in `SeriesCompletenessService.analyzeSeries`.
+- [x] Added database migration in `SeriesIdentityMigration.ts` realigning historical mismatched `series_identity_key` on `media_items` and `series_completeness` to the canonical series key.
+- [x] Added automated regression test in `tests/unit/database/SeriesIdentityMigration.test.ts` verifying full episode list recovery and summary accuracy.
+- [x] Verified full repository test suite (`npx vitest run`): 201/201 test files passing (1,597/1,597 tests passing, 0 failures).
+
+## Phase 35: System Architecture Audit — ID SSOT, Duplicate Prevention & UI Responsiveness [In Progress]
+- [x] Audited entity identity architecture: verified `media_identities` vs denormalized `media_items` / `series_completeness` columns and established `series_identity_key` as the invariant SSOT for television series.
+- [x] Audited database duplication in user database (`totality.db`): identified two distinct categories (multi-row show completeness clusters caused by legacy episode identity keys vs multi-source physical file duplication caused by concurrent Plex and Local sources pointing to `E:\Media`).
+- [x] Audited UI unresponsiveness root causes via 26,477-line production log: identified MusicBrainz 503 rate-limit retries (68% of log volume), sub-second SQLite state serialization in `TaskQueueService`, and un-throttled React full-library re-querying across IPC.
+- [ ] Implement TaskQueueService progress write throttling and IPC debouncing to eliminate renderer freeze under background analysis storms.
 

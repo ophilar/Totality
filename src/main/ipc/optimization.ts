@@ -148,31 +148,33 @@ export function registerOptimizationHandlers() {
     const analyzer = getMediaFileAnalyzer()
     const analyzerAvailable = await analyzer.isAvailable()
 
-    const episodeMetrics = await Promise.all(
-      episodes.map(async (episode) => {
-        if (!analyzerAvailable || !episode.file_path) throw new Error(`Fresh media analysis is unavailable for episode ${episode.title}`)
-        const analysis = await analyzer.analyzeFile(episode.file_path)
-        if (!analysis.success || !analysis.duration || analysis.audioTracks.length === 0) {
-          throw new Error(`Fresh media analysis is incomplete for episode ${episode.title}`)
-        }
-        const audioStreams = analysis.audioTracks.map((t) => ({
-          index: t.index, codec: t.codec, codec_name: t.codec, language: t.language, title: t.title,
-          channels: t.channels, bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
-          bitrate: t.bitrate ? t.bitrate * 1000 : undefined, isCommentary: t.isCommentary,
-          isAudioDescription: t.isAudioDescription, isAccessibility: t.isAccessibility,
-          reliableTag: Boolean(t.language),
-        }))
-        const durationSeconds = analysis.duration / 1000
+    const filePaths = episodes.map(e => e.file_path).filter((p): p is string => !!p)
+    if (filePaths.length !== episodes.length) throw new Error('Some episodes are missing local file paths')
+    const analysisMap = await analyzer.analyzeFilesParallel(filePaths)
 
-        return {
-          sizeBytes: episode.file_size ?? undefined,
-          recoverableBytes: episode.storage_debt_bytes ?? undefined,
-          efficiency: episode.efficiency_score ?? undefined,
-          audioStreams,
-          durationSeconds,
-        }
-      })
-    )
+    const episodeMetrics = episodes.map((episode) => {
+      if (!analyzerAvailable) throw new Error(`Fresh media analysis is unavailable for episode ${episode.title}`)
+      const analysis = analysisMap.get(episode.file_path!)
+      if (!analysis || !analysis.success || !analysis.duration || analysis.audioTracks.length === 0) {
+        throw new Error(`Fresh media analysis is incomplete for episode ${episode.title}`)
+      }
+      const audioStreams = analysis.audioTracks.map((t) => ({
+        index: t.index, codec: t.codec, codec_name: t.codec, language: t.language, title: t.title,
+        channels: t.channels, bit_rate: t.bitrate ? t.bitrate * 1000 : undefined,
+        bitrate: t.bitrate ? t.bitrate * 1000 : undefined, isCommentary: t.isCommentary,
+        isAudioDescription: t.isAudioDescription, isAccessibility: t.isAccessibility,
+        reliableTag: Boolean(t.language),
+      }))
+      const durationSeconds = analysis.duration / 1000
+
+      return {
+        sizeBytes: episode.file_size ?? undefined,
+        recoverableBytes: episode.storage_debt_bytes ?? undefined,
+        efficiency: episode.efficiency_score ?? undefined,
+        audioStreams,
+        durationSeconds,
+      }
+    })
 
     let originalLanguage = episodes.find(e => e.original_language)?.original_language ?? undefined
     if (!originalLanguage) {
@@ -279,12 +281,35 @@ export function registerOptimizationHandlers() {
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, z.number().int().positive(), async mediaItemId => db.mediaRemuxJobs.getLatest(mediaItemId))
   createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_DECISION, z.number().int().positive(), async mediaItemId => {
     const item = await db.media.getItemById(mediaItemId)
-    if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
+    if (!item?.file_path || !item.source_id) {
+      return buildOptimizationDecision({ originalLanguage: item?.original_language, fileSize: 0, audioTracks: [] })
+    }
     const source = await db.sources.getSourceById(item.source_id)
-    if (!source) throw new Error('Media source was not found')
-    MediaPathAuthorization.assertMediaAuthorized(item, source)
+    if (!source) {
+      return buildOptimizationDecision({ originalLanguage: item.original_language, fileSize: 0, audioTracks: [] })
+    }
+
+    try {
+      MediaPathAuthorization.assertMediaAuthorized(item, source)
+    } catch (e) {
+      return {
+        primaryAction: 'no-action',
+        trackRemoval: { status: 'unavailable', estimatedSavingsBytes: null, reason: e instanceof Error ? e.message : 'Not authorized', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: [], tracks: [], originalLanguage: item.original_language ?? null, evidenceSources: [] },
+        audioTranscode: { status: 'unavailable', estimatedSavingsBytes: null, reason: 'Not authorized', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN' },
+        videoTranscode: { status: 'unavailable', estimatedSavingsBytes: null, reason: 'Not authorized', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN' }
+      }
+    }
+
     const analysis = await getMediaFileAnalyzer().analyzeFile(item.file_path)
-    if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
+    if (!analysis.success) {
+      return {
+        primaryAction: 'no-action',
+        trackRemoval: { status: 'unavailable', estimatedSavingsBytes: null, reason: analysis.error || 'Analysis failed', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN', retainedTrackIndexes: [], removableTrackIndexes: [], reviewRequiredTrackIndexes: [], tracks: [], originalLanguage: item.original_language ?? null, evidenceSources: [] },
+        audioTranscode: { status: 'unavailable', estimatedSavingsBytes: null, reason: 'Analysis failed', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN' },
+        videoTranscode: { status: 'unavailable', estimatedSavingsBytes: null, reason: 'Analysis failed', evidence_status: 'UNKNOWN', confidence: 'LOW', savings_basis: 'UNKNOWN' }
+      }
+    }
+
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
       durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
@@ -292,7 +317,10 @@ export function registerOptimizationHandlers() {
       videoStorageDebtBytes: null,
       legacyTotalRecoverableBytes: item.storage_debt_bytes,
       audioTranscodeSavingsBytes: null,
-      audioTracks: analysis.audioTracks.map(track => ({ index: track.index, language: track.language, title: track.title, codec: track.codec, channels: track.channels, channelLayout: track.channelLayout, bitrate: track.bitrate, isDefault: track.isDefault, hasObjectAudio: track.hasObjectAudio, reliableTag: !!track.language, isCommentary: track.isCommentary, isAudioDescription: track.isAudioDescription, isAccessibility: track.isAccessibility })),
+      audioTracks: analysis.audioTracks.map(track => ({ index: track.index, language: track.language, title: track.title, codec: track.codec, channels: 
+track.channels, channelLayout: track.channelLayout, bitrate: track.bitrate, isDefault: track.isDefault, hasObjectAudio: track.hasObjectAudio, 
+reliableTag: !!track.language, isCommentary: track.isCommentary, isAudioDescription: track.isAudioDescription, isAccessibility: track.isAccessibility 
+})),
     })
   })
 }
