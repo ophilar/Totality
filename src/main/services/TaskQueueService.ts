@@ -114,15 +114,28 @@ export class TaskQueueService {
     }
   }
 
+  private getTaskSignature(task: Pick<QueuedTask, 'type' | 'mediaItemId' | 'artistId' | 'sourceId' | 'libraryId' | 'label'>): string {
+    if (task.mediaItemId !== undefined) return `${task.type}:media:${task.mediaItemId}`
+    if (task.artistId !== undefined) return `${task.type}:artist:${task.artistId}`
+    if (task.sourceId !== undefined) return `${task.type}:source:${task.sourceId}:lib:${task.libraryId ?? 'all'}`
+    return `${task.type}:label:${task.label}`
+  }
+
+  private createQueuedTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>, createdAt = new Date().toISOString()): QueuedTask {
+    return {
+      ...definition,
+      id: `task_${Date.now()}_${randomUUID()}`,
+      status: TaskStatus.Queued,
+      createdAt,
+    }
+  }
+
   /**
    * Add a new task to the queue
    */
   async addTask(definition: Omit<QueuedTask, 'id' | 'status' | 'createdAt'>): Promise<string> {
-    const existing = this.queue.find(t => 
-      t.type === definition.type && 
-      t.sourceId === definition.sourceId && 
-      t.libraryId === definition.libraryId
-    )
+    const signature = this.getTaskSignature(definition)
+    const existing = this.queue.find(t => this.getTaskSignature(t) === signature)
     
     if (existing) {
       this.logging.info('[TaskQueue]', `Task deduplicated: ${definition.label} (matches ${existing.id})`)
@@ -133,12 +146,7 @@ export class TaskQueueService {
       throw new Error('Task queue is at maximum capacity (50 tasks).')
     }
 
-    const task: QueuedTask = {
-      ...definition,
-      id: `task_${Date.now()}_${randomUUID()}`,
-      status: TaskStatus.Queued,
-      createdAt: new Date().toISOString(),
-    }
+    const task = this.createQueuedTask(definition)
 
     this.queue.push(task)
     const msg = `Task added: ${task.label} (${task.id})`
@@ -159,15 +167,17 @@ export class TaskQueueService {
     const now = new Date().toISOString()
     let addedCount = 0
 
+    const signatureMap = new Map<string, string>()
+    for (const t of this.queue) {
+      signatureMap.set(this.getTaskSignature(t), t.id)
+    }
+
     for (const definition of definitions) {
-      const existing = this.queue.find(t => 
-        t.type === definition.type && 
-        t.sourceId === definition.sourceId && 
-        t.libraryId === definition.libraryId
-      )
+      const signature = this.getTaskSignature(definition)
+      const existingId = signatureMap.get(signature)
       
-      if (existing) {
-        ids.push(existing.id)
+      if (existingId) {
+        ids.push(existingId)
         continue
       }
 
@@ -176,14 +186,10 @@ export class TaskQueueService {
         break
       }
 
-      const task: QueuedTask = {
-        ...definition,
-        id: `task_${Date.now()}_${randomUUID()}_${ids.length}`,
-        status: TaskStatus.Queued,
-        createdAt: now,
-      }
+      const task = this.createQueuedTask(definition, now)
       this.queue.push(task)
       ids.push(task.id)
+      signatureMap.set(signature, task.id)
       addedCount++
     }
 

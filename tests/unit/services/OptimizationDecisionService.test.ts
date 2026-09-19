@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOptimizationDecision } from '@main/services/OptimizationDecisionService'
+import { buildOptimizationDecision, buildUnavailableOptimizationDecision } from '@main/services/OptimizationDecisionService'
 
 describe('buildOptimizationDecision', () => {
   it('reports track removal before audio and video transcoding', () => {
@@ -180,5 +180,20 @@ describe('buildOptimizationDecision', () => {
     expect(result.trackRemoval.estimatedSavingsBytes).toBe(100_000_000)
     expect(result.videoTranscode.estimatedSavingsBytes).toBe(100_000_000)
     expect(result.primaryAction).toBe('remove-audio-tracks')
+  })
+
+  it('builds an unavailable optimization decision with reason and originalLanguage', () => {
+    const result = buildUnavailableOptimizationDecision('Not authorized', 'ja')
+
+    expect(result.primaryAction).toBe('no-action')
+    expect(result.trackRemoval.status).toBe('unavailable')
+    expect(result.trackRemoval.reason).toBe('Not authorized')
+    expect(result.trackRemoval.originalLanguage).toBe('ja')
+    expect(result.trackRemoval.evidence_status).toBe('insufficient')
+    expect(result.trackRemoval.confidence).toBe('none')
+    expect(result.audioTranscode.status).toBe('unavailable')
+    expect(result.audioTranscode.reason).toBe('Not authorized')
+    expect(result.videoTranscode.status).toBe('unavailable')
+    expect(result.videoTranscode.reason).toBe('Not authorized')
   })
 })

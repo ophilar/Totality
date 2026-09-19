@@ -156,3 +156,28 @@ export function buildOptimizationDecision(input: OptimizationDecisionInput): Opt
   })
   return { primaryAction, trackRemoval, audioTranscode, videoTranscode }
 }
+
+export function buildUnavailableOptimizationDecision(reason: string, originalLanguage?: string | null): OptimizationDecision {
+  const mechanism: OptimizationDecisionMechanism = {
+    status: 'unavailable',
+    estimatedSavingsBytes: null,
+    reason,
+    evidence_status: 'insufficient',
+    confidence: 'none',
+    savings_basis: 'insufficient_data',
+  }
+  return {
+    primaryAction: 'no-action',
+    trackRemoval: {
+      ...mechanism,
+      retainedTrackIndexes: [],
+      removableTrackIndexes: [],
+      reviewRequiredTrackIndexes: [],
+      tracks: [],
+      originalLanguage: originalLanguage ?? null,
+      evidenceSources: [],
+    },
+    audioTranscode: mechanism,
+    videoTranscode: mechanism,
+  }
+}

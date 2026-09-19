@@ -5,6 +5,7 @@
 import { vi } from 'vitest'
 import type { ComponentType, ReactNode } from 'react'
 
+
 interface MockVirtuosoProps {
   totalCount: number
   data?: unknown[]
@@ -187,6 +188,12 @@ const mockElectronAPI = {
   getCollections: vi.fn().mockResolvedValue([]),
   optimizationGetDecision: vi.fn().mockResolvedValue(null),
   optimizationRequestLocalRemux: vi.fn().mockResolvedValue(undefined),
+  listPlaybackTargetProfiles: vi.fn().mockResolvedValue([]),
+  analyzePlaybackCompatibility: vi.fn().mockResolvedValue(null),
+  createPlaybackTargetProfile: vi.fn(),
+  updatePlaybackTargetProfile: vi.fn(),
+  deletePlaybackTargetProfile: vi.fn(),
+  duplicatePlaybackTargetProfile: vi.fn(),
 }
 
 // Mock global electronAPI for renderer tests

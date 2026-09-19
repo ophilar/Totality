@@ -145,7 +145,7 @@ export class TranscodingService {
   private activeJobs = new Map<number, AbortController>()
   private initializedPromise: Promise<void> | null = null
   private capabilitiesPromise: Promise<TranscodingCapabilities> | null = null
-  private analysisCache = new Map<string, { analysis: Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>, size: number, mtimeMs: number }>()
+  private analysisCache = new Map<string, Awaited<ReturnType<ReturnType<typeof getMediaFileAnalyzer>['analyzeFile']>>>()
   private showPreflights = new Map<string, { request: ShowTranscodeRequest; result: ShowTranscodePreflight }>()
   private measuredOptimizationService = new MeasuredOptimizationService()
 
@@ -211,7 +211,7 @@ export class TranscodingService {
         if (!analysis.success || !analysis.video) {
           throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
         }
-        this.analysisCache.set(episode.file_path, { analysis, size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) })
+        this.analysisCache.set(episode.file_path, analysis)
         buildStreamSelectionPlan(analysis, request.options)
         const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
           ? await this.selectMeasuredParameters(episode.file_path, request.options)
@@ -501,14 +501,12 @@ export class TranscodingService {
    */
   async getTranscodeParameters(filePath: string, options: TranscodeOptions = {}): Promise<TranscodingParams> {
     const analyzer = getMediaFileAnalyzer()
-    const stat = await fs.stat(filePath)
-    let cacheEntry = this.analysisCache.get(filePath)
-    let analysis = cacheEntry?.analysis
-    if (!cacheEntry || cacheEntry.size !== stat.size || cacheEntry.mtimeMs !== Math.trunc(stat.mtimeMs)) {
+    let analysis = this.analysisCache.get(filePath)
+    if (!analysis) {
       analysis = await analyzer.analyzeFile(filePath)
-      if (analysis.success) this.analysisCache.set(filePath, { analysis, size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) })
+      if (analysis.success) this.analysisCache.set(filePath, analysis)
     }
-    if (!analysis || !analysis.success) throw new Error(`Failed to analyze file: ${analysis?.error}`)
+    if (!analysis.success) throw new Error(`Failed to analyze file: ${analysis.error}`)
     const effectiveOptions: TranscodeOptions = { ...options }
 
     if (effectiveOptions.optimizationMode === 'smart') {

@@ -848,7 +848,7 @@ export class QualityAnalyzer {
       (sourceTier === 'WEB-DL' || sourceTier === 'WEBRip' || isModernCodec || !hasVideoEvidence)) {
       return {
         action: 'stream_pruning',
-        decisionStatus: 'actionable',
+        decisionStatus: audioEvidence.status === 'measured' ? 'actionable' : 'insufficient_evidence',
         sourceTier,
         reason: 'Source is already efficient WEB-DL or HEVC/AV1. Stream copy (-c:v copy) recommended to prune measured foreign audio streams without re-encoding video.',
         estimatedSavingsBytes: audioSavings,

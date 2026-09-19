@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { AnalysisProgress, MediaSource, TVShowSummary } from '@/components/library/types'
+import type { AnalysisScope } from '@/components/library/analysisScope'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 
@@ -31,6 +32,7 @@ interface UseAnalysisManagerReturn {
   handleAnalyzeQuality: () => Promise<void>
   handleAnalyzeAll: (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => Promise<void>
   handleAnalyzeSingleSeries: (show: TVShowSummary) => Promise<void>
+  analyze: (scope: AnalysisScope) => Promise<void>
   handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
   checkTmdbApiKey: () => Promise<void>
 }
@@ -154,6 +156,10 @@ export function useAnalysisManager({
     [loadCompletenessData]
   )
 
+  const analyze = useCallback(async (scope: AnalysisScope) => {
+    await window.electronAPI.mediaAnalyze(scope)
+  }, [])
+
   // Cancel current analysis
   const handleCancelAnalysis = useCallback(async (_type: 'series' | 'collections' | 'music') => {
     try {
@@ -178,6 +184,7 @@ export function useAnalysisManager({
     handleAnalyzeQuality,
     handleAnalyzeAll,
     handleAnalyzeSingleSeries,
+    analyze,
     handleCancelAnalysis,
     checkTmdbApiKey,
   }
