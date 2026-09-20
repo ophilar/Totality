@@ -18,6 +18,7 @@ import { getMovieCollectionService } from '@main/services/MovieCollectionService
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getStatsCacheService } from '@main/services/StatsCacheService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 
 export function registerMediaHandlers(): void {
   const analyzer = getMediaFileAnalyzer()
@@ -84,6 +85,8 @@ export function registerMediaHandlers(): void {
       deepAnalysis: analysis.deepAnalysis,
       audioTracks: analysis.audioTracks,
     }, new Date().toISOString())
+    const quality = await getQualityAnalyzer().analyzeMediaItem(item)
+    await getDatabase().media.upsertQualityScore(quality)
     return {
       scope: { kind: 'item', mediaId },
       completedStages: ['media', 'quality'],

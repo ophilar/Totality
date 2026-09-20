@@ -16,7 +16,6 @@ import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { formatDuration } from '@/components/library/mediaUtils'
 import { Zap } from 'lucide-react'
 import type { MediaItem, MediaItemVersion } from '@main/types/database'
-import type { AnalysisAction } from '@/components/library/analysisScope'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -32,7 +31,6 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
-  const [analysisActions, setAnalysisActions] = useState<AnalysisAction[]>([])
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
@@ -53,7 +51,6 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
         } else {
           setDeepAnalysis(null)
         }
-        setAnalysisActions([])
         setVersions(itemVersions as MediaItemVersion[])
         
         // Default to best version
@@ -78,8 +75,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
     if (!media?.id) return
     try {
       setIsAnalyzing(true)
-      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { actions?: AnalysisAction[]; analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
-      setAnalysisActions(result.actions ?? [])
+      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
       if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
       const refreshed = await window.electronAPI.getMediaItem(media.id)
       if (refreshed) setMedia(refreshed as MediaItem)
@@ -101,12 +97,8 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
   const isMovie = media.type === 'movie'
-  const analysisComplete = Boolean(deepAnalysis || media.evidence_status)
-  const hasOptimizationAction = analysisComplete && (
-    analysisActions.some(action => action.id === 'optimize')
-    || media.needs_upgrade === true
-    || (media.storage_debt_bytes ?? 0) > 0
-  )
+  const hasOptimizationAction = media.evidence_status !== undefined
+    && (media.needs_upgrade === true || (media.storage_debt_bytes ?? 0) > 0)
   
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
