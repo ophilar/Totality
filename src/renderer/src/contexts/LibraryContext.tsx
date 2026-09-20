@@ -3,7 +3,6 @@ import { createContext, useContext, useState, useCallback, ReactNode, useEffect,
 import type { MediaViewType, ViewType, QualityFilter, TVShowSummary } from '@/components/library/types'
 import { normalizeSortForType, type LibrarySortType } from '@/components/library/sortDefinitions'
 import type { MusicArtist, MusicAlbum } from '@main/types/database'
-import type { MediaDeepAnalysisResult } from '@preload/api/media'
 
 interface LibraryContextType {
   view: MediaViewType
@@ -41,7 +40,6 @@ interface LibraryContextType {
   // Selection
   activeSourceId: string | null
   setActiveSourceId: (id: string | null) => void
-  deepAnalyzeMedia: (filePath: string) => Promise<MediaDeepAnalysisResult>
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined)
@@ -70,15 +68,6 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
   const [selectedShow, setSelectedShow] = useState<TVShowSummary | null>(null)
   const [selectedArtist, setSelectedArtist] = useState<MusicArtist | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<MusicAlbum | null>(null)
-
-  const deepAnalyzeMedia = useCallback(async (filePath: string) => {
-    try {
-      return await window.electronAPI.mediaDeepAnalyze({ filePath })
-    } catch (e) {
-      window.electronAPI.log.error('[LibraryContext]', 'Deep analysis failed:', e)
-      throw e
-    }
-  }, [])
 
   // Persist view preferences
   const viewPrefsRef = useRef<Record<string, { viewType: ViewType, gridScale: number, sortBy?: string, sortOrder?: 'asc' | 'desc', groupByCollections?: boolean }>>({})
@@ -161,8 +150,7 @@ export function LibraryProvider({ children, initialTab }: { children: ReactNode,
       selectedAlbum, setSelectedAlbum,
       sortBy, setSortBy: updateSortBy,
       sortOrder, setSortOrder: updateSortOrder,
-      activeSourceId, setActiveSourceId,
-      deepAnalyzeMedia
+      activeSourceId, setActiveSourceId
     }}>
       {children}
     </LibraryContext.Provider>

@@ -237,6 +237,7 @@ export const IPC_CHANNELS = {
     SEARCH_METADATA: 'media:searchMetadata',
     DEEP_ANALYZE: 'media:deepAnalyze',
     ANALYZE: 'media:analyze',
+    GET_OPTIMIZATION_ADVICE: 'media:getOptimizationAdvice',
   },
   TIMELINES: {
     LIST_RECIPES: 'timelines:listRecipes',

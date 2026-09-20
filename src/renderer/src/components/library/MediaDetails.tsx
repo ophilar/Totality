@@ -31,6 +31,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
+  const [optimizationAdvice, setOptimizationAdvice] = useState<{ action: string; decisionStatus: string } | null>(null)
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
@@ -52,6 +53,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
           setDeepAnalysis(null)
         }
         setVersions(itemVersions as MediaItemVersion[])
+        setOptimizationAdvice(await window.electronAPI.getMediaOptimizationAdvice(mediaId))
         
         // Default to best version
         const best = (itemVersions as MediaItemVersion[]).find(v => v.is_best) || (itemVersions as MediaItemVersion[])[0]
@@ -79,6 +81,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
       if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
       const refreshed = await window.electronAPI.getMediaItem(media.id)
       if (refreshed) setMedia(refreshed as MediaItem)
+      setOptimizationAdvice(await window.electronAPI.getMediaOptimizationAdvice(media.id))
     } finally {
       setIsAnalyzing(false)
     }
@@ -97,8 +100,8 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
   const isMovie = media.type === 'movie'
-  const hasOptimizationAction = media.evidence_status !== undefined
-    && (media.needs_upgrade === true || (media.storage_debt_bytes ?? 0) > 0)
+  const hasOptimizationAction = optimizationAdvice?.decisionStatus === 'actionable'
+    && optimizationAdvice.action !== 'already_optimized'
   
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']

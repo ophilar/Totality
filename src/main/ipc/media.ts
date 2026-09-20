@@ -19,6 +19,7 @@ import { getMusicBrainzService } from '@main/services/MusicBrainzService'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getStatsCacheService } from '@main/services/StatsCacheService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 
 export function registerMediaHandlers(): void {
   const analyzer = getMediaFileAnalyzer()
@@ -79,13 +80,31 @@ export function registerMediaHandlers(): void {
     const item = await getDatabase().media.getItemById(mediaId)
     if (!item) throw new Error(`Media item ${mediaId} was not found`)
     if (!item.file_path) throw new Error(`Media item ${mediaId} has no local file path`)
-    const analysis = await analyzer.deepAnalyzeFile(item.file_path, { scanBitrate: true, detectVolume: true })
-    if (!analysis.success) throw new Error(analysis.error || `Analysis failed for media item ${mediaId}`)
-    await getDatabase().media.updateDeepAnalysisByPath(item.file_path, {
-      deepAnalysis: analysis.deepAnalysis,
-      audioTracks: analysis.audioTracks,
-    }, new Date().toISOString())
-    const quality = await getQualityAnalyzer().analyzeMediaItem(item)
+    const fileAnalysis = await analyzer.analyzeFile(item.file_path)
+    if (!fileAnalysis.success) throw new Error(fileAnalysis.error || `Analysis failed for media item ${mediaId}`)
+    const streamBytes = await analyzer.measureStreamBytes(item.file_path)
+    const deepAnalysis = await analyzer.deepAnalyzeFile(item.file_path, { scanBitrate: true, detectVolume: true })
+    if (!deepAnalysis.success) throw new Error(deepAnalysis.error || `Deep analysis failed for media item ${mediaId}`)
+    const persistedAnalysis: FileAnalysisResult = {
+      ...fileAnalysis,
+      streamBytes,
+      audioTracks: deepAnalysis.audioTracks?.length ? deepAnalysis.audioTracks : fileAnalysis.audioTracks,
+      deepAnalysis: deepAnalysis.deepAnalysis,
+    }
+    await getDatabase().media.updateDeepAnalysisByPath(item.file_path, persistedAnalysis, new Date().toISOString())
+    const quality = await getQualityAnalyzer().analyzeMediaItem({
+      ...item,
+      video_codec: fileAnalysis.video?.codec ?? item.video_codec,
+      video_bitrate: fileAnalysis.video?.bitrate ?? item.video_bitrate,
+      width: fileAnalysis.video?.width ?? item.width,
+      height: fileAnalysis.video?.height ?? item.height,
+      duration: fileAnalysis.duration ?? item.duration,
+      audio_codec: fileAnalysis.audioTracks[0]?.codec ?? item.audio_codec,
+      audio_channels: fileAnalysis.audioTracks[0]?.channels ?? item.audio_channels,
+      audio_bitrate: fileAnalysis.audioTracks[0]?.bitrate ?? item.audio_bitrate,
+      audio_tracks: JSON.stringify(persistedAnalysis.audioTracks),
+      subtitle_tracks: JSON.stringify(persistedAnalysis.subtitleTracks),
+    })
     await getDatabase().media.upsertQualityScore(quality)
     return {
       scope: { kind: 'item', mediaId },
@@ -96,8 +115,21 @@ export function registerMediaHandlers(): void {
         ...(item.match_status === 'unresolved' ? [{ id: 'fix-match', label: 'Fix match' }] : []),
       ],
       errors: [],
-      analysis,
+      analysis: persistedAnalysis,
     }
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.MEDIA.GET_OPTIMIZATION_ADVICE, z.number().int().positive(), async (mediaId) => {
+    const item = await getDatabase().media.getItemById(mediaId)
+    if (!item) throw new Error(`Media item ${mediaId} was not found`)
+    if (!item.deep_analysis) {
+      return getQualityAnalyzer().getOptimizationAdvice(item)
+    }
+    const persisted = JSON.parse(item.deep_analysis) as FileAnalysisResult
+    if (!persisted.success || persisted.filePath !== item.file_path) {
+      throw new Error(`Persisted file analysis for media item ${mediaId} is invalid`)
+    }
+    return getQualityAnalyzer().getOptimizationAdvice(item, persisted)
   })
 
   /**
@@ -111,15 +143,26 @@ export function registerMediaHandlers(): void {
     detectVolume: z.boolean().optional()
   }), async (options) => {
     getLoggingService().info('[media]', `Starting deep analysis for: ${options.filePath}`)
+    const item = (await getDatabase().media.getItems()).find(candidate => candidate.file_path === options.filePath)
+    if (!item) throw new Error(`No media item is associated with ${options.filePath}`)
+    const fileAnalysis = await analyzer.analyzeFile(options.filePath)
+    if (!fileAnalysis.success) throw new Error(fileAnalysis.error || `Analysis failed for ${options.filePath}`)
+    const streamBytes = await analyzer.measureStreamBytes(options.filePath)
     const result = await analyzer.deepAnalyzeFile(options.filePath, {
       scanBitrate: options.scanBitrate ?? true,
       detectVolume: options.detectVolume ?? true,
       requestId: options.requestId
     })
-    await getDatabase().media.updateDeepAnalysisByPath(options.filePath, {
+    if (!result.success) throw new Error(result.error || `Deep analysis failed for ${options.filePath}`)
+    const persistedAnalysis: FileAnalysisResult = {
+      ...fileAnalysis,
+      streamBytes,
+      audioTracks: result.audioTracks?.length ? result.audioTracks : fileAnalysis.audioTracks,
       deepAnalysis: result.deepAnalysis,
-      audioTracks: result.audioTracks,
-    }, new Date().toISOString())
+    }
+    await getDatabase().media.updateDeepAnalysisByPath(options.filePath, persistedAnalysis, new Date().toISOString())
+    const quality = await getQualityAnalyzer().analyzeMediaItem({ ...item, video_codec: fileAnalysis.video?.codec ?? item.video_codec, video_bitrate: fileAnalysis.video?.bitrate ?? item.video_bitrate, width: fileAnalysis.video?.width ?? item.width, height: fileAnalysis.video?.height ?? item.height, duration: fileAnalysis.duration ?? item.duration, audio_codec: fileAnalysis.audioTracks[0]?.codec ?? item.audio_codec, audio_channels: fileAnalysis.audioTracks[0]?.channels ?? item.audio_channels, audio_bitrate: fileAnalysis.audioTracks[0]?.bitrate ?? item.audio_bitrate, audio_tracks: JSON.stringify(persistedAnalysis.audioTracks), subtitle_tracks: JSON.stringify(persistedAnalysis.subtitleTracks) })
+    await getDatabase().media.upsertQualityScore(quality)
     return result
   })
 
