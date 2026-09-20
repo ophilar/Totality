@@ -397,6 +397,23 @@ export class MediaFileAnalyzer {
     return this.parseFFprobeOutput(filePath, ffprobeOutput)
   }
 
+  async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<FileAnalysisResult> {
+    const fileAnalysis = await this.analyzeFile(filePath)
+    const streamBytes = await this.measureStreamBytes(filePath)
+    const deepAnalysis = await this.deepAnalyzeFile(filePath, {
+      scanBitrate: options.scanBitrate ?? true,
+      detectVolume: options.detectVolume ?? true,
+      requestId: options.requestId,
+    })
+    if (!deepAnalysis.success) throw new Error(deepAnalysis.error || `Deep analysis failed for ${filePath}`)
+    return {
+      ...fileAnalysis,
+      streamBytes,
+      audioTracks: deepAnalysis.audioTracks?.length ? deepAnalysis.audioTracks : fileAnalysis.audioTracks,
+      deepAnalysis: deepAnalysis.deepAnalysis,
+    }
+  }
+
   async measureStreamBytes(filePath: string): Promise<Record<number, number>> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()

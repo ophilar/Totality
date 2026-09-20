@@ -7,6 +7,7 @@ import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { normalizeLanguage } from '@main/constants/languages'
 import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
 import { buildOptimizationSavingsBreakdown } from '@main/services/OptimizationSavingsService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -664,7 +665,23 @@ export class QualityAnalyzer {
         if (isCancelled?.()) {
           return analyzed
         }
-        const qualityScore = await this.analyzeMediaItem(item)
+        if (!item.file_path) throw new Error(`Media item ${item.id ?? item.title} has no local file path`)
+        const completeAnalysis = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path)
+        await db.media.updateDeepAnalysisByPath(item.file_path, completeAnalysis, new Date().toISOString())
+        const analyzedItem: MediaItem = {
+          ...item,
+          video_codec: completeAnalysis.video?.codec ?? item.video_codec,
+          video_bitrate: completeAnalysis.video?.bitrate ?? item.video_bitrate,
+          width: completeAnalysis.video?.width ?? item.width,
+          height: completeAnalysis.video?.height ?? item.height,
+          duration: completeAnalysis.duration ?? item.duration,
+          audio_codec: completeAnalysis.audioTracks[0]?.codec ?? item.audio_codec,
+          audio_channels: completeAnalysis.audioTracks[0]?.channels ?? item.audio_channels,
+          audio_bitrate: completeAnalysis.audioTracks[0]?.bitrate ?? item.audio_bitrate,
+          audio_tracks: JSON.stringify(completeAnalysis.audioTracks),
+          subtitle_tracks: JSON.stringify(completeAnalysis.subtitleTracks),
+        }
+        const qualityScore = await this.analyzeMediaItem(analyzedItem)
         await db.withBatch(async () => {
           await db.media.upsertQualityScore(qualityScore)
         })
