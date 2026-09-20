@@ -267,19 +267,19 @@ async function rebuildTableWhenNeeded(
 
   const legacyTable = `${table}_legacy_nullable_evidence`
   getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so analysis evidence can be NULL`)
-  await db.execute('BEGIN IMMEDIATE')
+  const transaction = await db.transaction('write')
   try {
     const quotedTable = quoteIdentifier(table)
     const quotedLegacyTable = quoteIdentifier(legacyTable)
     const quotedCopyColumns = copyColumns.map(quoteIdentifier).join(', ')
-    await db.execute(`ALTER TABLE ${quotedTable} RENAME TO ${quotedLegacyTable}`)
-    await db.execute(createSql)
-    await db.execute(`INSERT INTO ${quotedTable} (${quotedCopyColumns}) SELECT ${quotedCopyColumns} FROM ${quotedLegacyTable}`)
-    await db.execute(`DROP TABLE ${quotedLegacyTable}`)
-    for (const statement of createSupportingObjects) await db.execute(statement)
-    await db.execute('COMMIT')
+    await transaction.execute(`ALTER TABLE ${quotedTable} RENAME TO ${quotedLegacyTable}`)
+    await transaction.execute(createSql)
+    await transaction.execute(`INSERT INTO ${quotedTable} (${quotedCopyColumns}) SELECT ${quotedCopyColumns} FROM ${quotedLegacyTable}`)
+    await transaction.execute(`DROP TABLE ${quotedLegacyTable}`)
+    for (const statement of createSupportingObjects) await transaction.execute(statement)
+    await transaction.commit()
   } catch (error) {
-    await db.execute('ROLLBACK')
+    await transaction.rollback()
     throw error
   }
 }

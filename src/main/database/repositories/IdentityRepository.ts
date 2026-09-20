@@ -1,4 +1,4 @@
-import type { Client } from '@libsql/client'
+import type { Client, Transaction } from '@libsql/client'
 import { normalizeTitleForMatching } from '@main/services/metadata/TitleMatching'
 
 export type IdentityEntityType = 'movie' | 'series' | 'artist' | 'album'
@@ -30,7 +30,16 @@ export interface MediaAliasRecord {
 }
 
 export class IdentityRepository {
-  constructor(private readonly db: Client) {}
+  private readonly baseDb: Client
+  private activeDb: Client | Transaction | null = null
+
+  constructor(db: Client) { this.baseDb = db }
+
+  private get db(): Client { return (this.activeDb ?? this.baseDb) as Client }
+
+  public setTransactionContext(db: Client | Transaction | null): void {
+    this.activeDb = db
+  }
 
   async upsertIdentity(input: IdentityInput): Promise<void> {
     await this.db.execute({

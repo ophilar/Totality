@@ -1,4 +1,4 @@
-import type { Client } from '@libsql/client'
+import type { Client, Transaction } from '@libsql/client'
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import { eq, sql, count, desc, asc, or, like, inArray } from 'drizzle-orm'
@@ -15,12 +15,36 @@ type SortExpression = SQLiteColumn | SQL<unknown>
  * Provides generic CRUD operations for any Drizzle table.
  */
 export abstract class BaseRepository<TTable extends SQLiteTable> {
+  private readonly baseDb: Client
+  private readonly baseDrizzle: LibSQLDatabase<typeof schema>
+  private transactionDb: Client | Transaction | null = null
+  private transactionDrizzle: LibSQLDatabase<typeof schema> | null = null
+
   constructor(
-    protected db: Client,
+    db: Client,
     protected tableName: string,
-    protected drizzle: LibSQLDatabase<typeof schema>,
+    drizzle: LibSQLDatabase<typeof schema>,
     protected table: TTable
-  ) {}
+  ) {
+    this.baseDb = db
+    this.baseDrizzle = drizzle
+  }
+
+  protected get db(): Client {
+    return (this.transactionDb ?? this.baseDb) as Client
+  }
+
+  protected get drizzle(): LibSQLDatabase<typeof schema> {
+    return this.transactionDrizzle ?? this.baseDrizzle
+  }
+
+  public setTransactionContext(
+    db: Client | Transaction | null,
+    drizzle: LibSQLDatabase<typeof schema> | null,
+  ): void {
+    this.transactionDb = db
+    this.transactionDrizzle = drizzle
+  }
 
   protected async withBatch<R>(fn: () => Promise<R>): Promise<R> {
     const { getDatabase } = await import('@main/database/BetterSQLiteService')

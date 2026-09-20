@@ -1,5 +1,5 @@
 import { createClient, Client } from '@libsql/client'
-import type { InValue } from '@libsql/client'
+import type { InValue, Transaction } from '@libsql/client'
 import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import * as path from 'path'
@@ -54,6 +54,7 @@ export class BetterSQLiteService {
   private _drizzle: LibSQLDatabase<typeof schema> | null = null
   private dbPath: string = ''
   private _transactionDepth = 0
+  private _transaction: Transaction | null = null
   private repos: Partial<{
     config: ConfigRepository
     media: MediaRepository
@@ -125,6 +126,7 @@ export class BetterSQLiteService {
   public close(): void {
     this._client?.close()
     this._client = null
+    this._transaction = null
     this.repos = {}
   }
 
@@ -133,7 +135,7 @@ export class BetterSQLiteService {
 
   public get db(): Client {
     if (!this._client) throw new Error('Database not initialized. Call initialize(path) during app startup.')
-    return this._client
+    return (this._transaction ?? this._client) as Client
   }
 
   public get drizzle(): LibSQLDatabase<typeof schema> {
@@ -172,20 +174,48 @@ export class BetterSQLiteService {
 
     return this.withLock(async () => {
       this._transactionDepth = 1
+      let transaction: Awaited<ReturnType<Client['transaction']>> | null = null
       try {
-        await this.db.execute('BEGIN IMMEDIATE')
+        if (!this._client) throw new Error('Database client is not initialized.')
+        // Materialize repository singletons before binding the transaction context.
+        // Repositories created during the callback would otherwise retain the base client.
+        void this.config; void this.media; void this.music; void this.stats; void this.notifications
+        void this.tvShows; void this.sources; void this.wishlist; void this.exclusions; void this.tasks
+        void this.duplicates; void this.movieCollections; void this.identities; void this.mediaRemuxJobs
+        void this.globalSearch; void this.playbackTargetProfiles
+        transaction = await this._client.transaction('write')
+        this._transaction = transaction
+        const transactionDrizzle = drizzle(transaction as unknown as Client, { schema })
+        for (const repository of Object.values(this.repos)) {
+          if (repository && 'setTransactionContext' in repository) {
+            const contextRepository = repository as ConfigRepository & { setTransactionContext: (...args: never[]) => void }
+            contextRepository.setTransactionContext(transaction, transactionDrizzle)
+          }
+        }
         const result = await fn()
-        await this.db.execute('COMMIT')
+        await transaction.commit()
+        this._transaction = null
+        for (const repository of Object.values(this.repos)) {
+          if (repository && 'setTransactionContext' in repository) {
+            const contextRepository = repository as ConfigRepository & { setTransactionContext: (...args: never[]) => void }
+            contextRepository.setTransactionContext(null, null)
+          }
+        }
         this._transactionDepth = 0
         return result
       } catch (error) {
         try {
-          await this.db.execute('ROLLBACK')
+          await transaction?.rollback()
         } catch (rollbackError) {
-          if (error && typeof error === 'object') {
-            Object.assign(error as Error, { rollbackCause: rollbackError })
-          }
+          if (error && typeof error === 'object') Object.assign(error as Error, { rollbackCause: rollbackError })
         } finally {
+          this._transaction = null
+          for (const repository of Object.values(this.repos)) {
+            if (repository && 'setTransactionContext' in repository) {
+              const contextRepository = repository as ConfigRepository & { setTransactionContext: (...args: never[]) => void }
+              contextRepository.setTransactionContext(null, null)
+            }
+          }
           this._transactionDepth = 0
         }
         throw error

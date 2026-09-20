@@ -38,10 +38,10 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
     await db.execute(`DROP INDEX IF EXISTS ${index.name}`)
   }
 
-  await db.execute('BEGIN IMMEDIATE')
+  const transaction = await db.transaction('write')
   try {
     // 1. Align episode identities where series_tmdb_id is known
-    await db.execute(`
+    await transaction.execute(`
       UPDATE media_items
       SET series_identity_key = 'tmdb:' || series_tmdb_id
       WHERE type = 'episode'
@@ -50,7 +50,7 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
     `)
 
     // 2. Link episodes missing series_tmdb_id to series_completeness records that have a TMDB ID
-    await db.execute(`
+    await transaction.execute(`
       UPDATE media_items
       SET series_tmdb_id = (
         SELECT s.tmdb_id FROM series_completeness s
@@ -80,7 +80,7 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
     `)
 
     // 3. Align series_completeness identities where tmdb_id is known
-    await db.execute(`
+    await transaction.execute(`
       UPDATE series_completeness
       SET series_identity_key = 'tmdb:' || tmdb_id
       WHERE tmdb_id IS NOT NULL AND tmdb_id != ''
@@ -88,7 +88,7 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
     `)
 
     // 4. Backfill series_completeness missing tmdb_id from child episodes with series_tmdb_id
-    await db.execute(`
+    await transaction.execute(`
       UPDATE series_completeness
       SET tmdb_id = (
         SELECT m.series_tmdb_id FROM media_items m
@@ -119,12 +119,12 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
         )
     `)
 
-    const completenessRows = await db.execute(`
+    const completenessRows = await transaction.execute(`
       SELECT id, series_title, source_id, library_id, tmdb_id, tvdb_id
       FROM series_completeness
       WHERE series_identity_key IS NULL OR TRIM(series_identity_key) = ''
     `)
-    const episodeRows = await db.execute(`
+    const episodeRows = await transaction.execute(`
       SELECT id, series_title, source_id, library_id, series_tmdb_id
       FROM media_items
       WHERE type = 'episode'
@@ -142,7 +142,7 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
         tmdbId: row.tmdb_id,
         tvdbId: row.tvdb_id,
       })
-      await db.execute({
+      await transaction.execute({
         sql: 'UPDATE series_completeness SET series_identity_key = ? WHERE id = ?',
         args: [identityKey, row.id],
       })
@@ -156,15 +156,15 @@ export async function backfillSeriesIdentityKeys(db: Client): Promise<void> {
         folderRelativePath: row.series_title,
         tmdbId: row.series_tmdb_id,
       })
-      await db.execute({
+      await transaction.execute({
         sql: 'UPDATE media_items SET series_identity_key = ? WHERE id = ?',
         args: [identityKey, row.id],
       })
     }
 
-    await db.execute('COMMIT')
+    await transaction.commit()
   } catch (error) {
-    await db.execute('ROLLBACK')
+    await transaction.rollback()
     throw error
   }
 }

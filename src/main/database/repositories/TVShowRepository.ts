@@ -720,7 +720,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
         const cleanTitle = parser.cleanSeriesTitleAndYear(primary.seriesTitle).title || primary.seriesTitle
 
-        await this.db.execute('BEGIN IMMEDIATE')
+        const transaction = await this.db.transaction('write')
+        this.setTransactionContext(transaction, null)
         try {
           for (const sec of secondaryRows) {
             const secondaryIdentityKey = sec.seriesIdentityKey || deriveSeriesIdentityKey({
@@ -831,13 +832,15 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             })
           }
 
-          await this.db.execute('COMMIT')
+          await transaction.commit()
           mergedCount++
           logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records into canonical ID ${primary.id} ("${cleanTitle}")`)
         } catch (err) {
-          await this.db.execute('ROLLBACK')
+          await transaction.rollback()
           logging.error('[TVShowRepository]', `Failed to merge duplicate cluster for "${primary.seriesTitle}": ${getErrorMessage(err)}`)
           throw err
+        } finally {
+          this.setTransactionContext(null, null)
         }
       }
     }
