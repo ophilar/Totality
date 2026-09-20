@@ -16,7 +16,7 @@ import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { formatDuration } from '@/components/library/mediaUtils'
 import { Zap } from 'lucide-react'
 import type { MediaItem, MediaItemVersion } from '@main/types/database'
-import { PlaybackCompatibilityPanel } from '@/components/library/PlaybackCompatibilityPanel'
+import type { AnalysisAction } from '@/components/library/analysisScope'
 
 interface MediaDetailsProps {
   mediaId: number
@@ -32,6 +32,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
+  const [analysisActions, setAnalysisActions] = useState<AnalysisAction[]>([])
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
@@ -52,6 +53,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
         } else {
           setDeepAnalysis(null)
         }
+        setAnalysisActions([])
         setVersions(itemVersions as MediaItemVersion[])
         
         // Default to best version
@@ -76,8 +78,11 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
     if (!media?.id) return
     try {
       setIsAnalyzing(true)
-      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
+      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { actions?: AnalysisAction[]; analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
+      setAnalysisActions(result.actions ?? [])
       if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
+      const refreshed = await window.electronAPI.getMediaItem(media.id)
+      if (refreshed) setMedia(refreshed as MediaItem)
     } finally {
       setIsAnalyzing(false)
     }
@@ -96,6 +101,12 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
   const isMovie = media.type === 'movie'
+  const analysisComplete = Boolean(deepAnalysis || media.evidence_status)
+  const hasOptimizationAction = analysisComplete && (
+    analysisActions.some(action => action.id === 'optimize')
+    || media.needs_upgrade === true
+    || (media.storage_debt_bytes ?? 0) > 0
+  )
   
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -211,7 +222,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
               </div>
               <div className="mt-3 flex items-center justify-between rounded-lg border border-border/40 bg-background/20 px-3 py-2 text-xs">
                 <span className="text-muted-foreground">Actions after analysis</span>
-                <button onClick={() => setShowTranscodeModal(true)} disabled={!deepAnalysis} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                <button onClick={() => setShowTranscodeModal(true)} disabled={!hasOptimizationAction} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
                   <Zap className="h-3.5 w-3.5" /> Optimize
                 </button>
               </div>
@@ -230,7 +241,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
                     {section.icon}<span className="text-sm font-semibold">{section.label}</span><span className="ml-auto truncate text-xs text-muted-foreground">{section.summary}</span><ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expandedSection === section.id ? 'rotate-180' : ''}`} />
                   </button>
                   {expandedSection === section.id && <div className="border-t border-border/40 px-3 py-2.5 text-xs text-muted-foreground">
-                    {section.id === 'playback' && <PlaybackCompatibilityPanel mediaId={mediaId} />}
+                    {section.id === 'playback' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Video stream <b className="float-right text-foreground uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)} · {toSafeString(sv?.resolution ?? media.resolution)}</b></span><span>Audio stream <b className="float-right text-foreground uppercase">{toSafeString(sv?.audio_codec ?? media.audio_codec)} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</b></span><span>Target analysis <b className="float-right text-foreground">Not required</b></span></div>}
                     {section.id === 'video' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Codec <b className="float-right text-foreground uppercase">{toSafeString(sv?.video_codec ?? media.video_codec)}</b></span><span>Resolution <b className="float-right text-foreground">{toSafeString(sv?.resolution ?? media.resolution ?? media.quality_tier)}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.video_bitrate ?? media.video_bitrate))}</b></span><span>HDR <b className="float-right text-foreground">{formatHdrLabel(media.hdr_format) || '—'}</b></span></div>}
                     {section.id === 'audio' && <div className="grid grid-cols-2 gap-x-6 gap-y-1"><span>Audio <b className="float-right text-foreground uppercase">{toSafeString(sv?.audio_codec ?? media.audio_codec)} {formatChannels(toSafeNumber(sv?.audio_channels ?? media.audio_channels))}</b></span><span>Bitrate <b className="float-right text-foreground">{formatBitrate(toSafeNumber(sv?.audio_bitrate ?? media.audio_bitrate))}</b></span><span>Object audio <b className="float-right text-foreground">{media.has_object_audio ? 'Atmos / DTS:X' : '—'}</b></span></div>}
                     {section.id === 'file' && <div className="space-y-1"><div>Size <b className="float-right text-foreground">{formatFileSize(toSafeNumber(sv?.file_size ?? media.file_size))}</b></div><div>Path <b className="ml-2 font-mono text-foreground" title={toSafeString(sv?.file_path ?? media.file_path)}>{toSafeString(sv?.file_path ?? media.file_path)}</b></div><div>Match <b className="float-right text-foreground">{media.match_status ?? 'unknown'}</b></div></div>}
