@@ -7,4 +7,11 @@ const analysis = (overrides = {}) => ({ success: true, filePath: 'x', container:
 describe('evaluatePlaybackTarget', () => {
   it('returns compatible findings with local-analysis provenance', () => { const result = evaluatePlaybackTarget(profile, analysis()); expect(result.overall).toBe('compatible'); expect(result.findings.video.source).toBe('local-analysis') })
   it('reports incompatible dimensions independently', () => { const result = evaluatePlaybackTarget(profile, analysis({ container: 'mp4' })); expect(result.overall).toBe('incompatible'); expect(result.findings.container.status).toBe('incompatible'); expect(result.findings.video.status).toBe('compatible') })
+  it('applies a conditional container rule only to matching video properties', () => {
+    const conditionalProfile = { ...profile, definition: { ...profile.definition, containers: ['matroska', 'mp4'], video: { ...profile.definition.video, containerRules: [{ containers: ['mp4'], profiles: ['dvhe.05'], hdrFormats: ['Dolby Vision'] }] } } }
+    const dolbyVision = analysis({ container: 'matroska', video: { ...analysis().video, profile: 'dvhe.05.06', hdrFormat: 'Dolby Vision' } })
+    const regularHevc = analysis({ container: 'matroska' })
+    expect(evaluatePlaybackTarget(conditionalProfile, dolbyVision).findings.container.status).toBe('incompatible')
+    expect(evaluatePlaybackTarget(conditionalProfile, regularHevc).findings.container.status).toBe('compatible')
+  })
 })

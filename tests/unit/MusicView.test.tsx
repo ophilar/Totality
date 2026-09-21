@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import React from 'react'
 import type { ReactNode, ComponentType } from 'react'
 import { MusicView } from '@/components/library/MusicView'
@@ -11,6 +11,15 @@ import { MusicAlbumDetails } from '@/components/library/music/MusicAlbumDetails'
 import { getSortOptions } from '@/components/library/sortDefinitions'
 import { TestProviders } from '../TestProviders'
 import type { MusicArtist, MusicAlbum, MusicTrack } from '@/components/library/types'
+
+async function renderSettled(ui: React.ReactElement) {
+  let result!: ReturnType<typeof render>
+  await act(async () => {
+    result = render(ui)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+  })
+  return result
+}
 
 interface MockVirtuosoProps {
   data?: unknown[]
@@ -73,7 +82,7 @@ describe('Music Simplification Architecture', () => {
       expect(keys).not.toContain('recoverable')
     })
 
-    it('renders MusicView with canonical sort controls and headers without efficiency or recoverable', () => {
+    it('renders MusicView with canonical sort controls and headers without efficiency or recoverable', async () => {
       const defaultProps: Parameters<typeof MusicView>[0] = {
         artists: [{ id: 1, name: 'Artist 1', provider_id: 'a1', source_id: 's1', source_type: 'local' }] as MusicArtist[],
         totalArtistCount: 1,
@@ -120,7 +129,7 @@ describe('Music Simplification Architecture', () => {
         slimDown: false
       }
 
-      render(
+      await renderSettled(
         <TestProviders>
           <MusicView {...defaultProps} />
         </TestProviders>
@@ -144,7 +153,7 @@ describe('Music Simplification Architecture', () => {
   })
 
   describe('TrackListItem Authoritative Quality Tier', () => {
-    it('uses authoritative tier from data without local calculation', () => {
+    it('uses authoritative tier from data without local calculation', async () => {
       const hiResTrack: MusicTrack = {
         id: 1,
         title: 'Hi-Res Track',
@@ -156,7 +165,7 @@ describe('Music Simplification Architecture', () => {
         quality_tier: 'HI_RES'
       }
 
-      const { rerender } = render(
+      const { rerender } = await renderSettled(
         <TestProviders>
           <TrackListItem track={hiResTrack} index={1} />
         </TestProviders>
@@ -181,7 +190,7 @@ describe('Music Simplification Architecture', () => {
       expect(screen.getByTitle('Quality upgrade recommended')).toBeTruthy()
     })
 
-    it('renders raw audio specs or Unanalyzed when quality_tier is missing without defaulting to LOSSY_MID', () => {
+    it('renders raw audio specs or Unanalyzed when quality_tier is missing without defaulting to LOSSY_MID', async () => {
       const unanalyzedWithBitrate: MusicTrack = {
         id: 3,
         title: 'Unanalyzed With Bitrate',
@@ -194,7 +203,7 @@ describe('Music Simplification Architecture', () => {
         quality_tier: undefined
       }
 
-      const { rerender } = render(
+      const { rerender } = await renderSettled(
         <TestProviders>
           <TrackListItem track={unanalyzedWithBitrate} index={1} />
         </TestProviders>
@@ -226,7 +235,7 @@ describe('Music Simplification Architecture', () => {
   })
 
   describe('MusicAlbumDetails Authoritative Quality Tier', () => {
-    it('uses authoritative tier from album without local calculation', () => {
+    it('uses authoritative tier from album without local calculation', async () => {
       const album: MusicAlbum = {
         id: 10,
         title: 'Test Album',
@@ -239,7 +248,7 @@ describe('Music Simplification Architecture', () => {
         best_audio_codec: 'flac'
       }
 
-      render(
+      await renderSettled(
         <MusicAlbumDetails
           selectedAlbum={album}
           selectedArtist={null}
@@ -263,7 +272,7 @@ describe('Music Simplification Architecture', () => {
       expect(screen.getByText('Lossless')).toBeTruthy()
     })
 
-    it('renders raw audio specs or Unanalyzed when album quality_tier is missing without defaulting to LOSSY_MID', () => {
+    it('renders raw audio specs or Unanalyzed when album quality_tier is missing without defaulting to LOSSY_MID', async () => {
       const unanalyzedAlbum: MusicAlbum = {
         id: 11,
         title: 'Unanalyzed Album',
@@ -274,7 +283,7 @@ describe('Music Simplification Architecture', () => {
         track_count: 0
       }
 
-      render(
+      await renderSettled(
         <MusicAlbumDetails
           selectedAlbum={unanalyzedAlbum}
           selectedArtist={null}

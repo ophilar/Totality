@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 
 const definition = z.object({
   containers: z.array(z.string()).min(1),
-  video: z.object({ codecs: z.array(z.string()).min(1), profiles: z.array(z.string()).min(1), levels: z.array(z.number()).min(1), maxWidth: z.number().positive(), maxHeight: z.number().positive(), maxFrameRate: z.number().positive(), bitDepths: z.array(z.number()).min(1) }),
+  video: z.object({ codecs: z.array(z.string()).min(1), profiles: z.array(z.string()).min(1), levels: z.array(z.number()).min(1), maxWidth: z.number().positive(), maxHeight: z.number().positive(), maxFrameRate: z.number().positive(), bitDepths: z.array(z.number()).min(1), containerRules: z.array(z.object({ containers: z.array(z.string()).min(1), codecs: z.array(z.string()).optional(), profiles: z.array(z.string()).optional(), hdrFormats: z.array(z.string()).optional() })).optional() }),
   hdr: z.object({ formats: z.array(z.string()), fallbackRequired: z.boolean() }),
   audio: z.object({ codecs: z.array(z.string()).min(1), maxChannels: z.number().positive(), objectAudio: z.boolean(), outputPath: z.enum(['device', 'passthrough', 'receiver']) }),
   subtitles: z.object({ formats: z.array(z.string()), embedded: z.boolean(), external: z.boolean(), burnIn: z.boolean() }),

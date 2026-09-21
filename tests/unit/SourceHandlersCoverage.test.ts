@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, cleanupTestDb, createTempDir, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
-import { registerSourceHandlers } from '@main/ipc/sources'
 import { ProviderType, LibraryType } from '@main/types/database'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -24,7 +23,6 @@ describe('Source Handlers Deep Coverage (No Mocks)', () => {
     const bridge = setupRealIntegratedBridge()
     handlers = bridge.handlers
     
-    registerSourceHandlers()
     tempDir = createTempDir('source-handlers-coverage')
   })
 

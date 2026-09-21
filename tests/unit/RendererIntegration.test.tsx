@@ -10,10 +10,6 @@ import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 import { WishlistProvider, useWishlist } from '@/contexts/WishlistContext'
 import { _LibraryType, ProviderType, WishlistMediaType, WishlistReason, WishlistStatus } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
-import { registerDatabaseHandlers } from '@main/ipc/database'
-import { registerWishlistHandlers } from '@main/ipc/wishlist'
-import { registerSourceHandlers } from '@main/ipc/sources'
-import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
 
 import React from 'react'
 
@@ -56,10 +52,6 @@ describe('Renderer Integration (Real Bridge & DB)', () => {
   beforeEach(async () => {
     db = await setupTestDb()
     setupRealIntegratedBridge()
-    registerDatabaseHandlers()
-    registerWishlistHandlers()
-    registerSourceHandlers()
-    registerTaskQueueHandlers()
   })
 
   afterEach(() => {

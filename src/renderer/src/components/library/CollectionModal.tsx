@@ -5,6 +5,7 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { MissingItemPopup } from '@/components/library/MissingItemPopup'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MovieCollectionData, MediaItem } from '@/components/library/types'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
 
 interface MissingMovie {
   tmdb_id: string
@@ -102,6 +103,12 @@ export const CollectionModal = memo(function CollectionModal({
     return [...owned, ...missing].sort((a, b) => (a.year || 0) - (b.year || 0))
   }, [ownedMovies, missingMovies])
 
+  const collectionOptimizationSummary = useMemo(() => ({
+    totalCount: ownedMovies.length,
+    analyzedCount: ownedMovies.filter(movie => movie.efficiency_score != null).length,
+    recoverableBytes: ownedMovies.reduce((total, movie) => total + (movie.storage_debt_bytes ?? 0), 0),
+  }), [ownedMovies])
+
   return (
     <>
       {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title">
@@ -124,6 +131,12 @@ export const CollectionModal = memo(function CollectionModal({
                   {Math.round(collection.completeness_percentage)}% complete
                 </span>
               </p>
+              <ScopedOptimizationSummary
+                totalCount={collectionOptimizationSummary.totalCount}
+                analyzedCount={collectionOptimizationSummary.analyzedCount}
+                recoverableBytes={collectionOptimizationSummary.recoverableBytes}
+                className="mt-2"
+              />
             </div>
             <div className="flex items-center gap-1">
               {onDismissAllMissingInCollection && missingMovies.length > 1 && (

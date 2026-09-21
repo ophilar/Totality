@@ -1,5 +1,5 @@
 import { getDatabase, type BetterSQLiteService } from '@main/database/BetterSQLiteService'
-import { getMediaFileAnalyzer, type FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getSourceManager } from '@main/services/SourceManager'
 import { PlexPlaybackDecisionProvider } from '@main/providers/plex/PlexPlaybackDecisionProvider'
@@ -11,15 +11,17 @@ export type PlaybackPresentationState = 'compatible' | 'incompatible' | 'conflic
 export interface PlaybackCompatibilityResult { profile: PlaybackTargetProfile; evaluation: PlaybackTargetEvaluation; providerDecision?: ProviderPlaybackDecision; providerDecisionError?: string; presentation: PlaybackPresentationState }
 
 export class PlaybackCompatibilityService {
-  constructor(private readonly db: BetterSQLiteService = getDatabase(), private readonly analyzer = getMediaFileAnalyzer(), private readonly providers: Partial<Record<'plex', PlaybackDecisionProvider>> = {}) {}
+  constructor(private readonly db: BetterSQLiteService = getDatabase(), private readonly providers: Partial<Record<'plex', PlaybackDecisionProvider>> = {}) {}
 
-  async analyze(mediaItemId: number, profileId: string): Promise<PlaybackCompatibilityResult> {
+  async evaluate(mediaItemId: number, profileId: string): Promise<PlaybackCompatibilityResult> {
     const item = await this.db.media.getItemById(mediaItemId)
     if (!item) throw new Error('Media item was not found')
     if (!item.file_path) throw new Error('Media item has no local file path')
     const profile = await this.db.playbackTargetProfiles.get(profileId)
     if (!profile) throw new Error('Playback target profile was not found')
-    const analysis = await this.analyzer.analyzeFile(item.file_path)
+    if (!item.deep_analysis) throw new Error('Media item must be analyzed before compatibility can be evaluated')
+    const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
+    if (!analysis.success || analysis.filePath !== item.file_path) throw new Error('Persisted file analysis is invalid')
     const evaluation = evaluatePlaybackTarget(profile, analysis)
     if (item.source_type !== 'plex' || !item.source_id || !profile.definition.providers?.plex) return { profile, evaluation, presentation: evaluation.overall }
     const plex = this.providers.plex || await this.getConfiguredPlexProvider(item.source_id)

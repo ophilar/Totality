@@ -17,6 +17,7 @@ export interface TranscodeOptions {
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
   qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
   encoderPolicy?: 'hardware' | 'software' | 'compare'
+  targetProfileId?: string
 }
 
 export interface ShowTranscodePreflightEpisode {
@@ -35,6 +36,7 @@ export interface ShowTranscodePreflightEpisode {
   savingsBasis?: string
   sourceTier?: string
   adviceReason?: string
+  targetCompatibility?: { overall: 'compatible' | 'incompatible'; findings: Record<string, { status: string; rule: string; evidence: string }> }
   measuredParameters?: { encoder: string; crf?: number; preset: string }
 }
 

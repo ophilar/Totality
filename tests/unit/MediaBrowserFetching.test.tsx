@@ -5,7 +5,6 @@ import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MediaBrowser } from '@/components/library/MediaBrowser'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
-import { registerDatabaseHandlers } from '@main/ipc/database'
 import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 
@@ -15,7 +14,6 @@ describe('MediaBrowser Data Fetching (Real Integrated Bridge)', () => {
   beforeEach(async () => {
     _db = await setupTestDb()
     setupRealIntegratedBridge()
-    registerDatabaseHandlers()
   })
 
   afterEach(() => {

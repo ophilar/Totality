@@ -127,28 +127,8 @@ function AppContent() {
   }, [])
 
   // Analysis handlers
-  const handleAnalyzeSeries = async (_libraryId?: string) => {
-    await window.electronAPI.mediaAnalyze(_libraryId ? { kind: 'library', libraryId: _libraryId } : { kind: 'all-libraries' })
-  }
-
-  const handleAnalyzeCollections = async (_libraryId?: string) => {
-    await window.electronAPI.mediaAnalyze(_libraryId ? { kind: 'library', libraryId: _libraryId } : { kind: 'all-libraries' })
-  }
-
-  const handleAnalyzeMusic = async () => {
-    await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
-  }
-
   const handleAnalyzeAll = async () => {
     if (hasTV || hasMovies || hasMusic) await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
-  }
-
-  const handleCancelAnalysis = async () => {
-    try {
-      await window.electronAPI.taskQueueCancelCurrent()
-    } catch (err) {
-      window.electronAPI.log.error('[App]', 'Failed to cancel analysis:', err)
-    }
   }
 
   const handleOnboardingComplete = async () => {
@@ -343,20 +323,14 @@ function AppContent() {
           <>
             <SectionErrorBoundary section="Completeness Panel" compact>
             <CompletenessPanel
-                onAnalyzeSeries={handleAnalyzeSeries}
-                onAnalyzeCollections={handleAnalyzeCollections}
-                onAnalyzeMusic={handleAnalyzeMusic}
                 onAnalyzeAll={handleAnalyzeAll}
-                onCancel={handleCancelAnalysis}
                 isAnalyzing={isAnalyzing}
                 analysisProgress={analysisProgress}
                 analysisType={analysisType}
-                onDataRefresh={() => {}}
                 hasTV={hasTV}
                 hasMovies={hasMovies}
                 hasMusic={hasMusic}
                 onOpenSettings={handleOpenSettings}
-                libraries={[]}
               />
             </SectionErrorBoundary>
             <SectionErrorBoundary section="Wishlist Panel" compact>

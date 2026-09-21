@@ -8,7 +8,7 @@ export interface PlaybackAPI {
   createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
   updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
   deletePlaybackTargetProfile: (id: string) => Promise<boolean>
-  analyzePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => Promise<PlaybackCompatibilityResult>
+  evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => Promise<PlaybackCompatibilityResult>
 }
 
 export const playbackApi: PlaybackAPI = {
@@ -16,5 +16,5 @@ export const playbackApi: PlaybackAPI = {
   createPlaybackTargetProfile: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_CREATE, input),
   updatePlaybackTargetProfile: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_UPDATE, input),
   deletePlaybackTargetProfile: id => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_DELETE, id),
-  analyzePlaybackCompatibility: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_COMPATIBILITY_ANALYZE, input),
+  evaluatePlaybackCompatibility: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_COMPATIBILITY_EVALUATE, input),
 }

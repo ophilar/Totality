@@ -10,6 +10,22 @@ import React, { act } from 'react'
 
 import type { TVShow, TVShowSummary } from '@/components/library/types'
 
+const playbackProfile = {
+  id: 'builtin:plex-webos-4-lg-b8',
+  name: 'Plex webOS 4 / LG B8',
+  isBuiltin: true,
+  definition: {
+    containers: ['matroska', 'mp4', 'mpegts'],
+    video: { codecs: ['h264', 'hevc'], profiles: ['Main', 'High', 'Main 10'], levels: [41, 51, 52], maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60, bitDepths: [8, 10] },
+    hdr: { formats: ['HDR10', 'HLG'], fallbackRequired: true },
+    audio: { codecs: ['aac', 'ac3', 'eac3'], maxChannels: 8, objectAudio: false, outputPath: 'device' },
+    subtitles: { formats: ['srt', 'ass', 'ssa', 'webvtt', 'mov_text'], embedded: true, external: true, burnIn: false },
+    network: { sustainableBitrate: 100000000 }
+  },
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+}
+
 // Mock react-virtuoso
 vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent }: { data?: unknown[]; itemContent: (index: number, item: unknown) => React.ReactNode }) => (
@@ -26,7 +42,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     Object.assign(window, {
       electronAPI: {
         log: { error: vi.fn(), info: vi.fn() },
-        getSetting: vi.fn().mockResolvedValue(''),
+        getSetting: vi.fn((key: string) => Promise.resolve(key === 'optimization_default_target_profile_id' ? playbackProfile.id : '')),
+        listPlaybackTargetProfiles: vi.fn().mockResolvedValue([playbackProfile]),
         getCapabilities: vi.fn().mockResolvedValue({
           detectedAt: '2026-08-19T22:00:00Z',
           ffmpeg: true,
@@ -107,30 +124,33 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     ])
   }
 
-  it('renders "Optimize Series" button in TVShowDetails and triggers onTranscodeShow', () => {
+  it('renders "Optimize Series" button in TVShowDetails and triggers onTranscodeShow', async () => {
     const handleTranscodeShow = vi.fn()
 
-    render(
-      <TVShowDetails
-        selectedShow={{
-          series_title: 'Example Saga: Strange New Worlds',
-          series_identity_key: 'tmdb:103768',
-          source_id: 'src_local',
-          library_id: 'lib_local'
-        }}
-        selectedShowData={mockShowData}
-        selectedShowLoading={false}
-        seriesCompleteness={new Map()}
-        onBack={vi.fn()}
-        onAnalyzeSeries={vi.fn()}
-        filterItem={() => true}
-        onSelectEpisode={vi.fn()}
-        expandedRecommendations={new Set()}
-        onToggleOptimize={vi.fn()}
-        onMissingItemClick={vi.fn()}
-        onTranscodeShow={handleTranscodeShow}
-      />
-    )
+    await act(async () => {
+      render(
+        <TVShowDetails
+          selectedShow={{
+            series_title: 'Example Saga: Strange New Worlds',
+            series_identity_key: 'tmdb:103768',
+            source_id: 'src_local',
+            library_id: 'lib_local'
+          }}
+          selectedShowData={mockShowData}
+          selectedShowLoading={false}
+          seriesCompleteness={new Map()}
+          onBack={vi.fn()}
+          onAnalyzeSeries={vi.fn()}
+          filterItem={() => true}
+          onSelectEpisode={vi.fn()}
+          expandedRecommendations={new Set()}
+          onToggleOptimize={vi.fn()}
+          onMissingItemClick={vi.fn()}
+          onTranscodeShow={handleTranscodeShow}
+        />
+      )
+      await Promise.resolve()
+    })
 
     const optimizeButton = screen.getByRole('button', { name: /optimize series/i })
     expect(optimizeButton).toBeTruthy()

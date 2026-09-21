@@ -31,6 +31,7 @@ describe('File-Aware Audio Language Detection with Provider Defaults', () => {
       electronAPI: {
         log: { error: vi.fn(), info: vi.fn() },
         getSetting: vi.fn().mockResolvedValue(''),
+        listPlaybackTargetProfiles: vi.fn().mockResolvedValue([]),
         getCapabilities: vi.fn().mockResolvedValue({
           detectedAt: '2026-08-25T22:00:00Z',
           ffmpeg: true,

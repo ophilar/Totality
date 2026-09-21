@@ -5,5 +5,5 @@ import { PlaybackCompatibilityService } from '@main/services/PlaybackCompatibili
 
 export function registerPlaybackCompatibilityHandlers(): void {
   const service = new PlaybackCompatibilityService()
-  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.PLAYBACK_COMPATIBILITY_ANALYZE, z.object({ mediaItemId: z.number().int().positive(), profileId: z.string().min(1) }), input => service.analyze(input.mediaItemId, input.profileId))
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.PLAYBACK_COMPATIBILITY_EVALUATE, z.object({ mediaItemId: z.number().int().positive(), profileId: z.string().min(1) }), input => service.evaluate(input.mediaItemId, input.profileId))
 }

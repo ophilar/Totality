@@ -1,5 +1,5 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, HardDrive, Zap } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Zap } from 'lucide-react'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import { providerColors, getStatusBadge } from '@/components/library/mediaUtils'
@@ -7,18 +7,17 @@ import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/comp
 import { EvidenceStatusBadge } from '@/components/library/EvidenceStatusBadge'
 import { EfficiencyDisplay } from '@/components/library/EfficiencyDisplay'
 import { RecoverableWasteDisplay } from '@/components/library/RecoverableWasteDisplay'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
 
 
 
-export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow }: {
+export const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onTranscodeShow }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => Promise<void>
   onFixMatch?: (sourceId: string, folderPath?: string) => void
-  onOptimizationDryRun?: () => void
-  onRequestOptimization?: () => void
   onTranscodeShow?: () => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
@@ -93,6 +92,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           {show.owned_regular_seasons == null ? `${seasonCount} ${seasonCount === 1 ? 'Season' : 'Seasons'} • ${totalEpisodes} Episodes` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
+        <ScopedOptimizationSummary totalCount={show.episode_count} analyzedCount={show.scored_episode_count} recoverableBytes={show.total_recoverable_bytes} className="mt-1" />
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -163,8 +163,6 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
                 Optimize Series
               </button>
             )}
-            {onOptimizationDryRun && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onOptimizationDryRun() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Dry-run optimization</button>}
-            {onRequestOptimization && <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); onRequestOptimization() }} className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" />Request optimization</button>}
           </div>
         )}
       </div>

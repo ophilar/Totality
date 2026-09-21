@@ -140,6 +140,11 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
   const [optimizationMode, setOptimizationMode] = useState<'smart' | 'remux_only' | 'transcode'>('smart')
+  const [removeUnnecessaryStreams, setRemoveUnnecessaryStreams] = useState(true)
+  const [adjustToTarget, setAdjustToTarget] = useState(true)
+  const [targetProfileId, setTargetProfileId] = useState('')
+  const [targetProfileName, setTargetProfileName] = useState('')
+  const [targetProfiles, setTargetProfiles] = useState<Array<{ id: string; name: string }>>([])
   const [codec, setCodec] = useState<'hevc' | 'av1'>('av1')
   const [audio, setAudio] = useState<'all' | 'original-and-protected'>('original-and-protected')
   const [language, setLanguage] = useState('')
@@ -167,6 +172,23 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   })
 
   useFocusTrap(true, modalRef)
+
+  useEffect(() => {
+    let mounted = true
+    void Promise.all([
+      window.electronAPI.listPlaybackTargetProfiles(),
+      window.electronAPI.getSetting('optimization_default_target_profile_id')
+    ]).then(([profiles, configuredId]) => {
+      const profile = profiles.find(candidate => candidate.id === (configuredId || profiles.find(candidate => candidate.isBuiltin)?.id))
+      if (!profile) throw new Error('A default playback profile is required before show optimization can run')
+      if (mounted) {
+        setTargetProfiles(profiles)
+        setTargetProfileId(profile.id)
+        setTargetProfileName(profile.name)
+      }
+    }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
+    return () => { mounted = false }
+  }, [])
 
   const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
@@ -325,34 +347,58 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     setSubtitleWhitelist(next)
   }
 
-  const getCleanOptions = () => {
-    const whitelist = subtitleList.length > 0 ? subtitleList : undefined
+  const getCleanOptions = (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
+    const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
+    const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
+    const whitelist = shouldRemoveStreams && subtitleList.length > 0 ? subtitleList : undefined
+    const effectiveAudio = shouldRemoveStreams ? audio : 'all' as const
+    const effectiveOptimizationMode = shouldAdjustToTarget ? optimizationMode : 'remux_only' as const
     return {
       targetCodec: codec,
       transcodingEngine: 'ffmpeg' as const,
       outputMode,
-      useGpu: optimizationMode === 'remux_only' ? false : useGpu,
-      gpuId: useGpu && optimizationMode !== 'remux_only' ? gpuId : undefined,
-      optimizationMode,
-      streamSelection: audio === 'all'
-        ? { audio, subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
-        : { audio, originalLanguage: language.trim().toLowerCase(), subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
+      useGpu: effectiveOptimizationMode === 'remux_only' ? false : useGpu,
+      gpuId: useGpu && effectiveOptimizationMode !== 'remux_only' ? gpuId : undefined,
+      optimizationMode: effectiveOptimizationMode,
+      targetProfileId: overrides.targetProfileId ?? targetProfileId,
+      streamSelection: effectiveAudio === 'all'
+        ? { audio: 'all' as const, subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
+        : { audio: effectiveAudio, originalLanguage: language.trim().toLowerCase(), subtitle: 'all' as const, subtitleLanguageWhitelist: whitelist, defaultSubtitle: 'preserve' as const }
     }
   }
 
-  const runPreflight = async () => {
-    if (!codec || !audio || !outputMode || (audio === 'original-and-protected' && !language.trim())) {
-      throw new Error('Please choose a video codec, audio policy, output mode, and original language.')
+  const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
+    const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
+    if (!targetProfileId || !outputMode || (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim())) {
+      throw new Error('A playback profile and output mode are required; choose an original language when stream pruning is enabled.')
     }
     const preflight = await window.electronAPI.preflightShow({
       seriesTitle: show.series_title,
       seriesIdentityKey,
       sourceId,
       libraryId,
-      options: getCleanOptions()
+      options: getCleanOptions(overrides)
     })
     setPreflightData(preflight)
     return preflight
+  }
+
+  const updatePlan = async (next: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string }) => {
+    if (next.removeUnnecessaryStreams !== undefined) setRemoveUnnecessaryStreams(next.removeUnnecessaryStreams)
+    if (next.adjustToTarget !== undefined) setAdjustToTarget(next.adjustToTarget)
+    if (next.targetProfileId !== undefined) {
+      setTargetProfileId(next.targetProfileId)
+      setTargetProfileName(targetProfiles.find(profile => profile.id === next.targetProfileId)?.name || '')
+    }
+    setBusy(true)
+    setMessage('')
+    try {
+      await runPreflight(next)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const handlePreviewPlan = async () => {
@@ -556,10 +602,25 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               <div className="min-w-0"><div className="text-xs font-bold">Quarantined originals</div><div className="text-[11px] text-muted-foreground">{quarantineFiles.length} retained file{quarantineFiles.length === 1 ? '' : 's'} for this show</div></div>
               <div className="flex gap-2 shrink-0"><button type="button" onClick={loadQuarantine} className="px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted">List</button><button type="button" onClick={purgeQuarantine} disabled={quarantineFiles.length === 0} className="px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 disabled:opacity-40">Purge</button></div>
             </div>
-            {/* Optimization Mode Selection */}
             <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Optimization plan</label>
+              <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2 text-xs"><span className="text-muted-foreground">Default playback profile</span><span className="ml-2 font-semibold text-foreground">{targetProfileName || 'Loading…'}</span></div>
+              <div className="divide-y divide-border/40 rounded-xl border border-border/40 bg-card/40">
+                <label className="flex items-center justify-between gap-4 p-3 cursor-pointer">
+                  <span><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">Apply the selected audio and subtitle policies.</span></span>
+                  <input type="checkbox" checked={removeUnnecessaryStreams} onChange={event => setRemoveUnnecessaryStreams(event.target.checked)} className="h-4 w-4 accent-primary" />
+                </label>
+                <label className="flex items-center justify-between gap-4 p-3 cursor-pointer">
+                  <span><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">Allow target-driven video and container changes.</span></span>
+                  <input type="checkbox" checked={adjustToTarget} onChange={event => setAdjustToTarget(event.target.checked)} className="h-4 w-4 accent-primary" />
+                </label>
+              </div>
+            </div>
+            <details open className="space-y-2 rounded-xl border border-border/40 bg-card/20 p-3">
+              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment options</summary>
+            <div className="space-y-2 pt-3">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-primary" /> Optimization Strategy
+                <Sparkles className="w-3.5 h-3.5 text-primary" /> Strategy
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
@@ -617,7 +678,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 </button>
               </div>
             </div>
+            </details>
 
+            <details open className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
+              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment details</summary>
             {/* Codec Selection */}
             {optimizationMode !== 'remux_only' && (
               <div className="space-y-2">
@@ -660,6 +724,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
             )}
 
+            </details>
+            <details open className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
+              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Stream policy</summary>
             {/* Audio Track Policy */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -826,6 +893,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
             </div>
 
+            </details>
+            <details className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
+              <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Execution and output</summary>
             {/* Transcoding Device Selector */}
             {optimizationMode !== 'remux_only' && (
               <TranscodingDeviceSelector
@@ -902,6 +972,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 <span>{message}</span>
               </div>
             )}
+            </details>
           </div>
         ) : mode === 'preview' && preflightData ? (
           /* Preflight Preview Mode */
@@ -913,37 +984,40 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                   <h4 className="text-sm font-bold text-foreground">Preflight Optimization Plan</h4>
                   <p className="text-xs text-muted-foreground">{preflightData.episodes.length} episodes analyzed; only evidenced actions can be queued</p>
                 </div>
-                <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30">
-                  {optimizationMode === 'smart' ? 'Smart (TRaSH)' : optimizationMode === 'remux_only' ? 'Lossless Stream Copy' : 'Full Transcode'}
-                </span>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">Profile
+                  <select value={targetProfileId} onChange={event => { void updatePlan({ targetProfileId: event.target.value }) }} disabled={busy} className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground">
+                    {targetProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                  </select>
+                </label>
               </div>
 
-              {/* Action Breakdown Counters */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                <div className="bg-background/80 p-2.5 rounded-xl border border-border/30 text-center">
-                  <div className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Video Transcode</div>
-                  <div className="text-base font-black text-foreground">
-                    {preflightData.episodes.filter(e => e.recommendedAction === 'video_transcode').length}
-                  </div>
-                </div>
-                <div className="bg-background/80 p-2.5 rounded-xl border border-amber-500/30 text-center">
-                  <div className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">Insufficient Evidence</div>
-                  <div className="text-base font-black text-foreground">
-                    {preflightData.episodes.filter(e => e.decisionStatus === 'insufficient_evidence').length}
-                  </div>
-                </div>
-                <div className="bg-background/80 p-2.5 rounded-xl border border-border/30 text-center">
-                  <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Lossless Copy</div>
-                  <div className="text-base font-black text-foreground">
-                    {preflightData.episodes.filter(e => e.recommendedAction === 'stream_pruning').length}
-                  </div>
-                </div>
-                <div className="bg-background/80 p-2.5 rounded-xl border border-border/30 text-center">
-                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Already Optimized</div>
-                  <div className="text-base font-black text-foreground">
-                    {preflightData.episodes.filter(e => e.recommendedAction === 'already_optimized').length}
-                  </div>
-                </div>
+              <div className="divide-y divide-border/40 rounded-xl border border-border/40 bg-background/40">
+                <details open={removeUnnecessaryStreams} className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
+                    <input type="checkbox" checked={removeUnnecessaryStreams} onChange={event => { event.preventDefault(); void updatePlan({ removeUnnecessaryStreams: event.target.checked }) }} className="h-4 w-4 accent-primary" />
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'stream_pruning').length} episodes · preserve only the selected audio and subtitle policy</span></span>
+                    <span className="text-xs text-muted-foreground">{formatBytes(preflightData.episodes.filter(e => e.recommendedAction === 'stream_pruning').reduce((sum, episode) => sum + (episode.estimatedSavingsBytes || 0), 0))}</span>
+                  </summary>
+                  <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Audio: {audio === 'all' ? 'all tracks' : 'original and protected tracks'} · Subtitles: {subtitleList.length ? subtitleList.join(', ') : 'preserve all'}</div>
+                </details>
+                <details open={adjustToTarget} className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
+                    <input type="checkbox" checked={adjustToTarget} onChange={event => { event.preventDefault(); void updatePlan({ adjustToTarget: event.target.checked }) }} className="h-4 w-4 accent-primary" />
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'video_transcode').length} episodes · apply the selected target strategy</span></span>
+                    <span className="text-xs text-muted-foreground">{formatBytes(preflightData.episodes.filter(e => e.recommendedAction === 'video_transcode').reduce((sum, episode) => sum + (episode.estimatedSavingsBytes || 0), 0))}</span>
+                  </summary>
+                  <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Profile: {targetProfileName || 'default playback profile'} · Codec: {codec.toUpperCase()} · Strategy: {optimizationMode}</div>
+                </details>
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
+                    <span className="text-emerald-400">✓</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Already optimized</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'already_optimized').length} episodes need no changes</span></span>
+                  </summary>
+                </details>
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
+                    <span className="text-amber-300">?</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Not analyzed</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.decisionStatus === 'insufficient_evidence').length} episodes will be skipped</span></span>
+                  </summary>
+                </details>
               </div>
             </div>
 

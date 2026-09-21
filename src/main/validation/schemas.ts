@@ -521,6 +521,7 @@ export const TranscodeOptionsSchema = z.object({
   optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
   qualityProfile: z.enum(['transparent', 'balanced', 'maximum_savings']).optional(),
   encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
+  targetProfileId: z.string().min(1).optional(),
   streamSelection: z.union([
     z.object({
       audio: z.literal('all'),

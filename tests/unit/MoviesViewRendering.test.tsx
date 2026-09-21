@@ -12,6 +12,15 @@ import React from 'react'
 import type { MediaItem } from '@/components/library/types'
 import type { OptimizationMetricsSummary, TaskQueueState } from '@main/types/database'
 
+async function renderSettled(ui: React.ReactElement) {
+  let result!: ReturnType<typeof render>
+  await act(async () => {
+    result = render(ui)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+  })
+  return result
+}
+
 describe('MoviesView Integrated Rendering (No Mocks)', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
 
@@ -53,7 +62,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     // Return the scanning state on mount
     api.taskQueueGetState = vi.fn().mockResolvedValue(scanningState)
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[]}
@@ -108,7 +117,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       file_path: '/movies/unanalyzed.mkv'
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie as MediaItem]}
@@ -143,7 +152,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       type: 'movie'
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie as MediaItem]}
@@ -168,7 +177,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     expect(screen.queryByText('Analyzing')).toBeNull()
   })
 
-  it('uses the server optimization summary instead of deriving totals from the loaded page', () => {
+  it('uses the server optimization summary instead of deriving totals from the loaded page', async () => {
     const movie = {
       id: 4,
       title: 'Paged Movie',
@@ -193,7 +202,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       confidenceScore: 80,
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie]}
@@ -218,10 +227,10 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     expect(screen.getByText('5 GB')).toBeTruthy()
   })
 
-  it('sorts movies when a sortable list column header is clicked', () => {
+  it('sorts movies when a sortable list column header is clicked', async () => {
     const onSortChange = vi.fn()
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[{ id: 3, title: 'Sortable Movie', type: 'movie' } as MediaItem]}
@@ -246,7 +255,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     expect(onSortChange).toHaveBeenCalledWith('year')
   })
 
-  it('renders flat movies when groupByCollections is false even if collection exists', () => {
+  it('renders flat movies when groupByCollections is false even if collection exists', async () => {
     const movie1 = { id: 10, title: 'Avatar 1', type: 'movie' } as MediaItem
     const movie2 = { id: 11, title: 'Avatar 2', type: 'movie' } as MediaItem
     const collection = {
@@ -256,7 +265,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       movies: [movie1, movie2],
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie1, movie2]}
@@ -283,7 +292,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     expect(screen.queryByText('Avatar Collection')).toBeNull()
   })
 
-  it('groups movies into collection cards when groupByCollections is true', () => {
+  it('groups movies into collection cards when groupByCollections is true', async () => {
     const movie1 = { id: 20, title: 'Alien 1', type: 'movie' } as MediaItem
     const movie2 = { id: 21, title: 'Alien 2', type: 'movie' } as MediaItem
     const collection = {
@@ -293,7 +302,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       movies: [movie1, movie2],
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie1, movie2]}
@@ -318,7 +327,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
     expect(screen.getByText('Alien Collection')).toBeTruthy()
   })
 
-  it('filters out non-collection movies when collectionsOnly is true', () => {
+  it('filters out non-collection movies when collectionsOnly is true', async () => {
     const movie1 = { id: 30, title: 'Iron Man', type: 'movie' } as MediaItem
     const standaloneMovie = { id: 31, title: 'Inception', type: 'movie' } as MediaItem
     const collection = {
@@ -329,7 +338,7 @@ describe('MoviesView Integrated Rendering (No Mocks)', () => {
       movies: [movie1],
     }
 
-    render(
+    await renderSettled(
       <TestProviders>
         <MoviesView
           movies={[movie1, standaloneMovie]}

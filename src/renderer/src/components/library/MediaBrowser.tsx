@@ -529,7 +529,7 @@ export function MediaBrowser({
 
   const {
     isAnalyzing, setIsAnalyzing, analysisProgress, setAnalysisProgress, analysisType, setAnalysisType,
-    handleAnalyzeSeries, handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeAll, handleAnalyzeSingleSeries, handleCancelAnalysis, checkTmdbApiKey,
+    handleAnalyzeAll, handleAnalyzeSingleSeries, checkTmdbApiKey,
   } = useAnalysisManager({ sources, activeSourceId, activeSourceLibraries, loadCompletenessData })
 
   const loadActiveSourceLibraries = useCallback(async () => {
@@ -680,7 +680,7 @@ export function MediaBrowser({
                   onBack={() => selectedAlbum ? setSelectedAlbum(null) : setSelectedArtist(null)}
                   gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
                   showSourceBadge={!activeSourceId && sources.length > 1}
-                  onAnalyzeAlbum={async (id) => { await window.electronAPI.mediaAnalyze({ kind: 'album', albumId: String(id) }); loadMusicCompletenessData() }}
+                  onAnalyzeAlbum={async (id) => { await window.electronAPI.mediaAnalyze({ kind: 'album', albumId: id }); loadMusicCompletenessData() }}
                   onAnalyzeArtist={async () => { await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' }) }}
                   onArtistCompletenessUpdated={loadMusicCompletenessData}
                   onFixArtistMatch={(id, n) => setMatchFixModal({ isOpen: true, type: 'artist', title: n, artistId: id })}
@@ -731,16 +731,10 @@ export function MediaBrowser({
         hasTV={(stats?.totalShows ?? 0) > 0}
         hasMovies={(stats?.totalMovies ?? 0) > 0}
         hasMusic={musicArtists.length > 0}
-        onAnalyzeSeries={handleAnalyzeSeries}
-        onAnalyzeCollections={handleAnalyzeCollections}
-        onAnalyzeMusic={handleAnalyzeMusic}
         onAnalyzeAll={() => handleAnalyzeAll((stats?.totalShows ?? 0) > 0, (stats?.totalMovies ?? 0) > 0, musicArtists.length > 0)}
-        onCancel={handleCancelAnalysis}
         isAnalyzing={isAnalyzing}
         analysisProgress={analysisProgress}
         analysisType={analysisType}
-        onDataRefresh={loadCompletenessData}
-        libraries={activeSourceLibraries}
       />
       <WishlistPanel isOpen={showWishlistPanel} onClose={() => setShowWishlistPanel(false)} />
 

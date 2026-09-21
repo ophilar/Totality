@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import React from 'react'
 import { ShowCard } from '@/components/library/tv/ShowCard'
 import type { TVShowSummary } from '@/components/library/types'
@@ -105,15 +105,15 @@ describe('ShowCard', () => {
     )
 
     const menuButton = screen.getByRole('button')
-    fireEvent.click(menuButton)
+    await act(async () => { fireEvent.click(menuButton) })
 
     const analyzeOption = screen.getByText('Analyze Series')
     expect(analyzeOption).toBeDefined()
-    await fireEvent.click(analyzeOption)
+    await act(async () => { fireEvent.click(analyzeOption) })
     expect(onAnalyzeSeries).toHaveBeenCalledTimes(1)
   })
 
-  it('triggers onTranscodeShow from menu action without calling onAnalyzeSeries', () => {
+  it('triggers onTranscodeShow from menu action without calling onAnalyzeSeries', async () => {
     const onAnalyzeSeries = vi.fn()
     const onTranscodeShow = vi.fn()
 
@@ -127,11 +127,11 @@ describe('ShowCard', () => {
     )
 
     const menuButton = screen.getByRole('button')
-    fireEvent.click(menuButton)
+    await act(async () => { fireEvent.click(menuButton) })
 
     const optimizeOption = screen.getByText('Optimize Series')
     expect(optimizeOption).toBeDefined()
-    fireEvent.click(optimizeOption)
+    await act(async () => { fireEvent.click(optimizeOption) })
     expect(onTranscodeShow).toHaveBeenCalledTimes(1)
     expect(onAnalyzeSeries).not.toHaveBeenCalled()
   })

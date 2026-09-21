@@ -1,20 +1,19 @@
 import { useState, memo, useRef } from 'react'
-import { RefreshCw, Pencil, HardDrive, Link2Off, Zap } from 'lucide-react'
+import { RefreshCw, Pencil, Link2Off, Zap } from 'lucide-react'
 import { TvPlaceholder } from '@/components/ui/MediaPlaceholders'
 import { ActionMenu, MenuItem } from '@/components/ui/ActionMenu'
 import { providerColors } from '@/components/library/mediaUtils'
 import type { TVShowSummary, SeriesCompletenessData, ProviderType } from '@/components/library/types'
 import { MediaMetricsRow } from '@/components/library/MediaMetricsRow'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
 
-export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizationDryRun, onRequestOptimization, onTranscodeShow, isLibraryAnalyzing }: {
+export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onTranscodeShow, isLibraryAnalyzing }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => void
   onFixMatch?: (sourceId: string, folderPath?: string) => void
-  onOptimizationDryRun?: () => void
-  onRequestOptimization?: () => void
   onTranscodeShow?: () => void
   isLibraryAnalyzing?: boolean
 }) => {
@@ -51,28 +50,6 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
       icon: Pencil,
       onClick: () => {
         onFixMatch(sourceId, folderPath)
-      }
-    })
-  }
-
-  if (onOptimizationDryRun) {
-    menuItems.push({
-      id: 'dry-run-optimization',
-      label: 'Dry-run optimization',
-      icon: HardDrive,
-      onClick: () => {
-        onOptimizationDryRun()
-      }
-    })
-  }
-
-  if (onRequestOptimization) {
-    menuItems.push({
-      id: 'request-optimization',
-      label: 'Request optimization',
-      icon: HardDrive,
-      onClick: () => {
-        onRequestOptimization()
       }
     })
   }
@@ -148,6 +125,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
           <p className="text-xs text-muted-foreground mt-0.5">
             {show.owned_regular_seasons == null ? `${show.season_count} ${show.season_count === 1 ? 'Season' : 'Seasons'} • ${show.episode_count} ${show.episode_count === 1 ? 'Episode' : 'Episodes'}` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           </p>
+          <ScopedOptimizationSummary totalCount={show.episode_count} analyzedCount={show.scored_episode_count} className="mt-1" />
           {/* storageDebtBytes is the same canonical Total Debt value used by the TV list sort. */}
           <MediaMetricsRow
             fileSize={show.total_size}

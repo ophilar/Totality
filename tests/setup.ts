@@ -189,7 +189,7 @@ const mockElectronAPI = {
   optimizationGetDecision: vi.fn().mockResolvedValue(null),
   optimizationRequestLocalRemux: vi.fn().mockResolvedValue(undefined),
   listPlaybackTargetProfiles: vi.fn().mockResolvedValue([]),
-  analyzePlaybackCompatibility: vi.fn().mockResolvedValue(null),
+  evaluatePlaybackCompatibility: vi.fn().mockResolvedValue(null),
   createPlaybackTargetProfile: vi.fn(),
   updatePlaybackTargetProfile: vi.fn(),
   deletePlaybackTargetProfile: vi.fn(),

@@ -9,14 +9,6 @@ import { DuplicatesView } from '@/components/library/DuplicatesView'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { SourceProvider } from '@/contexts/SourceContext'
-import { registerDatabaseHandlers } from '@main/ipc/database'
-import { registerSourceHandlers } from '@main/ipc/sources'
-import { registerTranscodingHandlers } from '@main/ipc/transcoding'
-import { registerSeriesHandlers } from '@main/ipc/series'
-import { registerDuplicateHandlers } from '@main/ipc/duplicates'
-import { registerMusicHandlers } from '@main/ipc/music'
-import { registerWishlistHandlers } from '@main/ipc/wishlist'
-import { registerGeminiHandlers } from '@main/ipc/gemini'
 import { sql } from 'drizzle-orm'
 import React from 'react'
 type TestDb = Awaited<ReturnType<typeof setupTestDb>>
@@ -36,21 +28,13 @@ describe('Renderer UI Deep Dive (Integrated Stack)', () => {
     Object.assign(globalThis, { electronAPI: bridge.api })
     Object.assign(bridge.api, {
       listPlaybackTargetProfiles: vi.fn().mockResolvedValue([]),
-      analyzePlaybackCompatibility: vi.fn().mockResolvedValue(null),
+      evaluatePlaybackCompatibility: vi.fn().mockResolvedValue(null),
       sourcesList: vi.fn().mockResolvedValue([]),
       sourcesGetStats: vi.fn().mockResolvedValue({ totalSources: 0, enabledSources: 0, totalItems: 0, bySource: [] }),
       sourcesGetSupportedProviders: vi.fn().mockResolvedValue(['plex']),
       sourcesTestConnection: vi.fn().mockResolvedValue({ success: true }),
     })
 
-    registerDatabaseHandlers()
-    registerSourceHandlers()
-    registerTranscodingHandlers()
-    registerSeriesHandlers()
-    registerDuplicateHandlers()
-    registerMusicHandlers()
-    registerWishlistHandlers()
-    registerGeminiHandlers()
   })
 
   afterEach(async () => {

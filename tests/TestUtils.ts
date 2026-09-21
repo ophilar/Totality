@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 import { _BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase } from '@main/database/BetterSQLiteService'
+import { resetSourceManagerForTesting } from '@main/services/SourceManager'
+import { resetLiveMonitoringServiceForTesting } from '@main/services/LiveMonitoringService'
 import * as _dbFuncs from '@main/database/BetterSQLiteService'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -20,6 +22,8 @@ export async function setupTestDb() {
   const dbPath = path.join(dbDir, `test-${dbId}.db`)
   
   // Reset the singleton
+  resetSourceManagerForTesting()
+  resetLiveMonitoringServiceForTesting()
   resetBetterSQLiteServiceForTesting()
   
   const dbService = getDatabase()
@@ -33,6 +37,8 @@ export async function setupTestDb() {
  * Cleanup test database
  */
 export function cleanupTestDb() {
+  resetSourceManagerForTesting()
+  resetLiveMonitoringServiceForTesting()
   resetBetterSQLiteServiceForTesting()
 }
 
@@ -46,6 +52,7 @@ export function createAuthorizedIpcEvent(): IpcMainInvokeEvent {
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { registerSeriesHandlers } from '@main/ipc/series'
 import { registerDatabaseHandlers } from '@main/ipc/database'
+import { registerMediaHandlers } from '@main/ipc/media'
 import { registerMusicHandlers } from '@main/ipc/music'
 import { registerSourceHandlers } from '@main/ipc/sources'
 import { registerCollectionHandlers } from '@main/ipc/collections'
@@ -78,6 +85,7 @@ const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
   // Register real handlers (The DB must be initialized before this)
   registerSeriesHandlers()
   registerDatabaseHandlers()
+  registerMediaHandlers()
   registerMusicHandlers()
   registerSourceHandlers()
   registerCollectionHandlers()
@@ -113,8 +121,10 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     countMediaItems: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, f),
     mediaList: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, f),
     mediaCount: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, f),
+    getMediaOptimizationSummary: (f?: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_OPTIMIZATION_SUMMARY, f),
     getMediaItem: (id: number) => invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_ITEM, id),
     getMediaItemVersions: (id: number) => invoke(IPC_CHANNELS.DATABASE.MEDIA_GET_VERSIONS, id),
+    getMediaOptimizationAdvice: (id: number) => invoke(IPC_CHANNELS.MEDIA.GET_OPTIMIZATION_ADVICE, id),
     getTVShows: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_LIST, f),
     countTVShows: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.TVSHOWS_COUNT, f),
     getLibraryOverview: (sId: string) => invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_OVERVIEW, sId),
@@ -126,9 +136,12 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     getSetting: (k: string) => invoke(IPC_CHANNELS.DATABASE.GET_SETTING, k),
     setSetting: (k: string, v: string) => invoke(IPC_CHANNELS.DATABASE.SET_SETTING, k, v),
     getAllSettings: () => invoke(IPC_CHANNELS.DATABASE.GET_ALL_SETTINGS),
-    getExclusions: (t?: string, pK?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pK),
-    addExclusion: (t: string, rK?: string, pK?: string, mI?: number, rT?: string) => invoke(IPC_CHANNELS.DATABASE.ADD_EXCLUSION, t, rK, pK, mI, rT),
-    removeExclusion: (id: number) => invoke(IPC_CHANNELS.DATABASE.REMOVE_EXCLUSION, id),
+    dbGetPath: () => invoke(IPC_CHANNELS.DATABASE.GET_PATH),
+    dbExportCSV: (options: unknown) => invoke(IPC_CHANNELS.DATABASE.EXPORT_CSV, options),
+    dbOpenFolder: () => invoke(IPC_CHANNELS.DATABASE.OPEN_FOLDER),
+    getNfsMappings: () => invoke(IPC_CHANNELS.SETTINGS.GET_NFS_MAPPINGS),
+    setNfsMappings: (mappings: unknown) => invoke(IPC_CHANNELS.SETTINGS.SET_NFS_MAPPINGS, mappings),
+    testNfsMapping: (nfsPath: string, localPath: string) => invoke(IPC_CHANNELS.SETTINGS.TEST_NFS_MAPPING, nfsPath, localPath),
     isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE),
     setVerboseLogging: (e: boolean) => invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, e),
     getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l),
@@ -139,6 +152,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     optimizationGetRemuxJob: (mediaItemId: number) => invoke(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, mediaItemId),
     monitoringGetConfig: () => invoke(IPC_CHANNELS.MONITORING.GET_CONFIG),
     monitoringSetConfig: (c: unknown) => invoke(IPC_CHANNELS.MONITORING.SET_CONFIG, c),
+    getCapabilities: () => invoke('transcoding:getCapabilities'),
+    ffprobeIsAvailable: () => invoke('ffprobe:isAvailable'),
+    ffprobeGetVersion: () => invoke('ffprobe:getVersion'),
 
     // Exclusions
     addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
@@ -174,6 +190,8 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     musicTrackList: (f: unknown) => invoke('music:tracks:list', f),
     musicTrackCount: (f: unknown) => invoke('music:tracks:count', f),
     musicGetTracksByAlbum: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_TRACKS_BY_ALBUM, id),
+    musicGetArtist: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_ARTIST_BY_ID, id),
+    musicGetAlbum: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUM_BY_ID, id),
     musicGetAlbumCompleteness: (id: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUM_COMPLETENESS, id),
     musicGetAllArtistCompleteness: (sId: string) => invoke(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, sId),
     musicGetAlbumsNeedingUpgrade: (l: number) => invoke(IPC_CHANNELS.MUSIC.GET_ALBUMS_NEEDING_UPGRADE, l),
@@ -221,6 +239,8 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
 
     // AI
     aiIsConfigured: () => invoke(IPC_CHANNELS.AI.IS_CONFIGURED),
+    aiGetAvailableModels: () => invoke(IPC_CHANNELS.AI.GET_AVAILABLE_MODELS),
+    aiTestApiKey: (key: string) => invoke(IPC_CHANNELS.AI.TEST_API_KEY, key),
     aiGetRateLimitInfo: () => invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO),
     aiSendMessage: (p: unknown) => invoke(IPC_CHANNELS.AI.SEND_MESSAGE, p),
     aiQualityReport: (p: unknown) => invoke(IPC_CHANNELS.AI.QUALITY_REPORT, p),
@@ -231,7 +251,6 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     aiExplainQuality: (p: unknown) => invoke(IPC_CHANNELS.AI.EXPLAIN_QUALITY, p),
     
     // Exclusions
-    getExclusions: (type?: string, parentKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, type, parentKey),
 
     // Database Management
     dbReset: () => invoke(IPC_CHANNELS.DATABASE.RESET),
@@ -242,7 +261,6 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     dbOptimize: () => invoke(IPC_CHANNELS.DATABASE.OPTIMIZE),
     dbRematchItem: (id: number, t: unknown) => invoke(IPC_CHANNELS.DATABASE.REMATCH_ITEM, id, t),
     dbIgnoreDuplicate: (sId: string, eId: string, t: string) => invoke(IPC_CHANNELS.DATABASE.IGNORE_DUPLICATE, sId, eId, t),
-    getExclusions: (t?: string, pKey?: string) => invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, t, pKey),
 
     // Task Queue
     taskQueueGetState: () => invoke(IPC_CHANNELS.TASK_QUEUE.GET_STATE).then(r => r || api.__taskState),
@@ -279,9 +297,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     onAutoUpdateStateChanged: (_cb: (state: unknown) => void) => () => {},
 
     log: {
-      info: (s: string, m: unknown) => console.log(`[${s}] ${String(m)}`),
-      warn: (s: string, m: unknown) => console.warn(`[${s}] ${String(m)}`),
-      error: (s: string, m: unknown) => console.error(`[${s}] ${String(m)}`),
+      info: (s: string, ...messages: unknown[]) => console.log(`[${s}]`, ...messages),
+      warn: (s: string, ...messages: unknown[]) => console.warn(`[${s}]`, ...messages),
+      error: (s: string, ...messages: unknown[]) => console.error(`[${s}]`, ...messages),
     },
 
     // Event Listeners (mock all as non-firing to avoid crashes)

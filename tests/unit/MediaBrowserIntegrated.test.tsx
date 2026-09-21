@@ -10,15 +10,6 @@ import { WishlistProvider } from '@/contexts/WishlistContext'
 import { ToastProvider, useToast } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
-import { registerDatabaseHandlers } from '@main/ipc/database'
-import { registerSourceHandlers } from '@main/ipc/sources'
-import { registerTaskQueueHandlers } from '@main/ipc/taskQueue'
-import { registerWishlistHandlers } from '@main/ipc/wishlist'
-import { registerCollectionHandlers } from '@main/ipc/collections'
-import { registerSeriesHandlers } from '@main/ipc/series'
-import { registerMusicHandlers } from '@main/ipc/music'
-import { registerLoggingHandlers } from '@main/ipc/logging'
-import { registerMonitoringHandlers } from '@main/ipc/monitoring'
 import React from 'react'
 type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
@@ -42,15 +33,6 @@ describe('MediaBrowser (Integrated Stack)', () => {
     Object.assign(window, { electronAPI: bridge.api })
     Object.assign(globalThis, { electronAPI: bridge.api })
 
-    registerDatabaseHandlers()
-    registerSourceHandlers()
-    registerTaskQueueHandlers()
-    registerWishlistHandlers()
-    registerCollectionHandlers()
-    registerSeriesHandlers()
-    registerMusicHandlers()
-    registerLoggingHandlers()
-    registerMonitoringHandlers()
   })
 
   afterEach(async () => {

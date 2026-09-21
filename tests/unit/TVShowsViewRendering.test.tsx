@@ -47,27 +47,8 @@ vi.mock('react-virtuoso', () => ({
 
 describe('TVShowsView Rendering (Mocked Bridge)', () => {
   let mockConfig: Record<string, string | undefined> = {}
-  let optimizationDryRun: ReturnType<typeof vi.fn>
-
   beforeEach(async () => {
     mockConfig = {}
-    optimizationDryRun = vi.fn().mockResolvedValue({
-      totalBytes: 1_000_000_000,
-      recoverableBytes: 300_000_000,
-      audioPruningBytes: 100_000_000,
-      videoDebtBytes: 200_000_000,
-      totalRecoverableBytes: 300_000_000,
-      totalCombinedSavingsBytes: 300_000_000,
-      percentageSavings: 30,
-      coverage: 'partial',
-      totalEpisodes: 1,
-      scoredEpisodes: 1,
-      unscoredEpisodes: 0,
-      weightedEfficiency: 80,
-      trackDecisions: [],
-      primaryAction: 'remove-audio-tracks',
-      action: 'stream-pruning'
-    })
 
     Object.assign(window, { electronAPI: {
       sourcesList: () => Promise.resolve([]),
@@ -76,7 +57,6 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
         mockConfig[key] = value
         return Promise.resolve(true)
       },
-      optimizationDryRun,
       log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
       onSourcesScanProgress: () => () => {},
       onSourcesScanCompleted: () => () => {},
@@ -191,7 +171,7 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
     expect(onSelectShow).toHaveBeenCalledWith(second)
   })
 
-  it('uses identity-scoped dry run data and displays one canonical total debt and percentage', async () => {
+  it('displays the persisted show optimization summary without legacy duplicate actions', async () => {
     const show = {
       series_title: 'Shared Title',
       series_identity_key: 'tmdb:202',
@@ -212,12 +192,8 @@ describe('TVShowsView Rendering (Mocked Bridge)', () => {
     const menuButton = container.querySelector('button.w-7.h-7')
     expect(menuButton).toBeTruthy()
     fireEvent.click(menuButton!)
-    fireEvent.click(screen.getByRole('button', { name: 'Dry-run optimization' }))
-
-    await vi.waitFor(() => {
-      expect(optimizationDryRun).toHaveBeenCalledWith('Shared Title', 's1', 'tmdb:202', 'tv')
-      expect(screen.getByText(/286 MB \(30\.0%\)/)).toBeTruthy()
-      expect(screen.getByText('Recovery evidence: partial')).toBeTruthy()
-    })
+    expect(screen.getByText('0/1 analyzed')).toBeTruthy()
+    expect(screen.getByText('1 not analyzed')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Dry-run optimization' })).toBeNull()
   })
 })

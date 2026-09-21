@@ -146,8 +146,14 @@ export function useAnalysisManager({
     async (show: TVShowSummary) => {
       try {
         window.electronAPI.log.info('[useAnalysisManager]', `Analyzing series: ${show.series_title}`)
-        if (!show.id) throw new Error('Show has no persisted identity')
-        await window.electronAPI.mediaAnalyze({ kind: 'show', showId: String(show.id) })
+        if (!show.source_id || !show.library_id || !show.series_identity_key) throw new Error('Show has no complete persisted identity')
+        await window.electronAPI.mediaAnalyze({
+          kind: 'show',
+          sourceId: show.source_id,
+          libraryId: show.library_id,
+          seriesIdentityKey: show.series_identity_key,
+          title: show.series_title,
+        })
         await loadCompletenessData()
       } catch (err) {
         window.electronAPI.log.error('[useAnalysisManager]', 'Single series analysis failed:', err)

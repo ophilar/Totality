@@ -4,7 +4,7 @@
   "isBuiltin": true,
   "definition": {
     "containers": ["matroska", "mp4", "mpegts"],
-    "video": { "codecs": ["h264", "hevc"], "profiles": ["Main", "High", "Main 10"], "levels": [41, 51, 52], "maxWidth": 3840, "maxHeight": 2160, "maxFrameRate": 60, "bitDepths": [8, 10] },
+    "video": { "codecs": ["h264", "hevc"], "profiles": ["Main", "High", "Main 10"], "levels": [41, 51, 52], "maxWidth": 3840, "maxHeight": 2160, "maxFrameRate": 60, "bitDepths": [8, 10], "containerRules": [{ "containers": ["mp4"], "profiles": ["dvhe.05", "dvh1.05"], "hdrFormats": ["Dolby Vision"] }] },
     "hdr": { "formats": ["HDR10", "HLG"], "fallbackRequired": true },
     "audio": { "codecs": ["aac", "ac3", "eac3"], "maxChannels": 8, "objectAudio": false, "outputPath": "device" },
     "subtitles": { "formats": ["srt", "ass", "ssa", "webvtt", "mov_text"], "embedded": true, "external": true, "burnIn": false },

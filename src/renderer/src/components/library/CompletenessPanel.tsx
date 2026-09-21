@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, Loader2 } from 'lucide-react'
-
-type CompletenessTaskType = 'series-completeness' | 'collection-completeness' | 'music-completeness'
+import { X, RefreshCw, Tv, Film, Music, Settings } from 'lucide-react'
 
 interface SeriesStats {
   totalSeries: number
@@ -41,7 +39,6 @@ interface AnalysisProgress {
 }
 
 import { usePanel } from '@/contexts/PanelContext'
-import type { QueuedTask, TaskQueueState } from '@main/types/database'
 
 interface CompletenessPanelProps {
   isOpen?: boolean
@@ -49,20 +46,14 @@ interface CompletenessPanelProps {
   seriesStats?: SeriesStats | null
   collectionStats?: CollectionStats | null
   musicStats?: MusicStats | null
-  onAnalyzeSeries: (libraryId?: string) => Promise<void>
-  onAnalyzeCollections: (libraryId?: string) => Promise<void>
-  onAnalyzeMusic: () => Promise<void>
   onAnalyzeAll?: () => Promise<void>
-  onCancel: (type: 'series' | 'collections' | 'music') => Promise<void>
   isAnalyzing: boolean
   analysisProgress: AnalysisProgress | null
   analysisType: 'series' | 'collections' | 'music' | null
-  onDataRefresh: () => void
   hasTV: boolean
   hasMovies: boolean
   hasMusic: boolean
   onOpenSettings?: (initialTab?: string) => void
-  libraries: Array<{ id: string; name: string; type: string }>
 }
 
 export function CompletenessPanel({
@@ -71,20 +62,14 @@ export function CompletenessPanel({
   seriesStats: initialSeriesStats,
   collectionStats: initialCollectionStats,
   musicStats: initialMusicStats,
-  onAnalyzeSeries,
-  onAnalyzeCollections,
-  onAnalyzeMusic,
   onAnalyzeAll,
-  onCancel,
   isAnalyzing,
   analysisProgress,
   analysisType,
-  onDataRefresh,
   hasTV,
   hasMovies,
   hasMusic,
   onOpenSettings,
-  libraries = []
 }: CompletenessPanelProps) {
   const { showCompletenessPanel, setShowCompletenessPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showCompletenessPanel
@@ -93,9 +78,6 @@ export function CompletenessPanel({
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(initialCollectionStats || null)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(initialMusicStats || null)
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
-  const [queueState, setQueueState] = useState<TaskQueueState | null>(null)
-  const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
-  const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
 
   const loadCompletenessData = useCallback(async () => {
     if (initialSeriesStats !== undefined && initialCollectionStats !== undefined) {
@@ -154,49 +136,9 @@ export function CompletenessPanel({
     return () => cleanupSettingsChanged?.()
   }, [isOpen, loadMusicCompletenessData])
 
-  const movieLibraries = libraries.filter(l => l.type === 'movie')
-  const showLibraries = libraries.filter(l => l.type === 'show')
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
-  const seriesButtonRef = useRef<HTMLButtonElement>(null)
-  const collectionsButtonRef = useRef<HTMLButtonElement>(null)
-  const musicButtonRef = useRef<HTMLButtonElement>(null)
-  // Helper to check if a task type is queued or running
-  const getTaskStatus = useCallback((taskType: CompletenessTaskType): 'queued' | 'running' | null => {
-    if (!queueState) return null
-
-    // Check if currently running
-    if (queueState.currentTask?.type === taskType && queueState.currentTask.status === 'running') {
-      return 'running'
-    }
-
-    const isQueued = queueState.queue?.some((task: QueuedTask) => task.type === taskType)
-    if (isQueued) return 'queued'
-
-    return null
-  }, [queueState])
-
-  // Load queue state and subscribe to updates
-  useEffect(() => {
-    const loadQueueState = async () => {
-      try {
-        const state = await window.electronAPI.taskQueueGetState()
-        setQueueState(state)
-      } catch (err) {
-        window.electronAPI.log.error('[CompletenessPanel]', 'Failed to load queue state:', err)
-      }
-    }
-
-    loadQueueState()
-
-    // Subscribe to queue updates
-    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: TaskQueueState) => {
-      setQueueState(state)
-    })
-
-    return () => cleanup?.()
-  }, [])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -227,21 +169,6 @@ export function CompletenessPanel({
       }, 100)
     }
   }, [isOpen])
-
-  const handleAnalyzeSeries = async () => {
-    await onAnalyzeSeries(selectedShowLibraryId || undefined)
-    onDataRefresh()
-  }
-
-  const handleAnalyzeCollections = async () => {
-    await onAnalyzeCollections(selectedMovieLibraryId || undefined)
-    onDataRefresh()
-  }
-
-  const handleAnalyzeMusic = async () => {
-    await onAnalyzeMusic()
-    onDataRefresh()
-  }
 
   // Get phase-specific label and description for each analysis type
   const getAnalysisInfo = () => {
@@ -457,69 +384,6 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
               <p className="text-sm text-muted-foreground">No series data yet</p>
             )}
 
-            {showLibraries.length >= 2 && (
-              <select
-                value={selectedShowLibraryId}
-                onChange={(e) => setSelectedShowLibraryId(e.target.value)}
-                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
-              >
-                <option value="">All Libraries</option>
-                {showLibraries.map(lib => (
-                  <option key={lib.id} value={lib.id}>{lib.name}</option>
-                ))}
-              </select>
-            )}
-
-            {(() => {
-              const taskStatus = getTaskStatus('series-completeness')
-              if (isAnalyzing && analysisType === 'series') {
-                return (
-                  <button
-                    ref={seriesButtonRef}
-                    onClick={() => onCancel('series')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
-                  >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
-                )
-              }
-              if (taskStatus === 'running') {
-                return (
-                  <button
-                    ref={seriesButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Analyzing...
-                  </button>
-                )
-              }
-              if (taskStatus === 'queued') {
-                return (
-                  <button
-                    ref={seriesButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
-                    Queued
-                  </button>
-                )
-              }
-              return (
-                <button
-                  ref={seriesButtonRef}
-                  onClick={handleAnalyzeSeries}
-                  disabled={!isKeyConfigured}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Series
-                </button>
-              )
-            })()}
           </div>
         )}
 
@@ -554,69 +418,6 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
               <p className="text-sm text-muted-foreground">No collection data yet</p>
             )}
 
-            {movieLibraries.length >= 2 && (
-              <select
-                value={selectedMovieLibraryId}
-                onChange={(e) => setSelectedMovieLibraryId(e.target.value)}
-                className="w-full px-2.5 py-1 bg-card border border-border rounded-md text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
-              >
-                <option value="">All Libraries</option>
-                {movieLibraries.map(lib => (
-                  <option key={lib.id} value={lib.id}>{lib.name}</option>
-                ))}
-              </select>
-            )}
-
-            {(() => {
-              const taskStatus = getTaskStatus('collection-completeness')
-              if (isAnalyzing && analysisType === 'collections') {
-                return (
-                  <button
-                    ref={collectionsButtonRef}
-                    onClick={() => onCancel('collections')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
-                  >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
-                )
-              }
-              if (taskStatus === 'running') {
-                return (
-                  <button
-                    ref={collectionsButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Analyzing...
-                  </button>
-                )
-              }
-              if (taskStatus === 'queued') {
-                return (
-                  <button
-                    ref={collectionsButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
-                    Queued
-                  </button>
-                )
-              }
-              return (
-                <button
-                  ref={collectionsButtonRef}
-                  onClick={handleAnalyzeCollections}
-                  disabled={!isKeyConfigured}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm focus:outline-hidden`}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Collections
-                </button>
-              )
-            })()}
           </div>
         )}
 
@@ -651,56 +452,6 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
               <p className="text-sm text-muted-foreground">No music data yet</p>
             )}
 
-            {(() => {
-              const taskStatus = getTaskStatus('music-completeness')
-              if (isAnalyzing && analysisType === 'music') {
-                return (
-                  <button
-                    ref={musicButtonRef}
-                    onClick={() => onCancel('music')}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 text-sm focus:outline-hidden`}
-                  >
-                    <Square className="w-4 h-4" />
-                    Stop Analysis
-                  </button>
-                )
-              }
-              if (taskStatus === 'running') {
-                return (
-                  <button
-                    ref={musicButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary/70 text-primary-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Analyzing...
-                  </button>
-                )
-              }
-              if (taskStatus === 'queued') {
-                return (
-                  <button
-                    ref={musicButtonRef}
-                    disabled
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md text-sm cursor-not-allowed"
-                  >
-                    <Clock className="w-4 h-4" />
-                    Queued
-                  </button>
-                )
-              }
-              return (
-                <button
-                  ref={musicButtonRef}
-                  onClick={handleAnalyzeMusic}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden`}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Analyze Music
-                </button>
-              )
-            })()}
-
             <p className="text-xs text-muted-foreground">
               Analyzes artist discographies and album track completeness using the public MusicBrainz API.
               May take time due to rate limits.
@@ -723,7 +474,7 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh All Analysis
+            Analyze all libraries
           </button>
         )}
       </div>

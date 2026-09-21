@@ -5,8 +5,6 @@ import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge } from '@tests/TestUtils'
-import { registerDatabaseHandlers } from '@main/ipc/database'
-import { registerSourceHandlers } from '@main/ipc/sources'
 import { ToastProvider } from '@/contexts/ToastContext'
 import { LibraryProvider } from '@/contexts/LibraryContext'
 import { SourceProvider } from '@/contexts/SourceContext'
@@ -29,8 +27,6 @@ describe('Settings Rendering (Integrated Stack)', () => {
     Object.assign(window, { electronAPI: bridge.api })
     Object.assign(globalThis, { electronAPI: bridge.api })
 
-    registerDatabaseHandlers()
-    registerSourceHandlers()
   })
 
   afterEach(async () => {

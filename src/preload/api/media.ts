@@ -149,7 +149,7 @@ export const mediaApi: MediaAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_EXCLUSIONS, exclusionType, parentKey),
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEDIA.DEEP_ANALYZE, options),
-  mediaAnalyze: (scope: import('@/components/library/analysisScope').AnalysisScope) =>
+  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEDIA.ANALYZE, scope),
   getMediaOptimizationAdvice: (mediaId: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEDIA.GET_OPTIMIZATION_ADVICE, mediaId),
@@ -390,7 +390,7 @@ export interface MediaAPI {
 
   // Deep Analysis
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) => Promise<MediaDeepAnalysisResult>
-  mediaAnalyze: (scope: import('@/components/library/analysisScope').AnalysisScope) => Promise<import('@/components/library/analysisScope').AnalysisResult & { analysis?: unknown }>
+  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) => Promise<import('@shared/analysisScope').AnalysisResult & { analysis?: unknown }>
   getMediaOptimizationAdvice: (mediaId: number) => Promise<{ action: string; decisionStatus: string }>
   mediaCancelDeepAnalyze: (requestId: string) => Promise<{ success: boolean }>
   mediaCompareProvider: (mediaItemId: number) => Promise<{ providerType: string; differences: Array<{ field: string; local: unknown; provider: unknown }> }>

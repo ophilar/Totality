@@ -7,6 +7,7 @@ import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyz
 import * as childProcess from 'child_process'
 import * as fsPromises from 'fs/promises'
 import * as path from 'path'
+import baselineProfile from '../../../src/main/config/playbackTargetProfiles/plex-webos-4-lg-b8.json'
 
 vi.mock('fs/promises', () => ({
   stat: vi.fn().mockResolvedValue({ size: 4000, mtimeMs: 12345678 }),
@@ -30,6 +31,9 @@ const mockDbInstance = {
     getSettingsByPrefix: vi.fn().mockResolvedValue({}),
     setSetting: vi.fn().mockResolvedValue(undefined),
     deleteSetting: vi.fn().mockResolvedValue(undefined)
+  },
+  playbackTargetProfiles: {
+    get: vi.fn().mockResolvedValue(baselineProfile)
   },
   tvShows: {
     getEpisodes: vi.fn().mockResolvedValue([])
@@ -381,7 +385,16 @@ describe('TranscodingService', () => {
             { index: 2, codec: 'eac3', channels: 6, bitrate: 640, language: 'de', title: 'German' },
             { index: 3, codec: 'eac3', channels: 6, bitrate: 640, language: 'fr', title: 'French' },
             { index: 4, codec: 'eac3', channels: 6, bitrate: 640, language: 'es', title: 'Spanish' }
-          ])
+          ]),
+          deep_analysis: JSON.stringify({
+            success: true,
+            filePath: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+            container: 'matroska',
+            overallBitrate: 6000000,
+            video: { index: 0, codec: 'h264', profile: 'High', level: 51, width: 1920, height: 1080, frameRate: 24, bitDepth: 8, hdrFormat: 'SDR' },
+            audioTracks: [{ index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', hasObjectAudio: false }],
+            subtitleTracks: []
+          })
         } as unknown as Parameters<typeof mockDbInstance.media.upsertItem>[0]
       ])
 
@@ -401,7 +414,7 @@ describe('TranscodingService', () => {
         seriesIdentityKey: 'tmdb:85552',
         sourceId: 'src1',
         libraryId: 'tv',
-        options: { optimizationMode: 'smart' }
+        options: { optimizationMode: 'smart', targetProfileId: 'builtin:plex-webos-4-lg-b8' }
       })
 
       expect(preflight.compatible).toBe(true)

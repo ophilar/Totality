@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Disc3, RefreshCw, Copy, Check, CircleFadingArrowUp, MoreVertical, X, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MusicArtist, MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '@/components/library/types'
+import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
 
 export function MusicAlbumDetails({
   selectedAlbum,
@@ -163,6 +164,12 @@ export function MusicAlbumDetails({
     return (a.track_number || 999) - (b.track_number || 999)
   })
 
+  const albumOptimizationSummary = {
+    totalCount: tracks.length,
+    analyzedCount: tracks.filter(track => track.efficiency_score != null).length,
+    recoverableBytes: tracks.reduce((total, track) => total + (track.storage_debt_bytes ?? 0), 0),
+  }
+
   return (
     <div className="space-y-6">
       <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
@@ -195,6 +202,12 @@ export function MusicAlbumDetails({
           </div>
           <p className="text-lg text-muted-foreground">{selectedAlbum.artist_name}</p>
           {selectedAlbum.year && <p className="text-sm text-muted-foreground mt-1">{selectedAlbum.year}</p>}
+          <ScopedOptimizationSummary
+            totalCount={albumOptimizationSummary.totalCount}
+            analyzedCount={albumOptimizationSummary.analyzedCount}
+            recoverableBytes={albumOptimizationSummary.recoverableBytes}
+            className="mt-2"
+          />
           <div className="flex flex-wrap gap-2 mt-3">
             {(() => {
               if (selectedAlbum.quality_tier) {

@@ -439,7 +439,13 @@ describe('useAnalysisManager', () => {
         '[useAnalysisManager]',
         'Analyzing series: Breaking Bad'
       )
-      expect(mockMediaAnalyze).toHaveBeenCalledWith({ kind: 'show', showId: '1396' })
+      expect(mockMediaAnalyze).toHaveBeenCalledWith({
+        kind: 'show',
+        sourceId: 'src-1',
+        libraryId: 'lib-1',
+        seriesIdentityKey: 'tmdb:1396',
+        title: 'Breaking Bad',
+      })
       expect(mockLoadCompletenessData).toHaveBeenCalledTimes(1)
     })
 
@@ -527,10 +533,10 @@ describe('useAnalysisManager', () => {
 
     const scopes = [
       { kind: 'all-libraries' as const },
-      { kind: 'library' as const, libraryId: 'lib-1' },
-      { kind: 'collection' as const, collectionId: '12' },
-      { kind: 'show' as const, showId: '13' },
-      { kind: 'album' as const, albumId: '14' },
+      { kind: 'library' as const, sourceId: 'src-1', libraryId: 'lib-1' },
+      { kind: 'collection' as const, collectionId: 12 },
+      { kind: 'show' as const, sourceId: 'src-1', libraryId: 'lib-1', seriesIdentityKey: 'tmdb:13', title: 'Show' },
+      { kind: 'album' as const, albumId: 14 },
       { kind: 'item' as const, mediaId: 15 },
     ]
     for (const scope of scopes) {

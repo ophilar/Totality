@@ -23,6 +23,7 @@ import { StreamRemuxCommandBuilder } from './transcoding/StreamRemuxCommandBuild
 import { buildCandidateLadder, selectMeasuredCandidate, type OptimizationQualityProfile } from './MeasuredOptimizationPolicy'
 import { MeasuredOptimizationService } from './MeasuredOptimizationService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
+import { evaluatePlaybackTarget, type PlaybackTargetEvaluation } from '@main/types/playbackTarget'
 
 export class TranscodeError extends Error {
   constructor(message: string, public readonly exitCode?: number, public readonly stderr?: string) {
@@ -49,6 +50,7 @@ export interface TranscodeOptions {
   optimizationMode?: 'smart' | 'remux_only' | 'transcode'
   qualityProfile?: 'transparent' | 'balanced' | 'maximum_savings'
   encoderPolicy?: 'hardware' | 'software' | 'compare'
+  targetProfileId?: string
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -132,6 +134,7 @@ export interface ShowTranscodePreflight {
     savingsBasis?: string
     sourceTier?: MediaSourceTier
     adviceReason?: string
+    targetCompatibility?: PlaybackTargetEvaluation
     measuredParameters?: Pick<TranscodingParams, 'encoder' | 'crf' | 'preset'>
   }>
 }
@@ -188,6 +191,10 @@ export class TranscodingService {
     if (!request.seriesTitle.trim() || !request.sourceId.trim()) throw new Error('Show title and source ID are required')
     if (!request.seriesIdentityKey?.trim()) throw new Error('TV series identity is required')
     if (!request.libraryId?.trim()) throw new Error('TV series library is required')
+    const profileId = request.options.targetProfileId || await getDatabase().config.getSetting('optimization_default_target_profile_id')
+    if (!profileId) throw new Error('A default playback profile is required before show optimization can run')
+    const targetProfile = await getDatabase().playbackTargetProfiles.get(profileId)
+    if (!targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
     const episodes = await getDatabase().tvShows.getEpisodes(request.seriesTitle, request.sourceId, request.seriesIdentityKey, request.libraryId)
     if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -206,11 +213,14 @@ export class TranscodingService {
         }
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        const analyzer = getMediaFileAnalyzer()
-        const analysis = await analyzer.analyzeFile(episode.file_path)
-        if (!analysis.success || !analysis.video) {
-          throw new Error(`Fresh media analysis failed for "${label}": ${analysis.error || 'Unknown analysis error'}`)
+        if (!episode.deep_analysis) {
+          throw new Error(`Episode "${label}" has no persisted analysis; analyze the show before optimizing it`)
         }
+        const analysis = JSON.parse(episode.deep_analysis) as FileAnalysisResult
+        if (!analysis.success || analysis.filePath !== episode.file_path || !analysis.video) {
+          throw new Error(`Persisted media analysis is invalid for "${label}"`)
+        }
+        const targetCompatibility = evaluatePlaybackTarget(targetProfile, analysis)
         this.analysisCache.set(episode.file_path, analysis)
         buildStreamSelectionPlan(analysis, request.options)
         const measuredParameters = request.options.optimizationMode === 'transcode' && request.options.qualityProfile && request.options.encoderPolicy
@@ -232,6 +242,7 @@ export class TranscodingService {
           savingsBasis: advice.savings_basis,
           sourceTier: advice.sourceTier,
           adviceReason: advice.reason,
+          targetCompatibility,
           measuredParameters
         }
       } catch (error) {
