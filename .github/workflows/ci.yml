@@ -11,6 +11,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 jobs:
   test-and-build:
@@ -33,5 +34,10 @@ jobs:
       - name: Run tests
         run: npm run test:run
 
-      - name: Build
+      - name: Verify renderer build
+        if: github.event_name == 'pull_request'
+        run: npx vite build
+
+      - name: Build desktop package
+        if: github.event_name != 'pull_request'
         run: npm run build -- --publish never
