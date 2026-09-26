@@ -644,7 +644,11 @@ export class LocalFolderProvider extends BaseMediaProvider {
         }
 
         if (tracksToUpsert.length > 0) {
-          await db.music.bulkUpsertTracks(tracksToUpsert)
+          try {
+            await db.music.bulkUpsertTracks(tracksToUpsert)
+          } catch (bulkError: unknown) {
+            result.errors.push(`Failed to bulk upsert tracks: ${getErrorMessage(bulkError)}`)
+          }
         }
       } finally {
         // No endBatch needed
