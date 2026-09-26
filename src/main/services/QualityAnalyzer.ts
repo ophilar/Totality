@@ -660,6 +660,11 @@ export class QualityAnalyzer {
 
     getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
+    const multiVersionItemIds = mediaItems
+      .filter((item) => item.id && item.version_count && item.version_count > 1)
+      .map((item) => item.id!)
+    const versionsByMediaId = await db.media.getItemVersionsByMediaItemIds(multiVersionItemIds)
+
     try {
       for (const item of mediaItems) {
         if (isCancelled?.()) {
@@ -692,7 +697,7 @@ export class QualityAnalyzer {
         qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
 
         if (item.id && item.version_count && item.version_count > 1) {
-          const versions = await db.media.getItemVersions(item.id)
+          const versions = versionsByMediaId.get(item.id) ?? []
           const updatePromises: Promise<void>[] = []
           for (const version of versions) {
             if (isCancelled?.()) {
