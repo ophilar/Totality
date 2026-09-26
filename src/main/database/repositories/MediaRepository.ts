@@ -1522,6 +1522,67 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return result[0]?.id || 0
   }
 
+  async upsertQualityScores(scores: QualityScore[]): Promise<void> {
+    if (scores.length === 0) return
+
+    const chunkSize = 500
+    for (let i = 0; i < scores.length; i += chunkSize) {
+      const chunk = scores.slice(i, i + chunkSize)
+
+      const values = chunk.map((score) => ({
+        mediaItemId: score.media_item_id,
+        qualityTier: score.quality_tier,
+        tierQuality: score.tier_quality,
+        tierScore: score.tier_score,
+        bitrateTierScore: score.bitrate_tier_score,
+        audioTierScore: score.audio_tier_score,
+        overallScore: score.overall_score,
+        resolutionScore: score.resolution_score,
+        bitrateScore: score.bitrate_score,
+        audioScore: score.audio_score,
+        efficiencyScore: score.efficiency_score,
+        storageDebtBytes: score.storage_debt_bytes,
+        estimatedSavingsBytes: score.estimated_savings_bytes,
+        evidenceStatus: score.evidence_status,
+        confidence: score.confidence,
+        savingsBasis: score.savings_basis,
+        isLowQuality: score.is_low_quality ? 1 : 0,
+        needsUpgrade: score.needs_upgrade ? 1 : 0,
+        issues: score.issues,
+        createdAt: sql`(datetime('now'))`,
+        updatedAt: sql`(datetime('now'))`,
+      }))
+
+      await this.drizzle
+        .insert(schema.qualityScores)
+        .values(values)
+        .onConflictDoUpdate({
+          target: schema.qualityScores.mediaItemId,
+          set: {
+            qualityTier: sql`excluded.quality_tier`,
+            tierQuality: sql`excluded.tier_quality`,
+            tierScore: sql`excluded.tier_score`,
+            bitrateTierScore: sql`COALESCE(excluded.bitrate_tier_score, 0)`,
+            audioTierScore: sql`COALESCE(excluded.audio_tier_score, 0)`,
+            overallScore: sql`excluded.overall_score`,
+            resolutionScore: sql`excluded.resolution_score`,
+            bitrateScore: sql`excluded.bitrate_score`,
+            audioScore: sql`excluded.audio_score`,
+            efficiencyScore: sql`excluded.efficiency_score`,
+            storageDebtBytes: sql`excluded.storage_debt_bytes`,
+            estimatedSavingsBytes: sql`excluded.estimated_savings_bytes`,
+            evidenceStatus: sql`excluded.evidence_status`,
+            confidence: sql`excluded.confidence`,
+            savingsBasis: sql`excluded.savings_basis`,
+            isLowQuality: sql`excluded.is_low_quality`,
+            needsUpgrade: sql`excluded.needs_upgrade`,
+            issues: sql`excluded.issues`,
+            updatedAt: sql`(datetime('now'))`,
+          },
+        })
+    }
+  }
+
   private mapDrizzleToQualityScores(rows: unknown[]): QualityScore[] {
     return rows.map((r) => toSnakeCaseQualityScore(r))
   }
