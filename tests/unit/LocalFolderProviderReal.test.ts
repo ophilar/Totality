@@ -305,8 +305,18 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
       { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
     ])
 
+    const bulkUpsertSpy = vi.spyOn(db.music, 'bulkUpsertTracks').mockRejectedValueOnce(new Error('database write failed'))
+    const failedResult = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
+    expect(failedResult.success).toBe(false)
+    expect(failedResult.itemsScanned).toBe(0)
+    expect(failedResult.itemsAdded).toBe(0)
+    expect(failedResult.itemsUpdated).toBe(0)
+    expect(failedResult.errors).toContain('database write failed')
+    bulkUpsertSpy.mockRestore()
+
     const result = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
     expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBe(2)
     expect(result.itemsAdded).toBe(2)
 
     const tracks = await db.music.getMusicTracks({ sourceId })

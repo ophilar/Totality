@@ -64,7 +64,7 @@ import {
   SourceConfig,
   AudioStreamInfo,
 } from '@main/providers/base/MediaProvider'
-import { LibraryType, ProviderType, MediaItemType, AlbumType, MusicTrack } from '@main/types/database'
+import { LibraryType, ProviderType, MediaItemType, AlbumType } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
 import type { MediaItem, MediaItemVersion, AudioTrack, MusicTrack } from '@main/types/database'
 import { extractVersionNames } from '@main/providers/utils/VersionNaming'
@@ -596,6 +596,8 @@ export class LocalFolderProvider extends BaseMediaProvider {
       const existingTracks = await db.music.getTracksByPaths(validFiles)
       const existingTracksMap = new Map(existingTracks.map(t => [t.file_path, t]))
       const tracksToUpsert: MusicTrack[] = []
+      let itemsAdded = 0
+      let itemsUpdated = 0
 
       try {
         for (let i = 0; i < validFiles.length; i++) {
@@ -639,16 +641,16 @@ export class LocalFolderProvider extends BaseMediaProvider {
             }
 
             tracksToUpsert.push({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: parsed.trackNumber, disc_number: parsed.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: stats.size, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-            result.itemsScanned++; if (isNew) result.itemsAdded++; else result.itemsUpdated++
+            if (isNew) itemsAdded++
+            else itemsUpdated++
           } catch (error: unknown) { result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`) }
         }
 
         if (tracksToUpsert.length > 0) {
-          try {
-            await db.music.bulkUpsertTracks(tracksToUpsert)
-          } catch (bulkError: unknown) {
-            result.errors.push(`Failed to bulk upsert tracks: ${getErrorMessage(bulkError)}`)
-          }
+          await db.music.bulkUpsertTracks(tracksToUpsert)
+          result.itemsScanned += tracksToUpsert.length
+          result.itemsAdded += itemsAdded
+          result.itemsUpdated += itemsUpdated
         }
       } finally {
         // No endBatch needed
