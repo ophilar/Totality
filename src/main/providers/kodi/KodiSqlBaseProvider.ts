@@ -1,5 +1,5 @@
 import { BaseMediaProvider, MediaMetadata, ScanResult, ScanOptions, AudioStreamInfo } from '@main/providers/base/MediaProvider'
-import type { MediaItem, MediaItemVersion } from '@main/types/database'
+import type { MediaItem, MediaItemVersion, MusicTrack } from '@main/types/database'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
@@ -292,7 +292,17 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
           }
         }
 
+        // Cache albums by provider_id to avoid N+1 DB calls during song processing
+        const dbAlbums = await db.music.getAlbums({ sourceId: this.sourceId })
+        const albumMap = new Map<string, { id?: number; artist_id?: number }>()
+        for (const album of dbAlbums) {
+          if (album.provider_id) {
+            albumMap.set(album.provider_id, album)
+          }
+        }
+
         // Sync Songs
+        const mappedSongs: MusicTrack[] = []
         for (const song of songs) {
           if (this.scanCancelled) break
           itemIndex++
@@ -305,7 +315,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
              let dbArtistId: number | undefined = undefined
 
              if (song.idAlbum) {
-                 const a = (await db.music.getAlbums({ sourceId: this.sourceId })).find(album => album.provider_id === String(song.idAlbum))
+                 const a = albumMap.get(String(song.idAlbum))
                  if (a) {
                      dbAlbumId = a.id
                      dbArtistId = a.artist_id
@@ -313,11 +323,15 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
              }
 
              const mappedSong = KodiMappingUtils.mapToMusicTrack(song, this.sourceId, this.providerType, dbAlbumId, dbArtistId)
-             await db.music.upsertTrack(mappedSong)
+             mappedSongs.push(mappedSong)
              result.itemsScanned++
           } catch (err: unknown) {
              result.errors.push(`Failed to process song ${song.strTitle}: ${getErrorMessage(err)}`)
           }
+        }
+
+        if (mappedSongs.length > 0) {
+          await db.music.bulkUpsertTracks(mappedSongs)
         }
 
       await db.sources.updateSourceScanTime(this.sourceId)
