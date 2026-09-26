@@ -108,6 +108,7 @@ export function toSnakeCaseQualityScore(r: unknown): QualityScore {
     audio_score: row.audioScore !== undefined ? row.audioScore as number | null : row.audio_score as number | null,
     efficiency_score: row.efficiencyScore !== undefined ? row.efficiencyScore as number | null : row.efficiency_score as number | null,
     storage_debt_bytes: row.storageDebtBytes !== undefined ? row.storageDebtBytes as number | null : row.storage_debt_bytes as number | null,
+    estimated_savings_bytes: row.estimatedSavingsBytes !== undefined ? row.estimatedSavingsBytes as number | null : row.estimated_savings_bytes as number | null,
     evidence_status: row.evidenceStatus !== undefined ? row.evidenceStatus as QualityScore['evidence_status'] : row.evidence_status as QualityScore['evidence_status'],
     confidence: row.confidence as QualityScore['confidence'],
     savings_basis: row.savingsBasis !== undefined ? row.savingsBasis as QualityScore['savings_basis'] : row.savings_basis as QualityScore['savings_basis'],

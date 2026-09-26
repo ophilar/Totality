@@ -662,12 +662,25 @@ export class QualityAnalyzer {
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
     const qualityCounts: Record<string, number> = {}
+    const qualityScoresBatch: QualityScore[] = []
+    let qualityScoreBatchWriteFailed = false
+    const flushQualityScores = async (): Promise<void> => {
+      if (qualityScoresBatch.length === 0) return
+      try {
+        await db.media.upsertQualityScores(qualityScoresBatch)
+        qualityScoresBatch.length = 0
+      } catch (error) {
+        qualityScoreBatchWriteFailed = true
+        throw error
+      }
+    }
 
     getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
 
     try {
       for (const item of mediaItems) {
         if (isCancelled?.()) {
+          await flushQualityScores()
           return analyzed
         }
         if (!item.file_path) throw new Error(`Media item ${item.id ?? item.title} has no local file path`)
@@ -687,9 +700,7 @@ export class QualityAnalyzer {
           subtitle_tracks: JSON.stringify(completeAnalysis.subtitleTracks),
         }
         const qualityScore = await this.analyzeMediaItem(analyzedItem)
-        await db.withBatch(async () => {
-          await db.media.upsertQualityScore(qualityScore)
-        })
+        qualityScoresBatch.push(qualityScore)
 
         const tier = qualityScore.quality_tier
         const quality = qualityScore.tier_quality
@@ -697,6 +708,7 @@ export class QualityAnalyzer {
         qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
 
         if (item.id && item.version_count && item.version_count > 1) {
+          await flushQualityScores()
           const versions = versionsByMediaId.get(item.id) ?? []
           const updatePromises: Promise<void>[] = []
           for (const version of versions) {
@@ -714,10 +726,25 @@ export class QualityAnalyzer {
           await db.media.updateBestVersion(item.id)
         }
 
+        if (qualityScoresBatch.length >= 50) {
+          await flushQualityScores()
+        }
+
         analyzed++
         if (onProgress) onProgress(analyzed, mediaItems.length)
       }
+
+      await flushQualityScores()
     } catch (error) {
+      if (qualityScoresBatch.length > 0 && !qualityScoreBatchWriteFailed) {
+        try {
+          await flushQualityScores()
+        } catch (flushError) {
+          const analysisMessage = error instanceof Error ? error.message : String(error)
+          const persistenceMessage = flushError instanceof Error ? flushError.message : String(flushError)
+          error = new Error(`Quality analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
+        }
+      }
       getLoggingService().error('[QualityAnalyzer]', 'Analysis failed:', error)
       throw error
     }

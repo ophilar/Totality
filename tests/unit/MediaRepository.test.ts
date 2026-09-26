@@ -3,6 +3,7 @@ import { MediaRepository } from '@main/database/repositories/MediaRepository'
 import { SourceRepository } from '@main/database/repositories/SourceRepository'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { MediaItem } from '@main/types/database'
+import type { QualityScore } from '@main/types/database'
 
 describe('MediaRepository (Real DB)', () => {
   let repo: MediaRepository
@@ -130,6 +131,52 @@ describe('MediaRepository (Real DB)', () => {
     expect(summary.recoverableWasteBytes).toBe(750_000_000)
     expect(summary.recoverableBytes).toBe(750_000_000)
     expect(summary.evidenceStatus).toBe('estimated')
+  })
+
+  it('should bulk upsert quality scores', async () => {
+    const id1 = await repo.upsertItem(mockItem('Movie A'))
+    const id2 = await repo.upsertItem(mockItem('Movie B'))
+    const createScore = (mediaItemId: number, qualityTier: QualityScore['quality_tier'], tierScore: number, estimatedSavingsBytes: number): QualityScore => ({
+      media_item_id: mediaItemId,
+      quality_tier: qualityTier,
+      tier_quality: 'HIGH',
+      tier_score: tierScore,
+      bitrate_tier_score: null,
+      audio_tier_score: null,
+      overall_score: null,
+      resolution_score: null,
+      bitrate_score: null,
+      audio_score: null,
+      efficiency_score: null,
+      storage_debt_bytes: null,
+      estimated_savings_bytes: estimatedSavingsBytes,
+      evidence_status: 'estimated',
+      confidence: 'medium',
+      savings_basis: 'video_sample_encode',
+      is_low_quality: false,
+      needs_upgrade: false,
+      issues: '[]',
+    })
+
+    await repo.upsertQualityScores([
+      createScore(id1, '1080p', 85, 1000),
+      createScore(id2, '4K', 95, 2000),
+    ])
+
+    const score1 = await repo.getQualityScoreByMediaId(id1)
+    const score2 = await repo.getQualityScoreByMediaId(id2)
+
+    expect(score1?.quality_tier).toBe('1080p')
+    expect(score1?.tier_score).toBe(85)
+    expect(score1?.estimated_savings_bytes).toBe(1000)
+    expect(score2?.quality_tier).toBe('4K')
+    expect(score2?.tier_score).toBe(95)
+
+    await repo.upsertQualityScores([createScore(id1, '4K', 99, 3000)])
+    const updatedScore1 = await repo.getQualityScoreByMediaId(id1)
+    expect(updatedScore1?.quality_tier).toBe('4K')
+    expect(updatedScore1?.tier_score).toBe(99)
+    expect(updatedScore1?.estimated_savings_bytes).toBe(3000)
   })
 
   it('should delete a media item and its cascade data', async () => {
