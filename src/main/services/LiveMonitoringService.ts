@@ -6,7 +6,7 @@ import { MediaItem, SourceLibrary } from '@main/types/database'
 import { BrowserWindow } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { execFile } from 'child_process'
+import { exec } from 'child_process'
 import { promisify } from 'util'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getSourceManager } from '@main/services/SourceManager'
@@ -46,19 +46,14 @@ const MEDIA_EXTENSIONS = new Set([
   '.opus',
 ])
 
-const execFileAsync = promisify(execFile)
+const execAsync = promisify(exec)
 let networkDriveLetters: Set<string> = new Set()
 
 async function detectWindowsNetworkDrivesAsync(): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    const { stdout } = await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-Command',
-        'Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID',
-      ],
+    const { stdout } = await execAsync(
+      'powershell.exe -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID"',
       {
         timeout: 2000,
         windowsHide: true,

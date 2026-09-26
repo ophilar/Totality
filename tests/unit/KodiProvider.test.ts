@@ -11,6 +11,8 @@ vi.mock('@main/database/BetterSQLiteService', () => {
                 upsertAlbum: vi.fn(),
                 upsertTrack: vi.fn(),
                 bulkUpsertTracks: vi.fn(),
+                getArtists: vi.fn().mockResolvedValue([{ id: 1, provider_id: '1', name: 'Artist 1' }]),
+                getAlbums: vi.fn().mockResolvedValue([{ id: 2, artist_id: 1, provider_id: '1', title: 'Album 1' }]),
                 getArtistByProviderId: vi.fn().mockReturnValue({ id: 1 }),
                 getAlbumByProviderId: vi.fn().mockReturnValue({ id: 2, artist_id: 1 }),
             },
@@ -36,11 +38,11 @@ describe('KodiSqlBaseProvider Music Sync', () => {
 
         provider['queryAll'] = vi.fn().mockImplementation(async (sql, _params, dbType) => {
              expect(dbType).toBe('music')
-             if (sql.includes('artist')) {
+             if (sql.includes('FROM artist')) {
                  return [{ idArtist: 1, strArtist: 'Artist 1' }]
-             } else if (sql.includes('album')) {
+             } else if (sql.includes('FROM album')) {
                  return [{ idAlbum: 1, strAlbum: 'Album 1', artistId: 1 }]
-             } else if (sql.includes('song')) {
+             } else if (sql.includes('FROM song')) {
                  return [{ idSong: 1, strTitle: 'Song 1', idAlbum: 1, strPath: '/music', strFileName: 'song1.mp3' }]
              }
              return []

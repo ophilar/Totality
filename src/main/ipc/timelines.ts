@@ -52,12 +52,12 @@ const SyncPlexPlaylistSchema = z.tuple([
 
 export function registerTimelinesHandlers(): void {
   createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_RECIPES, async () => {
-    const [localRecipes, tmdbRecipes, remoteRecipes] = await Promise.all([
+    const [localRecipes, registryRecipes, tmdbRecipes] = await Promise.all([
       localProvider.listAvailableRecipes(),
+      registryProvider.listAvailableRecipes().catch(() => []),
       tmdbProvider.listAvailableRecipes(),
-      registryProvider.listAvailableRecipes(),
     ])
-    const combined = [...localRecipes, ...tmdbRecipes, ...remoteRecipes]
+    const combined = [...localRecipes, ...registryRecipes, ...tmdbRecipes]
     const unique = new Map<string, TimelineRecipeSummary>()
     for (const r of combined) {
       if (!unique.has(r.id)) {

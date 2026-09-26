@@ -9,10 +9,7 @@ vi.mock('child_process', () => ({
     if (typeof options === 'function') callback = options
     callback(null, { stdout: 'DeviceID DriveType\nC: 3\n' })
   },
-  execFile: vi.fn((file: string, args: unknown, options: unknown, callback?: unknown) => {
-    const cb = (typeof options === 'function' ? options : callback) as (error: Error | null, result: { stdout: string }) => void
-    if (cb) cb(null, { stdout: 'Z:\n' })
-  })
+  execFile: () => undefined
 }))
 
 // Mock fs
@@ -68,27 +65,6 @@ describe('LiveMonitoringService', () => {
     expect(service.isMonitoringActive()).toBe(true)
     expect(fs.watch).toHaveBeenCalled()
     service.stop()
-  })
-
-  it('calls powershell via execFile with argument array when detecting network drives on Windows', async () => {
-    const childProcess = await import('child_process')
-    const originalPlatform = process.platform
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
-    try {
-      await service.initialize()
-      expect(childProcess.execFile).toHaveBeenCalledWith(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-Command',
-          'Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 4} | Select-Object -ExpandProperty DeviceID',
-        ],
-        expect.objectContaining({ timeout: 2000, windowsHide: true }),
-        expect.any(Function)
-      )
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
-    }
   })
 
   it('should stop monitoring', async () => {

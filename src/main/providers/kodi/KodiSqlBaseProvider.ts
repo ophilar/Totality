@@ -280,7 +280,8 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
             // Find Totality artist ID for this album's Kodi artistId
             let dbArtistId: number | undefined = undefined
             if (album.artistId) {
-               const a = (await db.music.getArtists({ sourceId: this.sourceId })).find(artist => artist.provider_id === String(album.artistId))
+               const dbArtists = (await db.music.getArtists?.({ sourceId: this.sourceId })) || []
+               const a = dbArtists.find(artist => artist.provider_id === String(album.artistId))
                if (a) dbArtistId = a.id
             }
 
@@ -293,7 +294,7 @@ export abstract class KodiSqlBaseProvider extends BaseMediaProvider {
         }
 
         // Cache albums by provider_id to avoid N+1 DB calls during song processing
-        const dbAlbums = await db.music.getAlbums({ sourceId: this.sourceId })
+        const dbAlbums = (await db.music.getAlbums?.({ sourceId: this.sourceId })) || []
         const albumMap = new Map<string, { id?: number; artist_id?: number }>()
         for (const album of dbAlbums) {
           if (album.provider_id) {
