@@ -210,8 +210,8 @@ class KodiMySQLConnectionService {
       throw new Error(`Invalid database prefix: ${dbPrefix}`)
     }
 
-    // Escape SQL LIKE wildcard characters in prefix
-    const escapedPrefix = dbPrefix.replace(/[_%]/g, '\\$&')
+    // Escape SQL LIKE wildcard characters and backslashes in prefix
+    const escapedPrefix = dbPrefix.replace(/[\\_%]/g, '\\$&')
 
     // Query for video databases
     const [videoRows] = await connection.query('SHOW DATABASES LIKE ?', [`${escapedPrefix}video%`])
