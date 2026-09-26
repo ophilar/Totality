@@ -43,4 +43,36 @@ describe('KodiMySQLConnectionService', () => {
       (service as any).detectDatabasesWithConnection(mockConnection, 'kodi; DROP TABLE--')
     ).rejects.toThrow('Invalid database prefix: kodi; DROP TABLE--')
   })
+
+  it('validates database names and escapes identifiers correctly in query method', async () => {
+    const service = getKodiMySQLConnectionService()
+
+    const mockQuery = vi.fn().mockResolvedValue([[{ id: 1 }], []])
+    const mockConnection = {
+      query: mockQuery,
+      release: vi.fn(),
+    }
+    const mockPool = {
+      getConnection: vi.fn().mockResolvedValue(mockConnection),
+    } as any
+
+    // 1. Invalid database identifier should throw error without executing query
+    await expect(service.query(mockPool, 'invalid;db', 'SELECT 1')).rejects.toThrow(
+      'Invalid database name: invalid;db'
+    )
+    expect(mockQuery).not.toHaveBeenCalled()
+
+    // 2. Valid database identifier should execute USE with escaped identifier
+    const rows = await service.query(mockPool, 'my_kodi_db', 'SELECT * FROM media WHERE id = ?', [
+      123,
+    ])
+    expect(rows).toEqual([{ id: 1 }])
+    expect(mockQuery).toHaveBeenNthCalledWith(1, 'USE `my_kodi_db`')
+    expect(mockQuery).toHaveBeenNthCalledWith(
+      2,
+      'SELECT * FROM media WHERE id = ?',
+      [123]
+    )
+    expect(mockConnection.release).toHaveBeenCalled()
+  })
 })

@@ -263,8 +263,9 @@ class KodiMySQLConnectionService {
         throw new Error(`Invalid database name: ${database}`)
       }
 
-      // Switch to the target database
-      await connection.query(`USE \`${database}\``)
+      // Switch to the target database safely using identifier escaping
+      const escapedDb = mysql?.escapeId ? mysql.escapeId(database) : `\`${database.replace(/`/g, '``')}\``
+      await connection.query(`USE ${escapedDb}`)
 
       // Execute the query
       const [rows] = await connection.query(sql, params)
