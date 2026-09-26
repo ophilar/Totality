@@ -34,10 +34,5 @@ jobs:
       - name: Run tests
         run: npm run test:run
 
-      - name: Verify renderer build
-        if: github.event_name == 'pull_request'
-        run: npx vite build
-
-      - name: Build desktop package
-        if: github.event_name != 'pull_request'
+      - name: Build
         run: npm run build -- --publish never
