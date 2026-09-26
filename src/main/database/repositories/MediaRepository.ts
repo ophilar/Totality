@@ -1091,6 +1091,55 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }))
   }
 
+  async getItemVersionsForMediaIds(mediaItemIds: number[]): Promise<Map<number, MediaItemVersion[]>> {
+    const result = new Map<number, MediaItemVersion[]>()
+    if (mediaItemIds.length === 0) return result
+
+    const batchSize = 500
+    for (let i = 0; i < mediaItemIds.length; i += batchSize) {
+      const batch = mediaItemIds.slice(i, i + batchSize)
+      const rows = await this.drizzle
+        .select()
+        .from(schema.mediaItemVersions)
+        .where(inArray(schema.mediaItemVersions.mediaItemId, batch))
+        .all()
+
+      for (const row of rows) {
+        const version: MediaItemVersion = {
+          id: row.id,
+          media_item_id: row.mediaItemId,
+          version_source: row.versionSource,
+          edition: row.edition || undefined,
+          label: row.label || undefined,
+          file_path: row.filePath,
+          file_size: row.fileSize,
+          duration: row.duration,
+          resolution: row.resolution,
+          width: row.width,
+          height: row.height,
+          video_codec: row.videoCodec,
+          video_bitrate: row.videoBitrate,
+          audio_codec: row.audioCodec,
+          audio_channels: row.audioChannels,
+          audio_bitrate: row.audioBitrate,
+          video_frame_rate: row.videoFrameRate || undefined,
+          color_bit_depth: row.colorBitDepth || undefined,
+          hdr_format: row.hdrFormat || undefined,
+          original_language: row.originalLanguage || undefined,
+          audio_language: row.audioLanguage || undefined,
+          is_best: row.isBest === 1,
+          created_at: row.createdAt,
+          updated_at: row.updatedAt,
+        }
+        const versions = result.get(row.mediaItemId)
+        if (versions) versions.push(version)
+        else result.set(row.mediaItemId, [version])
+      }
+    }
+
+    return result
+  }
+
   async syncItemVersions(mediaItemId: number, versions: Array<Omit<MediaItemVersion, 'id' | 'media_item_id'> & { original_language?: string | null; audio_language?: string | null }>): Promise<void> {
     await this.withBatch(async () => {
       await this.drizzle

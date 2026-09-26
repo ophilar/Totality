@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type { TimelineRecipeSummary, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
-import { LocalTimelineRecipeProvider } from '@main/services/timelines/LocalTimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
 
 describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
@@ -23,10 +22,10 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     })
 
     const mockRecipe: TimelineDefinition = {
-      id: 'star-trek-chronological',
-      franchise: 'Example Saga',
-      name: 'Example Saga: Chronological Order',
-      description: 'Complete universe chronological order',
+      id: 'registry-only-timeline',
+      franchise: 'Registry Fixture',
+      name: 'Registry Only Timeline',
+      description: 'Recipe served only by the remote registry fixture',
       version: 1,
       items: [
         {
@@ -59,25 +58,14 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
 
     const mockManifest: TimelineRecipeSummary[] = [
       {
-        id: 'star-trek-chronological',
-        name: 'Example Saga: Chronological Order',
-        franchise: 'Example Saga',
-        description: 'Complete chronological order',
+        id: 'registry-only-timeline',
+        name: 'Registry Only Timeline',
+        franchise: 'Registry Fixture',
+        description: 'Recipe served only by the remote registry fixture',
         totalItems: 3,
         sourceType: 'remote',
       },
     ]
-
-    vi.spyOn(LocalTimelineRecipeProvider.prototype, 'listAvailableRecipes').mockResolvedValue([
-      {
-        id: 'star-trek-chronological',
-        name: 'Example Saga: Chronological Order',
-        franchise: 'Example Saga',
-        description: 'Complete universe chronological order',
-        totalItems: 3,
-        sourceType: 'local',
-      },
-    ])
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       const urlStr = String(url)
@@ -109,18 +97,20 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     expect(recipes).toBeDefined()
     expect(recipes.length).toBeGreaterThanOrEqual(1)
 
-    const starTrekChrono = recipes.find((r) => r.id === 'star-trek-chronological')
-    expect(starTrekChrono).toBeDefined()
-    expect(starTrekChrono?.franchise).toBe('Example Saga')
+    const registryRecipe = recipes.find((r) => r.id === 'registry-only-timeline')
+    expect(registryRecipe).toMatchObject({
+      franchise: 'Registry Fixture',
+      sourceType: 'remote',
+    })
   })
 
   it('retrieves a timeline recipe definition via IPC', async () => {
     const getRecipeHandler = handlers.get(IPC_CHANNELS.TIMELINES.GET_RECIPE)!
     expect(getRecipeHandler).toBeDefined()
 
-    const timeline = (await getRecipeHandler(createAuthorizedIpcEvent(), 'star-trek-chronological')) as TimelineDefinition
+    const timeline = (await getRecipeHandler(createAuthorizedIpcEvent(), 'registry-only-timeline')) as TimelineDefinition
     expect(timeline).toBeDefined()
-    expect(timeline.id).toBe('star-trek-chronological')
+    expect(timeline.id).toBe('registry-only-timeline')
     expect(timeline.items.length).toBeGreaterThan(0)
   })
 

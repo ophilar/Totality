@@ -654,6 +654,11 @@ export class QualityAnalyzer {
     const db = getDatabase()
     const mediaItems = await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
 
+    const multiVersionItemIds = mediaItems
+      .filter((item): item is typeof item & { id: number } => Boolean(item.id && item.version_count && item.version_count > 1))
+      .map((item) => item.id)
+    const versionsByMediaId = await db.media.getItemVersionsForMediaIds(multiVersionItemIds)
+
     let analyzed = 0
     const tierCounts: Record<string, number> = {}
     const qualityCounts: Record<string, number> = {}
@@ -692,7 +697,7 @@ export class QualityAnalyzer {
         qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
 
         if (item.id && item.version_count && item.version_count > 1) {
-          const versions = await db.media.getItemVersions(item.id)
+          const versions = versionsByMediaId.get(item.id) ?? []
           const updatePromises: Promise<void>[] = []
           for (const version of versions) {
             if (isCancelled?.()) {

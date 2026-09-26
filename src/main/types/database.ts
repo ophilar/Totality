@@ -282,6 +282,8 @@ export interface MediaItemVersion {
   video_frame_rate?: number | null | undefined
   color_bit_depth?: number | null | undefined
   hdr_format?: string | null | undefined
+  original_language?: string | null | undefined
+  audio_language?: string | null | undefined
   color_space?: string | null | undefined
   video_profile?: string | null | undefined
   video_level?: number | null | undefined
