@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type { TimelineRecipeSummary, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
+import { LocalTimelineRecipeProvider } from '@main/services/timelines/LocalTimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
 
 describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
@@ -66,6 +67,17 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
         sourceType: 'remote',
       },
     ]
+
+    vi.spyOn(LocalTimelineRecipeProvider.prototype, 'listAvailableRecipes').mockResolvedValue([
+      {
+        id: 'star-trek-chronological',
+        name: 'Example Saga: Chronological Order',
+        franchise: 'Example Saga',
+        description: 'Complete universe chronological order',
+        totalItems: 3,
+        sourceType: 'local',
+      },
+    ])
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       const urlStr = String(url)
