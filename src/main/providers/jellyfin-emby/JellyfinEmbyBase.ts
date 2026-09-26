@@ -447,8 +447,8 @@ export abstract class JellyfinEmbyBase extends BaseMediaProvider {
           scannedAlbumIds.add(jellyfinAlbum.Id)
           for (const t of trackDataList) {
             t.album_id = albumId
-            await db.music.upsertTrack(t)
           }
+          await db.music.bulkUpsertTracks(trackDataList)
         result.itemsScanned += trackDataList.length
       }
 
