@@ -1091,6 +1091,59 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     }))
   }
 
+  async getItemVersionsForMediaIds(mediaItemIds: number[]): Promise<Map<number, MediaItemVersion[]>> {
+    const result = new Map<number, MediaItemVersion[]>()
+    if (mediaItemIds.length === 0) return result
+
+    const batchSize = 500
+    for (let i = 0; i < mediaItemIds.length; i += batchSize) {
+      const batch = mediaItemIds.slice(i, i + batchSize)
+      const rows = await this.drizzle
+        .select()
+        .from(schema.mediaItemVersions)
+        .where(inArray(schema.mediaItemVersions.mediaItemId, batch))
+        .all()
+
+      for (const r of rows) {
+        const version: MediaItemVersion = {
+          id: r.id,
+          media_item_id: r.mediaItemId,
+          version_source: r.versionSource,
+          edition: r.edition || undefined,
+          label: r.label || undefined,
+          file_path: r.filePath,
+          file_size: r.fileSize,
+          duration: r.duration,
+          resolution: r.resolution,
+          width: r.width,
+          height: r.height,
+          video_codec: r.videoCodec,
+          video_bitrate: r.videoBitrate,
+          audio_codec: r.audioCodec,
+          audio_channels: r.audioChannels,
+          audio_bitrate: r.audioBitrate,
+          video_frame_rate: r.videoFrameRate || undefined,
+          color_bit_depth: r.colorBitDepth || undefined,
+          hdr_format: r.hdrFormat || undefined,
+          original_language: r.originalLanguage || undefined,
+          audio_language: r.audioLanguage || undefined,
+          is_best: r.isBest === 1,
+          created_at: r.createdAt,
+          updated_at: r.updatedAt,
+        }
+
+        const existing = result.get(r.mediaItemId)
+        if (existing) {
+          existing.push(version)
+        } else {
+          result.set(r.mediaItemId, [version])
+        }
+      }
+    }
+
+    return result
+  }
+
   async syncItemVersions(mediaItemId: number, versions: Array<Omit<MediaItemVersion, 'id' | 'media_item_id'> & { original_language?: string | null; audio_language?: string | null }>): Promise<void> {
     await this.withBatch(async () => {
       await this.drizzle

@@ -156,6 +156,23 @@ describe('MediaRepository (Real DB)', () => {
     expect((await repo.getItemVersions(id)).map(item => item.file_path)).toEqual(['/movie-a.mkv'])
   })
 
+  it('should retrieve versions for multiple media IDs in batch', async () => {
+    const item1 = mockItem('Movie 1')
+    item1.plex_id = 'plex-1'
+    const id1 = await repo.upsertItem(item1)
+    await repo.syncItemVersions(id1, [mockVersion('/movie1-v1.mkv'), mockVersion('/movie1-v2.mkv')])
+
+    const item2 = mockItem('Movie 2')
+    item2.plex_id = 'plex-2'
+    const id2 = await repo.upsertItem(item2)
+    await repo.syncItemVersions(id2, [mockVersion('/movie2-v1.mkv')])
+
+    const map = await repo.getItemVersionsForMediaIds([id1, id2])
+    expect(map.size).toBe(2)
+    expect(map.get(id1)?.map(v => v.file_path)).toEqual(['/movie1-v1.mkv', '/movie1-v2.mkv'])
+    expect(map.get(id2)?.map(v => v.file_path)).toEqual(['/movie2-v1.mkv'])
+  })
+
   it('should persist deep analysis for every episode sharing a normalized file path', async () => {
     const first = mockItem('Episode 1')
     first.type = 'episode'
