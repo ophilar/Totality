@@ -593,12 +593,20 @@ export class LocalFolderProvider extends BaseMediaProvider {
       if (validFiles.length === 0 && deletedFiles.length === 0) { result.success = true; result.durationMs = Date.now() - startTime; return result }
 
       const artistMap = new Map<string, number>(); const albumMap = new Map<string, number>()
+      const existingTracks = await db.music.getTracksByPaths(validFiles)
+      const existingTracksMap = new Map(existingTracks.map(t => [t.file_path, t]))
+      const tracksToUpsert: MusicTrack[] = []
+      let itemsAdded = 0
+      let itemsUpdated = 0
+
       try {
         for (let i = 0; i < validFiles.length; i++) {
           const filePath = validFiles[i]; const relativePath = path.relative(this.folderPath, filePath)
           onProgress?.({ current: i + 1, total: validFiles.length, phase: 'processing', currentItem: path.basename(filePath), percentage: ((i + 1) / validFiles.length) * 100 })
           try {
-            const existingTrack = await db.music.getTrackByPath(filePath); const isNew = !existingTrack
+            const dbPath = PathUtils.toDatabasePath(filePath)
+            const existingTrack = existingTracksMap.get(dbPath) || existingTracksMap.get(filePath)
+            const isNew = !existingTrack
             const folderContext = path.dirname(relativePath)
             const parsed = parser.parseMusic(path.basename(filePath, path.extname(filePath)), folderContext)
             const artistName = parsed.artist || 'Unknown Artist'; const albumName = parsed.album || 'Unknown Album'; const trackTitle = parsed.title || path.basename(filePath, path.extname(filePath))
@@ -632,9 +640,17 @@ export class LocalFolderProvider extends BaseMediaProvider {
               albumMap.set(albumKey, albumId!)
             }
 
-            await db.music.upsertTrack({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: parsed.trackNumber, disc_number: parsed.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: stats.size, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-            result.itemsScanned++; if (isNew) result.itemsAdded++; else result.itemsUpdated++
+            tracksToUpsert.push({ source_id: this.sourceId, source_type: ProviderType.Local, library_id: 'music', provider_id: this.generateItemId(filePath), album_id: albumId, artist_id: artistId, album_name: albumName, artist_name: artistName, title: trackTitle, track_number: parsed.trackNumber, disc_number: parsed.discNumber, duration: audioInfo.duration, file_path: filePath, file_size: stats.size, container: path.extname(filePath).slice(1).toLowerCase(), audio_codec: audioInfo.codec || 'Unknown', audio_bitrate: audioInfo.bitrate, sample_rate: audioInfo.sampleRate, bit_depth: audioInfo.bitDepth, channels: audioInfo.channels, is_lossless: audioInfo.isLossless, is_hi_res: this.isHiRes(audioInfo.sampleRate, audioInfo.bitDepth), created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            if (isNew) itemsAdded++
+            else itemsUpdated++
           } catch (error: unknown) { result.errors.push(`Failed to process ${path.basename(filePath)}: ${getErrorMessage(error)}`) }
+        }
+
+        if (tracksToUpsert.length > 0) {
+          await db.music.bulkUpsertTracks(tracksToUpsert)
+          result.itemsScanned += tracksToUpsert.length
+          result.itemsAdded += itemsAdded
+          result.itemsUpdated += itemsUpdated
         }
       } finally {
         // No endBatch needed

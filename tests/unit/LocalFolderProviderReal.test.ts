@@ -290,6 +290,38 @@ describe('LocalFolderProvider Integration (Real FS)', () => {
     expect(items).toHaveLength(1)
     expect(items[0].file_path).toContain('Long.mkv')
   })
+
+  it('should support targeted music scan using bulk upsert', async () => {
+    const artistDir = path.join(tempDir.path, 'Music', 'Target Artist')
+    const albumDir = path.join(artistDir, 'Target Album')
+    fs.mkdirSync(albumDir, { recursive: true })
+
+    const track1 = path.join(albumDir, '01 - Track One.mp3')
+    const track2 = path.join(albumDir, '02 - Track Two.mp3')
+    fs.writeFileSync(track1, 'mp3 content 1')
+    fs.writeFileSync(track2, 'mp3 content 2')
+
+    await db.sources.setLibrariesEnabled(sourceId, [
+      { id: 'music', name: 'Music', type: LibraryType.Music, enabled: true }
+    ])
+
+    const bulkUpsertSpy = vi.spyOn(db.music, 'bulkUpsertTracks').mockRejectedValueOnce(new Error('database write failed'))
+    const failedResult = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
+    expect(failedResult.success).toBe(false)
+    expect(failedResult.itemsScanned).toBe(0)
+    expect(failedResult.itemsAdded).toBe(0)
+    expect(failedResult.itemsUpdated).toBe(0)
+    expect(failedResult.errors).toContain('database write failed')
+    bulkUpsertSpy.mockRestore()
+
+    const result = await provider.scanLibrary('music', { targetFiles: [track1, track2] })
+    expect(result.success).toBe(true)
+    expect(result.itemsScanned).toBe(2)
+    expect(result.itemsAdded).toBe(2)
+
+    const tracks = await db.music.getMusicTracks({ sourceId })
+    expect(tracks).toHaveLength(2)
+  })
 })
 
 
