@@ -1125,8 +1125,6 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
           video_frame_rate: r.videoFrameRate || undefined,
           color_bit_depth: r.colorBitDepth || undefined,
           hdr_format: r.hdrFormat || undefined,
-          original_language: r.originalLanguage || undefined,
-          audio_language: r.audioLanguage || undefined,
           is_best: r.isBest === 1,
           created_at: r.createdAt,
           updated_at: r.updatedAt,
