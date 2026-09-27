@@ -13,7 +13,7 @@ import { getLoggingService } from '@main/services/LoggingService'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { detectHdrFormat } from '@main/types/mediaContracts'
 import type { HdrFormat } from '@main/types/mediaContracts'
-import { parsePacketByteOutput, toStreamByteMap } from '@main/services/transcoding/StreamByteAccounting'
+import { StreamByteAccumulator } from '@main/services/transcoding/StreamByteAccounting'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
 
@@ -399,7 +399,7 @@ export class MediaFileAnalyzer {
 
   async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<FileAnalysisResult> {
     const fileAnalysis = await this.analyzeFile(filePath)
-    const streamBytes = await this.measureStreamBytes(filePath)
+    const streamBytes = await this.measureAudioStreamBytes(filePath)
     const deepAnalysis = await this.deepAnalyzeFile(filePath, {
       scanBitrate: options.scanBitrate ?? true,
       detectVolume: options.detectVolume ?? true,
@@ -414,24 +414,34 @@ export class MediaFileAnalyzer {
     }
   }
 
-  async measureStreamBytes(filePath: string): Promise<Record<number, number>> {
+  async measureAudioStreamBytes(filePath: string): Promise<Record<number, number>> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'error',
+        '-select_streams', 'a',
         '-show_entries', 'packet=stream_index,size',
         '-of', 'csv=p=0',
         `file:${sanitizedPath}`,
       ]
       const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-      let stdout = ''
+      const streamByteAccumulator = new StreamByteAccumulator()
       let stderr = ''
+      let outputError: unknown
       const timeout = setTimeout(() => {
         proc.kill('SIGKILL')
-        reject(new Error('FFprobe stream byte measurement timed out after 60 seconds'))
+        reject(new Error(`FFprobe audio stream byte measurement timed out after 60 seconds: ${sanitizedPath}`))
       }, 60_000)
-      proc.stdout.on('data', data => { stdout += data.toString() })
+      proc.stdout.on('data', data => {
+        if (outputError) return
+        try {
+          streamByteAccumulator.write(data.toString())
+        } catch (error) {
+          outputError = error
+          proc.kill('SIGKILL')
+        }
+      })
       proc.stderr.on('data', data => { stderr += data.toString() })
       proc.once('error', error => {
         clearTimeout(timeout)
@@ -439,12 +449,16 @@ export class MediaFileAnalyzer {
       })
       proc.once('close', code => {
         clearTimeout(timeout)
+        if (outputError) {
+          reject(outputError)
+          return
+        }
         if (code !== 0) {
           reject(new Error(stderr || `FFprobe stream byte measurement exited with code ${code}`))
           return
         }
         try {
-          resolve(toStreamByteMap(parsePacketByteOutput(stdout)))
+          resolve(streamByteAccumulator.finish())
         } catch (error) {
           reject(error)
         }
