@@ -55,6 +55,20 @@ describe('PinEntryModal', () => {
     expect(screen.getByRole('button', { name: /Unlock/i })).toBeDefined()
   })
 
+  it('waits for PIN status before allowing an unlock attempt', async () => {
+    vi.mocked(window.electronAPI.dbHasPin).mockReturnValue(new Promise<boolean>(() => {}))
+    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
+
+    const input = await screen.findByPlaceholderText('••••')
+    fireEvent.change(input, { target: { value: '1234' } })
+    const submitButton = screen.getByRole('button', { name: /Unlock/i }) as HTMLButtonElement
+
+    expect(submitButton.disabled).toBe(true)
+    fireEvent.click(submitButton)
+    expect(window.electronAPI.dbVerifyPin).not.toHaveBeenCalled()
+    expect(mockOnSuccess).not.toHaveBeenCalled()
+  })
+
   it('filters non-numeric characters from input and disables submit when pin length is less than 4', async () => {
     render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
 

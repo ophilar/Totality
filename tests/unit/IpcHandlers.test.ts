@@ -72,6 +72,20 @@ describe('IPC Handler Registration', () => {
 
   })
 
+  it('requires a security PIN before protecting a library', async () => {
+    const handler = handlers.get('db:setLibraryProtected')!
+    await expect(handler(createAuthorizedIpcEvent(), 'source-1', 'library-1', true))
+      .rejects.toThrow('Set a security PIN before protecting a library')
+  })
+
+  it('accepts only 4 to 8 digit security PINs', async () => {
+    const handler = handlers.get('db:setPin')!
+    await expect(handler(createAuthorizedIpcEvent(), '12')).rejects.toThrow()
+    await expect(handler(createAuthorizedIpcEvent(), '12ab')).rejects.toThrow()
+    await handler(createAuthorizedIpcEvent(), '1234')
+    expect(await db.config.hasPin()).toBe(true)
+  })
+
   it('registerListHandlers registers canonical list and count channels', () => {
     const base = 'test:resource'
     const schema = z.unknown()

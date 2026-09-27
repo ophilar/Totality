@@ -32,7 +32,7 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (pin.length < 4) return
+    if (pin.length < 4 || hasPin === null) return
 
     setLoading(true)
     setError(null)
@@ -121,7 +121,7 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
             <div className="flex flex-col gap-3 pt-2">
               <button
                 type="submit"
-                disabled={loading || pin.length < 4}
+                disabled={loading || pin.length < 4 || hasPin === null}
                 className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (

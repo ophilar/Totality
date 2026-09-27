@@ -110,16 +110,19 @@ function Toggle({
   checked,
   onChange,
   disabled = false,
+  'aria-label': ariaLabel,
 }: {
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
+  'aria-label'?: string
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background ${
@@ -620,6 +623,9 @@ export function LibrarySettingsTab() {
           {/* Library List */}
           <div className="space-y-3">
             <p className="text-xs font-medium text-foreground">Manage Libraries</p>
+            {!hasPin && (
+              <p className="text-xs text-muted-foreground">Set a PIN before enabling library protection.</p>
+            )}
             {sources.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">No sources configured.</p>
             ) : (
@@ -661,6 +667,8 @@ export function LibrarySettingsTab() {
                                 <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Protected</span>
                                 <Toggle 
                                   checked={!!lib.isProtected}
+                                  disabled={!hasPin && !lib.isProtected}
+                                  aria-label={`Protect ${lib.name}`}
                                   onChange={(checked) => handleToggleProtected(source.source_id, lib.id, checked)}
                                 />
                               </div>

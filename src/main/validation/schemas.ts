@@ -34,6 +34,7 @@ export const TierQualitySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
 
 export const EvidenceStatusSchema = z.enum(['measured', 'estimated', 'insufficient'])
 export const EvidenceConfidenceSchema = z.enum(['high', 'medium', 'low', 'none'])
+export const SecurityPinSchema = z.string().regex(/^\d{4,8}$/, 'PIN must contain 4 to 8 digits')
 export const SavingsBasisSchema = z.enum([
   'audio_stream_removal',
   'audio_transcode_model',

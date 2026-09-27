@@ -356,6 +356,7 @@ describe('LibrarySettingsTab', () => {
   })
 
   it('handles protected library toggle and allow expanded matching toggle', async () => {
+    mockElectronAPI.dbHasPin.mockResolvedValue(true)
     render(<LibrarySettingsTab />)
 
     await waitFor(() => {
@@ -407,6 +408,22 @@ describe('LibrarySettingsTab', () => {
       'lib-1',
       true
     )
+  })
+
+  it('does not allow enabling library protection before setting a PIN', async () => {
+    render(<LibrarySettingsTab />)
+
+    await waitFor(() => expect(screen.getByText('Protected Libraries')).toBeTruthy())
+    await act(async () => {
+      fireEvent.click(screen.getByText('Protected Libraries'))
+    })
+
+    const protectMovies = await screen.findByRole('switch', { name: 'Protect Movies' })
+    expect(protectMovies.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Set a PIN before enabling library protection.')).toBeTruthy()
+
+    fireEvent.click(protectMovies)
+    expect(mockElectronAPI.dbSetLibraryProtected).not.toHaveBeenCalled()
   })
 
   it('logs errors if loadSourceData or initial data load fails', async () => {

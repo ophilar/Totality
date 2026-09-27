@@ -14,6 +14,7 @@ import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerW
 import fs from 'fs/promises'
 import {
   PositiveIntSchema,
+  SecurityPinSchema,
   NonEmptyStringSchema,
   SettingKeySchema,
   MediaItemFiltersSchema,
@@ -156,6 +157,9 @@ export function registerDatabaseHandlers() {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, z.tuple([z.string(), z.string(), z.boolean()]), async (sourceId, libraryId, isProtected) => {
+    if (isProtected && !await db.config.hasPin()) {
+      throw new Error('Set a security PIN before protecting a library')
+    }
     const manager = getSourceManager()
     const libs = await manager.getLibraries(sourceId)
     const lib = libs.find(l => l.id === libraryId)
@@ -179,7 +183,7 @@ export function registerDatabaseHandlers() {
     return await db.config.verifyPin(pin)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_PIN, z.string(), async (pin) => {
+  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.SET_PIN, SecurityPinSchema, async (pin) => {
     await db.config.setPin(pin)
     return true
   })
