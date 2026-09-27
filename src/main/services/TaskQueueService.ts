@@ -317,7 +317,17 @@ export class TaskQueueService {
     }
   }
 
-  cancelCurrentTask(): Promise<void> { return this.cancelCurrent() }
+  async cancelCurrentTask(): Promise<void> {
+    const queuedCount = this.queue.length
+    const hadCurrentTask = this.currentTask !== null
+    this.queue = []
+    await this.cancelCurrent()
+    if (!hadCurrentTask && queuedCount > 0) await this.saveState()
+    if (queuedCount > 0) {
+      this.logging.info('[TaskQueue]', `Cleared ${queuedCount} queued tasks after cancellation`)
+    }
+    if (hadCurrentTask || queuedCount > 0) this.notifyListeners()
+  }
 
   /**
    * Get the current state of the queue

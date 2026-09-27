@@ -15,6 +15,7 @@ describe('TaskQueueService', () => {
   let service: TaskQueueService
   let db: BetterSQLiteService
   let logging: LoggingService
+  let mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource' | 'stopScan'>
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -24,7 +25,7 @@ describe('TaskQueueService', () => {
     
     // We still mock SourceManager for now as it involves complex provider setup,
     // but we use real DB and Logging.
-    const mockSourceManager: Pick<SourceManager, 'scanLibrary' | 'scanSource' | 'stopScan'> = {
+    mockSourceManager = {
       scanLibrary: vi.fn().mockResolvedValue({ success: true }),
       scanSource: vi.fn().mockResolvedValue({ success: true }),
       stopScan: vi.fn(),
@@ -86,6 +87,30 @@ describe('TaskQueueService', () => {
     it('should return false when removing non-existent task', async () => {
       const removed = await service.removeTask('non-existent-id')
       expect(removed).toBe(false)
+    })
+
+    it('should clear pending tasks when the current task is cancelled', async () => {
+      let startScan!: () => void
+      let finishScan!: (result: { success: boolean }) => void
+      const scanStarted = new Promise<void>(resolve => { startScan = resolve })
+      const scanResult = new Promise<{ success: boolean }>(resolve => { finishScan = resolve })
+      mockSourceManager.scanLibrary = vi.fn(async () => {
+        startScan()
+        return await scanResult
+      })
+
+      await service.addTask({ type: TaskType.LibraryScan, label: 'Active', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
+      await scanStarted
+      await service.addTask({ type: TaskType.SourceScan, label: 'Pending', sourceId: 's2' } satisfies TaskDefinition)
+
+      await service.cancelCurrentTask()
+
+      expect(service.getQueueState().queue).toHaveLength(0)
+      expect(mockSourceManager.stopScan).toHaveBeenCalledOnce()
+      const savedState = JSON.parse((await db.config.getSetting('task_queue_state'))!)
+      expect(savedState.queue).toHaveLength(0)
+      finishScan({ success: true })
+      await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
     })
 
     it('should generate unique task IDs', async () => {
