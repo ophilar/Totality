@@ -42,6 +42,10 @@ describe('FFprobeWorkerPool', () => {
     mockWorker.terminate.mockReset()
     mockWorker.removeAllListeners.mockReset()
     mockWorker.terminate.mockResolvedValue(0)
+    mockWorker.once.mockImplementation((event, listener) => {
+      if (event === 'exit') listener(0)
+      return mockWorker
+    })
   })
 
   describe('initialization', () => {

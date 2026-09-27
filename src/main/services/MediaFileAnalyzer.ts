@@ -218,7 +218,7 @@ export class MediaFileAnalyzer {
   /**
    * Perform deep analysis of a media file (bitrate variance, volume peaks)
    */
-  async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<Partial<FileAnalysisResult>> {
+  async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}): Promise<Partial<FileAnalysisResult>> {
     if (!await this.isAvailable()) throw new Error('FFprobe is unavailable through the system PATH')
 
     const results: Partial<FileAnalysisResult> = { success: true, filePath, audioTracks: [], subtitleTracks: [], deepAnalysis: {} }
@@ -226,12 +226,12 @@ export class MediaFileAnalyzer {
     const startTime = Date.now()
 
     if (options.detectVolume) {
-      const vol = await this.detectAudioVolume(filePath, options.requestId)
+      const vol = await this.detectAudioVolume(filePath, options.requestId, options.signal)
       results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }]
     }
 
     if (options.scanBitrate) {
-      const bitrate = await this.analyzeBitrateVariance(filePath, options.requestId)
+      const bitrate = await this.analyzeBitrateVariance(filePath, options.requestId, options.signal)
       results.deepAnalysis = { ...results.deepAnalysis, ...bitrate }
     }
 
@@ -244,12 +244,12 @@ export class MediaFileAnalyzer {
     this.deepProcesses.delete(requestId)
   }
 
-  private async detectAudioVolume(filePath: string, requestId?: string): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
+  private async detectAudioVolume(filePath: string, requestId?: string, signal?: AbortSignal): Promise<{ peakVolumeDB: number; meanVolumeDB: number }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffmpegCommand = this.requireFFmpegPath()
     return new Promise((resolve, reject) => {
       const args = ['-i', `file:${sanitizedPath}`, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-']
-      const proc = spawn(ffmpegCommand, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000 })
+      const proc = spawn(ffmpegCommand, args, { stdio: ['ignore', 'ignore', 'pipe'], signal })
       if (requestId) this.deepProcesses.set(requestId, proc)
 
       let stderr = ''
@@ -274,13 +274,13 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private async analyzeBitrateVariance(filePath: string, requestId?: string): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
+  private async analyzeBitrateVariance(filePath: string, requestId?: string, signal?: AbortSignal): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       // Use ffprobe to get packet sizes for the first video stream
       const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0:nk=1', `file:${sanitizedPath}`]
-      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 })
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
       if (requestId) this.deepProcesses.set(requestId, proc)
 
       let stdout = ''
@@ -384,7 +384,7 @@ export class MediaFileAnalyzer {
   /**
    * Analyze a media file and return detailed metadata
    */
-  async analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+  async analyzeFile(filePath: string, signal?: AbortSignal): Promise<FileAnalysisResult> {
     if (!await this.isAvailable()) {
       throw new Error('FFprobe is unavailable through the system PATH')
     }
@@ -393,17 +393,18 @@ export class MediaFileAnalyzer {
       throw new Error(`File not found: ${filePath}`)
     }
 
-    const ffprobeOutput = await this.runFFprobe(filePath)
+    const ffprobeOutput = await this.runFFprobe(filePath, signal)
     return this.parseFFprobeOutput(filePath, ffprobeOutput)
   }
 
-  async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<FileAnalysisResult> {
-    const fileAnalysis = await this.analyzeFile(filePath)
-    const streamBytes = await this.measureStreamBytes(filePath)
+  async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}): Promise<FileAnalysisResult> {
+    const fileAnalysis = await this.analyzeFile(filePath, options.signal)
+    const streamBytes = await this.measureStreamBytes(filePath, options.signal)
     const deepAnalysis = await this.deepAnalyzeFile(filePath, {
       scanBitrate: options.scanBitrate ?? true,
       detectVolume: options.detectVolume ?? true,
       requestId: options.requestId,
+      signal: options.signal,
     })
     if (!deepAnalysis.success) throw new Error(deepAnalysis.error || `Deep analysis failed for ${filePath}`)
     return {
@@ -414,7 +415,7 @@ export class MediaFileAnalyzer {
     }
   }
 
-  async measureStreamBytes(filePath: string): Promise<Record<number, number>> {
+  async measureStreamBytes(filePath: string, signal?: AbortSignal): Promise<Record<number, number>> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
@@ -424,7 +425,7 @@ export class MediaFileAnalyzer {
         '-of', 'csv=p=0',
         `file:${sanitizedPath}`,
       ]
-      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
       const streamByteAccumulator = new StreamByteAccumulator()
       let stderr = ''
       let outputError: unknown
@@ -615,11 +616,11 @@ export class MediaFileAnalyzer {
   // PRIVATE HELPERS
   // ============================================================================
 
-  private async runFFprobe(filePath: string): Promise<FFprobeOutput> {
+  private async runFFprobe(filePath: string, signal?: AbortSignal): Promise<FFprobeOutput> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     return new Promise((resolve, reject) => {
       const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', `file:${sanitizedPath}`]
-      const proc = spawn(this.requireFFprobePath(), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
+      const proc = spawn(this.requireFFprobePath(), args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
       let stdout = ''
       let stderr = ''
       proc.stdout.on('data', (data) => { stdout += data.toString() })

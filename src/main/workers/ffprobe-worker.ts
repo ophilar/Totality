@@ -6,6 +6,7 @@
  */
 
 import { parentPort, workerData } from 'worker_threads'
+import type { ChildProcess } from 'child_process'
 import { spawn } from 'child_process'
 import * as path from 'path'
 import { detectHdrFormat } from '../types/mediaContracts'
@@ -73,8 +74,18 @@ interface FFprobeOutput {
 }
 
 interface WorkerTask {
+  type: 'analyze'
   taskId: string
   filePath: string
+}
+
+interface WorkerCancelTask {
+  type: 'cancel'
+  taskId: string
+}
+
+interface WorkerShutdownTask {
+  type: 'shutdown'
 }
 
 export interface AnalyzedVideoStream {
@@ -165,6 +176,7 @@ export interface FileAnalysisResult {
 interface WorkerResult {
   taskId: string
   result: FileAnalysisResult
+  cancelled?: boolean
 }
 
 // Get FFprobe path from worker data
@@ -183,7 +195,12 @@ function sanitizePath(filePath: string): string {
 /**
  * Run FFprobe on a file and return raw JSON output
  */
-function runFFprobe(filePath: string): Promise<FFprobeOutput> {
+const activeProcesses = new Map<string, ChildProcess>()
+const activeTasks = new Set<string>()
+const cancelledTasks = new Set<string>()
+let shuttingDown = false
+
+function runFFprobe(filePath: string, taskId: string): Promise<FFprobeOutput> {
   const sanitizedPath = sanitizePath(filePath)
   return new Promise((resolve, reject) => {
     const args = [
@@ -198,16 +215,10 @@ function runFFprobe(filePath: string): Promise<FFprobeOutput> {
     const proc = spawn(actualPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    activeProcesses.set(taskId, proc)
 
     let stdout = ''
     let stderr = ''
-    let killed = false
-
-    // Explicit timeout to kill hung FFprobe processes (spawn timeout is unreliable)
-    const killTimer = setTimeout(() => {
-      killed = true
-      proc.kill('SIGKILL')
-    }, 60000)
 
     proc.stdout.on('data', (data) => {
       stdout += data.toString()
@@ -218,11 +229,7 @@ function runFFprobe(filePath: string): Promise<FFprobeOutput> {
     })
 
     proc.on('close', (code) => {
-      clearTimeout(killTimer)
-      if (killed) {
-        reject(new Error('FFprobe timed out after 60 seconds'))
-        return
-      }
+      activeProcesses.delete(taskId)
       if (code === 0 && stdout) {
         try {
           const output = JSON.parse(stdout) as FFprobeOutput
@@ -236,7 +243,7 @@ function runFFprobe(filePath: string): Promise<FFprobeOutput> {
     })
 
     proc.on('error', (error) => {
-      clearTimeout(killTimer)
+      activeProcesses.delete(taskId)
       reject(new Error(`Failed to run FFprobe: ${error.message}`))
     })
   })
@@ -518,9 +525,9 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
 /**
  * Analyze a single file
  */
-async function analyzeFile(filePath: string): Promise<FileAnalysisResult> {
+async function analyzeFile(filePath: string, taskId: string): Promise<FileAnalysisResult> {
   try {
-    const output = await runFFprobe(filePath)
+    const output = await runFFprobe(filePath, taskId)
     return parseFFprobeOutput(filePath, output)
   } catch (error) {
     return {
@@ -535,12 +542,35 @@ async function analyzeFile(filePath: string): Promise<FileAnalysisResult> {
 
 // Handle messages from main thread
 if (parentPort) {
-  parentPort.on('message', async (task: WorkerTask) => {
-    const result = await analyzeFile(task.filePath)
+  parentPort.on('message', async (task: WorkerTask | WorkerCancelTask | WorkerShutdownTask) => {
+    if (task.type === 'shutdown') {
+      shuttingDown = true
+      for (const taskId of activeTasks) {
+        cancelledTasks.add(taskId)
+        activeProcesses.get(taskId)?.kill()
+      }
+      if (activeTasks.size === 0) parentPort!.close()
+      return
+    }
+
+    if (task.type === 'cancel') {
+      if (activeTasks.has(task.taskId)) {
+        cancelledTasks.add(task.taskId)
+        activeProcesses.get(task.taskId)?.kill()
+      }
+      return
+    }
+
+    activeTasks.add(task.taskId)
+    const result = await analyzeFile(task.filePath, task.taskId)
+    const cancelled = cancelledTasks.delete(task.taskId)
+    activeTasks.delete(task.taskId)
     const response: WorkerResult = {
       taskId: task.taskId,
       result,
+      cancelled,
     }
     parentPort!.postMessage(response)
+    if (shuttingDown && activeTasks.size === 0) parentPort!.close()
   })
 }

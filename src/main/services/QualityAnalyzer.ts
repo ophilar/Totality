@@ -649,7 +649,8 @@ export class QualityAnalyzer {
     onProgress?: (current: number, total: number) => void,
     isCancelled?: () => boolean,
     sourceId?: string,
-    libraryId?: string
+    libraryId?: string,
+    signal?: AbortSignal
   ): Promise<number> {
     const db = getDatabase()
     const mediaItems = await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
@@ -684,7 +685,7 @@ export class QualityAnalyzer {
           return analyzed
         }
         if (!item.file_path) throw new Error(`Media item ${item.id ?? item.title} has no local file path`)
-        const completeAnalysis = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path)
+        const completeAnalysis = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path, { signal })
         await db.media.updateDeepAnalysisByPath(item.file_path, completeAnalysis, new Date().toISOString())
         const analyzedItem: MediaItem = {
           ...item,
@@ -745,6 +746,7 @@ export class QualityAnalyzer {
           error = new Error(`Quality analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
         }
       }
+      if (signal?.aborted && error instanceof Error && error.name === 'AbortError') return analyzed
       getLoggingService().error('[QualityAnalyzer]', 'Analysis failed:', error)
       throw error
     }

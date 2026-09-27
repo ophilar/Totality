@@ -15,13 +15,24 @@ import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { APP_CONFIG } from '@main/config'
 
 interface WorkerTask {
+  type: 'analyze'
   taskId: string
   filePath: string
+}
+
+interface WorkerCancelTask {
+  type: 'cancel'
+  taskId: string
+}
+
+interface WorkerShutdownTask {
+  type: 'shutdown'
 }
 
 interface WorkerResult {
   taskId: string
   result: FileAnalysisResult
+  cancelled?: boolean
 }
 
 interface QueuedTask {
@@ -38,10 +49,8 @@ interface WorkerInfo {
   busy: boolean
   currentTask: QueuedTask | null
   lastBusyTime: number
-  taskTimeout: NodeJS.Timeout | null
+  exitPromise: Promise<void>
 }
-
-const FFPROBE_TASK_TIMEOUT_MS = 30_000
 
 
 // Singleton instance
@@ -221,11 +230,7 @@ export class FFprobeWorkerPool {
     if (!workerInfo) return
     task.abortCleanup?.()
     task.resolve({ success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] })
-    workerInfo.currentTask = null
-    workerInfo.busy = false
-    workerInfo.worker.terminate()
-    this.removeWorker(workerInfo)
-    this.processQueue()
+    workerInfo.worker.postMessage({ type: 'cancel', taskId: task.taskId } satisfies WorkerCancelTask)
   }
 
   /**
@@ -266,13 +271,16 @@ export class FFprobeWorkerPool {
           ffprobePath: this.ffprobePath,
         },
       })
+      const exitPromise = new Promise<void>(resolve => {
+        worker.once('exit', () => resolve())
+      })
 
       const workerInfo: WorkerInfo = {
         worker,
         busy: false,
         currentTask: null,
         lastBusyTime: Date.now(),
-        taskTimeout: null,
+        exitPromise,
       }
 
       worker.on('message', (result: WorkerResult) => {
@@ -306,26 +314,8 @@ export class FFprobeWorkerPool {
     workerInfo.busy = true
     workerInfo.currentTask = task
 
-    // Guard against hung ffprobe processes that never respond
-    workerInfo.taskTimeout = setTimeout(() => {
-      if (workerInfo.currentTask?.taskId !== task.taskId) return
-      getLoggingService().warn('[FFprobeWorkerPool]', `Task timed out after ${FFPROBE_TASK_TIMEOUT_MS}ms: ${task.filePath}`)
-      workerInfo.currentTask = null
-      workerInfo.taskTimeout = null
-      task.abortCleanup?.()
-      task.resolve({
-        success: false,
-        error: 'FFprobe analysis timed out',
-        filePath: task.filePath,
-        audioTracks: [],
-        subtitleTracks: [],
-      })
-      this.removeWorker(workerInfo)
-      workerInfo.worker.terminate()
-      this.processQueue()
-    }, FFPROBE_TASK_TIMEOUT_MS)
-
     const message: WorkerTask = {
+      type: 'analyze',
       taskId: task.taskId,
       filePath: task.filePath,
     }
@@ -337,14 +327,12 @@ export class FFprobeWorkerPool {
    * Handle worker result
    */
   private handleWorkerResult(workerInfo: WorkerInfo, result: WorkerResult): void {
-    if (workerInfo.taskTimeout) {
-      clearTimeout(workerInfo.taskTimeout)
-      workerInfo.taskTimeout = null
-    }
     const task = workerInfo.currentTask
     if (task && task.taskId === result.taskId) {
       task.abortCleanup?.()
-      task.resolve(result.result)
+      task.resolve(result.cancelled
+        ? { success: false, error: 'FFprobe analysis cancelled', filePath: task.filePath, audioTracks: [], subtitleTracks: [] }
+        : result.result)
     }
 
     workerInfo.busy = false
@@ -360,10 +348,6 @@ export class FFprobeWorkerPool {
    * Handle worker error
    */
   private handleWorkerError(workerInfo: WorkerInfo, error: unknown): void {
-    if (workerInfo.taskTimeout) {
-      clearTimeout(workerInfo.taskTimeout)
-      workerInfo.taskTimeout = null
-    }
     const task = workerInfo.currentTask
     if (task) {
       task.abortCleanup?.()
@@ -439,6 +423,7 @@ export class FFprobeWorkerPool {
 
     // Reject all queued tasks
     for (const task of this.taskQueue) {
+      task.abortCleanup?.()
       task.resolve({
         success: false,
         error: 'Worker pool shutting down',
@@ -449,9 +434,10 @@ export class FFprobeWorkerPool {
     }
     this.taskQueue = []
 
-    // Terminate all workers
+    // Stop active FFprobe processes and let workers exit after they close.
     const terminationPromises = this.workers.map(workerInfo => {
       if (workerInfo.currentTask) {
+        workerInfo.currentTask.abortCleanup?.()
         workerInfo.currentTask.resolve({
           success: false,
           error: 'Worker pool shutting down',
@@ -459,22 +445,11 @@ export class FFprobeWorkerPool {
           audioTracks: [],
           subtitleTracks: [],
         })
-        workerInfo.currentTask = null
-        workerInfo.busy = false
       }
-      return new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          workerInfo.worker.terminate()
-          resolve()
-        }, 5000)
-
-        workerInfo.worker.once('exit', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-
-        workerInfo.worker.terminate()
-      })
+      return (async () => {
+        workerInfo.worker.postMessage({ type: 'shutdown' } satisfies WorkerShutdownTask)
+        await workerInfo.exitPromise
+      })()
     })
 
     await Promise.all(terminationPromises)

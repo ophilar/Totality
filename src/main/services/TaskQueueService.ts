@@ -40,6 +40,7 @@ export interface TaskQueueDependencies {
 export class TaskQueueService {
   private queue: QueuedTask[] = []
   private currentTask: QueuedTask | null = null
+  private currentTaskAbortController: AbortController | null = null
   private completedTasks: QueuedTask[] = []
   private isPaused = false
   private cancelRequested = false
@@ -301,6 +302,7 @@ export class TaskQueueService {
   async cancelCurrent(): Promise<void> {
     if (this.currentTask) {
       this.cancelRequested = true
+      this.currentTaskAbortController?.abort()
       this.currentTask.status = TaskStatus.Cancelled
       this.logging.info('[TaskQueue]', `Cancellation requested for task: ${this.currentTask.label}`)
       if (this.currentTask.type === TaskType.Transcode && this.currentTask.mediaItemId) {
@@ -366,6 +368,7 @@ export class TaskQueueService {
 
     this.currentTask = this.queue.shift() || null
     if (!this.currentTask) return
+    this.currentTaskAbortController = new AbortController()
 
     this.currentTask.status = TaskStatus.Running
     this.currentTask.startedAt = new Date().toISOString()
@@ -479,20 +482,25 @@ export class TaskQueueService {
         this.logging.info('[TaskQueue]', `Task completed: ${task.label}`)
       }
     } catch (error) {
-      const errorMsg = getErrorMessage(error)
-      task.status = TaskStatus.Failed
-      task.error = errorMsg
-      this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
-      
-      try {
-        await this.db.notifications.addNotification({
-          type: NotificationType.Error,
-          title: 'Task failed',
-          message: `${task.label}: ${errorMsg}`,
-          reference_id: task.sourceId,
-        })
-      } catch (e) {
-        getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)
+      if (this.cancelRequested && error instanceof Error && error.name === 'AbortError') {
+        task.status = TaskStatus.Cancelled
+        this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
+      } else {
+        const errorMsg = getErrorMessage(error)
+        task.status = TaskStatus.Failed
+        task.error = errorMsg
+        this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
+
+        try {
+          await this.db.notifications.addNotification({
+            type: NotificationType.Error,
+            title: 'Task failed',
+            message: `${task.label}: ${errorMsg}`,
+            reference_id: task.sourceId,
+          })
+        } catch (e) {
+          getLoggingService().error('[TaskQueueService]', 'Failed to dispatch notification:', e)
+        }
       }
     } finally {
       await flushProgressWrite()
@@ -504,6 +512,7 @@ export class TaskQueueService {
       
       const prevTask = task
       this.currentTask = null
+      this.currentTaskAbortController = null
       await this.saveState()
       this.notifyListeners()
       
@@ -707,7 +716,7 @@ export class TaskQueueService {
         percentage: total > 0 ? Math.round((current / total) * 100) : 100,
         phase: current >= total ? 'complete' : 'analyzing',
       })
-    }, () => this.cancelRequested, task.sourceId, task.libraryId)
+    }, () => this.cancelRequested, task.sourceId, task.libraryId, this.currentTaskAbortController?.signal)
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
