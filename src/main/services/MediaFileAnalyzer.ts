@@ -399,7 +399,7 @@ export class MediaFileAnalyzer {
 
   async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}): Promise<FileAnalysisResult> {
     const fileAnalysis = await this.analyzeFile(filePath)
-    const streamBytes = await this.measureAudioStreamBytes(filePath)
+    const streamBytes = await this.measureStreamBytes(filePath)
     const deepAnalysis = await this.deepAnalyzeFile(filePath, {
       scanBitrate: options.scanBitrate ?? true,
       detectVolume: options.detectVolume ?? true,
@@ -414,13 +414,12 @@ export class MediaFileAnalyzer {
     }
   }
 
-  async measureAudioStreamBytes(filePath: string): Promise<Record<number, number>> {
+  async measureStreamBytes(filePath: string): Promise<Record<number, number>> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'error',
-        '-select_streams', 'a',
         '-show_entries', 'packet=stream_index,size',
         '-of', 'csv=p=0',
         `file:${sanitizedPath}`,
@@ -429,10 +428,6 @@ export class MediaFileAnalyzer {
       const streamByteAccumulator = new StreamByteAccumulator()
       let stderr = ''
       let outputError: unknown
-      const timeout = setTimeout(() => {
-        proc.kill('SIGKILL')
-        reject(new Error(`FFprobe audio stream byte measurement timed out after 60 seconds: ${sanitizedPath}`))
-      }, 60_000)
       proc.stdout.on('data', data => {
         if (outputError) return
         try {
@@ -444,17 +439,15 @@ export class MediaFileAnalyzer {
       })
       proc.stderr.on('data', data => { stderr += data.toString() })
       proc.once('error', error => {
-        clearTimeout(timeout)
         reject(error)
       })
       proc.once('close', code => {
-        clearTimeout(timeout)
         if (outputError) {
           reject(outputError)
           return
         }
         if (code !== 0) {
-          reject(new Error(stderr || `FFprobe stream byte measurement exited with code ${code}`))
+          reject(new Error(stderr || `FFprobe stream byte measurement exited with code ${code}: ${sanitizedPath}`))
           return
         }
         try {
