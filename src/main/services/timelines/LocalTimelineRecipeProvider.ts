@@ -15,7 +15,7 @@ export class LocalTimelineRecipeProvider implements ITimelineRecipeProvider {
       description: recipe.description,
       totalItems: recipe.items.length,
       sourceType: 'preset' as const,
-      sourceUrl: recipe.sourceUrl,
+      ...(recipe.sourceUrl ? { sourceUrl: recipe.sourceUrl } : {}),
     }))
   }
 

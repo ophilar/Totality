@@ -12,6 +12,7 @@ import { TMDBRecipeProvider } from '@main/services/timelines/TMDBRecipeProvider'
 import { WebGuideRecipeProvider } from '@main/services/timelines/WebGuideRecipeProvider'
 import { TimelineRecipeProviderFactory } from '@main/services/timelines/TimelineRecipeProviderFactory'
 import { TimelineParserPluginProvider } from '@main/services/timelines/TimelineParserPluginProvider'
+import type { ITimelineRecipeProvider } from '@main/services/timelines/ITimelineRecipeProvider'
 import { TimelineResolutionEngine } from '@main/services/timelines/TimelineResolutionEngine'
 import { PlexPlaylistSyncService } from '@main/services/timelines/PlexPlaylistSyncService'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
@@ -42,9 +43,9 @@ const SyncPlexPlaylistSchema = z.tuple([
   }),
 ])
 
-export function registerTimelinesHandlers(): void {
+export function registerTimelinesHandlers(timelineRecipeProvider: ITimelineRecipeProvider = recipeProvider): void {
   createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_RECIPES, async () => {
-    return await recipeProvider.listAvailableRecipes()
+    return await timelineRecipeProvider.listAvailableRecipes()
   })
 
   createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_PARSER_PLUGINS, async () => {
@@ -60,11 +61,11 @@ export function registerTimelinesHandlers(): void {
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.GET_RECIPE, z.tuple([z.string().min(1)]), async (recipeId) => {
-    return await recipeProvider.fetchTimeline(recipeId)
+    return await timelineRecipeProvider.fetchTimeline(recipeId)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, ResolveTimelineSchema, async (recipeId, sourceId) => {
-    const timeline = await recipeProvider.fetchTimeline(recipeId)
+    const timeline = await timelineRecipeProvider.fetchTimeline(recipeId)
 
     const db = getDatabase().drizzle
     const engine = new TimelineResolutionEngine(db)
@@ -74,7 +75,7 @@ export function registerTimelinesHandlers(): void {
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, SyncPlexPlaylistSchema, async (payload) => {
     const { sourceId, recipeId, playlistTitle } = payload
 
-    const timeline = await recipeProvider.fetchTimeline(recipeId)
+    const timeline = await timelineRecipeProvider.fetchTimeline(recipeId)
 
     const db = getDatabase().drizzle
     const engine = new TimelineResolutionEngine(db)

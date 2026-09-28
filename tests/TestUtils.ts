@@ -69,11 +69,12 @@ import { registerNotificationHandlers } from '@main/ipc/notifications'
 import { registerJellyfinHandlers } from '@main/ipc/jellyfin'
 import { registerTimelinesHandlers } from '@main/ipc/timelines'
 import { registerOptimizationHandlers } from '@main/ipc/optimization'
+import type { ITimelineRecipeProvider } from '@main/services/timelines/ITimelineRecipeProvider'
 
 /**
  * Sets up a real bridge between Renderer and Main process handlers.
  */
-export function setupRealIntegratedBridge() {
+export function setupRealIntegratedBridge(timelineRecipeProvider?: ITimelineRecipeProvider) {
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
 
   // Intercept registrations
@@ -100,7 +101,7 @@ const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
   registerTranscodingHandlers()
   registerNotificationHandlers()
   registerJellyfinHandlers()
-  registerTimelinesHandlers()
+  registerTimelinesHandlers(timelineRecipeProvider)
   registerOptimizationHandlers()
 
   // Helper to invoke a handler with no fallbacks and loud errors

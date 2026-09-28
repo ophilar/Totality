@@ -305,7 +305,7 @@ export class MediaFileAnalyzer {
         const bitrates: number[] = []
 
         for (const line of lines) {
-          const [sizeStr, durStr] = line.split('|')
+          const [durStr, sizeStr] = line.split('|')
           const size = parseInt(sizeStr, 10)
           const duration = parseFloat(durStr)
           if (isNaN(size) || isNaN(duration)) continue

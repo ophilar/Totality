@@ -1,113 +1,63 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
-import { spawn } from 'child_process'
-import { EventEmitter } from 'events'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
-vi.mock('child_process', () => ({
-  spawn: vi.fn()
-}))
+vi.unmock('child_process')
 
-vi.mock('electron', () => ({
-  app: {
-    getPath: vi.fn().mockReturnValue('mock-user-data')
-  }
-}))
+import { MediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 
-vi.mock('@main/services/LoggingService', () => ({
-  getLoggingService: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn()
-  })
-}))
+let fixtureDirectory: string
+let audioFixture: string
+let videoFixture: string
 
-describe('MediaFileAnalyzer Deep Analysis', () => {
-  type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter }
-  const analyzer = getMediaFileAnalyzer()
+beforeAll(() => {
+  fixtureDirectory = mkdtempSync(path.join(os.tmpdir(), 'totality-deep-analysis-'))
+  audioFixture = path.join(fixtureDirectory, 'volume.wav')
+  videoFixture = path.join(fixtureDirectory, 'bitrate.mkv')
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' })
+  execFileSync('ffprobe', ['-version'], { stdio: 'ignore' })
+  execFileSync('ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1',
+    '-af', 'volume=4', '-c:a', 'pcm_s16le', audioFixture,
+  ], { stdio: 'ignore' })
+  execFileSync('ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=25:duration=2',
+    '-c:v', 'mpeg4', '-q:v', '5', '-an', videoFixture,
+  ], { stdio: 'ignore' })
+}, 30_000)
 
-  it('detects audio volume using ffmpeg volumedetect', async () => {
-    const mockStderr = `
-      [Parsed_volumedetect_0 @ 000001f3f7e5d800] n_samples: 480000
-      [Parsed_volumedetect_0 @ 000001f3f7e5d800] max_volume: -3.2 dB
-      [Parsed_volumedetect_0 @ 000001f3f7e5d800] mean_volume: -21.5 dB
-    `
+afterAll(() => {
+  rmSync(fixtureDirectory, { recursive: true, force: true })
+})
 
-    // Mock spawn for ffmpeg -version and then volumedetect
-    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
-      const ee = new EventEmitter() as MockProcess
-      ee.stdout = new EventEmitter()
-      ee.stderr = new EventEmitter()
-      
-      if (args.includes('-version')) {
-        process.nextTick(() => ee.emit('close', 0))
-      } else if (args.includes('volumedetect')) {
-        process.nextTick(() => {
-          ee.stderr.emit('data', Buffer.from(mockStderr))
-          ee.emit('close', 0)
-        })
-      }
-      return ee as unknown as ReturnType<typeof spawn>
-    })
+describe('MediaFileAnalyzer deep analysis with system FFmpeg tools', () => {
+  it('detects volume from an encoded audio fixture', async () => {
+    const result = await new MediaFileAnalyzer().deepAnalyzeFile(audioFixture, { detectVolume: true })
+    const audio = result.audioTracks?.[0]
 
-    const result = await analyzer.deepAnalyzeFile('test.mkv', { detectVolume: true })
-    
     expect(result.success).toBe(true)
-    expect(result.audioTracks![0].peakVolumeDB).toBe(-3.2)
-    expect(result.audioTracks![0].meanVolumeDB).toBe(-21.5)
+    expect(audio?.peakVolumeDB).toBeGreaterThan(-8)
+    expect(audio?.peakVolumeDB).toBeLessThan(-4)
+    expect(audio?.meanVolumeDB).toBeGreaterThan(-11)
+    expect(audio?.meanVolumeDB).toBeLessThan(-7)
   })
 
-  it('analyzes bitrate variance using ffprobe packet scan', async () => {
-    // Simulate compact output for packets: size|duration_time
-    // Need at least 0.5s for the window to trigger
-    const mockStdout = []
-    for (let i = 0; i < 20; i++) {
-      mockStdout.push(`${100000 + (i % 5) * 10000}|0.04`) // 20 * 0.04 = 0.8s
-    }
-    const mockStdoutStr = mockStdout.join('\n')
+  it('calculates bitrate variance from encoded video packets', async () => {
+    const result = await new MediaFileAnalyzer().deepAnalyzeFile(videoFixture, { scanBitrate: true })
 
-    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
-      const ee = new EventEmitter() as MockProcess
-      ee.stdout = new EventEmitter()
-      ee.stderr = new EventEmitter()
-      
-      if (args.includes('-version')) {
-        process.nextTick(() => ee.emit('close', 0))
-      } else if (args.includes('packet=size,duration_time')) {
-        process.nextTick(() => {
-          ee.stdout.emit('data', Buffer.from(mockStdoutStr))
-          ee.emit('close', 0)
-        })
-      }
-      return ee as unknown as ReturnType<typeof spawn>
-    })
-
-    const result = await analyzer.deepAnalyzeFile('test.mkv', { scanBitrate: true })
-    
     expect(result.success).toBe(true)
     expect(result.deepAnalysis?.avgBitrate).toBeGreaterThan(0)
     expect(result.deepAnalysis?.peakBitrate).toBeGreaterThan(0)
-    expect(result.deepAnalysis?.bitrateVariance).toBeDefined()
+    expect(result.deepAnalysis?.bitrateVariance).toBeGreaterThanOrEqual(0)
   })
 
-  it('handles FFmpeg failure loudly', async () => {
-    vi.mocked(spawn).mockImplementation((_path: string, args: readonly string[]) => {
-      const ee = new EventEmitter() as MockProcess
-      ee.stdout = new EventEmitter()
-      ee.stderr = new EventEmitter()
-      
-      if (args.includes('-version')) {
-        process.nextTick(() => ee.emit('close', 0))
-      } else {
-        process.nextTick(() => ee.emit('close', 1)) // Failure
-      }
-      return ee as unknown as ReturnType<typeof spawn>
-    })
+  it('propagates FFmpeg failure for a missing media file', async () => {
+    const missingFile = path.join(fixtureDirectory, 'missing.wav')
 
-    await expect(analyzer.deepAnalyzeFile('test.mkv', { detectVolume: true }))
-      .rejects.toThrow('FFmpeg exited with code 1')
+    await expect(new MediaFileAnalyzer().deepAnalyzeFile(missingFile, { detectVolume: true }))
+      .rejects.toThrow(/FFmpeg exited with code [1-9]\d*/)
   })
 })
