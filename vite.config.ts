@@ -26,7 +26,7 @@ export default defineConfig({
             },
             rollupOptions: {
               external: [
-                'electron', 'electron-updater', 'sql.js', 'mysql2',
+                'electron', 'electron-updater', 'sql.js', 'mysql2', 'jsdom',
                 'fsevents',
                 'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
