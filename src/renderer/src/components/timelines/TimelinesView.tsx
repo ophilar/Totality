@@ -17,6 +17,23 @@ import { useToast } from '@/contexts/ToastContext'
 import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
 import type { PlexPlaylistSummary } from '@main/services/timelines/PlexPlaylistSyncService'
+import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
+
+const NEW_PARSER_TEMPLATE = {
+  id: 'my-viewing-guide',
+  name: 'My Viewing Guide',
+  franchise: 'Franchise name',
+  description: 'Viewing order parsed from an online guide.',
+  sourceUrl: 'https://example.com/viewing-guide',
+  attribution: 'Guide publisher',
+  tableSelector: 'table',
+  headerRowSelector: 'thead tr',
+  rowSelector: 'tbody tr',
+  requiredHeaders: ['Order', 'Title', 'Type'],
+  fields: { title: 'Title', type: 'Type' },
+  groupings: [],
+  orders: [{ id: 'default', name: 'Viewing Order', description: 'The guide order.', order: 'Order' }],
+}
 
 export function TimelinesView() {
   const { sources, activeSourceId } = useSources()
@@ -36,6 +53,12 @@ export function TimelinesView() {
   const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'missing'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [customPlaylistTitle, setCustomPlaylistTitle] = useState('')
+  const [recipeRefreshToken, setRecipeRefreshToken] = useState(0)
+  const [parserEditorOpen, setParserEditorOpen] = useState(false)
+  const [parserDefinitionText, setParserDefinitionText] = useState(JSON.stringify(NEW_PARSER_TEMPLATE, null, 2))
+  const [parserPluginDefinitions, setParserPluginDefinitions] = useState<TimelineParserPlugin[]>([])
+  const [selectedParserPluginId, setSelectedParserPluginId] = useState('')
+  const [isSavingParser, setIsSavingParser] = useState(false)
 
   // Filter sources for Plex providers
   const plexSources = useMemo(
@@ -135,7 +158,7 @@ export function TimelinesView() {
     return () => {
       isMounted = false
     }
-  }, [selectedRecipeId, resolveSourceId, addToast])
+  }, [selectedRecipeId, resolveSourceId, addToast, recipeRefreshToken])
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -177,6 +200,56 @@ export function TimelinesView() {
       })
     } finally {
       setIsImporting(false)
+    }
+  }
+
+  const openParserEditor = async () => {
+    try {
+      const plugins = await window.electronAPI.timelinesListParserPlugins()
+      setParserPluginDefinitions(plugins)
+      setParserDefinitionText(JSON.stringify(NEW_PARSER_TEMPLATE, null, 2))
+      setSelectedParserPluginId('')
+      setParserEditorOpen(true)
+    } catch (err: unknown) {
+      addToast({ type: 'error', title: 'Timeline Parsers', message: `Failed to load parser definitions: ${err instanceof Error ? err.message : String(err)}` })
+    }
+  }
+
+  const saveParser = async () => {
+    setIsSavingParser(true)
+    try {
+      const parser = JSON.parse(parserDefinitionText) as TimelineParserPluginInput
+      const plugins = await window.electronAPI.timelinesSaveParserPlugin(parser)
+      const recipes = await window.electronAPI.timelinesListRecipes()
+      setParserPluginDefinitions(plugins)
+      setSelectedParserPluginId(parser.id)
+      setRecipes(recipes)
+      setSelectedTimelineResult(null)
+      setSelectedRecipeId(`${parser.id}:${parser.orders[0].id}`)
+      setRecipeRefreshToken(value => value + 1)
+      setParserEditorOpen(false)
+      addToast({ type: 'success', title: 'Timeline Parser Saved', message: `Saved '${parser.name}'.` })
+    } catch (err: unknown) {
+      addToast({ type: 'error', title: 'Timeline Parser', message: `Could not save parser: ${err instanceof Error ? err.message : String(err)}` })
+    } finally {
+      setIsSavingParser(false)
+    }
+  }
+
+  const removeParser = async () => {
+    if (!selectedParserPluginId) return
+    try {
+      const plugins = await window.electronAPI.timelinesRemoveParserPlugin(selectedParserPluginId)
+      setParserPluginDefinitions(plugins)
+      setParserDefinitionText(JSON.stringify(NEW_PARSER_TEMPLATE, null, 2))
+      setSelectedParserPluginId('')
+      const recipes = await window.electronAPI.timelinesListRecipes()
+      setRecipes(recipes)
+      setSelectedTimelineResult(null)
+      if (selectedRecipeId.startsWith(`${selectedParserPluginId}:`)) setSelectedRecipeId(recipes[0]?.id ?? '')
+      addToast({ type: 'success', title: 'Timeline Parser Removed', message: 'Removed the saved parser definition.' })
+    } catch (err: unknown) {
+      addToast({ type: 'error', title: 'Timeline Parser', message: `Could not remove parser: ${err instanceof Error ? err.message : String(err)}` })
     }
   }
 
@@ -331,7 +404,9 @@ export function TimelinesView() {
             filteredRecipes.map((recipe) => {
               const isSelected = recipe.id === selectedRecipeId
               const sourceBadge =
-                recipe.sourceType === 'web'
+                recipe.id.startsWith('babylon-project:')
+                  ? 'The Babylon Project'
+                  : recipe.sourceType === 'web'
                   ? 'Web Guide'
                   : recipe.sourceType === 'trakt'
                   ? 'Trakt'
@@ -362,7 +437,9 @@ export function TimelinesView() {
                     )}
                   </div>
                   <div className="mt-2 text-right">
-                    <span className="text-[10px] text-muted-foreground font-mono">{recipe.totalItems} items</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {recipe.totalItems > 0 ? `${recipe.totalItems} items` : 'Loads from source'}
+                    </span>
                   </div>
                 </button>
               )
@@ -372,12 +449,48 @@ export function TimelinesView() {
 
         {/* Universal Importer Footer */}
         <div className="p-3 border-t border-border bg-card/50 shrink-0">
+          {parserEditorOpen && (
+            <div className="mb-3 space-y-2">
+              <label className="block text-xs font-medium">Parser definition (JSON)</label>
+              <select
+                value={selectedParserPluginId}
+                onChange={event => {
+                  const id = event.target.value
+                  setSelectedParserPluginId(id)
+                  const plugin = parserPluginDefinitions.find(candidate => candidate.id === id)
+                  if (plugin) setParserDefinitionText(JSON.stringify(plugin, null, 2))
+                  else setParserDefinitionText(JSON.stringify(NEW_PARSER_TEMPLATE, null, 2))
+                }}
+                className="w-full px-2 py-1.5 text-xs rounded border border-border bg-background"
+              >
+                <option value="">New parser…</option>
+                {parserPluginDefinitions.map(plugin => <option key={plugin.id} value={plugin.id}>{plugin.name}</option>)}
+              </select>
+              <textarea
+                value={parserDefinitionText}
+                onChange={event => setParserDefinitionText(event.target.value)}
+                rows={12}
+                spellCheck={false}
+                className="w-full resize-y px-2 py-1.5 text-[10px] font-mono rounded border border-border bg-background"
+                aria-label="Timeline parser definition JSON"
+              />
+              <p className="text-[10px] text-muted-foreground">Configure table or ordered-list selectors and source rules. Saved definitions are available immediately and remain on this device.</p>
+              <button type="button" onClick={() => void saveParser()} disabled={isSavingParser} className="w-full py-1.5 text-xs rounded bg-primary text-primary-foreground disabled:opacity-50">
+                {isSavingParser ? 'Saving…' : 'Save parser'}
+              </button>
+              {selectedParserPluginId && (
+                <button type="button" onClick={() => void removeParser()} className="w-full py-1.5 text-xs rounded border border-destructive/40 text-destructive hover:bg-destructive/10">
+                  Remove parser or restore bundled definition
+                </button>
+              )}
+            </div>
+          )}
           <form onSubmit={handleImport} className="space-y-2">
             <input
               type="text"
               value={customImportInput}
               onChange={(e) => setCustomImportInput(e.target.value)}
-              placeholder="Web Guide URL, Trakt, or AI..."
+              placeholder="Parser URL, Trakt list, TMDB collection, or prompt..."
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <button
@@ -389,11 +502,14 @@ export function TimelinesView() {
               Import Recipe
             </button>
           </form>
+          <button type="button" onClick={() => void openParserEditor()} className="w-full mt-2 py-1.5 text-xs rounded border border-border hover:bg-secondary">
+            Add or edit online parser
+          </button>
         </div>
       </div>
 
       {/* Right Column / Detail View Area */}
-      <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden p-6 space-y-4">
+      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden p-6 space-y-4">
         {isResolvingTimeline && !selectedTimelineResult ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -403,8 +519,8 @@ export function TimelinesView() {
           <>
             {/* Sync Control & Stats Card */}
             <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-xs shrink-0">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                <div className="space-y-2 flex-1">
+              <div className="flex flex-col gap-5">
+                <div className="space-y-2 w-full min-w-0">
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-bold">{selectedTimelineResult.timeline.name}</h2>
                     {selectedTimelineResult.timeline.sourceUrl && (
@@ -448,11 +564,11 @@ export function TimelinesView() {
                 </div>
 
                 {/* Playlist Sync Action Box */}
-                <div className="flex flex-col gap-2 p-3.5 rounded-xl bg-background/60 border border-border">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-                    <div className="space-y-1">
+                <div className="flex flex-col gap-2 w-full min-w-0 p-3.5 rounded-xl bg-background/60 border border-border">
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                    <div className="space-y-1 min-w-0">
                       <label className="text-[11px] font-medium text-muted-foreground">Select or Name Plex Playlist</label>
-                      <div className="flex items-center gap-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <select
                           value={visibleExistingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : 'custom-playlist-mode'}
                           onChange={(e) => {
@@ -460,7 +576,7 @@ export function TimelinesView() {
                               setCustomPlaylistTitle(e.target.value)
                             }
                           }}
-                          className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-44"
+                          className="w-full min-w-0 px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                           <option value="custom-playlist-mode">-- Create New / Custom Playlist --</option>
                           {visibleExistingPlaylists.map((pl) => (
@@ -474,7 +590,7 @@ export function TimelinesView() {
                           value={customPlaylistTitle}
                           onChange={(e) => setCustomPlaylistTitle(e.target.value)}
                           placeholder="Playlist Title"
-                          className="px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-48"
+                          className="w-full min-w-0 px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         />
                       </div>
                     </div>

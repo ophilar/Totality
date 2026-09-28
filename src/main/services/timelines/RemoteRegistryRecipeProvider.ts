@@ -49,6 +49,10 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
     return []
   }
 
+  async supports(input: string): Promise<boolean> {
+    return (await this.listAvailableRecipes()).some(recipe => recipe.id === input)
+  }
+
   async fetchTimeline(id: string): Promise<TimelineDefinition> {
     const isCustomUrl = !!this.registryBaseUrl
 

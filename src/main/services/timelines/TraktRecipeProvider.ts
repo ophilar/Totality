@@ -48,6 +48,10 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
     return []
   }
 
+  async supports(input: string): Promise<boolean> {
+    return input.startsWith('trakt-') || /^https?:\/\/trakt\.tv\//i.test(input) || /^[^/]+\/[^/]+$/.test(input)
+  }
+
   async fetchTimeline(listSlugOrUrl: string): Promise<TimelineDefinition> {
     const cached = await this.cacheService.getRecipe(listSlugOrUrl)
     if (cached) {
@@ -59,7 +63,10 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
     }
 
     // Parse username and list slug from e.g. "donxy/star-trek-chronological" or "users/donxy/lists/star-trek-chronological"
-    const cleaned = listSlugOrUrl.replace(/^https?:\/\/trakt\.tv\//, '').replace(/^\/?users\//, '')
+    const canonical = listSlugOrUrl.match(/^trakt-(.+)-(.+)$/)
+    const cleaned = canonical ? `${canonical[1]}/${canonical[2]}` : listSlugOrUrl
+      .replace(/^https?:\/\/(?:www\.)?trakt\.tv\//, '')
+      .replace(/^\/?users\//, '')
     const parts = cleaned.split('/').filter(Boolean)
     
     let username: string

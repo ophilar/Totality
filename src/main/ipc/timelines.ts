@@ -10,32 +10,24 @@ import { LocalTimelineRecipeProvider } from '@main/services/timelines/LocalTimel
 import { TraktRecipeProvider } from '@main/services/timelines/TraktRecipeProvider'
 import { TMDBRecipeProvider } from '@main/services/timelines/TMDBRecipeProvider'
 import { WebGuideRecipeProvider } from '@main/services/timelines/WebGuideRecipeProvider'
+import { TimelineRecipeProviderFactory } from '@main/services/timelines/TimelineRecipeProviderFactory'
+import { TimelineParserPluginProvider } from '@main/services/timelines/TimelineParserPluginProvider'
 import { TimelineResolutionEngine } from '@main/services/timelines/TimelineResolutionEngine'
 import { PlexPlaylistSyncService } from '@main/services/timelines/PlexPlaylistSyncService'
 import { PlexProvider } from '@main/providers/plex/PlexProvider'
-import type { TimelineDefinition, TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
 
-const webGuideProvider = new WebGuideRecipeProvider()
-const registryProvider = new RemoteRegistryRecipeProvider()
-const localProvider = new LocalTimelineRecipeProvider(path.resolve(process.cwd(), 'data/timelines'))
-const traktProvider = new TraktRecipeProvider()
-const tmdbProvider = new TMDBRecipeProvider()
+const parserPluginProvider = new TimelineParserPluginProvider()
+const recipeProvider = new TimelineRecipeProviderFactory(
+  [
+    new LocalTimelineRecipeProvider(path.resolve(process.cwd(), 'data/timelines')),
+    new TMDBRecipeProvider(),
+    new RemoteRegistryRecipeProvider(),
+    new TraktRecipeProvider(),
+    parserPluginProvider,
+    new WebGuideRecipeProvider(),
+  ]
+)
 const syncService = new PlexPlaylistSyncService()
-
-async function fetchTimelineRecipe(recipeId: string): Promise<TimelineDefinition> {
-  const trimmed = recipeId.trim()
-  if (trimmed.startsWith('tmdb-') || trimmed.startsWith('tmdb-collection-')) {
-    return await tmdbProvider.fetchTimeline(trimmed)
-  }
-  if (trimmed.startsWith('trakt-') || (trimmed.includes('/') && !trimmed.startsWith('http') && trimmed.split('/').length === 2)) {
-    return await traktProvider.fetchTimeline(trimmed)
-  }
-  if (/^https?:\/\//i.test(trimmed)) {
-    return await webGuideProvider.fetchTimeline(trimmed)
-  }
-
-  try { return await localProvider.fetchTimeline(trimmed) } catch { return await registryProvider.fetchTimeline(trimmed) }
-}
 
 const ResolveTimelineSchema = z.tuple([
   z.string().min(1),
@@ -52,27 +44,27 @@ const SyncPlexPlaylistSchema = z.tuple([
 
 export function registerTimelinesHandlers(): void {
   createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_RECIPES, async () => {
-    const [localRecipes, tmdbRecipes, remoteRecipes] = await Promise.all([
-      localProvider.listAvailableRecipes(),
-      tmdbProvider.listAvailableRecipes(),
-      registryProvider.listAvailableRecipes(),
-    ])
-    const combined = [...localRecipes, ...tmdbRecipes, ...remoteRecipes]
-    const unique = new Map<string, TimelineRecipeSummary>()
-    for (const r of combined) {
-      if (!unique.has(r.id)) {
-        unique.set(r.id, r)
-      }
-    }
-    return Array.from(unique.values())
+    return await recipeProvider.listAvailableRecipes()
+  })
+
+  createIpcHandler(IPC_CHANNELS.TIMELINES.LIST_PARSER_PLUGINS, async () => {
+    return await parserPluginProvider.listPlugins()
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.SAVE_PARSER_PLUGIN, z.tuple([z.unknown()]), async (plugin) => {
+    return await parserPluginProvider.savePlugin(plugin)
+  })
+
+  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.REMOVE_PARSER_PLUGIN, z.tuple([z.string().min(1)]), async (id) => {
+    return await parserPluginProvider.removePlugin(id)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.GET_RECIPE, z.tuple([z.string().min(1)]), async (recipeId) => {
-    return await fetchTimelineRecipe(recipeId)
+    return await recipeProvider.fetchTimeline(recipeId)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, ResolveTimelineSchema, async (recipeId, sourceId) => {
-    const timeline = await fetchTimelineRecipe(recipeId)
+    const timeline = await recipeProvider.fetchTimeline(recipeId)
 
     const db = getDatabase().drizzle
     const engine = new TimelineResolutionEngine(db)
@@ -82,7 +74,7 @@ export function registerTimelinesHandlers(): void {
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, SyncPlexPlaylistSchema, async (payload) => {
     const { sourceId, recipeId, playlistTitle } = payload
 
-    const timeline = await fetchTimelineRecipe(recipeId)
+    const timeline = await recipeProvider.fetchTimeline(recipeId)
 
     const db = getDatabase().drizzle
     const engine = new TimelineResolutionEngine(db)

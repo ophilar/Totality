@@ -14,6 +14,10 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
     return this._tmdb || getTMDBService()
   }
 
+  async supports(input: string): Promise<boolean> {
+    return input.startsWith('tmdb-collection-') || /^\d+$/.test(input)
+  }
+
   async listAvailableRecipes(): Promise<TimelineRecipeSummary[]> {
     const recipes: TimelineRecipeSummary[] = []
     const seenIds = new Set<string>()

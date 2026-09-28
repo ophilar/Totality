@@ -241,6 +241,9 @@ export const IPC_CHANNELS = {
   },
   TIMELINES: {
     LIST_RECIPES: 'timelines:listRecipes',
+    LIST_PARSER_PLUGINS: 'timelines:listParserPlugins',
+    SAVE_PARSER_PLUGIN: 'timelines:saveParserPlugin',
+    REMOVE_PARSER_PLUGIN: 'timelines:removeParserPlugin',
     GET_RECIPE: 'timelines:getRecipe',
     RESOLVE_TIMELINE: 'timelines:resolveTimeline',
     SYNC_PLEX_PLAYLIST: 'timelines:syncPlexPlaylist',

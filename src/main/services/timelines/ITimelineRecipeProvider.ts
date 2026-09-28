@@ -33,9 +33,11 @@ export interface TimelineRecipeSummary {
   description: string
   totalItems: number
   sourceType: 'preset' | 'remote' | 'trakt' | 'web' | 'ai'
+  sourceUrl?: string
 }
 
 export interface ITimelineRecipeProvider {
+  supports(input: string): Promise<boolean>
   listAvailableRecipes(): Promise<TimelineRecipeSummary[]>
   fetchTimeline(id: string): Promise<TimelineDefinition>
 }

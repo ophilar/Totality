@@ -15,6 +15,7 @@ export class LocalTimelineRecipeProvider implements ITimelineRecipeProvider {
       description: recipe.description,
       totalItems: recipe.items.length,
       sourceType: 'preset' as const,
+      sourceUrl: recipe.sourceUrl,
     }))
   }
 
@@ -24,6 +25,15 @@ export class LocalTimelineRecipeProvider implements ITimelineRecipeProvider {
     const entry = entries.find(({ name }) => name === filename)
     if (!entry) throw new Error(`Timeline '${id}' was not found in ${this.directory}.`)
     return entry.recipe
+  }
+
+  async hasRecipe(id: string): Promise<boolean> {
+    const filename = `${id}.json`
+    return (await this.readFiles()).some(entry => entry.name === filename)
+  }
+
+  async supports(input: string): Promise<boolean> {
+    return await this.hasRecipe(input)
   }
 
   private async readFiles(): Promise<Array<{ name: string; recipe: TimelineDefinition }>> {
