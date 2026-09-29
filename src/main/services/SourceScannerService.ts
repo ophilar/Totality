@@ -8,6 +8,7 @@ import type {
   ScanResult,
   ProgressCallback,
   MediaLibrary,
+  ScanProgress,
 } from '@main/providers/base/MediaProvider'
 
 export type AggregateProgressCallback = (
@@ -63,10 +64,21 @@ export class SourceScannerService {
       const library = libraries.find(lib => lib.id === libraryId)
 
       let lastNotifyTime = 0
+      let lastLoggedPhase: ScanProgress['phase'] | undefined
+      let lastLoggedProgressBucket = -1
       const wrappedProgress: ProgressCallback = (progress) => {
         if (this.scanCancelled) {
           this.logging.info('[SourceScannerService]', 'Progress callback: Scan cancelled flag detected')
           throw new Error('Scan cancelled by user')
+        }
+        const progressBucket = Math.floor(progress.percentage / 10) * 10
+        if (progress.phase !== lastLoggedPhase || progressBucket > lastLoggedProgressBucket) {
+          this.logging.debug(
+            '[SourceScannerService]',
+            `Scan progress: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}, phase=${progress.phase}, current=${progress.current}/${progress.total}, percentage=${progress.percentage}`
+          )
+          lastLoggedPhase = progress.phase
+          lastLoggedProgressBucket = progressBucket
         }
         if (progress.phase === 'processing' && progress.current > 0) {
           const now = Date.now()
@@ -80,9 +92,16 @@ export class SourceScannerService {
 
       this.logging.info('[SourceScannerService]', `Starting scan: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}`)
       const result = await provider.scanLibrary(libraryId, { onProgress: wrappedProgress })
+      const wasCancelled = this.scanCancelled
+      this.logging.info(
+        '[SourceScannerService]',
+        `Scan finished: provider=${provider.providerType}, sourceId=${sourceId}, libraryId=${libraryId}, success=${result.success}, cancelled=${wasCancelled || result.cancelled === true}, scanned=${result.itemsScanned}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}, durationMs=${result.durationMs}, errors=${result.errors.length}`
+      )
+      if (result.errors.length > 0) {
+        this.logging.warn('[SourceScannerService]', `Scan errors for sourceId=${sourceId}, libraryId=${libraryId}:`, result.errors)
+      }
 
       // Check if cancelled after the provider finishes
-      const wasCancelled = this.scanCancelled
       if (wasCancelled) return this.getCancellerResult(result)
 
       if (result.success && library) {
@@ -144,21 +163,44 @@ export class SourceScannerService {
 
         if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) continue
 
+        let currentLibraryId: string | undefined
         try {
           const libraries = await provider.getLibraries()
           const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
+          let lastLoggedPhase: string | undefined
+          let lastLoggedProgressBucket = -1
           for (const library of libraries) {
             if (this.scanCancelled) break
             if (library.type === LibraryType.Music) continue
             if (!enabledLibraries.has(library.id)) continue
 
+            currentLibraryId = library.id
+            lastLoggedPhase = undefined
+            lastLoggedProgressBucket = -1
+            this.logging.info('[SourceScannerService]', `Starting scan: provider=${provider.providerType}, sourceId=${source.source_id}, libraryId=${library.id}`)
             const result = await provider.scanLibrary(library.id, {
               onProgress: (progress) => {
                 if (this.scanCancelled) throw new Error('Scan cancelled by user')
+                const progressBucket = Math.floor(progress.percentage / 10) * 10
+                if (progress.phase !== lastLoggedPhase || progressBucket > lastLoggedProgressBucket) {
+                  this.logging.debug(
+                    '[SourceScannerService]',
+                    `Scan progress: provider=${provider.providerType}, sourceId=${source.source_id}, libraryId=${library.id}, phase=${progress.phase}, current=${progress.current}/${progress.total}, percentage=${progress.percentage}`
+                  )
+                  lastLoggedPhase = progress.phase
+                  lastLoggedProgressBucket = progressBucket
+                }
                 if (onProgress) onProgress(source.source_id, source.display_name, progress)
               }
             })
             results.set(`${source.source_id}:${library.id}`, result)
+            this.logging.info(
+              '[SourceScannerService]',
+              `Scan finished: provider=${provider.providerType}, sourceId=${source.source_id}, libraryId=${library.id}, success=${result.success}, cancelled=${result.cancelled === true}, scanned=${result.itemsScanned}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}, durationMs=${result.durationMs}, errors=${result.errors.length}`
+            )
+            if (result.errors.length > 0) {
+              this.logging.warn('[SourceScannerService]', `Scan errors for sourceId=${source.source_id}, libraryId=${library.id}:`, result.errors)
+            }
             if (result.success) {
               await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
               await this.startPostScanTasks(source.source_id, library.id, library)
@@ -167,7 +209,11 @@ export class SourceScannerService {
         } catch (error) {
           if (this.scanCancelled) break
           const errorMsg = error instanceof Error ? error.message : String(error)
-          this.logging.error('[SourceScannerService]', `Failed to scan source ${source.source_id}:`, error)
+          this.logging.error(
+            '[SourceScannerService]',
+            `Failed to scan source ${source.source_id}${currentLibraryId === undefined ? '' : `, library ${currentLibraryId}`}:`,
+            error
+          )
           results.set(`${source.source_id}:*`, {
             success: false,
             itemsScanned: 0,

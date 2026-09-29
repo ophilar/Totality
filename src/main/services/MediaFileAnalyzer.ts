@@ -221,17 +221,24 @@ export class MediaFileAnalyzer {
   async deepAnalyzeFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}): Promise<Partial<FileAnalysisResult>> {
     if (!await this.isAvailable()) throw new Error('FFprobe is unavailable through the system PATH')
 
+    const logging = getLoggingService()
     const results: Partial<FileAnalysisResult> = { success: true, filePath, audioTracks: [], subtitleTracks: [], deepAnalysis: {} }
     const deepAnalysis = results.deepAnalysis ?? (results.deepAnalysis = {})
     const startTime = Date.now()
 
     if (options.detectVolume) {
+      const volumeStartedAt = Date.now()
+      logging.debug('[MediaFileAnalyzer]', 'Starting audio volume detection')
       const vol = await this.detectAudioVolume(filePath, options.requestId, options.signal)
+      logging.debug('[MediaFileAnalyzer]', `Completed audio volume detection in ${Date.now() - volumeStartedAt}ms`)
       results.audioTracks = [{ index: 0, codec: 'unknown', channels: 0, isDefault: false, hasObjectAudio: false, ...vol }]
     }
 
     if (options.scanBitrate) {
+      const bitrateStartedAt = Date.now()
+      logging.debug('[MediaFileAnalyzer]', 'Starting bitrate variance analysis')
       const bitrate = await this.analyzeBitrateVariance(filePath, options.requestId, options.signal)
+      logging.debug('[MediaFileAnalyzer]', `Completed bitrate variance analysis in ${Date.now() - bitrateStartedAt}ms`)
       results.deepAnalysis = { ...results.deepAnalysis, ...bitrate }
     }
 
@@ -398,20 +405,45 @@ export class MediaFileAnalyzer {
   }
 
   async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}): Promise<FileAnalysisResult> {
-    const fileAnalysis = await this.analyzeFile(filePath, options.signal)
-    const streamBytes = await this.measureStreamBytes(filePath, options.signal)
-    const deepAnalysis = await this.deepAnalyzeFile(filePath, {
-      scanBitrate: options.scanBitrate ?? true,
-      detectVolume: options.detectVolume ?? true,
-      requestId: options.requestId,
-      signal: options.signal,
-    })
-    if (!deepAnalysis.success) throw new Error(deepAnalysis.error || `Deep analysis failed for ${filePath}`)
-    return {
-      ...fileAnalysis,
-      streamBytes,
-      audioTracks: deepAnalysis.audioTracks?.length ? deepAnalysis.audioTracks : fileAnalysis.audioTracks,
-      deepAnalysis: deepAnalysis.deepAnalysis,
+    const logging = getLoggingService()
+    const startedAt = Date.now()
+    let stage = 'metadata probe'
+    logging.debug('[MediaFileAnalyzer]', `Starting ${stage}`)
+    try {
+      const fileAnalysis = await this.analyzeFile(filePath, options.signal)
+      logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - startedAt}ms`)
+
+      stage = 'stream byte measurement'
+      const streamBytesStartedAt = Date.now()
+      logging.debug('[MediaFileAnalyzer]', `Starting ${stage}`)
+      const streamBytes = await this.measureStreamBytes(filePath, options.signal)
+      logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - streamBytesStartedAt}ms`)
+
+      stage = 'deep analysis'
+      const deepAnalysisStartedAt = Date.now()
+      logging.debug('[MediaFileAnalyzer]', `Starting ${stage}`)
+      const deepAnalysis = await this.deepAnalyzeFile(filePath, {
+        scanBitrate: options.scanBitrate ?? true,
+        detectVolume: options.detectVolume ?? true,
+        requestId: options.requestId,
+        signal: options.signal,
+      })
+      if (!deepAnalysis.success) throw new Error(deepAnalysis.error || `Deep analysis failed for ${filePath}`)
+      logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - deepAnalysisStartedAt}ms`)
+
+      return {
+        ...fileAnalysis,
+        streamBytes,
+        audioTracks: deepAnalysis.audioTracks?.length ? deepAnalysis.audioTracks : fileAnalysis.audioTracks,
+        deepAnalysis: deepAnalysis.deepAnalysis,
+      }
+    } catch (error) {
+      if (options.signal?.aborted) {
+        logging.info('[MediaFileAnalyzer]', `Cancelled during ${stage} after ${Date.now() - startedAt}ms`)
+      } else {
+        logging.error('[MediaFileAnalyzer]', `Failed during ${stage} after ${Date.now() - startedAt}ms`, error)
+      }
+      throw error
     }
   }
 

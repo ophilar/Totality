@@ -653,6 +653,12 @@ export class QualityAnalyzer {
     signal?: AbortSignal
   ): Promise<number> {
     const db = getDatabase()
+    const logging = getLoggingService()
+    const analysisStartedAt = Date.now()
+    logging.info(
+      '[QualityAnalyzer]',
+      `Loading media for analysis: sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
+    )
     const mediaItems = await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
 
     const multiVersionItemIds = mediaItems
@@ -676,16 +682,33 @@ export class QualityAnalyzer {
       }
     }
 
-    getLoggingService().verbose('[QualityAnalyzer]', `Starting analysis of ${mediaItems.length} items`)
+    logging.info(
+      '[QualityAnalyzer]',
+      `Starting analysis: items=${mediaItems.length}, sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
+    )
+    let currentItemId: number | undefined
+    let currentItemIndex = 0
+    let currentStage = 'loading media versions'
+    let currentItemStartedAt = 0
 
     try {
-      for (const item of mediaItems) {
+      for (const [index, item] of mediaItems.entries()) {
         if (isCancelled?.()) {
           await flushQualityScores()
+          logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
           return analyzed
         }
+        currentItemId = item.id
+        currentItemIndex = index + 1
+        currentItemStartedAt = Date.now()
+        currentStage = 'media file analysis'
+        logging.debug(
+          '[QualityAnalyzer]',
+          `Analyzing item ${currentItemIndex}/${mediaItems.length}: id=${currentItemId}, type=${item.type}`
+        )
         if (!item.file_path) throw new Error(`Media item ${item.id ?? item.title} has no local file path`)
         const completeAnalysis = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path, { signal })
+        currentStage = 'persisting deep analysis'
         await db.media.updateDeepAnalysisByPath(item.file_path, completeAnalysis, new Date().toISOString())
         const analyzedItem: MediaItem = {
           ...item,
@@ -700,6 +723,7 @@ export class QualityAnalyzer {
           audio_tracks: JSON.stringify(completeAnalysis.audioTracks),
           subtitle_tracks: JSON.stringify(completeAnalysis.subtitleTracks),
         }
+        currentStage = 'calculating quality score'
         const qualityScore = await this.analyzeMediaItem(analyzedItem)
         qualityScoresBatch.push(qualityScore)
 
@@ -709,11 +733,14 @@ export class QualityAnalyzer {
         qualityCounts[quality] = (qualityCounts[quality] ?? 0) + 1
 
         if (item.id && item.version_count && item.version_count > 1) {
+          currentStage = 'persisting quality scores before version analysis'
           await flushQualityScores()
+          currentStage = 'analyzing alternate versions'
           const versions = versionsByMediaId.get(item.id) ?? []
           const updatePromises: Promise<void>[] = []
           for (const version of versions) {
             if (isCancelled?.()) {
+              logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
               return analyzed
             }
             if (version.id) {
@@ -722,19 +749,27 @@ export class QualityAnalyzer {
             }
           }
           if (updatePromises.length > 0) {
+            currentStage = 'persisting alternate version scores'
             await db.withBatch(async () => { await Promise.all(updatePromises) })
           }
+          currentStage = 'selecting best alternate version'
           await db.media.updateBestVersion(item.id)
         }
 
         if (qualityScoresBatch.length >= 50) {
+          currentStage = 'persisting quality scores'
           await flushQualityScores()
         }
 
         analyzed++
+        logging.debug(
+          '[QualityAnalyzer]',
+          `Analyzed item ${currentItemIndex}/${mediaItems.length}: id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`
+        )
         if (onProgress) onProgress(analyzed, mediaItems.length)
       }
 
+      currentStage = 'persisting final quality scores'
       await flushQualityScores()
     } catch (error) {
       if (qualityScoresBatch.length > 0 && !qualityScoreBatchWriteFailed) {
@@ -747,14 +782,18 @@ export class QualityAnalyzer {
         }
       }
       if (signal?.aborted && error instanceof Error && error.name === 'AbortError') return analyzed
-      getLoggingService().error('[QualityAnalyzer]', 'Analysis failed:', error)
+      logging.error(
+        '[QualityAnalyzer]',
+        `Analysis failed during ${currentStage} after ${analyzed}/${mediaItems.length} items${currentItemId === undefined ? '' : `; item ${currentItemIndex}/${mediaItems.length} id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`}`,
+        error
+      )
       throw error
     }
 
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')
     const qualSummary = Object.entries(qualityCounts).map(([q, c]) => `${q}:${c}`).join(', ')
-    getLoggingService().verbose('[QualityAnalyzer]',
-      `Analysis complete: ${analyzed}/${mediaItems.length} items — Tiers: ${tierSummary} — Quality: ${qualSummary}`)
+    logging.info('[QualityAnalyzer]',
+      `Analysis complete: ${analyzed}/${mediaItems.length} items in ${Date.now() - analysisStartedAt}ms — Tiers: ${tierSummary} — Quality: ${qualSummary}`)
 
     return analyzed
   }

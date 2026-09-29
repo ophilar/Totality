@@ -602,17 +602,19 @@ export function MediaBrowser({
       )}
 
       <div className="flex-1 flex flex-col min-h-0 pb-4">
-        <BrowserFilterBar
-          view={view} musicViewMode={musicViewMode} setMusicViewMode={setMusicViewMode}
-          activeSourceId={activeSourceId} activeLibraryId={activeLibraryId} setActiveLibraryId={setActiveLibraryId}
-          currentTypeLibraries={currentTypeLibraries} isUnlocked={isUnlocked} setIsUnlocked={setIsUnlocked}
-          setShowPinModal={setShowPinModal} tierFilter={tierFilter} setTierFilter={setTierFilter}
-          qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} slimDown={slimDown} setSlimDown={setSlimDown}
-          collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly}
-          groupByCollections={groupByCollections} setGroupByCollections={setGroupByCollections}
-          hasCollections={movieCollections.length > 0}
-          gridScale={gridScale} setGridScale={setGridScale} viewType={viewType} setViewType={setViewType} selectedShow={selectedShow}
-        />
+        {view !== 'timelines' && (
+          <BrowserFilterBar
+            view={view} musicViewMode={musicViewMode} setMusicViewMode={setMusicViewMode}
+            activeSourceId={activeSourceId} activeLibraryId={activeLibraryId} setActiveLibraryId={setActiveLibraryId}
+            currentTypeLibraries={currentTypeLibraries} isUnlocked={isUnlocked} setIsUnlocked={setIsUnlocked}
+            setShowPinModal={setShowPinModal} tierFilter={tierFilter} setTierFilter={setTierFilter}
+            qualityFilter={qualityFilter} setQualityFilter={setQualityFilter} slimDown={slimDown} setSlimDown={setSlimDown}
+            collectionsOnly={collectionsOnly} setCollectionsOnly={setCollectionsOnly}
+            groupByCollections={groupByCollections} setGroupByCollections={setGroupByCollections}
+            hasCollections={movieCollections.length > 0}
+            gridScale={gridScale} setGridScale={setGridScale} viewType={viewType} setViewType={setViewType} selectedShow={selectedShow}
+          />
+        )}
 
         <div className="flex-1 relative min-h-0">
           <div className={`absolute inset-0 px-4 pb-4 ${view === 'timelines' ? 'pr-4' : 'pr-10'}`}>
