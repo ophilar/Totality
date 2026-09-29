@@ -5,34 +5,16 @@
  * clamp, and reject invalid inputs from AI-generated tool calls.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/database/BetterSQLiteService'
-
-// Mock dependencies before importing
-vi.mock('../../src/main/services/QualityAnalyzer', () => ({
-  getQualityAnalyzer: vi.fn(() => ({
-    getQualityDistribution: vi.fn(() => ({})),
-  })),
-}))
-
-vi.mock('../../src/main/services/TMDBService', () => ({
-  getTMDBService: vi.fn(() => ({
-    searchMovie: vi.fn(() => ({ results: [] })),
-    searchTVShow: vi.fn(() => ({ results: [] })),
-    searchCollection: vi.fn(() => ({ results: [] })),
-  })),
-}))
+import { describe, it, expect, beforeEach } from 'vitest'
 
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
-// Import after mocks
-const { executeTool } = await import('../../src/main/services/GeminiTools')
+import { executeTool } from '@main/services/GeminiTools'
 
 describe('GeminiTools', () => {
   let _db: Awaited<ReturnType<typeof setupTestDb>>
 
   beforeEach(async () => {
-    vi.clearAllMocks()
     _db = await setupTestDb()
     process.env.NODE_ENV = 'test'
   })

@@ -13,16 +13,6 @@ import { _getDatabase, _resetBetterSQLiteServiceForTesting } from '@main/databas
 const mockFetch = vi.fn()
 global.fetch = mockFetch
 
-// Mock RateLimiter
-vi.mock('../../src/main/services/utils/RateLimiter', () => ({
-  RateLimiters: {
-    createTMDBLimiter: vi.fn(() => ({
-      waitForSlot: vi.fn(() => Promise.resolve()),
-    })),
-  },
-  SlidingWindowRateLimiter: vi.fn(),
-}))
-
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
 describe('TMDBService', () => {

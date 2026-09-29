@@ -143,6 +143,13 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     getNfsMappings: () => invoke(IPC_CHANNELS.SETTINGS.GET_NFS_MAPPINGS),
     setNfsMappings: (mappings: unknown) => invoke(IPC_CHANNELS.SETTINGS.SET_NFS_MAPPINGS, mappings),
     testNfsMapping: (nfsPath: string, localPath: string) => invoke(IPC_CHANNELS.SETTINGS.TEST_NFS_MAPPING, nfsPath, localPath),
+    dbVerifyPin: (pin: string) => invoke(IPC_CHANNELS.DATABASE.VERIFY_PIN, pin),
+    dbSetPin: (pin: string) => invoke(IPC_CHANNELS.DATABASE.SET_PIN, pin),
+    dbHasPin: () => invoke(IPC_CHANNELS.DATABASE.HAS_PIN),
+    dbSetLibraryProtected: (sourceId: string, libraryId: string, isProtected: boolean) =>
+      invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_PROTECTED, sourceId, libraryId, isProtected),
+    dbSetLibraryAllowExpandedMatching: (sourceId: string, libraryId: string, allow: boolean) =>
+      invoke(IPC_CHANNELS.DATABASE.SET_LIBRARY_ALLOW_EXPANDED_MATCHING, sourceId, libraryId, allow),
     isVerboseLogging: () => invoke(IPC_CHANNELS.LOGGING.IS_VERBOSE),
     setVerboseLogging: (e: boolean) => invoke(IPC_CHANNELS.LOGGING.SET_VERBOSE, e),
     getLogs: (l: number) => invoke(IPC_CHANNELS.LOGGING.GET_ALL, l),
@@ -202,7 +209,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     sourcesGetActive: () => invoke(IPC_CHANNELS.SOURCES.GET_ACTIVE),
     sourcesGetLibrariesWithStatus: (sId: string) => invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sId),
     sourcesGetStats: (sId?: string) => invoke(IPC_CHANNELS.SOURCES.GET_STATS, sId),
-    sourcesTestConnection: (_sId: string) => Promise.resolve({ success: true }),
+    sourcesTestConnection: (sourceId: string) => invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId),
     sourcesGetSupportedProviders: () => invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS),
     sourcesUpsert: (s: unknown) => invoke(IPC_CHANNELS.SOURCES.UPSERT, s),
     sourcesDelete: (id: string) => invoke(IPC_CHANNELS.SOURCES.DELETE, id),
@@ -234,7 +241,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     wishlistGetCountsByReason: () => invoke(IPC_CHANNELS.WISHLIST.GET_COUNTS_BY_REASON),
     wishlistGetRegion: () => invoke(IPC_CHANNELS.WISHLIST.GET_REGION),
     wishlistAdd: (i: unknown) => invoke(IPC_CHANNELS.WISHLIST.ADD, i),
-    wishlistDelete: (id: number) => invoke(IPC_CHANNELS.WISHLIST.DELETE, id),
+    wishlistRemove: (id: number) => invoke(IPC_CHANNELS.WISHLIST.REMOVE, id),
     wishlistUpdateStatus: (id: number, s: string) => invoke(IPC_CHANNELS.WISHLIST.UPDATE_STATUS, id, s),
     wishlistUpdatePriority: (id: number, p: number) => invoke(IPC_CHANNELS.WISHLIST.UPDATE_PRIORITY, id, p),
 

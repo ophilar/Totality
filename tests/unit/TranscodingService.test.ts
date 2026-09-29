@@ -1,17 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getTranscodingService, resetTranscodingServiceForTesting } from '@main/services/TranscodingService'
-import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import * as fs from 'fs'
 import * as path from 'path'
-import { spawn } from 'child_process'
+import { spawnSync } from 'child_process'
 import { registerTranscodingHandlers } from '@main/ipc/transcoding'
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { _FileAnalysisResult } from '@main/workers/ffprobe-worker'
 import type { MediaItem } from '@main/types/database'
-
-vi.mock('child_process')
 
 describe('Transcoding Integration (Service + IPC)', () => {
   let service: ReturnType<typeof getTranscodingService>
@@ -28,6 +25,14 @@ describe('Transcoding Integration (Service + IPC)', () => {
     db = await setupTestDb()
     
     if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true })
+    const fixturePath = path.join(testDir, 'input.mkv')
+    const fixture = spawnSync('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
+      'color=c=black:s=16x16:d=1', '-frames:v', '1', '-c:v', 'mpeg4',
+      '-f', 'matroska', '-y', fixturePath,
+    ], { encoding: 'utf8' })
+    if (fixture.error) throw fixture.error
+    if (fixture.status !== 0) throw new Error(`FFmpeg test fixture failed: ${fixture.stderr}`)
 
     // Capture registered handlers
     vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: CapturedHandler) => {
@@ -38,40 +43,6 @@ describe('Transcoding Integration (Service + IPC)', () => {
     registerTranscodingHandlers()
     service = getTranscodingService()
 
-    // Setup real analyzer but mock ffprobe call
-    const analyzer = getMediaFileAnalyzer()
-    vi.spyOn(analyzer as unknown as { runFFprobe: (filePath: string) => Promise<unknown> }, 'runFFprobe').mockImplementation(async (filePath: string) => {
-      const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 1000
-      return {
-        format: { format_name: 'matroska', size: size.toString(), duration: '60' },
-        streams: [{ codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080 }]
-      }
-    })
-
-    // Mock spawn to handle availability checks and FFmpeg execution.
-    vi.mocked(spawn).mockImplementation((tool: string, args: readonly string[]) => {
-      const mockProc = {
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        kill: vi.fn(),
-        on: vi.fn((event, cb) => {
-          if (event === 'close') {
-            const argsArray = Array.isArray(args) ? args : []
-            const iIdx = argsArray.indexOf('-i')
-            const oIdx = argsArray.indexOf('-o')
-            
-            if (iIdx !== -1 && oIdx !== -1) {
-               const outputPath = argsArray[oIdx + 1]
-               if (outputPath) {
-                 fs.writeFileSync(outputPath, 'transcoded content')
-               }
-            }
-            setTimeout(() => cb(0), 10)
-          }
-        })
-      }
-      return mockProc as unknown as ReturnType<typeof spawn>
-    })
   })
 
   afterEach(async () => {
@@ -92,7 +63,6 @@ describe('Transcoding Integration (Service + IPC)', () => {
   describe('Integrated Transcoding Flow', () => {
     it('returns explicit transcoding parameters via IPC for a real file', async () => {
       const testFile = path.join(testDir, 'input.mkv')
-      fs.writeFileSync(testFile, 'dummy')
       await db.sources.upsertSource({ source_id: 'src1', source_type: 'local', display_name: 'Test source', connection_config: JSON.stringify({ folderPath: testDir }), is_enabled: 1 })
       await db.media.upsertItem({ id: 1, source_id: 'src1', plex_id: 'p1', title: 'Movie', type: 'movie', file_path: testFile, file_size: 5, duration: null, resolution: null, width: null, height: null, video_codec: null, video_bitrate: null, audio_codec: null, audio_channels: null, audio_bitrate: null } satisfies MediaItem)
 

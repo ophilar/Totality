@@ -1,19 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { StatsCacheService, getStatsCacheService } from '@main/services/StatsCacheService'
 import { BrowserWindow } from 'electron'
-import { safeSend } from '@main/ipc/utils/safeSend'
-
-vi.mock('electron', () => {
-  return {
-    BrowserWindow: {
-      getAllWindows: vi.fn(() => []),
-    }
-  }
-})
-
-vi.mock('@main/ipc/utils/safeSend', () => ({
-  safeSend: vi.fn(),
-}))
 
 describe('StatsCacheService', () => {
   let cacheService: StatsCacheService
@@ -72,7 +59,11 @@ describe('StatsCacheService', () => {
   })
 
   it('should clear cache and notify windows on invalidate', async () => {
-    const mockWindow = { id: 1 } as unknown as BrowserWindow
+    const send = vi.fn()
+    const mockWindow = {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send },
+    } as unknown as BrowserWindow
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow])
 
     const fetchSeries = vi.fn().mockResolvedValue({ total: 10 })
@@ -99,7 +90,7 @@ describe('StatsCacheService', () => {
 
     // Assert notification sent
     expect(BrowserWindow.getAllWindows).toHaveBeenCalledTimes(1)
-    expect(safeSend).toHaveBeenCalledWith(mockWindow, 'library:updated', { type: 'stats-cache-invalidated' })
+    expect(send).toHaveBeenCalledWith('library:updated', { type: 'stats-cache-invalidated' })
   })
 
   it('should return singleton instance via getStatsCacheService', () => {

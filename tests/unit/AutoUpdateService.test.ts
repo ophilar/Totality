@@ -4,7 +4,6 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { safeSend } from '@main/ipc/utils/safeSend'
 import { NotificationType } from '@main/types/monitoring'
 import type { BrowserWindow } from 'electron'
 
@@ -44,10 +43,6 @@ vi.mock('electron-updater', () => {
     }
   }
 })
-
-vi.mock('@main/ipc/utils/safeSend', () => ({
-  safeSend: vi.fn()
-}))
 
 describe('AutoUpdateService', () => {
   let service: AutoUpdateService
@@ -90,12 +85,16 @@ describe('AutoUpdateService', () => {
   })
 
   it('should allow setting main window', () => {
-    const mockWin = { id: 1 } as unknown as BrowserWindow
+    const send = vi.fn()
+    const mockWin = {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send },
+    } as unknown as BrowserWindow
     service.setMainWindow(mockWin)
     service.initialize()
 
     ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('checking-for-update')
-    expect(safeSend).toHaveBeenCalledWith(mockWin, 'autoUpdate:stateChanged', expect.objectContaining({ status: 'checking' }))
+    expect(send).toHaveBeenCalledWith('autoUpdate:stateChanged', expect.objectContaining({ status: 'checking' }))
   })
 
   it('should trigger check manually', async () => {

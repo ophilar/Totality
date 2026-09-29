@@ -5,38 +5,8 @@ import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { LanguageRemuxService } from '@main/services/LanguageRemuxService'
 import { ArrIntegrationService } from '@main/services/ArrIntegrationService'
 import { getTMDBService } from '@main/services/TMDBService'
-import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 import { promises as fs } from 'node:fs'
-import { EventEmitter } from 'node:events'
-
-vi.mock('electron', () => ({
-  app: {
-    getPath: vi.fn((name: string) => `/tmp/test-user-data/${name}`),
-  },
-  ipcMain: {
-    handle: vi.fn(),
-    removeHandler: vi.fn(),
-    on: vi.fn(),
-  },
-  safeStorage: {
-    isEncryptionAvailable: () => false,
-  },
-}))
-
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>()
-  return {
-    ...actual,
-    createReadStream: vi.fn(() => {
-      const emitter = new EventEmitter()
-      process.nextTick(() => {
-        emitter.emit('data', Buffer.from('mock-file-data'))
-        emitter.emit('end')
-      })
-      return emitter
-    }),
-  }
-})
+import path from 'node:path'
 
 vi.mock('@main/services/MediaFileAnalyzer', () => ({
   getMediaFileAnalyzer: vi.fn(),
@@ -52,7 +22,9 @@ vi.mock('@main/services/ArrIntegrationService', () => ({
 
 describe('Optimization IPC Handlers', () => {
   let db: Awaited<ReturnType<typeof setupTestDb>>
+  let mediaDir: string
   let invoke: ReturnType<typeof setupRealIntegratedBridge>['invoke']
+  const mediaPath = (filename: string) => path.join(mediaDir, filename)
 
   const mockAnalyzer = {
     isAvailable: vi.fn(),
@@ -67,6 +39,11 @@ describe('Optimization IPC Handlers', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    await fs.mkdir(path.join(process.cwd(), 'tests/tmp'), { recursive: true })
+    mediaDir = await fs.mkdtemp(path.join(process.cwd(), 'tests/tmp/optimization-ipc-'))
+    await Promise.all(['movie.mkv', 's01e01.mkv', 'test.mkv', 'item.mkv'].map(filename =>
+      fs.writeFile(mediaPath(filename), Buffer.alloc(1_000_000))
+    ))
     db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
     invoke = bridge.invoke
@@ -78,19 +55,12 @@ describe('Optimization IPC Handlers', () => {
     vi.mocked(getMediaFileAnalyzer).mockReturnValue(mockAnalyzer as never)
     vi.mocked(getTMDBService).mockReturnValue(mockTMDBService as never)
 
-    // Bypass MediaPathAuthorization for test convenience
-    vi.spyOn(MediaPathAuthorization, 'assertMediaAuthorized').mockImplementation(() => {})
-
-    // Default mock implementation for fs.stat
-    vi.spyOn(fs, 'stat').mockResolvedValue({
-      size: 1000000,
-      mtimeMs: 1600000000000,
-    } as never)
   })
 
   afterEach(async () => {
     vi.restoreAllMocks()
     await cleanupTestDb()
+    await fs.rm(mediaDir, { recursive: true, force: true })
   })
 
   describe('OPTIMIZATION.LOCAL_REMUX', () => {
@@ -111,7 +81,7 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'non-existent-source',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         title: 'Movie',
       } as never)
 
@@ -125,14 +95,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         title: 'Movie',
       } as never)
 
@@ -148,14 +118,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         title: 'Movie',
       } as never)
 
@@ -174,14 +144,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         original_language: 'eng',
         title: 'Movie',
       } as never)
@@ -216,14 +186,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         original_language: 'eng',
         title: 'Movie',
       } as never)
@@ -266,7 +236,7 @@ describe('Optimization IPC Handlers', () => {
 
       const mockRemuxInstance = {
         remux: vi.fn().mockResolvedValue({
-          activePath: '/media/movie.mkv',
+          activePath: mediaPath('movie.mkv'),
           verifiedProbe: { size: 800000, duration: 120000 },
         }),
       }
@@ -290,14 +260,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/movie.mkv',
+        file_path: mediaPath('movie.mkv'),
         original_language: 'eng',
         title: 'Movie',
       } as never)
@@ -353,7 +323,7 @@ describe('Optimization IPC Handlers', () => {
   describe('OPTIMIZATION.DRY_RUN', () => {
     it('throws error when episode media analysis is incomplete or unavailable', async () => {
       vi.spyOn(db.tvShows, 'getEpisodes').mockResolvedValueOnce([
-        { title: 'Ep 1', file_path: '/media/s01e01.mkv' } as never,
+        { title: 'Ep 1', file_path: mediaPath('s01e01.mkv') } as never,
       ])
       mockAnalyzer.isAvailable.mockResolvedValueOnce(false)
 
@@ -366,7 +336,7 @@ describe('Optimization IPC Handlers', () => {
       vi.spyOn(db.tvShows, 'getEpisodes').mockResolvedValueOnce([
         {
           title: 'Ep 1',
-          file_path: '/media/s01e01.mkv',
+          file_path: mediaPath('s01e01.mkv'),
           file_size: 500000,
           storage_debt_bytes: 100000,
           efficiency_score: 80,
@@ -503,14 +473,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/test.mkv',
+        file_path: mediaPath('test.mkv'),
         title: 'Title',
       } as never)
 
@@ -518,7 +488,7 @@ describe('Optimization IPC Handlers', () => {
         mediaItemId: mediaId,
         operationKind: 'remux',
         status: 'planned',
-        sourcePath: '/media/test.mkv',
+        sourcePath: mediaPath('test.mkv'),
         sourceSize: 1000,
         sourceMtimeMs: 1000,
         sourceSha256: 'abc',
@@ -556,7 +526,7 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'missing-src',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/item.mkv',
+        file_path: mediaPath('item.mkv'),
         title: 'Title',
       } as never)
 
@@ -570,14 +540,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/item.mkv',
+        file_path: mediaPath('item.mkv'),
         title: 'Title',
       } as never)
 
@@ -596,14 +566,14 @@ describe('Optimization IPC Handlers', () => {
         source_id: 'src-1',
         source_type: 'local',
         display_name: 'Local',
-        connection_config: JSON.stringify({ path: '/media' }),
+        connection_config: JSON.stringify({ folderPath: mediaDir }),
         is_enabled: 1,
       })
       const mediaId = await db.media.upsertItem({
         source_id: 'src-1',
         source_type: 'local',
         type: 'movie',
-        file_path: '/media/item.mkv',
+        file_path: mediaPath('item.mkv'),
         title: 'Title',
         original_language: 'eng',
       } as never)

@@ -1,35 +1,31 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import React from 'react'
 import { ChatMessage } from '@/components/chat/ChatMessage'
-import { useWishlist, WishlistItem } from '@/contexts/WishlistContext'
+import { WishlistProvider } from '@/contexts/WishlistContext'
 import type { ChatMessage as ChatMessageType, ActionableItem } from '@/hooks/useChat'
-
-vi.mock('@/contexts/WishlistContext', () => ({
-  useWishlist: vi.fn(),
-}))
+import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 
 describe('ChatMessage Component', () => {
-  const mockAddItem = vi.fn()
-  const mockRemoveItem = vi.fn()
+  let db: BetterSQLiteService
 
-  beforeEach(() => {
-    vi.resetAllMocks()
-    mockAddItem.mockResolvedValue(1)
-    mockRemoveItem.mockResolvedValue(undefined)
-    vi.mocked(useWishlist).mockReturnValue({
-      addItem: mockAddItem,
-      removeItem: mockRemoveItem,
-      items: [],
-    } as unknown as ReturnType<typeof useWishlist>)
+  beforeEach(async () => {
+    db = await setupTestDb()
+    Object.assign(window, { electronAPI: setupRealIntegratedBridge().api })
   })
 
   afterEach(() => {
     cleanup()
+    cleanupTestDb()
   })
+
+  function renderWithWishlist(message: ChatMessageType, activeTools: string[] = []) {
+    return render(<WishlistProvider><ChatMessage message={message} activeTools={activeTools} /></WishlistProvider>)
+  }
 
   it('renders user message with correct avatar, alignment, and styling', () => {
     const userMessage: ChatMessageType = {
@@ -39,7 +35,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    const { container } = render(<ChatMessage message={userMessage} activeTools={[]} />)
+    const { container } = renderWithWishlist(userMessage)
 
     // Check content text
     expect(screen.getByText('Can you search for Sci-Fi movies?')).toBeDefined()
@@ -61,7 +57,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    const { container } = render(<ChatMessage message={botMessage} activeTools={[]} />)
+    const { container } = renderWithWishlist(botMessage)
 
     expect(screen.getByText('Here are the Sci-Fi movies found in your library.')).toBeDefined()
 
@@ -81,7 +77,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={loadingMessage} activeTools={[]} />)
+    renderWithWishlist(loadingMessage)
 
     expect(screen.getByText('Thinking...')).toBeDefined()
   })
@@ -97,7 +93,7 @@ describe('ChatMessage Component', () => {
 
     const activeTools = ['search_library', 'unknown_custom_tool']
 
-    render(<ChatMessage message={loadingMessage} activeTools={activeTools} />)
+    renderWithWishlist(loadingMessage, activeTools)
 
     expect(screen.getByText('Searching library...')).toBeDefined()
     expect(screen.getByText('unknown_custom_tool...')).toBeDefined()
@@ -112,7 +108,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={messageWithTools} activeTools={[]} />)
+    renderWithWishlist(messageWithTools)
 
     expect(screen.getByText('Querying media items')).toBeDefined()
     expect(screen.getByText('custom_tool')).toBeDefined()
@@ -127,7 +123,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={userMessageWithItems} activeTools={[]} />)
+    renderWithWishlist(userMessageWithItems)
 
     expect(screen.queryByText('Add to wishlist:')).toBeNull()
     expect(screen.queryByText('Inception (2010)')).toBeNull()
@@ -137,7 +133,6 @@ describe('ChatMessage Component', () => {
     const item: ActionableItem = {
       title: 'Inception',
       year: 2010,
-      tmdb_id: 'tmdb-101',
       media_type: 'movie',
     }
 
@@ -149,7 +144,7 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={botMessageWithItems} activeTools={[]} />)
+    renderWithWishlist(botMessageWithItems)
 
     expect(screen.getByText('Add to wishlist:')).toBeDefined()
     const button = screen.getByRole('button', { name: 'Inception (2010)' })
@@ -157,22 +152,20 @@ describe('ChatMessage Component', () => {
 
     fireEvent.click(button)
 
-    await waitFor(() => {
-      expect(mockAddItem).toHaveBeenCalledWith({
+    await waitFor(async () => {
+      expect(await db.wishlist.getItems()).toContainEqual(expect.objectContaining({
         title: 'Inception',
         year: 2010,
-        tmdb_id: 'tmdb-101',
         media_type: 'movie',
         reason: 'missing',
         priority: 3,
         status: 'active',
-      })
+      }))
     })
   })
 
   it('maps "tv" media type to "season" and handles removing item when already in wishlist', async () => {
-    const existingWishlistItem: WishlistItem = {
-      id: 42,
+    await db.wishlist.add({
       media_type: 'season',
       title: 'Breaking Bad',
       year: 2008,
@@ -180,15 +173,7 @@ describe('ChatMessage Component', () => {
       reason: 'missing',
       priority: 3,
       status: 'active',
-      added_at: '2025-01-01',
-      updated_at: '2025-01-01',
-    }
-
-    vi.mocked(useWishlist).mockReturnValue({
-      addItem: mockAddItem,
-      removeItem: mockRemoveItem,
-      items: [existingWishlistItem],
-    } as unknown as ReturnType<typeof useWishlist>)
+    })
 
     const tvItem: ActionableItem = {
       title: 'Breaking Bad',
@@ -205,35 +190,25 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={botMessage} activeTools={[]} />)
+    renderWithWishlist(botMessage)
 
     const button = screen.getByRole('button', { name: 'Breaking Bad (2008)' })
+    await waitFor(() => expect(button.className).toContain('text-foreground'))
     expect(button).toBeDefined()
 
     fireEvent.click(button)
 
-    await waitFor(() => {
-      expect(mockRemoveItem).toHaveBeenCalledWith(42)
-    })
+    await waitFor(async () => expect(await db.wishlist.getItems()).toHaveLength(0))
   })
 
   it('matches wishlist item by title when tmdb_id is absent', async () => {
-    const existingWishlistItem: WishlistItem = {
-      id: 99,
+    await db.wishlist.add({
       media_type: 'movie',
       title: 'Unknown Indie Film',
       reason: 'missing',
       priority: 3,
       status: 'active',
-      added_at: '2025-01-01',
-      updated_at: '2025-01-01',
-    }
-
-    vi.mocked(useWishlist).mockReturnValue({
-      addItem: mockAddItem,
-      removeItem: mockRemoveItem,
-      items: [existingWishlistItem],
-    } as unknown as ReturnType<typeof useWishlist>)
+    })
 
     const itemWithoutTmdb: ActionableItem = {
       title: 'Unknown Indie Film',
@@ -248,13 +223,12 @@ describe('ChatMessage Component', () => {
       timestamp: new Date().toISOString(),
     }
 
-    render(<ChatMessage message={botMessage} activeTools={[]} />)
+    renderWithWishlist(botMessage)
 
     const button = screen.getByRole('button', { name: 'Unknown Indie Film' })
+    await waitFor(() => expect(button.className).toContain('text-foreground'))
     fireEvent.click(button)
 
-    await waitFor(() => {
-      expect(mockRemoveItem).toHaveBeenCalledWith(99)
-    })
+    await waitFor(async () => expect(await db.wishlist.getItems()).toHaveLength(0))
   })
 })

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, _waitFor, act, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { ServicesTab } from '@/components/settings/tabs/ServicesTab'
 import { DataManagementTab } from '@/components/settings/tabs/DataManagementTab'
 import { TroubleshootTab } from '@/components/settings/tabs/TroubleshootTab'
@@ -38,7 +38,6 @@ describe('Settings Tabs Deep Dive (Integrated Stack)', () => {
 
     _db = await setupTestDb()
     const bridge = setupRealIntegratedBridge()
-    
     Object.assign(window, { electronAPI: bridge.api })
     Object.assign(globalThis, { electronAPI: bridge.api })
   })
@@ -66,7 +65,7 @@ describe('Settings Tabs Deep Dive (Integrated Stack)', () => {
             renderWithProviders(<ServicesTab />)
         })
 
-        expect(screen.getByText(/Configure external services/i)).toBeTruthy()
+        await waitFor(() => expect(screen.getByText(/Configure external services/i)).toBeTruthy())
         
         const tmdbCard = screen.getByText(/TMDB API/i)
         await act(async () => {

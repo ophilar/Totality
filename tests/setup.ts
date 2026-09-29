@@ -97,37 +97,6 @@ vi.mock('electron', () => {
   }
 })
 
-// Mock child_process
-vi.mock('child_process', () => {
-  const mockProc = {
-    on: vi.fn().mockImplementation(function(evt, handler) {
-      if (evt === 'close' || evt === 'exit') setImmediate(() => handler(0))
-      return this
-    }),
-    stdout: { on: vi.fn().mockReturnThis(), pipe: vi.fn().mockReturnThis() },
-    stderr: { on: vi.fn().mockReturnThis(), pipe: vi.fn().mockReturnThis() },
-    stdin: { write: vi.fn(), end: vi.fn(), on: vi.fn().mockReturnThis() },
-    kill: vi.fn(),
-    unref: vi.fn(),
-  }
-  const result = {
-    exec: vi.fn((cmd, options, callback) => {
-      const cb = typeof options === 'function' ? options : callback
-      if (cb) setImmediate(() => cb(null, { stdout: '' }, ''))
-      return mockProc
-    }),
-    execFile: vi.fn((file, args, options, callback) => {
-      const cb = typeof options === 'function' ? options : typeof args === 'function' ? args : callback
-      if (cb) setImmediate(() => cb(null, { stdout: '' }, ''))
-      return mockProc
-    }),
-    execSync: vi.fn().mockReturnValue(''),
-    spawn: vi.fn().mockReturnValue(mockProc),
-    fork: vi.fn(),
-  }
-  return { ...result, default: result }
-})
-
 // Mock react-virtuoso for JSDOM/Happy-dom
 vi.mock('react-virtuoso', () => {
   const React = require('react')

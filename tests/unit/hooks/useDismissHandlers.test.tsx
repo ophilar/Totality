@@ -12,12 +12,7 @@ import type {
   MovieCollectionData,
   ArtistCompletenessData,
 } from '@/components/library/types'
-import { emitDismissUpgrade, emitDismissCollectionMovie } from '@/utils/dismissEvents'
-
-vi.mock('@/utils/dismissEvents', () => ({
-  emitDismissUpgrade: vi.fn(),
-  emitDismissCollectionMovie: vi.fn(),
-}))
+import { onDismissUpgrade, onDismissCollectionMovie } from '@/utils/dismissEvents'
 
 describe('useDismissHandlers', () => {
   const mockAddExclusion = vi.fn()
@@ -75,6 +70,8 @@ describe('useDismissHandlers', () => {
 
       const options = createOptions()
       const { result } = renderHook(() => useDismissHandlers(options))
+      const dismissedMediaIds: number[] = []
+      const removeDismissListener = onDismissUpgrade(({ mediaId }) => dismissedMediaIds.push(mediaId))
 
       const item = {
         id: 1,
@@ -101,7 +98,8 @@ describe('useDismissHandlers', () => {
       const updatedEps = epUpdater([{ id: 1, needs_upgrade: true, tier_quality: 'HIGH' } as MediaItem])
       expect(updatedEps).toEqual([{ id: 1, needs_upgrade: false, tier_quality: 'HIGH' }])
 
-      expect(emitDismissUpgrade).toHaveBeenCalledWith({ mediaId: 1 })
+      expect(dismissedMediaIds).toEqual([1])
+      removeDismissListener()
       expect(addToast).toHaveBeenCalledWith({
         type: 'success',
         title: 'Upgrade dismissed',
@@ -341,6 +339,8 @@ describe('useDismissHandlers', () => {
 
       const options = createOptions({ selectedCollection: collection })
       const { result } = renderHook(() => useDismissHandlers(options))
+      const dismissedMovies: Array<{ collectionId: string; tmdbId: string }> = []
+      const removeDismissListener = onDismissCollectionMovie(payload => dismissedMovies.push(payload))
 
       await act(async () => {
         await result.current.handleDismissCollectionMovie('movie-1', 'Movie One')
@@ -367,7 +367,8 @@ describe('useDismissHandlers', () => {
       expect(updatedList).toHaveLength(1)
       expect(updatedList[0].tmdb_collection_id).toBe('col-1')
 
-      expect(emitDismissCollectionMovie).toHaveBeenCalledWith({ collectionId: 'col-1', tmdbId: 'movie-1' })
+      expect(dismissedMovies).toEqual([{ collectionId: 'col-1', tmdbId: 'movie-1' }])
+      removeDismissListener()
       expect(addToast).toHaveBeenCalledWith({
         type: 'success',
         title: 'Movie dismissed',

@@ -3,16 +3,12 @@
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render as renderComponent, screen, fireEvent } from '@testing-library/react'
 import { JellyfinAuthFlow } from '@/components/sources/JellyfinAuthFlow'
-import { useSources } from '@/contexts/SourceContext'
-
-vi.mock('@/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
+import { SourceProvider } from '@/contexts/SourceContext'
+import { ToastProvider } from '@/contexts/ToastContext'
 
 const mockGetLibraries = vi.fn()
-const mockRefreshSources = vi.fn()
 
 const mockElectronAPI = {
   jellyfinDiscoverServers: vi.fn(),
@@ -23,6 +19,13 @@ const mockElectronAPI = {
   embyAuthenticateApiKey: vi.fn(),
   sourcesSetLibrariesEnabled: vi.fn(),
   taskQueueAddTask: vi.fn(),
+  sourcesList: vi.fn().mockResolvedValue([]),
+  sourcesGetStats: vi.fn().mockResolvedValue({ totalSources: 0, enabledSources: 0, totalItems: 0, bySource: [] }),
+  sourcesGetSupportedProviders: vi.fn().mockResolvedValue(['jellyfin', 'emby']),
+  sourcesGetLibrariesWithStatus: vi.fn().mockResolvedValue([]),
+  sourcesGetLibraries: mockGetLibraries,
+  onSourcesScanProgress: vi.fn().mockReturnValue(() => {}),
+  onScanCompleted: vi.fn().mockReturnValue(() => {}),
   log: {
     error: vi.fn(),
   },
@@ -41,16 +44,11 @@ describe('JellyfinAuthFlow Component', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(useSources).mockReturnValue({
-      getLibraries: mockGetLibraries,
-      refreshSources: mockRefreshSources,
-      sources: [],
-      supportedProviders: [],
-      addSource: vi.fn(),
-      removeSource: vi.fn(),
-      syncSource: vi.fn(),
-      isLoading: false,
-    } as any)
+    mockElectronAPI.sourcesList.mockResolvedValue([])
+    mockElectronAPI.sourcesGetStats.mockResolvedValue({ totalSources: 0, enabledSources: 0, totalItems: 0, bySource: [] })
+    mockElectronAPI.sourcesGetSupportedProviders.mockResolvedValue(['jellyfin', 'emby'])
+    mockElectronAPI.sourcesGetLibrariesWithStatus.mockResolvedValue([])
+    mockElectronAPI.sourcesGetLibraries.mockResolvedValue([])
 
     mockElectronAPI.jellyfinDiscoverServers.mockResolvedValue([])
     mockElectronAPI.embyDiscoverServers.mockResolvedValue([])
@@ -68,6 +66,10 @@ describe('JellyfinAuthFlow Component', () => {
     mockElectronAPI.taskQueueAddTask.mockResolvedValue(true)
     mockGetLibraries.mockResolvedValue([])
   })
+
+  function render(ui: React.ReactElement) {
+    return renderComponent(<ToastProvider><SourceProvider>{ui}</SourceProvider></ToastProvider>)
+  }
 
   describe('Discovery step', () => {
     it('calls jellyfinDiscoverServers on mount when isEmby is false', async () => {
@@ -295,6 +297,7 @@ describe('JellyfinAuthFlow Component', () => {
       await navigateToLibrariesStep()
 
       const doneBtn = screen.getByRole('button', { name: 'Done' })
+      mockElectronAPI.sourcesList.mockClear()
       fireEvent.click(doneBtn)
 
       expect(await screen.findByText('Select libraries to include:')).toBeTruthy()
@@ -304,7 +307,7 @@ describe('JellyfinAuthFlow Component', () => {
         { id: 'lib-2', name: 'TV Shows', type: 'show', enabled: true },
         { id: 'lib-3', name: 'Music Library', type: 'music', enabled: true },
       ])
-      expect(mockRefreshSources).toHaveBeenCalledTimes(1)
+      expect(mockElectronAPI.sourcesList).toHaveBeenCalledTimes(1)
       expect(mockElectronAPI.taskQueueAddTask).toHaveBeenCalledWith({
         type: 'library-scan',
         label: 'Scan Movies (Discovered Server)',

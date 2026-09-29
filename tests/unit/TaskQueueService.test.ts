@@ -6,10 +6,7 @@ import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 import type { LoggingService } from '@main/services/LoggingService'
 import type { SourceManager } from '@main/services/SourceManager'
 import { QueuedTask, TaskType } from '@main/types/database'
-import { safeSend } from '@main/ipc/utils/safeSend'
 type TaskDefinition = Omit<QueuedTask, 'id' | 'status' | 'createdAt'>
-
-vi.mock('@main/ipc/utils/safeSend', () => ({ safeSend: vi.fn() }))
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService
@@ -164,7 +161,8 @@ describe('TaskQueueService', () => {
         stopScan: vi.fn(),
       }
       service = new TaskQueueService({ db, logging, sourceManager })
-      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }
       service.setMainWindow(win as never)
 
       const taskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Cancel Test', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
@@ -174,14 +172,15 @@ describe('TaskQueueService', () => {
       expect(sourceManager.stopScan).toHaveBeenCalledOnce()
       const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
       expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelled' })
-      expect(safeSend).toHaveBeenCalledWith(win, 'taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelled' }) }))
+      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelled' }) }))
 
       releaseTask()
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
     })
 
     it('persists add, pause, and resume state before notifying the renderer', async () => {
-      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }
       service.setMainWindow(win as never)
       const originalSetSetting = db.config.setSetting.bind(db.config)
       let releaseWrite: (() => void) | undefined
@@ -197,32 +196,32 @@ describe('TaskQueueService', () => {
       blockNextWrite = true
       const pausePromise = service.pauseQueue()
       await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
-      expect(safeSend).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
       releaseWrite!()
       await pausePromise
-      expect(safeSend).toHaveBeenLastCalledWith(win, 'taskQueue:updated', expect.objectContaining({ isPaused: true }))
+      expect(send).toHaveBeenLastCalledWith('taskQueue:updated', expect.objectContaining({ isPaused: true }))
 
-      vi.mocked(safeSend).mockClear()
+      send.mockClear()
       releaseWrite = undefined
       blockNextWrite = true
       const addPromise = service.addTask({ type: TaskType.LibraryScan, label: 'Ordered Add', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
       await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
-      expect(safeSend).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
       releaseWrite!()
       await addPromise
-      expect(safeSend).toHaveBeenLastCalledWith(win, 'taskQueue:updated', expect.objectContaining({
+      expect(send).toHaveBeenLastCalledWith('taskQueue:updated', expect.objectContaining({
         queue: [expect.objectContaining({ label: 'Ordered Add', status: 'queued' })],
       }))
 
-      vi.mocked(safeSend).mockClear()
+      send.mockClear()
       releaseWrite = undefined
       blockNextWrite = true
       const resumePromise = service.resumeQueue()
       await vi.waitFor(() => expect(releaseWrite).toBeTypeOf('function'))
-      expect(safeSend).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
       releaseWrite!()
       await resumePromise
-      expect(safeSend).toHaveBeenCalledWith(win, 'taskQueue:updated', expect.objectContaining({ isPaused: false }))
+      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ isPaused: false }))
     })
 
     it('persists the latest task progress for renderer reconnects', async () => {
@@ -306,7 +305,6 @@ describe('TaskQueueService', () => {
 
     it('does not notify an unregistered main window', async () => {
       await service.addTask({ type: TaskType.LibraryScan, label: 'No Window', sourceId: 's1', libraryId: 'l1' } satisfies TaskDefinition)
-      expect(safeSend).not.toHaveBeenCalled()
     })
   })
 

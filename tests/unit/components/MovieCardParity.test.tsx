@@ -5,35 +5,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import React from 'react'
 import { MoviesView } from '@/components/library/MoviesView'
-import { useSources } from '@/contexts/SourceContext'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { ToastProvider } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
+import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
 import type { MediaItem, MovieCollectionData } from '@/components/library/types'
 import type { OptimizationMetricsSummary } from '@main/types/database'
 
-vi.mock('@/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
-
 describe('MoviesView and MovieCard Canonical Parity', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    vi.mocked(useSources).mockReturnValue({
-      sources: [],
-      isLoading: false,
-      scanProgress: new Map(),
-      isScanning: false,
-      isMonitoring: false,
-      refreshSources: vi.fn(),
-      addSource: vi.fn(),
-      updateSource: vi.fn(),
-      deleteSource: vi.fn(),
-      scanSource: vi.fn(),
-      cancelScan: vi.fn(),
-    } as never)
+  beforeEach(async () => {
+    await setupTestDb()
+    Object.assign(window, { electronAPI: setupRealIntegratedBridge().api })
   })
 
   afterEach(() => {
     cleanup()
+    cleanupTestDb()
   })
 
   it('renders movie card with canonical metrics row, collection badge, and existing metadata without data loss', () => {
@@ -83,8 +70,10 @@ describe('MoviesView and MovieCard Canonical Parity', () => {
     }
 
     render(
-      <ScrollMemoryProvider>
-        <MoviesView
+      <ToastProvider>
+        <SourceProvider>
+          <ScrollMemoryProvider>
+            <MoviesView
           movies={[movie]}
           sortBy="title"
           sortOrder="asc"
@@ -102,8 +91,10 @@ describe('MoviesView and MovieCard Canonical Parity', () => {
           onLoadMoreMovies={vi.fn()}
           groupByCollections={false}
           optimizationSummary={optimizationSummary}
-        />
-      </ScrollMemoryProvider>
+            />
+          </ScrollMemoryProvider>
+        </SourceProvider>
+      </ToastProvider>
     )
 
     // Verify Title & Original Metadata

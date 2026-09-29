@@ -11,11 +11,6 @@ import { TestProviders } from '@tests/TestProviders'
 import React from 'react'
 type TestDb = Awaited<ReturnType<typeof setupTestDb>>
 
-// Mock the heavy event listener hook to prevent background noise during tests
-vi.mock('@/components/library/hooks/useLibraryEventListeners', () => ({
-  useLibraryEventListeners: () => {}
-}))
-
 describe('MediaBrowser Lifecycle Integration', () => {
   let db: TestDb
 

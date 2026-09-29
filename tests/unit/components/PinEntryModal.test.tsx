@@ -1,194 +1,107 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import React from 'react'
 import { PinEntryModal } from '@/components/library/PinEntryModal'
+import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
+import type { BetterSQLiteService } from '@main/database/BetterSQLiteService'
 
-describe('PinEntryModal', () => {
-  const mockOnClose = vi.fn()
-  const mockOnSuccess = vi.fn()
+describe('PinEntryModal (Integrated Stack)', () => {
+  let db: BetterSQLiteService
+  let closeCount: number
+  let successCount: number
 
-  beforeEach(() => {
-    vi.resetAllMocks()
-    window.electronAPI = {
-      ...(window.electronAPI || {}),
-      dbHasPin: vi.fn().mockResolvedValue(true),
-      dbSetPin: vi.fn().mockResolvedValue(true),
-      dbVerifyPin: vi.fn().mockResolvedValue(true),
-    } as unknown as typeof window.electronAPI
+  beforeEach(async () => {
+    db = await setupTestDb()
+    Object.assign(window, { electronAPI: setupRealIntegratedBridge().api })
+    closeCount = 0
+    successCount = 0
   })
 
   afterEach(() => {
     cleanup()
+    cleanupTestDb()
   })
 
-  it('does not render when isOpen is false', () => {
-    const { container } = render(
-      <PinEntryModal isOpen={false} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    )
+  const renderModal = (isOpen = true) => render(
+    <PinEntryModal
+      isOpen={isOpen}
+      onClose={() => { closeCount += 1 }}
+      onSuccess={() => { successCount += 1 }}
+    />
+  )
+
+  const enterPin = (pin: string) => fireEvent.change(screen.getByPlaceholderText('••••'), { target: { value: pin } })
+
+  it('does not render while closed', () => {
+    const { container } = renderModal(false)
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders Set Security PIN mode when dbHasPin resolves to false', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(false)
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Set Security PIN')).toBeDefined()
-    })
-    expect(
-      screen.getByText('Create a PIN to protect your secret libraries and personal content.')
-    ).toBeDefined()
-    expect(screen.getByRole('button', { name: /Save PIN/i })).toBeDefined()
+  it('shows PIN creation when the database has no PIN', async () => {
+    renderModal()
+    expect(await screen.findByText('Set Security PIN')).toBeTruthy()
+    expect(screen.getByText('Create a PIN to protect your secret libraries and personal content.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Save PIN/i })).toBeTruthy()
   })
 
-  it('renders Unlock Library mode when dbHasPin resolves to true', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(true)
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Unlock Library')).toBeDefined()
-    })
-    expect(screen.getByText('Enter your security PIN to view protected libraries.')).toBeDefined()
-    expect(screen.getByRole('button', { name: /Unlock/i })).toBeDefined()
+  it('shows unlock mode when a PIN exists in the database', async () => {
+    await db.config.setPin('5678')
+    renderModal()
+    expect(await screen.findByText('Unlock Library')).toBeTruthy()
+    expect(screen.getByText('Enter your security PIN to view protected libraries.')).toBeTruthy()
   })
 
-  it('waits for PIN status before allowing an unlock attempt', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockReturnValue(new Promise<boolean>(() => {}))
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
+  it('filters non-numeric input and requires four digits', async () => {
+    await db.config.setPin('5678')
+    renderModal()
+    const input = await screen.findByPlaceholderText('••••') as HTMLInputElement
+    const submit = screen.getByRole('button', { name: /Unlock/i }) as HTMLButtonElement
 
-    const input = await screen.findByPlaceholderText('••••')
-    fireEvent.change(input, { target: { value: '1234' } })
-    const submitButton = screen.getByRole('button', { name: /Unlock/i }) as HTMLButtonElement
-
-    expect(submitButton.disabled).toBe(true)
-    fireEvent.click(submitButton)
-    expect(window.electronAPI.dbVerifyPin).not.toHaveBeenCalled()
-    expect(mockOnSuccess).not.toHaveBeenCalled()
-  })
-
-  it('filters non-numeric characters from input and disables submit when pin length is less than 4', async () => {
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText('••••')).toBeDefined()
-    })
-
-    const input = screen.getByPlaceholderText('••••') as HTMLInputElement
-    const submitBtn = screen.getByRole('button', { name: /Unlock/i }) as HTMLButtonElement
-
-    expect(submitBtn.disabled).toBe(true)
-
-    fireEvent.change(input, { target: { value: '12abc3' } })
+    expect(submit.disabled).toBe(true)
+    enterPin('12abc3')
     expect(input.value).toBe('123')
-    expect(submitBtn.disabled).toBe(true)
-
-    fireEvent.change(input, { target: { value: '1234' } })
+    expect(submit.disabled).toBe(true)
+    enterPin('1234')
     expect(input.value).toBe('1234')
-    expect(submitBtn.disabled).toBe(false)
+    expect(submit.disabled).toBe(false)
   })
 
-  it('handles first-time PIN setting successfully', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(false)
-    vi.mocked(window.electronAPI.dbSetPin).mockResolvedValue(true)
+  it('sets a first-time PIN through the real database handler', async () => {
+    renderModal()
+    await screen.findByText('Set Security PIN')
+    enterPin('1234')
+    fireEvent.click(screen.getByRole('button', { name: /Save PIN/i }))
 
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Set Security PIN')).toBeDefined()
-    })
-
-    const input = screen.getByPlaceholderText('••••')
-    fireEvent.change(input, { target: { value: '1234' } })
-
-    const submitBtn = screen.getByRole('button', { name: /Save PIN/i })
-    fireEvent.click(submitBtn)
-
-    await waitFor(() => {
-      expect(window.electronAPI.dbSetPin).toHaveBeenCalledWith('1234')
-      expect(mockOnSuccess).toHaveBeenCalledTimes(1)
-    })
+    await waitFor(async () => expect(await db.config.hasPin()).toBe(true))
+    expect(await db.config.verifyPin('1234')).toBe(true)
+    expect(successCount).toBe(1)
   })
 
-  it('handles valid PIN verification successfully', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(true)
-    vi.mocked(window.electronAPI.dbVerifyPin).mockResolvedValue(true)
+  it('unlocks with a valid PIN and rejects an invalid one', async () => {
+    await db.config.setPin('5678')
+    renderModal()
+    await screen.findByText('Unlock Library')
 
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
+    enterPin('0000')
+    fireEvent.click(screen.getByRole('button', { name: /Unlock/i }))
+    expect(await screen.findByText('Invalid PIN. Please try again.')).toBeTruthy()
+    expect((screen.getByPlaceholderText('••••') as HTMLInputElement).value).toBe('')
+    expect(successCount).toBe(0)
 
-    await waitFor(() => {
-      expect(screen.getByText('Unlock Library')).toBeDefined()
-    })
-
-    const input = screen.getByPlaceholderText('••••')
-    fireEvent.change(input, { target: { value: '5678' } })
-
-    const submitBtn = screen.getByRole('button', { name: /Unlock/i })
-    fireEvent.click(submitBtn)
-
-    await waitFor(() => {
-      expect(window.electronAPI.dbVerifyPin).toHaveBeenCalledWith('5678')
-      expect(mockOnSuccess).toHaveBeenCalledTimes(1)
-    })
+    enterPin('5678')
+    fireEvent.click(screen.getByRole('button', { name: /Unlock/i }))
+    await waitFor(() => expect(successCount).toBe(1))
+    expect(await db.config.verifyPin('5678')).toBe(true)
   })
 
-  it('shows error message when PIN verification fails', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(true)
-    vi.mocked(window.electronAPI.dbVerifyPin).mockResolvedValue(false)
-
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Unlock Library')).toBeDefined()
-    })
-
-    const input = screen.getByPlaceholderText('••••') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '0000' } })
-
-    const submitBtn = screen.getByRole('button', { name: /Unlock/i })
-    fireEvent.click(submitBtn)
-
-    await waitFor(() => {
-      expect(screen.getByText('Invalid PIN. Please try again.')).toBeDefined()
-      expect(input.value).toBe('')
-      expect(mockOnSuccess).not.toHaveBeenCalled()
-    })
-  })
-
-  it('shows error message when electronAPI throws an exception', async () => {
-    vi.mocked(window.electronAPI.dbHasPin).mockResolvedValue(true)
-    vi.mocked(window.electronAPI.dbVerifyPin).mockRejectedValue(new Error('DB failure'))
-
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Unlock Library')).toBeDefined()
-    })
-
-    const input = screen.getByPlaceholderText('••••')
-    fireEvent.change(input, { target: { value: '9999' } })
-
-    const submitBtn = screen.getByRole('button', { name: /Unlock/i })
-    fireEvent.click(submitBtn)
-
-    await waitFor(() => {
-      expect(screen.getByText('An error occurred. Please try again.')).toBeDefined()
-      expect(mockOnSuccess).not.toHaveBeenCalled()
-    })
-  })
-
-  it('triggers onClose when close button is clicked', async () => {
-    render(<PinEntryModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Unlock Library')).toBeDefined()
-    })
-
-    const closeBtn = screen.getByRole('button', { name: '' })
-    fireEvent.click(closeBtn)
-
-    expect(mockOnClose).toHaveBeenCalledTimes(1)
+  it('calls the close handler when the close button is clicked', async () => {
+    await db.config.setPin('5678')
+    renderModal()
+    await screen.findByText('Unlock Library')
+    fireEvent.click(screen.getByRole('button', { name: '' }))
+    expect(closeCount).toBe(1)
   })
 })

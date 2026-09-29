@@ -2,39 +2,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LiveMonitoringService } from '@main/services/LiveMonitoringService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 
-// Mock child_process
-vi.mock('child_process', () => ({
-  exec: (cmd: string, options: unknown, callback: (error: Error | null, result: { stdout: string }) => void) => {
-    if (typeof options === 'function') callback = options
-    callback(null, { stdout: 'DeviceID DriveType\nC: 3\n' })
-  },
-  execFile: vi.fn((file: string, args: unknown, options: unknown, callback?: unknown) => {
-    const cb = (typeof options === 'function' ? options : callback) as (error: Error | null, result: { stdout: string }) => void
-    if (cb) cb(null, { stdout: 'Z:\n' })
-  })
-}))
-
-// Mock fs
-vi.mock('fs', async () => {
-  const actual = await vi.importActual<typeof import('fs')>('fs')
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>()
   return {
     ...actual,
-    watch: vi.fn().mockReturnValue({
-      on: vi.fn().mockReturnThis(),
-      close: vi.fn(),
+    execFile: vi.fn((_file: string, _args: unknown, options: unknown, callback?: unknown) => {
+      const cb = (typeof options === 'function' ? options : callback) as
+        | ((error: Error | null, result: { stdout: string }) => void)
+        | undefined
+      cb?.(null, { stdout: 'Z:\n' })
     }),
-    existsSync: vi.fn().mockReturnValue(true),
   }
 })
 
 describe('LiveMonitoringService', () => {
   let service: LiveMonitoringService
   let db: Awaited<ReturnType<typeof setupTestDb>>
+  let sourceDir: string
 
   beforeEach(async () => {
     db = await setupTestDb()
     service = new LiveMonitoringService()
+    sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'totality-monitoring-'))
     
     // Set mock configuration
     await db.config.setSetting('monitoring_enabled', 'true')
@@ -42,7 +34,9 @@ describe('LiveMonitoringService', () => {
   })
 
   afterEach(() => {
+    service.stop()
     cleanupTestDb()
+    fs.rmSync(sourceDir, { recursive: true, force: true })
     vi.resetAllMocks()
   })
 
@@ -58,7 +52,7 @@ describe('LiveMonitoringService', () => {
       source_id: sourceId,
       source_type: 'local',
       display_name: 'Local Source',
-      connection_config: JSON.stringify({ folderPath: '/mock/path' }),
+      connection_config: JSON.stringify({ folderPath: sourceDir }),
       is_enabled: 1
     })
 
@@ -66,7 +60,6 @@ describe('LiveMonitoringService', () => {
     await service.start()
     
     expect(service.isMonitoringActive()).toBe(true)
-    expect(fs.watch).toHaveBeenCalled()
     service.stop()
   })
 
@@ -99,26 +92,27 @@ describe('LiveMonitoringService', () => {
     expect(service.isMonitoringActive()).toBe(false)
   })
 
-  it('does not log or process directory events as media events', async () => {
-    let watcherCallback: ((eventType: string, filename: string) => Promise<void>) | undefined
-    vi.mocked(fs.watch).mockImplementationOnce((_path, _options, callback) => {
-      watcherCallback = callback as typeof watcherCallback
-      return { on: vi.fn().mockReturnThis(), close: vi.fn() } as never
-    })
-
+  it('detects media file changes through the filesystem watcher', async () => {
     await db.sources.upsertSource({
       source_id: 's2',
       source_type: 'local',
       display_name: 'Local Source',
-      connection_config: JSON.stringify({ folderPath: '/mock/path' }),
+      connection_config: JSON.stringify({ folderPath: sourceDir }),
       is_enabled: 1,
     })
 
     await service.initialize()
+    const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: vi.fn() } }
+    service.setMainWindow(window as never)
     await service.start()
-    await watcherCallback?.('rename', 'Artwork Collection')
-
-    expect(watcherCallback).toBeDefined()
+    const mediaFile = path.join(sourceDir, 'episode.mkv')
+    fs.writeFileSync(mediaFile, 'media')
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith(
+        'monitoring:event',
+        expect.objectContaining({ message: expect.stringContaining('episode.mkv') })
+      )
+    })
     service.stop()
   })
 })

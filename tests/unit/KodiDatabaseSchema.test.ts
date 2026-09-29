@@ -3,9 +3,9 @@ import {
   convertKodiPathToLocal,
   invalidateNfsMappingsCache
 } from '@main/providers/kodi/KodiDatabaseSchema'
+import { getLoggingService } from '@main/services/LoggingService'
 
 const mockGetSetting = vi.fn()
-const mockWarn = vi.fn()
 
 vi.mock('@main/database/BetterSQLiteService', () => ({
   getDatabase: () => ({
@@ -15,17 +15,10 @@ vi.mock('@main/database/BetterSQLiteService', () => ({
   })
 }))
 
-vi.mock('@main/services/LoggingService', () => ({
-  getLoggingService: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: mockWarn
-  })
-}))
-
 describe('KodiDatabaseSchema - convertKodiPathToLocal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getLoggingService().clearLogs()
     invalidateNfsMappingsCache()
   })
 
@@ -78,14 +71,11 @@ describe('KodiDatabaseSchema - convertKodiPathToLocal', () => {
     const result = convertKodiPathToLocal(unmappedNfsUrl)
 
     expect(result).toBe(unmappedNfsUrl)
-    expect(mockWarn).toHaveBeenCalledWith(
-      '[KodiDatabaseSchema]',
-      'No NFS mount mapping configured for path with scheme: nfs'
-    )
-    expect(mockWarn).toHaveBeenCalledWith(
-      '[KodiDatabaseSchema]',
-      '[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts'
-    )
+    const warnings = getLoggingService().getLogs().filter(log => log.level === 'warn')
+    expect(warnings.map(log => log.message)).toEqual([
+      'No NFS mount mapping configured for path with scheme: nfs',
+      '[KodiDatabaseSchema] Configure NFS mappings in Settings > Services > Kodi NFS Mounts',
+    ])
   })
 
   it('should log a warning and return original URL for unknown URL schemes', () => {
@@ -93,10 +83,11 @@ describe('KodiDatabaseSchema - convertKodiPathToLocal', () => {
     const result = convertKodiPathToLocal(unknownUrl)
 
     expect(result).toBe(unknownUrl)
-    expect(mockWarn).toHaveBeenCalledWith(
-      '[KodiDatabaseSchema]',
-      'Unknown URL scheme for FFprobe: ssh'
-    )
+    expect(getLoggingService().getLogs().at(-1)).toMatchObject({
+      level: 'warn',
+      source: '[KodiDatabaseSchema]',
+      message: 'Unknown URL scheme for FFprobe: ssh',
+    })
   })
 
   it('should convert file:// URLs to local paths', () => {

@@ -7,22 +7,6 @@ type GeminiInternals = GeminiService & {
   checkRateLimit: () => void
 }
 
-vi.mock('@main/database/BetterSQLiteService', () => ({
-  getDatabase: vi.fn(() => ({
-    config: {
-      getSetting: vi.fn(),
-    }
-  }))
-}))
-
-vi.mock('@main/services/LoggingService', () => ({
-  getLoggingService: vi.fn(() => ({
-    warn: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-  }))
-}))
-
 describe('GeminiService', () => {
   let service: GeminiService
 

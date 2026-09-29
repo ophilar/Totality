@@ -1,69 +1,60 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { useSources } from '@/contexts/SourceContext'
-import { _LibraryType } from '@main/types/database'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
 import React from 'react'
-
-// Mock useSources
-vi.mock('../../src/renderer/src/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
 
 describe('Sidebar Rendering', () => {
   const mockOnOpenAbout = vi.fn()
   const mockOnToggleCollapse = vi.fn()
+  let api: ReturnType<typeof setupRealIntegratedBridge>['api']
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks()
-    
-    // Mock window.electronAPI
-    const mockElectronAPI = {
-      onLibraryUpdated: vi.fn().mockReturnValue(() => {}),
-      onScanCompleted: vi.fn().mockReturnValue(() => {}),
-      onQualityAnalysisProgress: vi.fn().mockReturnValue(() => {}),
-      onMusicScanProgress: vi.fn().mockReturnValue(() => {}),
-      onTaskQueueUpdated: vi.fn().mockReturnValue(() => {}),
-      taskQueueGetState: vi.fn().mockResolvedValue({ currentTask: null, queue: [], isPaused: false }),
-      sourcesGetLibrariesWithStatus: vi.fn().mockResolvedValue([]),
-      log: { error: vi.fn(), warn: vi.fn() }
-    }
-    vi.stubGlobal('window', { 
-      electronAPI: mockElectronAPI, 
-      navigator: { clipboard: { writeText: vi.fn() } } 
-    })
-
-    vi.mocked(useSources).mockReturnValue({
-      sources: [
-        { source_id: 's1', display_name: 'Local Movies', source_type: 'local' },
-        { source_id: 's2', display_name: 'Plex Server', source_type: 'plex' }
-      ],
-      isLoading: false,
-      scanProgress: new Map(),
-      connectionStatus: new Map(),
-      newItemCounts: new Map(),
-      activeSourceId: 's1',
-      setActiveSource: vi.fn(),
-      refreshSources: vi.fn(),
-      stopScan: vi.fn(),
-      removeSource: vi.fn(),
-      clearNewItems: vi.fn(),
-      refreshLibraryTypes: vi.fn(),
+    const db = await setupTestDb()
+    await Promise.all([
+      db.sources.upsertSource({
+        source_id: 's1', source_type: 'local', display_name: 'Local Movies',
+        connection_config: '{}', is_enabled: 0,
+      }),
+      db.sources.upsertSource({
+        source_id: 's2', source_type: 'plex', display_name: 'Plex Server',
+        connection_config: '{}', is_enabled: 0,
+      }),
+    ])
+    api = setupRealIntegratedBridge().api
+    Object.assign(window, {
+      electronAPI: api,
     })
   })
 
+  afterEach(() => {
+    cleanup()
+    cleanupTestDb()
+  })
+
+  function renderSidebar(isCollapsed = false) {
+    return render(
+      <ToastProvider>
+        <SourceProvider>
+          <Sidebar
+            onOpenAbout={mockOnOpenAbout}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={mockOnToggleCollapse}
+          />
+        </SourceProvider>
+      </ToastProvider>
+    )
+  }
+
   it('should render source list when expanded', async () => {
     await act(async () => {
-      render(
-        <Sidebar
-          onOpenAbout={mockOnOpenAbout}
-          isCollapsed={false}
-          onToggleCollapse={mockOnToggleCollapse}
-        />
-      )
+      renderSidebar()
     })
 
     expect(screen.getByText('Local Movies')).toBeTruthy()
@@ -73,13 +64,7 @@ describe('Sidebar Rendering', () => {
 
   it('should render icons only when collapsed', async () => {
     await act(async () => {
-      render(
-        <Sidebar
-          onOpenAbout={mockOnOpenAbout}
-          isCollapsed={true}
-          onToggleCollapse={mockOnToggleCollapse}
-        />
-      )
+      renderSidebar(true)
     })
 
     expect(screen.queryByText('Local Movies')).toBeNull()
@@ -92,13 +77,7 @@ describe('Sidebar Rendering', () => {
 
   it('should call onToggleCollapse when toggle button clicked', async () => {
     await act(async () => {
-      render(
-        <Sidebar
-          onOpenAbout={mockOnOpenAbout}
-          isCollapsed={false}
-          onToggleCollapse={mockOnToggleCollapse}
-        />
-      )
+      renderSidebar()
     })
 
     const toggleButton = screen.getByLabelText('Collapse sidebar')
@@ -109,27 +88,18 @@ describe('Sidebar Rendering', () => {
   })
 
   it('should show loading state', async () => {
-    vi.mocked(useSources).mockReturnValue({
-      sources: [],
-      isLoading: true,
-      scanProgress: new Map(),
-      connectionStatus: new Map(),
-      newItemCounts: new Map(),
-    })
+    let resolveSources!: (sources: []) => void
+    api.sourcesList = () => new Promise(resolve => { resolveSources = resolve })
 
     await act(async () => {
-      render(
-        <Sidebar
-          onOpenAbout={mockOnOpenAbout}
-          isCollapsed={false}
-          onToggleCollapse={mockOnToggleCollapse}
-        />
-      )
+      renderSidebar()
     })
 
     // Check for loader (Loader2 has animate-spin)
     const loader = document.querySelector('.animate-spin')
     expect(loader).toBeTruthy()
+
+    await act(async () => resolveSources([]))
   })
 })
 

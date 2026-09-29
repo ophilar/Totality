@@ -1,68 +1,48 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, _waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { AddSourceModal } from '@/components/sources/AddSourceModal'
-import { useSources } from '@/contexts/SourceContext'
-import { useToast } from '@/contexts/ToastContext'
+import { SourceProvider } from '@/contexts/SourceContext'
+import { ToastProvider } from '@/contexts/ToastContext'
+import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
 import React from 'react'
 
-// Mock context hooks
-vi.mock('../../src/renderer/src/contexts/SourceContext', () => ({
-  useSources: vi.fn(),
-}))
-
-vi.mock('../../src/renderer/src/contexts/ToastContext', () => ({
-  useToast: vi.fn(),
-}))
-
-// Mock useFocusTrap
-vi.mock('../../src/renderer/src/hooks/useFocusTrap', () => ({
-  useFocusTrap: vi.fn(),
-}))
-
-// Mock window.electronAPI
-const mockElectronAPI = {
-  sourcesGetSupportedProviders: vi.fn().mockResolvedValue(['local', 'plex', 'jellyfin']),
-  sourcesAdd: vi.fn().mockResolvedValue({ source_id: 's1' }),
-  sourcesTestConnection: vi.fn().mockResolvedValue({ success: true }),
-  pathSelectDirectory: vi.fn().mockResolvedValue('/selected/path'),
-  onSettingsChanged: vi.fn().mockReturnValue(() => {}),
-  mediaAnalyzerIsAvailable: vi.fn().mockResolvedValue(true),
-}
-vi.stubGlobal('window', { electronAPI: mockElectronAPI })
-
 describe('AddSourceModal Rendering', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(useSources).mockReturnValue({
-      refreshSources: vi.fn(),
-      supportedProviders: ['local', 'plex', 'jellyfin', 'emby', 'kodi', 'mediamonkey'],
-    })
-    vi.mocked(useToast).mockReturnValue({
-      addToast: vi.fn(),
-    })
+  beforeEach(async () => {
+    await setupTestDb()
+    Object.assign(window, { electronAPI: setupRealIntegratedBridge().api })
   })
 
-  it('should render provider selection first', async () => {
-    render(<AddSourceModal onClose={() => {}} onSuccess={() => {}} />)
-    
+  afterEach(() => {
+    cleanup()
+    cleanupTestDb()
+  })
+
+  function renderAddSourceModal() {
+    return render(
+      <ToastProvider>
+        <SourceProvider>
+          <AddSourceModal onClose={() => {}} onSuccess={() => {}} />
+        </SourceProvider>
+      </ToastProvider>
+    )
+  }
+
+  it('renders provider selection first', async () => {
+    renderAddSourceModal()
+
     expect(await screen.findByText('Local Folder')).toBeTruthy()
     expect(screen.getByText('Plex')).toBeTruthy()
   })
 
-  it('should navigate to local folder flow when selected', async () => {
-    render(<AddSourceModal onClose={() => {}} onSuccess={() => {}} />)
-    
-    const btn = await screen.findByText('Local Folder')
-    fireEvent.click(btn)
-    
-    // Check for elements in LocalFolderFlow
+  it('navigates to the local folder flow when selected', async () => {
+    renderAddSourceModal()
+
+    fireEvent.click(await screen.findByText('Local Folder'))
+
     expect(await screen.findByText('Add Local Folder')).toBeTruthy()
     expect(screen.getByText('Browse')).toBeTruthy()
   })
 })
-
-
-

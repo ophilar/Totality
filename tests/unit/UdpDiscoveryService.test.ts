@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createServer, type Server } from 'node:http'
 import { UdpDiscoveryService, getUdpDiscoveryService } from '../../src/main/services/UdpDiscoveryService'
 import * as dgram from 'dgram'
-import { fetchJSON } from '@main/services/utils/httpClient'
 
 const { mockSocket } = vi.hoisted(() => {
   const mockSocket = {
@@ -23,23 +23,14 @@ vi.mock('dgram', () => {
   }
 })
 
-vi.mock('@main/services/utils/httpClient', () => ({
-  fetchJSON: vi.fn(),
-}))
-
-vi.mock('@main/services/LoggingService', () => {
-  return {
-    getLoggingService: vi.fn(() => ({
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    }))
-  }
-})
-
 describe('UdpDiscoveryService', () => {
   let service: UdpDiscoveryService
+  let httpServer: Server
+  let serverUrl: string
+  let responseStatus: number
+  let responseBody: unknown
+  let requestPath: string | undefined
+  let acceptHeader: string | undefined
   type Callback = (...args: unknown[]) => void
 
   beforeEach(() => {
@@ -270,18 +261,30 @@ describe('UdpDiscoveryService', () => {
   })
 
   describe('testServerUrl', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       vi.useRealTimers()
+      responseStatus = 200
+      responseBody = { ServerName: 'Test Server', Id: 'test-id-123', Version: '10.8.10' }
+      httpServer = createServer((request, response) => {
+        requestPath = request.url
+        acceptHeader = request.headers.accept
+        response.writeHead(responseStatus, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify(responseBody))
+      })
+      await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+      const address = httpServer.address()
+      if (!address || typeof address === 'string') throw new Error('Loopback HTTP server did not bind')
+      serverUrl = `http://127.0.0.1:${address.port}`
+    })
+
+    afterEach(async () => {
+      await new Promise<void>((resolve, reject) =>
+        httpServer.close((error) => error ? reject(error) : resolve())
+      )
     })
 
     it('should return server info on successful request', async () => {
-      vi.mocked(fetchJSON).mockResolvedValueOnce({
-        ServerName: 'Test Server',
-        Id: 'test-id-123',
-        Version: '10.8.10'
-      })
-
-      const result = await service.testServerUrl('http://192.168.1.100:8096')
+      const result = await service.testServerUrl(serverUrl)
 
       expect(result).toEqual({
         success: true,
@@ -289,50 +292,25 @@ describe('UdpDiscoveryService', () => {
         serverId: 'test-id-123',
         version: '10.8.10'
       })
-      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeoutMs: 5000,
-        headers: { Accept: 'application/json' },
-      })
+      expect(requestPath).toBe('/System/Info/Public')
+      expect(acceptHeader).toBe('application/json')
     })
 
     it('should handle trailing slash in url', async () => {
-      vi.mocked(fetchJSON).mockResolvedValueOnce({
-        ServerName: 'Test Server',
-        Id: 'test-id-123',
-        Version: '10.8.10'
-      })
-
-      await service.testServerUrl('http://192.168.1.100:8096/')
-
-      expect(fetchJSON).toHaveBeenCalledWith('http://192.168.1.100:8096/System/Info/Public', {
-        timeoutMs: 5000,
-        headers: { Accept: 'application/json' },
-      })
+      await service.testServerUrl(`${serverUrl}/`)
+      expect(requestPath).toBe('/System/Info/Public')
     })
 
-    it('should return failure info on request error', async () => {
-      vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('Network error'))
+    it('should return failure info when the server rejects the request', async () => {
+      responseStatus = 503
+      responseBody = { message: 'Unavailable' }
 
-      const result = await service.testServerUrl('http://192.168.1.100:8096')
+      const result = await service.testServerUrl(serverUrl)
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: false,
-        error: 'Network error',
       })
-    })
-
-    it('should return default failure info on missing error message', async () => {
-      const errorObj = {
-        toString: () => ''
-      }
-      vi.mocked(fetchJSON).mockRejectedValueOnce(errorObj)
-
-      const result = await service.testServerUrl('http://192.168.1.100:8096')
-
-      expect(result).toEqual({
-        success: false,
-        error: 'Failed to connect',
-      })
+      expect(result.error).toContain('HTTP 503:')
     })
   })
 })

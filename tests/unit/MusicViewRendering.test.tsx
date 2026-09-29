@@ -10,40 +10,7 @@ import { ToastProvider } from '@/contexts/ToastContext'
 import { ScrollMemoryProvider } from '@/contexts/ScrollMemoryContext'
 
 import React from 'react'
-import type { ReactNode, ComponentType } from 'react'
 import type { MusicArtist, MusicAlbum } from '@/components/library/types'
-
-interface MockVirtuosoProps {
-  data?: unknown[]
-  itemContent: (index: number, item: unknown) => ReactNode
-  components?: { Footer?: ComponentType; List?: ComponentType<{ children?: ReactNode }>; Item?: ComponentType<{ children?: ReactNode }> }
-}
-
-// Mock react-virtuoso to render items in JSDOM (infrastructure mock)
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent, components }: MockVirtuosoProps) => (
-    <div data-testid="virtuoso-list">
-      {data?.map((item, index) => (
-        <div key={index}>{itemContent(index, item)}</div>
-      ))}
-      {components?.Footer && <components.Footer />}
-    </div>
-  ),
-  VirtuosoGrid: ({ data, itemContent, components }: MockVirtuosoProps) => {
-    const List = components?.List || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
-    const Item = components?.Item || (({ children }: { children?: ReactNode }) => <div>{children}</div>)
-    return (
-      <div data-testid="virtuoso-grid">
-        <List>
-          {data?.map((item, index) => (
-            <Item key={index}>{itemContent(index, item)}</Item>
-          ))}
-        </List>
-        {components?.Footer && <components.Footer />}
-      </div>
-    )
-  }
-}))
 
 describe('MusicView Rendering (Mocked Bridge)', () => {
   let mockConfig: Record<string, string | undefined> = {}

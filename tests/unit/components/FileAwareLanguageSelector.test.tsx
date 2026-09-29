@@ -10,17 +10,6 @@ import { formatLanguage } from '@/components/library/mediaUtils'
 import { ToastProvider } from '@/contexts/ToastContext'
 import type { TVShow, TVShowSummary } from '@/components/library/types'
 
-// Mock react-virtuoso for TVShowDetails
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent }: { data?: unknown[]; itemContent: (index: number, item: unknown) => React.ReactNode }) => (
-    <div data-testid="virtuoso-list">
-      {data?.map((item, index) => (
-        <div key={index}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
-}))
-
 describe('File-Aware Audio Language Detection with Provider Defaults', () => {
   afterEach(() => {
     cleanup()

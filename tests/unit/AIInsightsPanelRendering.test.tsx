@@ -6,11 +6,6 @@ import { render, screen, fireEvent, _waitFor, act } from '@testing-library/react
 import { AIInsightsPanel } from '@/components/library/AIInsightsPanel'
 import React from 'react'
 
-// Mock SimpleMarkdown
-vi.mock('../ui/SimpleMarkdown', () => ({
-  SimpleMarkdown: ({ text }: { text: string }) => <div data-testid="markdown">{text}</div>,
-}))
-
 // Mock window.electronAPI
 const mockElectronAPI = {
   aiIsConfigured: vi.fn().mockResolvedValue(true),

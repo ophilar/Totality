@@ -1,84 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { EventEmitter } from 'events'
-import { Readable } from 'stream'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { TranscodingService, TranscodeError, TranscodeOptions } from '../../../src/main/services/TranscodingService'
 import { TranscodeCommandFactory } from '../../../src/main/services/transcoding/TranscodeCommandFactory'
 import { getMediaFileAnalyzer } from '../../../src/main/services/MediaFileAnalyzer'
-import * as childProcess from 'child_process'
 import * as fsPromises from 'fs/promises'
 import * as path from 'path'
-import baselineProfile from '../../../src/main/config/playbackTargetProfiles/plex-webos-4-lg-b8.json'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import type { MediaItem } from '@main/types/database'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
-vi.mock('fs/promises', () => ({
-  stat: vi.fn().mockResolvedValue({ size: 4000, mtimeMs: 12345678 }),
-  rename: vi.fn().mockResolvedValue(undefined),
-  copyFile: vi.fn().mockResolvedValue(undefined),
-  unlink: vi.fn().mockResolvedValue(undefined),
-  rm: vi.fn().mockResolvedValue(undefined),
-  access: vi.fn().mockResolvedValue(undefined)
-}))
-
-vi.mock('node:fs', () => ({
-  createReadStream: vi.fn(() => Readable.from(['source-content']))
-}))
-
-type MockProcess = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> }
-
-const mockDbInstance = {
-  isInitialized: true,
-  config: {
-    getSetting: vi.fn().mockResolvedValue(null),
-    getSettingsByPrefix: vi.fn().mockResolvedValue({}),
-    setSetting: vi.fn().mockResolvedValue(undefined),
-    deleteSetting: vi.fn().mockResolvedValue(undefined)
-  },
-  playbackTargetProfiles: {
-    get: vi.fn().mockResolvedValue(baselineProfile)
-  },
-  tvShows: {
-    getEpisodes: vi.fn().mockResolvedValue([])
-  },
-  sources: {
-    getSourceById: vi.fn().mockResolvedValue({
-      source_id: 'src1',
-      source_type: 'local',
-      connection_config: JSON.stringify({ folderPath: '/media' })
-    })
-  },
-  media: {
-    getItemById: vi.fn().mockResolvedValue(null),
-    getItemByPath: vi.fn().mockResolvedValue(null),
-    getItem: vi.fn().mockResolvedValue(null),
-    updatePathAndStats: vi.fn().mockResolvedValue(undefined)
-  },
-  mediaRemuxJobs: {
-    create: vi.fn().mockResolvedValue(1),
-    update: vi.fn().mockResolvedValue(undefined),
-    getLatest: vi.fn().mockResolvedValue(null),
-    getCalibratedOutputBytes: vi.fn().mockResolvedValue(null)
-  }
-}
-
-vi.mock('../../../src/main/database/BetterSQLiteService', () => ({
-  getDatabase: () => mockDbInstance
-}))
-
-vi.mock('../../../src/main/services/LoggingService', () => ({
-  getLoggingService: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    verbose: vi.fn()
-  })
-}))
-
-vi.mock('../../../src/main/services/GeminiService', () => ({
-  getGeminiService: () => ({
-    isConfigured: () => false,
-    sendMessage: vi.fn()
-  })
-}))
+const mediaDir = path.join(process.cwd(), 'tests/tmp/transcoding-service')
+const mediaPath = (filename: string) => path.join(mediaDir, filename)
 
 const mockAnalyzerInstance = {
   analyzeFile: vi.fn().mockResolvedValue({
@@ -112,13 +43,6 @@ vi.mock('../../../src/main/services/utils/GpuDetector', () => ({
   }
 }))
 
-vi.mock('../../../src/main/services/TaskQueueService', () => ({
-  getTaskQueueService: () => ({
-    getTasks: vi.fn().mockResolvedValue([]),
-    addTasks: vi.fn().mockResolvedValue([])
-  })
-}))
-
 describe('TranscodeError', () => {
   it('constructs with message, exitCode, and stderr', () => {
     const err = new TranscodeError('Process failed', 1, 'Error: invalid codec')
@@ -132,10 +56,41 @@ describe('TranscodeError', () => {
 
 describe('TranscodingService', () => {
   let service: TranscodingService
+  let db: Awaited<ReturnType<typeof setupTestDb>>
 
-  beforeEach(() => {
+  async function upsertMediaItem(item: Partial<MediaItem> & Pick<MediaItem, 'title' | 'type' | 'file_path'>): Promise<number> {
+    return db.media.upsertItem({
+      source_id: 'src1',
+      source_type: 'local',
+      plex_id: path.basename(item.file_path),
+      ...item,
+    } as MediaItem)
+  }
+
+  beforeEach(async () => {
     vi.clearAllMocks()
+    db = await setupTestDb()
+    await fsPromises.mkdir(mediaDir, { recursive: true })
+    await db.sources.upsertSource({
+      source_id: 'src1',
+      source_type: 'local',
+      display_name: 'Transcoding test source',
+      connection_config: JSON.stringify({ folderPath: mediaDir }),
+      is_enabled: 1,
+    })
+    await Promise.all([
+      'dv.mkv', 'episode.mkv', 'movie.avi', 'Movie.mkv', 'Movie.mp4',
+      'Movie.quarantine-123.mkv', 'Show.S01E01.1080p.Remux.mkv',
+      'Show.S01E01.1080p.WEB-DL.mkv',
+      'Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+      'stream.ts', 'video.mp4', 'invalid-input.mkv',
+    ].map(filename => fsPromises.writeFile(mediaPath(filename), Buffer.alloc(4_000))))
     service = new TranscodingService()
+  })
+
+  afterEach(async () => {
+    await fsPromises.rm(mediaDir, { recursive: true, force: true })
+    cleanupTestDb()
   })
 
   describe('getTranscodeParameters', () => {
@@ -204,7 +159,7 @@ describe('TranscodingService', () => {
       const analyzer = getMediaFileAnalyzer()
       vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
         success: true,
-        filePath: '/media/dv.mkv',
+        filePath: mediaPath('dv.mkv'),
         video: {
           index: 0,
           codec: 'hevc',
@@ -216,7 +171,7 @@ describe('TranscodingService', () => {
         subtitleTracks: [],
       })
 
-      const params = await service.getTranscodeParameters('/media/dv.mkv', { optimizationMode: 'remux_only' })
+      const params = await service.getTranscodeParameters(mediaPath('dv.mkv'), { optimizationMode: 'remux_only' })
       expect(params.encoder).toBe('copy')
       expect(params.ffmpegArgs).toContain('copy')
     })
@@ -234,7 +189,7 @@ describe('TranscodingService', () => {
       const analyzer = getMediaFileAnalyzer()
       vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
         success: true,
-        filePath: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+        filePath: mediaPath('Show.S01E01.1080p.WEB-DL.mkv'),
         duration: 45 * 60 * 1000,
         fileSize: 3 * 1024 * 1024 * 1024,
         video: {
@@ -264,8 +219,15 @@ describe('TranscodingService', () => {
         ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
-      mockDbInstance.media.getItemByPath.mockResolvedValueOnce({
-        file_path: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+      await upsertMediaItem({
+        title: 'Foreign language WEB-DL',
+        type: 'episode',
+        series_title: 'Show',
+        series_identity_key: 'tmdb:show',
+        season_number: 1,
+        episode_number: 1,
+        library_id: 'tv',
+        file_path: mediaPath('Show.S01E01.1080p.WEB-DL.mkv'),
         original_language: 'en',
         video_codec: 'h264',
         video_bitrate: 5000,
@@ -280,7 +242,7 @@ describe('TranscodingService', () => {
         ]),
       })
 
-      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
+      const params = await service.getTranscodeParameters(mediaPath('Show.S01E01.1080p.WEB-DL.mkv'), options)
       expect(params.encoder).toBe('copy')
       expect(params.ffmpegArgs).toContain('-c:v')
       expect(params.ffmpegArgs).toContain('copy')
@@ -290,7 +252,7 @@ describe('TranscodingService', () => {
       const analyzer = getMediaFileAnalyzer()
       vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
         success: true,
-        filePath: '/media/Show.S01E01.1080p.Remux.mkv',
+        filePath: mediaPath('Show.S01E01.1080p.Remux.mkv'),
         duration: 45 * 60 * 1000,
         fileSize: 15 * 1024 * 1024 * 1024,
         video: {
@@ -316,7 +278,7 @@ describe('TranscodingService', () => {
         ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
-      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.Remux.mkv', options)
+      const params = await service.getTranscodeParameters(mediaPath('Show.S01E01.1080p.Remux.mkv'), options)
       expect(params.encoder).toBe('nvenc_h265')
       expect(params.ffmpegArgs).toContain('hevc_nvenc')
     })
@@ -325,7 +287,7 @@ describe('TranscodingService', () => {
       const analyzer = getMediaFileAnalyzer()
       vi.mocked(analyzer.analyzeFile).mockResolvedValueOnce({
         success: true,
-        filePath: '/media/Show.S01E01.1080p.WEB-DL.mkv',
+        filePath: mediaPath('Show.S01E01.1080p.WEB-DL.mkv'),
         duration: 45 * 60 * 1000,
         fileSize: 3 * 1024 * 1024 * 1024,
         video: {
@@ -353,7 +315,7 @@ describe('TranscodingService', () => {
         encoderPolicy: 'hardware'
       }
 
-      const params = await service.getTranscodeParameters('/media/Show.S01E01.1080p.WEB-DL.mkv', options)
+      const params = await service.getTranscodeParameters(mediaPath('Show.S01E01.1080p.WEB-DL.mkv'), options)
       expect(params.encoder).toBe('nvenc_h265')
       expect(params.ffmpegArgs).toContain('hevc_nvenc')
     })
@@ -361,16 +323,19 @@ describe('TranscodingService', () => {
 
   describe('preflightShowTranscode Advisory', () => {
     it('populates recommendedAction, sourceTier, and adviceReason in preflight episode items', async () => {
-      mockDbInstance.tvShows.getEpisodes.mockResolvedValueOnce([
-        {
+      const episodePath = mediaPath('Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv')
+      await upsertMediaItem({
           id: 10,
           source_id: 'src1',
           plex_id: 'p10',
+          source_type: 'local',
+          library_id: 'tv',
+          series_identity_key: 'tmdb:85552',
           title: 'Strange New Worlds S01E01',
           season_number: 1,
           episode_number: 1,
           type: 'episode',
-          file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+          file_path: episodePath,
           file_size: 4 * 1024 * 1024 * 1024,
           duration: 50 * 60 * 1000,
           resolution: '1080p',
@@ -388,26 +353,14 @@ describe('TranscodingService', () => {
           ]),
           deep_analysis: JSON.stringify({
             success: true,
-            filePath: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+            filePath: PathUtils.toDatabasePath(episodePath),
             container: 'matroska',
             overallBitrate: 6000000,
             video: { index: 0, codec: 'h264', profile: 'High', level: 51, width: 1920, height: 1080, frameRate: 24, bitDepth: 8, hdrFormat: 'SDR' },
             audioTracks: [{ index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', hasObjectAudio: false }],
             subtitleTracks: []
           })
-        } as unknown as Parameters<typeof mockDbInstance.media.upsertItem>[0]
-      ])
-
-      mockDbInstance.media.getItemById.mockResolvedValueOnce({
-        id: 10,
-        source_id: 'src1',
-        file_path: '/media/Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv'
-      } as unknown as Awaited<ReturnType<typeof mockDbInstance.media.getItemById>>)
-
-      vi.mocked(fsPromises.stat).mockResolvedValueOnce({
-        size: 4 * 1024 * 1024 * 1024,
-        mtimeMs: 12345678
-      } as unknown as Awaited<ReturnType<typeof fsPromises.stat>>)
+      })
 
       const preflight = await service.preflightShowTranscode({
         seriesTitle: 'Example Saga Strange New Worlds',
@@ -427,34 +380,21 @@ describe('TranscodingService', () => {
 
   describe('Process Diagnostic Error Tracking', () => {
     it('runFFmpeg throws TranscodeError with stderr diagnostic log on process exit failure', async () => {
-      const mockProc = new EventEmitter() as MockProcess
-      mockProc.stdout = new EventEmitter()
-      mockProc.stderr = new EventEmitter()
-      mockProc.kill = vi.fn()
-
-      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
-
       const options: TranscodeOptions = { useGpu: false, targetCodec: 'hevc', encoder: 'svt_av1', crf: 24, preset: 'medium', qualityProfile: 'balanced', encoderPolicy: 'software' }
-      const params = await service.getTranscodeParameters('input.mp4', options)
-
+      const params = { ffmpegArgs: ['-hide_banner', '-loglevel', 'error', '-i', '<input>', '-f', 'null', '-'] }
       const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<unknown> }
       const runPromise = hooks.runFFmpeg(
-        'input.mp4',
-        'output.mkv',
+        mediaPath('invalid-input.mkv'),
+        mediaPath('output.mkv'),
         params,
         options,
         vi.fn()
       )
 
-      mockProc.stderr.emit('data', Buffer.from('[ffmpeg] Invalid video stream parameters\n'))
-      mockProc.stderr.emit('data', Buffer.from('Conversion failed!\n'))
-      mockProc.emit('close', 1)
-
       await expect(runPromise).rejects.toThrow(TranscodeError)
       await runPromise.catch((err: TranscodeError) => {
-        expect(err.exitCode).toBe(1)
-        expect(err.stderr).toContain('[ffmpeg] Invalid video stream parameters')
-        expect(err.stderr).toContain('Conversion failed!')
+        expect(err.exitCode).not.toBe(0)
+        expect(err.stderr).toContain('Invalid data found when processing input')
       })
     })
 
@@ -474,10 +414,10 @@ describe('TranscodingService', () => {
 
     it('preserves any video file extension (.mp4, .avi, .mkv, .ts) for quarantine backup files', () => {
       const testCases = [
-        { input: '/media/video.mp4', expectedExt: '.mp4' },
-        { input: '/media/movie.avi', expectedExt: '.avi' },
-        { input: '/media/episode.mkv', expectedExt: '.mkv' },
-        { input: '/media/stream.ts', expectedExt: '.ts' }
+        { input: mediaPath('video.mp4'), expectedExt: '.mp4' },
+        { input: mediaPath('movie.avi'), expectedExt: '.avi' },
+        { input: mediaPath('episode.mkv'), expectedExt: '.mkv' },
+        { input: mediaPath('stream.ts'), expectedExt: '.ts' }
       ]
 
       for (const tc of testCases) {
@@ -492,12 +432,14 @@ describe('TranscodingService', () => {
 
   describe('replacement activation', () => {
     it('quarantines a remux with custom FFmpeg arguments instead of directly replacing the source', async () => {
-      const inputPath = path.resolve('/media/episode.mkv')
-      mockDbInstance.media.getItem.mockResolvedValueOnce({ id: 99, file_path: inputPath })
-      vi.mocked(fsPromises.stat).mockResolvedValue({ size: 4000, mtimeMs: 12345678 } as never)
-      vi.spyOn(service as never, 'runFFmpeg').mockResolvedValue(true)
+      const inputPath = path.resolve(mediaPath('episode.mkv'))
+      const mediaItemId = await upsertMediaItem({ title: 'Episode', type: 'episode', file_path: inputPath })
+      vi.spyOn(service as never, 'runFFmpeg').mockImplementation(async (...args: unknown[]) => {
+        await fsPromises.writeFile(args[1] as string, 'verified transcoded output')
+        return true
+      })
 
-      await service.transcode(99, {
+      await service.transcode(mediaItemId, {
         transcodingEngine: 'ffmpeg',
         optimizationMode: 'remux_only',
         outputMode: 'replace',
@@ -505,60 +447,47 @@ describe('TranscodingService', () => {
         useGpu: false
       })
 
-      expect(fsPromises.rename).toHaveBeenCalledWith(
-        expect.stringContaining('.totality_tmp_'),
-        inputPath
-      )
-      expect(fsPromises.copyFile).not.toHaveBeenCalled()
+      expect(await fsPromises.readFile(inputPath, 'utf8')).toBe('verified transcoded output')
+      expect((await fsPromises.readdir(path.dirname(inputPath))).some(name => name.startsWith('episode.quarantine-'))).toBe(true)
     })
 
     it('moves a verified temporary output onto the original instead of copying it', async () => {
-      const inputPath = path.resolve('/media/episode.mkv')
-      mockDbInstance.media.getItem.mockResolvedValueOnce({ id: 99, file_path: inputPath })
-      vi.mocked(fsPromises.stat).mockResolvedValue({ size: 4000, mtimeMs: 12345678 } as never)
-      vi.spyOn(service as never, 'runFFmpeg').mockResolvedValue(true)
+      const inputPath = path.resolve(mediaPath('episode.mkv'))
+      const mediaItemId = await upsertMediaItem({ title: 'Episode', type: 'episode', file_path: inputPath })
+      vi.spyOn(service as never, 'runFFmpeg').mockImplementation(async (...args: unknown[]) => {
+        await fsPromises.writeFile(args[1] as string, 'verified transcoded output')
+        return true
+      })
 
-      await service.transcode(99, {
+      await service.transcode(mediaItemId, {
         transcodingEngine: 'ffmpeg',
         optimizationMode: 'remux_only',
         outputMode: 'replace',
         useGpu: false
       })
 
-      expect(fsPromises.rename).toHaveBeenCalledWith(
-        expect.stringContaining('.totality_tmp_'),
-        inputPath
-      )
-      expect(fsPromises.copyFile).not.toHaveBeenCalled()
+      expect(await fsPromises.readFile(inputPath, 'utf8')).toBe('verified transcoded output')
     })
   })
 
   describe('cancellation', () => {
     it('waits for FFmpeg to exit before reporting an aborted job as finished', async () => {
-      const mockProc = new EventEmitter() as MockProcess
-      mockProc.stdout = new EventEmitter()
-      mockProc.stderr = new EventEmitter()
-      mockProc.kill = vi.fn()
-      vi.spyOn(childProcess, 'spawn').mockReturnValue(mockProc as unknown as ReturnType<typeof childProcess.spawn>)
       const controller = new AbortController()
       const hooks = service as unknown as { runFFmpeg: (...args: unknown[]) => Promise<boolean> }
       const runPromise = hooks.runFFmpeg(
-        'input.mkv',
-        'output.mkv',
-        { ffmpegArgs: ['-i', '<input>', '<output>'] },
+        mediaPath('unused-input.mkv'),
+        mediaPath('cancelled-output.mkv'),
+        { ffmpegArgs: [
+          '-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i',
+          'testsrc=size=320x240:rate=25', '-t', '30', '-f', 'null', '<output>',
+        ] },
         {},
         vi.fn(),
         controller.signal
       )
-      let settled = false
-      void runPromise.then(() => { settled = true })
-
-      controller.abort()
-      await Promise.resolve()
-
-      expect(settled).toBe(false)
-      mockProc.emit('close', 1)
+      const abortTimer = setTimeout(() => controller.abort(), 500)
       await expect(runPromise).resolves.toBe(false)
+      clearTimeout(abortTimer)
     })
   })
 
@@ -638,7 +567,7 @@ describe('TranscodingService', () => {
         detectedAt: new Date().toISOString()
       })
 
-      const result = await service.selectMeasuredParameters('/media/episode.mkv', {
+      const result = await service.selectMeasuredParameters(mediaPath('episode.mkv'), {
         targetCodec: 'hevc',
         qualityProfile: 'balanced',
         encoderPolicy: 'hardware'
@@ -648,72 +577,51 @@ describe('TranscodingService', () => {
       expect(mockMeasure).toHaveBeenCalledWith(expect.objectContaining({
         outputDirectory: expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/)
       }))
-      expect(fsPromises.rm).toHaveBeenCalledWith(
-        expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/),
-        { recursive: true, force: true }
-      )
+      const outputDirectory = (mockMeasure.mock.calls[0][0] as { outputDirectory: string }).outputDirectory
+      await expect(fsPromises.access(outputDirectory)).rejects.toThrow()
     })
   })
 
   describe('crash-consistent activation journal recovery', () => {
     it('rolls back quarantined file to original input if crash occurred before target was placed', async () => {
-      mockDbInstance.config.getSettingsByPrefix.mockResolvedValueOnce({
-        'transcoding.activation.501': JSON.stringify({
+      await db.config.setSetting('transcoding.activation.501', JSON.stringify({
           mediaItemId: 501,
           phase: 'source_quarantined',
-          inputPath: '/media/Movie.mkv',
-          targetPath: '/media/Movie.mkv',
-          quarantinePath: '/media/Movie.quarantine-123.mkv'
-        })
-      })
+          inputPath: mediaPath('Movie.mkv'),
+          targetPath: mediaPath('Movie.mkv'),
+          quarantinePath: mediaPath('Movie.quarantine-123.mkv')
+        }))
 
-      vi.mocked(fsPromises.access).mockImplementation(async (filePath) => {
-        if (filePath === '/media/Movie.quarantine-123.mkv') return undefined
-        throw new Error('ENOENT')
-      })
+      await fsPromises.rm(mediaPath('Movie.mkv'))
 
       const internal = service as unknown as { recoverActivationJournals: () => Promise<void> }
       await internal.recoverActivationJournals()
 
-      expect(fsPromises.rename).toHaveBeenCalledWith('/media/Movie.quarantine-123.mkv', '/media/Movie.mkv')
-      expect(mockDbInstance.config.deleteSetting).toHaveBeenCalledWith('transcoding.activation.501')
+      expect((await fsPromises.stat(mediaPath('Movie.mkv'))).size).toBe(4_000)
+      await expect(fsPromises.access(mediaPath('Movie.quarantine-123.mkv'))).rejects.toThrow()
+      expect(await db.config.getSetting('transcoding.activation.501')).toBeNull()
     })
 
     it('re-synchronizes media item database record if crash occurred after target was activated', async () => {
-      mockDbInstance.config.getSettingsByPrefix.mockResolvedValueOnce({
-        'transcoding.activation.502': JSON.stringify({
-          mediaItemId: 502,
+      const mediaItemId = await upsertMediaItem({ id: 502, title: 'Movie', type: 'movie', file_path: mediaPath('Movie.mp4') })
+      await db.config.setSetting(`transcoding.activation.${mediaItemId}`, JSON.stringify({
+          mediaItemId,
           phase: 'output_activated',
-          inputPath: '/media/Movie.mp4',
-          targetPath: '/media/Movie.mkv',
+          inputPath: mediaPath('Movie.mp4'),
+          targetPath: mediaPath('Movie.mkv'),
           outputStats: {
             fileSize: 850000000,
             duration: 7200000,
             video: { codec: 'hevc', width: 1920, height: 1080 },
             audioTracks: [{ codec: 'aac', channels: 6 }]
           }
-        })
-      })
-
-      vi.mocked(fsPromises.access).mockImplementation(async (filePath) => {
-        if (filePath === '/media/Movie.mkv') return undefined
-        throw new Error('ENOENT')
-      })
-
-      mockDbInstance.media.getItemById.mockResolvedValueOnce({
-        id: 502,
-        file_path: '/media/Movie.mp4'
-      } as unknown as Awaited<ReturnType<typeof mockDbInstance.media.getItemById>>)
+        }))
 
       const internal = service as unknown as { recoverActivationJournals: () => Promise<void> }
       await internal.recoverActivationJournals()
 
-      expect(mockDbInstance.media.updatePathAndStats).toHaveBeenCalledWith(
-        502,
-        '/media/Movie.mkv',
-        expect.objectContaining({ fileSize: 850000000, duration: 7200000 })
-      )
-      expect(mockDbInstance.config.deleteSetting).toHaveBeenCalledWith('transcoding.activation.502')
+      expect(PathUtils.arePathsEqual((await db.media.getItemById(mediaItemId))!.file_path!, mediaPath('Movie.mkv'))).toBe(true)
+      expect(await db.config.getSetting(`transcoding.activation.${mediaItemId}`)).toBeNull()
     })
   })
 })

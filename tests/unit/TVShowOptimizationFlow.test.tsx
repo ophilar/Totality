@@ -26,17 +26,6 @@ const playbackProfile = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 }
 
-// Mock react-virtuoso
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent }: { data?: unknown[]; itemContent: (index: number, item: unknown) => React.ReactNode }) => (
-    <div data-testid="virtuoso-list">
-      {data?.map((item, index) => (
-        <div key={index}>{itemContent(index, item)}</div>
-      ))}
-    </div>
-  ),
-}))
-
 describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
   beforeEach(() => {
     Object.assign(window, {

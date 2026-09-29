@@ -2,23 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest'
 import { OMDbMetadataProvider } from '../../../../../src/main/services/metadata/providers/OMDbMetadataProvider'
 import { getLoggingService } from '../../../../../src/main/services/LoggingService'
 
-const mockLogger = {
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-}
-
-vi.mock('../../../../../src/main/services/LoggingService', () => ({
-  getLoggingService: vi.fn(() => mockLogger),
-}))
-
 describe('OMDbMetadataProvider', () => {
   let provider: OMDbMetadataProvider
   let mockApiKeyGetter: Mock
   let mockFetch: Mock
 
   beforeEach(() => {
+    getLoggingService().clearLogs()
     mockApiKeyGetter = vi.fn(() => 'test-api-key')
     provider = new OMDbMetadataProvider(mockApiKeyGetter)
     mockFetch = vi.fn()
@@ -42,8 +32,11 @@ describe('OMDbMetadataProvider', () => {
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
       const result = await provider.search({ title: 'test', type: 'movie' })
       expect(result).toEqual([])
-      const logger = getLoggingService()
-      expect(logger.error).toHaveBeenCalledWith('[OMDbMetadataProvider]', 'Search HTTP 500 for query: test')
+      expect(getLoggingService().getLogs().at(-1)).toMatchObject({
+        level: 'error',
+        source: '[OMDbMetadataProvider]',
+        message: 'Search HTTP 500 for query: test',
+      })
     })
 
     it('should return empty array if response is False', async () => {
@@ -129,8 +122,12 @@ describe('OMDbMetadataProvider', () => {
       mockFetch.mockRejectedValueOnce(error)
       const result = await provider.search({ title: 'test', type: 'movie' })
       expect(result).toEqual([])
-      const logger = getLoggingService()
-      expect(logger.error).toHaveBeenCalledWith('[OMDbMetadataProvider]', 'Search error:', error)
+      expect(getLoggingService().getLogs().at(-1)).toMatchObject({
+        level: 'error',
+        source: '[OMDbMetadataProvider]',
+        message: 'Search error:',
+        details: expect.stringContaining('Network Error'),
+      })
     })
   })
 
@@ -152,8 +149,11 @@ describe('OMDbMetadataProvider', () => {
       mockFetch.mockResolvedValueOnce({ ok: false, status: 404 })
       const result = await provider.getDetails('tt123', 'movie')
       expect(result).toBeNull()
-      const logger = getLoggingService()
-      expect(logger.error).toHaveBeenCalledWith('[OMDbMetadataProvider]', 'Details HTTP 404 for ID: tt123')
+      expect(getLoggingService().getLogs().at(-1)).toMatchObject({
+        level: 'error',
+        source: '[OMDbMetadataProvider]',
+        message: 'Details HTTP 404 for ID: tt123',
+      })
     })
 
     it('should return null if response is False', async () => {
@@ -252,8 +252,12 @@ describe('OMDbMetadataProvider', () => {
       mockFetch.mockRejectedValueOnce(error)
       const result = await provider.getDetails('tt123', 'movie')
       expect(result).toBeNull()
-      const logger = getLoggingService()
-      expect(logger.error).toHaveBeenCalledWith('[OMDbMetadataProvider]', 'Details error:', error)
+      expect(getLoggingService().getLogs().at(-1)).toMatchObject({
+        level: 'error',
+        source: '[OMDbMetadataProvider]',
+        message: 'Details error:',
+        details: expect.stringContaining('Network Error'),
+      })
     })
   })
 
