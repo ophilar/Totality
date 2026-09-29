@@ -21,7 +21,7 @@ const FOCUSABLE_SELECTOR = [
  */
 export function useFocusTrap(
   isActive: boolean,
-  containerRef: RefObject<HTMLElement>,
+  containerRef: RefObject<HTMLElement | null>,
   autoFocusFirst: boolean = true
 ) {
   const previousActiveElement = useRef<HTMLElement | null>(null)

@@ -27,10 +27,10 @@ export function AddSourceModal({ onClose, onSuccess }: AddSourceModalProps) {
   const [focusedIndex, setFocusedIndex] = useState(0)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
   const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null!)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Focus trap and modal registration
-  useFocusTrap(true, modalRef as React.RefObject<HTMLElement>, false)
+  useFocusTrap(true, modalRef, false)
 
   // Use SSOT for available providers
   const availableProviders = useMemo(() => {

@@ -161,7 +161,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string }>>([])
-  const modalRef = useRef<HTMLDivElement>(null!)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<TaskQueueState>({

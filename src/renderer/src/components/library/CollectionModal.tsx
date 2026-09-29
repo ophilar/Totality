@@ -32,10 +32,10 @@ export const CollectionModal = memo(function CollectionModal({
   onDismissAllMissingInCollection,
 }: CollectionModalProps) {
   const [selectedMissing, setSelectedMissing] = useState<MissingMovie | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null!)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Focus trap
-  useFocusTrap(true, modalRef as React.RefObject<HTMLElement>)
+  useFocusTrap(true, modalRef)
 
   // Handle Escape key
   useEffect(() => {

@@ -88,10 +88,10 @@ export function MatchFixModal({
   const [error, setError] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
   const [expandedOverviews, setExpandedOverviews] = useState<Record<number, boolean>>({})
-  const modalRef = useRef<HTMLDivElement>(null!)
+  const modalRef = useRef<HTMLDivElement | null>(null)
 
   // Focus trap
-  useFocusTrap(isOpen, modalRef as React.RefObject<HTMLElement>)
+  useFocusTrap(isOpen, modalRef)
 
   const [includeExpanded, setIncludeExpanded] = useState(false)
 
