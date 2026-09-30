@@ -65,6 +65,7 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   const maximumVideoBitrate = Math.floor(Math.min(levelBitrateLimit, Math.min(definition.network.sustainableBitrate, outputCeiling * 8 / (analysis.duration! / 1000)) - retainedBitrate))
   if (maximumVideoBitrate <= 0) throw new Error('Retained audio exhausts the configured target bitrate')
   const convertHdr = sourceHdr !== 'SDR' && hdrFormat !== sourceHdr
+  if (convertHdr && hdrFormat !== 'SDR' && hdrFormat !== 'HDR10') throw new Error(`Conversion to ${hdrFormat} is not verified; select SDR or HDR10`)
   if ((sourceHdr === 'Dolby Vision' || sourceHdr === 'HDR10+') && !convertHdr) throw new Error('Dynamic HDR transcoding requires an explicitly selected HDR10 or SDR conversion')
   const pixelFormat = bitDepth === 10 ? 'yuv420p10le' : 'yuv420p'
   const videoFilter = convertHdr

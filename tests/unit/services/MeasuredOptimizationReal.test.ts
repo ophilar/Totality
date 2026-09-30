@@ -112,6 +112,7 @@ describe('real episode sample encoding and measurement', () => {
       const analysis = await analyzer.analyzeFile(inputPath)
       expect(analysis.video).toMatchObject({ colorTransfer: transfer, colorPrimaries: 'bt2020', hdrFormat: format })
       const options: TranscodeOptions = { targetCodec: 'hevc', encoder: 'x265', preset: 'medium', crf: 20, useGpu: false, targetContainer: 'mkv', targetHdrFormat: 'SDR' }
+      if (format === 'HDR10') expect(() => buildTargetTranscodePlan(analysis, profile!, { ...options, targetHdrFormat: 'HLG' })).toThrow('Conversion to HLG is not verified')
       options.targetConversion = buildTargetTranscodePlan(analysis, profile!, options)
       const outputPath = path.join(directory, `${format}-SDR.mkv`)
       const command = new SoftwareCommandBuilder().buildFFmpegArgs(inputPath, outputPath, options, analysis)
