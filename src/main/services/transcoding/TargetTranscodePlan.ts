@@ -4,6 +4,12 @@ import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { buildStreamSelectionPlan } from './StreamSelectionPlan'
 import { APP_CONFIG } from '@main/config'
 
+// Main-tier bitrate limits in bits/s: ITU-T H.265 Annex A and AV1 Annex A.
+const MAIN_TIER_BITRATE_LIMITS: Record<string, Record<number, number>> = {
+  hevc: { 10: 128000, 20: 1500000, 21: 3000000, 30: 6000000, 31: 10000000, 40: 12000000, 41: 20000000, 50: 25000000, 51: 40000000, 52: 60000000, 60: 60000000, 61: 120000000, 62: 240000000 },
+  av1: { 20: 1500000, 21: 3000000, 30: 6000000, 31: 10000000, 40: 12000000, 41: 20000000, 50: 30000000, 51: 40000000, 52: 60000000, 53: 60000000, 60: 60000000, 61: 100000000, 62: 160000000, 63: 160000000 },
+}
+
 export interface TargetTranscodePlan {
   container: 'mkv' | 'mp4'
   width: number
@@ -54,7 +60,9 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   }
   const retainedBitrate = audio.reduce((sum, item) => sum + (item.bitrateKbps ?? analysis.audioTracks.find(track => track.index === item.sourceIndex)?.bitrate ?? 0) * 1000, 0)
   const outputCeiling = options.maxOutputBytes ?? analysis.fileSize!
-  const maximumVideoBitrate = Math.floor(Math.min(definition.network.sustainableBitrate, outputCeiling * 8 / (analysis.duration! / 1000)) - retainedBitrate)
+  const levelBitrateLimit = MAIN_TIER_BITRATE_LIMITS[options.targetCodec!]?.[level]
+  if (levelBitrateLimit === undefined) throw new Error(`No verified main-tier bitrate limit for ${options.targetCodec} level ${level / 10}`)
+  const maximumVideoBitrate = Math.floor(Math.min(levelBitrateLimit, Math.min(definition.network.sustainableBitrate, outputCeiling * 8 / (analysis.duration! / 1000)) - retainedBitrate))
   if (maximumVideoBitrate <= 0) throw new Error('Retained audio exhausts the configured target bitrate')
   const convertHdr = sourceHdr !== 'SDR' && hdrFormat !== sourceHdr
   if ((sourceHdr === 'Dolby Vision' || sourceHdr === 'HDR10+') && !convertHdr) throw new Error('Dynamic HDR transcoding requires an explicitly selected HDR10 or SDR conversion')
@@ -74,7 +82,8 @@ export function applyTargetTranscodePlan(args: string[], options: TranscodeOptio
     while ((index = args.indexOf(flag)) >= 0) args.splice(index, 2)
   }
   args.unshift(...plan.inputArgs)
-  args.splice(args.length - 1, 0, '-vf', plan.videoFilter, '-pix_fmt', plan.bitDepth === 10 ? 'yuv420p10le' : 'yuv420p', '-maxrate', String(plan.maximumVideoBitrate), '-bufsize', String(plan.maximumVideoBitrate * 2))
+  const bufferSize = Math.min(plan.maximumVideoBitrate * 2, MAIN_TIER_BITRATE_LIMITS[options.targetCodec!][plan.level])
+  args.splice(args.length - 1, 0, '-vf', plan.videoFilter, '-pix_fmt', plan.bitDepth === 10 ? 'yuv420p10le' : 'yuv420p', '-maxrate', String(plan.maximumVideoBitrate), '-bufsize', String(bufferSize))
   if (options.targetCodec === 'hevc') args.splice(args.length - 1, 0, '-profile:v', plan.profile === 'Main 10' ? 'main10' : 'main')
   const encoderLevel = options.targetCodec === 'av1' && options.encoder?.startsWith('nvenc') ? (Math.floor(plan.level / 10) - 2) * 4 + plan.level % 10 : options.encoder?.startsWith('qsv') || options.encoder === 'svt_av1' ? plan.level : plan.level / 10
   args.splice(args.length - 1, 0, '-level:v', String(encoderLevel))

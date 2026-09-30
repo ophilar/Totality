@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as fs from 'node:fs/promises'
+import { watch } from 'node:fs'
 import * as path from 'node:path'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { ChildProcessMeasurementRunner, MeasuredOptimizationService } from '@main/services/MeasuredOptimizationService'
@@ -16,6 +17,25 @@ describe('real episode sample encoding and measurement', () => {
   const runner = new ChildProcessMeasurementRunner()
   beforeEach(async () => { db = await setupTestDb(); directory = await fs.mkdtemp(path.resolve('tests/tmp/measure-real-')) })
   afterEach(async () => { await fs.rm(directory, { recursive: true, force: true }); cleanupTestDb() })
+  it.each(['failure', 'cancellation'] as const)('cleans owned references and partial samples after real %s', async mode => {
+    const analyzer = getMediaFileAnalyzer()
+    expect(await analyzer.isFFmpegAvailable()).toBe(true)
+    const binary = analyzer.getFFmpegPath()!
+    const inputPath = path.join(directory, 'source.mkv'), outputDirectory = path.join(directory, 'samples')
+    await runner.run(binary, ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=24', '-t', '3', '-c:v', 'ffv1', inputPath])
+    await fs.mkdir(outputDirectory)
+    await fs.writeFile(path.join(outputDirectory, 'unrelated.txt'), 'preserved')
+    const controller = new AbortController()
+    const watcher = mode === 'cancellation' ? watch(outputDirectory, (_event, filename) => { if (filename?.toString() === 'reference-0.mkv') controller.abort() }) : undefined
+    try {
+      const measurement = new MeasuredOptimizationService().measure({ inputPath, outputDirectory, durationMs: 3000, signal: controller.signal, referenceInputArgs: ['-init_hw_device', 'vulkan=target', '-filter_hw_device', 'target'], referenceFilter: 'format=yuv420p,hwupload,libplacebo=w=160:h=90:format=yuv420p,hwdownload,format=yuv420p', candidates: [{ encoder: 'x265', preset: 'medium', quality: 20, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: ['-y', '-i', '<input>', '-c:v', mode === 'failure' ? 'encoder-that-does-not-exist' : 'libx265', '<output>'] }] })
+      if (mode === 'failure') await expect(measurement).rejects.toThrow('Unknown encoder')
+      else await expect(measurement).rejects.toMatchObject({ name: 'AbortError' })
+    } finally { watcher?.close() }
+    expect(await fs.readdir(outputDirectory)).toEqual(['unrelated.txt'])
+    expect(await fs.readFile(path.join(outputDirectory, 'unrelated.txt'), 'utf8')).toBe('preserved')
+    await expect(fs.access(inputPath)).resolves.toBeUndefined()
+  }, 30000)
   it('encodes three bounded clips with x265 and SVT-AV1, executes CAMBI and preserves cadence', async () => {
     const inputPath = path.join(directory, 'source.mkv')
     expect(await getMediaFileAnalyzer().isFFmpegAvailable()).toBe(true)
@@ -29,6 +49,11 @@ describe('real episode sample encoding and measurement', () => {
       const supportedProfile = { ...profile!, definition: { ...profile!.definition, video: { ...profile!.definition.video, codecs: [targetCodec], profiles: ['Main'], bitDepths: [8] } } }
       const options: TranscodeOptions = { targetCodec, encoder, preset, crf: 20, useGpu: false, targetContainer: 'mkv', targetHdrFormat: 'SDR', targetAudioCodec: 'aac' }
       options.targetConversion = buildTargetTranscodePlan(analysis, supportedProfile, options)
+      const highBitrateProfile = { ...supportedProfile, definition: { ...supportedProfile.definition, video: { ...supportedProfile.definition.video, levels: [51] } } }
+      const highBitratePlan = buildTargetTranscodePlan(analysis, highBitrateProfile, { ...options, maxOutputBytes: 1000000000 })
+      expect(highBitratePlan.maximumVideoBitrate).toBe(40000000)
+      const highBitrateArgs = new SoftwareCommandBuilder().buildFFmpegArgs('<input>', '<output>', { ...options, targetConversion: highBitratePlan }, analysis)
+      expect(highBitrateArgs[highBitrateArgs.indexOf('-bufsize') + 1]).toBe('40000000')
       const ffmpegArgs = new SoftwareCommandBuilder().buildFFmpegArgs('<input>', '<output>', options, analysis)
       const result = await new MeasuredOptimizationService().measure({ inputPath, outputDirectory: path.join(directory, encoder), durationMs: analysis.duration!, referenceFilter: options.targetConversion.videoFilter, candidates: [{ encoder, preset, quality: 20, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs }] })
       expect(result.cambiAvailable).toBe(true)

@@ -5,6 +5,7 @@ import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
+import { getErrorMessage } from './utils/errorUtils'
 
 export interface MeasurementProcessRunner {
   run(binary: string, args: string[], signal?: AbortSignal): Promise<string>
@@ -49,44 +50,59 @@ export class MeasuredOptimizationService {
     const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
     const referencePaths: string[] = []
-    // Materialize hardware color transforms once per section. Feeding libplacebo
-    // and libvmaf in one graph changes frame synchronization on multi-input graphs.
-    if (request.referenceInputArgs?.length && request.referenceFilter) {
-      for (const [index, start] of starts.entries()) {
-        const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
-        await this.processRunner.run(binary, ['-y', '-v', 'error', ...request.referenceInputArgs, '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath), '-t', String(length), '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
-        referencePaths.push(referencePath)
+    const ownedPaths = new Set<string>()
+    const retainedPaths = new Set<string>()
+    let failure: unknown
+    try {
+      // Materialize hardware color transforms once per section. Feeding libplacebo
+      // and libvmaf in one graph changes frame synchronization on multi-input graphs.
+      if (request.referenceInputArgs?.length && request.referenceFilter) {
+        for (const [index, start] of starts.entries()) {
+          const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
+          ownedPaths.add(referencePath)
+          await this.processRunner.run(binary, ['-y', '-v', 'error', ...request.referenceInputArgs, '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath), '-t', String(length), '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
+          referencePaths.push(referencePath)
+        }
       }
-    }
-    const measured: MeasuredCandidate[] = []
-    for (const candidate of request.candidates) {
-      const scores: number[] = [], banding: number[] = [], samplePaths: string[] = []
-      let outputBytes = 0
-      for (const [index, start] of starts.entries()) {
-        request.signal?.throwIfAborted()
-        const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
-        const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(request.inputPath) : arg === '<output>' ? outputPath : arg)
-        args.splice(args.indexOf('-i'), 0, '-ss', String(start))
-        args.splice(args.length - 1, 0, '-t', String(length))
-        await this.processRunner.run(binary, args, request.signal)
-        outputBytes += (await fs.stat(outputPath)).size
-        samplePaths.push(outputPath)
-        const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
-        // Two parsing levels: filtergraph, then filter options. Quote at both levels.
-        const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
-        const reference = !referencePaths.length && request.referenceFilter ? `,${request.referenceFilter}` : ''
-        const graph = `[0:v]settb=AVTB,setpts=PTS-STARTPTS[d];[1:v]settb=AVTB,setpts=PTS-STARTPTS${reference}[r];[d][r]libvmaf=feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
-        await this.processRunner.run(binary, ['-v', 'error', '-i', outputPath, ...(referencePaths.length ? ['-i', referencePaths[index]] : ['-ss', String(start), '-t', String(length), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath)]), '-filter_complex', graph, '-an', '-sn', '-f', 'null', '-'], request.signal)
-        const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
-        if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')
-        for (const frame of log.frames) { scores.push(frame.metrics.vmaf); banding.push(frame.metrics.cambi) }
-        await fs.unlink(logPath)
+      const measured: MeasuredCandidate[] = []
+      for (const candidate of request.candidates) {
+        const scores: number[] = [], banding: number[] = [], samplePaths: string[] = []
+        let outputBytes = 0
+        for (const [index, start] of starts.entries()) {
+          request.signal?.throwIfAborted()
+          const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
+          ownedPaths.add(outputPath)
+          const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(request.inputPath) : arg === '<output>' ? outputPath : arg)
+          args.splice(args.indexOf('-i'), 0, '-ss', String(start))
+          args.splice(args.length - 1, 0, '-t', String(length))
+          await this.processRunner.run(binary, args, request.signal)
+          outputBytes += (await fs.stat(outputPath)).size
+          samplePaths.push(outputPath)
+          const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
+          ownedPaths.add(logPath)
+          // Two parsing levels: filtergraph, then filter options. Quote at both levels.
+          const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
+          const reference = !referencePaths.length && request.referenceFilter ? `,${request.referenceFilter}` : ''
+          const graph = `[0:v]settb=AVTB,setpts=PTS-STARTPTS[d];[1:v]settb=AVTB,setpts=PTS-STARTPTS${reference}[r];[d][r]libvmaf=feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
+          await this.processRunner.run(binary, ['-v', 'error', '-i', outputPath, ...(referencePaths.length ? ['-i', referencePaths[index]] : ['-ss', String(start), '-t', String(length), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath)]), '-filter_complex', graph, '-an', '-sn', '-f', 'null', '-'], request.signal)
+          const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
+          if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')
+          for (const frame of log.frames) { scores.push(frame.metrics.vmaf); banding.push(frame.metrics.cambi) }
+          await fs.unlink(logPath)
+        }
+        if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
+        scores.sort((a, b) => a - b)
+        measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
       }
-      if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
-      scores.sort((a, b) => a - b)
-      measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
+      for (const candidate of measured) for (const samplePath of candidate.samplePaths!) retainedPaths.add(samplePath)
+      return { candidates: measured, vmafAvailable: true, cambiAvailable: true }
+    } catch (error) {
+      failure = error
+      throw error
+    } finally {
+      const cleanup = await Promise.allSettled([...ownedPaths].filter(filePath => !retainedPaths.has(filePath)).map(filePath => fs.rm(filePath, { force: true })))
+      const errors = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason)
+      if (errors.length) throw new Error(`Measured optimization artifact cleanup failed: ${(failure === undefined ? errors : [failure, ...errors]).map(getErrorMessage).join('; ')}`)
     }
-    for (const referencePath of referencePaths) await fs.unlink(referencePath)
-    return { candidates: measured, vmafAvailable: true, cambiAvailable: true }
   }
 }
