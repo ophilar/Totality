@@ -14,6 +14,8 @@ export interface TimelineItem {
   airDate?: string
   timelineEra?: string
   identifiers: TimelineItemIdentifiers
+  identityIssue?: string
+  deliberateRepeat?: boolean
 }
 
 export interface TimelineDefinition {
@@ -24,6 +26,10 @@ export interface TimelineDefinition {
   sourceUrl?: string
   version: number
   items: TimelineItem[]
+  retrievedAt?: string
+  contentFingerprint?: string
+  refreshError?: string
+  granularity?: 'episode-interleaved' | 'series-blocks' | 'release-order'
 }
 
 export interface TimelineRecipeSummary {
@@ -34,10 +40,13 @@ export interface TimelineRecipeSummary {
   totalItems: number
   sourceType: 'preset' | 'remote' | 'trakt' | 'web' | 'ai'
   sourceUrl?: string
+  granularity?: TimelineDefinition['granularity']
 }
+
+export interface TimelineFetchOptions { refresh?: boolean; snapshotId?: string }
 
 export interface ITimelineRecipeProvider {
   supports(input: string): Promise<boolean>
   listAvailableRecipes(): Promise<TimelineRecipeSummary[]>
-  fetchTimeline(id: string): Promise<TimelineDefinition>
+  fetchTimeline(id: string, options?: TimelineFetchOptions): Promise<TimelineDefinition>
 }

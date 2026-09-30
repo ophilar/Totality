@@ -1,4 +1,4 @@
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 import { getGeminiService, GeminiService } from '@main/services/GeminiService'
 import { validateTimelineDefinition } from './TimelineValidation'
@@ -21,13 +21,13 @@ export class WebGuideRecipeProvider implements ITimelineRecipeProvider {
     return !/^https?:\/\//i.test(input) && !input.startsWith('tmdb-') && !input.startsWith('trakt-')
   }
 
-  async fetchTimeline(input: string): Promise<TimelineDefinition> {
+  async fetchTimeline(input: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const prompt = input.trim()
     if (/^https?:\/\//i.test(prompt)) {
       throw new Error('Online guide URLs require a saved parser definition. Add one in the timeline parser editor.')
     }
     const cached = await this.cacheService.getRecipe(prompt)
-    if (cached) return cached
+    if (cached && !options.refresh) return cached
     if (!this.gemini.isConfigured()) throw new Error('Configure Gemini in Settings to generate a timeline from a prompt.')
 
     const response = await this.gemini.sendMessage({

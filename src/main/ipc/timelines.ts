@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/BetterSQLiteService'
@@ -33,6 +34,7 @@ const syncService = new PlexPlaylistSyncService()
 const ResolveTimelineSchema = z.tuple([
   z.string().min(1),
   z.string().optional(),
+  z.object({ refresh: z.boolean().optional(), snapshotId: z.string().min(1).optional() }).optional(),
 ])
 
 const SyncPlexPlaylistSchema = z.tuple([
@@ -40,6 +42,9 @@ const SyncPlexPlaylistSchema = z.tuple([
     sourceId: z.string().min(1),
     recipeId: z.string().min(1),
     playlistTitle: z.string().min(1),
+    snapshotId: z.string().min(1),
+    playlistRatingKey: z.string().optional(),
+    allowStale: z.boolean().optional(),
   }),
 ])
 
@@ -60,26 +65,40 @@ export function registerTimelinesHandlers(timelineRecipeProvider: ITimelineRecip
     return await parserPluginProvider.removePlugin(id)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.GET_RECIPE, z.tuple([z.string().min(1)]), async (recipeId) => {
-    return await timelineRecipeProvider.fetchTimeline(recipeId)
+  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.GET_RECIPE, z.tuple([z.string().min(1), z.object({ refresh: z.boolean().optional() }).optional()]), async (recipeId, options) => {
+    return await timelineRecipeProvider.fetchTimeline(recipeId, options)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, ResolveTimelineSchema, async (recipeId, sourceId) => {
-    const timeline = await timelineRecipeProvider.fetchTimeline(recipeId)
+  createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, ResolveTimelineSchema, async (recipeId, sourceId, options) => {
+    let timeline: import('@main/services/timelines/ITimelineRecipeProvider').TimelineDefinition
+    if (options?.snapshotId) {
+      const raw = await getDatabase().config.getSetting(`timeline_snapshot:${options.snapshotId}`)
+      if (!raw) throw new Error('The opened viewing-guide snapshot no longer exists; reopen the guide.')
+      timeline = (JSON.parse(raw) as import('@main/services/timelines/TimelineResolutionEngine').ResolvedTimelineResult).timeline
+      if (timeline.id !== recipeId) throw new Error('The snapshot belongs to another viewing guide.')
+    } else timeline = await timelineRecipeProvider.fetchTimeline(recipeId, options)
 
     const db = getDatabase().drizzle
     const engine = new TimelineResolutionEngine(db)
-    return await engine.resolveTimeline(timeline, sourceId)
+    const resolved = { ...await engine.resolveTimeline(timeline, sourceId), snapshotId: randomUUID() }
+    await getDatabase().config.setSetting(`timeline_snapshot:${resolved.snapshotId}`, JSON.stringify(resolved))
+    return resolved
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, SyncPlexPlaylistSchema, async (payload) => {
-    const { sourceId, recipeId, playlistTitle } = payload
-
-    const timeline = await timelineRecipeProvider.fetchTimeline(recipeId)
-
-    const db = getDatabase().drizzle
-    const engine = new TimelineResolutionEngine(db)
-    const resolved = await engine.resolveTimeline(timeline, sourceId)
+    const { sourceId, playlistTitle, snapshotId, playlistRatingKey, allowStale } = payload
+    const raw = await getDatabase().config.getSetting(`timeline_snapshot:${snapshotId}`)
+    if (!raw) throw new Error('The reviewed timeline snapshot no longer exists; reopen the guide.')
+    const resolved = JSON.parse(raw) as import('@main/services/timelines/TimelineResolutionEngine').ResolvedTimelineResult
+    if (resolved.timeline.id !== payload.recipeId) throw new Error('The reviewed snapshot belongs to another viewing guide.')
+    if (resolved.sourceId !== sourceId) throw new Error('The reviewed timeline belongs to another source; resolve it for the selected Plex server.')
+    if (resolved.timeline.refreshError && !allowStale) throw new Error('Explicit authorization is required to sync this stale timeline snapshot.')
+    if (resolved.items.some(item => item.status === 'ambiguous')) throw new Error('Resolve ambiguous timeline matches before syncing.')
+    for (const item of resolved.items) {
+      if (!item.matchedMediaItem) continue
+      const current = await getDatabase().media.getItemById(item.matchedMediaItem.id)
+      if (!current || current.source_id !== sourceId || current.source_type !== 'plex' || current.plex_id !== item.matchedMediaItem.plexId) throw new Error('A timeline match changed after review; refresh local matches before syncing.')
+    }
 
     const sourceManager = getSourceManager()
     const provider = sourceManager.getProvider(sourceId)
@@ -99,6 +118,8 @@ export function registerTimelinesHandlers(timelineRecipeProvider: ITimelineRecip
       machineIdentifier: selectedServer.machineIdentifier,
       playlistTitle,
       items: resolved.items,
+      playlistRatingKey,
+      sourceId,
     })
   })
 

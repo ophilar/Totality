@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import type { AddressInfo } from 'node:net'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PlexPlaylistSyncService } from '@main/services/timelines/PlexPlaylistSyncService'
@@ -19,6 +20,7 @@ describe('PlexPlaylistSyncService', () => {
   let requests: PlexResponse[]
 
   beforeEach(async () => {
+    await setupTestDb()
     responses = []
     requests = []
     server = createServer((request, response) => {
@@ -30,6 +32,7 @@ describe('PlexPlaylistSyncService', () => {
   })
 
   afterEach(async () => {
+    cleanupTestDb()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   })
 
@@ -76,7 +79,21 @@ describe('PlexPlaylistSyncService', () => {
   }
 
   const playlistResponse = (ratingKey: string, title: string) => ({
-    MediaContainer: { Metadata: [{ ratingKey, title }] },
+    MediaContainer: { Metadata: [{ ratingKey, title, playlistType: 'video' }] },
+  })
+
+  it('keeps the previous playlist when staging returns the wrong sequence', async () => {
+    respond('GET', '/playlists', playlistResponse('existing', 'Reviewed order'))
+    respond('POST', '/playlists', playlistResponse('staged', 'Staging'))
+    respond('PUT', '/playlists/staged/items', {})
+    respond('GET', '/playlists/staged/items', { MediaContainer: { Metadata: [{ ratingKey: '2' }, { ratingKey: '1' }] } })
+    await expect(service.syncPlaylist({ serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', playlistRatingKey: 'existing', sourceId: 'src-1', items: [matchedItem(1, '1'), matchedItem(2, '2')] })).rejects.toThrow('sequence does not match')
+    expect(requests.some(request => request.method === 'DELETE' || request.path === '/playlists/staged' && request.method === 'PUT')).toBe(false)
+  })
+
+  it('rejects cross-server identities before sending playlist requests', async () => {
+    await expect(service.syncPlaylist({ serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', sourceId: 'another-server', items: [matchedItem(1, '1')] })).rejects.toThrow('selected Plex source')
+    expect(requests).toHaveLength(0)
   })
 
   it('throws error when no matched items exist in the list', async () => {
@@ -92,6 +109,7 @@ describe('PlexPlaylistSyncService', () => {
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
+      sourceId: 'src-1',
       playlistTitle: 'Example Saga Complete',
       items,
     })).rejects.toThrow(/No matched items found/)
@@ -102,6 +120,8 @@ describe('PlexPlaylistSyncService', () => {
     respond('GET', '/playlists', { MediaContainer: { Metadata: [] } })
     respond('POST', '/playlists', playlistResponse('playlist-999', 'Example Saga Complete'))
     respond('PUT', '/playlists/playlist-999/items', {})
+    respond('GET', '/playlists/playlist-999/items', { MediaContainer: { Metadata: [{ ratingKey: '1001' }, { ratingKey: '1003' }] } })
+    respond('PUT', '/playlists/playlist-999', {})
     const items = [matchedItem(1, '1001'), {
       order: 2,
       type: 'movie' as const,
@@ -114,6 +134,7 @@ describe('PlexPlaylistSyncService', () => {
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
+      sourceId: 'src-1',
       playlistTitle: 'Example Saga Complete',
       items,
     })
@@ -128,11 +149,13 @@ describe('PlexPlaylistSyncService', () => {
       'GET /playlists',
       'POST /playlists',
       'PUT /playlists/playlist-999/items',
+      'GET /playlists/playlist-999/items',
+      'PUT /playlists/playlist-999',
     ])
     expect(requests[0].body).toEqual({})
     expect(requests[1].body).toEqual({
       type: 'video',
-      title: 'Example Saga Complete',
+      title: expect.stringContaining('Totality staging'),
       smart: '0',
       uri: 'server://mach-123/com.plexapp.plugins.library/library/metadata/1001',
     })
@@ -142,24 +165,30 @@ describe('PlexPlaylistSyncService', () => {
     expect(responses).toHaveLength(0)
   })
 
-  it('deletes an existing playlist with the same title before recreating it', async () => {
+  it('verifies and publishes a staged playlist before deleting the selected previous playlist', async () => {
     respond('GET', '/playlists', playlistResponse('old-playlist-123', 'Example Saga Complete'))
-    respond('DELETE', '/playlists/old-playlist-123', {})
     respond('POST', '/playlists', playlistResponse('playlist-1000', 'Example Saga Complete'))
+    respond('GET', '/playlists/playlist-1000/items', { MediaContainer: { Metadata: [{ ratingKey: '1001' }] } })
+    respond('PUT', '/playlists/playlist-1000', {})
+    respond('DELETE', '/playlists/old-playlist-123', {})
 
     const result = await service.syncPlaylist({
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
+      sourceId: 'src-1',
       playlistTitle: 'Example Saga Complete',
+      playlistRatingKey: 'old-playlist-123',
       items: [matchedItem(1, '1001')],
     })
 
     expect(result.playlistRatingKey).toBe('playlist-1000')
     expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
       'GET /playlists',
-      'DELETE /playlists/old-playlist-123',
       'POST /playlists',
+      'GET /playlists/playlist-1000/items',
+      'PUT /playlists/playlist-1000',
+      'DELETE /playlists/old-playlist-123',
     ])
     expect(requests[0].headers['x-plex-token']).toBe('plex-token')
     expect(requests[1].headers['x-plex-token']).toBe('plex-token')

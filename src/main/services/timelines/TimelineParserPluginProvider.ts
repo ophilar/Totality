@@ -1,7 +1,7 @@
 import { JSDOM } from 'jsdom'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { validateTimelineDefinition } from './TimelineValidation'
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { TimelineParserPluginSchema, type TimelineParserGroupDefinition, type TimelineParserListDefinition, type TimelineParserOrder, type TimelineParserPlugin } from './TimelineParserPlugin'
 import alienPredatorParser from './parser-plugins/alien-predator.json'
 import babylonProjectParser from './parser-plugins/babylon-project.json'
@@ -39,14 +39,15 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       totalItems: 0,
       sourceType: 'web' as const,
       sourceUrl: this.orderSourceUrl(plugin, order),
+      granularity: typeof order.order !== 'string' && 'kind' in order.order && order.order.format !== 'star-trek-guide' ? 'series-blocks' as const : 'episode-interleaved' as const,
     })))
   }
 
-  async fetchTimeline(idOrUrl: string): Promise<TimelineDefinition> {
+  async fetchTimeline(idOrUrl: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const selected = await this.findOrder(idOrUrl.trim())
     if (!/^https?:\/\//i.test(idOrUrl)) {
       const cached = await this.cacheService.getRecipe(`${selected.plugin.id}:${selected.order.id}`)
-      if (cached) return cached
+      if (cached && !options.refresh) return cached
     }
     const fetchUrl = selected.plugin.fetchUrl ?? selected.plugin.sourceUrl
     const response = await fetch(fetchUrl, {
@@ -75,6 +76,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       description: `${selected.order.description} Source: ${selected.plugin.attribution}.`,
       sourceUrl: this.orderSourceUrl(selected.plugin, selected.order),
       version: isListOrder ? 1 : 2,
+      granularity: isListOrder && orderDefinition.format !== 'star-trek-guide' ? 'series-blocks' : 'episode-interleaved',
       items: rows,
     }
     const validation = validateTimelineDefinition(definition)

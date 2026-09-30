@@ -1,4 +1,4 @@
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 
 interface TraktItemResponse {
@@ -52,9 +52,9 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
     return input.startsWith('trakt-') || /^https?:\/\/trakt\.tv\//i.test(input) || /^[^/]+\/[^/]+$/.test(input)
   }
 
-  async fetchTimeline(listSlugOrUrl: string): Promise<TimelineDefinition> {
+  async fetchTimeline(listSlugOrUrl: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const cached = await this.cacheService.getRecipe(listSlugOrUrl)
-    if (cached) {
+    if (cached && !options.refresh) {
       return cached
     }
 
@@ -83,7 +83,7 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
 
     const canonicalId = `trakt-${username}-${listSlug}`
     const cachedByCanonical = await this.cacheService.getRecipe(canonicalId)
-    if (cachedByCanonical) {
+    if (cachedByCanonical && !options.refresh) {
       return cachedByCanonical
     }
 

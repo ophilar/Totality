@@ -184,7 +184,7 @@ describe('TimelinesView Rendering & Interactions', () => {
     })
   })
 
-  it('supports syncing to Plex playlist', async () => {
+  it('requires an explicitly selected Plex source before publication', async () => {
     render(
       <TestProviders>
         <TimelinesView />
@@ -198,10 +198,7 @@ describe('TimelinesView Rendering & Interactions', () => {
 
     const syncButton = screen.getByRole('button', { name: /Sync to Plex Playlist/i })
     expect(syncButton).toBeTruthy()
-    fireEvent.click(syncButton)
-
-    await waitFor(() => {
-      expect(screen.getByText(/Successfully synced playlist/i)).toBeTruthy()
-    })
+    expect((syncButton as HTMLButtonElement).disabled).toBe(true)
+    expect(window.electronAPI.timelinesSyncPlexPlaylist).not.toHaveBeenCalled()
   })
 })

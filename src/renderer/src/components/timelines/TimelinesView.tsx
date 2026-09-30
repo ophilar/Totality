@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ListOrdered,
   Film,
@@ -39,6 +39,8 @@ export function TimelinesView() {
   const { sources, activeSourceId } = useSources()
   const { addToast } = useToast()
 
+  const importedSnapshot = useRef<string | null>(null)
+  const openedGuide = useRef<{ recipeId: string; refreshToken: number; snapshotId: string } | null>(null)
   const [recipes, setRecipes] = useState<TimelineRecipeSummary[]>([])
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('')
   const [selectedTimelineResult, setSelectedTimelineResult] = useState<ResolvedTimelineResult | null>(null)
@@ -52,6 +54,7 @@ export function TimelinesView() {
   const [recipeSearchQuery, setRecipeSearchQuery] = useState('')
   const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'missing'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [playlistRatingKey, setPlaylistRatingKey] = useState('')
   const [customPlaylistTitle, setCustomPlaylistTitle] = useState('')
   const [recipeRefreshToken, setRecipeRefreshToken] = useState(0)
   const [parserEditorOpen, setParserEditorOpen] = useState(false)
@@ -70,7 +73,7 @@ export function TimelinesView() {
     if (activeSourceId && plexSources.some((s) => s.source_id === activeSourceId)) {
       return activeSourceId
     }
-    return plexSources[0]?.source_id
+    return undefined
   }, [activeSourceId, plexSources])
 
   const resolveSourceId = activeSourceId || undefined
@@ -85,8 +88,8 @@ export function TimelinesView() {
       try {
         const playlists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
         if (isMounted) setExistingPlaylists(playlists)
-      } catch {
-        if (isMounted) setExistingPlaylists([])
+      } catch (error) {
+        if (isMounted) { setExistingPlaylists([]); addToast({ type: 'error', title: 'Plex playlists', message: String(error) }) }
       }
     }
     void fetchExistingPlaylists()
@@ -130,13 +133,18 @@ export function TimelinesView() {
 
   useEffect(() => {
     if (!selectedRecipeId) return
+    if (importedSnapshot.current === selectedRecipeId) { importedSnapshot.current = null; return }
     let isMounted = true
+    setSelectedTimelineResult(null)
 
     const fetchResolvedTimeline = async () => {
       setIsResolvingTimeline(true)
       try {
-        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId)
+        const snapshot = openedGuide.current
+        const options = snapshot?.recipeId === selectedRecipeId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
+        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options)
         if (!isMounted) return
+        if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
         setSelectedTimelineResult(result)
         setCustomPlaylistTitle(result.timeline.name)
       } catch (err: unknown) {
@@ -167,7 +175,12 @@ export function TimelinesView() {
 
     setIsImporting(true)
     try {
-      const timeline = await window.electronAPI.timelinesGetRecipe(input)
+      const result = await window.electronAPI.timelinesResolveTimeline(input, resolveSourceId, { refresh: true })
+      const timeline = result.timeline
+      if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
+      importedSnapshot.current = timeline.id === selectedRecipeId ? null : timeline.id
+      setSelectedTimelineResult(result)
+      setCustomPlaylistTitle(timeline.name)
       setSelectedRecipeId(timeline.id)
       const sourceType: TimelineRecipeSummary['sourceType'] = input.startsWith('http')
         ? 'web'
@@ -264,12 +277,16 @@ export function TimelinesView() {
     }
     if (!selectedTimelineResult) return
 
+    if (selectedTimelineResult.timeline.refreshError && !window.confirm(`Refresh failed: ${selectedTimelineResult.timeline.refreshError}. Authorize syncing this exact snapshot from ${selectedTimelineResult.timeline.retrievedAt}?`)) return
     setIsSyncingPlaylist(true)
     try {
       const result = await window.electronAPI.timelinesSyncPlexPlaylist({
         sourceId: selectedPlexSourceId,
         recipeId: selectedRecipeId,
         playlistTitle: customPlaylistTitle.trim() || selectedTimelineResult.timeline.name,
+        snapshotId: selectedTimelineResult.snapshotId!,
+        playlistRatingKey: playlistRatingKey || undefined,
+        allowStale: Boolean(selectedTimelineResult.timeline.refreshError),
       })
 
       addToast({
@@ -282,7 +299,8 @@ export function TimelinesView() {
       try {
         const updatedPlaylists = await window.electronAPI.timelinesGetPlexPlaylists(selectedPlexSourceId)
         setExistingPlaylists(updatedPlaylists)
-      } catch {
+      } catch (error) {
+        addToast({ type: 'error', title: 'Playlist list refresh failed', message: String(error) })
         // Non-fatal
       }
     } catch (err: unknown) {
@@ -305,25 +323,9 @@ export function TimelinesView() {
     if (!selectedTimelineResult) return
     setIsRefreshingWeb(true)
     try {
-      if (isWebImportedRecipe && selectedTimelineResult.timeline.sourceUrl) {
-        const freshTimeline = await window.electronAPI.timelinesGetRecipe(selectedTimelineResult.timeline.sourceUrl)
-        const result = await window.electronAPI.timelinesResolveTimeline(freshTimeline.id, resolveSourceId)
-        setSelectedTimelineResult(result)
-        addToast({
-          type: 'success',
-          title: 'Timeline Refreshed',
-          message: `Successfully refreshed '${freshTimeline.name}' (${result.totalCount} items).`,
-        })
-      } else {
-        // Preset / Canonical timeline: re-resolve local library matches
-        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId)
-        setSelectedTimelineResult(result)
-        addToast({
-          type: 'success',
-          title: 'Timeline Re-resolved',
-          message: `Successfully re-checked local library matches for '${result.timeline.name}' (${result.matchedCount}/${result.totalCount} matched).`,
-        })
-      }
+      const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, { refresh: true })
+      setSelectedTimelineResult(result)
+      addToast({ type: result.timeline.refreshError ? 'error' : 'success', title: 'Timeline Refresh', message: result.timeline.refreshError || `Loaded ${result.totalCount} items.` })
     } catch (err: unknown) {
       addToast({
         type: 'error',
@@ -521,8 +523,11 @@ export function TimelinesView() {
             <div className="p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md shadow-xs shrink-0">
               <div className="flex flex-col gap-5">
                 <div className="space-y-2 w-full min-w-0">
+                    {!resolveSourceId && <p className="text-sm text-muted-foreground">Select a media source to resolve local availability for this guide.</p>}
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-bold">{selectedTimelineResult.timeline.name}</h2>
+                    <span className="text-xs">{selectedTimelineResult.timeline.granularity} · Retrieved {selectedTimelineResult.timeline.retrievedAt}</span>
+                    {selectedTimelineResult.timeline.refreshError && <p role="alert" className="text-xs text-amber-400">Stale snapshot: {selectedTimelineResult.timeline.refreshError}</p>}
                     {selectedTimelineResult.timeline.sourceUrl && (
                       <a
                         href={selectedTimelineResult.timeline.sourceUrl}
@@ -570,17 +575,18 @@ export function TimelinesView() {
                       <label className="text-[11px] font-medium text-muted-foreground">Select or Name Plex Playlist</label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <select
-                          value={visibleExistingPlaylists.some(p => p.title === customPlaylistTitle) ? customPlaylistTitle : 'custom-playlist-mode'}
+                          value={playlistRatingKey || 'custom-playlist-mode'}
                           onChange={(e) => {
-                            if (e.target.value !== 'custom-playlist-mode') {
-                              setCustomPlaylistTitle(e.target.value)
-                            }
+                            const key = e.target.value === 'custom-playlist-mode' ? '' : e.target.value
+                            setPlaylistRatingKey(key)
+                            const selected = visibleExistingPlaylists.find(playlist => playlist.ratingKey === key)
+                            if (selected) setCustomPlaylistTitle(selected.title)
                           }}
                           className="w-full min-w-0 px-3 py-1.5 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                           <option value="custom-playlist-mode">-- Create New / Custom Playlist --</option>
                           {visibleExistingPlaylists.map((pl) => (
-                            <option key={pl.ratingKey} value={pl.title}>
+                            <option key={pl.ratingKey} value={pl.ratingKey}>
                               {pl.title} ({pl.leafCount ?? 0} items)
                             </option>
                           ))}
@@ -598,7 +604,7 @@ export function TimelinesView() {
                     <div>
                       <button
                         onClick={handleSyncToPlex}
-                        disabled={isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
+                        disabled={!selectedPlexSourceId || Boolean(selectedTimelineResult.ambiguousCount) || isSyncingPlaylist || isResolvingTimeline || selectedTimelineResult.matchedCount === 0 || !customPlaylistTitle.trim()}
                         className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
                       >
                         {isSyncingPlaylist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -737,7 +743,7 @@ export function TimelinesView() {
                           ) : (
                             <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                               <AlertCircle className="w-3.5 h-3.5 text-muted-foreground/60" />
-                              Missing in Library
+                              {item.status === 'ambiguous' ? 'Ambiguous match — review required' : 'Missing in Library'}
                             </span>
                           )}
                         </td>

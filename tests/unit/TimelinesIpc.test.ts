@@ -44,6 +44,28 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     await cleanupTestDb()
   })
 
+  it('requires explicit authorization for the exact stale snapshot and rejects another source', async () => {
+    const resolved = await handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }) as ResolvedTimelineResult
+    resolved.timeline.refreshError = 'Publisher unavailable'
+    await db.config.setSetting(`timeline_snapshot:${resolved.snapshotId}`, JSON.stringify(resolved))
+    const sync = handlers.get(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST)!
+    const payload = { sourceId: 'src-plex', recipeId: resolved.timeline.id, playlistTitle: 'Acceptance', snapshotId: resolved.snapshotId }
+    await expect(sync(createAuthorizedIpcEvent(), payload)).rejects.toThrow('Explicit authorization')
+    await expect(sync(createAuthorizedIpcEvent(), { ...payload, sourceId: 'other', allowStale: true })).rejects.toThrow('another source')
+    await expect(sync(createAuthorizedIpcEvent(), { ...payload, allowStale: true })).rejects.toThrow('connected Plex server')
+  })
+
+  it('resolves a different source from the opened snapshot without fetching the guide again', async () => {
+    const resolve = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
+    const opened = await resolve(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }) as ResolvedTimelineResult
+    await rm(path.join(timelineDirectory, 'example-saga-viewing-order.json'))
+    await db.sources.upsertSource({ source_id: 'src-other', source_type: 'plex', display_name: 'Other acceptance server', connection_config: '{}', is_enabled: 1 })
+    const switched = await resolve(createAuthorizedIpcEvent(), opened.timeline.id, 'src-other', { snapshotId: opened.snapshotId }) as ResolvedTimelineResult
+    expect(switched.sourceId).toBe('src-other')
+    expect(switched.timeline).toEqual(opened.timeline)
+    expect(switched.snapshotId).not.toBe(opened.snapshotId)
+  })
+
   it('lists local timeline recipes via IPC', async () => {
     const listHandler = handlers.get(IPC_CHANNELS.TIMELINES.LIST_RECIPES)!
     expect(listHandler).toBeDefined()
@@ -99,7 +121,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     expect(firstItem.matchedMediaItem?.plexId).toBe('1001')
   })
 
-  it('matches Example Saga movies by title variations without explicit tmdb/imdb IDs', async () => {
+  it('leaves title variations unresolved without canonical identifiers', async () => {
     await db.media.upsertItem({
       source_id: 'src-plex',
       source_type: 'plex',
@@ -118,11 +140,11 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
 
     const khanItem = result.items.find((i) => i.title.includes('Wrath of Khan'))
     expect(khanItem).toBeDefined()
-    expect(khanItem?.status).toBe('matched')
-    expect(khanItem?.matchedMediaItem?.plexId).toBe('1002')
+    expect(khanItem?.status).toBe('missing')
+    expect(khanItem?.matchedMediaItem).toBeUndefined()
   })
 
-  it('matches Example Saga episodes by series alias without external IDs', async () => {
+  it('leaves series aliases unresolved without canonical identifiers', async () => {
     await db.media.upsertItem({
       source_id: 'src-plex',
       source_type: 'plex',
@@ -143,7 +165,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
 
     const tosItem = result.items.find((i) => i.title === 'Example Saga: The Original Series' || i.seriesTitle === 'Example Saga: The Original Series')
     expect(tosItem).toBeDefined()
-    expect(tosItem?.status).toBe('matched')
-    expect(tosItem?.matchedMediaItem?.plexId).toBe('1003')
+    expect(tosItem?.status).toBe('missing')
+    expect(tosItem?.matchedMediaItem).toBeUndefined()
   })
 })

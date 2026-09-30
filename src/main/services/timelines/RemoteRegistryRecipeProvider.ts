@@ -1,80 +1,34 @@
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import type { ITimelineRecipeProvider, TimelineDefinition, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTimelineCacheService, TimelineCacheService } from './TimelineCacheService'
 
 export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
-  private readonly defaultRegistryUrl = 'https://raw.githubusercontent.com/totality-app/timelines-registry/main'
-
   constructor(
     private readonly registryBaseUrl?: string,
     private readonly cacheService: TimelineCacheService = getTimelineCacheService()
   ) {}
 
-  private get effectiveBaseUrl(): string {
-    return this.registryBaseUrl || this.defaultRegistryUrl
-  }
-
   async listAvailableRecipes(): Promise<TimelineRecipeSummary[]> {
-    const isCustomUrl = !!this.registryBaseUrl
-
-    // 1. Check persistent/memoized cache
-    const cachedManifest = await this.cacheService.getManifest(this.effectiveBaseUrl)
-    if (cachedManifest && cachedManifest.length > 0) {
-      return cachedManifest
-    }
-
-    if (isCustomUrl) {
-      try {
-        const response = await fetch(`${this.effectiveBaseUrl}/manifest.json`, { signal: AbortSignal.timeout(6000) })
-        if (response.ok) {
-          const remoteManifest: TimelineRecipeSummary[] = await response.json()
-          const list = remoteManifest.map((item) => ({ ...item, sourceType: 'remote' as const }))
-          await this.cacheService.setManifest(list, this.effectiveBaseUrl)
-          return list
-        }
-      } catch {
-        // Remote registry unreachable or offline
-      }
-      return []
-    }
-
-    try {
-      const response = await fetch(`${this.effectiveBaseUrl}/manifest.json`, { signal: AbortSignal.timeout(6000) })
-      if (response.ok) {
-        const remoteManifest: TimelineRecipeSummary[] = await response.json()
-        const list = remoteManifest.map(item => ({ ...item, sourceType: 'remote' as const }))
-        await this.cacheService.setManifest(list, this.effectiveBaseUrl)
-        return list
-      }
-    } catch { /* The caller receives an empty remote catalog. */ }
-    return []
+    if (!this.registryBaseUrl) return []
+    const cachedManifest = await this.cacheService.getManifest(this.registryBaseUrl)
+    if (cachedManifest) return cachedManifest
+    const response = await fetch(`${this.registryBaseUrl}/manifest.json`, { signal: AbortSignal.timeout(6000) })
+    if (!response.ok) throw new Error(`Cannot fetch timeline registry: ${response.status} ${response.statusText}`)
+    const remoteManifest: TimelineRecipeSummary[] = await response.json()
+    const list = remoteManifest.map(item => ({ ...item, sourceType: 'remote' as const }))
+    await this.cacheService.setManifest(list, this.registryBaseUrl)
+    return list
   }
 
   async supports(input: string): Promise<boolean> {
     return (await this.listAvailableRecipes()).some(recipe => recipe.id === input)
   }
 
-  async fetchTimeline(id: string): Promise<TimelineDefinition> {
-    const isCustomUrl = !!this.registryBaseUrl
-
-    // 1. Check persistent/memoized cache
+  async fetchTimeline(id: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
+    if (!this.registryBaseUrl) throw new Error('No timeline registry is configured')
     const cached = await this.cacheService.getRecipe(id)
-    if (cached) {
-      return cached
-    }
+    if (cached && !options.refresh) return cached
 
-    if (isCustomUrl) {
-      const response = await fetch(`${this.effectiveBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(10000) })
-      if (!response.ok) {
-        throw new Error(`Failed to fetch timeline '${id}' from remote registry (${response.status}: ${response.statusText}).`)
-      }
-
-      const recipe: TimelineDefinition = await response.json()
-      this.validateRecipe(recipe)
-      await this.cacheService.setRecipe(id, recipe)
-      return recipe
-    }
-
-    const response = await fetch(`${this.effectiveBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(10000) })
+    const response = await fetch(`${this.registryBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(10000) })
     if (!response.ok) {
       throw new Error(`Failed to fetch timeline '${id}' from remote registry (${response.status}: ${response.statusText}).`)
     }

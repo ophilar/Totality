@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { LocalTimelineRecipeProvider } from '@main/services/timelines/LocalTimelineRecipeProvider'
 import { RemoteRegistryRecipeProvider } from '@main/services/timelines/RemoteRegistryRecipeProvider'
 
 describe('timeline recipe providers', () => {
+  beforeEach(() => setupTestDb())
+  afterEach(() => cleanupTestDb())
   it('loads validated timelines from individual local files', async () => {
     const provider = new LocalTimelineRecipeProvider('tests/fixtures/timelines')
     const recipes = await provider.listAvailableRecipes()

@@ -1,4 +1,4 @@
-import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary } from './ITimelineRecipeProvider'
+import type { ITimelineRecipeProvider, TimelineDefinition, TimelineItem, TimelineRecipeSummary, TimelineFetchOptions } from './ITimelineRecipeProvider'
 import { getTMDBService, TMDBService } from '@main/services/TMDBService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { movieCollections } from '@main/database/drizzleSchema'
@@ -36,6 +36,7 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
             description: `Official TMDB Collection (${col.totalMovies} films)`,
             totalItems: col.totalMovies,
             sourceType: 'remote',
+            granularity: 'release-order',
           })
         }
       }
@@ -46,9 +47,9 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
     return recipes
   }
 
-  async fetchTimeline(idOrQuery: string): Promise<TimelineDefinition> {
+  async fetchTimeline(idOrQuery: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const cached = await this.cacheService.getRecipe(idOrQuery)
-    if (cached) {
+    if (cached && !options.refresh) {
       return cached
     }
 
@@ -100,6 +101,7 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
       description: collection.overview || `Official ${collection.name} from TMDB.`,
       sourceUrl: `https://www.themoviedb.org/collection/${collection.id}`,
       version: 1,
+      granularity: 'release-order',
       items,
     }
 

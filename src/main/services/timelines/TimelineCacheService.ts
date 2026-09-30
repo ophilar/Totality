@@ -30,7 +30,7 @@ export class TimelineCacheService {
     TimelineCacheService.instance = null
   }
 
-  async getRecipe(id: string): Promise<TimelineDefinition | null> {
+  async getRecipe(id: string, includeExpired = false): Promise<TimelineDefinition | null> {
     const key = `timeline_recipe:${id}`
 
     // 1. Check in-memory memoization
@@ -40,7 +40,7 @@ export class TimelineCacheService {
       this.warnRejectedRecipe(id, 'cache envelope is malformed')
       return null
     }
-    if (mem && mem.expiresAt > Date.now()) {
+    if (mem && (includeExpired || mem.expiresAt > Date.now())) {
       const validation = validateTimelineDefinition(mem.data)
       if (validation.valid) return validation.value
       this.memoryCache.delete(key)
@@ -60,7 +60,7 @@ export class TimelineCacheService {
         }
         const entry = parsed
         // Check expiration
-        if (entry && entry.data && entry.expiresAt > Date.now()) {
+        if (entry && entry.data && (includeExpired || entry.expiresAt > Date.now())) {
           const validation = validateTimelineDefinition(entry.data)
           if (!validation.valid) {
             this.warnRejectedRecipe(id, validation.reason)
@@ -72,7 +72,7 @@ export class TimelineCacheService {
         }
       }
     } catch (err) {
-      getLoggingService().warn('[TimelineCacheService]', `Failed to read persistent cache for '${id}':`, err)
+      throw new Error(`Cannot read cached timeline '${id}': ${String(err)}`)
     }
 
     return null
@@ -99,7 +99,8 @@ export class TimelineCacheService {
       const db = getDatabase()
       await db.config.setSetting(key, JSON.stringify(entry))
     } catch (err) {
-      getLoggingService().warn('[TimelineCacheService]', `Failed to save persistent cache for '${id}':`, err)
+      this.memoryCache.delete(key)
+      throw new Error(`Cannot persist timeline '${id}': ${String(err)}`)
     }
   }
 
@@ -124,7 +125,7 @@ export class TimelineCacheService {
         }
       }
     } catch (err) {
-      getLoggingService().warn('[TimelineCacheService]', `Failed to read manifest cache '${manifestKey}':`, err)
+      throw new Error(`Cannot read timeline catalog '${manifestKey}': ${String(err)}`)
     }
 
     return null
@@ -148,7 +149,8 @@ export class TimelineCacheService {
       const db = getDatabase()
       await db.config.setSetting(key, JSON.stringify(entry))
     } catch (err) {
-      getLoggingService().warn('[TimelineCacheService]', `Failed to save manifest cache '${manifestKey}':`, err)
+      this.memoryCache.delete(key)
+      throw new Error(`Cannot persist timeline catalog '${manifestKey}': ${String(err)}`)
     }
   }
 
@@ -159,19 +161,19 @@ export class TimelineCacheService {
       try {
         const db = getDatabase()
         await db.config.deleteSetting(key)
-      } catch {
-        // Ignore
+      } catch (error) {
+        throw new Error(`Cannot invalidate timeline cache: ${String(error)}`)
       }
     } else {
       this.memoryCache.clear()
       try {
         const db = getDatabase()
-        const settings = await db.config.getSettingsByPrefix('timeline_')
+        const settings = { ...await db.config.getSettingsByPrefix('timeline_recipe:'), ...await db.config.getSettingsByPrefix('timeline_manifest:') }
         for (const k of Object.keys(settings)) {
           await db.config.deleteSetting(k)
         }
-      } catch {
-        // Ignore
+      } catch (error) {
+        throw new Error(`Cannot invalidate timeline cache: ${String(error)}`)
       }
     }
   }

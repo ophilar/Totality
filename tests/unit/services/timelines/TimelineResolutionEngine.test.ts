@@ -24,6 +24,32 @@ describe('TimelineResolutionEngine', () => {
     cleanupTestDb()
   })
 
+  it('retains deliberate appearances and flags unintended duplicate episode identities', async () => {
+    await db.media.upsertItem({ source_id: 'src-plex', source_type: 'plex', plex_id: 'mando-1', title: 'Chapter 1', series_title: 'The Mandalorian', series_identity_key: 'tmdb:82856', series_tmdb_id: '82856', type: 'episode', season_number: 1, episode_number: 1, library_id: 'tv', file_path: 'D:/Acceptance/mando.mkv' })
+    const episode = { order: 1, type: 'episode' as const, title: 'Chapter 1', seriesTitle: 'The Mandalorian', seasonNumber: 1, episodeNumber: 1, identifiers: { tmdbId: 82856 } }
+    const guide: TimelineDefinition = { id: 'mando', franchise: 'Star Wars', name: 'Order', description: '', version: 1, items: [episode, { ...episode, order: 2 }] }
+    const result = await engine.resolveTimeline(guide, 'src-plex')
+    expect(result.items.map(item => item.status)).toEqual(['matched', 'ambiguous'])
+    guide.items[1].deliberateRepeat = true
+    expect((await engine.resolveTimeline(guide, 'src-plex')).matchedCount).toBe(2)
+    guide.items = [{ ...episode, identifiers: { tmdbId: 83867 } }]
+    expect((await engine.resolveTimeline(guide, 'src-plex')).matchedCount).toBe(0)
+  })
+
+  it('does not resolve against every server when no source is selected', async () => {
+    await db.media.upsertItem({ source_id: 'src-plex', source_type: 'plex', plex_id: 'movie', title: 'Movie', type: 'movie', tmdb_id: '1', file_path: 'D:/Acceptance/movie.mkv' })
+    const guide: TimelineDefinition = { id: 'unselected', franchise: 'Acceptance', name: 'Order', description: '', version: 1, items: [{ order: 1, type: 'movie', title: 'Movie', identifiers: { tmdbId: 1 } }] }
+    const result = await engine.resolveTimeline(guide)
+    expect(result.matchedCount).toBe(0)
+    expect(result.items[0].reason).toContain('Select a media source')
+  })
+
+  it('rejects contradictory canonical identifiers', async () => {
+    await db.media.upsertItem({ source_id: 'src-plex', source_type: 'plex', plex_id: 'movie', title: 'Movie', type: 'movie', tmdb_id: '1', imdb_id: 'tt2', file_path: 'D:/Acceptance/movie.mkv' })
+    const guide: TimelineDefinition = { id: 'contradiction', franchise: 'Acceptance', name: 'Order', description: '', version: 1, items: [{ order: 1, type: 'movie', title: 'Movie', identifiers: { tmdbId: 1, imdbId: 'tt3' } }] }
+    expect((await engine.resolveTimeline(guide, 'src-plex')).matchedCount).toBe(0)
+  })
+
   it('matches movies strictly by TMDB or IMDb ID', async () => {
     await db.media.upsertItem({
       source_id: 'src-plex',
@@ -120,7 +146,7 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.totalCount).toBe(2)
     expect(result.matchedCount).toBe(1)
     expect(result.missingCount).toBe(1)
@@ -197,18 +223,18 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.totalCount).toBe(3)
-    expect(result.matchedCount).toBe(3)
-    expect(result.items[0].status).toBe('matched')
-    expect(result.items[0].matchedMediaItem?.plexId).toBe('3001')
+    expect(result.matchedCount).toBe(2)
+    expect(result.items[0].status).toBe('missing')
+    expect(result.items[0].matchedMediaItem).toBeUndefined()
     expect(result.items[1].status).toBe('matched')
     expect(result.items[1].matchedMediaItem?.plexId).toBe('3002')
     expect(result.items[2].status).toBe('matched')
     expect(result.items[2].matchedMediaItem?.plexId).toBe('3003')
   })
 
-  it('matches Example Saga episodes by common series title shorthand aliases', async () => {
+  it('requires canonical identities for series shorthand aliases', async () => {
     // TOS shorthand "Example Saga"
     await db.media.upsertItem({
       source_id: 'src-plex',
@@ -344,14 +370,10 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.totalCount).toBe(5)
-    expect(result.matchedCount).toBe(5)
-    expect(result.items[0].matchedMediaItem?.plexId).toBe('4001')
-    expect(result.items[1].matchedMediaItem?.plexId).toBe('4002')
-    expect(result.items[2].matchedMediaItem?.plexId).toBe('4003')
-    expect(result.items[3].matchedMediaItem?.plexId).toBe('4004')
-    expect(result.items[4].matchedMediaItem?.plexId).toBe('4005')
+    expect(result.matchedCount).toBe(0)
+    expect(result.items.every(item => item.status === 'missing')).toBe(true)
   })
 
   it('matches IMDb IDs formatted with or without tt prefix', async () => {
@@ -384,13 +406,13 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.matchedCount).toBe(1)
     expect(result.items[0].status).toBe('matched')
     expect(result.items[0].matchedMediaItem?.plexId).toBe('5001')
   })
 
-  it('falls back to matching across all sources if item exists in a different source', async () => {
+  it('never matches an item from a different selected source', async () => {
     await db.sources.upsertSource({
       source_id: 'src-jellyfin',
       source_type: 'jellyfin',
@@ -430,10 +452,9 @@ describe('TimelineResolutionEngine', () => {
 
     // Resolving with 'src-plex' prioritizes src-plex but falls back to src-jellyfin
     const result = await engine.resolveTimeline(timeline, 'src-plex')
-    expect(result.matchedCount).toBe(1)
-    expect(result.items[0].status).toBe('matched')
-    expect(result.items[0].matchedMediaItem?.sourceId).toBe('src-jellyfin')
-    expect(result.items[0].matchedMediaItem?.plexId).toBe('jf-9001')
+    expect(result.matchedCount).toBe(0)
+    expect(result.items[0].status).toBe('missing')
+    expect(result.items[0].matchedMediaItem).toBeUndefined()
   })
 
   it('generically resolves Example Galaxy movies and series using standard IDs and title normalization', async () => {
@@ -495,7 +516,7 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.totalCount).toBe(2)
     expect(result.matchedCount).toBe(2)
     expect(result.items[0].status).toBe('matched')
@@ -562,7 +583,7 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
     expect(result.totalCount).toBe(2)
     expect(result.matchedCount).toBe(2)
     expect(result.items[0].matchedMediaItem?.plexId).toBe('mcu-1001')
@@ -635,9 +656,10 @@ describe('TimelineResolutionEngine', () => {
       ],
     }
 
-    const result = await engine.resolveTimeline(timeline)
-    expect(result.totalCount).toBe(1)
-    expect(result.matchedCount).toBe(1)
+    const result = await engine.resolveTimeline(timeline, 'src-plex')
+    expect(result.totalCount).toBe(3)
+    expect(result.matchedCount).toBe(3)
+    expect(result.items.map(item => item.order)).toEqual([1, 2, 3])
     expect(result.items.length).toBe(3)
     expect(result.items.every((i) => i.type === 'episode')).toBe(true)
     expect(result.items[0].matchedMediaItem?.plexId).toBe('ent-101')
