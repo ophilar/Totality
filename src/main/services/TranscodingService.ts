@@ -424,22 +424,16 @@ export class TranscodingService {
         try { await fs.access(filePath); return true } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
       }
       const inputExists = await exists(journal.inputPath)
-      const targetExists = await exists(journal.targetPath)
-      const quarantineExists = await exists(journal.quarantinePath)
-      const tempExists = await exists(journal.tempPath)
+      let targetExists = await exists(journal.targetPath)
+      let quarantineExists = await exists(journal.quarantinePath)
+      let tempExists = await exists(journal.tempPath)
 
       if ((journal.phase === 'prepared' || journal.phase === 'source_quarantined') && tempExists && journal.targetPath && journal.quarantinePath && journal.outputStats?.success && journal.mode) {
         if (!quarantineExists) await fs.rename(journal.inputPath, journal.quarantinePath)
         await fs.rename(journal.tempPath!, journal.targetPath)
-        await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, { ...journal.outputStats, filePath: journal.targetPath })
-        this.analysisCache.delete(journal.inputPath)
-        this.analysisCache.delete(journal.targetPath)
-        getStatsCacheService().invalidate()
-        if (journal.mode === 'replace') await fs.unlink(journal.quarantinePath)
-        const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
-        if (job) await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: journal.outputStats.fileSize, outputAnalysis: JSON.stringify({ ...journal.outputStats, filePath: journal.targetPath }) })
-        await db.config.deleteSetting(key)
-        continue
+        targetExists = true
+        quarantineExists = true
+        tempExists = false
       }
 
       // Crash occurred after source was quarantined but before target was placed
@@ -452,7 +446,7 @@ export class TranscodingService {
       }
 
       // Crash occurred after target file was successfully placed/activated
-      if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined') && targetExists && journal.targetPath) {
+      if ((journal.phase === 'output_activated' || journal.phase === 'source_quarantined' || (journal.phase === 'prepared' && quarantineExists && !tempExists)) && targetExists && journal.targetPath) {
         // Ensure database points to the newly activated target path
         const analysis = journal.outputStats ?? await getMediaFileAnalyzer().analyzeFile(journal.targetPath)
         if (!analysis.success) throw new Error('Activation recovery requires verified output analysis')
@@ -461,6 +455,12 @@ export class TranscodingService {
         this.analysisCache.delete(journal.targetPath)
         getStatsCacheService().invalidate()
         if (journal.mode === 'replace' && quarantineExists) await fs.unlink(journal.quarantinePath!)
+        const job = await db.mediaRemuxJobs.getLatest(journal.mediaItemId)
+        if (job && job.sourcePath === journal.inputPath && job.quarantinePath === journal.quarantinePath) {
+          const encodedReductionBytes = job.sourceSize - analysis.fileSize!
+          const retainedOriginalBytes = journal.mode === 'replace' ? 0 : job.sourceSize
+          await db.mediaRemuxJobs.update(job.id, { status: 'promoted', actualOutputBytes: analysis.fileSize, bytesSaved: encodedReductionBytes, outputDurationMs: analysis.duration, outputAnalysis: JSON.stringify({ ...analysis, filePath: journal.targetPath, encodedReductionBytes, retainedOriginalBytes, physicallyReclaimedBytes: journal.mode === 'replace' ? encodedReductionBytes : -analysis.fileSize! }) })
+        }
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Committed forward activation recovery for media item ${journal.mediaItemId}`)
         continue
@@ -472,19 +472,6 @@ export class TranscodingService {
         await db.config.deleteSetting(key)
         getLoggingService().info('[TranscodingService]', `Discarded prepared activation journal for media item ${journal.mediaItemId}`)
         continue
-      }
-
-      // Direct replacement can activate the target before the second journal write.
-      // If the staged output is gone and the target's size matches the recorded output,
-      // commit the same forward transition used by output_activated.
-      if (journal.phase === 'prepared' && targetExists && !tempExists && journal.targetPath && journal.outputStats?.fileSize != null) {
-        const targetStat = await fs.stat(journal.targetPath)
-        if (targetStat.size === journal.outputStats.fileSize) {
-          await db.media.updatePathAndStats(journal.mediaItemId, journal.targetPath, journal.outputStats)
-          await db.config.deleteSetting(key)
-          getLoggingService().info('[TranscodingService]', `Committed interrupted direct activation for media item ${journal.mediaItemId}`)
-          continue
-        }
       }
 
       throw new Error(`Unresolved transcoding activation journal for media item ${journal.mediaItemId}; manual recovery is required`)
