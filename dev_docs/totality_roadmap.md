@@ -313,3 +313,9 @@
 - [x] Audited UI unresponsiveness root causes via 26,477-line production log: identified MusicBrainz 503 rate-limit retries (68% of log volume), sub-second SQLite state serialization in `TaskQueueService`, and un-throttled React full-library re-querying across IPC.
 - [ ] Implement TaskQueueService progress write throttling and IPC debouncing to eliminate renderer freeze under background analysis storms.
 
+## TV optimization and online viewing orders — 2026-09-30
+- [x] Carry approved per-episode plans, real measurements, conversions and retained playback samples through existing optimization APIs.
+- [x] Verify and journal activation, persist complete output analysis, account for retained originals and physical recovery, and scope show controls by batch.
+- [x] Refresh online guide snapshots, resolve within the selected source, retain completeness placeholders and publish verified staged Plex sequences.
+- [x] Validate real software/hardware encoding, genuine HDR clips, built-app preflight and disposable live Plex operations.
+- [ ] Validate additional Dolby Vision profiles and the full encoder/color/container matrix on physical target devices. See `specs/tv-optimization-online-order/verification.md` for the verified boundary.
