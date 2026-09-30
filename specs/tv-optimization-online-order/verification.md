@@ -20,12 +20,15 @@ Viewing guides refresh explicitly on opening. Retrieval date, fingerprint, granu
 - Installed VLC: disposable AV1 and HEVC playback completed with real video output and exit code 0. These checks do not constitute visual approval on a television, phone or tablet.
 - Real Plex: disposable staged publication and rating-key replacement matched the reviewed sequence; watch-history values were unchanged. A rejected repeated-entry sequence left the previous reviewed playlist intact. All owned disposable playlists were removed.
 - Online guide/database/IPC regressions cover publisher additions, visible stale refresh, snapshot reuse without refetch, ambiguous and cross-source matches, completeness expansion, duplicate identities and Andor/Mandalorian entries.
+- Live online guide and local-library resolution: refreshed the registered StarWars.com guide in the built Electron app and resolved that exact snapshot against a read-only clone of the configured Plex database. The current page supplied 28 series-block entries, including Maul – Shadow Lord and The Mandalorian and Grogu (2026); resolution found one local match, 27 visibly missing entries, and no ambiguous matches. Reuse preserved the selected Plex source, retrieval timestamp and content fingerprint; no playlist was published. The page provides series/season blocks, so episode interleaving is not claimed.
+- Forced-restart recovery: in a disposable database and media tree, terminated the actual Electron process tree after recording the `source_quarantined` replacement journal transition. Relaunch recovered the recorded output, committed its analysis to the active path, cleared the journal, and removed only the owned temporary output and quarantined original.
 
 ## Unsupported and unverified combinations
 
 - This Plex server removes repeated media entries. Sequence verification rejects such a publication and preserves the previous playlist; deliberate repeats remain visible in the viewing guide.
 - Dolby Vision profiles other than profile 8 have not been validated. Native preservation of Dolby Vision or HDR10+ dynamic metadata is not claimed; explicit conversion discloses its loss and requires real sample validation.
 - Genuine HDR was validated with NVENC HEVC. The complete encoder/color/profile/container matrix, physical target-device playback and subjective visual quality remain unverified. Unsupported retained track semantics block preflight.
+- The live guide snapshot resolved against the configured local Plex catalog with 27 missing entries. This confirms those guide identities were not available for this catalog snapshot; no inference was made about the reason for each absence. Live refresh failure and explicit stale-snapshot authorization remain covered by the existing controlled HTTP/IPC regression, not by an injected outage against the public provider.
 - Real user media was read only for bounded HDR fixture extraction. No optimization or deletion ran against the user library. Publication testing used only uniquely owned disposable playlists.
 
 ## Reproduction
