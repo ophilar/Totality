@@ -21,6 +21,8 @@ interface TmdbItem {
   production_companies?: Array<{ id?: number; name?: string }>
   production_countries?: Array<{ iso_3166_1?: string; name?: string }>
   media_type?: 'movie' | 'tv' | 'person'
+  external_ids?: { imdb_id?: string; tvdb_id?: number }
+  alternative_titles?: { titles?: Array<{ title: string }>; results?: Array<{ title: string }> }
   known_for?: TmdbItem[]
 }
 
@@ -33,10 +35,10 @@ export class TMDBMetadataProvider implements IMetadataProvider {
   readonly providerName = 'The Movie Database (TMDB)'
   readonly supportedTypes: MetadataType[] = ['movie', 'tv']
 
-  constructor(private apiKeyGetter: () => string) {}
+  constructor(private apiKeyGetter: () => string | null | Promise<string | null>) {}
 
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    const apiKey = this.apiKeyGetter()
+    const apiKey = await this.apiKeyGetter()
     if (!apiKey) return []
 
     const expanded = query.includeExpanded ?? query.includeAdult ?? false
@@ -103,7 +105,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
   }
 
   async findByExternalId(externalId: string, source: 'imdb_id' | 'tvdb_id', type: MetadataType): Promise<MediaMetadataDetails | null> {
-    const apiKey = this.apiKeyGetter()
+    const apiKey = await this.apiKeyGetter()
     if (!apiKey || !externalId) return null
 
     const url = `https://api.themoviedb.org/3/find/${encodeURIComponent(externalId)}?api_key=${apiKey}&external_source=${source}`
@@ -127,11 +129,11 @@ export class TMDBMetadataProvider implements IMetadataProvider {
   }
 
   async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
-    const apiKey = this.apiKeyGetter()
+    const apiKey = await this.apiKeyGetter()
     if (!apiKey || !externalId) return null
 
     const endpoint = type === 'movie' ? `movie/${externalId}` : `tv/${externalId}`
-    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}`
+    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&append_to_response=external_ids,alternative_titles`
 
     try {
       const res = await fetch(url)
@@ -151,7 +153,8 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         bannerUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview,
-        externalIds: { tmdbId: String(item.id) },
+        externalIds: { tmdbId: String(item.id), imdbId: item.external_ids?.imdb_id, tvdbId: item.external_ids?.tvdb_id ? String(item.external_ids.tvdb_id) : undefined },
+        alternateTitles: (item.alternative_titles?.titles ?? item.alternative_titles?.results)?.map(alternative => alternative.title),
         score: item.vote_average,
         genres: Array.isArray(item.genres)
           ? item.genres.map((g) => String(g.name ?? '')).filter(Boolean)

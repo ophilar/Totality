@@ -42,10 +42,10 @@ export class OMDbMetadataProvider implements IMetadataProvider {
   readonly providerName = 'Open Movie Database (OMDb / IMDb)'
   readonly supportedTypes: MetadataType[] = ['movie', 'tv']
 
-  constructor(private apiKeyGetter: () => string) {}
+  constructor(private apiKeyGetter: () => string | null | Promise<string | null>) {}
 
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    const apiKey = this.apiKeyGetter()
+    const apiKey = await this.apiKeyGetter()
     if (!apiKey) return []
 
     const typeParam = query.type === 'movie' ? 'movie' : 'series'
@@ -84,7 +84,7 @@ export class OMDbMetadataProvider implements IMetadataProvider {
   }
 
   async getDetails(externalId: string, type: MetadataType): Promise<MediaMetadataDetails | null> {
-    const apiKey = this.apiKeyGetter()
+    const apiKey = await this.apiKeyGetter()
     if (!apiKey || !externalId) return null
 
     const url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(externalId)}&plot=full`

@@ -12,6 +12,7 @@ export interface TimelineItem {
   seasonNumber?: number
   episodeNumber?: number
   airDate?: string
+  releaseYear?: number
   timelineEra?: string
   identifiers: TimelineItemIdentifiers
   identityIssue?: string

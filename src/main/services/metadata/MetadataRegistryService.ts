@@ -6,7 +6,7 @@ import { TVMazeMetadataProvider } from './providers/TVMazeMetadataProvider'
 import { TVDBMetadataProvider } from './providers/TVDBMetadataProvider'
 import { MusicBrainzMetadataProvider } from './providers/MusicBrainzMetadataProvider'
 import { MetadataMatchingService } from './MetadataMatchingService'
-import { getDatabase } from '../../database/BetterSQLiteService'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 
 /**
  * MetadataRegistryService - Singleton orchestrator for metadata provider strategies.
@@ -39,31 +39,17 @@ export class MetadataRegistryService {
 
   private initializeProviders(): void {
     // TMDB Provider (with lazy key access)
-    const tmdbProvider = new TMDBMetadataProvider(() => {
-      try {
-        const ConfigService = require('../ConfigService').ConfigService
-        return ConfigService.getInstance().get('tmdb_api_key') || ''
-      } catch {
-        return ''
-      }
-    })
+    const tmdbProvider = new TMDBMetadataProvider(() => getDatabase().config.getSetting('tmdb_api_key'))
 
     // AniList Provider (Anime Metadata)
     const aniListProvider = new AniListMetadataProvider()
 
     // OMDb Provider (IMDb Metadata & Ratings)
-    const omdbProvider = new OMDbMetadataProvider(() => {
-      try {
-        const ConfigService = require('../ConfigService').ConfigService
-        return ConfigService.getInstance().get('omdb_api_key') || ''
-      } catch {
-        return ''
-      }
-    })
+    const omdbProvider = new OMDbMetadataProvider(() => getDatabase().config.getSetting('omdb_api_key'))
 
-    const tvdbProvider = new TVDBMetadataProvider(() => ({
-      apiKey: (() => { try { const ConfigService = require('../ConfigService').ConfigService; return ConfigService.getInstance().get('tvdb_api_key') || '' } catch { return '' } })(),
-      pin: (() => { try { const ConfigService = require('../ConfigService').ConfigService; return ConfigService.getInstance().get('tvdb_pin') || undefined } catch { return undefined } })()
+    const tvdbProvider = new TVDBMetadataProvider(async () => ({
+      apiKey: await getDatabase().config.getSetting('tvdb_api_key'),
+      pin: await getDatabase().config.getSetting('tvdb_pin'),
     }))
 
     this.compositeProvider.registerProvider(tmdbProvider)

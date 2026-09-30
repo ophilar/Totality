@@ -53,7 +53,7 @@ function validateTimelineItem(value: unknown, version: unknown, index: number): 
   if (!validateOptionalString(value.seriesTitle) || !validateOptionalString(value.airDate) || !validateOptionalString(value.timelineEra)) {
     return invalid(`item ${index + 1} has malformed optional text fields`)
   }
-  if (!validateOptionalNonNegativeInteger(value.seasonNumber) || !validateOptionalPositiveInteger(value.episodeNumber)) {
+  if (!validateOptionalNonNegativeInteger(value.seasonNumber) || !validateOptionalPositiveInteger(value.episodeNumber) || !validateOptionalPositiveInteger(value.releaseYear)) {
     return invalid(`item ${index + 1} has malformed episode coordinates`)
   }
 

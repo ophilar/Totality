@@ -192,7 +192,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
     const selectedLists = config.listIndex === undefined ? lists : [lists[config.listIndex]]
     const elements = [...new Set(selectedLists.flatMap(list => [...list.querySelectorAll(config.itemSelector)]))]
     const items = elements.flatMap((element, elementIndex) => {
-      const sourceText = element.textContent?.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+      const sourceText = this.readCellText(element)?.replace(/\u00a0/g, ' ').replace(/\*+\s*$/, '').trim() ?? ''
       if (!sourceText) return []
       if (config.excludedText.some(text => sourceText.toLowerCase().startsWith(text.toLowerCase()))) return []
 
@@ -231,6 +231,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
 
       let title = sourceText
       let timelineEra: string | undefined
+      let releaseYear: number | undefined
       if (config.format === 'title-era-list') {
         const era = title.match(/:\s*(\d{3,4}(?:\s*,\s*[A-Za-z]+)?\s*(?:A\.D\.|B\.C\.|AD|BC)?)\s*$/i)
         if (era) {
@@ -241,6 +242,8 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
         const era = title.match(/\s+\(([^()]*(?:\d{3,4}|BC|AD)[^()]*)\)\s*(?:\[[^\]]+\])?\s*$/i)
         if (era) {
           timelineEra = era[1].match(/\d{3,4}(?:\s*(?:B\.C\.|A\.D\.|BC|AD))?/i)?.[0] ?? era[1]
+          const year = era[1].match(/(?:^|,\s*)(\d{4})(?:\s*[-–]\s*\d{4})?$/)
+          if (year) releaseYear = Number(year[1])
           title = title.slice(0, era.index).trim()
         }
         title = title.replace(/\s*\(Episode\s+[IVXLCDM]+\)\s*$/i, '').trim()
@@ -253,6 +256,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       const itemTitle = seasonRule ? `${title} Season ${seasonRule.season}` : title
       const item: TimelineItem = this.listItem(elementIndex + 1, type, itemTitle)
       if (timelineEra) item.timelineEra = timelineEra
+      if (releaseYear) item.releaseYear = releaseYear
       if (type === 'show') {
         item.seriesTitle = itemTitle.replace(/\s+seasons?\s+\d+.*$/i, '').trim()
       }

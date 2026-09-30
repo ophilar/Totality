@@ -1,6 +1,6 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from '../IMetadataProvider'
 
-interface TVDBConfig { apiKey: string; pin?: string }
+interface TVDBConfig { apiKey: string | null; pin?: string | null }
 interface TVDBSearchItem {
   id?: number
   name?: string
@@ -23,10 +23,10 @@ export class TVDBMetadataProvider implements IMetadataProvider {
   private readonly baseUrl = 'https://api4.thetvdb.com/v4'
   private token: string | null = null
 
-  constructor(private readonly getConfig: () => TVDBConfig = () => ({ apiKey: '' })) {}
+  constructor(private readonly getConfig: () => TVDBConfig | Promise<TVDBConfig> = () => ({ apiKey: '' })) {}
 
   private async authenticate(): Promise<string | null> {
-    const config = this.getConfig()
+    const config = await this.getConfig()
     if (!config.apiKey) return null
     if (this.token) return this.token
     const response = await fetch(`${this.baseUrl}/login`, {
@@ -75,7 +75,7 @@ export class TVDBMetadataProvider implements IMetadataProvider {
   }
 
   async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    if (!this.getConfig().apiKey || !this.supportedTypes.includes(query.type)) return []
+    if (!(await this.getConfig()).apiKey || !this.supportedTypes.includes(query.type)) return []
     const body = await this.request<{ data?: TVDBSearchItem[] }>(`/search?query=${encodeURIComponent(query.title)}&type=series`)
     return (body?.data || []).filter(item => item.id && item.name).map(item => this.map(item))
   }
