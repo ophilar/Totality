@@ -34,3 +34,44 @@ Viewing guides refresh explicitly on opening. Retrieval date, fingerprint, granu
 ## Reproduction
 
 Run `npm test -- --maxWorkers=1`, then `npm run build`. Opt-in hardware acceptance uses `TOTALITY_HARDWARE_ACCEPTANCE=1` (see the test's environment contract); genuine HDR acceptance uses `TOTALITY_HDR_FIXTURES` pointing to bounded `DV8.mkv`, `HDR10.mkv` and `HLG.mkv` clips. Genuine media and credentials are excluded from Git. Owned acceptance media, isolated databases and credential copies were removed after validation. Local sanitized logs and screenshots remain under `dev_docs/acceptance-20260930`.
+
+## Follow-up verification — 2026-10-01
+
+This section updates the earlier evidence and catalog conclusions. The follow-up delivered four contained code commits:
+
+- `724c370`: activation recovery now commits the recorded transition and complete optimization-job accounting after placement, including the window before the next journal write. The unsafe size-only recovery branch was removed.
+- `68b4c8e`: metadata credentials use the existing database configuration API; parser footnotes and release years are handled; authoritative TMDB aliases and external identifiers resolve publisher titles. Canonical imports correct duplicate bundled parser/database instances that skipped enrichment or hid configured credentials.
+- `535dd49`: target plans and command builders bound peak bitrate and buffering by documented codec main-tier limits. Measurement failure/cancellation removes owned references, metric logs and partial samples; successful candidate samples remain available. Cleanup failures include the original error.
+- `c415f72`: preflight rejects conversion to unverified HDR output formats, including HLG, instead of accepting a transfer function the conversion filter does not implement. Native HLG preservation is unchanged. The real-process HDR regression and final packaged build passed after this guard.
+
+### Live guides, built UI and restart recovery
+
+- The final built app refreshed StarWars.com once and reused that snapshot for resolution. Its 28 publisher blocks expanded to 51 displayed positions: **28 matched, 23 missing, zero ambiguous**. Matches include all 24 Andor episodes and Rogue One, A New Hope, The Empire Strikes Back and Return of the Jedi. Current publisher additions were retained, including Maul – Shadow Lord and The Mandalorian and Grogu.
+- The earlier 27 unmatched publisher entries were **not evidence of catalog absence**. Footnotes, title aliases, missing metadata credentials and bundled class identity prevented legitimate matches. After those fixes, the remaining 23 identities were missing from the selected cached catalog. A separate title audit found only unrelated Rebel Speeder extras as substring candidates for Star Wars Rebels.
+- The built-app stale-guide flow used a registered parser and a publisher excerpt over a real local HTTP connection. Closing that server produced an actual refresh failure. The UI displayed the stale error and retrieval timestamp; cancellation preserved playlists; missing stale authorization was rejected; explicit confirmation published the reviewed sequence to a uniquely owned disposable Plex playlist. Publication performed no provider refetch. The disposable playlist was removed.
+- **Eleven activation restart states passed** using real encoding, files and databases: six replacement boundaries and five quarantine-replacement boundaries, including placement before the journal update, metadata commitment and original removal.
+- **Six Plex publication restart states passed** against the real server: building without a saved stage key, building, verified, renamed before the journal update, published, and published after previous-playlist deletion. Owned playlists were cleaned up; watch-history values were preserved.
+
+### Genuine HDR encoder coverage
+
+The matrix used genuine bounded HDR10, HDR10+ and HLG inputs, five verified encoders, MKV output at up to 1280×720, preserved source cadence, configured AAC conversion and three 30-second sections per case. The HDR10+ fixture retained real HDR10+ metadata after removing Dolby Vision RPU from a dual-format source. No color metadata was fabricated. AV1 checks used an explicit acceptance profile allowing AV1.
+
+Each successful case checked output codec/color, cadence, audio track/channel counts, VMAF/CAMBI and full sample decoding. **Twenty-eight of thirty cases passed.** The VMAF >85 acceptance threshold checks conversion viability; production preflight continues to enforce its independently selected quality gates. These clips are candidate playback artifacts, not approved user-library optimization plans.
+
+| Genuine source → SDR and HDR10 | NVENC HEVC | NVENC AV1 | QSV HEVC | x265 | SVT-AV1 |
+| --- | --- | --- | --- | --- | --- |
+| HDR10+ | Both passed | Both passed | Both passed | Both passed | Both passed |
+| HDR10 | Both passed | Both blocked | Both passed | Both passed | Both passed |
+| HLG | Both passed | Both passed | Both passed | Both passed | Both passed |
+
+The two blocked cases are the high-bitrate HDR10 fixture through NVENC AV1 at the reviewed main-tier level 5.2, 60 Mbps peak bitrate and level-bounded buffer. This driver rejected both SDR and HDR10 outputs with `Invalid Level`. A diagnostic automatic-level encode emitted AV1 level 7.3, exceeding the reviewed target maximum. That diagnostic does not establish support for the approved plan. Other encoder selections must pass their own preflight and playback approval.
+
+### Final checks and remaining gates
+
+- The final typecheck passed. The final full test run reported **208 files and 1,615 tests passed**, seven opt-in cases skipped, and one native Windows worker crash (`0xC0000005`) in `LibrarySettingsTab.test.tsx`; it did not exit cleanly. That suite then passed all seven tests in isolation. The native full-run crash remains unexplained. The updated eight-case real measurement suite passed in the final run, including genuine process cancellation and owned-file cleanup.
+- The final packaged build passed and produced `release/Totality-Setup-0.5.1.exe` from the committed source.
+- Physical playback remains pending: the connected Samsung Galaxy Tab S7+ was locked throughout these checks; no physical TV or phone was available. Decoder checks and desktop-player evidence do not substitute for target-device visual approval.
+- Dolby Vision profiles beyond the previously verified profile 8, dynamic-metadata preservation, other color/profile/container combinations, and the blocked NVENC AV1 settings remain unsupported or unverified.
+- This Plex server still removes repeated media entries. Exact sequence verification preserves the previous playlist when publication cannot reproduce the reviewed order.
+
+No library optimization or original deletion ran against user media. Publication used uniquely owned disposable playlists. Isolated databases, credential copies, bounded input clips and comparison files were removed. **Eighty-four candidate samples** remain under `dev_docs/acceptance-20261001/matrix` for the pending device checks; sanitized logs, `hdr-results.json` and the stale-guide screenshot remain in the acceptance directory.
