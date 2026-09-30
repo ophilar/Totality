@@ -7,6 +7,7 @@ export interface MeasuredCandidate {
   outputBytes: number
   vmafMean: number
   vmafP5: number
+  samplePaths?: string[]
   cambiMean: number
 }
 
@@ -21,11 +22,10 @@ export function buildCandidateLadder(targetCodec: 'av1' | 'hevc', encoderPolicy:
   const hardware = hardwareEncoder ?? ''
   const encoders = encoderPolicy === 'hardware' ? [hardware] : encoderPolicy === 'software' ? [softwareEncoder] : [hardware, softwareEncoder]
   if (encoders.some(encoder => !encoder)) throw new Error('A verified hardware encoder is required for hardware candidate measurement')
-  return encoders.flatMap(encoder => [
-    { encoder, preset: encoder.includes('nvenc') ? 'p5' : 'medium', quality: 18 },
-    { encoder, preset: encoder.includes('nvenc') ? 'p6' : 'slow', quality: 22 },
-    { encoder, preset: encoder.includes('nvenc') ? 'p7' : 'slower', quality: 26 }
-  ])
+  return encoders.flatMap(encoder => {
+    const presets = encoder.startsWith('nvenc') ? ['p5', 'p6', 'p7'] : encoder === 'svt_av1' ? ['8', '6', '4'] : encoder.startsWith('qsv') ? ['medium', 'slow', 'veryslow'] : ['medium', 'slow', 'slower']
+    return [18, 22, 26].map((quality, index) => ({ encoder, preset: presets[index], quality }))
+  })
 }
 
 interface QualityGates {

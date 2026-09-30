@@ -1,4 +1,5 @@
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
+import { normalizeVideoCodec, normalizeAudioCodec } from '@main/services/MediaNormalizer'
 
 export type PlaybackSource = 'provided-baseline' | 'user-declared' | 'local-analysis' | 'plex-decision'
 export type PlaybackFindingStatus = 'compatible' | 'incompatible' | 'not-applicable'
@@ -35,12 +36,12 @@ export function evaluatePlaybackTarget(profile: PlaybackTargetProfile, analysis:
   const matchingContainerRule = d.video.containerRules?.find(rule => matches(video.codec, rule.codecs) && matches(video.profile, rule.profiles) && matches(video.hdrFormat, rule.hdrFormats))
   const allowedContainers = matchingContainerRule?.containers ?? d.containers
   const findings = {
-    container: finding(allowedContainers.includes(analysis.container), `container in [${allowedContainers.join(', ')}]`, analysis.container),
-    video: finding(d.video.codecs.includes(video.codec) && d.video.profiles.includes(video.profile || '') && d.video.levels.includes(video.level || 0) && (video.width || 0) <= d.video.maxWidth && (video.height || 0) <= d.video.maxHeight && (video.frameRate || 0) <= d.video.maxFrameRate && d.video.bitDepths.includes(video.bitDepth || 0), 'video codec/profile/level/resolution/frame-rate/bit-depth supported', JSON.stringify(video)),
-    hdr: finding(!video.hdrFormat || d.hdr.formats.includes(video.hdrFormat) || d.hdr.fallbackRequired, 'HDR format supported or fallback required', video.hdrFormat || 'SDR'),
-    audio: finding(analysis.audioTracks.every(t => d.audio.codecs.includes(t.codec) && t.channels <= d.audio.maxChannels && (!t.hasObjectAudio || d.audio.objectAudio)), 'all audio tracks supported by codec/channel/object-audio policy', JSON.stringify(analysis.audioTracks)),
-    subtitle: finding(analysis.subtitleTracks.length === 0 || (d.subtitles.embedded || d.subtitles.external), 'subtitle delivery explicitly supported', JSON.stringify(analysis.subtitleTracks)),
-    network: finding(analysis.overallBitrate <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrate)),
+    container: finding(analysis.container.split(',').some(container => allowedContainers.includes(container)), `container in [${allowedContainers.join(', ')}]`, analysis.container),
+    video: finding(d.video.codecs.some(codec => normalizeVideoCodec(codec) === normalizeVideoCodec(video.codec)) && d.video.profiles.includes(video.profile || '') && video.level !== undefined && video.level <= Math.max(...d.video.levels) && (video.width || 0) <= d.video.maxWidth && (video.height || 0) <= d.video.maxHeight && d.video.bitDepths.includes(video.bitDepth || 0), 'video codec/profile/level/resolution/bit-depth supported', JSON.stringify(video)),
+    hdr: finding(!video.hdrFormat || video.hdrFormat === 'SDR' || d.hdr.formats.includes(video.hdrFormat), 'HDR output format supported', video.hdrFormat || 'SDR'),
+    audio: finding(analysis.audioTracks.every(t => d.audio.codecs.some(codec => normalizeAudioCodec(codec) === normalizeAudioCodec(t.codec)) && t.channels <= d.audio.maxChannels && (!t.hasObjectAudio || d.audio.objectAudio)), 'all audio tracks supported by codec/channel/object-audio policy', JSON.stringify(analysis.audioTracks)),
+    subtitle: finding(analysis.subtitleTracks.every(track => d.subtitles.embedded && d.subtitles.formats.includes(track.codec === 'subrip' ? 'srt' : track.codec) && (!analysis.container!.split(',').includes('mp4') && !analysis.container!.split(',').includes('mov') || track.codec === 'mov_text')), 'subtitle delivery explicitly supported', JSON.stringify(analysis.subtitleTracks)),
+    network: finding(analysis.overallBitrate * 1000 <= d.network.sustainableBitrate, `bitrate <= ${d.network.sustainableBitrate}`, String(analysis.overallBitrate * 1000)),
   }
   return { profileId: profile.id, overall: Object.values(findings).every(f => f.status !== 'incompatible') ? 'compatible' : 'incompatible', findings }
 }

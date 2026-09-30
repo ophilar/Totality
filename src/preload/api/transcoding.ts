@@ -12,6 +12,8 @@ export const transcodingAPI = {
   preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
   queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke('transcoding:approveShow', preflightId),
+  discardShow: (preflightId: string) => ipcRenderer.invoke('transcoding:discardShow', preflightId),
+  openShowSample: (preflightId: string, mediaItemId: number, index: number) => ipcRenderer.invoke('transcoding:openShowSample', preflightId, mediaItemId, index),
   listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:listShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:purgeShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   onProgress: (callback: (progress: TranscodeProgress & { mediaItemId: number }) => void) => {

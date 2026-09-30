@@ -216,6 +216,7 @@ export class TaskQueueService {
     const index = this.queue.findIndex(t => t.id === taskId)
     if (index !== -1) {
       const task = this.queue.splice(index, 1)[0]
+      if (task.type === TaskType.Transcode) await this.getTranscoding().discardTaskSamples(task)
       this.logging.info('[TaskQueue]', `Task removed: ${task.label} (${task.id})`)
       await this.saveState()
       this.notifyListeners()
@@ -259,13 +260,14 @@ export class TaskQueueService {
   /**
    * Clear the entire queue
    */
-  async clearQueue(): Promise<void> {
+  async clearQueue(batchId?: string): Promise<void> {
     const count = this.queue.length
-    this.queue = []
-    if (this.currentTask) {
-      await this.cancelCurrent()
-    }
-    this.getTranscoding().abortAll()
+    const removed = this.queue.filter(task => !batchId || task.batchId === batchId)
+    this.queue = this.queue.filter(task => batchId && task.batchId !== batchId)
+    if (this.currentTask && (!batchId || this.currentTask.batchId === batchId)) await this.cancelCurrent()
+    for (const task of removed) if (task.type === TaskType.Transcode) await this.getTranscoding().discardTaskSamples(task)
+    for (const task of removed) if (task.type === TaskType.Transcode && task.batchId !== this.currentTask?.batchId) await this.getTranscoding().discardBatchSamples(task)
+    if (!batchId) this.getTranscoding().abortAll()
     this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
     await this.saveState()
     this.notifyListeners()
@@ -317,16 +319,10 @@ export class TaskQueueService {
     }
   }
 
-  async cancelCurrentTask(): Promise<void> {
-    const queuedCount = this.queue.length
-    const hadCurrentTask = this.currentTask !== null
-    this.queue = []
+  async cancelCurrentTask(batchId?: string): Promise<void> {
+    if (batchId && this.currentTask?.batchId !== batchId) return
     await this.cancelCurrent()
-    if (!hadCurrentTask && queuedCount > 0) await this.saveState()
-    if (queuedCount > 0) {
-      this.logging.info('[TaskQueue]', `Cleared ${queuedCount} queued tasks after cancellation`)
-    }
-    if (hadCurrentTask || queuedCount > 0) this.notifyListeners()
+    this.notifyListeners()
   }
 
   /**
@@ -523,6 +519,9 @@ export class TaskQueueService {
       const prevTask = task
       this.currentTask = null
       this.currentTaskAbortController = null
+      if (prevTask.type === TaskType.Transcode && !this.queue.some(queued => queued.batchId === prevTask.batchId)) {
+        await this.getTranscoding().discardBatchSamples(prevTask)
+      }
       await this.saveState()
       this.notifyListeners()
       
@@ -741,7 +740,7 @@ export class TaskQueueService {
       currentItem: task.label
     })
 
-    await service.transcode(
+    const success = await service.transcode(
       task.mediaItemId,
       task.options || {},
       (p: TranscodeProgress) => {
@@ -755,10 +754,18 @@ export class TaskQueueService {
           phase: p.status,
           currentItem: task.label,
           fps: p.fps,
+          speed: p.speed,
           eta: p.eta
         })
       }
     )
+    if (success) {
+      const job = await this.db.mediaRemuxJobs.getLatest(task.mediaItemId)
+      if (job?.outputAnalysis) {
+        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes: number; retainedOriginalBytes: number; physicallyReclaimedBytes: number }
+        task.result = { encodedReductionBytes: output.encodedReductionBytes, retainedOriginalBytes: output.retainedOriginalBytes, physicallyReclaimedBytes: output.physicallyReclaimedBytes }
+      }
+    } else if (!this.cancelRequested) throw new Error('Transcoding ended without producing a verified output')
   }
 
   private notifyListeners(): void {

@@ -3,12 +3,13 @@ import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
+import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
 
 
 export class IntelCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
-    const hdrArgs = buildHdrMetadataArgs(_analysis)
+    const hdrArgs = buildHdrMetadataArgs(_analysis, options)
     const codec = options.targetCodec === 'av1' ? 'av1_qsv' : 'hevc_qsv'
     const quality = (options.crf ?? APP_CONFIG.transcoding.defaultIntelQuality).toString()
 
@@ -19,7 +20,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
       '-hwaccel', 'qsv',
       '-hwaccel_output_format', 'qsv',
       '-i', input,
-      '-fps_mode', 'cfr',
+      '-fps_mode', 'passthrough',
       '-vf', 'vpp_qsv=format=p010le',
       '-c:v', codec,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultIntelPreset,
@@ -30,6 +31,7 @@ export class IntelCommandBuilder implements ITranscodeCommandBuilder {
     appendStreamMappingArgs(args, _analysis, options)
     args.push(...hdrArgs)
     args.push(output)
+    applyTargetTranscodePlan(args, options)
     return args
   }
 

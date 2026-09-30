@@ -11,8 +11,12 @@ import { spawn } from 'child_process'
 import * as path from 'path'
 import { detectHdrFormat } from '../types/mediaContracts'
 import type { HdrFormat } from '../types/mediaContracts'
+import { normalizeVideoLevel } from '../services/MediaNormalizer'
+import { APP_CONFIG } from '../config'
 
-// Types mirrored from MediaFileAnalyzer (can't import due to worker isolation)
+export const FFPROBE_ANALYSIS_ARGS = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', '-show_frames', '-show_entries', 'stream:format:frame=stream_index:frame_side_data', '-read_intervals', `%+${APP_CONFIG.transcoding.hdrProbeDurationSeconds}`]
+
+// Canonical analysis contract shared by the worker and the main-thread analyzer.
 interface FFprobeStream {
   index: number
   codec_name?: string
@@ -37,6 +41,9 @@ interface FFprobeStream {
   channel_layout?: string
   bits_per_sample?: number
   duration?: string
+  start_time?: string
+  time_base?: string
+  nb_frames?: string
   tags?: {
     language?: string
     title?: string
@@ -68,9 +75,10 @@ interface FFprobeFormat {
   tags?: Record<string, string>
 }
 
-interface FFprobeOutput {
+export interface FFprobeOutput {
   streams: FFprobeStream[]
   format: FFprobeFormat
+  frames?: Array<{ stream_index: number; side_data_list?: FFprobeStream['side_data_list'] }>
 }
 
 interface WorkerTask {
@@ -89,6 +97,8 @@ interface WorkerShutdownTask {
 }
 
 export interface AnalyzedVideoStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
@@ -103,9 +113,12 @@ export interface AnalyzedVideoStream {
   colorTransfer?: string
   colorPrimaries?: string
   hdrFormat?: HdrFormat
+  dolbyVisionProfile?: number
 }
 
 export interface AnalyzedAudioStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
@@ -146,6 +159,7 @@ export interface EmbeddedMetadataTags {
 }
 
 export interface FileAnalysisResult {
+  sourceFingerprint?: { size: number; mtimeMs: number; sha256: string }
   success: boolean
   error?: string
   filePath: string
@@ -203,13 +217,7 @@ let shuttingDown = false
 function runFFprobe(filePath: string, taskId: string): Promise<FFprobeOutput> {
   const sanitizedPath = sanitizePath(filePath)
   return new Promise((resolve, reject) => {
-    const args = [
-      '-v', 'quiet',
-      '-print_format', 'json',
-      '-show_format',
-      '-show_streams',
-      `file:${sanitizedPath}`,
-    ]
+    const args = [...FFPROBE_ANALYSIS_ARGS, `file:${sanitizedPath}`]
 
     const actualPath = (ffprobePath && (path.isAbsolute(ffprobePath) || ffprobePath.includes(path.sep))) ? path.resolve(ffprobePath) : ffprobePath
     const proc = spawn(actualPath, args, {
@@ -332,6 +340,13 @@ function detectObjectAudio(stream: FFprobeStream): boolean {
 /**
  * Parse video stream
  */
+function parseStreamTiming(stream: FFprobeStream): { durationMs?: number; timestampPrecisionMs?: number } {
+  const duration = stream.duration ? Number(stream.duration) * 1000 : stream.tags?.DURATION ? stream.tags.DURATION.split(':').reduce((seconds, value) => seconds * 60 + Number(value), 0) * 1000 - Number(stream.start_time ?? 0) * 1000 : undefined
+  const sampleDuration = stream.codec_name?.startsWith('pcm_') && stream.nb_frames && stream.sample_rate ? Number(stream.nb_frames) * 1000 / Number(stream.sample_rate) : undefined
+  const timeBase = stream.time_base?.split('/').map(Number)
+  return { durationMs: duration ?? sampleDuration, timestampPrecisionMs: timeBase ? timeBase[0] * 1000 / timeBase[1] : undefined }
+}
+
 function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedVideoStream {
   const bitrate = extractBitrate(stream, durationMs)
   const frameRate = parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
@@ -345,10 +360,11 @@ function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedV
   })
 
   return {
+    ...parseStreamTiming(stream),
     index: stream.index,
     codec: stream.codec_name || 'unknown',
     profile: stream.profile,
-    level: stream.level,
+    level: normalizeVideoLevel(stream.codec_name || '', stream.level),
     width: stream.width || stream.coded_width || 0,
     height: stream.height || stream.coded_height || 0,
     bitrate,
@@ -359,6 +375,7 @@ function parseVideoStream(stream: FFprobeStream, durationMs?: number): AnalyzedV
     colorTransfer: stream.color_transfer,
     colorPrimaries: stream.color_primaries,
     hdrFormat,
+    dolbyVisionProfile: stream.side_data_list?.find(data => data.side_data_type.toLowerCase().includes('dovi'))?.dv_profile as number | undefined,
   }
 }
 
@@ -371,6 +388,7 @@ function parseAudioStream(stream: FFprobeStream, durationMs?: number): AnalyzedA
   const channels = stream.channels || 2
 
   return {
+    ...parseStreamTiming(stream),
     index: stream.index,
     codec: stream.codec_name || 'unknown',
     profile: stream.profile,
@@ -419,7 +437,7 @@ function getArtworkMimeType(codecName?: string): string {
 /**
  * Parse FFprobe output into FileAnalysisResult
  */
-function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalysisResult {
+export function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalysisResult {
   const result: FileAnalysisResult = {
     success: true,
     filePath,
@@ -507,7 +525,7 @@ function parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalys
     switch (stream.codec_type) {
       case 'video':
         if (!result.video) {
-          result.video = parseVideoStream(stream, result.duration)
+          result.video = parseVideoStream({ ...stream, side_data_list: [...stream.side_data_list ?? [], ...output.frames?.filter(frame => frame.stream_index === stream.index).flatMap(frame => frame.side_data_list ?? []) ?? []] }, result.duration)
         }
         break
       case 'audio':

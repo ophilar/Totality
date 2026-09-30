@@ -3,22 +3,23 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { getMediaFileAnalyzer } from './MediaFileAnalyzer'
 import { PathUtils } from './utils/PathUtils'
+import { APP_CONFIG } from '@main/config'
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
 
 export interface MeasurementProcessRunner {
-  run(binary: string, args: string[]): Promise<string>
+  run(binary: string, args: string[], signal?: AbortSignal): Promise<string>
 }
 
-class ChildProcessMeasurementRunner implements MeasurementProcessRunner {
-  run(binary: string, args: string[]): Promise<string> {
+export class ChildProcessMeasurementRunner implements MeasurementProcessRunner {
+  run(binary: string, args: string[], signal?: AbortSignal): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(PathUtils.resolveExecutablePath(binary), args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 30 * 60 * 1000 })
-      let output = ''
-      let error = ''
+      const child = spawn(PathUtils.resolveExecutablePath(binary), args, { stdio: ['ignore', 'pipe', 'pipe'], signal, killSignal: 'SIGKILL', timeout: 30 * 60 * 1000 })
+      let output = '', error = ''
       child.stdout.on('data', data => { output += data.toString() })
       child.stderr.on('data', data => { error += data.toString() })
-      child.once('error', reject)
-      child.once('close', code => code === 0 ? resolve(output + error) : reject(new Error(error || `FFmpeg exited with code ${code}`)))
+      let processError: Error | undefined
+      child.once('error', error => { processError = error })
+      child.once('close', code => processError ? reject(processError) : code === 0 ? resolve(output + error) : reject(new Error(error || `FFmpeg exited with code ${code}`)))
     })
   }
 }
@@ -26,50 +27,66 @@ class ChildProcessMeasurementRunner implements MeasurementProcessRunner {
 export interface MeasuredSampleRequest {
   inputPath: string
   outputDirectory: string
+  durationMs: number
+  outputExtension?: string
+  referenceFilter?: string
+  referenceInputArgs?: string[]
+  signal?: AbortSignal
   candidates: Array<MeasuredCandidate & { ffmpegArgs: string[] }>
 }
-
-export interface MeasuredSampleResult {
-  candidates: MeasuredCandidate[]
-  vmafAvailable: boolean
-  cambiAvailable: boolean
-}
+export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
 export class MeasuredOptimizationService {
   constructor(private readonly processRunner: MeasurementProcessRunner = new ChildProcessMeasurementRunner()) {}
 
   async measure(request: MeasuredSampleRequest): Promise<MeasuredSampleResult> {
-    const ffmpegPath = getMediaFileAnalyzer().getFFmpegPath()
-    if (!ffmpegPath) throw new Error('FFmpeg path is unavailable for measured optimization')
-    const filters = await this.processRunner.run(ffmpegPath, ['-hide_banner', '-filters'])
-    const vmafAvailable = /libvmaf/i.test(filters)
-    const vmafOptions = vmafAvailable ? await this.processRunner.run(ffmpegPath, ['-hide_banner', '-h', 'filter=libvmaf']) : ''
-    const cambiAvailable = /cambi/i.test(vmafOptions)
-    if (!vmafAvailable) throw new Error('FFmpeg does not provide the libvmaf filter required for measured optimization')
-    if (!cambiAvailable) throw new Error('FFmpeg does not provide the CAMBI filter required for measured optimization')
-    if (request.candidates.length === 0) throw new Error('At least one measured encoder candidate is required')
-
+    const analyzer = getMediaFileAnalyzer()
+    if (!await analyzer.isFFmpegAvailable()) throw new Error('FFmpeg is unavailable for measured optimization')
+    const binary = analyzer.getFFmpegPath()!
+    if (!request.candidates.length) throw new Error('At least one measured encoder candidate is required')
+    const durationSeconds = request.durationMs / 1000
+    const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
+    const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })
+    const referencePaths: string[] = []
+    // Materialize hardware color transforms once per section. Feeding libplacebo
+    // and libvmaf in one graph changes frame synchronization on multi-input graphs.
+    if (request.referenceInputArgs?.length && request.referenceFilter) {
+      for (const [index, start] of starts.entries()) {
+        const referencePath = path.join(request.outputDirectory, `reference-${index}.mkv`)
+        await this.processRunner.run(binary, ['-y', '-v', 'error', ...request.referenceInputArgs, '-ss', String(start), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath), '-t', String(length), '-vf', request.referenceFilter, '-fps_mode', 'passthrough', '-an', '-sn', '-c:v', 'ffv1', referencePath], request.signal)
+        referencePaths.push(referencePath)
+      }
+    }
     const measured: MeasuredCandidate[] = []
     for (const candidate of request.candidates) {
-      const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}.mkv`)
-      const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(request.inputPath) : arg === '<output>' ? outputPath : arg)
-      await this.processRunner.run(ffmpegPath, args)
-      const stat = await fs.stat(outputPath)
-      if (stat.size <= 0) throw new Error(`Measured candidate produced an empty output: ${candidate.encoder}`)
-      const vmafLog = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}.vmaf.json`)
-      const cambiLog = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}.cambi.json`)
-      await this.processRunner.run(ffmpegPath, ['-v', 'error', '-i', PathUtils.sanitizeAbsolutePath(request.inputPath), '-i', outputPath, '-lavfi', `libvmaf=feature=name=cambi:log_fmt=json:log_path=${vmafLog}`, '-f', 'null', '-'])
-      const vmaf = JSON.parse(await fs.readFile(vmafLog, 'utf8')) as { pooled_metrics?: { vmaf?: number; cambi?: number }; frames?: Array<{ metrics?: { vmaf?: number; cambi?: number } }> }
-      const frameScores = (vmaf.frames ?? []).map(frame => frame.metrics?.vmaf).filter((score): score is number => typeof score === 'number').sort((left, right) => left - right)
-      const vmafMean = vmaf.pooled_metrics?.vmaf
-      if (vmafMean === undefined || frameScores.length === 0) throw new Error(`VMAF output was incomplete for ${candidate.encoder}`)
-      const cambiMean = vmaf.pooled_metrics?.cambi
-      if (cambiMean === undefined) throw new Error(`CAMBI output was incomplete for ${candidate.encoder}`)
-      measured.push({ ...candidate, outputBytes: stat.size, vmafMean, vmafP5: frameScores[Math.floor(frameScores.length * 0.05)], cambiMean })
-      await Promise.all([fs.rm(outputPath, { force: true }), fs.rm(vmafLog, { force: true }), fs.rm(cambiLog, { force: true })])
+      const scores: number[] = [], banding: number[] = [], samplePaths: string[] = []
+      let outputBytes = 0
+      for (const [index, start] of starts.entries()) {
+        request.signal?.throwIfAborted()
+        const outputPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}${request.outputExtension ?? '.mkv'}`)
+        const args = candidate.ffmpegArgs.map(arg => arg === '<input>' ? PathUtils.sanitizeAbsolutePath(request.inputPath) : arg === '<output>' ? outputPath : arg)
+        args.splice(args.indexOf('-i'), 0, '-ss', String(start))
+        args.splice(args.length - 1, 0, '-t', String(length))
+        await this.processRunner.run(binary, args, request.signal)
+        outputBytes += (await fs.stat(outputPath)).size
+        samplePaths.push(outputPath)
+        const logPath = path.join(request.outputDirectory, `${candidate.encoder}-${candidate.quality}-${candidate.preset}-${index}.json`)
+        // Two parsing levels: filtergraph, then filter options. Quote at both levels.
+        const escapedPath = logPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\''")
+        const reference = !referencePaths.length && request.referenceFilter ? `,${request.referenceFilter}` : ''
+        const graph = `[0:v]settb=AVTB,setpts=PTS-STARTPTS[d];[1:v]settb=AVTB,setpts=PTS-STARTPTS${reference}[r];[d][r]libvmaf=feature=name=cambi:log_fmt=json:log_path='${escapedPath}'`
+        await this.processRunner.run(binary, ['-v', 'error', '-i', outputPath, ...(referencePaths.length ? ['-i', referencePaths[index]] : ['-ss', String(start), '-t', String(length), '-i', PathUtils.sanitizeAbsolutePath(request.inputPath)]), '-filter_complex', graph, '-an', '-sn', '-f', 'null', '-'], request.signal)
+        const log = JSON.parse(await fs.readFile(logPath, 'utf8')) as { pooled_metrics: { vmaf: { mean: number }; cambi: { mean: number } }; frames: Array<{ metrics: { vmaf: number; cambi: number } }> }
+        if (!Number.isFinite(log.pooled_metrics.vmaf.mean) || !Number.isFinite(log.pooled_metrics.cambi.mean)) throw new Error('VMAF/CAMBI measurements are incomplete')
+        for (const frame of log.frames) { scores.push(frame.metrics.vmaf); banding.push(frame.metrics.cambi) }
+        await fs.unlink(logPath)
+      }
+      if (!scores.length || scores.some(score => !Number.isFinite(score)) || banding.some(score => !Number.isFinite(score))) throw new Error('Measured frame scores are incomplete')
+      scores.sort((a, b) => a - b)
+      measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
     }
-    return { candidates: measured, vmafAvailable, cambiAvailable }
+    for (const referencePath of referencePaths) await fs.unlink(referencePath)
+    return { candidates: measured, vmafAvailable: true, cambiAvailable: true }
   }
-
 }

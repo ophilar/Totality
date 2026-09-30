@@ -86,7 +86,7 @@ describe('TaskQueueService', () => {
       expect(removed).toBe(false)
     })
 
-    it('should clear pending tasks when the current task is cancelled', async () => {
+    it('should preserve pending tasks when the current task is cancelled', async () => {
       let startScan!: () => void
       let finishScan!: (result: { success: boolean }) => void
       const scanStarted = new Promise<void>(resolve => { startScan = resolve })
@@ -102,10 +102,10 @@ describe('TaskQueueService', () => {
 
       await service.cancelCurrentTask()
 
-      expect(service.getQueueState().queue).toHaveLength(0)
+      expect(service.getQueueState().queue).toHaveLength(1)
       expect(mockSourceManager.stopScan).toHaveBeenCalledOnce()
       const savedState = JSON.parse((await db.config.getSetting('task_queue_state'))!)
-      expect(savedState.queue).toHaveLength(0)
+      expect(savedState.queue).toHaveLength(1)
       finishScan({ success: true })
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
     })

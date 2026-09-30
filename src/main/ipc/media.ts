@@ -54,10 +54,11 @@ export function registerMediaHandlers(): void {
         return { scope, completedStages: ['music-completeness'], findings: [], actions: [], errors: [], result }
       }
       if (scope.kind === 'show') {
+        await getQualityAnalyzer().analyzeAllMediaItems(undefined, undefined, scope.sourceId, scope.libraryId, undefined, { title: scope.title, seriesIdentityKey: scope.seriesIdentityKey })
         const episodes = await getDatabase().tvShows.getEpisodes(scope.title, scope.sourceId, scope.seriesIdentityKey, scope.libraryId)
         const result = await getSeriesCompletenessService().analyzeSeries(scope.title, scope.sourceId, scope.libraryId, undefined, episodes, { returnConstructed: true })
         getStatsCacheService().invalidate()
-        return { scope, completedStages: ['tv-completeness'], findings: [], actions: [], errors: [], result }
+        return { scope, completedStages: ['media', 'quality', 'tv-completeness'], findings: [], actions: [], errors: [], result }
       }
       const enabledSources = scope.kind === 'library'
         ? [await getDatabase().sources.getSourceById(scope.sourceId)].filter((source): source is NonNullable<typeof source> => source !== null)

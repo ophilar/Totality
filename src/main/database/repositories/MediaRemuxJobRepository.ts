@@ -1,4 +1,4 @@
-import { desc, eq, and, isNotNull } from 'drizzle-orm'
+import { desc, eq, and, isNotNull, inArray } from 'drizzle-orm'
 import type { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import type { Client } from '@libsql/client'
@@ -22,6 +22,11 @@ export class MediaRemuxJobRepository {
     return await this.drizzle.select().from(schema.mediaOptimizationJobs)
       .where(eq(schema.mediaOptimizationJobs.mediaItemId, mediaItemId))
       .orderBy(desc(schema.mediaOptimizationJobs.updatedAt)).limit(1).get() || null
+  }
+
+  async getQuarantines(mediaItemIds: number[]): Promise<MediaRemuxJob[]> {
+    if (!mediaItemIds.length) return []
+    return this.drizzle.select().from(schema.mediaOptimizationJobs).where(and(inArray(schema.mediaOptimizationJobs.mediaItemId, mediaItemIds), isNotNull(schema.mediaOptimizationJobs.quarantinePath))).all()
   }
 
   async getCalibratedOutputBytes(sourceSize: number, operationKind: string, encoderProfile: string): Promise<number | null> {

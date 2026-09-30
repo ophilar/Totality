@@ -4,11 +4,12 @@ import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
+import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
 
 export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, _analysis: FileAnalysisResult): string[] {
-    const hdrArgs = buildHdrMetadataArgs(_analysis)
+    const hdrArgs = buildHdrMetadataArgs(_analysis, options)
     const codec = options.targetCodec === 'av1' ? 'libsvtav1' : 'libx265'
     const crf = (options.crf ?? APP_CONFIG.transcoding.defaultSoftwareCrf).toString()
     
@@ -27,13 +28,17 @@ export class SoftwareCommandBuilder implements ITranscodeCommandBuilder {
       '-c:v', codec,
       '-crf', crf,
       '-preset', options.preset || APP_CONFIG.transcoding.defaultSoftwarePreset,
-      ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}`, '-bufsize', `${sourceBitrate * 2}`] : []),
+      ...(sourceBitrate ? ['-maxrate', `${sourceBitrate}k`, '-bufsize', `${sourceBitrate * 2}k`] : []),
       '-pix_fmt', 'yuv420p10le'
     ]
 
     appendStreamMappingArgs(args, _analysis, options)
-    args.push(...hdrArgs)
+    if (options.targetCodec === 'hevc' && hdrArgs.length) {
+      const color = (flag: string) => hdrArgs[hdrArgs.indexOf(flag) + 1]
+      args.push('-x265-params', `colorprim=${color('-color_primaries')}:transfer=${color('-color_trc')}:colormatrix=${color('-colorspace')}`)
+    } else args.push(...hdrArgs)
     args.push(output)
+    applyTargetTranscodePlan(args, options)
     return args
   }
 

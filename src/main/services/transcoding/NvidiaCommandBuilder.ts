@@ -3,11 +3,12 @@ import { TranscodeOptions } from '../TranscodingService'
 import { FileAnalysisResult } from '../MediaFileAnalyzer'
 import { buildHdrMetadataArgs } from './HdrTranscodingPolicy'
 import { appendStreamMappingArgs } from './StreamSelectionPlan'
+import { applyTargetTranscodePlan } from './TargetTranscodePlan'
 import { APP_CONFIG } from '@main/config'
 
 export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
   buildFFmpegArgs(input: string, output: string, options: TranscodeOptions, analysis: FileAnalysisResult): string[] {
-    const hdrArgs = buildHdrMetadataArgs(analysis)
+    const hdrArgs = buildHdrMetadataArgs(analysis, options)
     const args: string[] = [
       '-y',
       '-hwaccel', 'cuda',
@@ -45,6 +46,7 @@ export class NvidiaCommandBuilder implements ITranscodeCommandBuilder {
     args.push(...hdrArgs)
 
     args.push(output)
+    applyTargetTranscodePlan(args, options)
     return args
   }
 

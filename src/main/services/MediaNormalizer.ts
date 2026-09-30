@@ -10,6 +10,13 @@
 // VIDEO CODEC NORMALIZATION
 // ============================================================================
 
+export function normalizeVideoLevel(codec: string, level: number | undefined): number | undefined {
+  if (level === undefined || level < 0) return undefined
+  if (codec === 'hevc') return level / 3
+  if (codec === 'av1') return (2 + Math.floor(level / 4)) * 10 + level % 4
+  return level
+}
+
 export function buildMediaLabel(parts: Array<string | null | undefined>): string {
   return parts.map(part => part?.trim()).filter((part): part is string => Boolean(part && part !== 'None')).join(' ')
 }

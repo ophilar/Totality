@@ -160,6 +160,11 @@
     "maxBufsizeFallback": 120000000,
     "audioSurroundTargetBitrateKbps": 640,
     "audioStereoTargetBitrateKbps": 256,
-    "audioHeavyBitrateThresholdKbps": 1500
+    "audioHeavyBitrateThresholdKbps": 1500,
+    "hdrProbeDurationSeconds": 1,
+    "encoderProbeWidth": 640,
+    "encoderProbeHeight": 360,
+    "sampleDurationSeconds": 30,
+    "samplePositions": [0.1, 0.5, 0.9]
   }
 }

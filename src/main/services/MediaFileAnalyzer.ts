@@ -11,91 +11,13 @@ import type { MediaMetadata } from '@main/providers/base/MediaProvider'
 import type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream } from '@main/workers/ffprobe-worker'
 import { getLoggingService } from '@main/services/LoggingService'
 import { PathUtils } from '@main/services/utils/PathUtils'
-import { detectHdrFormat } from '@main/types/mediaContracts'
-import type { HdrFormat } from '@main/types/mediaContracts'
+import { FFPROBE_ANALYSIS_ARGS, parseFFprobeOutput, type FFprobeOutput } from '@main/workers/ffprobe-worker'
 import { StreamByteAccumulator } from '@main/services/transcoding/StreamByteAccounting'
 
 export type { FileAnalysisResult, AnalyzedAudioStream, AnalyzedSubtitleStream, EmbeddedMetadataTags, AnalyzedVideoStream }
 
 const SYSTEM_FFPROBE_COMMAND = 'ffprobe'
 const SYSTEM_FFMPEG_COMMAND = 'ffmpeg'
-
-// FFprobe JSON output types
-interface FFprobeStream {
-  index: number
-  codec_name?: string
-  codec_long_name?: string
-  codec_type: 'video' | 'audio' | 'subtitle' | 'data'
-  profile?: string
-  level?: number
-  width?: number
-  height?: number
-  coded_width?: number
-  coded_height?: number
-  pix_fmt?: string
-  color_space?: string
-  color_transfer?: string
-  color_primaries?: string
-  field_order?: string
-  r_frame_rate?: string
-  avg_frame_rate?: string
-  bit_rate?: string
-  bits_per_raw_sample?: string
-  sample_rate?: string
-  channels?: number
-  channel_layout?: string
-  sample_fmt?: string
-  bits_per_sample?: number
-  duration?: string
-  tags?: {
-    language?: string
-    title?: string
-    BPS?: string
-    'BPS-eng'?: string
-    NUMBER_OF_BYTES?: string
-    'NUMBER_OF_BYTES-eng'?: string
-    [key: string]: string | undefined
-  }
-  disposition?: {
-    default: number
-    dub: number
-    original: number
-    comment: number
-    lyrics: number
-    karaoke: number
-    forced: number
-    hearing_impaired: number
-    visual_impaired: number
-    clean_effects: number
-    attached_pic: number
-    timed_thumbnails: number
-  }
-  side_data_list?: Array<{
-    side_data_type: string
-    [key: string]: unknown
-  }>
-}
-
-interface FFprobeFormat {
-  filename: string
-  nb_streams: number
-  nb_programs: number
-  format_name: string
-  format_long_name: string
-  start_time?: string
-  duration?: string
-  size?: string
-  bit_rate?: string
-  probe_score: number
-  tags?: {
-    [key: string]: string
-  }
-}
-
-interface FFprobeOutput {
-  streams: FFprobeStream[]
-  format: FFprobeFormat
-}
 
 // Singleton instance
 let analyzerInstance: MediaFileAnalyzer | null = null
@@ -401,7 +323,7 @@ export class MediaFileAnalyzer {
     }
 
     const ffprobeOutput = await this.runFFprobe(filePath, signal)
-    return this.parseFFprobeOutput(filePath, ffprobeOutput)
+    return parseFFprobeOutput(filePath, ffprobeOutput)
   }
 
   async analyzeCompleteFile(filePath: string, options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}): Promise<FileAnalysisResult> {
@@ -651,7 +573,7 @@ export class MediaFileAnalyzer {
   private async runFFprobe(filePath: string, signal?: AbortSignal): Promise<FFprobeOutput> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     return new Promise((resolve, reject) => {
-      const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', `file:${sanitizedPath}`]
+      const args = [...FFPROBE_ANALYSIS_ARGS, `file:${sanitizedPath}`]
       const proc = spawn(this.requireFFprobePath(), args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
       let stdout = ''
       let stderr = ''
@@ -669,103 +591,4 @@ export class MediaFileAnalyzer {
     })
   }
 
-  private parseFFprobeOutput(filePath: string, output: FFprobeOutput): FileAnalysisResult {
-    const result: FileAnalysisResult = { success: true, filePath, audioTracks: [], subtitleTracks: [] }
-    if (output.format) {
-      result.container = output.format.format_name
-      result.fileSize = output.format.size ? parseInt(output.format.size, 10) : undefined
-      result.duration = output.format.duration ? Math.round(parseFloat(output.format.duration) * 1000) : undefined
-      result.overallBitrate = output.format.bit_rate ? Math.round(parseInt(output.format.bit_rate, 10) / 1000) : undefined
-
-      if (output.format.tags) {
-        const t = output.format.tags
-        result.embeddedMetadata = {
-          title: t.title || t.TITLE,
-          year: t.date ? parseInt(t.date, 10) : undefined,
-          showName: t.show || t.SHOW,
-          seasonNumber: t.season_number ? parseInt(t.season_number, 10) : undefined,
-          episodeNumber: t.episode_sort ? parseInt(t.episode_sort, 10) : undefined,
-        }
-      }
-    }
-
-    for (const stream of output.streams) {
-      if (stream.codec_type === 'video' && !result.video) {
-        result.video = {
-          index: stream.index,
-          codec: stream.codec_name || 'unknown',
-          width: stream.width || 0,
-          height: stream.height || 0,
-          bitrate: stream.bit_rate ? Math.round(parseInt(stream.bit_rate, 10) / 1000) : undefined,
-          frameRate: stream.avg_frame_rate ? (() => {
-            const parts = stream.avg_frame_rate.split('/')
-            if (parts.length === 2) {
-              const num = parseFloat(parts[0])
-              const den = parseFloat(parts[1])
-              return den !== 0 ? num / den : undefined
-            }
-            return parseFloat(stream.avg_frame_rate) || undefined
-          })() : undefined,
-          hdrFormat: this.detectHdrFormat(stream),
-          colorTransfer: stream.color_transfer,
-          colorPrimaries: stream.color_primaries,
-          bitDepth: stream.bits_per_raw_sample ? parseInt(stream.bits_per_raw_sample, 10) : undefined,
-          profile: stream.profile,
-          colorSpace: stream.color_space,
-        }
-      } else if (stream.codec_type === 'audio') {
-        result.audioTracks.push({
-          index: stream.index,
-          codec: stream.codec_name || 'unknown',
-          channels: stream.channels || 2,
-          bitrate: stream.bit_rate ? Math.round(parseInt(stream.bit_rate, 10) / 1000) : undefined,
-          isDefault: stream.disposition?.default === 1,
-          hasObjectAudio: this.detectObjectAudio(stream),
-          language: stream.tags?.language,
-          title: stream.tags?.title,
-          profile: stream.profile,
-          sampleRate: stream.sample_rate ? parseInt(stream.sample_rate, 10) : undefined,
-        })
-      } else if (stream.codec_type === 'subtitle') {
-        result.subtitleTracks.push({
-          index: stream.index,
-          codec: stream.codec_name || 'unknown',
-          language: stream.tags?.language,
-          title: stream.tags?.title,
-          isDefault: stream.disposition?.default === 1,
-          isForced: stream.disposition?.forced === 1,
-        })
-      }
-    }
-    return result
-  }
-
-  private detectHdrFormat(stream: FFprobeStream): HdrFormat {
-    const sideData = stream.side_data_list?.map(item => item.side_data_type.toLowerCase()) ?? []
-    return detectHdrFormat({
-      colorTransfer: stream.color_transfer,
-      colorPrimaries: stream.color_primaries,
-      colorSpace: stream.color_space,
-      sideDataTypes: sideData,
-      profile: stream.profile
-    })
-  }
-
-  private detectObjectAudio(stream: FFprobeStream): boolean {
-    const codec = stream.codec_name?.toLowerCase() || ''
-    const profile = stream.profile?.toLowerCase() || ''
-    const title = stream.tags?.title?.toLowerCase() || ''
-
-    if (codec === 'truehd' && (profile.includes('atmos') || title.includes('atmos'))) {
-      return true
-    }
-    if (codec === 'eac3' && (profile.includes('atmos') || title.includes('atmos'))) {
-      return true
-    }
-    if (codec.includes('dts') && (profile.includes('x') || title.includes('dts:x') || title.includes('dts-x'))) {
-      return true
-    }
-
-    return false
-  }
 }

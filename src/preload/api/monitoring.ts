@@ -70,12 +70,12 @@ export const monitoringApi = {
   }>) => ipcRenderer.invoke('taskQueue:addTasks', definitions),
   taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke('taskQueue:removeTask', taskId),
   taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke('taskQueue:reorderQueue', taskIds),
-  taskQueueClearQueue: () => ipcRenderer.invoke('taskQueue:clearQueue'),
+  taskQueueClearQueue: (batchId?: string) => ipcRenderer.invoke('taskQueue:clearQueue', batchId),
 
   // Queue Control
   taskQueuePause: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.PAUSE),
   taskQueueResume: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.RESUME),
-  taskQueueCancelCurrent: () => ipcRenderer.invoke('taskQueue:cancelCurrent'),
+  taskQueueCancelCurrent: (batchId?: string) => ipcRenderer.invoke('taskQueue:cancelCurrent', batchId),
   taskQueueCancelTask: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.TASK_QUEUE.CANCEL_TASK, taskId),
 
   // History
@@ -209,12 +209,12 @@ export interface MonitoringAPI {
   }>) => Promise<{ success: boolean; taskIds: string[] }>
   taskQueueRemoveTask: (taskId: string) => Promise<{ success: boolean }>
   taskQueueReorderQueue: (taskIds: string[]) => Promise<{ success: boolean }>
-  taskQueueClearQueue: () => Promise<{ success: boolean }>
+  taskQueueClearQueue: (batchId?: string) => Promise<{ success: boolean }>
 
   // Queue Control
   taskQueuePause: () => Promise<{ success: boolean }>
   taskQueueResume: () => Promise<{ success: boolean }>
-  taskQueueCancelCurrent: () => Promise<{ success: boolean }>
+  taskQueueCancelCurrent: (batchId?: string) => Promise<{ success: boolean }>
     taskQueueCancelTask: (taskId: string) => Promise<{ success: boolean }> | undefined
 
   // History

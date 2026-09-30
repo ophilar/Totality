@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { shell } from 'electron'
 import { getTranscodingService } from '@main/services/TranscodingService'
 import { GetTranscodeParamsByMediaItemSchema, TranscodeMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, NonEmptyStringSchema, SourceIdSchema, LibraryIdSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
@@ -58,6 +59,17 @@ export function registerTranscodingHandlers(): void {
 
   createValidatedIpcHandler('transcoding:preflightShow', PreflightShowTranscodeSchema, async (request) => {
     return await getTranscodingService().preflightShowTranscode(request)
+  })
+
+  createValidatedIpcHandler('transcoding:discardShow', QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
+  createValidatedIpcHandler('transcoding:openShowSample', z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
+    const saved = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
+    if (!saved) throw new Error('Sample plan no longer exists')
+    const plan = JSON.parse(saved) as { result: import('@main/services/TranscodingService').ShowTranscodePreflight }
+    const sample = plan.result.episodes.find(episode => episode.mediaItemId === mediaItemId)?.samplePaths?.[index]
+    if (!sample) throw new Error('Sample is not part of the reviewed plan')
+    const error = await shell.openPath(sample)
+    if (error) throw new Error(error)
   })
 
   createValidatedIpcHandler('transcoding:queueShow', QueueShowTranscodeSchema, async (preflightId) => {

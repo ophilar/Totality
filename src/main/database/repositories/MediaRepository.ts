@@ -15,6 +15,7 @@ import type {
   CalculationStatus,
 } from '@main/types/database'
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
+import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import { toSnakeCaseMediaItem, toSnakeCaseQualityScore } from '@main/database/utils/mappers'
@@ -300,15 +301,16 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return rows.map((r) => toSnakeCaseMediaItem(r))
   }
 
-  async updatePathAndStats(mediaItemId: number, newPath: string, analysis: MediaAnalysisStats): Promise<void> {
+  async updatePathAndStats(mediaItemId: number, newPath: string, analysis: MediaAnalysisStats & Partial<FileAnalysisResult>): Promise<void> {
     const dbPath = PathUtils.toDatabasePath(newPath)
-    await this.drizzle
+    await this.withBatch(async () => {
+      await this.drizzle
       .update(schema.mediaItems)
       .set({
         filePath: dbPath,
         fileSize: analysis.fileSize || 0,
         duration: analysis.duration || 0,
-        resolution: analysis.video?.resolution || 'unknown',
+        resolution: analysis.video?.width && analysis.video?.height ? `${analysis.video.width}x${analysis.video.height}` : analysis.video?.resolution || 'unknown',
         width: analysis.video?.width || 0,
         height: analysis.video?.height || 0,
         videoCodec: analysis.video?.codec || 'unknown',
@@ -316,9 +318,21 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         audioCodec: analysis.audioTracks?.[0]?.codec || 'unknown',
         audioChannels: analysis.audioTracks?.[0]?.channels || 0,
         audioBitrate: analysis.audioTracks?.[0]?.bitrate || 0,
+        ...(analysis.success ? {
+          deepAnalysis: JSON.stringify({ ...analysis, filePath: dbPath }),
+          deepAnalysisAt: new Date().toISOString(),
+          audioTracks: JSON.stringify(analysis.audioTracks),
+          subtitleTracks: JSON.stringify(analysis.subtitleTracks),
+          hdrFormat: analysis.video?.hdrFormat,
+          colorBitDepth: analysis.video?.bitDepth,
+          videoFrameRate: analysis.video?.frameRate,
+          container: analysis.container,
+        } : { deepAnalysis: null, deepAnalysisAt: null }),
         updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(schema.mediaItems.id, mediaItemId))
+      await this.drizzle.delete(schema.qualityScores).where(eq(schema.qualityScores.mediaItemId, mediaItemId))
+    })
   }
 
   async updateActivatedPathAndStats(mediaItemId: number, newPath: string, fileSize: number, duration: number): Promise<void> {

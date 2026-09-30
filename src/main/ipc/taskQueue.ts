@@ -29,8 +29,8 @@ export function registerTaskQueueHandlers(): void {
     return { success: true }
   })
 
-  createIpcHandler('taskQueue:clearQueue', async () => {
-    await service.clearQueue()
+  createValidatedIpcHandler('taskQueue:clearQueue', z.string().min(1).optional(), async (batchId) => {
+    await service.clearQueue(batchId)
     return { success: true }
   })
 
@@ -44,8 +44,8 @@ export function registerTaskQueueHandlers(): void {
     return { success: true }
   })
 
-  createIpcHandler('taskQueue:cancelCurrent', async () => {
-    await service.cancelCurrentTask()
+  createValidatedIpcHandler('taskQueue:cancelCurrent', z.string().min(1).optional(), async (batchId) => {
+    await service.cancelCurrentTask(batchId)
     return { success: true }
   })
 

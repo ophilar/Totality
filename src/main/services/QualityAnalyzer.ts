@@ -650,7 +650,8 @@ export class QualityAnalyzer {
     isCancelled?: () => boolean,
     sourceId?: string,
     libraryId?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    series?: { title: string; seriesIdentityKey: string }
   ): Promise<number> {
     const db = getDatabase()
     const logging = getLoggingService()
@@ -659,7 +660,9 @@ export class QualityAnalyzer {
       '[QualityAnalyzer]',
       `Loading media for analysis: sourceId=${sourceId ?? 'all'}, libraryId=${libraryId ?? 'all'}`
     )
-    const mediaItems = await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
+    const mediaItems = series
+      ? await db.tvShows.getEpisodes(series.title, sourceId!, series.seriesIdentityKey, libraryId!)
+      : await db.media.getItems(sourceId || libraryId ? { sourceId, libraryId } : undefined)
 
     const multiVersionItemIds = mediaItems
       .filter((item): item is typeof item & { id: number } => Boolean(item.id && item.version_count && item.version_count > 1))

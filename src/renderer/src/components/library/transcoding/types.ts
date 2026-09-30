@@ -20,35 +20,7 @@ export interface TranscodeOptions {
   targetProfileId?: string
 }
 
-export interface ShowTranscodePreflightEpisode {
-  mediaItemId: number
-  label: string
-  compatible: boolean
-  reason?: string
-  hdrFormat: string
-  sourceSize: number
-  sourceMtimeMs: number
-  recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
-  decisionStatus?: 'actionable' | 'sample_required' | 'already_optimized' | 'insufficient_evidence'
-  evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
-  confidence?: 'high' | 'medium' | 'low' | 'none'
-  estimatedSavingsBytes?: number | null
-  savingsBasis?: string
-  sourceTier?: string
-  adviceReason?: string
-  targetCompatibility?: { overall: 'compatible' | 'incompatible'; findings: Record<string, { status: string; rule: string; evidence: string }> }
-  measuredParameters?: { encoder: string; crf?: number; preset: string }
-}
-
-export interface ShowTranscodePreflight {
-  preflightId: string
-  batchId: string
-  seriesTitle: string
-  episodeCount: number
-  compatible: boolean
-  expiresAt: string
-  episodes: ShowTranscodePreflightEpisode[]
-}
+export type { ShowTranscodePreflight } from '@main/services/TranscodingService'
 
 export interface TranscodingParams {
   summary: string

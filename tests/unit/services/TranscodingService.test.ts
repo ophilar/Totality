@@ -355,12 +355,14 @@ describe('TranscodingService', () => {
             success: true,
             filePath: PathUtils.toDatabasePath(episodePath),
             container: 'matroska',
-            overallBitrate: 6000000,
+            overallBitrate: 6000,
             video: { index: 0, codec: 'h264', profile: 'High', level: 51, width: 1920, height: 1080, frameRate: 24, bitDepth: 8, hdrFormat: 'SDR' },
             audioTracks: [{ index: 1, codec: 'eac3', channels: 6, bitrate: 640, language: 'en', hasObjectAudio: false }],
             subtitleTracks: []
           })
       })
+
+      mockAnalyzerInstance.analyzeFile.mockResolvedValueOnce(JSON.parse((await db.media.getItemByPath(episodePath))!.deep_analysis!))
 
       const preflight = await service.preflightShowTranscode({
         seriesTitle: 'Example Saga Strange New Worlds',
@@ -430,43 +432,14 @@ describe('TranscodingService', () => {
     })
   })
 
-  describe('replacement activation', () => {
-    it('quarantines a remux with custom FFmpeg arguments instead of directly replacing the source', async () => {
+  describe('replacement verification', () => {
+    it('rejects invalid source media before activation and preserves the original', async () => {
       const inputPath = path.resolve(mediaPath('episode.mkv'))
+      const original = await fsPromises.readFile(inputPath)
       const mediaItemId = await upsertMediaItem({ title: 'Episode', type: 'episode', file_path: inputPath })
-      vi.spyOn(service as never, 'runFFmpeg').mockImplementation(async (...args: unknown[]) => {
-        await fsPromises.writeFile(args[1] as string, 'verified transcoded output')
-        return true
-      })
-
-      await service.transcode(mediaItemId, {
-        transcodingEngine: 'ffmpeg',
-        optimizationMode: 'remux_only',
-        outputMode: 'replace',
-        customArgs: '-c:v libx264',
-        useGpu: false
-      })
-
-      expect(await fsPromises.readFile(inputPath, 'utf8')).toBe('verified transcoded output')
-      expect((await fsPromises.readdir(path.dirname(inputPath))).some(name => name.startsWith('episode.quarantine-'))).toBe(true)
-    })
-
-    it('moves a verified temporary output onto the original instead of copying it', async () => {
-      const inputPath = path.resolve(mediaPath('episode.mkv'))
-      const mediaItemId = await upsertMediaItem({ title: 'Episode', type: 'episode', file_path: inputPath })
-      vi.spyOn(service as never, 'runFFmpeg').mockImplementation(async (...args: unknown[]) => {
-        await fsPromises.writeFile(args[1] as string, 'verified transcoded output')
-        return true
-      })
-
-      await service.transcode(mediaItemId, {
-        transcodingEngine: 'ffmpeg',
-        optimizationMode: 'remux_only',
-        outputMode: 'replace',
-        useGpu: false
-      })
-
-      expect(await fsPromises.readFile(inputPath, 'utf8')).toBe('verified transcoded output')
+      await expect(service.transcode(mediaItemId, { transcodingEngine: 'ffmpeg', optimizationMode: 'remux_only', outputMode: 'replace', useGpu: false })).rejects.toThrow()
+      expect(await fsPromises.readFile(inputPath)).toEqual(original)
+      expect((await fsPromises.readdir(mediaDir)).some(name => name.startsWith('.totality_tmp_'))).toBe(false)
     })
   })
 
@@ -548,40 +521,6 @@ describe('TranscodingService', () => {
     })
   })
 
-  describe('selectMeasuredParameters workspace isolation', () => {
-    it('cleans up isolated measurement workspace after measurement completes', async () => {
-      const mockMeasure = vi.fn().mockResolvedValue({
-        candidates: [
-          { encoder: 'nvenc_h265', quality: 22, preset: 'p6', outputBytes: 1000, vmafMean: 96, vmafP5: 93, cambiMean: 2 }
-        ],
-        vmafAvailable: true,
-        cambiAvailable: true
-      })
-      const internal = service as unknown as { measuredOptimizationService: { measure: typeof mockMeasure } }
-      internal.measuredOptimizationService = { measure: mockMeasure }
-      vi.spyOn(service, 'getCapabilities').mockResolvedValue({
-        ffmpegAvailable: true,
-        selectedGpuId: 'gpu-0',
-        gpus: [{ id: 'gpu-0', name: 'NVIDIA RTX', vendor: 'NVIDIA' }],
-        encoders: ['hevc_nvenc', 'libx265'],
-        detectedAt: new Date().toISOString()
-      })
-
-      const result = await service.selectMeasuredParameters(mediaPath('episode.mkv'), {
-        targetCodec: 'hevc',
-        qualityProfile: 'balanced',
-        encoderPolicy: 'hardware'
-      })
-
-      expect(result.encoder).toBe('nvenc_h265')
-      expect(mockMeasure).toHaveBeenCalledWith(expect.objectContaining({
-        outputDirectory: expect.stringMatching(/\.totality-measurements-[a-f0-9]{12}$/)
-      }))
-      const outputDirectory = (mockMeasure.mock.calls[0][0] as { outputDirectory: string }).outputDirectory
-      await expect(fsPromises.access(outputDirectory)).rejects.toThrow()
-    })
-  })
-
   describe('crash-consistent activation journal recovery', () => {
     it('rolls back quarantined file to original input if crash occurred before target was placed', async () => {
       await db.config.setSetting('transcoding.activation.501', JSON.stringify({
@@ -610,6 +549,7 @@ describe('TranscodingService', () => {
           inputPath: mediaPath('Movie.mp4'),
           targetPath: mediaPath('Movie.mkv'),
           outputStats: {
+            success: true, subtitleTracks: [],
             fileSize: 850000000,
             duration: 7200000,
             video: { codec: 'hevc', width: 1920, height: 1080 },

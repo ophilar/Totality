@@ -49,11 +49,11 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
         setSelectedGpu: vi.fn().mockResolvedValue({ selectedGpuId: 'gpu-nv-1' }),
         tmdbGetTVShowDetails: vi.fn().mockResolvedValue({ overview: 'Test show overview' }),
         seriesGetEpisodes: vi.fn().mockResolvedValue([
-          { id: 101, title: 'Episode 1', original_language: 'ja' }
+          { id: 101, title: 'Episode 1', original_language: 'ja', deep_analysis: '{}' }
         ]),
         seriesGetAudioLanguagesByIdentity: vi.fn().mockResolvedValue(['ja', 'en']),
         seriesGetEpisodesByIdentity: vi.fn().mockResolvedValue([
-          { id: 101, title: 'Episode 1', original_language: 'ja' }
+          { id: 101, title: 'Episode 1', original_language: 'ja', deep_analysis: '{}' }
         ]),
         preflightShow: vi.fn().mockResolvedValue({
           preflightId: 'pref-123',
@@ -82,6 +82,12 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
         </ToastProvider>
       )
       await Promise.resolve()
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByRole('combobox', { name: /^quality$/i }), { target: { value: 'balanced' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /^encoder policy$/i }), { target: { value: 'software' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /^container$/i }), { target: { value: 'mkv' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /^output color$/i }), { target: { value: 'SDR' } })
     })
   }
 
@@ -180,7 +186,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       expect(languageSelect.value).toBe('ja')
     })
 
-    const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
+    const queueButton = screen.getByRole('button', { name: /measure & review series/i })
     expect(queueButton).toBeTruthy()
 
     await act(async () => {
@@ -190,14 +196,11 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     await vi.waitFor(() => {
       expect(window.electronAPI.preflightShow).toHaveBeenCalledTimes(1)
-      expect(window.electronAPI.queueShow).toHaveBeenCalledWith('pref-123')
+      expect(window.electronAPI.queueShow).not.toHaveBeenCalled()
+      expect(screen.getByText('Preflight Optimization Plan')).toBeTruthy()
     })
 
-    // Verify transition to Live Series Optimization monitoring mode
-    await vi.waitFor(() => {
-      expect(screen.getByText('Live Series Optimization')).toBeTruthy()
-      expect(screen.getByText('Run in Background')).toBeTruthy()
-    })
+
   })
 
   it('allows selecting optimization modes (Smart, Remux Only, Full Transcode) and configures subtitle whitelist', async () => {
@@ -243,7 +246,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
       fireEvent.click(jpnPreset)
     })
 
-    const queueButton = screen.getByRole('button', { name: /preflight & queue series/i })
+    const queueButton = screen.getByRole('button', { name: /measure & review series/i })
     await act(async () => {
       fireEvent.click(queueButton)
       await Promise.resolve()
@@ -322,7 +325,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
     })
 
     // Click Preview Plan
-    const previewButton = screen.getByRole('button', { name: /preview plan/i })
+    const previewButton = screen.getByRole('button', { name: /measure & review series/i })
     expect(previewButton).toBeTruthy()
     await act(async () => {
       fireEvent.click(previewButton)
