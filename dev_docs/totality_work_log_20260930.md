@@ -15,3 +15,11 @@ Built-app stale authorization and disposable publication passed. Eleven activati
 Owned disposable playlists, isolated databases, credential copies, bounded inputs and comparison artifacts were removed. Eighty-four candidate playback samples were retained for device validation. User library originals and existing playlists were preserved.
 
 An additional contained contract correction (`c415f72`) blocks unverified HDR output conversions during preflight. Its focused real-process regression and final packaged build passed; native HLG preservation is unchanged.
+
+## Remaining non-Dolby-Vision follow-up — 2026-10-01
+
+Fixed database closure retaining its Drizzle ORM reference (`32818b9`) and added a real persisted-database close/reopen regression. Final normal typecheck/full suite passed: 209 files, 1,617 tests, seven opt-in tests skipped. Packaged build passed. The intermittent native crash did not recur after the fix in this run; its cause remains unconfirmed. The preceding unloaded control run still crashed an IntegratedLifecycle worker, whose two cases passed in isolation. Debugger diagnostics were excluded from acceptance after slowing FFmpeg into a timeout; Windows denied detaching those children.
+
+Bounded NVENC AV1 diagnostics reproduced the level rejection using an existing HDR10-derived sample: 30/40/60 Mbps CQ peaks fail at level 5.2, while 20 Mbps succeeds with source cadence preserved. A 60 Mbps VBR peak and level 6.0 CQ also fail. No arbitrary rate restriction, cadence conversion, encoder substitution or automatic-level bypass was added. Both reviewed high-bitrate conversion cases remain unsupported on the tested configuration.
+
+The documented Plex play-queue publication alternative cannot yet be verified: current credentials return HTTP 401 even for playlist listing. No disposable playlist was created, and owned credential copies were removed. Device playback awaits tablet unlock. Dolby Vision changes were excluded. Details and sanitized evidence are appended to `specs/tv-optimization-online-order/verification.md`.
