@@ -126,6 +126,7 @@ export class BetterSQLiteService {
   public close(): void {
     this._client?.close()
     this._client = null
+    this._drizzle = null
     this._transaction = null
     this.repos = {}
   }

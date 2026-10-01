@@ -12,6 +12,17 @@ describe('Database Export/Import Transactional Integrity', () => {
     cleanupTestDb()
   })
 
+  it('releases the ORM on close and reopens the same persisted database', async () => {
+    await db.config.setSetting('lifecycle', 'retained')
+    const databasePath = db.getDbPath()
+    const previousOrm = db.drizzle
+    db.close()
+    expect(() => db.drizzle).toThrow('Database not initialized')
+    await db.initialize(databasePath)
+    expect(db.drizzle).not.toBe(previousOrm)
+    expect(await db.config.getSetting('lifecycle')).toBe('retained')
+  })
+
   it('exports and imports data atomically without data loss', async () => {
     await db.config.setSetting('test_key_1', 'value_1')
     await db.config.setSetting('test_key_2', 'value_2')
