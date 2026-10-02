@@ -319,3 +319,10 @@
 - [x] Refresh online guide snapshots, resolve within the selected source, retain completeness placeholders and publish verified staged Plex sequences.
 - [x] Validate real software/hardware encoding, genuine HDR clips, built-app preflight and disposable live Plex operations.
 - [ ] Validate additional Dolby Vision profiles and the full encoder/color/container matrix on physical target devices. See `specs/tv-optimization-online-order/verification.md` for the verified boundary.
+
+## Test and dependency maintenance - 2026-10-02
+- [x] Upgrade all currently compatible direct packages and document incompatible newer majors.
+- [x] Consolidate redundant test suites and correct lifecycle resource ownership.
+- [x] Fix the joined TV show alphabet query reported by the installed-app log.
+- [x] Build the complete Windows installer with Electron 44.5.1.
+- [ ] Establish the cause of the intermittent native lifecycle access violation; a passing rerun alone does not establish resolution.

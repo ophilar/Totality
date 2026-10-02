@@ -4,6 +4,7 @@ import * as schema from '@main/database/drizzleSchema'
 import { eq, sql, count, desc, asc, or, like, inArray } from 'drizzle-orm'
 import type { AnyColumn, SQL } from 'drizzle-orm'
 import { SQLiteTable, SQLiteColumn } from 'drizzle-orm/sqlite-core'
+import type { SQLiteInsertValue } from 'drizzle-orm/sqlite-core'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
 type Predicate = SQL<unknown>
@@ -159,7 +160,7 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     const conflictTarget = uniqueConstraint as SQLiteColumn[]
     const updateData = { ...(updateFields as Partial<Omit<InferInsertModel<T>, 'createdAt' | 'updatedAt'>>), updatedAt: now }
     const result = await this.drizzle.insert(table)
-      .values(insertData as InferInsertModel<T>)
+      .values(insertData as SQLiteInsertValue<T>)
       .onConflictDoUpdate({ target: conflictTarget, set: updateData })
       .returning({ id: (table as T & { id: SQLiteColumn }).id })
     return Number(result[0]?.id ?? 0)
@@ -194,7 +195,7 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     for (let i = 0; i < insertDataList.length; i += batchSize) {
       const batch = insertDataList.slice(i, i + batchSize)
       const result = await this.drizzle.insert(table)
-        .values(batch as InferInsertModel<T>[])
+        .values(batch as SQLiteInsertValue<T>[])
         .onConflictDoUpdate({ target: conflictTarget, set: updateData })
         .returning({ id: (table as T & { id: SQLiteColumn }).id })
       totalUpserted += result.length
