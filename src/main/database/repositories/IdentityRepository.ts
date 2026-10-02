@@ -72,6 +72,17 @@ export class IdentityRepository {
     })
   }
 
+  async deleteUnlockedEntityRecords(entityType: IdentityEntityType, entityId: number): Promise<void> {
+    await this.db.execute({
+      sql: 'DELETE FROM media_identities WHERE entity_type = ? AND entity_id = ? AND is_locked = 0',
+      args: [entityType, entityId],
+    })
+    await this.db.execute({
+      sql: 'DELETE FROM media_aliases WHERE entity_type = ? AND entity_id = ?',
+      args: [entityType, entityId],
+    })
+  }
+
   async addAlias(input: { entityType: IdentityEntityType; entityId: number; alias: string; provider?: string }): Promise<void> {
     const alias = input.alias.trim()
     if (!alias) return

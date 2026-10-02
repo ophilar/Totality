@@ -25,6 +25,7 @@ const mockAnalyzerInstance = {
     audioTracks: [],
     subtitleTracks: []
   }),
+  analyzeCompleteFile: vi.fn(),
   isAvailable: vi.fn().mockResolvedValue(true),
   isFFmpegAvailable: vi.fn().mockResolvedValue(true),
   getFFmpegPath: vi.fn().mockReturnValue('ffmpeg')
@@ -322,6 +323,30 @@ describe('TranscodingService', () => {
   })
 
   describe('preflightShowTranscode Advisory', () => {
+    it('analyzes and persists a movie during individual optimization preflight', async () => {
+      const moviePath = mediaPath('Movie.avi')
+      const mediaItemId = await upsertMediaItem({
+        title: 'Movie', type: 'movie', file_path: moviePath, file_size: 4_000, duration: 120_000,
+        source_id: 'src1', source_type: 'local', library_id: 'movies', video_codec: 'h264', video_bitrate: 6000,
+      })
+      mockAnalyzerInstance.analyzeCompleteFile.mockResolvedValueOnce({
+        success: true, filePath: PathUtils.toDatabasePath(moviePath), container: 'matroska', duration: 120_000,
+        video: { index: 0, codec: 'h264', width: 1920, height: 1080, hdrFormat: 'SDR', bitrate: 6000 },
+        audioTracks: [], subtitleTracks: [],
+      })
+
+      const preflight = await service.preflightShowTranscode({
+        mediaItemId, sourceId: 'src1', libraryId: 'movies',
+        options: { optimizationMode: 'smart', targetProfileId: 'builtin:plex-webos-4-lg-b8' },
+      })
+
+      expect(preflight.episodes).toHaveLength(1)
+      expect(preflight.episodes[0].mediaItemId).toBe(mediaItemId)
+      expect(mockAnalyzerInstance.analyzeCompleteFile).toHaveBeenCalledWith(PathUtils.toDatabasePath(moviePath))
+      expect(await db.media.getItemByPath(moviePath)).toMatchObject({ deep_analysis: expect.any(String) })
+      expect(await db.media.getQualityScoreByMediaId(mediaItemId)).toBeTruthy()
+    })
+
     it('populates recommendedAction, sourceTier, and adviceReason in preflight episode items', async () => {
       const episodePath = mediaPath('Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv')
       await upsertMediaItem({

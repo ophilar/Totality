@@ -28,7 +28,9 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [generating, setGenerating] = useState(false)
   const [params, setParams] = useState<TranscodingParams | null>(null)
   const [gpus, setGpus] = useState<GpuInfo[]>([])
-  const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor'>('presets')
+  const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
+  const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[] }> } | null>(null)
+  const [samplesReviewed, setSamplesReviewed] = useState(false)
 
   const [options, setOptions] = useState<TranscodeOptions>({
     targetCodec: '' as TranscodeOptions['targetCodec'],
@@ -166,30 +168,31 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   }
 
   const startTranscode = async () => {
-    if (!media) return
+    if (!media?.source_id) return
     failureReportedRef.current = false
-    setProgress(null)
-    setStatus('encoding')
-    setActiveTab('monitor')
+    setStatus('generating')
     try {
-      const success = await window.electronAPI.start(media.id!, options)
-      if (success) {
-        addToast({ title: 'Transcode complete', type: 'success' })
+      if (!preflight) {
+        const result = await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options }) as typeof preflight
+        if (!result) throw new Error('Optimization review could not be created')
+        setPreflight(result)
+        setStatus('idle')
+        setActiveTab('review')
+        return
       }
+      const item = preflight.episodes.find(entry => entry.mediaItemId === media.id)
+      if (!item?.compatible) throw new Error(item?.reason || 'This file has no safe optimization plan')
+      if (item.decisionStatus === 'sample_required' && !samplesReviewed) throw new Error('Review the measured samples before queuing this transcode')
+      if (item.decisionStatus === 'sample_required') await window.electronAPI.approveShow(preflight.preflightId)
+      await window.electronAPI.queueShow(preflight.preflightId)
+      setProgress(null)
+      setStatus('encoding')
+      setActiveTab('monitor')
+      addToast({ title: 'Optimization queued', type: 'success' })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
-      setStatus('failed')
-      setActiveTab('monitor')
-      setProgress(current => current?.status === 'failed' ? current : {
-        mediaItemId: media.id!,
-        status: 'failed',
-        percent: 0,
-        error: message
-      })
-      if (!failureReportedRef.current) {
-        failureReportedRef.current = true
-        addToast({ title: `Transcode failed: ${message}`, type: 'error' })
-      }
+      setStatus('idle')
+      addToast({ title: `Optimization could not be queued: ${message}`, type: 'error' })
     }
   }
 
@@ -335,6 +338,19 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
               onClose={onClose}
             />
           )}
+
+          {activeTab === 'review' && preflight && (
+            <section className="space-y-4 rounded-xl border border-border p-4">
+              <h4 className="font-bold">Review optimization plan</h4>
+              <button className="text-sm underline" onClick={() => { setPreflight(null); setSamplesReviewed(false); setActiveTab('advanced') }}>Change optimization settings</button>
+              {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
+                <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
+                {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
+                {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index)}>Open measured sample {index + 1}</button>)}
+              </div>)}
+              {preflight.episodes.some(item => item.decisionStatus === 'sample_required') && <label className="flex gap-2 text-sm"><input type="checkbox" checked={samplesReviewed} onChange={event => setSamplesReviewed(event.target.checked)} /> I reviewed and approve the measured sample</label>}
+            </section>
+          )}
         </div>
 
         {/* Modal Footer Controls */}
@@ -359,11 +375,11 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
 
               <button 
                 onClick={startTranscode}
-                disabled={!availability?.ffmpeg}
+                disabled={!availability?.ffmpeg || status === 'generating' || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))}
                 className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
               >
                 <Play className="w-4 h-4 fill-current" />
-                Start Transcode Optimization
+                {status === 'generating' ? 'Preparing…' : preflight ? 'Queue Optimization' : 'Review Optimization'}
               </button>
             </div>
           </div>

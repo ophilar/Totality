@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   estimated_savings_bytes INTEGER,
   evidence_status TEXT CHECK(evidence_status IN ('measured', 'estimated', 'insufficient')),
   confidence TEXT CHECK(confidence IN ('high', 'medium', 'low', 'none')),
-  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data')),
+  savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured_and_estimated')),
 
   -- Quality flags
   is_low_quality INTEGER NOT NULL,

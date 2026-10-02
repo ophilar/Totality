@@ -5,7 +5,7 @@ import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
-import type { Client } from '@libsql/client'
+import type { Client, Transaction } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import { getMediaMatchStatus } from '@main/services/SeriesIdentityService'
@@ -19,6 +19,11 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   constructor(db: Client, drizzle: LibSQLDatabase<typeof schema>) {
     super(db, 'series_completeness', drizzle, schema.seriesCompleteness)
     this.identities = new IdentityRepository(db)
+  }
+
+  override setTransactionContext(db: Client | Transaction | null, drizzle: LibSQLDatabase<typeof schema> | null): void {
+    super.setTransactionContext(db, drizzle)
+    this.identities.setTransactionContext(db)
   }
 
   async getSummaries(filters?: TVShowFilters & { completenessFilter?: string }): Promise<TVShowSummary[]> {
@@ -377,13 +382,13 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
     if (filters?.qualityTier && filters.qualityTier !== 'all') {
       conditions.push(
-        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND m.series_identity_key = series_completeness.series_identity_key AND (UPPER(q.quality_tier) = UPPER(${filters.qualityTier}) OR UPPER(m.resolution) = UPPER(${filters.qualityTier})))`
+        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '') AND m.series_identity_key = series_completeness.series_identity_key AND (UPPER(q.quality_tier) = UPPER(${filters.qualityTier}) OR UPPER(m.resolution) = UPPER(${filters.qualityTier})))`
       )
     }
 
     if (filters?.tierQuality && filters.tierQuality !== 'all') {
       conditions.push(
-        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND m.series_identity_key = series_completeness.series_identity_key AND UPPER(q.tier_quality) = UPPER(${filters.tierQuality}))`
+        sql`EXISTS (SELECT 1 FROM media_items m JOIN quality_scores q ON m.id = q.media_item_id WHERE m.type = 'episode' AND m.source_id = series_completeness.source_id AND COALESCE(m.library_id, '') = COALESCE(series_completeness.library_id, '') AND m.series_identity_key = series_completeness.series_identity_key AND UPPER(q.tier_quality) = UPPER(${filters.tierQuality}))`
       )
     }
 
@@ -586,6 +591,43 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
   async deleteCompleteness(id: number): Promise<void> {
     await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.id, id))
+  }
+
+  async reconcileOrphanedCompleteness(sourceId: string, libraryId: string): Promise<{ removed: number; preservedLocked: number }> {
+    if (!sourceId.trim() || !libraryId.trim()) throw new Error('Source and library are required to reconcile TV summaries')
+    const unresolvedEpisodes = await this.db.execute({
+      sql: `SELECT COUNT(*) AS count FROM media_items
+            WHERE type = 'episode' AND source_id = ? AND library_id = ?
+              AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')`,
+      args: [sourceId, libraryId],
+    })
+    const unresolvedCount = Number(unresolvedEpisodes.rows[0]?.count ?? 0)
+    if (unresolvedCount > 0) throw new Error(`Cannot reconcile TV summaries while ${unresolvedCount} scoped episodes have no series identity`)
+    const episodeRows = await this.db.execute({
+      sql: `SELECT DISTINCT series_identity_key FROM media_items
+            WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key IS NOT NULL`,
+      args: [sourceId, libraryId],
+    })
+    const currentIdentities = new Set(episodeRows.rows.map(row => String(row.series_identity_key)))
+    const summaries = await this.getAllCompleteness(sourceId, libraryId)
+    let removed = 0
+    let preservedLocked = 0
+
+    for (const summary of summaries) {
+      if (!summary.series_identity_key) throw new Error(`TV summary ${summary.id} has no series identity`)
+      if (currentIdentities.has(summary.series_identity_key)) continue
+      const identities = summary.id ? await this.identities.getIdentities('series', summary.id) : []
+      if (summary.user_fixed_match || identities.some(identity => identity.locked)) {
+        preservedLocked++
+        continue
+      }
+      if (!summary.id) throw new Error(`Orphan TV summary "${summary.series_title}" has no row ID`)
+      await this.identities.deleteUnlockedEntityRecords('series', summary.id)
+      await this.deleteCompleteness(summary.id)
+      removed++
+    }
+
+    return { removed, preservedLocked }
   }
 
   async mergeDuplicateShows(sourceId?: string, libraryId?: string): Promise<number> {

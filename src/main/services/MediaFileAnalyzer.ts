@@ -375,8 +375,8 @@ export class MediaFileAnalyzer {
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'error',
-        '-show_entries', 'packet=stream_index,size',
-        '-of', 'csv=p=0',
+        '-show_entries', 'packet=stream_index,size:packet_side_data=',
+        '-of', 'compact=p=1:nk=0',
         `file:${sanitizedPath}`,
       ]
       const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })

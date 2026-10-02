@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import axios, { AxiosInstance } from 'axios'
 import { app } from 'electron'
 import { getDatabase } from '@main/database/BetterSQLiteService'
@@ -852,7 +853,7 @@ export class PlexProvider extends BaseMediaProvider {
           const albumId = await db.music.upsertAlbum(albumData)
 
           if (albumTracks && albumTracks.length > 0) {
-            const tracksData = albumTracks.map((plexTrack: PlexMusicTrack) => {
+            const tracksData = await Promise.all(albumTracks.map(async (plexTrack: PlexMusicTrack) => {
               if (
                 plexTrack.grandparentRatingKey !== undefined &&
                 plexTrack.grandparentRatingKey !== plexAlbum.parentRatingKey
@@ -871,7 +872,7 @@ export class PlexProvider extends BaseMediaProvider {
                   `Plex track "${plexTrack.title}" (${plexTrack.ratingKey}) has inconsistent artist title: "${plexTrack.grandparentTitle}" != "${artist.name}"`
                 )
               }
-              return this.convertToMusicTrack(
+              return await this.convertToMusicTrack(
                 plexTrack,
                 albumId,
                 artist.id,
@@ -879,7 +880,7 @@ export class PlexProvider extends BaseMediaProvider {
                 albumData.title,
                 libraryId
               )
-            })
+            }))
 
             await db.music.upsertTracks(tracksData)
             result.itemsScanned += tracksData.length
@@ -948,14 +949,14 @@ export class PlexProvider extends BaseMediaProvider {
     }
   }
 
-  private convertToMusicTrack(
+  private async convertToMusicTrack(
     item: PlexMusicTrack,
     albumId: number,
     artistId: number,
     artistName: string,
     albumTitle: string,
     libraryId: string
-  ): MusicTrack {
+  ): Promise<MusicTrack> {
     const media = item.Media?.[0]
     if (!media) {
       throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing Media metadata`)
@@ -964,9 +965,11 @@ export class PlexProvider extends BaseMediaProvider {
     if (!part) {
       throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing Part metadata`)
     }
-    if (!media.audioCodec) {
-      throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing audio codec metadata`)
-    }
+    const localAnalysis = media.audioCodec ? null : await getMediaFileAnalyzer().analyzeFile(part.file)
+    const audioCodec = media.audioCodec || localAnalysis?.audioTracks[0]?.codec
+    if (!audioCodec) throw new Error(`Plex track "${item.title}" (${item.ratingKey}) is missing audio codec metadata; local file analysis supplied no audio codec`)
+    const audioBitrate = media.bitrate || localAnalysis?.audioTracks[0]?.bitrate
+    const audioChannels = media.audioChannels || localAnalysis?.audioTracks[0]?.channels
 
     return {
       source_id: this.sourceId,
@@ -984,11 +987,11 @@ export class PlexProvider extends BaseMediaProvider {
       file_path: part.file,
       file_size: part.size,
       container: media.container,
-      audio_codec: media.audioCodec,
-      audio_bitrate: media.bitrate,
-      channels: media.audioChannels,
+      audio_codec: audioCodec,
+      audio_bitrate: audioBitrate,
+      channels: audioChannels,
       is_lossless: ['flac', 'alac', 'wav', 'dsd'].some((codec) =>
-        media.audioCodec.toLowerCase().includes(codec)
+        audioCodec.toLowerCase().includes(codec)
       ),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

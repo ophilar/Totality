@@ -27,8 +27,11 @@ export function buildOptimizationSavingsBreakdown(input: OptimizationSavingsInpu
   const audioTranscodeBytes = normalizeKnownBytes(input.audioTranscodeBytes)
   const components = [videoDebtBytes, audioPruningBytes, audioTranscodeBytes]
   const knownCount = components.filter(component => component !== null).length
-  const totalRecoverableBytes = components.reduce<number>((sum, component) => sum + (component ?? 0), 0)
   const totalBytes = normalizeKnownBytes(input.totalBytes)
+  const totalRecoverableBytes = Math.min(
+    totalBytes ?? Number.MAX_SAFE_INTEGER,
+    components.reduce<number>((sum, component) => sum + (component ?? 0), 0)
+  )
 
   return {
     videoDebtBytes,

@@ -143,10 +143,14 @@ export enum MediaItemType {
 export type EvidenceStatus = 'measured' | 'estimated' | 'insufficient'
 export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none'
 export type SavingsBasis =
-  | 'audio_stream_removal'
-  | 'audio_transcode_model'
-  | 'video_sample_encode'
-  | 'insufficient_data'
+    | 'audio_stream_removal'
+    | 'audio_transcode_model'
+    | 'video_sample_encode'
+    | 'video_bitrate_estimate'
+    | 'audio_bitrate_estimate'
+    | 'mixed_estimates'
+    | 'mixed_measured_and_estimated'
+    | 'insufficient_data'
 
 export interface MediaItem {
   id?: number

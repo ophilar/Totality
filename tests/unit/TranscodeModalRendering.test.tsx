@@ -14,6 +14,7 @@ describe('TranscodeModal failure handling', () => {
         title: 'Failure Movie',
         type: 'movie',
         file_path: '/media/failure.mkv',
+        source_id: 'test-source',
       }),
       getCapabilities: vi.fn().mockResolvedValue({
         ffmpeg: true,
@@ -26,24 +27,23 @@ describe('TranscodeModal failure handling', () => {
         summary: 'test strategy',
       }),
       onProgress: vi.fn().mockReturnValue(vi.fn()),
-      start: vi.fn().mockRejectedValue(new Error('encoder start failed')),
+      preflightShow: vi.fn().mockRejectedValue(new Error('analysis failed')),
       cancel: vi.fn().mockResolvedValue(undefined),
     })
   })
 
-  it('leaves encoding state and exposes failure when starting a transcode rejects', async () => {
+  it('keeps the modal out of encoding state when optimization preflight fails', async () => {
     render(
       <ToastProvider>
         <TranscodeModal mediaId={501} onClose={vi.fn()} />
       </ToastProvider>
     )
 
-    const startButton = await screen.findByRole('button', { name: /start transcode optimization/i })
+    const startButton = await screen.findByRole('button', { name: /review optimization/i })
     fireEvent.click(startButton)
 
-    await waitFor(() => {
-      expect(screen.getByText('Encoding Failed')).toBeTruthy()
-    })
+    await waitFor(() => expect(window.electronAPI.preflightShow).toHaveBeenCalled())
+    expect(screen.queryByText('Encoding Failed')).toBeNull()
     expect(screen.queryByText('Live Hardware Transcoding Active')).toBeNull()
   })
 })

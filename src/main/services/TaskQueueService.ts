@@ -12,7 +12,7 @@ import { getSourceManager, SourceManager } from '@main/services/SourceManager'
 import { getSeriesCompletenessService, SeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getMovieCollectionService, MovieCollectionService } from '@main/services/MovieCollectionService'
 import { getMusicBrainzService, MusicBrainzService } from '@main/services/MusicBrainzService'
-import { getQualityAnalyzer, QualityAnalyzer } from '@main/services/QualityAnalyzer'
+import { getQualityAnalyzer, QualityAnalyzer, QualityAnalysisError } from '@main/services/QualityAnalyzer'
 import { getTranscodingService, TranscodingService, TranscodeProgress } from '@main/services/TranscodingService'
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { BrowserWindow } from 'electron'
@@ -495,6 +495,18 @@ export class TaskQueueService {
         const errorMsg = getErrorMessage(error)
         task.status = TaskStatus.Failed
         task.error = errorMsg
+        if (error instanceof QualityAnalysisError) {
+          task.result = {
+            ...task.result,
+            status: 'partial',
+            itemsScanned: error.details.analyzedCount,
+            totalCount: error.details.totalCount,
+            failedCount: error.details.totalCount - error.details.analyzedCount,
+            failedItemId: error.details.mediaItemId,
+            failedItemIndex: error.details.itemIndex,
+            failedStage: error.details.stage,
+          }
+        }
         this.logging.error('[TaskQueue]', `Task failed: ${task.label}`, error)
 
         try {
@@ -578,6 +590,15 @@ export class TaskQueueService {
       outcome,
     }
 
+    if (outcome.status === 'completed' && !this.cancelRequested && task.sourceId && task.libraryId) {
+      const backupPath = await this.db.createDatabaseBackup()
+      const reconciliation = await this.db.withBatch(() =>
+        this.db.tvShows.reconcileOrphanedCompleteness(task.sourceId!, task.libraryId!)
+      )
+      task.result = { ...task.result, reconciliation, databaseBackupPath: backupPath }
+      this.logging.info('[TaskQueue]', `Reconciled TV summaries for ${task.label}`, { ...reconciliation, backupPath })
+    }
+
     if (outcome.status === 'failed' && !this.cancelRequested) {
       const firstError = outcome.diagnostics[0]?.message
       if (!firstError) {
@@ -618,6 +639,11 @@ export class TaskQueueService {
 
     task.result = {
       itemsScanned: result.analyzed,
+      totalCount: result.total,
+      completeCount: result.complete,
+      failedCount: result.errors.length,
+      errors: result.errors,
+      status: !result.completed ? 'cancelled' : result.errors.length ? 'partial' : 'completed',
     }
   }
 

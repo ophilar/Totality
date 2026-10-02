@@ -4,6 +4,7 @@ import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
 import * as path from 'path'
 import * as fs from 'fs'
+import { randomUUID } from 'node:crypto'
 import { runMigrations } from '@main/database/DatabaseMigration'
 import { ConfigRepository } from '@main/database/repositories/ConfigRepository'
 import { MediaRepository } from '@main/database/repositories/MediaRepository'
@@ -226,6 +227,21 @@ export class BetterSQLiteService {
 
   public isInTransaction(): boolean { return this._transactionDepth > 0 }
   public forceSave(): void { this._client?.execute('PRAGMA wal_checkpoint(PASSIVE)') }
+
+  public async createDatabaseBackup(): Promise<string> {
+    if (!this._client || !this.dbPath) throw new Error('Cannot back up an uninitialized database')
+    const backupDirectory = path.join(path.dirname(this.dbPath), 'backups')
+    await fs.promises.mkdir(backupDirectory, { recursive: true })
+    const backupPath = path.join(backupDirectory, `totality-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.db`)
+    try {
+      await this._client.execute(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`)
+      const backup = await fs.promises.stat(backupPath)
+      if (!backup.isFile() || backup.size === 0) throw new Error('SQLite produced an empty backup file')
+      return backupPath
+    } catch (error) {
+      throw new Error(`Database backup failed; repair was not started: ${getErrorMessage(error)}`)
+    }
+  }
 
   public async exportData(): Promise<ExportData> {
     const data: ExportData = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }

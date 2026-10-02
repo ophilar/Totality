@@ -8,6 +8,7 @@ import { normalizeLanguage } from '@main/constants/languages'
 import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
 import { buildOptimizationSavingsBreakdown } from '@main/services/OptimizationSavingsService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
+import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -78,6 +79,16 @@ interface AudioQualityMetadata {
   channels: number | null
   bitrate: number | null
   hasObjectAudio: boolean | null
+}
+
+export class QualityAnalysisError extends Error {
+  constructor(
+    message: string,
+    readonly details: { analyzedCount: number; totalCount: number; mediaItemId?: number; itemIndex?: number; stage: string }
+  ) {
+    super(message)
+    this.name = 'QualityAnalysisError'
+  }
 }
 
 function metadataString(value: unknown, field: string): string | null {
@@ -247,11 +258,9 @@ export class QualityAnalyzer {
 
   private getCodecEfficiency(codec: string | null): number | null {
     if (codec === null) return null
-    const codecLower = codec.toLowerCase()
-    for (const [key, efficiency] of Object.entries(this.codecEfficiency)) {
-      if (codecLower.includes(key)) return efficiency
-    }
-    return null
+    const normalizedCodec = normalizeVideoCodec(codec)
+    const match = Object.entries(this.codecEfficiency).find(([key]) => normalizeVideoCodec(key) === normalizedCodec)
+    return match?.[1] ?? null
   }
 
   private calculateDubBitrate(item: MediaItem): number | null {
@@ -461,13 +470,13 @@ export class QualityAnalyzer {
     }
   }
 
-  async analyzeMediaItem(mediaItem: MediaItem): Promise<QualityScore> {
+  async analyzeMediaItem(mediaItem: MediaItem, analysis?: FileAnalysisResult): Promise<QualityScore> {
     const { qualityTier, tierQuality, tierScore, bitrateTierScore, audioTierScore, effectiveBitrate, bestAudio } =
       this.scoreQuality(mediaItem)
 
     const efficiencyScore = qualityTier !== 'Unknown' ? this.calculateEfficiencyScore(mediaItem, qualityTier) : null
     const videoBloatBytes = this.calculateVideoBloatBytes(mediaItem, qualityTier)
-    const audioPruningEvidence = this.getAudioPruningEvidence(mediaItem)
+    const audioPruningEvidence = this.getAudioPruningEvidence(mediaItem, analysis)
     const savingsBreakdown = buildOptimizationSavingsBreakdown({
       totalBytes: mediaItem.file_size,
       videoDebtBytes: videoBloatBytes,
@@ -477,6 +486,24 @@ export class QualityAnalyzer {
     const storageDebtBytes = savingsBreakdown.coverage === 'insufficient'
       ? null
       : savingsBreakdown.totalRecoverableBytes
+    const estimatedSavingsBytes = Math.min(mediaItem.file_size ?? Number.MAX_SAFE_INTEGER, [
+      videoBloatBytes,
+      audioPruningEvidence.status === 'estimated' ? audioPruningEvidence.estimatedSavingsBytes : null,
+    ].reduce<number>((sum, value) => sum + (value ?? 0), 0))
+    const savingSources = [
+      videoBloatBytes === null ? null : 'estimated',
+      audioPruningEvidence.estimatedSavingsBytes === null ? null : audioPruningEvidence.status,
+    ].filter((value): value is 'measured' | 'estimated' => value !== null)
+    const savingsBasis = savingSources.length === 0
+      ? 'insufficient_data'
+      : savingSources.length > 1
+        ? savingSources.includes('measured') ? 'mixed_measured_and_estimated' : 'mixed_estimates'
+        : audioPruningEvidence.estimatedSavingsBytes !== null
+          ? audioPruningEvidence.status === 'measured' ? 'audio_stream_removal' : 'audio_bitrate_estimate'
+          : 'video_bitrate_estimate'
+    const evidenceStatus = savingSources.length > 0 && savingSources.every(source => source === 'measured')
+      ? 'measured'
+      : savingSources.length > 0 ? 'estimated' : 'insufficient'
 
     const issues: string[] = []
     const itemBitrate = metadataNumber(mediaItem.video_bitrate, 'video_bitrate')
@@ -531,7 +558,6 @@ export class QualityAnalyzer {
       issues.push(`Dubbed audio bloat: ${this.formatBitrate(dubBitrate)} from non-original language tracks`)
     }
 
-    const hasVideoBitrate = itemBitrate !== null
     const isLowQuality = tierQuality === 'LOW'
     const needsUpgrade = tierQuality === 'LOW'
     const resolutionScore = qualityTier === '4K' ? 100 : qualityTier === '1080p' ? 80 : qualityTier === '720p' ? 60 : qualityTier === 'SD' ? 40 : null
@@ -549,9 +575,10 @@ export class QualityAnalyzer {
       audio_score: audioTierScore,
       efficiency_score: efficiencyScore,
       storage_debt_bytes: storageDebtBytes,
-      evidence_status: hasVideoBitrate && bestAudio.bitrate !== null ? 'estimated' : 'insufficient',
-      confidence: hasVideoBitrate && bestAudio.bitrate !== null ? 'medium' : 'none',
-      savings_basis: 'insufficient_data',
+      estimated_savings_bytes: estimatedSavingsBytes > 0 ? estimatedSavingsBytes : null,
+      evidence_status: evidenceStatus,
+      confidence: evidenceStatus === 'measured' ? 'high' : evidenceStatus === 'estimated' ? 'medium' : 'none',
+      savings_basis: savingsBasis,
       is_low_quality: isLowQuality,
       needs_upgrade: needsUpgrade,
       issues: JSON.stringify(issues),
@@ -727,7 +754,7 @@ export class QualityAnalyzer {
           subtitle_tracks: JSON.stringify(completeAnalysis.subtitleTracks),
         }
         currentStage = 'calculating quality score'
-        const qualityScore = await this.analyzeMediaItem(analyzedItem)
+        const qualityScore = await this.analyzeMediaItem(analyzedItem, completeAnalysis)
         qualityScoresBatch.push(qualityScore)
 
         const tier = qualityScore.quality_tier
@@ -776,22 +803,29 @@ export class QualityAnalyzer {
       await flushQualityScores()
     } catch (error) {
       let failure: unknown = error
+      let failureStage = currentStage
       if (qualityScoresBatch.length > 0 && !qualityScoreBatchWriteFailed) {
         try {
           await flushQualityScores()
         } catch (flushError) {
           const analysisMessage = error instanceof Error ? error.message : String(error)
           const persistenceMessage = flushError instanceof Error ? flushError.message : String(flushError)
-          failure = new Error(`Quality analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
+          failure = new Error(`Analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
+          failureStage = 'persisting pending quality scores'
         }
       }
       if (signal?.aborted && failure instanceof Error && failure.name === 'AbortError') return analyzed
+      const failureMessage = failure instanceof Error ? failure.message : String(failure)
+      const contextualFailure = new QualityAnalysisError(
+        `Quality analysis failed after ${analyzed}/${mediaItems.length} items during ${failureStage}${currentItemId === undefined ? '' : ` at item ${currentItemIndex} (id=${currentItemId})`}: ${failureMessage}`,
+        { analyzedCount: analyzed, totalCount: mediaItems.length, mediaItemId: currentItemId, itemIndex: currentItemIndex || undefined, stage: failureStage }
+      )
       logging.error(
         '[QualityAnalyzer]',
-        `Analysis failed during ${currentStage} after ${analyzed}/${mediaItems.length} items${currentItemId === undefined ? '' : `; item ${currentItemIndex}/${mediaItems.length} id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`}`,
-        failure
+        `${contextualFailure.message}${currentItemId === undefined ? '' : `; elapsedMs=${Date.now() - currentItemStartedAt}`}`,
+        contextualFailure
       )
-      throw failure
+      throw contextualFailure
     }
 
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')

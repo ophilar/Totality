@@ -17,6 +17,68 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
     cleanupTestDb()
   })
 
+  it('scores canonical H.264 labels through the shared codec normalizer', async () => {
+    const score = await analyzer.analyzeMediaItem({
+      id: 410,
+      source_id: 'src1',
+      plex_id: 'p410',
+      title: 'Canonical H.264',
+      type: 'movie',
+      file_path: '/media/h264.mkv',
+      file_size: 20_000_000_000,
+      duration: 7_200_000,
+      resolution: '1080p',
+      video_codec: 'H.264',
+      video_bitrate: 12_000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate: 192,
+    })
+
+    expect(score.efficiency_score).not.toBeNull()
+    expect(score.bitrate_tier_score).not.toBeNull()
+  })
+
+  it('keeps packet-measured stream savings separate from bitrate estimates', async () => {
+    const item: MediaItem = {
+      id: 411,
+      source_id: 'src1',
+      plex_id: 'p411',
+      title: 'Measured stream pruning',
+      type: 'movie',
+      file_path: '/media/measured.mkv',
+      file_size: 20_000_000_000,
+      duration: 7_200_000,
+      resolution: '1080p',
+      video_codec: 'HEVC',
+      video_bitrate: 12_000,
+      audio_codec: 'aac',
+      audio_channels: 2,
+      audio_bitrate: 192,
+      audio_tracks: JSON.stringify([{ index: 1, language: 'en', bitrate: 192 }, { index: 2, language: 'de', bitrate: 640 }]),
+      original_language: 'en',
+    }
+    const analysis: FileAnalysisResult = {
+      success: true,
+      filePath: item.file_path!,
+      duration: item.duration!,
+      video: { index: 0, codec: 'HEVC', width: 1920, height: 1080, bitrate: 12_000 },
+      audioTracks: [
+        { index: 1, codec: 'aac', channels: 2, bitrate: 192, language: 'en', isDefault: true, hasObjectAudio: false },
+        { index: 2, codec: 'aac', channels: 2, bitrate: 640, language: 'de', isDefault: false, hasObjectAudio: false },
+      ],
+      subtitleTracks: [],
+      streamBytes: { 1: 100_000_000, 2: 300_000_000 },
+    }
+
+    const score = await analyzer.analyzeMediaItem(item, analysis)
+
+    expect(score.savings_basis).toBe('mixed_measured_and_estimated')
+    expect(score.evidence_status).toBe('estimated')
+    expect(score.estimated_savings_bytes).not.toBeNull()
+    expect(score.storage_debt_bytes).toBeGreaterThan(score.estimated_savings_bytes!)
+  })
+
   it('does not turn container size into a video bitrate when stream bitrate is absent', () => {
     const item: MediaItem = {
       id: 8,

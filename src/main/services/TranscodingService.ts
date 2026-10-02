@@ -109,7 +109,8 @@ export interface TranscodingParams {
 
 
 export interface ShowTranscodeRequest {
-  seriesTitle: string
+  mediaItemId?: number
+  seriesTitle?: string
   seriesIdentityKey?: string
   sourceId: string
   libraryId?: string
@@ -213,21 +214,24 @@ export class TranscodingService {
   }
 
   async preflightShowTranscode(request: ShowTranscodeRequest): Promise<ShowTranscodePreflight> {
-    if (!request.seriesTitle.trim() || !request.sourceId.trim()) throw new Error('Show title and source ID are required')
-    if (!request.seriesIdentityKey?.trim()) throw new Error('TV series identity is required')
-    if (!request.libraryId?.trim()) throw new Error('TV series library is required')
+    if (!request.sourceId.trim()) throw new Error('Source ID is required')
+    if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId || await getDatabase().config.getSetting('optimization_default_target_profile_id')
     if (!profileId) throw new Error('A default playback profile is required before show optimization can run')
     const targetProfile = await getDatabase().playbackTargetProfiles.get(profileId)
     if (!targetProfile) throw new Error(`Playback target profile ${profileId} was not found`)
-    const episodes = await getDatabase().tvShows.getEpisodes(request.seriesTitle, request.sourceId, request.seriesIdentityKey, request.libraryId)
+    const episodes = request.mediaItemId === undefined
+      ? await getDatabase().tvShows.getEpisodes(request.seriesTitle!, request.sourceId, request.seriesIdentityKey!, request.libraryId!)
+      : [await getDatabase().media.getItemById(request.mediaItemId)].filter((item): item is MediaItem => item !== null)
     if (episodes.length === 0) throw new Error('No local episodes were found for the selected show')
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const preflightId = `${batchId}_preflight`
     const queuedMediaIds = new Set((await (await import('./TaskQueueService')).getTaskQueueService().getTasks()).filter(task => task.type === TaskType.Transcode && ['queued', 'running'].includes(task.status)).map(task => task.mediaItemId).filter((id): id is number => id !== undefined))
 
     const processEpisode = async (episode: typeof episodes[0]): Promise<ShowTranscodePreflight['episodes'][0]> => {
-      const label = `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
+      const label = request.mediaItemId === undefined
+        ? `${request.seriesTitle} S${String(episode.season_number || 0).padStart(2, '0')}E${String(episode.episode_number || 0).padStart(2, '0')} ${episode.title}`
+        : episode.title
       const fallbackMediaItemId = episode.id || 0
       try {
         if (!episode.id || !episode.file_path || !episode.source_id) {
@@ -238,12 +242,29 @@ export class TranscodingService {
         }
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        if (!episode.deep_analysis) {
-          throw new Error(`Episode "${label}" has no persisted analysis; analyze the show before optimizing it`)
-        }
-        const analysis = await getMediaFileAnalyzer().analyzeFile(episode.file_path)
+        const analysis = request.mediaItemId === undefined
+          ? await getMediaFileAnalyzer().analyzeFile(episode.file_path)
+          : await getMediaFileAnalyzer().analyzeCompleteFile(episode.file_path)
         if (!analysis.success || analysis.filePath !== episode.file_path || !analysis.video) {
           throw new Error(`Current media analysis is invalid for "${label}"`)
+        }
+        if (request.mediaItemId !== undefined) {
+          await getDatabase().media.updateDeepAnalysisByPath(episode.file_path, analysis, new Date().toISOString())
+          await getDatabase().media.upsertQualityScore(await getQualityAnalyzer().analyzeMediaItem({
+            ...episode,
+            video_codec: analysis.video.codec ?? episode.video_codec,
+            video_bitrate: analysis.video.bitrate ?? episode.video_bitrate,
+            width: analysis.video.width ?? episode.width,
+            height: analysis.video.height ?? episode.height,
+            duration: analysis.duration ?? episode.duration,
+            audio_codec: analysis.audioTracks[0]?.codec ?? episode.audio_codec,
+            audio_channels: analysis.audioTracks[0]?.channels ?? episode.audio_channels,
+            audio_bitrate: analysis.audioTracks[0]?.bitrate ?? episode.audio_bitrate,
+            audio_tracks: JSON.stringify(analysis.audioTracks),
+            subtitle_tracks: JSON.stringify(analysis.subtitleTracks),
+          }, analysis))
+        } else if (!episode.deep_analysis) {
+          throw new Error(`Episode "${label}" has no persisted analysis; analyze the show before optimizing it`)
         }
         this.analysisCache.set(episode.file_path, analysis)
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
@@ -325,7 +346,7 @@ export class TranscodingService {
       results.push(...chunkResults)
     }
 
-    const result = { preflightId, batchId, seriesTitle: request.seriesTitle, episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
+    const result = { preflightId, batchId, seriesTitle: request.seriesTitle || episodes[0]?.title || 'Selected media', episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
     return result

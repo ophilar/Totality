@@ -326,3 +326,11 @@
 - [x] Fix the joined TV show alphabet query reported by the installed-app log.
 - [x] Build the complete Windows installer with Electron 44.5.1.
 - [ ] Establish the cause of the intermittent native lifecycle access violation; a passing rerun alone does not establish resolution.
+
+## Database summaries, analysis, and item optimization - 2026-10-02
+- [x] Repair compact FFprobe packet parsing, normalized codec scoring, and evidence-basis persistence.
+- [x] Make the app back up and transactionally reconcile verified unlocked orphan TV summaries after a successful scoped scan.
+- [x] Enable movie/episode Optimize controls through the shared preflight, sample review, approval, and queue path; make preflight refresh and persist analysis itself.
+- [x] Preserve provider failures in task outcomes, enrich Plex audio metadata from local analysis, and refresh stale TMDB movie collection recipes.
+- [x] Finish lower-concurrency full-suite validation and build the Windows installer; renderer and service flows pass component and integration tests.
+- [ ] Launch the packaged installer build against an isolated user-data directory and verify Optimize interaction visually.

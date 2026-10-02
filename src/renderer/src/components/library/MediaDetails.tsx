@@ -31,7 +31,6 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
-  const [optimizationAdvice, setOptimizationAdvice] = useState<{ action: string; decisionStatus: string } | null>(null)
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
@@ -44,12 +43,9 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
       if (!active || !item) return
       const typedItem = item as MediaItem
       const typedVersions = itemVersions as MediaItemVersion[]
-      const advice = await window.electronAPI.getMediaOptimizationAdvice(mediaId)
-      if (!active) return
       setMedia(typedItem)
       setDeepAnalysis(typedItem.deep_analysis ? JSON.parse(typedItem.deep_analysis).deepAnalysis || null : null)
       setVersions(typedVersions)
-      setOptimizationAdvice(advice)
       const best = typedVersions.find(version => version.is_best) || typedVersions[0]
       setSelectedVersionId(best?.id ?? null)
     }).catch(err => {
@@ -70,7 +66,6 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
       if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
       const refreshed = await window.electronAPI.getMediaItem(media.id)
       if (refreshed) setMedia(refreshed as MediaItem)
-      setOptimizationAdvice(await window.electronAPI.getMediaOptimizationAdvice(media.id))
     } finally {
       setIsAnalyzing(false)
     }
@@ -89,8 +84,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
 
   const sv = versions.find(v => v.id === selectedVersionId) || versions[0]
   const isMovie = media.type === 'movie'
-  const hasOptimizationAction = optimizationAdvice?.decisionStatus === 'actionable'
-    && optimizationAdvice.action !== 'already_optimized'
+  const canOptimize = Boolean(media.file_path && media.id)
   
   const formatFileSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -206,7 +200,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
               </div>
               <div className="mt-3 flex items-center justify-between rounded-lg border border-border/40 bg-background/20 px-3 py-2 text-xs">
                 <span className="text-muted-foreground">Actions after analysis</span>
-                <button onClick={() => setShowTranscodeModal(true)} disabled={!hasOptimizationAction} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                <button onClick={() => setShowTranscodeModal(true)} disabled={!canOptimize} title={canOptimize ? 'Review optimization options for this file' : 'A local media file is required'} className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
                   <Zap className="h-3.5 w-3.5" /> Optimize
                 </button>
               </div>

@@ -49,7 +49,9 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
 
   async fetchTimeline(idOrQuery: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const cached = await this.cacheService.getRecipe(idOrQuery)
-    if (cached && !options.refresh) {
+    const obsoleteMovieCollection = cached?.version === 1 && cached.items.every(item => item.type === 'movie') &&
+      (cached.id.startsWith('tmdb-collection-') || idOrQuery.startsWith('tmdb-collection-') || /^\d+$/.test(idOrQuery))
+    if (cached && !options.refresh && !obsoleteMovieCollection) {
       return cached
     }
 
@@ -100,7 +102,7 @@ export class TMDBRecipeProvider implements ITimelineRecipeProvider {
       name: collection.name,
       description: collection.overview || `Official ${collection.name} from TMDB.`,
       sourceUrl: `https://www.themoviedb.org/collection/${collection.id}`,
-      version: 1,
+      version: 2,
       granularity: 'release-order',
       items,
     }

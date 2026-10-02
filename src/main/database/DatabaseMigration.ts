@@ -262,8 +262,11 @@ async function rebuildTableWhenNeeded(
   createSql: string,
   copyColumns: readonly string[],
   createSupportingObjects: readonly string[],
+  requiredSqlFragment?: string,
 ): Promise<void> {
-  if (!await hasNotNullColumn(db, table, nullableColumns)) return
+  const existingSql = await db.execute({ sql: 'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', args: ['table', table] })
+  const schemaSql = String(existingSql.rows[0]?.sql || '')
+  if (!await hasNotNullColumn(db, table, nullableColumns) && (!requiredSqlFragment || schemaSql.includes(requiredSqlFragment))) return
 
   const legacyTable = `${table}_legacy_nullable_evidence`
   getLoggingService().info('[DatabaseMigration]', `Rebuilding ${table} so analysis evidence can be NULL`)
@@ -306,7 +309,7 @@ async function rebuildQualityScoresForNullableEvidence(db: Client): Promise<void
       estimated_savings_bytes INTEGER,
       evidence_status TEXT,
       confidence TEXT,
-      savings_basis TEXT,
+      savings_basis TEXT CHECK(savings_basis IN ('audio_stream_removal', 'audio_transcode_model', 'video_sample_encode', 'insufficient_data', 'video_bitrate_estimate', 'audio_bitrate_estimate', 'mixed_estimates', 'mixed_measured_and_estimated')),
       is_low_quality INTEGER NOT NULL,
       needs_upgrade INTEGER NOT NULL,
       issues TEXT NOT NULL DEFAULT '[]',
@@ -321,6 +324,7 @@ async function rebuildQualityScoresForNullableEvidence(db: Client): Promise<void
          UPDATE quality_scores SET updated_at = datetime('now') WHERE id = NEW.id;
        END`,
     ],
+    "'mixed_measured_and_estimated'",
   )
 }
 

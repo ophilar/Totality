@@ -141,6 +141,38 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries.filter(summary => summary.series_title === 'Duplicate Show')).toHaveLength(1)
   })
 
+  it('removes only verified unlocked orphan summaries and preserves locked matches', async () => {
+    const addSummary = async (title: string, identity: string) => repo.upsertCompleteness({
+      series_title: title, series_identity_key: identity, source_id: 'src-1', library_id: 'lib-1',
+      total_seasons: 1, total_episodes: 1, owned_seasons: 0, owned_episodes: 0,
+      completeness_percentage: 0, missing_seasons: '[]', missing_episodes: '[]',
+    } as SeriesCompleteness)
+    const removableId = await addSummary('Removed Orphan', 'tmdb:100')
+    const lockedId = await addSummary('Locked Orphan', 'tmdb:200')
+    await db.identities.upsertIdentity({ entityType: 'series', entityId: lockedId, provider: 'tmdb', externalId: '200', locked: true, lockSource: 'user' })
+
+    const result = await db.withBatch(() => repo.reconcileOrphanedCompleteness('src-1', 'lib-1'))
+
+    expect(result).toEqual({ removed: 1, preservedLocked: 1 })
+    expect(await repo.getAllCompleteness('src-1', 'lib-1')).toHaveLength(1)
+    expect((await repo.getAllCompleteness('src-1', 'lib-1'))[0].id).toBe(lockedId)
+    expect(await db.identities.getIdentities('series', removableId)).toEqual([])
+  })
+
+  it('does not prune summaries while scoped episodes lack identity keys', async () => {
+    const episode = mockEpisode('Unresolved', 1, 1)
+    await mediaRepo.upsertItem(episode)
+    await db.db.execute({ sql: 'UPDATE media_items SET series_identity_key = NULL WHERE source_id = ? AND library_id = ? AND title = ?', args: ['src-1', 'lib-1', 'Episode 1'] })
+    await repo.upsertCompleteness({
+      series_title: 'Stale', series_identity_key: 'tmdb:300', source_id: 'src-1', library_id: 'lib-1',
+      total_seasons: 1, total_episodes: 1, owned_seasons: 0, owned_episodes: 0,
+      completeness_percentage: 0, missing_seasons: '[]', missing_episodes: '[]',
+    } as SeriesCompleteness)
+
+    await expect(db.withBatch(() => repo.reconcileOrphanedCompleteness('src-1', 'lib-1'))).rejects.toThrow(/no series identity/)
+    expect(await repo.getAllCompleteness('src-1', 'lib-1')).toHaveLength(1)
+  })
+
   it('sorts TV summaries by weighted efficiency before applying pagination', async () => {
     const addShow = async (title: string, efficiency: number) => {
       await repo.upsertCompleteness({

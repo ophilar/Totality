@@ -151,7 +151,9 @@ export class MovieCollectionService {
                 }
               }
             } catch (e) {
-              getLoggingService().warn('[MovieCollectionService]', `Failed to fetch collection details for movie ${m.tmdb_id} (${m.title}):`, e)
+              const message = e instanceof Error ? e.message : String(e)
+              result.errors.push(`Movie "${m.title}" (${m.tmdb_id}): ${message}`)
+              getLoggingService().warn('[MovieCollectionService]', `Failed to fetch collection details for movie ${m.tmdb_id} (${m.title}): ${message}`)
             }
           }
         }))
@@ -186,7 +188,7 @@ export class MovieCollectionService {
       
       getLiveMonitoringService().notifyLibraryUpdated(sourceId)
       
-    return { ...result, completed: true }
+    return { ...result, completed: !this.cancelRequested }
   }
 
   async analyzeCollection(name: string, sourceId = '', libraryId = '', tmdbCollectionId?: string): Promise<MovieCollection | null> {

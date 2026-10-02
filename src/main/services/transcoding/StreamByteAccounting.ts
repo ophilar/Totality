@@ -6,14 +6,31 @@ export interface PacketByteRecord {
 function parsePacketByteLine(line: string): PacketByteRecord | null {
   const normalizedLine = line.trim()
   if (!normalizedLine) return null
-  const separator = normalizedLine.indexOf(',')
-  if (separator <= 0) throw new Error(`Invalid packet byte row: ${normalizedLine}`)
-  const streamIndex = Number(normalizedLine.slice(0, separator))
-  const rawBytes = normalizedLine.slice(separator + 1).trim()
-  if (!Number.isInteger(streamIndex) || streamIndex < 0) {
+  const fields = normalizedLine.split('|')
+  if (fields[0] !== 'packet') throw new Error(`Invalid FFprobe packet section: ${normalizedLine}`)
+
+  const packetFields = new Map<string, string>()
+  for (const field of fields.slice(1)) {
+    if (!field) continue
+    if (field === 'side_data' || field.startsWith('side_data_')) break
+    if (!field.includes('=')) throw new Error(`Invalid FFprobe packet field '${field}': ${normalizedLine}`)
+    const separator = field.indexOf('=')
+    const key = field.slice(0, separator)
+    const value = field.slice(separator + 1)
+    if (packetFields.has(key)) throw new Error(`Duplicate FFprobe packet field '${key}': ${normalizedLine}`)
+    packetFields.set(key, value)
+  }
+
+  const rawStreamIndex = packetFields.get('stream_index')
+  if (rawStreamIndex === undefined || rawStreamIndex === '') {
+    throw new Error(`FFprobe packet is missing stream_index: ${normalizedLine}`)
+  }
+  const streamIndex = Number(rawStreamIndex)
+  const rawBytes = packetFields.get('size')?.trim()
+  if (!Number.isSafeInteger(streamIndex) || streamIndex < 0) {
     throw new Error(`Invalid packet byte stream index: ${normalizedLine}`)
   }
-  if (rawBytes === 'N/A' || rawBytes === '') return { streamIndex, bytes: null }
+  if (rawBytes === undefined || rawBytes === 'N/A' || rawBytes === '') return { streamIndex, bytes: null }
   const bytes = Number(rawBytes)
   if (!Number.isSafeInteger(bytes) || bytes < 0) {
     throw new Error(`Invalid packet byte value: ${normalizedLine}`)
@@ -30,7 +47,11 @@ export function parsePacketByteOutput(output: string): PacketByteRecord[] {
 export function sumStreamBytes(records: PacketByteRecord[], streamIndex: number): number | null {
   const streamRecords = records.filter(record => record.streamIndex === streamIndex)
   if (streamRecords.length === 0 || streamRecords.some(record => record.bytes === null)) return null
-  return streamRecords.reduce((sum, record) => sum + record.bytes!, 0)
+  return streamRecords.reduce((sum, record) => {
+    const total = sum + record.bytes!
+    if (!Number.isSafeInteger(total)) throw new Error(`Packet byte total exceeds the safe integer range for stream ${streamIndex}`)
+    return total
+  }, 0)
 }
 
 function addPacketByteRecord(totals: Map<number, { bytes: number; complete: boolean }>, record: PacketByteRecord): void {

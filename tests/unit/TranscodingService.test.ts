@@ -56,7 +56,9 @@ describe('Transcoding Integration (Service + IPC)', () => {
     it('registers all expected transcoding handlers', () => {
       expect(handlers.has('transcoding:checkAvailability')).toBe(true)
       expect(handlers.has('transcoding:getParameters')).toBe(true)
-      expect(handlers.has('transcoding:start')).toBe(true)
+      expect(handlers.has('transcoding:preflightShow')).toBe(true)
+      expect(handlers.has('transcoding:queueShow')).toBe(true)
+      expect(handlers.has('transcoding:start')).toBe(false)
     })
   })
 
