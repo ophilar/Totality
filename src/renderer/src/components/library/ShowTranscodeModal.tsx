@@ -604,7 +604,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                   <input type="checkbox" checked={removeUnnecessaryStreams} onChange={event => setRemoveUnnecessaryStreams(event.target.checked)} className="h-4 w-4 accent-primary" />
                 </label>
                 <label className="flex items-center justify-between gap-4 p-3 cursor-pointer">
-                  <span><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">Allow target-driven video and container changes.</span></span>
+                  <span><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">Allow target-driven video and container changes. Turn off to keep the video stream unchanged.</span></span>
                   <input type="checkbox" checked={adjustToTarget} onChange={event => setAdjustToTarget(event.target.checked)} className="h-4 w-4 accent-primary" />
                 </label>
               </div>
@@ -615,6 +615,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-primary" /> Strategy
               </label>
+              <p className="text-xs text-muted-foreground">Choose video-preserving cleanup or measured lossy compression. Video-preserving cleanup copies the original video stream; the compression quality setting allows re-encoding only when measured samples meet its threshold.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
                   type="button"
@@ -644,11 +645,12 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs">Audio & Subs Prune</span>
+                    <span className="font-bold text-xs">Audio &amp; Subs Prune</span>
+                    <span className="sr-only">Preserve Video</span>
                     <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Instant</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-tight">
-                    Lossless container cleanup with -c:v copy (no video re-encoding).
+                    Copy the original video stream unchanged while applying selected audio and subtitle cleanup.
                   </p>
                 </button>
 
@@ -666,7 +668,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                     <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">Override</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-tight">
-                    Measure video encoding for all eligible episodes using the selected encoder policy.
+                    Allow video re-encoding for eligible episodes, then keep only candidates that meet the selected visual-quality threshold.
                   </p>
                 </button>
               </div>
@@ -676,7 +678,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
             <details open className="space-y-3 rounded-xl border border-border/40 bg-card/20 p-3">
               <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-muted-foreground">Target adjustment details</summary>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <label>Quality<select aria-label="Quality" value={qualityProfile} onChange={e => setQualityProfile(e.target.value as OptimizationQualityProfile)}><option value="">Select quality</option><option value="transparent">Transparent</option><option value="balanced">Balanced</option><option value="maximum_savings">Maximum savings</option></select></label>
+              <label>Visual quality threshold<select aria-label="Quality" value={qualityProfile} onChange={e => setQualityProfile(e.target.value as OptimizationQualityProfile)}><option value="">Select threshold</option><option value="transparent">Highest measured fidelity</option><option value="balanced">Balanced fidelity and savings</option><option value="maximum_savings">More savings, measured loss allowed</option></select></label>
               <label>Encoder policy<select aria-label="Encoder policy" value={encoderPolicy} onChange={e => setEncoderPolicy(e.target.value as typeof encoderPolicy)}><option value="">Select policy</option><option value="hardware" disabled={!hardwareAvailable}>Verified hardware</option><option value="software">Software</option><option value="compare" disabled={!hardwareAvailable}>Compare hardware and software</option></select></label>
               <label>Container<select aria-label="Container" value={targetContainer} onChange={e => setTargetContainer(e.target.value as typeof targetContainer)}><option value="">Select container</option>{targetProfiles.find(profile => profile.id === targetProfileId)?.definition.containers.filter(container => ['matroska', 'mp4'].includes(container)).map(container => <option key={container} value={container === 'matroska' ? 'mkv' : 'mp4'}>{container}</option>)}</select></label>
               <label>Output color<select aria-label="Output color" value={targetHdrFormat} onChange={e => setTargetHdrFormat(e.target.value as typeof targetHdrFormat)}><option value="">Select color format</option><option value="SDR">SDR</option>{targetProfiles.find(profile => profile.id === targetProfileId)?.definition.hdr.formats.includes('HDR10') && <option value="HDR10">HDR10</option>}</select></label>
