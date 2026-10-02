@@ -20,6 +20,15 @@ const analysis = {
 } as FileAnalysisResult
 
 describe('buildStreamSelectionPlan', () => {
+  it('rejects original-language selection when a retained audio track has no reliable language', () => {
+    const untaggedAnalysis: FileAnalysisResult = {
+      ...analysis,
+      audioTracks: analysis.audioTracks.map(({ language: _language, ...track }) => track)
+    }
+    expect(() => buildStreamSelectionPlan(untaggedAnalysis, {
+      streamSelection: { audio: 'original-and-protected', originalLanguage: 'xx', subtitle: 'all' }
+    })).toThrow('has no reliable language tag')
+  })
   it('copies every detected audio and subtitle stream by default', () => {
     expect(buildStreamSelectionPlan(analysis, {})).toEqual({
       audioStreamIndexes: [1, 2, 3],

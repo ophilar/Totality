@@ -20,15 +20,9 @@ describe('Database Lifecycle (Initialization + Operations)', () => {
     service = new BetterSQLiteService()
   })
 
-  afterEach(async () => {
+  afterEach(() => {
+    service.close()
     resetBetterSQLiteServiceForTesting()
-    if (fs.existsSync(testDbPath)) {
-      try {
-        fs.unlinkSync(testDbPath)
-      } catch (e) {
-        // Ignore EBUSY if file is locked
-      }
-    }
   })
 
   describe('Startup & Migrations', () => {

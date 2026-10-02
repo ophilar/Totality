@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, act, waitFor } from '@testing-library/react'
+import { render, screen, act, waitFor, cleanup } from '@testing-library/react'
 import { MediaBrowser } from '@/components/library/MediaBrowser'
 import { setupRealIntegratedBridge, setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { _TVShowRepository } from '@main/database/repositories/TVShowRepository'
@@ -16,10 +16,10 @@ describe('MediaBrowser Lifecycle Integration', () => {
 
   beforeEach(async () => {
     db = await setupTestDb()
-    setupRealIntegratedBridge()
   }, 60000)
 
   afterEach(() => {
+    cleanup()
     cleanupTestDb()
   })
 
