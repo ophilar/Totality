@@ -363,8 +363,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     if (filters?.searchQuery) conditions.push(like(schema.seriesCompleteness.seriesTitle, `%${filters.searchQuery}%`))
 
     if (filters?.alphabetFilter) {
-      if (filters.alphabetFilter === '#') conditions.push(sql`series_title NOT GLOB '[A-Za-z]*'`)
-      else conditions.push(eq(sql`UPPER(SUBSTR(series_title, 1, 1))`, filters.alphabetFilter.toUpperCase()))
+      conditions.push(this.buildAlphabetFilter(schema.seriesCompleteness.seriesTitle, filters.alphabetFilter))
     }
 
     if (filters?.completenessFilter) {

@@ -67,6 +67,24 @@ describe('TVShowRepository (Real DB)', () => {
     expect(summaries[0].current_episodes).toBe(2)
   })
 
+  it.each([['s', 'Severance'], ['#', '1899']])('filters joined summaries and counts by initial %s', async (alphabetFilter, title) => {
+    for (const series of ['Severance', '1899', 'Breaking Bad']) {
+      const episode = mockEpisode(series, 1, 1)
+      await mediaRepo.upsertItem(episode)
+      await repo.upsertCompleteness({
+        series_title: series,
+        series_identity_key: episode.series_identity_key,
+        source_id: 'src-1', library_id: 'lib-1',
+        total_seasons: 1, total_episodes: 1, owned_seasons: 1, owned_episodes: 1,
+        completeness_percentage: 100, missing_seasons: '[]', missing_episodes: '[]'
+      } as SeriesCompleteness)
+    }
+    const summaries = await repo.getSummaries({ alphabetFilter })
+    expect(summaries.map(show => show.series_title)).toEqual([title])
+    expect(summaries[0].current_episodes).toBe(1)
+    expect(await repo.count({ alphabetFilter })).toBe(1)
+  })
+
   it('should filter TV shows by search query', async () => {
     await repo.upsertCompleteness({
       series_title: 'The Wire',

@@ -1038,7 +1038,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     // If no tracklist from stored MBID, search MusicBrainz
     if (!tracklist || tracklist.tracks.length === 0) {
-      getLoggingService().info('[MusicBrainzService]', `Stored MBID didn't work, searching MusicBrainz for "${artistName}" - "${albumTitle}"...`)
+      getLoggingService().info('[MusicBrainzService]', `Searching MusicBrainz for "${artistName}" - "${albumTitle}" after ${originalMbId ? 'the stored MBID returned no tracklist' : 'no stored MBID was supplied'}`)
       const searchResults = await this.searchRelease(artistName, albumTitle)
 
       // Try each search result until we find one with tracks
