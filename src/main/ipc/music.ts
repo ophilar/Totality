@@ -123,7 +123,7 @@ export function registerMusicHandlers(): void {
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST, PositiveIntSchema, async (artistId) => {
     // Analysis is now handled by completeness background jobs, but we trigger a refresh
     const artist = await db.music.getArtistById(artistId)
-    return artist ? await db.music.getArtistCompleteness(artist.name) : null
+    return artist ? await db.music.getArtistCompleteness(artist.id!) : null
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ALBUM, PositiveIntSchema, async (albumId) => {
@@ -158,14 +158,14 @@ export function registerMusicHandlers(): void {
     return await getMusicBrainzService().searchRelease(artistName, albumTitle)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, z.string(), async (artistName) => {
-    return await db.music.getArtistCompleteness(artistName)
+  createValidatedIpcHandler(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
+    return await db.music.getArtistCompleteness(artistId)
   })
 
   createValidatedIpcHandler(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST_COMPLETENESS, PositiveIntSchema, async (artistId) => {
     const artist = await db.music.getArtistById(artistId)
     if (!artist) throw new Error(`Artist with ID ${artistId} not found`)
-    const albums = await db.music.getAlbums({ artistId, limit: 1000 })
+    const albums = await db.music.getAlbums({ artistId, sourceId: artist.source_id, libraryId: artist.library_id, limit: 1000 })
     const ownedTitles = albums.map((a: MusicAlbum) => a.title)
     const ownedMbIds = albums.map((a: MusicAlbum) => a.musicbrainz_id).filter((id: string | undefined): id is string => !!id)
     const completeness = await getMusicBrainzService().analyzeArtistCompleteness(
@@ -174,7 +174,7 @@ export function registerMusicHandlers(): void {
       ownedTitles,
       ownedMbIds
     )
-    await db.music.upsertArtistCompleteness(completeness)
+    await db.music.upsertArtistCompleteness({ ...completeness, artist_id: artistId, source_id: artist.source_id, library_id: artist.library_id })
     getStatsCacheService().invalidate()
     return completeness
   })

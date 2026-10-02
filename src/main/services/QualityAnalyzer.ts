@@ -587,6 +587,27 @@ export class QualityAnalyzer {
     }
   }
 
+  async analyzeMediaItemFileEvidence(mediaItem: MediaItem, signal?: AbortSignal): Promise<{ analysis: FileAnalysisResult; qualityScore: QualityScore }> {
+    if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
+    const analysis = await getMediaFileAnalyzer().analyzeCompleteFile(mediaItem.file_path, { signal })
+    if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
+    await getDatabase().media.updateDeepAnalysisByPath(mediaItem.file_path, analysis, new Date().toISOString())
+    const analyzedItem: MediaItem = {
+      ...mediaItem,
+      video_codec: analysis.video?.codec ?? mediaItem.video_codec,
+      video_bitrate: analysis.video?.bitrate ?? mediaItem.video_bitrate,
+      width: analysis.video?.width ?? mediaItem.width,
+      height: analysis.video?.height ?? mediaItem.height,
+      duration: analysis.duration ?? mediaItem.duration,
+      audio_codec: analysis.audioTracks[0]?.codec ?? mediaItem.audio_codec,
+      audio_channels: analysis.audioTracks[0]?.channels ?? mediaItem.audio_channels,
+      audio_bitrate: analysis.audioTracks[0]?.bitrate ?? mediaItem.audio_bitrate,
+      audio_tracks: JSON.stringify(analysis.audioTracks),
+      subtitle_tracks: JSON.stringify(analysis.subtitleTracks),
+    }
+    return { analysis, qualityScore: await this.analyzeMediaItem(analyzedItem, analysis) }
+  }
+
   private calculateEfficiencyScore(item: MediaItem, tier: QualityTier): number | null {
     const bitrate = metadataNumber(item.video_bitrate, 'video_bitrate')
     const duration = metadataNumber(item.duration, 'duration')
@@ -723,7 +744,7 @@ export class QualityAnalyzer {
 
     try {
       for (const [index, item] of mediaItems.entries()) {
-        if (isCancelled?.()) {
+          if (isCancelled?.() || signal?.aborted) {
           await flushQualityScores()
           logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
           return analyzed
@@ -736,25 +757,9 @@ export class QualityAnalyzer {
           '[QualityAnalyzer]',
           `Analyzing item ${currentItemIndex}/${mediaItems.length}: id=${currentItemId}, type=${item.type}`
         )
-        if (!item.file_path) throw new Error(`Media item ${item.id ?? item.title} has no local file path`)
-        const completeAnalysis = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path, { signal })
         currentStage = 'persisting deep analysis'
-        await db.media.updateDeepAnalysisByPath(item.file_path, completeAnalysis, new Date().toISOString())
-        const analyzedItem: MediaItem = {
-          ...item,
-          video_codec: completeAnalysis.video?.codec ?? item.video_codec,
-          video_bitrate: completeAnalysis.video?.bitrate ?? item.video_bitrate,
-          width: completeAnalysis.video?.width ?? item.width,
-          height: completeAnalysis.video?.height ?? item.height,
-          duration: completeAnalysis.duration ?? item.duration,
-          audio_codec: completeAnalysis.audioTracks[0]?.codec ?? item.audio_codec,
-          audio_channels: completeAnalysis.audioTracks[0]?.channels ?? item.audio_channels,
-          audio_bitrate: completeAnalysis.audioTracks[0]?.bitrate ?? item.audio_bitrate,
-          audio_tracks: JSON.stringify(completeAnalysis.audioTracks),
-          subtitle_tracks: JSON.stringify(completeAnalysis.subtitleTracks),
-        }
+        const { qualityScore } = await this.analyzeMediaItemFileEvidence(item, signal)
         currentStage = 'calculating quality score'
-        const qualityScore = await this.analyzeMediaItem(analyzedItem, completeAnalysis)
         qualityScoresBatch.push(qualityScore)
 
         const tier = qualityScore.quality_tier
@@ -769,7 +774,7 @@ export class QualityAnalyzer {
           const versions = versionsByMediaId.get(item.id) ?? []
           const updatePromises: Promise<void>[] = []
           for (const version of versions) {
-            if (isCancelled?.()) {
+              if (isCancelled?.() || signal?.aborted) {
               logging.info('[QualityAnalyzer]', `Analysis cancelled after ${analyzed}/${mediaItems.length} items`)
               return analyzed
             }

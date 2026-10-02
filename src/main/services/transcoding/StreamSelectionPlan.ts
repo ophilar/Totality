@@ -30,6 +30,13 @@ export type StreamSelectionPolicy =
       subtitleLanguageWhitelist?: string[]
       defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy
     }
+  | {
+      audio: 'explicit'
+      audioIndexes: number[]
+      subtitle: 'all'
+      subtitleLanguageWhitelist?: string[]
+      defaultSubtitle?: 'preserve' | 'none' | SubtitleSelectionPolicy
+    }
 
 import { normalizeLanguage } from '@main/constants/languages'
 import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
@@ -37,6 +44,7 @@ export { normalizeLanguage }
 
 function resolvePolicyIndexes(analysis: FileAnalysisResult, policy: StreamSelectionPolicy): number[] {
   if (policy.audio === 'all') return analysis.audioTracks.map(track => track.index)
+  if (policy.audio === 'explicit') return policy.audioIndexes
   const original = normalizeLanguage(policy.originalLanguage)
   if (!original) throw new Error('Original language is required for original-and-protected audio policy')
   const result = analysis.audioTracks.filter(track => {

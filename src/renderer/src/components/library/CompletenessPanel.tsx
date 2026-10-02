@@ -474,7 +474,7 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm focus:outline-hidden"
           >
             <RefreshCw className="w-4 h-4" />
-            Analyze all libraries
+            Analyze All
           </button>
         )}
       </div>

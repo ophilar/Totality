@@ -351,7 +351,9 @@ export const musicQualityScores = sqliteTable('music_quality_scores', {
 // --- Artist Completeness ---
 export const artistCompleteness = sqliteTable('artist_completeness', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  artistName: text('artist_name').notNull().unique(),
+  artistName: text('artist_name').notNull(),
+  artistId: integer('artist_id'),
+  sourceId: text('source_id'),
   musicbrainzId: text('musicbrainz_id'),
   libraryId: text('library_id').notNull(),
   totalAlbums: integer('total_albums').notNull(),
@@ -374,7 +376,7 @@ export const artistCompleteness = sqliteTable('artist_completeness', {
   lastSyncAt: text('last_sync_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-});
+}, table => [uniqueIndex('idx_artist_completeness_owner').on(table.sourceId, table.libraryId, table.artistId)]);
 
 // --- Album Completeness ---
 export const albumCompleteness = sqliteTable('album_completeness', {

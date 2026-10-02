@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SourceManager } from '@main/services/SourceManager'
 import { LibraryType } from '@main/types/database'
 import { setupTestDb, cleanupTestDb, createTempDir } from '@tests/TestUtils'
+import { getTaskQueueService } from '@main/services/TaskQueueService'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -80,6 +81,9 @@ describe('Library Issues Fixes (Deep Dive)', () => {
       const manager = new SourceManager()
       await manager.initialize()
       await manager.scanLibrary(sourceId, libraryId)
+
+      await getTaskQueueService().resume()
+      await vi.waitFor(async () => expect(await db.music.getQualityScore(albumId)).not.toBeNull(), { timeout: 5000 })
 
       const score = await db.music.getQualityScore(albumId)
       expect(score).not.toBeNull()

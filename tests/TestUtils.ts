@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 import { _BetterSQLiteService, resetBetterSQLiteServiceForTesting, getDatabase } from '@main/database/BetterSQLiteService'
 import { resetSourceManagerForTesting } from '@main/services/SourceManager'
 import { resetLiveMonitoringServiceForTesting } from '@main/services/LiveMonitoringService'
+import { resetTaskQueueServiceForTesting } from '@main/services/TaskQueueService'
 import * as _dbFuncs from '@main/database/BetterSQLiteService'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -24,6 +25,7 @@ export async function setupTestDb() {
   // Reset the singleton
   resetSourceManagerForTesting()
   resetLiveMonitoringServiceForTesting()
+  resetTaskQueueServiceForTesting()
   resetBetterSQLiteServiceForTesting()
   
   const dbService = getDatabase()
@@ -39,6 +41,7 @@ export async function setupTestDb() {
 export function cleanupTestDb() {
   resetSourceManagerForTesting()
   resetLiveMonitoringServiceForTesting()
+  resetTaskQueueServiceForTesting()
   resetBetterSQLiteServiceForTesting()
 }
 

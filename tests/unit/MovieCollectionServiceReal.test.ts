@@ -111,6 +111,7 @@ describe('MovieCollectionService (No Mocks)', () => {
 
     await db.media.upsertItem(createMovie({
       source_id: 's1',
+      library_id: 'movies',
       plex_id: 'p1',
       title: 'Fight Club',
       tmdb_id: '550',
@@ -135,10 +136,11 @@ describe('MovieCollectionService (No Mocks)', () => {
   it('should analyze collections and find missing movies', async () => {
      await db.sources.upsertSource({ source_id: 's1', source_type: 'plex', display_name: 'S1', connection_config: '{}', is_enabled: 1 })
      await db.media.upsertItem(createMovie({
-      source_id: 's1',
-      plex_id: 'p1',
-      title: 'Fight Club',
-      tmdb_id: '550'
+     source_id: 's1',
+      library_id: 'movies',
+     plex_id: 'p1',
+     title: 'Fight Club',
+     tmdb_id: '550'
     }))
 
     await service.analyzeAllCollections()

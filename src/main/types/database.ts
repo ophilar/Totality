@@ -716,8 +716,10 @@ export interface MusicQualityScore {
 }
 
 export interface ArtistCompleteness {
-  id?: number
-  artist_name: string
+    id?: number
+    artist_name: string
+    artist_id?: number
+    source_id?: string
 
   musicbrainz_id?: string
   library_id?: string
@@ -919,15 +921,19 @@ export enum TaskType {
   MusicCompleteness = 'music-completeness',
   MusicScan = 'music-scan',
   QualityAnalysis = 'quality-analysis',
+  Analysis = 'analysis',
   Transcode = 'transcode'
 }
 
 export enum TaskStatus {
   Queued = 'queued',
   Running = 'running',
+  Cancelling = 'cancelling',
   Completed = 'completed',
+  Partial = 'partial',
   Failed = 'failed',
-  Cancelled = 'cancelled'
+  Cancelled = 'cancelled',
+  Blocked = 'blocked'
 }
 
 export interface TaskProgress {
@@ -945,13 +951,15 @@ export type AnalysisStatus =
   | 'completed'
   | 'partial'
   | 'deferred'
+  | 'blocked'
   | 'failed'
   | 'cancelled'
 
 export interface AnalysisDiagnostic {
-  itemType: 'artist' | 'album' | 'series' | 'movie'
+  itemType: 'artist' | 'album' | 'series' | 'movie' | 'episode' | 'track' | 'collection' | 'library'
   itemId?: string | number
   itemName: string
+  stage?: string
   category: 'provider' | 'database' | 'identity' | 'unresolved' | 'cancelled'
   code: string
   message: string
@@ -971,6 +979,23 @@ export interface AnalysisOutcome {
   processedCount?: number
   totalCount?: number
   errors?: string[]
+}
+
+export interface AnalysisStageOutcome {
+  stage: string
+  status: 'completed' | 'failed' | 'blocked' | 'deferred' | 'skipped'
+  error?: string
+  code?: string
+  diagnostics?: AnalysisDiagnostic[]
+}
+
+export interface AnalysisJobResult extends AnalysisOutcome {
+  scope: import('@shared/analysisScope').AnalysisScope
+  outcomes: AnalysisStageOutcome[]
+  completedCount: number
+  failedCount: number
+  deferredCount: number
+  skippedCount: number
 }
 
 export interface CompletenessScope {
@@ -1018,9 +1043,16 @@ export interface TaskResult {
   itemsUpdated?: number
   itemsRemoved?: number
   status?: AnalysisStatus
+  completedCount?: number
+  failedCount?: number
+  deferredCount?: number
+  skippedCount?: number
+  reconciliation?: { removed: number; preservedLocked: number }
+  databaseBackupPath?: string
   deferred?: number
   diagnostics?: AnalysisDiagnostic[]
   outcome?: AnalysisOutcome
+  analysis?: AnalysisJobResult
   [key: string]: unknown
 }
 
@@ -1032,6 +1064,8 @@ export interface QueuedTask {
   libraryId?: string
   mediaItemId?: number
   artistId?: number
+  albumId?: number
+  collectionId?: number
   status: TaskStatus
   progress?: TaskProgress
   createdAt: string
@@ -1041,6 +1075,10 @@ export interface QueuedTask {
   result?: TaskResult
   options?: unknown
   batchId?: string
+  analysisScope?: import('@shared/analysisScope').AnalysisScope
+  seriesTitle?: string
+  seriesIdentityKey?: string
+  inputFingerprint?: string
 }
 
 export interface TaskQueueState {

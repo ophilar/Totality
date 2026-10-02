@@ -124,7 +124,7 @@ export function MusicArtistDetails({
               className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingArtist ? 'animate-spin' : ''}`} />
-              {isAnalyzingArtist ? 'Analyzing...' : 'Analyze Completeness'}
+              {isAnalyzingArtist ? 'Analyzing...' : 'Analyze'}
             </button>
             {onFixArtistMatch && (
               <button

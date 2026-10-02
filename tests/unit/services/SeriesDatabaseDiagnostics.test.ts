@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { parseDatabaseError } from '../../../src/main/services/utils/errorUtils'
 import { getDatabase, resetBetterSQLiteServiceForTesting } from '../../../src/main/database/BetterSQLiteService'
 import { SeriesCompletenessService } from '../../../src/main/services/SeriesCompletenessService'
-import { resetTMDBServiceForTesting } from '../../../src/main/services/TMDBService'
+import { getTMDBService, resetTMDBServiceForTesting } from '../../../src/main/services/TMDBService'
 
 describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
   let db: ReturnType<typeof getDatabase>
@@ -157,6 +157,8 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
           completeness_percentage: 100
         } as unknown as ReturnType<typeof service.analyzeAllSeries>
       })
+      await db.config.setSetting('tmdb_api_key', 'test-key')
+      vi.spyOn(getTMDBService(), 'initialize').mockResolvedValue()
 
       const outcome = await service.analyzeAllSeries('src-multi', 'tv')
 

@@ -304,8 +304,9 @@ export function ActivityPanel() {
   }, [queueState.isPaused])
 
   const handleCancelCurrent = useCallback(() => {
-    window.electronAPI.taskQueueCancelCurrent?.()
-  }, [])
+    const task = queueState.currentTask
+    if (task) window.electronAPI.taskQueueCancelTask?.(task.id)
+  }, [queueState.currentTask])
 
   const handleRemoveTask = useCallback((taskId: string) => {
     window.electronAPI.taskQueueRemoveTask?.(taskId)
@@ -467,7 +468,7 @@ export function ActivityPanel() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 min-w-0 pr-2">
                   <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
-                  <span className="text-sm font-medium truncate">{queueState.currentTask.label}</span>
+                  <span className="text-sm font-medium truncate">{queueState.currentTask.status === 'cancelling' ? 'Cancelling…' : `${queueState.currentTask.label}${queueState.currentTask.type === TaskType.Analysis && queueState.currentTask.progress?.phase ? ` · ${queueState.currentTask.progress.phase}` : ''}`}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {isTranscodeTask && (
@@ -598,6 +599,18 @@ export function ActivityPanel() {
             )}
           </div>
         </div>
+
+        {queueState.completedTasks.some(task => task.type === TaskType.Analysis && task.result?.analysis) && <div className="max-h-52 overflow-y-auto border-b border-border/30 p-3 space-y-2">
+          <p className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Recent analysis</p>
+          {queueState.completedTasks.filter(task => task.type === TaskType.Analysis && task.result?.analysis).slice(0, 6).map(task => {
+            const result = task.result!.analysis!
+            return <div key={task.id} className="rounded-md bg-muted/30 p-2 text-xs">
+              <div className="flex justify-between gap-2"><span className="font-medium">{task.label}</span><span className="capitalize">{result.status}</span></div>
+              <p className="text-muted-foreground">{result.completedCount} stages complete · {result.failedCount} failed · {result.deferredCount} deferred · {result.skippedCount} skipped</p>
+              {result.diagnostics.length > 0 && <ul className="mt-1 list-disc pl-4 text-amber-200">{result.diagnostics.slice(0, 3).map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.itemName}: {diagnostic.message}</li>)}</ul>}
+            </div>
+          })}
+        </div>}
 
         {/* Notifications Section */}
         <div className="flex-1 min-h-0 flex flex-col">

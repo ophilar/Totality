@@ -30,7 +30,7 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   if (onAnalyzeSeries) {
     menuItems.push({
       id: 'analyze',
-      label: 'Analyze Series',
+      label: 'Analyze',
       icon: RefreshCw,
       onClick: async () => {
         setIsAnalyzing(true)

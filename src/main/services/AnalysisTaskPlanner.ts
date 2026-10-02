@@ -1,4 +1,5 @@
-import { LibraryType, TaskType } from '@main/types/database'
+import { LibraryType } from '@main/types/database'
+import type { AnalysisScope } from '@shared/analysisScope'
 
 export interface AnalysisLibraryScope {
   sourceId: string
@@ -6,36 +7,43 @@ export interface AnalysisLibraryScope {
   libraryType: LibraryType
 }
 
-export interface AnalysisTaskDefinition {
-  type: TaskType
-  label: string
-  sourceId: string
+export interface AnalysisStageDefinition {
+  name: 'quality' | 'series-completeness' | 'collection-completeness' | 'music-quality' | 'music-completeness' | 'artist-completeness' | 'owned-album-completeness'
+  sourceId?: string
   libraryId?: string
+  mediaItemId?: number
+  artistId?: number
+  albumId?: number
+  collectionId?: number
+  series?: { title: string; seriesIdentityKey: string }
 }
 
-export function planAnalysisTasks(libraries: AnalysisLibraryScope[]): AnalysisTaskDefinition[] {
-  const tasks: AnalysisTaskDefinition[] = []
-  const musicSources = new Set<string>()
-
-  for (const library of libraries) {
-    const { sourceId, libraryId, libraryType } = library
-    if (libraryType !== LibraryType.Music) {
-      tasks.push({ type: TaskType.QualityAnalysis, label: `Analyze quality (${sourceId})`, sourceId, libraryId })
-    }
-    if (libraryType === LibraryType.Show || libraryType === LibraryType.Mixed) {
-      tasks.push({ type: TaskType.SeriesCompleteness, label: `Analyze TV completeness (${sourceId})`, sourceId, libraryId })
-    }
-    if (libraryType === LibraryType.Movie || libraryType === LibraryType.Mixed) {
-      tasks.push({ type: TaskType.CollectionCompleteness, label: `Analyze collections (${sourceId})`, sourceId, libraryId })
-    }
+export function planAnalysisStages(scope: AnalysisScope, libraries: AnalysisLibraryScope[] = []): AnalysisStageDefinition[] {
+  const stages: AnalysisStageDefinition[] = []
+  const addLibraryStages = ({ sourceId, libraryId, libraryType }: AnalysisLibraryScope): void => {
+    if (libraryType !== LibraryType.Music) stages.push({ name: 'quality', sourceId, libraryId })
+    if (libraryType === LibraryType.Show || libraryType === LibraryType.Mixed) stages.push({ name: 'series-completeness', sourceId, libraryId })
+    if (libraryType === LibraryType.Movie || libraryType === LibraryType.Mixed) stages.push({ name: 'collection-completeness', sourceId, libraryId })
     if (libraryType === LibraryType.Music || libraryType === LibraryType.Mixed) {
-      musicSources.add(sourceId)
+      stages.push({ name: 'music-quality', sourceId, libraryId }, { name: 'music-completeness', sourceId, libraryId })
     }
   }
 
-  for (const sourceId of musicSources) {
-    tasks.push({ type: TaskType.MusicCompleteness, label: `Analyze music (${sourceId})`, sourceId })
+  switch (scope.kind) {
+    case 'item': stages.push({ name: 'quality', mediaItemId: scope.mediaId }); break
+    case 'show': stages.push(
+      { name: 'quality', sourceId: scope.sourceId, libraryId: scope.libraryId, series: { title: scope.title, seriesIdentityKey: scope.seriesIdentityKey } },
+      { name: 'series-completeness', sourceId: scope.sourceId, libraryId: scope.libraryId, series: { title: scope.title, seriesIdentityKey: scope.seriesIdentityKey } },
+    ); break
+    case 'collection': stages.push({ name: 'quality', collectionId: scope.collectionId }, { name: 'collection-completeness', collectionId: scope.collectionId }); break
+    case 'album': stages.push({ name: 'music-quality', albumId: scope.albumId }, { name: 'music-completeness', albumId: scope.albumId }); break
+    case 'artist': stages.push(
+      { name: 'music-quality', artistId: scope.artistId },
+      { name: 'artist-completeness', artistId: scope.artistId },
+      { name: 'owned-album-completeness', artistId: scope.artistId },
+    ); break
+    case 'library':
+    case 'all-libraries': libraries.forEach(addLibraryStages); break
   }
-
-  return tasks
+  return stages
 }

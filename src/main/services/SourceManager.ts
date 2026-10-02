@@ -15,7 +15,7 @@ import { PlexProvider } from '@main/providers/plex/PlexProvider'
 import { SourceScannerService, type AggregateProgressCallback } from '@main/services/SourceScannerService'
 import { SourceCrudService } from '@main/services/SourceCrudService'
 import { PlexAuthService } from '@main/services/PlexAuthService'
-import { LibraryType, ProviderType, TaskType, type MediaSource } from '@main/types/database'
+import { LibraryType, ProviderType, type MediaSource } from '@main/types/database'
 import type { ConnectionTestResult } from '@main/types/ipc'
 import type {
   MediaProvider,
@@ -316,8 +316,6 @@ export class SourceManager {
     const sources = sourceId ? [await this.db.sources.getSourceById(sourceId)].filter((s): s is MediaSource => s !== null) : await this.db.sources.getEnabledSources()
     const { getWishlistCompletionService } = await import('./WishlistCompletionService')
     const tq = this.getTaskQueue()
-    const hasTmdbKey = await this.db.config.getSetting('tmdb_api_key')
-
     for (const source of sources) {
       if (!source) continue
       const libs = await this.getLibraries(source.source_id)
@@ -325,22 +323,14 @@ export class SourceManager {
       for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
         if (!enabledLibraries.has(lib.id)) continue
 
-        tq.addTask({ type: TaskType.QualityAnalysis, label: `Post-scan Quality Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-
-        if (lib.type === LibraryType.Show || lib.type === LibraryType.Mixed) {
-          tq.addTask({ type: TaskType.SeriesCompleteness, label: `Post-scan Series Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-        }
-        if (hasTmdbKey && (lib.type === LibraryType.Movie || lib.type === LibraryType.Mixed)) {
-          tq.addTask({ type: TaskType.CollectionCompleteness, label: `Post-scan Collection Analysis: ${lib.name}`, sourceId: source.source_id, libraryId: lib.id })
-        }
-        if (lib.type === LibraryType.Music) {
-          tq.addTask({ type: TaskType.MusicCompleteness, label: `Post-scan Music Analysis: ${lib.name}`, sourceId: source.source_id })
-        }
+        await tq.submitAnalysis({ kind: 'library', sourceId: source.source_id, libraryId: lib.id })
       }
     }
-    getWishlistCompletionService().checkAndComplete().catch(err => {
-      this.logging.error('[SourceManager]', 'Post-scan wishlist check failed:', err)
-    })
+    try {
+      await getWishlistCompletionService().checkAndComplete()
+    } catch (error) {
+      this.logging.error('[SourceManager]', 'Post-scan wishlist check failed:', error)
+    }
   }
 
   async getAggregatedStats() { await this.initialize(); return this.db.stats.getAggregatedSourceStats() }

@@ -58,8 +58,6 @@ function getOptimizationDecision(mediaId: number): Promise<OptimizationDecision>
 export function ConversionRecommendation({ item, compact = false }: { item: MediaItem; compact?: boolean }) {
   const [decisionState, setDecisionState] = useState<DecisionState | null>(null)
   const [showTranscodeModal, setShowTranscodeModal] = useState(false)
-  const [remuxing, setRemuxing] = useState(false)
-  const [remuxError, setRemuxError] = useState<string | null>(null)
   const mediaId = item.id
   const currentState = mediaId != null && decisionState?.mediaId === mediaId ? decisionState : null
   const decision = currentState?.decision ?? null
@@ -91,23 +89,9 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
   const canExecute = (mechanism: OptimizationDecisionMechanism) => mechanism.status === 'executable' && mechanism.estimatedSavingsBytes != null && mechanism.estimatedSavingsBytes > 0
   const removeTracks = canExecute(decision.trackRemoval)
   const transcode = canExecute(decision.audioTranscode) || canExecute(decision.videoTranscode)
-  const requestRemux = async () => {
-    if (!mediaId) return
-    setRemuxing(true)
-    setRemuxError(null)
-    try {
-      await window.electronAPI.optimizationRequestLocalRemux(mediaId, true)
-      setDecisionState({ mediaId, decision: await getOptimizationDecision(mediaId), error: null })
-    } catch (reason) {
-      setRemuxError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setRemuxing(false)
-    }
-  }
   return <div className={`${compact ? 'text-[10px]' : 'text-xs'} mt-3 rounded-md border border-primary/20 bg-primary/5 p-3`}>
-    {remuxError && <div className="mb-2 text-destructive">{remuxError}</div>}
     <div className="mb-2 flex items-center gap-2 font-semibold text-primary"><Zap className="h-3.5 w-3.5" />Disk optimization</div>
-    <MechanismRow label="Remove audio tracks" mechanism={decision.trackRemoval} action={removeTracks ? (remuxing ? 'Working' : 'Remove audio tracks') : undefined} onAction={requestRemux} />
+    <MechanismRow label="Remove audio tracks" mechanism={decision.trackRemoval} action={removeTracks && item.file_path ? 'Review stream pruning' : undefined} onAction={() => setShowTranscodeModal(true)} />
     <MechanismRow label="Transcode audio" mechanism={decision.audioTranscode} action={decision.primaryAction === 'transcode-audio' && canExecute(decision.audioTranscode) ? 'Transcode audio' : undefined} onAction={() => setShowTranscodeModal(true)} />
     <MechanismRow label="Transcode video" mechanism={decision.videoTranscode} action={decision.primaryAction === 'transcode-video' && canExecute(decision.videoTranscode) ? 'Transcode video' : undefined} onAction={() => setShowTranscodeModal(true)} />
     {!compact && <div className="mt-3 border-t border-border/30 pt-3">
@@ -121,6 +105,6 @@ export function ConversionRecommendation({ item, compact = false }: { item: Medi
       <div className="mt-2">Language confidence: {decision.trackRemoval.confidence}</div>
     </div>}
     {!removeTracks && !transcode && <div className="pt-2 text-muted-foreground">No executable disk optimization is available.</div>}
-    {showTranscodeModal && mediaId && <TranscodeModal mediaId={mediaId} onClose={() => setShowTranscodeModal(false)} />}
+    {showTranscodeModal && mediaId && <TranscodeModal mediaId={mediaId} mode={removeTracks ? 'remux' : 'transcode'} onClose={() => setShowTranscodeModal(false)} />}
   </div>
 }

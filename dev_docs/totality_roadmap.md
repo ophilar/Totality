@@ -334,3 +334,14 @@
 - [x] Preserve provider failures in task outcomes, enrich Plex audio metadata from local analysis, and refresh stale TMDB movie collection recipes.
 - [x] Finish lower-concurrency full-suite validation and build the Windows installer; renderer and service flows pass component and integration tests.
 - [ ] Launch the packaged installer build against an isolated user-data directory and verify Optimize interaction visually.
+
+## TV analysis cleanup convergence - 2026-10-02
+- [x] Make successful TV series analysis own its backup and stale-summary reconciliation for every affected source/library scope, independent of whether the caller supplied a library ID.
+- [x] Remove the task queue's separate cleanup implementation so all-series callers share one app-owned data workflow.
+
+## Unified analysis queue and optimization convergence - 2026-10-02
+- [x] Route scoped analysis requests and successful scan follow-up through persisted analysis jobs planned by `AnalysisTaskPlanner`.
+- [x] Add artist scope, scoped music filters, serialized queue acceptance, cancellation by task ID, and explicit stage outcomes.
+- [x] Route stream pruning through reviewed preflight and queued optimization; remove renderer-callable direct remux and obsolete series-analysis/dry-run entry points.
+  - [x] Run full automated suite and Windows package build; packaged UI and live database flows remain acceptance gates.
+  - [ ] Exercise packaged UI and real-database scan, scoped cleanup, restart, cancellation, and optimization flows.

@@ -243,10 +243,10 @@ export function TVShowDetails({
               }}
               disabled={isAnalyzing}
               className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 cursor-pointer"
-              title="Analyze Series"
+              title="Analyze"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Series'}
+              {isAnalyzing ? 'Analyzing...' : 'Analyze'}
             </button>
             {onTranscodeShow && (
               <button

@@ -107,7 +107,7 @@ describe('ShowCard', () => {
     const menuButton = screen.getByRole('button')
     await act(async () => { fireEvent.click(menuButton) })
 
-    const analyzeOption = screen.getByText('Analyze Series')
+    const analyzeOption = screen.getByText('Analyze')
     expect(analyzeOption).toBeDefined()
     await act(async () => { fireEvent.click(analyzeOption) })
     expect(onAnalyzeSeries).toHaveBeenCalledTimes(1)

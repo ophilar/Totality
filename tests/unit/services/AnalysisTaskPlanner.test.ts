@@ -1,40 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { planAnalysisTasks } from '@main/services/AnalysisTaskPlanner'
-import { LibraryType, TaskType } from '@main/types/database'
+import { planAnalysisStages } from '@main/services/AnalysisTaskPlanner'
+import type { AnalysisScope } from '@shared/analysisScope'
+import { LibraryType } from '@main/types/database'
 
-describe('planAnalysisTasks', () => {
-  it('selects only stages applicable to each library type', () => {
-    const tasks = planAnalysisTasks([
-      { sourceId: 'plex', libraryId: 'movies', libraryType: LibraryType.Movie },
-      { sourceId: 'plex', libraryId: 'shows', libraryType: LibraryType.Show },
-      { sourceId: 'plex', libraryId: 'music', libraryType: LibraryType.Music },
-    ])
-
-    expect(tasks).toEqual([
-      { type: TaskType.QualityAnalysis, label: 'Analyze quality (plex)', sourceId: 'plex', libraryId: 'movies' },
-      { type: TaskType.CollectionCompleteness, label: 'Analyze collections (plex)', sourceId: 'plex', libraryId: 'movies' },
-      { type: TaskType.QualityAnalysis, label: 'Analyze quality (plex)', sourceId: 'plex', libraryId: 'shows' },
-      { type: TaskType.SeriesCompleteness, label: 'Analyze TV completeness (plex)', sourceId: 'plex', libraryId: 'shows' },
-      { type: TaskType.MusicCompleteness, label: 'Analyze music (plex)', sourceId: 'plex' },
-    ])
+describe('planAnalysisStages', () => {
+  it('selects ordered stages for each scoped request', () => {
+    const cases: Array<[AnalysisScope, string[]]> = [
+      [{ kind: 'item', mediaId: 3 }, ['quality']],
+      [{ kind: 'show', sourceId: 's', libraryId: 'tv', title: 'Show', seriesIdentityKey: 'id:1' }, ['quality', 'series-completeness']],
+      [{ kind: 'collection', collectionId: 5 }, ['quality', 'collection-completeness']],
+      [{ kind: 'album', albumId: 7 }, ['music-quality', 'music-completeness']],
+      [{ kind: 'artist', artistId: 9 }, ['music-quality', 'artist-completeness', 'owned-album-completeness']],
+    ]
+    for (const [scope, expected] of cases) expect(planAnalysisStages(scope).map(stage => stage.name)).toEqual(expected)
   })
 
-  it('plans every applicable stage for mixed libraries and one music task per source', () => {
-    const tasks = planAnalysisTasks([
-      { sourceId: 'local', libraryId: 'mixed', libraryType: LibraryType.Mixed },
-      { sourceId: 'local', libraryId: 'music', libraryType: LibraryType.Music },
+  it('selects source and library scoped quality and completeness stages for mixed and all-library work', () => {
+    const stages = planAnalysisStages({ kind: 'all-libraries' }, [
+      { sourceId: 'one', libraryId: 'mixed', libraryType: LibraryType.Mixed },
+      { sourceId: 'two', libraryId: 'music', libraryType: LibraryType.Music },
     ])
-
-    expect(tasks.map(task => task.type)).toEqual([
-      TaskType.QualityAnalysis,
-      TaskType.SeriesCompleteness,
-      TaskType.CollectionCompleteness,
-      TaskType.MusicCompleteness,
+    expect(stages.map(stage => [stage.name, stage.sourceId, stage.libraryId])).toEqual([
+      ['quality', 'one', 'mixed'], ['series-completeness', 'one', 'mixed'], ['collection-completeness', 'one', 'mixed'], ['music-quality', 'one', 'mixed'], ['music-completeness', 'one', 'mixed'],
+      ['music-quality', 'two', 'music'], ['music-completeness', 'two', 'music'],
     ])
-    expect(tasks.filter(task => task.type === TaskType.MusicCompleteness)).toHaveLength(1)
-  })
-
-  it('does not create tasks for an empty scope', () => {
-    expect(planAnalysisTasks([])).toEqual([])
   })
 })

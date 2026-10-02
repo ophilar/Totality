@@ -202,7 +202,7 @@ export class MovieCollectionService {
     const details = await this.tmdb.getCollectionDetails(collectionId)
     if (!details?.parts) return null
     const tmdbIds = details.parts.map(p => String(p.id))
-    const ownedMap = await this.db.media.getItemsByTmdbIds(tmdbIds)
+    const ownedMap = await this.db.media.getItemsByTmdbIds(tmdbIds, { sourceId, libraryId })
 
     const movies: CollectionMovie[] = details.parts.map((p: TMDBCollectionPart) => {
       const id = String(p.id)

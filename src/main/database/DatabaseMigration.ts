@@ -140,6 +140,8 @@ export async function runMigrations(db: Client): Promise<void> {
 
   // Artist & Album Completeness
   await ensureColumn(db, 'artist_completeness', 'library_id', "TEXT NOT NULL DEFAULT ''")
+  await ensureColumn(db, 'artist_completeness', 'artist_id', 'INTEGER')
+  await ensureColumn(db, 'artist_completeness', 'source_id', 'TEXT')
   await ensureColumn(db, 'artist_completeness', 'total_size', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'artist_completeness', 'efficiency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'artist_completeness', 'storage_debt_bytes', 'INTEGER NOT NULL DEFAULT 0')
@@ -181,6 +183,7 @@ export async function runMigrations(db: Client): Promise<void> {
   await ensureColumn(db, 'library_scans', 'allow_expanded_matching', 'INTEGER NOT NULL DEFAULT 0')
 
   await migrateNullableEvidenceScores(db)
+  await migrateScopedArtistCompleteness(db)
 
   getLoggingService().debug('[DatabaseMigration]', 'Running complex migrations...')
   await migrateCheckConstraints(db)
@@ -483,6 +486,7 @@ async function migrateCheckConstraints(db: Client): Promise<void> {
 
 async function createIndexes(db: Client): Promise<void> {
   const indexes = [
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_artist_completeness_owner ON artist_completeness(source_id, library_id, artist_id)',
     'CREATE INDEX IF NOT EXISTS idx_media_items_tmdb_id ON media_items(tmdb_id) WHERE tmdb_id IS NOT NULL',
     'CREATE INDEX IF NOT EXISTS idx_media_items_imdb_id ON media_items(imdb_id) WHERE imdb_id IS NOT NULL',
     'CREATE INDEX IF NOT EXISTS idx_media_items_year ON media_items(year) WHERE year IS NOT NULL',
@@ -490,6 +494,49 @@ async function createIndexes(db: Client): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL'
   ]
   for (const idx of indexes) await db.execute(idx)
+}
+
+async function migrateScopedArtistCompleteness(db: Client): Promise<void> {
+  const indexes = await db.execute('PRAGMA index_list(artist_completeness)')
+  let uniqueNameOnly = false
+  for (const index of indexes.rows) {
+    if (Number(index.unique) !== 1) continue
+    const name = String(index.name)
+    const columns = await db.execute(`PRAGMA index_info(${quoteIdentifier(name)})`)
+    if (columns.rows.length === 1 && columns.rows[0]?.name === 'artist_name') uniqueNameOnly = true
+  }
+  if (!uniqueNameOnly) return
+  getLoggingService().info('[DatabaseMigration]', 'Rebuilding artist completeness keys while preserving unowned legacy rows')
+  const transaction = await db.transaction('write')
+  try {
+    await transaction.execute('ALTER TABLE artist_completeness RENAME TO artist_completeness_legacy_unscoped')
+    await transaction.execute(`CREATE TABLE artist_completeness (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, artist_name TEXT NOT NULL, artist_id INTEGER, source_id TEXT,
+      musicbrainz_id TEXT, library_id TEXT NOT NULL DEFAULT '', total_albums INTEGER NOT NULL,
+      owned_albums INTEGER NOT NULL, total_singles INTEGER NOT NULL, owned_singles INTEGER NOT NULL,
+      total_eps INTEGER NOT NULL, owned_eps INTEGER NOT NULL, missing_albums TEXT NOT NULL DEFAULT '[]',
+      missing_singles TEXT NOT NULL DEFAULT '[]', missing_eps TEXT NOT NULL DEFAULT '[]',
+      completeness_percentage REAL NOT NULL, country TEXT, active_years TEXT, artist_type TEXT, thumb_url TEXT,
+      efficiency_score INTEGER NOT NULL DEFAULT 0, storage_debt_bytes INTEGER NOT NULL DEFAULT 0,
+      total_size INTEGER NOT NULL DEFAULT 0, last_sync_at TEXT, created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    await transaction.execute(`INSERT INTO artist_completeness (
+      id, artist_name, artist_id, source_id, musicbrainz_id, library_id, total_albums, owned_albums,
+      total_singles, owned_singles, total_eps, owned_eps, missing_albums, missing_singles, missing_eps,
+      completeness_percentage, country, active_years, artist_type, thumb_url, efficiency_score,
+      storage_debt_bytes, total_size, last_sync_at, created_at, updated_at
+    ) SELECT id, artist_name, artist_id, source_id, musicbrainz_id, library_id, total_albums, owned_albums,
+      total_singles, owned_singles, total_eps, owned_eps, missing_albums, missing_singles, missing_eps,
+      completeness_percentage, country, active_years, artist_type, thumb_url, efficiency_score,
+      storage_debt_bytes, total_size, last_sync_at, created_at, updated_at FROM artist_completeness_legacy_unscoped`)
+    await transaction.execute('DROP TABLE artist_completeness_legacy_unscoped')
+    await transaction.execute('CREATE UNIQUE INDEX idx_artist_completeness_owner ON artist_completeness(source_id, library_id, artist_id)')
+    await transaction.commit()
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  }
 }
 
 async function repairInvalidMusicRelationships(db: Client): Promise<void> {

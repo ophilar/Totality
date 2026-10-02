@@ -121,6 +121,13 @@ export function useLibraryEventListeners({
         loadMedia()
         loadStats(activeSourceId || undefined)
       }
+      if (pendingTaskTypes.has('analysis')) {
+        loadMedia()
+        loadStats(activeSourceId || undefined)
+        loadCompletenessData()
+        loadMusicData()
+        loadMusicCompletenessData()
+      }
       if (pendingTaskTypes.has('series-completeness') || pendingTaskTypes.has('collection-completeness')) {
         loadCompletenessData()
       }
@@ -143,24 +150,22 @@ export function useLibraryEventListeners({
 
     // Listen for task queue state updates to sync analyzing state
     const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      const s = state as { currentTask: { type: string; progress?: AnalysisProgress } | null }
+      const s = state as { currentTask: { type: string; progress?: AnalysisProgress; id?: string; status?: string; analysisScope?: { kind?: string } } | null }
       if (s.currentTask) {
+        if (s.currentTask.status === 'cancelling') {
+          setIsAnalyzing(true)
+          setAnalysisProgress({ current: 0, total: 1, currentItem: 'Cancelling…', phase: 'cancelling' })
+        }
         const taskType = s.currentTask.type
-        if (taskType === 'series-completeness') {
+        if (taskType === 'analysis') {
           setIsAnalyzing(true)
-          setAnalysisType('series')
+          setAnalysisType(s.currentTask.analysisScope?.kind === 'show' ? 'series' : s.currentTask.analysisScope?.kind === 'collection' ? 'collections' : s.currentTask.analysisScope?.kind === 'album' || s.currentTask.analysisScope?.kind === 'artist' ? 'music' : null)
           if (s.currentTask.progress) {
             setAnalysisProgress(s.currentTask.progress)
           }
-        } else if (taskType === 'collection-completeness') {
+        } else if (taskType === 'collection-completeness' || taskType === 'music-completeness' || taskType === 'series-completeness') {
           setIsAnalyzing(true)
-          setAnalysisType('collections')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
-          }
-        } else if (taskType === 'music-completeness') {
-          setIsAnalyzing(true)
-          setAnalysisType('music')
+          setAnalysisType(taskType === 'series-completeness' ? 'series' : taskType === 'collection-completeness' ? 'collections' : 'music')
           if (s.currentTask.progress) {
             setAnalysisProgress(s.currentTask.progress)
           }

@@ -131,8 +131,8 @@ describe('MusicBrainzService (No Mocks)', () => {
   })
 
   it('returns cancelled without leaving a transaction open', async () => {
-    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'a1', name: 'Radiohead', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
-    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: 'a2', name: 'Radiohead 2', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', library_id: 'music', provider_id: 'a1', name: 'Radiohead', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
+    await db.music.upsertArtist({ source_id: 'src', source_type: 'local', library_id: 'music', provider_id: 'a2', name: 'Radiohead 2', musicbrainz_id: '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' })
     const original = service.analyzeArtistCompleteness.bind(service)
     let calls = 0
     ;(service as unknown as { analyzeArtistCompleteness: (...args: unknown[]) => Promise<unknown> }).analyzeArtistCompleteness = async (...args: unknown[]) => {
@@ -149,7 +149,7 @@ describe('MusicBrainzService (No Mocks)', () => {
 
   it('resets the consecutive-error counter after a successful response', async () => {
     for (let i = 0; i < 6; i++) {
-      await db.music.upsertArtist({ source_id: 'src', source_type: 'local', provider_id: `reset${i}`, name: i === 1 ? 'Radiohead' : `Reset ${i}`, musicbrainz_id: i === 1 ? '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' : `mbid-${i}` })
+      await db.music.upsertArtist({ source_id: 'src', source_type: 'local', library_id: 'music', provider_id: `reset${i}`, name: i === 1 ? 'Radiohead' : `Reset ${i}`, musicbrainz_id: i === 1 ? '10ad886a-ca4c-49dc-8a9d-e747d3fc2331' : `mbid-${i}` })
     }
     const original = service.analyzeArtistCompleteness.bind(service)
     let calls = 0

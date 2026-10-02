@@ -323,18 +323,12 @@ describe('TranscodingService', () => {
   })
 
   describe('preflightShowTranscode Advisory', () => {
-    it('analyzes and persists a movie during individual optimization preflight', async () => {
+    it('requires the scoped analysis job to persist file evidence before optimization preflight', async () => {
       const moviePath = mediaPath('Movie.avi')
       const mediaItemId = await upsertMediaItem({
         title: 'Movie', type: 'movie', file_path: moviePath, file_size: 4_000, duration: 120_000,
         source_id: 'src1', source_type: 'local', library_id: 'movies', video_codec: 'h264', video_bitrate: 6000,
       })
-      mockAnalyzerInstance.analyzeCompleteFile.mockResolvedValueOnce({
-        success: true, filePath: PathUtils.toDatabasePath(moviePath), container: 'matroska', duration: 120_000,
-        video: { index: 0, codec: 'h264', width: 1920, height: 1080, hdrFormat: 'SDR', bitrate: 6000 },
-        audioTracks: [], subtitleTracks: [],
-      })
-
       const preflight = await service.preflightShowTranscode({
         mediaItemId, sourceId: 'src1', libraryId: 'movies',
         options: { optimizationMode: 'smart', targetProfileId: 'builtin:plex-webos-4-lg-b8' },
@@ -342,13 +336,16 @@ describe('TranscodingService', () => {
 
       expect(preflight.episodes).toHaveLength(1)
       expect(preflight.episodes[0].mediaItemId).toBe(mediaItemId)
-      expect(mockAnalyzerInstance.analyzeCompleteFile).toHaveBeenCalledWith(PathUtils.toDatabasePath(moviePath))
-      expect(await db.media.getItemByPath(moviePath)).toMatchObject({ deep_analysis: expect.any(String) })
-      expect(await db.media.getQualityScoreByMediaId(mediaItemId)).toBeTruthy()
+      expect(preflight.episodes[0].compatible).toBe(false)
+      expect(preflight.episodes[0].reason).toContain('no persisted file analysis')
+      expect(mockAnalyzerInstance.analyzeCompleteFile).not.toHaveBeenCalled()
+      expect((await db.media.getItemByPath(moviePath))?.deep_analysis).toBeFalsy()
+      expect(await db.media.getQualityScoreByMediaId(mediaItemId)).toBeNull()
     })
 
     it('populates recommendedAction, sourceTier, and adviceReason in preflight episode items', async () => {
       const episodePath = mediaPath('Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv')
+      const episodeFileSize = (await fsPromises.stat(episodePath)).size
       await upsertMediaItem({
           id: 10,
           source_id: 'src1',
@@ -379,6 +376,7 @@ describe('TranscodingService', () => {
           deep_analysis: JSON.stringify({
             success: true,
             filePath: PathUtils.toDatabasePath(episodePath),
+            fileSize: episodeFileSize,
             container: 'matroska',
             overallBitrate: 6000,
             video: { index: 0, codec: 'h264', profile: 'High', level: 51, width: 1920, height: 1080, frameRate: 24, bitDepth: 8, hdrFormat: 'SDR' },

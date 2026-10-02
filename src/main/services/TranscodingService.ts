@@ -242,29 +242,10 @@ export class TranscodingService {
         }
         await this.assertAuthorizedItem(episode.id)
         const stat = await fs.stat(episode.file_path)
-        const analysis = request.mediaItemId === undefined
-          ? await getMediaFileAnalyzer().analyzeFile(episode.file_path)
-          : await getMediaFileAnalyzer().analyzeCompleteFile(episode.file_path)
-        if (!analysis.success || analysis.filePath !== episode.file_path || !analysis.video) {
-          throw new Error(`Current media analysis is invalid for "${label}"`)
-        }
-        if (request.mediaItemId !== undefined) {
-          await getDatabase().media.updateDeepAnalysisByPath(episode.file_path, analysis, new Date().toISOString())
-          await getDatabase().media.upsertQualityScore(await getQualityAnalyzer().analyzeMediaItem({
-            ...episode,
-            video_codec: analysis.video.codec ?? episode.video_codec,
-            video_bitrate: analysis.video.bitrate ?? episode.video_bitrate,
-            width: analysis.video.width ?? episode.width,
-            height: analysis.video.height ?? episode.height,
-            duration: analysis.duration ?? episode.duration,
-            audio_codec: analysis.audioTracks[0]?.codec ?? episode.audio_codec,
-            audio_channels: analysis.audioTracks[0]?.channels ?? episode.audio_channels,
-            audio_bitrate: analysis.audioTracks[0]?.bitrate ?? episode.audio_bitrate,
-            audio_tracks: JSON.stringify(analysis.audioTracks),
-            subtitle_tracks: JSON.stringify(analysis.subtitleTracks),
-          }, analysis))
-        } else if (!episode.deep_analysis) {
-          throw new Error(`Episode "${label}" has no persisted analysis; analyze the show before optimizing it`)
+        if (!episode.deep_analysis) throw new Error(`Episode "${label}" has no persisted file analysis; analyze the item before optimizing it`)
+        const analysis = JSON.parse(episode.deep_analysis) as FileAnalysisResult
+        if (!analysis.success || analysis.filePath !== episode.file_path || analysis.fileSize !== stat.size || !analysis.video) {
+          throw new Error(`Persisted file analysis is missing or stale for "${label}"; analyze the item before optimizing it`)
         }
         this.analysisCache.set(episode.file_path, analysis)
         const advice = getQualityAnalyzer().getOptimizationAdvice(episode, analysis)
@@ -352,6 +333,40 @@ export class TranscodingService {
     return result
   }
 
+  async preflightRemux(mediaItemId: number): Promise<ShowTranscodePreflight> {
+    const item = await getDatabase().media.getItemById(mediaItemId)
+    if (!item?.source_id || !item.library_id) throw new Error('Media item has no local source and library identity')
+    await this.assertAuthorizedItem(mediaItemId)
+    const file = item.file_path
+    if (!file) throw new Error('Media item has no local file path')
+    const stat = await fs.stat(file)
+    if (!item.deep_analysis) throw new Error('Persisted file analysis is missing; analyze the item before stream pruning')
+    const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
+    if (!analysis.success || analysis.filePath !== file || analysis.fileSize !== stat.size || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
+    const retained = analysis.audioTracks.filter(track => track.isDefault || track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio).map(track => track.index)
+    if (retained.length === analysis.audioTracks.length) throw new Error('No safe stream pruning operation is available; every audio stream must be retained')
+    const streamSelection: StreamSelectionPolicy = { audio: 'explicit', audioIndexes: retained, subtitle: 'all' }
+    // The preflight stores the explicit retained stream indexes as reviewed evidence.
+    const retainedAudioIndexes = retained
+    const options: TranscodeOptions = { optimizationMode: 'remux_only', targetCodec: (analysis.video?.codec || 'h264') as TranscodeOptions['targetCodec'], outputMode: 'quarantine-replace', useGpu: false, gpuId: '', encoder: 'copy', preset: '', customArgs: '', transcodingEngine: 'ffmpeg', targetSize: '', streamSelection }
+    const id = `remux_${Date.now()}_${randomUUID()}`
+    const fingerprint = await sha256File(file)
+    const result: ShowTranscodePreflight = {
+      preflightId: id,
+      batchId: id,
+      seriesTitle: item.title,
+      episodeCount: 1,
+      compatible: true,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      userApproved: false,
+      episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, recommendedAction: 'stream_pruning', decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
+    }
+    const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
+    this.showPreflights.set(id, { request, result })
+    await getDatabase().config.setSetting(`transcoding.preflight.${id}`, JSON.stringify({ request, result }))
+    return result
+  }
+
   async queueShowTranscode(preflightId: string): Promise<{ batchId: string; queuedMediaItemIds: number[] }> {
     let preflight = this.showPreflights.get(preflightId)
     if (!preflight) {
@@ -378,6 +393,12 @@ export class TranscodingService {
     }
     if (preflight.result.userApproved && preflight.result.approvalFingerprint !== this.preflightFingerprint(preflight.result)) throw new Error('Approved show plan changed; run preflight again')
     for (const episode of queueableEpisodes) {
+      if (episode.options?.optimizationMode === 'remux_only' && episode.sourceAnalysis) {
+        const item = await getDatabase().media.getItemById(episode.mediaItemId)
+        if (!item?.file_path) throw new Error('Remux source path is missing; run preflight again')
+        const current = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path)
+        if (!current.success || JSON.stringify(current.audioTracks) !== JSON.stringify(episode.sourceAnalysis.audioTracks)) throw new Error('Remux stream plan is stale; run preflight again')
+      }
       if (episode.targetProfile && JSON.stringify(await getDatabase().playbackTargetProfiles.get(episode.targetProfile.id)) !== JSON.stringify(episode.targetProfile)) throw new Error('Playback profile changed after review; run preflight again')
       if (episode.samplePaths && (await Promise.all(episode.samplePaths.map(sha256File))).some((hash, index) => hash !== episode.sampleHashes![index])) throw new Error('Reviewed samples changed; run preflight again')
     }

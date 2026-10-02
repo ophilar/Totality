@@ -107,7 +107,7 @@ describe('TaskQueue Analysis Outcome & Consolidated Notifications', () => {
     }
 
     expect(completedTask).toBeDefined()
-    expect(completedTask?.status).toBe(TaskStatus.Completed)
+    expect(completedTask?.status).toBe(TaskStatus.Partial)
     expect(completedTask?.result?.outcome).toEqual(mockOutcome)
 
     const notifications = await db.notifications.getNotifications()

@@ -22,11 +22,9 @@ export const IPC_CHANNELS = {
     GET_MANAGED_STATE: 'arr:getManagedState'
   },
   OPTIMIZATION: {
-    DRY_RUN: 'optimization:dryRun',
     REQUEST_ARR_SEARCH: 'optimization:requestArrSearch',
     GET_PENDING: 'optimization:getPending',
     DECIDE_LANGUAGE: 'optimization:decideLanguage',
-    LOCAL_REMUX: 'optimization:requestLocalRemux',
     GET_REMUX_JOB: 'optimization:getRemuxJob',
     GET_DECISION: 'optimization:getDecision'
   },

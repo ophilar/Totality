@@ -237,7 +237,7 @@ describe('MusicArtistDetails Component', () => {
       renderWithProviders(<MusicArtistDetails {...defaultProps} onAnalyzeArtist={mockAnalyze} />)
     })
 
-    const analyzeBtn = screen.getByText('Analyze Completeness')
+    const analyzeBtn = screen.getByText('Analyze')
     await act(async () => {
       fireEvent.click(analyzeBtn)
     })
@@ -250,7 +250,7 @@ describe('MusicArtistDetails Component', () => {
       await analyzePromise
     })
 
-    expect(screen.getByText('Analyze Completeness')).toBeDefined()
+    expect(screen.getByText('Analyze')).toBeDefined()
   })
 
   it('triggers onFixArtistMatch when fix match button is clicked', async () => {

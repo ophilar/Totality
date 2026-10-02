@@ -57,8 +57,8 @@ export const musicApi: MusicAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.MUSIC.SEARCH_MB_ARTIST, name),
   musicAnalyzeArtistCompleteness: (artistId: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.MUSIC.ANALYZE_ARTIST_COMPLETENESS, artistId),
-  musicGetArtistCompleteness: (artistName: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, artistName),
+  musicGetArtistCompleteness: (artistId: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MUSIC.GET_ARTIST_COMPLETENESS, artistId),
   musicGetAllArtistCompleteness: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.MUSIC.GET_ALL_ARTIST_COMPLETENESS, sourceId),
 
   // Music - Album Track Completeness
@@ -138,7 +138,7 @@ export interface MusicAPI {
   // MusicBrainz Completeness
   musicSearchMusicBrainzArtist: (name: string) => Promise<unknown[]>
   musicAnalyzeArtistCompleteness: (artistId: number) => Promise<unknown>
-  musicGetArtistCompleteness: (artistName: string) => Promise<unknown | null>
+  musicGetArtistCompleteness: (artistId: number) => Promise<unknown | null>
   musicGetAllArtistCompleteness: (sourceId?: string) => Promise<unknown>
 
   // Album Track Completeness

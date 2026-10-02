@@ -62,10 +62,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
     if (!media?.id) return
     try {
       setIsAnalyzing(true)
-      const result = await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id }) as { analysis?: { deepAnalysis?: { peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } } }
-      if (result.analysis?.deepAnalysis) setDeepAnalysis(result.analysis.deepAnalysis)
-      const refreshed = await window.electronAPI.getMediaItem(media.id)
-      if (refreshed) setMedia(refreshed as MediaItem)
+      await window.electronAPI.mediaAnalyze({ kind: 'item', mediaId: media.id })
     } finally {
       setIsAnalyzing(false)
     }

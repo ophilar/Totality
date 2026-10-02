@@ -171,8 +171,8 @@ describe('TaskQueueService', () => {
       await service.removeTask(taskId)
       expect(sourceManager.stopScan).toHaveBeenCalledOnce()
       const persisted = JSON.parse((await db.config.getSetting('task_queue_state'))!)
-      expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelled' })
-      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelled' }) }))
+      expect(persisted.currentTask).toMatchObject({ id: taskId, status: 'cancelling' })
+      expect(send).toHaveBeenCalledWith('taskQueue:updated', expect.objectContaining({ currentTask: expect.objectContaining({ id: taskId, status: 'cancelling' }) }))
 
       releaseTask()
       await vi.waitFor(() => expect(service.getQueueState().currentTask).toBeNull())
@@ -327,7 +327,7 @@ describe('TaskQueueService', () => {
     await new Promise(resolve => setTimeout(resolve, 25))
 
     const completed = partialService.getQueueState().completedTasks[0]
-    expect(completed.status, completed.error).toBe('completed')
+    expect(completed.status, completed.error).toBe('partial')
     expect(completed.result).toMatchObject({ totalSeries: 2, analyzedSeries: 1, failedSeries: ['"Show B": metadata unavailable'] })
     const notifications = await db.notifications.getNotifications()
     expect(notifications[0]).toMatchObject({ type: 'info', title: 'Series analysis partially completed' })

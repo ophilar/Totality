@@ -20,6 +20,8 @@ import type { Client } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
 
 interface ArtistCompletenessRow {
+  artistId?: number | null
+  sourceId?: string | null
   artistName: string
   musicbrainzId?: string | null
   libraryId: string
@@ -695,6 +697,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     }
 
     if (filters.sourceId) conditions.push(eq(schema.musicTracks.sourceId, filters.sourceId))
+    if (filters.libraryId) conditions.push(eq(schema.musicTracks.libraryId, filters.libraryId))
     if (filters.searchQuery) {
       conditions.push(
         or(
@@ -1031,10 +1034,13 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
   }
 
   async upsertArtistCompleteness(data: ArtistCompleteness): Promise<void> {
+    if (!data.artist_id || !data.source_id || !data.library_id) throw new Error('Artist completeness requires persisted artist, source, and library ownership')
     await this.drizzle
       .insert(schema.artistCompleteness)
       .values({
         artistName: data.artist_name,
+        artistId: data.artist_id,
+        sourceId: data.source_id,
         musicbrainzId: data.musicbrainz_id || null,
         libraryId: data.library_id || '',
         totalAlbums: data.total_albums || 0,
@@ -1059,7 +1065,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
         updatedAt: sql`(datetime('now'))`,
       })
       .onConflictDoUpdate({
-        target: schema.artistCompleteness.artistName,
+        target: [schema.artistCompleteness.sourceId, schema.artistCompleteness.libraryId, schema.artistCompleteness.artistId],
         set: {
           musicbrainzId: data.musicbrainz_id || null,
           totalAlbums: data.total_albums || 0,
@@ -1085,11 +1091,11 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
       })
   }
 
-  async getArtistCompleteness(artistName: string): Promise<ArtistCompleteness | null> {
+  async getArtistCompleteness(artistId: number): Promise<ArtistCompleteness | null> {
     const row = await this.drizzle
       .select()
       .from(schema.artistCompleteness)
-      .where(eq(schema.artistCompleteness.artistName, artistName))
+      .where(eq(schema.artistCompleteness.artistId, artistId))
       .get()
     return row ? this.mapDrizzleToArtistCompleteness(row) : null
   }
@@ -1116,6 +1122,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
     const artistsQuery = sql`
       SELECT 
         ac.id,
+        ac.artist_id as artistId,
+        ac.source_id as sourceId,
         ac.artist_name as artistName,
         ac.musicbrainz_id as musicbrainzId,
         ac.library_id as libraryId,
@@ -1144,7 +1152,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
           ELSE 100
         END AS completenessPercentage
       FROM artist_completeness ac
-      ${sourceId ? sql`INNER JOIN music_artists ma ON ac.artist_name = ma.name WHERE ma.source_id = ${sourceId}` : sql``}
+      WHERE ac.artist_id IS NOT NULL ${sourceId ? sql`AND ac.source_id = ${sourceId}` : sql``}
       ORDER BY ac.artist_name ASC
     `
 
@@ -1171,7 +1179,7 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
             CASE WHEN ${singlesEnabled} THEN (CASE WHEN ac.total_singles > ac.owned_singles THEN ac.total_singles - ac.owned_singles ELSE 0 END) ELSE 0 END
           ) AS missing_count
         FROM artist_completeness ac
-        ${sourceId ? sql`INNER JOIN music_artists ma ON ac.artist_name = ma.name WHERE ma.source_id = ${sourceId}` : sql``}
+        WHERE ac.artist_id IS NOT NULL ${sourceId ? sql`AND ac.source_id = ${sourceId}` : sql``}
       )
     `
 
@@ -1506,6 +1514,8 @@ export class MusicRepository extends BaseRepository<typeof schema.musicTracks> {
 
   private mapDrizzleToArtistCompleteness(r: ArtistCompletenessRow): ArtistCompleteness {
     return {
+      artist_id: r.artistId ?? undefined,
+      source_id: r.sourceId ?? undefined,
       artist_name: r.artistName,
       musicbrainz_id: r.musicbrainzId || undefined,
       library_id: r.libraryId,

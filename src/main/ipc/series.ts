@@ -3,11 +3,9 @@ import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessS
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getTMDBService } from '@main/services/TMDBService'
 import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
-import { getWindowFromEvent } from '@main/ipc/utils/safeSend'
-import { createProgressUpdater } from '@main/ipc/utils/progressUpdater'
-import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesAnalyzeAllTupleSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema } from '@main/validation/schemas'
+import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
-import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import type { MediaItem } from '@main/types/database'
@@ -81,21 +79,6 @@ export function registerSeriesHandlers() {
     getStatsCacheService().invalidate()
     return res
   }
-
-  createValidatedIpcHandlerWithEvent('series:analyzeAll', SeriesAnalyzeAllTupleSchema, async (event, sourceId, libraryId) => {
-    const win = getWindowFromEvent(event)
-    const { onProgress, flush } = createProgressUpdater(win, 'series:progress', 'media')
-    try {
-      const res = await service.analyzeAllSeries(sourceId, libraryId, onProgress)
-      getStatsCacheService().invalidate()
-      return res
-    } finally { flush() }
-  })
-
-  createIpcHandler('series:cancelAnalysis', async () => {
-    service.cancel()
-    return { success: true }
-  })
 
   createValidatedIpcHandler('series:analyzeByIdentity', SeriesIdentityTupleSchema, async (title, sourceId, seriesIdentityKey, libraryId) => {
     return await analyzeIdentityScoped(title, sourceId, seriesIdentityKey, libraryId)

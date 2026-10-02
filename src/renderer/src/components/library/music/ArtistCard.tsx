@@ -78,7 +78,7 @@ export const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, 
                     className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                    {isAnalyzing ? 'Analyzing...' : 'Analyze Completeness'}
+                    {isAnalyzing ? 'Analyzing...' : 'Analyze'}
                   </button>
                 )}
                 {onFixMatch && (

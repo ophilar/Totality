@@ -54,6 +54,7 @@ export function registerTranscodingHandlers(): void {
   createValidatedIpcHandler('transcoding:preflightShow', PreflightShowTranscodeSchema, async (request) => {
     return await getTranscodingService().preflightShowTranscode(request)
   })
+  createValidatedIpcHandler('transcoding:preflightRemux', z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
 
   createValidatedIpcHandler('transcoding:discardShow', QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
   createValidatedIpcHandler('transcoding:openShowSample', z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {

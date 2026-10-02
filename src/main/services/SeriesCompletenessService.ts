@@ -43,7 +43,19 @@ export class SeriesCompletenessService {
     this.cancelRequested = true
   }
 
-  async analyzeAllSeries(sourceId?: string, libraryId?: string, onProgress?: (prog: SeriesProgress) => void): Promise<AnalysisOutcome & { totalSeries: number; analyzed: number; complete: number; incomplete: number }> {
+  async analyzeAllSeries(
+    sourceId?: string,
+    libraryId?: string,
+    onProgress?: (prog: SeriesProgress) => void,
+    requestedSeries?: { title: string; seriesIdentityKey: string },
+  ): Promise<AnalysisOutcome & {
+    totalSeries: number
+    analyzed: number
+    complete: number
+    incomplete: number
+    reconciliation?: { removed: number; preservedLocked: number }
+    databaseBackupPath?: string
+  }> {
     this.cancelRequested = false
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[], diagnostics: [] as AnalysisDiagnostic[] }
 
@@ -51,7 +63,13 @@ export class SeriesCompletenessService {
     const source = await this.db.sources.getSourceById(sourceId || '')
     if (tmdbApiKey) await this.tmdb.initialize()
 
-    const allEpisodes = await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
+    const selectedEpisodes = requestedSeries
+      ? await this.db.tvShows.getEpisodes(requestedSeries.title, sourceId!, requestedSeries.seriesIdentityKey, libraryId!)
+      : await this.db.media.getItems({ type: MediaItemType.Episode, sourceId, libraryId })
+    if (requestedSeries && selectedEpisodes.some(episode => episode.series_identity_key !== requestedSeries.seriesIdentityKey || episode.source_id !== sourceId || episode.library_id !== libraryId)) {
+      throw new Error('Show episode ownership does not match the requested identity')
+    }
+    const allEpisodes = selectedEpisodes
     const seriesByIdentity = new Map<string, { title: string; identityKey: string; sourceId: string; libraryId: string; episodes: MediaItem[] }>()
 
     for (const episode of allEpisodes) {
@@ -78,7 +96,9 @@ export class SeriesCompletenessService {
       }
     }
 
-    const allCompleteness = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
+    const allCompleteness = requestedSeries
+      ? (await this.db.tvShows.getAllCompleteness(sourceId, libraryId)).filter(row => row.series_identity_key === requestedSeries.seriesIdentityKey)
+      : await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
     const completenessByIdentity = new Map<string, SeriesCompleteness>()
     for (const completeness of allCompleteness) {
       const identityKey = completeness.series_identity_key?.trim()
@@ -94,6 +114,12 @@ export class SeriesCompletenessService {
     try {
       for (let i = 0; i < seriesToAnalyze.length; i++) {
         if (this.cancelRequested) break
+        if (!tmdbApiKey && !completenessByIdentity.has(seriesToAnalyze[i][0])) {
+          const series = seriesToAnalyze[i][1]
+          result.errors.push(`"${series.title}": TMDB configuration is required to create series completeness`)
+          result.diagnostics.push({ itemType: 'series', itemId: series.identityKey, itemName: series.title, stage: 'series-completeness', category: 'unresolved', code: 'TMDB_CONFIGURATION_REQUIRED', message: result.errors[result.errors.length - 1] })
+          continue
+        }
         await new Promise(r => setImmediate(r))
 
         const [seriesKey, series] = seriesToAnalyze[i]
@@ -140,7 +166,6 @@ export class SeriesCompletenessService {
         }
       }
     } finally {
-      await this.db.tvShows.mergeDuplicateShows(sourceId, libraryId)
       getLiveMonitoringService().notifyLibraryUpdated(sourceId)
     }
 
@@ -154,7 +179,7 @@ export class SeriesCompletenessService {
         : result.errors.length > 0
           ? 'partial'
           : 'completed'
-    return {
+    const outcome = {
       ...result,
       processedCount: result.analyzed,
       totalCount: result.totalSeries,
@@ -164,6 +189,52 @@ export class SeriesCompletenessService {
       failedCount,
       completed: status === 'completed',
     } as AnalysisOutcome & { totalSeries: number; analyzed: number; complete: number; incomplete: number }
+
+    if (outcome.status !== 'completed' || this.cancelRequested) return outcome
+
+    const currentSummaries = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
+    const scopes = new Map<string, { sourceId: string; libraryId: string }>()
+    const addScope = (scopeSourceId: string, scopeLibraryId: string): void => {
+      const normalizedSourceId = scopeSourceId.trim()
+      const normalizedLibraryId = scopeLibraryId.trim()
+      if (!normalizedSourceId || !normalizedLibraryId) {
+        throw new Error('Cannot reconcile TV summaries without a persisted source and library scope')
+      }
+      scopes.set(JSON.stringify([normalizedSourceId, normalizedLibraryId]), {
+        sourceId: normalizedSourceId,
+        libraryId: normalizedLibraryId,
+      })
+    }
+
+    for (const episode of allEpisodes) {
+      addScope(episode.source_id ?? '', episode.library_id ?? '')
+    }
+    for (const summary of currentSummaries) {
+      addScope(summary.source_id ?? '', summary.library_id ?? '')
+    }
+
+    if (scopes.size === 0) return outcome
+
+    const databaseBackupPath = await this.db.createDatabaseBackup()
+    if (this.cancelRequested) return outcome
+    const reconciliation = await this.db.withBatch(async () => {
+      if (this.cancelRequested) throw new Error('Series reconciliation cancelled before transaction')
+      let removed = 0
+      let preservedLocked = 0
+      for (const scope of scopes.values()) {
+        const result = await this.db.tvShows.reconcileOrphanedCompleteness(scope.sourceId, scope.libraryId, requestedSeries?.seriesIdentityKey)
+        removed += result.removed
+        preservedLocked += result.preservedLocked
+      }
+      return { removed, preservedLocked }
+    })
+    getLoggingService().info('[SeriesCompleteness]', 'Reconciled TV summaries after completed series analysis', {
+      ...reconciliation,
+      scopeCount: scopes.size,
+      databaseBackupPath,
+    })
+
+    return { ...outcome, reconciliation, databaseBackupPath }
   }
 
   async analyzeSeries(

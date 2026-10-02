@@ -15,13 +15,15 @@ import type { MediaItem } from '@main/types/database'
 
 import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding'
 import { QuickPresetsTab, AdvancedTab, LiveEncodingTab } from './transcoding'
+import { useAnalysisManager } from './hooks/useAnalysisManager'
 
 interface TranscodeModalProps {
   mediaId: number
   onClose: () => void
+  mode?: 'transcode' | 'remux'
 }
 
-export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
+export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [availability, setAvailability] = useState<Availability | null>(null)
   const [loading, setLoading] = useState(true)
@@ -29,8 +31,14 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   const [params, setParams] = useState<TranscodingParams | null>(null)
   const [gpus, setGpus] = useState<GpuInfo[]>([])
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
-  const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[] }> } | null>(null)
+  const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[]; adviceReason?: string }> } | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
+  const [analysisRequired, setAnalysisRequired] = useState(false)
+  const [analysisTaskId, setAnalysisTaskId] = useState<string | null>(null)
+  const { analyze, taskQueueState } = useAnalysisManager()
+  const analysisTask = taskQueueState
+    ? [taskQueueState.currentTask, ...taskQueueState.queue, ...taskQueueState.completedTasks].find(task => task?.id === analysisTaskId)
+    : undefined
 
   const [options, setOptions] = useState<TranscodeOptions>({
     targetCodec: '' as TranscodeOptions['targetCodec'],
@@ -168,12 +176,14 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
   }
 
   const startTranscode = async () => {
-    if (!media?.source_id) return
+    if (!media?.source_id || media.id === undefined) return
     failureReportedRef.current = false
     setStatus('generating')
     try {
       if (!preflight) {
-        const result = await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options }) as typeof preflight
+        const result = (mode === 'remux'
+          ? await window.electronAPI.preflightRemux(media.id)
+          : await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options })) as typeof preflight
         if (!result) throw new Error('Optimization review could not be created')
         setPreflight(result)
         setStatus('idle')
@@ -191,8 +201,20 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
       addToast({ title: 'Optimization queued', type: 'success' })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
+      if (/persisted file analysis|analyze the item/i.test(message)) setAnalysisRequired(true)
       setStatus('idle')
       addToast({ title: `Optimization could not be queued: ${message}`, type: 'error' })
+    }
+  }
+
+  const analyzeRequiredEvidence = async () => {
+    if (!media?.id) return
+    try {
+      const accepted = await analyze({ kind: 'item', mediaId: media.id })
+      setAnalysisTaskId(accepted.taskId)
+      setAnalysisRequired(false)
+    } catch (error) {
+      addToast({ title: `Analysis could not be queued: ${error instanceof Error ? error.message : String(error)}`, type: 'error' })
     }
   }
 
@@ -348,9 +370,18 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
                 {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
                 {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index)}>Open measured sample {index + 1}</button>)}
               </div>)}
+              {mode === 'remux' && preflight.episodes.map(item => <p key={item.mediaItemId} className="text-muted-foreground">Retained audio streams are listed in the reviewed preflight plan: {item.adviceReason}</p>)}
               {preflight.episodes.some(item => item.decisionStatus === 'sample_required') && <label className="flex gap-2 text-sm"><input type="checkbox" checked={samplesReviewed} onChange={event => setSamplesReviewed(event.target.checked)} /> I reviewed and approve the measured sample</label>}
             </section>
           )}
+          {analysisRequired && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-sm">
+            <p className="font-semibold text-amber-200">Current persisted file analysis is required before optimization.</p>
+            <p className="text-muted-foreground">Queue Analyze for this item, then refresh this review after the task finishes. Analysis does not approve or queue optimization.</p>
+            {analysisTask?.status === 'running' || analysisTask?.status === 'cancelling' ? <p>{analysisTask.status === 'cancelling' ? 'Cancelling analysis…' : `Analyzing${analysisTask.progress?.phase ? ` · ${analysisTask.progress.phase}` : ''}`}</p> : null}
+            {analysisTask?.status === 'completed' && <button className="underline" onClick={() => { setPreflight(null); setAnalysisRequired(false); setAnalysisTaskId(null); void startTranscode() }}>Refresh optimization review</button>}
+            {analysisTask?.status === 'partial' && <p>Analysis was partial. Review its diagnostics in Activity before refreshing.</p>}
+            {analysisTask?.status === 'failed' || analysisTask?.status === 'blocked' ? <p>Analysis did not complete. Review its diagnostics in Activity.</p> : null}
+          </div>}
         </div>
 
         {/* Modal Footer Controls */}
@@ -364,6 +395,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
             </button>
 
             <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-3">
+              {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={Boolean(analysisTask && ['queued', 'running', 'cancelling'].includes(analysisTask.status))} className="px-5 py-2.5 rounded-xl border border-border text-xs font-bold disabled:opacity-50">{analysisTask?.status === 'queued' ? 'Analysis queued' : 'Analyze item'}</button>}
               <button 
                 onClick={generateParams}
                 disabled={generating || !availability?.ffmpeg}
@@ -379,7 +411,7 @@ export function TranscodeModal({ mediaId, onClose }: TranscodeModalProps) {
                 className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
               >
                 <Play className="w-4 h-4 fill-current" />
-                {status === 'generating' ? 'Preparing…' : preflight ? 'Queue Optimization' : 'Review Optimization'}
+                {status === 'generating' ? 'Preparing…' : preflight ? (mode === 'remux' ? 'Queue Stream Pruning' : 'Queue Optimization') : 'Review Optimization'}
               </button>
             </div>
           </div>

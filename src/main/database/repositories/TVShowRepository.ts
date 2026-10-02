@@ -593,23 +593,26 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
     await this.drizzle.delete(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.id, id))
   }
 
-  async reconcileOrphanedCompleteness(sourceId: string, libraryId: string): Promise<{ removed: number; preservedLocked: number }> {
+  async reconcileOrphanedCompleteness(sourceId: string, libraryId: string, seriesIdentityKey?: string): Promise<{ removed: number; preservedLocked: number }> {
     if (!sourceId.trim() || !libraryId.trim()) throw new Error('Source and library are required to reconcile TV summaries')
-    const unresolvedEpisodes = await this.db.execute({
-      sql: `SELECT COUNT(*) AS count FROM media_items
-            WHERE type = 'episode' AND source_id = ? AND library_id = ?
-              AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')`,
-      args: [sourceId, libraryId],
-    })
-    const unresolvedCount = Number(unresolvedEpisodes.rows[0]?.count ?? 0)
-    if (unresolvedCount > 0) throw new Error(`Cannot reconcile TV summaries while ${unresolvedCount} scoped episodes have no series identity`)
+    if (!seriesIdentityKey) {
+      const unresolvedEpisodes = await this.db.execute({
+        sql: `SELECT COUNT(*) AS count FROM media_items
+              WHERE type = 'episode' AND source_id = ? AND library_id = ?
+                AND (series_identity_key IS NULL OR TRIM(series_identity_key) = '')`,
+        args: [sourceId, libraryId],
+      })
+      const unresolvedCount = Number(unresolvedEpisodes.rows[0]?.count ?? 0)
+      if (unresolvedCount > 0) throw new Error(`Cannot reconcile TV summaries while ${unresolvedCount} scoped episodes have no series identity`)
+    }
     const episodeRows = await this.db.execute({
       sql: `SELECT DISTINCT series_identity_key FROM media_items
             WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key IS NOT NULL`,
       args: [sourceId, libraryId],
     })
     const currentIdentities = new Set(episodeRows.rows.map(row => String(row.series_identity_key)))
-    const summaries = await this.getAllCompleteness(sourceId, libraryId)
+    const summaries = (await this.getAllCompleteness(sourceId, libraryId))
+      .filter(summary => !seriesIdentityKey || summary.series_identity_key === seriesIdentityKey)
     let removed = 0
     let preservedLocked = 0
 

@@ -530,7 +530,7 @@ export function MediaBrowser({
   const {
     isAnalyzing, setIsAnalyzing, analysisProgress, setAnalysisProgress, analysisType, setAnalysisType,
     handleAnalyzeAll, handleAnalyzeSingleSeries, checkTmdbApiKey,
-  } = useAnalysisManager({ sources, activeSourceId, activeSourceLibraries, loadCompletenessData })
+  } = useAnalysisManager()
 
   const loadActiveSourceLibraries = useCallback(async () => {
     if (activeSourceId) {
@@ -683,7 +683,7 @@ export function MediaBrowser({
                   gridScale={gridScale} viewType={viewType} searchQuery={searchQuery} qualityFilter={qualityFilter}
                   showSourceBadge={!activeSourceId && sources.length > 1}
                   onAnalyzeAlbum={async (id) => { await window.electronAPI.mediaAnalyze({ kind: 'album', albumId: id }); loadMusicCompletenessData() }}
-                  onAnalyzeArtist={async () => { await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' }) }}
+                  onAnalyzeArtist={async (id) => { await window.electronAPI.mediaAnalyze({ kind: 'artist', artistId: id }) }}
                   onArtistCompletenessUpdated={loadMusicCompletenessData}
                   onFixArtistMatch={(id, n) => setMatchFixModal({ isOpen: true, type: 'artist', title: n, artistId: id })}
                   onFixAlbumMatch={(id, t, n) => setMatchFixModal({ isOpen: true, type: 'album', title: t, artistName: n, albumId: id })}
@@ -733,7 +733,7 @@ export function MediaBrowser({
         hasTV={(stats?.totalShows ?? 0) > 0}
         hasMovies={(stats?.totalMovies ?? 0) > 0}
         hasMusic={musicArtists.length > 0}
-        onAnalyzeAll={() => handleAnalyzeAll((stats?.totalShows ?? 0) > 0, (stats?.totalMovies ?? 0) > 0, musicArtists.length > 0)}
+        onAnalyzeAll={handleAnalyzeAll}
         isAnalyzing={isAnalyzing}
         analysisProgress={analysisProgress}
         analysisType={analysisType}

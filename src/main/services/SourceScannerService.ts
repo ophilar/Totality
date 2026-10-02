@@ -104,38 +104,7 @@ export class SourceScannerService {
       // Check if cancelled after the provider finishes
       if (wasCancelled) return this.getCancellerResult(result)
 
-      if (result.success && library) {
-        // BOLT: Analyze music quality if it was a music scan
-        if (library.type === LibraryType.Music) {
-          try {
-            const { getQualityAnalyzer } = await import('./QualityAnalyzer')
-            const analyzer = getQualityAnalyzer()
-            const albums = await this.db.music.getMusicAlbums({ sourceId })
-            const albumIds = albums.map(a => a.id).filter((id): id is number => id != null)
-            const tracksByAlbum = await this.db.music.getMusicTracksByAlbumIds(albumIds)
-
-            const BATCH_SIZE = 50
-            for (let i = 0; i < albums.length; i += BATCH_SIZE) {
-              const batch = albums.slice(i, i + BATCH_SIZE)
-              const scores: ReturnType<typeof analyzer.analyzeMusicAlbum>[] = []
-              for (const album of batch) {
-                const tracks = tracksByAlbum.get(album.id!) || []
-                const qualityScore = analyzer.analyzeMusicAlbum(album, tracks)
-                scores.push(qualityScore)
-              }
-
-              await this.db.withBatch(async () => {
-                await this.db.music.upsertQualityScores(scores)
-              })
-              // Yield to allow other IPCs
-              await new Promise(r => setTimeout(r, 0))
-            }
-            this.logging.info('[SourceScannerService]', `Analyzed quality for ${albums.length} music albums`)
-          } catch (err) {
-            this.logging.error('[SourceScannerService]', 'Failed to analyze music quality after scan:', err)
-          }
-        }
-
+      if (result.success && !this.scanCancelled && result.cancelled !== true && library) {
         await this.db.sources.updateLibraryScanTime(sourceId, libraryId, result.itemsScanned)
         await this.startPostScanTasks(sourceId, libraryId, library)
       }
@@ -201,7 +170,7 @@ export class SourceScannerService {
             if (result.errors.length > 0) {
               this.logging.warn('[SourceScannerService]', `Scan errors for sourceId=${source.source_id}, libraryId=${library.id}:`, result.errors)
             }
-            if (result.success) {
+            if (result.success && !this.scanCancelled && result.cancelled !== true) {
               await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
               await this.startPostScanTasks(source.source_id, library.id, library)
             }
@@ -214,7 +183,14 @@ export class SourceScannerService {
             `Failed to scan source ${source.source_id}${currentLibraryId === undefined ? '' : `, library ${currentLibraryId}`}:`,
             error
           )
-          results.set(`${source.source_id}:*`, {
+          const followUpFailure = errorMsg.startsWith('Scan completed; analysis could not be queued:')
+          if (followUpFailure && currentLibraryId) {
+            results.set(`${source.source_id}:${currentLibraryId}`, {
+              success: true, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0,
+              itemsRemoved: 0, errors: [errorMsg], durationMs: 0,
+            })
+          }
+          if (!followUpFailure) results.set(`${source.source_id}:*`, {
             success: false,
             itemsScanned: 0,
             itemsAdded: 0,
@@ -245,12 +221,12 @@ export class SourceScannerService {
     }
   }
 
-  private async startPostScanTasks(sourceId: string, libraryId: string, _library: MediaLibrary) {
+  private async startPostScanTasks(sourceId: string, libraryId: string, _library: MediaLibrary): Promise<void> {
+    const { getSourceManager } = await import('./SourceManager')
     try {
-      const { getSourceManager } = await import('./SourceManager')
       await getSourceManager().triggerPostScanAnalysis(sourceId, libraryId)
-    } catch (err) {
-      this.logging.error('[SourceScannerService]', 'Failed to start post-scan background tasks:', err)
+    } catch (error) {
+      throw new Error(`Scan completed; analysis could not be queued: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 }

@@ -115,7 +115,7 @@ describe('SourceManager (No Mocks)', () => {
     }
   })
 
-  it('enqueues TaskType.QualityAnalysis with sourceId during triggerPostScanAnalysis', async () => {
+  it('enqueues scoped analysis after successful scan completion', async () => {
     const source = await manager.addSource({
       sourceType: ProviderType.Local,
       displayName: 'Quality Scan Test',
@@ -125,14 +125,14 @@ describe('SourceManager (No Mocks)', () => {
     await manager.initialize()
     const libs = await manager.getLibraries(source.source_id)
     await db.sources.setLibrariesEnabled(source.source_id, libs.map(l => ({ id: l.id, name: l.name, type: l.type, enabled: true })))
-    const taskQueue = (manager as unknown as { getTaskQueue: () => { clearQueue: () => Promise<void>; getTasks: () => Array<{ type: TaskType; sourceId: string }> } }).getTaskQueue()
+    const taskQueue = (manager as unknown as { getTaskQueue: () => { clearQueue: () => Promise<void>; getTasks: () => Array<{ type: TaskType; sourceId?: string; analysisScope?: { kind: string; sourceId?: string; libraryId?: string } }> } }).getTaskQueue()
     await taskQueue.clearQueue()
 
-    await manager.triggerPostScanAnalysis(source.source_id, 'movie')
+    await manager.scanLibrary(source.source_id, 'movie')
 
     const tasks = taskQueue.getTasks()
-    const qualityTask = tasks.find((t) => t.type === TaskType.QualityAnalysis && t.sourceId === source.source_id)
-    expect(qualityTask).toBeDefined()
+    const analysisTask = tasks.find((t) => t.type === TaskType.Analysis)
+    expect(analysisTask?.analysisScope).toEqual({ kind: 'library', sourceId: source.source_id, libraryId: 'movie' })
   })
 })
 

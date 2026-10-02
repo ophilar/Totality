@@ -247,9 +247,8 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
 
   const handleScanAllLibraries = async (sourceId: string) => {
     try {
-      const source = sources.find(s => s.source_id === sourceId)
       const libraries = sourceLibraries.get(sourceId) || []
-      const sourceName = source?.display_name || sourceId
+      const sourceName = sources.find(s => s.source_id === sourceId)?.display_name || sourceId
 
       // Queue scan tasks for every enabled library in this source
       await Promise.all(
@@ -264,29 +263,6 @@ export function Sidebar({ onOpenAbout, isCollapsed, onToggleCollapse }: SidebarP
         })
       )
 
-      // Queue analysis tasks for this source based on library types present
-      const libraryTypes = new Set(libraries.map(l => l.type))
-      if (libraryTypes.has(LibraryType.Show) || libraryTypes.has(LibraryType.Mixed)) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'series-completeness',
-          label: `Analyze TV Series (${sourceName})`,
-          sourceId,
-        })
-      }
-      if (libraryTypes.has(LibraryType.Movie) || libraryTypes.has(LibraryType.Mixed)) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'collection-completeness',
-          label: `Analyze Collections (${sourceName})`,
-          sourceId,
-        })
-      }
-      if (libraryTypes.has(LibraryType.Music)) {
-        await window.electronAPI.taskQueueAddTask({
-          type: 'music-completeness',
-          label: `Analyze Music (${sourceName})`,
-          sourceId,
-        })
-      }
     } catch (err) {
       window.electronAPI.log.error('[Sidebar]', 'Failed to queue full rescan:', err)
     }
@@ -1005,8 +981,8 @@ function SourceItem({
               onClick={(e) => { e.stopPropagation(); onScanAll() }}
               disabled={libraries.length === 0}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Scan & Analyze All Libraries"
-              aria-label="Scan and analyze all libraries"
+              title="Scan All Libraries"
+              aria-label="Scan all libraries"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
             </button>

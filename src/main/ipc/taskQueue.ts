@@ -24,6 +24,8 @@ export function registerTaskQueueHandlers(): void {
     return { success: await service.removeTask(taskId) }
   })
 
+  createValidatedIpcHandler(IPC_CHANNELS.TASK_QUEUE.CANCEL_TASK, NonEmptyStringSchema, async taskId => ({ success: await service.cancelTask(taskId) }))
+
   createValidatedIpcHandler('taskQueue:reorderQueue', z.array(z.string().min(1)), async (ids) => {
     await service.reorderQueue(ids)
     return { success: true }

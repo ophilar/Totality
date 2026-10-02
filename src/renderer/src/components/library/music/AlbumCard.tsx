@@ -98,7 +98,7 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
                   className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                  {isAnalyzing ? 'Analyzing...' : 'Analyze for missing tracks'}
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze'}
                 </button>
                 {onFixMatch && (
                   <button

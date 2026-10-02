@@ -23,3 +23,11 @@ Fixed database closure retaining its Drizzle ORM reference (`32818b9`) and added
 Bounded NVENC AV1 diagnostics reproduced the level rejection using an existing HDR10-derived sample: 30/40/60 Mbps CQ peaks fail at level 5.2, while 20 Mbps succeeds with source cadence preserved. A 60 Mbps VBR peak and level 6.0 CQ also fail. No arbitrary rate restriction, cadence conversion, encoder substitution or automatic-level bypass was added. Both reviewed high-bitrate conversion cases remain unsupported on the tested configuration.
 
 The documented Plex play-queue publication alternative cannot yet be verified: current credentials return HTTP 401 even for playlist listing. No disposable playlist was created, and owned credential copies were removed. Device playback awaits tablet unlock. Dolby Vision changes were excluded. Details and sanitized evidence are appended to `specs/tv-optimization-online-order/verification.md`.
+
+## Unified analysis workflow and optimization convergence — 2026-10-02
+
+Implemented typed scoped analysis jobs on `fix/unified-series-analysis-cleanup`, with serialized durable queue acceptance, planner-owned stages, task-ID cancellation, scoped source/library music work, scan-owned follow-up, and stage outcomes surfaced in Activity. Item and bulk analysis share persisted file evidence and quality analysis. Successful series completeness owns backup and identity-scoped transactional reconciliation; cancelled or failed analysis does not prune summaries.
+
+Removed obsolete renderer analysis and direct remux entry points. Track pruning now opens canonical optimization preflight and the queue. The modal exposes analysis progress and requires an explicit plan refresh after evidence is saved. Specification and roadmap were updated additively.
+
+Validation passed: `npm test` (208 files, 1,595 tests; 2 files and 7 tests skipped) and `npm run build` (Windows NSIS installer). Packaged UI launch and real-database scan, cleanup, restart, cancellation, and optimization flows remain unverified. No direct database repair was run.

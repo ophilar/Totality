@@ -7,3 +7,11 @@ Reuse the canonical FFprobe parser for both worker and main-process analysis, in
 Keep online provider selection explicit. A retrieved snapshot is the authority for resolution, preview and publication. Changing the selected library source re-resolves that snapshot. Failed refresh exposes the previous snapshot and its error; stale publication requires authorization for that snapshot. Canonical source ownership and unambiguous series identity govern resolution.
 
 Extend existing activation jobs and settings publication records for recovery. A staged Plex sequence is verified before publication and previous-playlist deletion. A server that cannot reproduce deliberate repeats is rejected rather than silently changing the reviewed order. No watch-history mutation is needed.
+
+## Unified analysis, database updates, and optimization — 2026-10-02
+
+Keep analysis in one persisted task-queue workflow. `mediaAnalyze(scope)` acknowledges a durable typed scope; the main process validates ownership, plans ordered stages, aggregates required counts and diagnostics, and emits the terminal result. Queue acceptance is serialized across deduplication, capacity checks, and persistence. A successful library scan submits this same analysis job and waits for durable acceptance.
+
+The analysis service owns file evidence and quality persistence for both item and bulk scopes. Music quality is a planned stage and all music reads are source/library scoped. Cancellation is task-specific and propagates between stages and items. Series reconciliation runs only after successful completeness, backs up once, and performs identity-scoped removal transactionally while preserving locked and ambiguous rows.
+
+Optimization converges on preflight, review, approval, and the existing queue. Renderer code cannot invoke immediate local remux. Persisted file evidence is checked for missing or stale state; analysis completion requires an explicit preflight refresh and never auto-approves execution.

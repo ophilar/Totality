@@ -522,7 +522,9 @@ CREATE TABLE IF NOT EXISTS music_quality_scores (
 -- Artist discography completeness (MusicBrainz integration)
 CREATE TABLE IF NOT EXISTS artist_completeness (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  artist_name TEXT NOT NULL UNIQUE,
+  artist_name TEXT NOT NULL,
+  artist_id INTEGER,
+  source_id TEXT,
 
   -- MusicBrainz data
   musicbrainz_id TEXT,

@@ -1,23 +1,11 @@
-import { useState, useCallback } from 'react'
-import type { AnalysisProgress, MediaSource, TVShowSummary } from '@/components/library/types'
+import { useState, useCallback, useEffect } from 'react'
+import type { AnalysisProgress, TVShowSummary } from '@/components/library/types'
 import type { AnalysisScope } from '@/components/library/analysisScope'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 
-interface LibraryInfo {
-  id: string
-  name: string
-  type: string
-}
-
-interface UseAnalysisManagerOptions {
-  sources: MediaSource[]
-  activeSourceId: string | null
-  activeSourceLibraries: LibraryInfo[]
-  loadCompletenessData: () => Promise<void>
-}
-
 interface UseAnalysisManagerReturn {
+  taskQueueState: import('@main/types/database').TaskQueueState | null
   isAnalyzing: boolean
   setIsAnalyzing: (analyzing: boolean) => void
   analysisProgress: AnalysisProgress | null
@@ -26,14 +14,10 @@ interface UseAnalysisManagerReturn {
   setAnalysisType: (type: AnalysisType | null) => void
   tmdbApiKeySet: boolean
   setTmdbApiKeySet: (set: boolean) => void
-  handleAnalyzeSeries: (libraryId?: string) => Promise<void>
-  handleAnalyzeCollections: (libraryId?: string) => Promise<void>
-  handleAnalyzeMusic: () => Promise<void>
-  handleAnalyzeQuality: () => Promise<void>
-  handleAnalyzeAll: (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => Promise<void>
+  handleAnalyzeAll: () => Promise<void>
   handleAnalyzeSingleSeries: (show: TVShowSummary) => Promise<void>
-  analyze: (scope: AnalysisScope) => Promise<void>
-  handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
+  analyze: (scope: AnalysisScope) => Promise<{ taskId: string; scope: AnalysisScope }>
+  handleCancelAnalysis: (taskId: string) => Promise<void>
   checkTmdbApiKey: () => Promise<void>
 }
 
@@ -43,23 +27,18 @@ interface UseAnalysisManagerReturn {
  * Handles running series, collection, and music completeness analysis
  * via the task queue, with progress tracking and cancellation support.
  */
-export function useAnalysisManager({
-  sources,
-  activeSourceId,
-  activeSourceLibraries,
-  loadCompletenessData,
-}: UseAnalysisManagerOptions): UseAnalysisManagerReturn {
+export function useAnalysisManager(): UseAnalysisManagerReturn {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
   const [analysisType, setAnalysisType] = useState<AnalysisType | null>(null)
   const [tmdbApiKeySet, setTmdbApiKeySet] = useState(false)
+  const [taskQueueState, setTaskQueueState] = useState<import('@main/types/database').TaskQueueState | null>(null)
 
-  // Get source name for task labels
-  const getSourceName = useCallback(() => {
-    if (!activeSourceId) return 'All Sources'
-    const source = sources.find((s) => s.source_id === activeSourceId)
-    return source?.display_name || 'All Sources'
-  }, [sources, activeSourceId])
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.(state => setTaskQueueState(state as unknown as import('@main/types/database').TaskQueueState))
+    window.electronAPI.taskQueueGetState?.().then(state => setTaskQueueState(state as unknown as import('@main/types/database').TaskQueueState))
+    return () => { unsubscribe?.() }
+  }, [])
 
   // Check if TMDB API key is configured
   const checkTmdbApiKey = useCallback(async () => {
@@ -71,76 +50,9 @@ export function useAnalysisManager({
     }
   }, [])
 
-  // Run series analysis via task queue
-  const handleAnalyzeSeries = useCallback(async (libraryId?: string) => {
-    try {
-      const sourceName = getSourceName()
-      const libraryName = libraryId
-        ? activeSourceLibraries.find(l => l.id === libraryId)?.name
-        : undefined
-      const label = libraryName
-        ? `Analyze TV Series (${sourceName} - ${libraryName})`
-        : `Analyze TV Series (${sourceName})`
-      await window.electronAPI.taskQueueAddTask({
-        type: 'series-completeness',
-        label,
-        sourceId: activeSourceId || undefined,
-        libraryId,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue series analysis:', err)
-    }
-  }, [activeSourceId, activeSourceLibraries, getSourceName])
-
-  // Run collections analysis via task queue
-  const handleAnalyzeCollections = useCallback(async (libraryId?: string) => {
-    try {
-      const sourceName = getSourceName()
-      const libraryName = libraryId
-        ? activeSourceLibraries.find(l => l.id === libraryId)?.name
-        : undefined
-      const label = libraryName
-        ? `Analyze Collections (${sourceName} - ${libraryName})`
-        : `Analyze Collections (${sourceName})`
-      await window.electronAPI.taskQueueAddTask({
-        type: 'collection-completeness',
-        label,
-        sourceId: activeSourceId || undefined,
-        libraryId,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue collections analysis:', err)
-    }
-  }, [activeSourceId, activeSourceLibraries, getSourceName])
-
-  // Run unified music analysis via task queue
-  const handleAnalyzeMusic = useCallback(async () => {
-    try {
-      const sourceName = getSourceName()
-      await window.electronAPI.taskQueueAddTask({
-        type: 'music-completeness',
-        label: `Analyze Music (${sourceName})`,
-        sourceId: activeSourceId || undefined,
-      })
-    } catch (err) {
-      window.electronAPI.log.error('[useAnalysisManager]', 'Failed to queue music analysis:', err)
-    }
-  }, [activeSourceId, getSourceName])
-
-  const handleAnalyzeQuality = useCallback(async () => {
-    await window.electronAPI.taskQueueAddTask({
-      type: 'quality-analysis',
-      label: `Recalculate Media Quality (${getSourceName()})`,
-      sourceId: activeSourceId || undefined,
-    })
-  }, [activeSourceId, getSourceName])
-
-  const handleAnalyzeAll = useCallback(async (hasTV: boolean, hasMovies: boolean, hasMusic: boolean) => {
-    await handleAnalyzeQuality()
-    if (hasTV) await handleAnalyzeSeries()
-    if (hasMovies) await handleAnalyzeCollections()
-    if (hasMusic) await handleAnalyzeMusic()
-  }, [handleAnalyzeCollections, handleAnalyzeMusic, handleAnalyzeQuality, handleAnalyzeSeries])
+  const handleAnalyzeAll = useCallback(async () => {
+    await window.electronAPI.mediaAnalyze({ kind: 'all-libraries' })
+  }, [])
 
   const handleAnalyzeSingleSeries = useCallback(
     async (show: TVShowSummary) => {
@@ -154,28 +66,28 @@ export function useAnalysisManager({
           seriesIdentityKey: show.series_identity_key,
           title: show.series_title,
         })
-        await loadCompletenessData()
       } catch (err) {
         window.electronAPI.log.error('[useAnalysisManager]', 'Single series analysis failed:', err)
       }
     },
-    [loadCompletenessData]
+    []
   )
 
   const analyze = useCallback(async (scope: AnalysisScope) => {
-    await window.electronAPI.mediaAnalyze(scope)
+    return window.electronAPI.mediaAnalyze(scope)
   }, [])
 
   // Cancel current analysis
-  const handleCancelAnalysis = useCallback(async (_type: 'series' | 'collections' | 'music') => {
+  const handleCancelAnalysis = useCallback(async (taskId: string) => {
     try {
-      await window.electronAPI.taskQueueCancelCurrent()
+      await window.electronAPI.taskQueueCancelTask(taskId)
     } catch (err) {
       window.electronAPI.log.error('[useAnalysisManager]', 'Failed to cancel analysis:', err)
     }
   }, [])
 
   return {
+    taskQueueState,
     isAnalyzing,
     setIsAnalyzing,
     analysisProgress,
@@ -184,10 +96,6 @@ export function useAnalysisManager({
     setAnalysisType,
     tmdbApiKeySet,
     setTmdbApiKeySet,
-    handleAnalyzeSeries,
-    handleAnalyzeCollections,
-    handleAnalyzeMusic,
-    handleAnalyzeQuality,
     handleAnalyzeAll,
     handleAnalyzeSingleSeries,
     analyze,

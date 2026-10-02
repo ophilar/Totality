@@ -14,7 +14,7 @@ describe('SeriesCompletenessService batch contract', () => {
     await getDatabase().initialize(':memory:')
   })
 
-  it('analyzes every media-backed series when episodes already have a canonical identity key', async () => {
+  it('reports required TMDB configuration instead of claiming empty completeness', async () => {
     const db = getDatabase()
     await db.sources.upsertSource({
       source_id: 'plex-source',
@@ -50,12 +50,11 @@ describe('SeriesCompletenessService batch contract', () => {
     const result = await new SeriesCompletenessService().analyzeAllSeries('plex-source', 'tv')
 
     expect(result.totalSeries).toBe(1)
-    expect(result.analyzed).toBe(1)
-    expect(result.errors).toEqual([])
+    expect(result.analyzed).toBe(0)
+    expect(result.status).toBe('failed')
+    expect(result.diagnostics[0]?.code).toBe('TMDB_CONFIGURATION_REQUIRED')
 
     const summaries = await db.tvShows.getSummaries({ sourceId: 'plex-source', libraryId: 'tv' })
-    expect(summaries).toHaveLength(1)
-    expect(summaries[0].series_title).toBe('Game of Thrones')
-    expect(summaries[0].owned_episodes).toBe(1)
+    expect(summaries).toHaveLength(0)
   })
 })

@@ -4,6 +4,7 @@ export type AnalysisScope =
   | { kind: 'collection'; collectionId: number }
   | { kind: 'show'; sourceId: string; libraryId: string; seriesIdentityKey: string; title: string }
   | { kind: 'album'; albumId: number }
+  | { kind: 'artist'; artistId: number }
   | { kind: 'item'; mediaId: number }
 
 export type AnalysisStage = 'media' | 'quality' | 'playback' | 'provider' | 'tv-completeness' | 'collection-completeness' | 'music-completeness'
@@ -26,6 +27,7 @@ export function analysisScopeLabel(scope: AnalysisScope): string {
     case 'collection': return 'Analyze collection'
     case 'show': return 'Analyze show'
     case 'album': return 'Analyze album'
+    case 'artist': return 'Analyze artist'
     case 'item': return 'Analyze item'
   }
 }

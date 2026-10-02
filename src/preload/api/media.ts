@@ -79,7 +79,6 @@ export const mediaApi: MediaAPI = {
   dbOpenFolder: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.OPEN_FOLDER),
 
   // Series Completeness
-  seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
   seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
     ipcRenderer.invoke('series:analyzeByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
   seriesGetAll: (sourceId?: string) => ipcRenderer.invoke('series:getAll', sourceId),
@@ -259,7 +258,6 @@ export interface MediaAPI {
   dbOpenFolder: () => Promise<{ success: boolean }>
 
   // Series Completeness
-  seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ completed: boolean; analyzed: number }>
   seriesAnalyzeByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<SeriesCompleteness | null>
   seriesGetAll: (sourceId?: string) => Promise<unknown[]>
   seriesGetIncomplete: (sourceId?: string) => Promise<unknown[]>
@@ -391,7 +389,7 @@ export interface MediaAPI {
 
   // Deep Analysis
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) => Promise<MediaDeepAnalysisResult>
-  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) => Promise<import('@shared/analysisScope').AnalysisResult & { analysis?: unknown }>
+  mediaAnalyze: (scope: import('@shared/analysisScope').AnalysisScope) => Promise<{ taskId: string; scope: import('@shared/analysisScope').AnalysisScope }>
   getMediaOptimizationAdvice: (mediaId: number) => Promise<{ action: string; decisionStatus: string }>
   mediaCancelDeepAnalyze: (requestId: string) => Promise<{ success: boolean }>
   mediaCompareProvider: (mediaItemId: number) => Promise<{ providerType: string; differences: Array<{ field: string; local: unknown; provider: unknown }> }>

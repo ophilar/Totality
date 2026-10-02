@@ -890,17 +890,19 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
     return [headers, ...csvRows].join('\n')
   }
 
-  async getItemsByTmdbIds(tmdbIds: string[]): Promise<Map<string, MediaItem>> {
+  async getItemsByTmdbIds(tmdbIds: string[], scope?: { sourceId: string; libraryId: string }): Promise<Map<string, MediaItem>> {
     const result = new Map<string, MediaItem>()
     if (tmdbIds.length === 0) return result
 
     const batchSize = 500
     for (let i = 0; i < tmdbIds.length; i += batchSize) {
       const batch = tmdbIds.slice(i, i + batchSize)
+      const conditions = [inArray(schema.mediaItems.tmdbId, batch)]
+      if (scope) conditions.push(eq(schema.mediaItems.sourceId, scope.sourceId), eq(schema.mediaItems.libraryId, scope.libraryId))
       const rows = await this.drizzle
         .select()
         .from(schema.mediaItems)
-        .where(inArray(schema.mediaItems.tmdbId, batch))
+        .where(and(...conditions))
         .all()
 
       const items = this.mapDrizzleToMediaItems(rows)
@@ -1286,6 +1288,15 @@ export class MediaRepository extends BaseRepository<typeof schema.mediaItems> {
         })
         .onConflictDoNothing()
     }
+  }
+
+  async getMediaItemsForCollection(collectionId: number): Promise<MediaItem[]> {
+    const rows = await this.drizzle.select({ media: schema.mediaItems })
+      .from(schema.mediaItemCollections)
+      .innerJoin(schema.mediaItems, eq(schema.mediaItems.id, schema.mediaItemCollections.mediaItemId))
+      .where(eq(schema.mediaItemCollections.collectionId, collectionId))
+      .all()
+    return this.mapDrizzleToMediaItems(rows.map(row => row.media))
   }
 
   async getUniqueSeriesTitles(filters?: {

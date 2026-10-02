@@ -9,6 +9,7 @@ export const transcodingAPI = {
   getParameters: (mediaItemId: number, options?: TranscodeOptions) => ipcRenderer.invoke('transcoding:getParameters', mediaItemId, options) as Promise<TranscodingParams>,
   cancel: (mediaItemId: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
   preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
+  preflightRemux: (mediaItemId: number) => ipcRenderer.invoke('transcoding:preflightRemux', mediaItemId),
   queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
   approveShow: (preflightId: string) => ipcRenderer.invoke('transcoding:approveShow', preflightId),
   discardShow: (preflightId: string) => ipcRenderer.invoke('transcoding:discardShow', preflightId),

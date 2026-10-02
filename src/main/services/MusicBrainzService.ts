@@ -1119,7 +1119,7 @@ export class MusicBrainzService extends CancellableOperation {
   async analyzeAllMusic(
     onProgress?: (progress: MusicAnalysisProgress) => void,
     sourceId?: string,
-    options: MusicAnalysisOptions = {}
+    options: MusicAnalysisOptions & { libraryId?: string; artistId?: number } = {}
   ): Promise<AnalysisOutcome & { artistsAnalyzed: number; albumsAnalyzed: number; skipped: number; deferred: number }> {
     // Apply default options
     const {
@@ -1139,8 +1139,8 @@ export class MusicBrainzService extends CancellableOperation {
     const updateArtwork = true
 
     // Get artists and albums, optionally filtered by source
-    const artistFilters = sourceId ? { sourceId } : undefined
-    const albumFilters = sourceId ? { sourceId } : undefined
+    const artistFilters = sourceId || options.libraryId || options.artistId ? { sourceId, libraryId: options.libraryId, artistId: options.artistId } : undefined
+    const albumFilters = sourceId || options.libraryId || options.artistId ? { sourceId, libraryId: options.libraryId, artistId: options.artistId } : undefined
 
     const artists = await db.music.getArtists(artistFilters)
     const allSourceAlbums = (await db.music.getAlbums(albumFilters)) as MusicAlbum[]
@@ -1335,7 +1335,7 @@ export class MusicBrainzService extends CancellableOperation {
         )
 
         await db.withBatch(async () => {
-          await db.music.upsertArtistCompleteness(completeness)
+          await db.music.upsertArtistCompleteness({ ...completeness, artist_id: artist.id, source_id: artist.source_id, library_id: artist.library_id })
           if (completeness.foundMbId && !artist.musicbrainz_id && artist.id) {
             await db.music.updateMusicArtistMbid(artist.id, completeness.foundMbId)
             getLoggingService().info('[MusicBrainzService]', `Cached MBID for artist "${artist.name}": ${completeness.foundMbId}`)
