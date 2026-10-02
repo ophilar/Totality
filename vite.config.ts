@@ -1,23 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import electron from 'vite-plugin-electron'
+import electron, { type ElectronOptions } from 'vite-plugin-electron'
 import path from 'node:path'
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    electron([
+export const electronTargets: ElectronOptions[] = [
       {
         // Main process entry file
-        entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
         onstart(args) {
           args.startup()
         },
         vite: {
           build: {
             outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
-            minify: 'esbuild',
+            minify: 'oxc',
             emptyOutDir: true,
             lib: {
               entry: path.resolve(import.meta.dirname, 'src/main/index.ts'),
@@ -45,11 +41,10 @@ export default defineConfig({
       },
       {
         // FFprobe worker thread
-        entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
         vite: {
           build: {
             outDir: path.resolve(import.meta.dirname, 'dist-electron/main'),
-            minify: 'esbuild',
+            minify: 'oxc',
             emptyOutDir: false, // Don't empty because index.cjs is already there
             lib: {
               entry: path.resolve(import.meta.dirname, 'src/main/workers/ffprobe-worker.ts'),
@@ -70,14 +65,13 @@ export default defineConfig({
       },
       {
         // Preload scripts
-        entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
         onstart(args) {
           args.reload()
         },
         vite: {
           build: {
             outDir: path.resolve(import.meta.dirname, 'dist-electron/preload'),
-            minify: 'esbuild',
+            minify: 'oxc',
             emptyOutDir: true,
             lib: {
               entry: path.resolve(import.meta.dirname, 'src/preload/index.ts'),
@@ -96,7 +90,12 @@ export default defineConfig({
           }
         }
       }
-    ]),
+]
+
+export default defineConfig({
+  plugins: [
+    react(),
+    electron(electronTargets),
     {
       name: 'configure-rolldown-output',
       configResolved(config) {
