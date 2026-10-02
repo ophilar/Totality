@@ -214,7 +214,6 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
         ))
       }
 
-      let type: 'movie' | 'show' | undefined
       const normalized = sourceText.toLowerCase()
       const anchor = element.matches('a') ? element : element.querySelector('a')
       const href = anchor?.getAttribute('href') ?? ''
@@ -226,7 +225,7 @@ export class TimelineParserPluginProvider implements ITimelineRecipeProvider {
       if (new Set(textTypes).size > 1 || new Set(linkTypes).size > 1) {
         throw new Error(`Parser '${plugin.id}' found conflicting item types for '${sourceText}'.`)
       }
-      type = textTypes[0] ?? linkTypes[0] ?? config.defaultType
+      const type: 'movie' | 'show' | undefined = textTypes[0] ?? linkTypes[0] ?? config.defaultType
       if (!type) throw new Error(`Parser '${plugin.id}' cannot determine whether '${sourceText}' is a movie or series.`)
 
       let title = sourceText

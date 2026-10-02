@@ -1,6 +1,19 @@
 import { describe, it, expect, vi } from 'vitest'
 import { getKodiMySQLConnectionService } from '@main/services/KodiMySQLConnectionService'
 
+interface DatabaseDetector {
+  detectDatabasesWithConnection(connection: { query: (sql: string, params?: unknown[]) => Promise<unknown[][]> }, prefix: string): Promise<{
+    videoDatabase: string
+    videoVersion: number
+    musicDatabase: string
+    musicVersion: number
+  }>
+}
+
+function databaseDetector(service: unknown): DatabaseDetector {
+  return service as DatabaseDetector
+}
+
 describe('KodiMySQLConnectionService', () => {
   it('detects databases using parameterized query and escaped wildcard pattern parameters', async () => {
     const service = getKodiMySQLConnectionService()
@@ -19,9 +32,9 @@ describe('KodiMySQLConnectionService', () => {
 
     const mockConnection = {
       query: mockQuery,
-    } as any
+    } as unknown as { query: (sql: string, params?: unknown[]) => Promise<unknown[][]> }
 
-    const result = await (service as any).detectDatabasesWithConnection(mockConnection, 'kodi_')
+    const result = await databaseDetector(service).detectDatabasesWithConnection(mockConnection, 'kodi_')
 
     expect(mockQuery).toHaveBeenCalledTimes(2)
     expect(mockQuery).toHaveBeenNthCalledWith(
@@ -45,10 +58,10 @@ describe('KodiMySQLConnectionService', () => {
 
   it('rejects invalid database prefixes with disallowed characters', async () => {
     const service = getKodiMySQLConnectionService()
-    const mockConnection = { query: vi.fn() } as any
+    const mockConnection = { query: vi.fn() } as unknown as { query: (sql: string, params?: unknown[]) => Promise<unknown[][]> }
 
     await expect(
-      (service as any).detectDatabasesWithConnection(mockConnection, 'kodi; DROP TABLE--')
+      databaseDetector(service).detectDatabasesWithConnection(mockConnection, 'kodi; DROP TABLE--')
     ).rejects.toThrow('Invalid database prefix: kodi; DROP TABLE--')
   })
 })

@@ -5,38 +5,12 @@ import { act, renderHook } from '@testing-library/react'
 import { createRef } from 'react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { useGlobalSearch } from '@/components/library/hooks/useGlobalSearch'
-import { MediaItemType, type MediaItem } from '@main/types/database'
-
-function episode(): MediaItem {
-  return {
-    id: 42,
-    source_id: 'source-1',
-    library_id: 'tv',
-    plex_id: 'episode-42',
-    type: MediaItemType.Episode,
-    title: 'Identity Episode',
-    series_title: 'Shared Show',
-    series_identity_key: 'tmdb:4242',
-    season_number: 1,
-    episode_number: 2,
-    file_size: null,
-    duration: null,
-    resolution: null,
-    width: null,
-    height: null,
-    video_codec: null,
-    video_bitrate: null,
-    audio_codec: null,
-    audio_channels: null,
-    audio_bitrate: null,
-  }
-}
+import type { GlobalSearchResults } from '@preload/api/types'
 
 describe('useGlobalSearch episode identity', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    window.electronAPI = {
-      searchGlobal: vi.fn().mockResolvedValue({
+    window.electronAPI.searchGlobal = vi.fn<() => Promise<GlobalSearchResults>>().mockResolvedValue({
         movies: [],
         tvShows: [],
         episodes: [
@@ -58,7 +32,6 @@ describe('useGlobalSearch episode identity', () => {
         albums: [],
         tracks: []
       })
-    } as any
   })
 
   afterEach(() => {

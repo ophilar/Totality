@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react"],
+  "ignorePatterns": ["dist/**", "dist-electron/**", "release/**", "dev_docs/**"],
+  "categories": {
+    "correctness": "off",
+    "suspicious": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "style": "off",
+    "restriction": "off"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unsafe-function-type": "warn",
+    "eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrors": "none" }],
+    "eslint/no-unsafe-finally": "error",
+    "eslint/no-empty": "warn",
+    "eslint/no-useless-escape": "warn",
+    "eslint/prefer-const": "warn",
+    "eslint/no-useless-catch": "warn",
+    "react/exhaustive-deps": "warn",
+    "react/rules-of-hooks": "warn",
+    "react/only-export-components": ["warn", { "allowConstantExport": true, "allowExportNames": ["formatHdrLabel", "withErrorBoundary", "useLibrary", "usePanel", "useScrollMemory"] }]
+  }
+}

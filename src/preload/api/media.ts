@@ -1,6 +1,7 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
+import type { GlobalSearchResults } from '@shared/globalSearch'
 
 export const mediaApi: MediaAPI = {
   // Quality Analysis
@@ -189,7 +190,7 @@ export interface MediaAPI {
   getMediaItems: (filters?: MediaItemFilters) => Promise<MediaItem[]>
   countMediaItems: (filters?: unknown) => Promise<number>
   getMediaOptimizationSummary: (filters?: MediaItemFilters) => Promise<OptimizationMetricsSummary>
-  searchGlobal: (query: string) => Promise<any>
+  searchGlobal: (query: string) => Promise<GlobalSearchResults>
   mediaList: (filters?: unknown) => Promise<unknown[]>
   mediaCount: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: TVShowFilters) => Promise<TVShowSummary[]>

@@ -1,77 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef, RefObject } from 'react'
+import type { GlobalSearchResults } from '@shared/globalSearch'
+export type { GlobalSearchResults } from '@shared/globalSearch'
 
-interface MovieSearchResult {
-  id: number
-  title: string
-  year?: number | null
-  poster_url?: string | null
-  needs_upgrade: boolean
-  type: 'movie'
-}
-
-interface TVSearchResult {
-  id: string
-  title: string
-  poster_url?: string | null
-  type: 'tv'
-}
-
-interface EpisodeSearchResult {
-  id: number
-  title: string
-  series_title?: string | null
-  series_identity_key?: string | null
-  source_id?: string
-  library_id?: string
-  season_number?: number | null
-  episode_number?: number | null
-  thumb_url?: string | null
-  needs_upgrade: boolean
-  type: 'episode'
-}
-
-interface ArtistSearchResult {
-  id: number
-  title: string
-  thumb_url?: string | null
-  type: 'artist'
-}
-
-interface AlbumSearchResult {
-  id: number
-  title: string
-  subtitle: string
-  year?: number | null
-  thumb_url?: string | null
-  needs_upgrade: boolean
-  type: 'album'
-}
-
-interface TrackSearchResult {
-  id: number
-  title: string
-  album_id: number
-  album_title?: string
-  artist_name?: string
-  thumb_url?: string | null
-  needs_upgrade: boolean
-  type: 'track'
-}
+const EMPTY_SEARCH_RESULTS: GlobalSearchResults = { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
 
 interface SearchResultExtra {
   series_identity_key?: string | null
-  source_id?: string
-  library_id?: string
+  source_id?: string | null
+  library_id?: string | null
   album_id?: number
-}
-
-export interface GlobalSearchResults {
-  movies: MovieSearchResult[]
-  tvShows: TVSearchResult[]
-  episodes: EpisodeSearchResult[]
-  artists: ArtistSearchResult[]
-  albums: AlbumSearchResult[]
-  tracks: TrackSearchResult[]
 }
 
 export interface FlattenedResult {
@@ -126,10 +63,10 @@ export function useGlobalSearch({
   const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResults>({
     movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: []
   })
+  const visibleSearchResults = useMemo(() => searchInput.trim().length >= 2 ? globalSearchResults : EMPTY_SEARCH_RESULTS, [searchInput, globalSearchResults])
 
   useEffect(() => {
     if (!searchInput.trim() || searchInput.length < 2) {
-      setGlobalSearchResults({ movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] })
       return
     }
 
@@ -143,18 +80,18 @@ export function useGlobalSearch({
   }, [searchInput])
 
   const hasSearchResults =
-    globalSearchResults.movies.length > 0 ||
-    globalSearchResults.tvShows.length > 0 ||
-    globalSearchResults.episodes.length > 0 ||
-    globalSearchResults.artists.length > 0 ||
-    globalSearchResults.albums.length > 0 ||
-    globalSearchResults.tracks.length > 0
+    visibleSearchResults.movies.length > 0 ||
+    visibleSearchResults.tvShows.length > 0 ||
+    visibleSearchResults.episodes.length > 0 ||
+    visibleSearchResults.artists.length > 0 ||
+    visibleSearchResults.albums.length > 0 ||
+    visibleSearchResults.tracks.length > 0
 
   const flattenedResults = useMemo(() => {
     const results: FlattenedResult[] = []
-    globalSearchResults.movies.forEach((m) => results.push({ type: 'movie', id: m.id }))
-    globalSearchResults.tvShows.forEach((s) => results.push({ type: 'tv', id: s.id }))
-    globalSearchResults.episodes.forEach((e) =>
+    visibleSearchResults.movies.forEach((m) => results.push({ type: 'movie', id: m.id }))
+    visibleSearchResults.tvShows.forEach((s) => results.push({ type: 'tv', id: s.id }))
+    visibleSearchResults.episodes.forEach((e) =>
       results.push({
         type: 'episode',
         id: e.id,
@@ -165,13 +102,13 @@ export function useGlobalSearch({
         },
       })
     )
-    globalSearchResults.artists.forEach((a) => results.push({ type: 'artist', id: a.id }))
-    globalSearchResults.albums.forEach((a) => results.push({ type: 'album', id: a.id }))
-    globalSearchResults.tracks.forEach((t) =>
+    visibleSearchResults.artists.forEach((a) => results.push({ type: 'artist', id: a.id }))
+    visibleSearchResults.albums.forEach((a) => results.push({ type: 'album', id: a.id }))
+    visibleSearchResults.tracks.forEach((t) =>
       results.push({ type: 'track', id: t.id, extra: { album_id: t.album_id } })
     )
     return results
-  }, [globalSearchResults])
+  }, [visibleSearchResults])
 
   const [prevSearchInput, setPrevSearchInput] = useState(searchInput)
 
@@ -204,7 +141,7 @@ export function useGlobalSearch({
       } else if (type === 'tv') {
         onNavigateToTVShow(id as string)
       } else if (type === 'episode') {
-        onNavigateToEpisode(id as number, extra?.series_identity_key, extra?.source_id, extra?.library_id)
+        onNavigateToEpisode(id as number, extra?.series_identity_key, extra?.source_id ?? undefined, extra?.library_id ?? undefined)
       } else if (type === 'artist') {
         onNavigateToArtist(id as number)
       } else if (type === 'album') {
@@ -257,7 +194,7 @@ export function useGlobalSearch({
     searchResultIndex,
     setSearchResultIndex,
     searchContainerRef,
-    globalSearchResults,
+    globalSearchResults: visibleSearchResults,
     hasSearchResults,
     flattenedResults,
     handleSearchKeyDown,

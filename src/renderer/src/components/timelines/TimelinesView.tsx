@@ -96,7 +96,7 @@ export function TimelinesView() {
     return () => {
       isMounted = false
     }
-  }, [selectedPlexSourceId])
+  }, [selectedPlexSourceId, addToast])
 
   useEffect(() => {
     let isMounted = true
@@ -129,7 +129,7 @@ export function TimelinesView() {
     return () => {
       isMounted = false
     }
-  }, [addToast])
+  }, [addToast, selectedRecipeId])
 
   useEffect(() => {
     if (!selectedRecipeId) return

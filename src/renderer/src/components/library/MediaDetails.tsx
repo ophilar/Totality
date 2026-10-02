@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   X, 
@@ -35,43 +35,32 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
 
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const [item, itemVersions] = await Promise.all([
-        window.electronAPI.getMediaItem(mediaId),
-        window.electronAPI.getMediaItemVersions(mediaId),
-      ])
-      
-      if (item) {
-        setMedia(item as MediaItem)
-        const persistedAnalysis = (item as MediaItem).deep_analysis
-        if (persistedAnalysis) {
-          const persisted = JSON.parse(persistedAnalysis)
-          setDeepAnalysis(persisted.deepAnalysis || null)
-        } else {
-          setDeepAnalysis(null)
-        }
-        setVersions(itemVersions as MediaItemVersion[])
-        setOptimizationAdvice(await window.electronAPI.getMediaOptimizationAdvice(mediaId))
-        
-        // Default to best version
-        const best = (itemVersions as MediaItemVersion[]).find(v => v.is_best) || (itemVersions as MediaItemVersion[])[0]
-        if (best) setSelectedVersionId(best.id!)
-      }
-    } catch (err) {
-      window.electronAPI.log.error('[MediaDetails]', 'Failed to load media details:', err)
-      addToast({ title: 'Failed to load details', type: 'error' })
-    } finally {
-      setLoading(false)
-    }
-  }, [mediaId, addToast])
-
   useEffect(() => {
     let active = true
-    if (active) void loadData()
+    void Promise.all([
+      window.electronAPI.getMediaItem(mediaId),
+      window.electronAPI.getMediaItemVersions(mediaId),
+    ]).then(async ([item, itemVersions]) => {
+      if (!active || !item) return
+      const typedItem = item as MediaItem
+      const typedVersions = itemVersions as MediaItemVersion[]
+      const advice = await window.electronAPI.getMediaOptimizationAdvice(mediaId)
+      if (!active) return
+      setMedia(typedItem)
+      setDeepAnalysis(typedItem.deep_analysis ? JSON.parse(typedItem.deep_analysis).deepAnalysis || null : null)
+      setVersions(typedVersions)
+      setOptimizationAdvice(advice)
+      const best = typedVersions.find(version => version.is_best) || typedVersions[0]
+      setSelectedVersionId(best?.id ?? null)
+    }).catch(err => {
+      if (!active) return
+      window.electronAPI.log.error('[MediaDetails]', 'Failed to load media details:', err)
+      addToast({ title: 'Failed to load details', type: 'error' })
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
     return () => { active = false }
-  }, [loadData])
+  }, [mediaId, addToast])
 
   const handleAnalyze = async () => {
     if (!media?.id) return

@@ -208,7 +208,7 @@ export function SourceProvider({ children }: SourceProviderProps) {
   useEffect(() => {
     if (sources.length > 0) {
       // Check immediately
-      void checkAllConnections()
+      void Promise.resolve().then(checkAllConnections)
 
       // Check every 30 seconds
       const interval = setInterval(checkAllConnections, 30000)
@@ -310,9 +310,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Load sources on mount
   useEffect(() => {
-    void refreshSources()
-    void loadSupportedProviders()
-    void loadStats()
+    void Promise.resolve().then(refreshSources)
+    void Promise.resolve().then(loadSupportedProviders)
+    void Promise.resolve().then(loadStats)
     const handleProgress = (progress: ScanProgress) => {
       setScanProgress(prev => {
         const existing = prev.get(progress.sourceId)

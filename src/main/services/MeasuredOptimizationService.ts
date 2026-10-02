@@ -53,6 +53,8 @@ export class MeasuredOptimizationService {
     const ownedPaths = new Set<string>()
     const retainedPaths = new Set<string>()
     let failure: unknown
+    let result: MeasuredSampleResult | undefined
+    let cleanupFailure: Error | undefined
     try {
       // Materialize hardware color transforms once per section. Feeding libplacebo
       // and libvmaf in one graph changes frame synchronization on multi-input graphs.
@@ -95,14 +97,18 @@ export class MeasuredOptimizationService {
         measured.push({ encoder: candidate.encoder, quality: candidate.quality, preset: candidate.preset, outputBytes, vmafMean: scores.reduce((a, b) => a + b, 0) / scores.length, vmafP5: scores[Math.floor(scores.length * 0.05)], cambiMean: banding.reduce((a, b) => a + b, 0) / banding.length, samplePaths })
       }
       for (const candidate of measured) for (const samplePath of candidate.samplePaths!) retainedPaths.add(samplePath)
-      return { candidates: measured, vmafAvailable: true, cambiAvailable: true }
+      result = { candidates: measured, vmafAvailable: true, cambiAvailable: true }
     } catch (error) {
       failure = error
-      throw error
     } finally {
       const cleanup = await Promise.allSettled([...ownedPaths].filter(filePath => !retainedPaths.has(filePath)).map(filePath => fs.rm(filePath, { force: true })))
       const errors = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason)
-      if (errors.length) throw new Error(`Measured optimization artifact cleanup failed: ${(failure === undefined ? errors : [failure, ...errors]).map(getErrorMessage).join('; ')}`)
+      if (errors.length) cleanupFailure = new Error(`Measured optimization artifact cleanup failed: ${errors.map(getErrorMessage).join('; ')}`)
     }
+    if (failure !== undefined && cleanupFailure) throw new Error(`Measured optimization failed: ${getErrorMessage(failure)}; ${cleanupFailure.message}`)
+    if (failure !== undefined) throw failure
+    if (cleanupFailure) throw cleanupFailure
+    if (!result) throw new Error('Measured optimization completed without a result')
+    return result
   }
 }

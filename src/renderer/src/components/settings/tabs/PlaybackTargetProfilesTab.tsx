@@ -44,17 +44,17 @@ export function PlaybackTargetProfilesTab() {
   const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null)
 
   const loadProfiles = useCallback(async () => {
-    setError(null)
     const loaded = await window.electronAPI.listPlaybackTargetProfiles()
+    setError(null)
     setProfiles(loaded)
     const storedDefault = await window.electronAPI.getSetting('optimization_default_target_profile_id')
     const resolvedDefault = storedDefault || loaded.find(profile => profile.isBuiltin)?.id || null
     if (!storedDefault && resolvedDefault) await window.electronAPI.setSetting('optimization_default_target_profile_id', resolvedDefault)
     setDefaultProfileId(resolvedDefault)
-    if (!selectedId && loaded[0]) setSelectedId(loaded[0].id)
-  }, [selectedId])
+    setSelectedId(current => current ?? loaded[0]?.id ?? null)
+  }, [])
 
-  useEffect(() => { void loadProfiles().catch(e => setError(e instanceof Error ? e.message : String(e))) }, [loadProfiles])
+  useEffect(() => { void Promise.resolve().then(loadProfiles).catch(e => setError(e instanceof Error ? e.message : String(e))) }, [loadProfiles])
 
   const selectProfile = (profile: PlaybackTargetProfile) => {
     setSelectedId(profile.id)

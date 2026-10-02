@@ -4,10 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useLibraryEventListeners } from '@/components/library/hooks/useLibraryEventListeners'
-import { cleanupTestDb, setupRealIntegratedBridge, setupTestDb } from '@tests/TestUtils'
+import { cleanupTestDb, setupTestDb } from '@tests/TestUtils'
 
 describe('useLibraryEventListeners', () => {
-  let listeners: Record<string, Function>
+  let listeners: Record<string, (...args: unknown[]) => unknown>
 
   const createOptions = (overrides = {}) => ({
     activeSourceId: 'src-1',

@@ -775,22 +775,23 @@ export class QualityAnalyzer {
       currentStage = 'persisting final quality scores'
       await flushQualityScores()
     } catch (error) {
+      let failure: unknown = error
       if (qualityScoresBatch.length > 0 && !qualityScoreBatchWriteFailed) {
         try {
           await flushQualityScores()
         } catch (flushError) {
           const analysisMessage = error instanceof Error ? error.message : String(error)
           const persistenceMessage = flushError instanceof Error ? flushError.message : String(flushError)
-          error = new Error(`Quality analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
+          failure = new Error(`Quality analysis failed: ${analysisMessage}; pending score persistence failed: ${persistenceMessage}`)
         }
       }
-      if (signal?.aborted && error instanceof Error && error.name === 'AbortError') return analyzed
+      if (signal?.aborted && failure instanceof Error && failure.name === 'AbortError') return analyzed
       logging.error(
         '[QualityAnalyzer]',
         `Analysis failed during ${currentStage} after ${analyzed}/${mediaItems.length} items${currentItemId === undefined ? '' : `; item ${currentItemIndex}/${mediaItems.length} id=${currentItemId}, elapsedMs=${Date.now() - currentItemStartedAt}`}`,
-        error
+        failure
       )
-      throw error
+      throw failure
     }
 
     const tierSummary = Object.entries(tierCounts).map(([t, c]) => `${t}:${c}`).join(', ')

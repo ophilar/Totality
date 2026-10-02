@@ -196,7 +196,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       }
     }).catch(error => setMessage(error instanceof Error ? error.message : String(error)))
     return () => { mounted = false }
-  }, [])
+  }, [addToast])
 
   const handleUseGpuChange = useCallback((next: boolean) => setUseGpu(next), [])
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
@@ -311,7 +311,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       console.error('[ShowTranscodeModal] Failed to load subtitle preferences', error)
     })
     return () => { isMounted = false }
-  }, [])
+  }, [addToast])
 
   useEffect(() => {
     let isMounted = true
@@ -331,7 +331,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       addToast({ type: 'error', title: 'Encoder capabilities', message: String(err) })
     })
     return () => { isMounted = false }
-  }, [])
+  }, [addToast])
 
   // Subscribe to TaskQueue state updates
   useEffect(() => {
@@ -347,7 +347,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     return () => {
       unsubscribe?.()
     }
-  }, [])
+  }, [addToast])
 
   const subtitleList = subtitleWhitelist
     .split(/[,\s]+/)
