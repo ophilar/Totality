@@ -39,6 +39,10 @@ export abstract class BaseRepository<TTable extends SQLiteTable> {
     return this.transactionDrizzle ?? this.baseDrizzle
   }
 
+  protected get hasTransactionContext(): boolean {
+    return this.transactionDb !== null
+  }
+
   public setTransactionContext(
     db: Client | Transaction | null,
     drizzle: LibSQLDatabase<typeof schema> | null,

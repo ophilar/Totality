@@ -607,6 +607,8 @@ export function ActivityPanel() {
             return <div key={task.id} className="rounded-md bg-muted/30 p-2 text-xs">
               <div className="flex justify-between gap-2"><span className="font-medium">{task.label}</span><span className="capitalize">{result.status}</span></div>
               <p className="text-muted-foreground">{result.completedCount} stages complete · {result.failedCount} failed · {result.deferredCount} deferred · {result.skippedCount} skipped</p>
+              {result.reconciliation && <p className="text-muted-foreground">Summary cleanup: {result.reconciliation.merged} merged · {result.reconciliation.removed} removed · {result.reconciliation.preservedLocked} locked preserved · {result.reconciliation.ambiguous} ambiguous</p>}
+              {result.databaseBackupPath && <p className="truncate text-muted-foreground" title={result.databaseBackupPath}>Backup: {result.databaseBackupPath}</p>}
               {result.diagnostics.length > 0 && <ul className="mt-1 list-disc pl-4 text-amber-200">{result.diagnostics.slice(0, 3).map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.itemName}: {diagnostic.message}</li>)}</ul>}
             </div>
           })}

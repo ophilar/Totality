@@ -199,21 +199,17 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
 
       // Check resulting series completeness records
       const remaining = await db.tvShows.getAllCompleteness('src1', 'lib1')
-      expect(remaining.length).toBe(1)
-      expect(remaining[0].series_identity_key).toBe('tmdb:115981')
-      expect(remaining[0].tmdb_id).toBe('115981')
-      expect(remaining[0].tvdb_id).toBe('371980')
+      expect(remaining.length).toBe(2)
+      expect(remaining.map(row => row.series_identity_key).sort()).toEqual(['tmdb:115981', 'unresolved:src1:lib1:severance'])
 
       // Check media items repointed
       const epRes = await client.execute("SELECT series_identity_key, series_title FROM media_items WHERE type = 'episode'")
       const items = epRes.rows as unknown as Array<{ series_identity_key: string; series_title: string }>
       expect(items.length).toBe(2)
-      for (const item of items) {
-        expect(item.series_identity_key).toBe('tmdb:115981')
-      }
+      expect(items.map(item => item.series_identity_key).sort()).toEqual(['tmdb:115981', 'unresolved:src1:lib1:severance'])
     })
 
-    it('merges duplicate TV shows directly via TVShowRepository.mergeDuplicateShows', async () => {
+    it('preserves same-title summaries without shared verified identity', async () => {
       await db.tvShows.upsertCompleteness({
         series_title: 'Silo (2023)',
         series_identity_key: 'tmdb:125988',
@@ -243,14 +239,14 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       expect(before.length).toBe(2)
 
       const mergedCount = await db.tvShows.mergeDuplicateShows('src1', 'lib1')
-      expect(mergedCount).toBe(1)
+      expect(mergedCount).toBe(0)
 
       const after = await db.tvShows.getAllCompleteness('src1', 'lib1')
-      expect(after.length).toBe(1)
-      expect(after[0].tmdb_id).toBe('125988')
+      expect(after.length).toBe(2)
+      expect(after.map(row => row.series_identity_key).sort()).toEqual(['tmdb:125988', 'unresolved:src1:lib1:silo'].sort())
     })
 
-    it('preserves unknown completeness when deduplicating inventory-only rows', async () => {
+    it('preserves inventory-only duplicate titles without verified identity', async () => {
       const client = db.db
       await client.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
 
@@ -264,11 +260,11 @@ describe('TV Show Deduplication & Invariants (TOT-BUG-03)', () => {
       })
 
       const mergedCount = await db.tvShows.mergeDuplicateShows('src1', 'lib1')
-      expect(mergedCount).toBe(1)
+      expect(mergedCount).toBe(0)
 
       const after = await db.tvShows.getAllCompleteness('src1', 'lib1')
-      expect(after).toHaveLength(1)
-      expect(after[0].completeness_percentage).toBeNull()
+      expect(after).toHaveLength(2)
+      expect(after.every(row => row.completeness_percentage == null)).toBe(true)
     })
   })
 })

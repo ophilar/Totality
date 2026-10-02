@@ -15,3 +15,7 @@ Keep analysis in one persisted task-queue workflow. `mediaAnalyze(scope)` acknow
 The analysis service owns file evidence and quality persistence for both item and bulk scopes. Music quality is a planned stage and all music reads are source/library scoped. Cancellation is task-specific and propagates between stages and items. Series reconciliation runs only after successful completeness, backs up once, and performs identity-scoped removal transactionally while preserving locked and ambiguous rows.
 
 Optimization converges on preflight, review, approval, and the existing queue. Renderer code cannot invoke immediate local remux. Persisted file evidence is checked for missing or stale state; analysis completion requires an explicit preflight refresh and never auto-approves execution.
+
+### Identity-only summary consolidation — 2026-10-03
+
+Duplicate TV summaries consolidate only when persisted TMDB/TVDB identity evidence agrees within the same source and library. Scoped unresolved identity keys may consolidate only with the identical key and owner. Same-title rows without a shared identity remain separate; mismatched provider identities, user-fixed matches, and locked identity records are preserved and counted. Episode ownership is rechecked by exact source, library, and current identity inside the backup-backed cleanup transaction.

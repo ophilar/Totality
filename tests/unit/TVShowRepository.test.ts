@@ -330,8 +330,9 @@ describe('TVShowRepository (Real DB)', () => {
     await repo.mergeDuplicateShows('src-1', 'lib-1')
 
     const summaries = await repo.getSummaries()
-    expect(summaries).toHaveLength(1)
-    expect(summaries[0].series_identity_key).toBe('tmdb:83867')
+    expect(summaries).toHaveLength(2)
+    expect(summaries.some(summary => summary.series_identity_key === 'tmdb:83867')).toBe(true)
+    expect(summaries.some(summary => summary.series_identity_key === 'unresolved:src-1:lib-1:example-series')).toBe(true)
   })
 
   it('accurately resolves season count and owned counts even when total_seasons is 0 or unanalyzed', async () => {

@@ -48,12 +48,13 @@ export class SeriesCompletenessService {
     libraryId?: string,
     onProgress?: (prog: SeriesProgress) => void,
     requestedSeries?: { title: string; seriesIdentityKey: string },
+    existingBackupPath?: string,
   ): Promise<AnalysisOutcome & {
     totalSeries: number
     analyzed: number
     complete: number
     incomplete: number
-    reconciliation?: { removed: number; preservedLocked: number }
+    reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
     databaseBackupPath?: string
   }> {
     this.cancelRequested = false
@@ -110,6 +111,7 @@ export class SeriesCompletenessService {
 
     const seriesToAnalyze = Array.from(seriesByIdentity.entries())
     result.totalSeries = seriesToAnalyze.length
+    const successfullyAnalyzed: Array<{ sourceId: string; libraryId: string; seriesIdentityKey: string }> = []
 
     try {
       for (let i = 0; i < seriesToAnalyze.length; i++) {
@@ -141,6 +143,7 @@ export class SeriesCompletenessService {
           })
           if (analysis) {
             result.analyzed++
+            successfullyAnalyzed.push({ sourceId: series.sourceId, libraryId: series.libraryId, seriesIdentityKey: series.identityKey })
             if (analysis.completeness_percentage != null) {
               if (analysis.completeness_percentage >= 100) result.complete++
               else result.incomplete++
@@ -190,51 +193,59 @@ export class SeriesCompletenessService {
       completed: status === 'completed',
     } as AnalysisOutcome & { totalSeries: number; analyzed: number; complete: number; incomplete: number }
 
-    if (outcome.status !== 'completed' || this.cancelRequested) return outcome
+    if (!successfullyAnalyzed.length || this.cancelRequested) return outcome
 
-    const currentSummaries = await this.db.tvShows.getAllCompleteness(sourceId, libraryId)
-    const scopes = new Map<string, { sourceId: string; libraryId: string }>()
-    const addScope = (scopeSourceId: string, scopeLibraryId: string): void => {
-      const normalizedSourceId = scopeSourceId.trim()
-      const normalizedLibraryId = scopeLibraryId.trim()
-      if (!normalizedSourceId || !normalizedLibraryId) {
-        throw new Error('Cannot reconcile TV summaries without a persisted source and library scope')
-      }
-      scopes.set(JSON.stringify([normalizedSourceId, normalizedLibraryId]), {
-        sourceId: normalizedSourceId,
-        libraryId: normalizedLibraryId,
-      })
-    }
-
-    for (const episode of allEpisodes) {
-      addScope(episode.source_id ?? '', episode.library_id ?? '')
-    }
-    for (const summary of currentSummaries) {
-      addScope(summary.source_id ?? '', summary.library_id ?? '')
-    }
-
-    if (scopes.size === 0) return outcome
-
-    const databaseBackupPath = await this.db.createDatabaseBackup()
+    const databaseBackupPath = existingBackupPath ?? await this.db.createDatabaseBackup()
     if (this.cancelRequested) return outcome
     const reconciliation = await this.db.withBatch(async () => {
       if (this.cancelRequested) throw new Error('Series reconciliation cancelled before transaction')
-      let removed = 0
-      let preservedLocked = 0
-      for (const scope of scopes.values()) {
-        const result = await this.db.tvShows.reconcileOrphanedCompleteness(scope.sourceId, scope.libraryId, requestedSeries?.seriesIdentityKey)
-        removed += result.removed
-        preservedLocked += result.preservedLocked
+      const totals = { merged: 0, removed: 0, preservedLocked: 0, ambiguous: 0 }
+      for (const series of successfullyAnalyzed) {
+        if (this.cancelRequested) throw new Error('Series reconciliation cancelled before transaction')
+        const consolidation = await this.db.tvShows.mergeDuplicateShowsWithOutcome(
+          series.sourceId,
+          series.libraryId,
+          series.seriesIdentityKey,
+        )
+        totals.merged += consolidation.merged
+        totals.preservedLocked += consolidation.preservedLocked
+        totals.ambiguous += consolidation.ambiguous
+        const result = await this.db.tvShows.reconcileOrphanedCompleteness(series.sourceId, series.libraryId, series.seriesIdentityKey)
+        totals.removed += result.removed
+        totals.preservedLocked += result.preservedLocked
       }
-      return { removed, preservedLocked }
+      return totals
     })
     getLoggingService().info('[SeriesCompleteness]', 'Reconciled TV summaries after completed series analysis', {
       ...reconciliation,
-      scopeCount: scopes.size,
+      scopeCount: new Set(successfullyAnalyzed.map(series => JSON.stringify([series.sourceId, series.libraryId]))).size,
       databaseBackupPath,
     })
 
-    return { ...outcome, reconciliation, databaseBackupPath }
+    const diagnostics = reconciliation.ambiguous > 0
+      ? [...outcome.diagnostics, {
+          itemType: 'series' as const,
+          itemName: 'TV summary reconciliation',
+          stage: 'series-completeness',
+          category: 'identity' as const,
+          code: 'AMBIGUOUS_DUPLICATE_IDENTITY',
+          message: `${reconciliation.ambiguous} duplicate summary group(s) had conflicting identity evidence and were preserved`,
+        }]
+      : outcome.diagnostics
+    const finalStatus = reconciliation.ambiguous > 0 && outcome.status === 'completed' ? 'partial' : outcome.status
+    const errors = reconciliation.ambiguous > 0
+      ? [...(outcome.errors ?? []), `${reconciliation.ambiguous} duplicate summary group(s) preserved due to conflicting identity evidence`]
+      : outcome.errors
+    return {
+      ...outcome,
+      status: finalStatus,
+      completed: finalStatus === 'completed',
+      failedCount: (outcome.failedCount ?? 0) + reconciliation.ambiguous,
+      diagnostics,
+      errors,
+      reconciliation,
+      databaseBackupPath,
+    }
   }
 
   async analyzeSeries(

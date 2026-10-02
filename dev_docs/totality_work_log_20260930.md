@@ -31,3 +31,9 @@ Implemented typed scoped analysis jobs on `fix/unified-series-analysis-cleanup`,
 Removed obsolete renderer analysis and direct remux entry points. Track pruning now opens canonical optimization preflight and the queue. The modal exposes analysis progress and requires an explicit plan refresh after evidence is saved. Specification and roadmap were updated additively.
 
 Validation passed: `npm test` (208 files, 1,595 tests; 2 files and 7 tests skipped) and `npm run build` (Windows NSIS installer). Packaged UI launch and real-database scan, cleanup, restart, cancellation, and optimization flows remain unverified. No direct database repair was run.
+
+## Identity-safe reconciliation follow-up — 2026-10-03
+
+Replaced title-based duplicate summary consolidation with persisted TMDB/TVDB identity matching within exact source/library ownership. Exact scoped unresolved keys are consolidated only when identical; same-title resolved/unresolved rows remain separate. Locked and user-fixed matches are preserved. Reconciliation now reports merged, removed, locked-preserved, and ambiguous counts with the backup path, and one job reuses its first backup across series scopes. Partial library analyses clean only successfully analyzed series. Activity displays cleanup counts and backup location.
+
+Validation passed: typecheck; focused TV identity/migration/transaction suites (35 tests); full suite (208 files / 1,597 tests passed; 2 files / 7 skipped); Windows installer build. Packaged live-database acceptance is still pending while the installed app has active background processes.

@@ -689,9 +689,9 @@ export class TaskQueueService {
       await manager.scanSource(task.sourceId, onProgress)
   }
 
-  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, existingBackupPath?: string): Promise<void> {
     const service = this.getSeriesCompleteness()
-    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined)
+    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined, existingBackupPath)
 
     task.result = {
       itemsScanned: outcome.processedCount,
@@ -907,6 +907,8 @@ export class TaskQueueService {
     await this.validateAnalysisScope(scope)
     const outcomes: AnalysisStageOutcome[] = []
     let persistenceFailure: Error | null = null
+    let databaseBackupPath: string | undefined
+    const reconciliation = { merged: 0, removed: 0, preservedLocked: 0, ambiguous: 0 }
     const stages: Array<{ name: string; execute: () => Promise<void> }> = []
     const quality = (sourceId?: string, libraryId?: string, series?: { title: string; seriesIdentityKey: string }, mediaItemId?: number, collectionId?: number) => stages.push({ name: 'quality', execute: async () => {
       if (mediaItemId !== undefined) {
@@ -944,8 +946,9 @@ export class TaskQueueService {
       task.result = { ...task.result, itemsScanned: count }
     } })
     const series = (sourceId?: string, libraryId?: string, identity?: { title: string; seriesIdentityKey: string }) => stages.push({ name: 'series-completeness', execute: async () => {
-      await this.executeSeriesCompleteness({ ...task, type: TaskType.SeriesCompleteness, sourceId, libraryId, ...(identity ? { seriesTitle: identity.title, seriesIdentityKey: identity.seriesIdentityKey } : {}) }, onProgress)
-      if (task.result?.status === 'partial' || task.result?.status === 'failed') throw new Error(`Series completeness ${task.result.status}; dependent reconciliation did not complete`)
+      const seriesTask = { ...task, type: TaskType.SeriesCompleteness, sourceId, libraryId, ...(identity ? { seriesTitle: identity.title, seriesIdentityKey: identity.seriesIdentityKey } : {}) }
+      await this.executeSeriesCompleteness(seriesTask, onProgress, databaseBackupPath)
+      task.result = seriesTask.result
     } })
     const collections = (sourceId?: string, libraryId?: string) => stages.push({ name: 'collection-completeness', execute: async () => {
       await this.executeCollectionCompleteness({ ...task, type: TaskType.CollectionCompleteness, sourceId, libraryId }, onProgress)
@@ -1047,9 +1050,23 @@ export class TaskQueueService {
       onProgress({ current: index, total: stages.length, percentage: Math.floor(index * 100 / stages.length), phase: stage.name })
       try {
         await stage.execute()
+        const stageReconciliation = task.result?.reconciliation
+        if (stageReconciliation && typeof stageReconciliation === 'object') {
+          const counts = stageReconciliation as typeof reconciliation
+          reconciliation.merged += counts.merged
+          reconciliation.removed += counts.removed
+          reconciliation.preservedLocked += counts.preservedLocked
+          reconciliation.ambiguous += counts.ambiguous
+          databaseBackupPath ??= task.result?.databaseBackupPath
+        }
         const stageResultStatus = task.result?.status
         const diagnostics = task.result?.diagnostics
-        outcomes.push({ stage: stage.name, status: stageResultStatus === 'deferred' ? 'deferred' : 'completed', ...(stageResultStatus === 'deferred' ? { error: 'Provider returned no completeness result', code: 'PROVIDER_DEFERRED' } : {}), ...(diagnostics?.length ? { diagnostics } : {}) })
+        outcomes.push({
+          stage: stage.name,
+          status: stageResultStatus === 'deferred' ? 'deferred' : stageResultStatus === 'partial' ? 'partial' : stageResultStatus === 'failed' ? 'failed' : 'completed',
+          ...(stageResultStatus === 'deferred' ? { error: 'Provider returned no completeness result', code: 'PROVIDER_DEFERRED' } : {}),
+          ...(diagnostics?.length ? { diagnostics } : {}),
+        })
       } catch (error) {
         const message = getErrorMessage(error)
         if (parseDatabaseError(error).isDatabaseError) persistenceFailure = error instanceof Error ? error : new Error(message)
@@ -1059,17 +1076,29 @@ export class TaskQueueService {
         if (persistenceFailure) break
       }
     }
-    const failedCount = outcomes.filter(outcome => outcome.status === 'failed').length
+    const failedCount = outcomes.filter(outcome => outcome.status === 'failed' || outcome.status === 'partial').length
     const blockedCount = outcomes.filter(outcome => outcome.status === 'blocked').length
     const deferredCount = outcomes.filter(outcome => outcome.status === 'deferred').length
     const completedCount = outcomes.filter(outcome => outcome.status === 'completed').length
     const skippedCount = outcomes.filter(outcome => outcome.status === 'skipped').length
-    const status = this.cancelRequested ? 'cancelled' : failedCount || blockedCount || deferredCount ? completedCount ? 'partial' : blockedCount ? 'blocked' : failedCount ? 'failed' : 'deferred' : 'completed'
+    const hasPartialWork = outcomes.some(outcome => outcome.status === 'partial')
+    const status = this.cancelRequested ? 'cancelled' : failedCount || blockedCount || deferredCount ? completedCount || hasPartialWork ? 'partial' : blockedCount ? 'blocked' : failedCount ? 'failed' : 'deferred' : 'completed'
     const diagnostics = outcomes.flatMap(outcome => outcome.diagnostics ?? [])
-    const analysis: AnalysisJobResult = { scope, outcomes, status, completedCount, failedCount, deferredCount, skippedCount, diagnostics }
-    task.result = { ...task.result, status, completedCount, failedCount, deferredCount, skippedCount, diagnostics, outcomes, analysis }
+    const hasReconciliation = databaseBackupPath !== undefined
+    const analysis: AnalysisJobResult = {
+      scope,
+      outcomes,
+      status,
+      completedCount,
+      failedCount,
+      deferredCount,
+      skippedCount,
+      diagnostics,
+      ...(hasReconciliation ? { reconciliation, databaseBackupPath } : {}),
+    }
+    task.result = { ...task.result, status, completedCount, failedCount, deferredCount, skippedCount, diagnostics, outcomes, analysis, ...(hasReconciliation ? { reconciliation, databaseBackupPath } : {}) }
     if (persistenceFailure) throw persistenceFailure
-    if (failedCount && !completedCount && !blockedCount) throw new Error('All required analysis stages failed')
+    if (status === 'failed') throw new Error('All required analysis stages failed')
   }
 
   private async executeTranscode(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {

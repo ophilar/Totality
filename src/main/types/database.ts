@@ -983,7 +983,7 @@ export interface AnalysisOutcome {
 
 export interface AnalysisStageOutcome {
   stage: string
-  status: 'completed' | 'failed' | 'blocked' | 'deferred' | 'skipped'
+  status: 'completed' | 'partial' | 'failed' | 'blocked' | 'deferred' | 'skipped'
   error?: string
   code?: string
   diagnostics?: AnalysisDiagnostic[]
@@ -996,6 +996,8 @@ export interface AnalysisJobResult extends AnalysisOutcome {
   failedCount: number
   deferredCount: number
   skippedCount: number
+  reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
+  databaseBackupPath?: string
 }
 
 export interface CompletenessScope {
@@ -1047,7 +1049,7 @@ export interface TaskResult {
   failedCount?: number
   deferredCount?: number
   skippedCount?: number
-  reconciliation?: { removed: number; preservedLocked: number }
+  reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
   databaseBackupPath?: string
   deferred?: number
   diagnostics?: AnalysisDiagnostic[]

@@ -4,13 +4,11 @@ import type { TVShowSummary, TVShowFilters, SeriesCompleteness, MediaItem, Optim
 import { BaseRepository } from '@main/database/repositories/BaseRepository'
 import { toSnakeCaseMediaItem } from '@main/database/utils/mappers'
 
-import { LibSQLDatabase } from 'drizzle-orm/libsql'
+import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql'
 import type { Client, Transaction } from '@libsql/client'
 import * as schema from '@main/database/drizzleSchema'
-import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import { getMediaMatchStatus } from '@main/services/SeriesIdentityService'
 import { IdentityRepository } from '@main/database/repositories/IdentityRepository'
-import { getFileNameParser } from '@main/services/FileNameParser'
 import { getLoggingService } from '@main/services/LoggingService'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
 
@@ -634,9 +632,32 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
   }
 
   async mergeDuplicateShows(sourceId?: string, libraryId?: string): Promise<number> {
-    const parser = getFileNameParser()
+    return (await this.mergeDuplicateShowsWithOutcome(sourceId, libraryId)).merged
+  }
+
+  async mergeDuplicateShowsWithOutcome(
+    sourceId?: string,
+    libraryId?: string,
+    seriesIdentityKey?: string,
+  ): Promise<{ merged: number; preservedLocked: number; ambiguous: number }> {
+    if (!this.hasTransactionContext) {
+      const transaction = await this.db.transaction('write')
+      this.setTransactionContext(transaction, drizzle(transaction as unknown as Client, { schema }))
+      try {
+        const result = await this.mergeDuplicateShowsWithOutcome(sourceId, libraryId, seriesIdentityKey)
+        await transaction.commit()
+        return result
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      } finally {
+        this.setTransactionContext(null, null)
+      }
+    }
     const logging = getLoggingService()
     let mergedCount = 0
+    let preservedLocked = 0
+    let ambiguous = 0
 
     const conditions = []
     if (sourceId) conditions.push(eq(schema.seriesCompleteness.sourceId, sourceId))
@@ -647,7 +668,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .all()
 
-    if (!rows || rows.length <= 1) return 0
+    if (!rows || rows.length <= 1) return { merged: 0, preservedLocked: 0, ambiguous: 0 }
 
     const scopedGroups = new Map<string, typeof rows>()
     for (const row of rows) {
@@ -658,84 +679,69 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
 
     for (const [scope, scopeRows] of scopedGroups.entries()) {
       const [scopeSourceId, scopeLibraryId] = scope.split(':::')
-      const clusters: Array<typeof rows> = []
-      const visited = new Set<number>()
       type ScopedRow = (typeof scopeRows)[number]
-
-      const resolvedIdentity = (row: ScopedRow): string | null => {
-        if (row.seriesIdentityKey && !row.seriesIdentityKey.startsWith('unresolved:')) return row.seriesIdentityKey
-        if (row.tmdbId) return `tmdb:${row.tmdbId}`
-        if (row.tvdbId) return `tvdb:${row.tvdbId}`
-        return null
-      }
-      const titlesEquivalent = (a: ScopedRow, b: ScopedRow): boolean => {
-        const normA = parser.normalizeSeriesTitle(a.seriesTitle)
-        const normB = parser.normalizeSeriesTitle(b.seriesTitle)
-        if (!normA || !normB || normA !== normB) return false
-        const cleanA = parser.cleanSeriesTitleAndYear(a.seriesTitle)
-        const cleanB = parser.cleanSeriesTitleAndYear(b.seriesTitle)
-        return Boolean(
-          cleanA.title
-          && cleanB.title
-          && cleanA.title.toLowerCase() === cleanB.title.toLowerCase()
-          && (cleanA.year === cleanB.year || !cleanA.year || !cleanB.year)
-        )
-      }
-
-      const resolvedIdentityCounts = new Map<number, number>()
+      const rowIdentities = new Map<number, { tmdb: Set<string>; tvdb: Set<string> }>()
       for (const row of scopeRows) {
-        const identities = new Set<string>()
-        for (const candidate of scopeRows) {
-          if (!titlesEquivalent(row, candidate)) continue
-          const identity = resolvedIdentity(candidate)
-          if (identity) identities.add(identity)
-        }
-        resolvedIdentityCounts.set(row.id, identities.size)
+        const linked = row.id ? await this.identities.getIdentities('series', row.id) : []
+        const tmdb = new Set(linked.filter(record => record.provider.toLowerCase() === 'tmdb').map(record => record.externalId.trim()).filter(Boolean))
+        const tvdb = new Set(linked.filter(record => record.provider.toLowerCase() === 'tvdb').map(record => record.externalId.trim()).filter(Boolean))
+        if (row.tmdbId?.trim()) tmdb.add(row.tmdbId.trim())
+        if (row.tvdbId?.trim()) tvdb.add(row.tvdbId.trim())
+        if (row.seriesIdentityKey?.startsWith('tmdb:')) tmdb.add(row.seriesIdentityKey.slice(5))
+        if (row.seriesIdentityKey?.startsWith('tvdb:')) tvdb.add(row.seriesIdentityKey.slice(5))
+        rowIdentities.set(row.id, { tmdb, tvdb })
+      }
+      const stableIdentity = (row: ScopedRow): string | null => {
+        const ids = rowIdentities.get(row.id)
+        if (!ids || ids.tmdb.size > 1 || ids.tvdb.size > 1) return null
+        const tmdbId = [...ids.tmdb][0]
+        if (tmdbId) return `tmdb:${tmdbId}`
+        const tvdbId = [...ids.tvdb][0]
+        if (tvdbId) return `tvdb:${tvdbId}`
+        const scopedUnresolvedPrefix = `unresolved:${scopeSourceId}:${scopeLibraryId}:`
+        return row.seriesIdentityKey?.startsWith(scopedUnresolvedPrefix) ? row.seriesIdentityKey : null
+      }
+      ambiguous += scopeRows.filter(row => {
+        const ids = rowIdentities.get(row.id)
+        return Boolean(ids && (ids.tmdb.size > 1 || ids.tvdb.size > 1))
+      }).length
+      const seedIdentity = seriesIdentityKey
+        ? scopeRows.find(row => row.seriesIdentityKey === seriesIdentityKey)
+        : undefined
+      const targetIdentity = seedIdentity ? stableIdentity(seedIdentity) : undefined
+      if (seriesIdentityKey && !targetIdentity) continue
+
+      const groupedRows = new Map<string, typeof rows>()
+      for (const row of scopeRows) {
+        const identity = stableIdentity(row)
+        if (!identity || (targetIdentity && identity !== targetIdentity)) continue
+        const group = groupedRows.get(identity) ?? []
+        group.push(row)
+        groupedRows.set(identity, group)
       }
 
-      for (let i = 0; i < scopeRows.length; i++) {
-        const a = scopeRows[i]
-        if (visited.has(a.id)) continue
+      const clusters = [...groupedRows.entries()]
+        .filter(([, group]) => group.length > 1)
+        .map(([identity, group]) => ({ identity, rows: group }))
 
-        const cluster: typeof rows = [a]
-        visited.add(a.id)
-
-        for (let j = i + 1; j < scopeRows.length; j++) {
-          const b = scopeRows[j]
-          if (visited.has(b.id)) continue
-
-          const matchTvdb = Boolean(a.tvdbId && b.tvdbId && a.tvdbId === b.tvdbId)
-          const matchTmdb = Boolean(a.tmdbId && b.tmdbId && a.tmdbId === b.tmdbId)
-          const matchIdentityKey = Boolean(a.seriesIdentityKey && b.seriesIdentityKey && a.seriesIdentityKey === b.seriesIdentityKey)
-          const aResolved = resolvedIdentity(a) !== null
-          const bResolved = resolvedIdentity(b) !== null
-          const titleMatches = titlesEquivalent(a, b)
-          const titleMayMerge = titleMatches && (
-            (!aResolved && !bResolved)
-            || (aResolved !== bResolved
-              && (resolvedIdentityCounts.get(a.id) ?? 0) <= 1
-              && (resolvedIdentityCounts.get(b.id) ?? 0) <= 1)
-          )
-
-          if (matchTvdb || matchTmdb || matchIdentityKey || titleMayMerge) {
-            cluster.push(b)
-            visited.add(b.id)
-          }
+      for (const { identity, rows: cluster } of clusters) {
+        const tmdbIds = new Set(cluster.flatMap(row => [...(rowIdentities.get(row.id)?.tmdb ?? [])]))
+        const tvdbIds = new Set(cluster.flatMap(row => [...(rowIdentities.get(row.id)?.tvdb ?? [])]))
+        if (tmdbIds.size > 1 || tvdbIds.size > 1) {
+          ambiguous++
+          continue
+        }
+        const lockedRows = []
+        for (const row of cluster) {
+          const identities = row.id ? await this.identities.getIdentities('series', row.id) : []
+          if (row.userFixedMatch || identities.some(record => record.locked)) lockedRows.push(row)
+        }
+        if (lockedRows.length) {
+          preservedLocked += lockedRows.length
+          continue
         }
 
-        if (cluster.length > 1) clusters.push(cluster)
-      }
-
-      for (const cluster of clusters) {
         cluster.sort((x, y) => {
-          const xFixed = (x.userFixedMatch || 0) === 1 ? 1 : 0
-          const yFixed = (y.userFixedMatch || 0) === 1 ? 1 : 0
-          if (xFixed !== yFixed) return yFixed - xFixed
-
-          const xHasExt = (x.tmdbId || x.tvdbId) ? 1 : 0
-          const yHasExt = (y.tmdbId || y.tvdbId) ? 1 : 0
-          if (xHasExt !== yHasExt) return yHasExt - xHasExt
-
           const xEpisodes = x.ownedEpisodes || 0
           const yEpisodes = y.ownedEpisodes || 0
           if (xEpisodes !== yEpisodes) return yEpisodes - xEpisodes
@@ -747,55 +753,30 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
         const secondaryRows = cluster.slice(1)
         const secondaryIds = secondaryRows.map(r => r.id)
 
-        const mergedTmdbId = primary.tmdbId || cluster.find(r => r.tmdbId)?.tmdbId || null
-        const mergedTvdbId = primary.tvdbId || cluster.find(r => r.tvdbId)?.tvdbId || null
+        const mergedTmdbId = identity.startsWith('tmdb:') ? identity.slice(5) : primary.tmdbId || cluster.find(r => r.tmdbId)?.tmdbId || null
+        const mergedTvdbId = identity.startsWith('tvdb:') ? identity.slice(5) : primary.tvdbId || cluster.find(r => r.tvdbId)?.tvdbId || null
         const mergedPosterUrl = primary.posterUrl ?? cluster.find(r => r.posterUrl)?.posterUrl ?? null
         const mergedBackdropUrl = primary.backdropUrl ?? cluster.find(r => r.backdropUrl)?.backdropUrl ?? null
         const mergedStatus = primary.status ?? cluster.find(r => r.status)?.status ?? null
-        const mergedUserFixed = cluster.some(r => r.userFixedMatch === 1) ? 1 : 0
-
-        const canonicalKey = deriveSeriesIdentityKey({
-          sourceId: scopeSourceId,
-          libraryId: scopeLibraryId,
-          folderRelativePath: primary.seriesTitle,
-          tmdbId: mergedTmdbId,
-          tvdbId: mergedTvdbId,
-        })
-
-        const cleanTitle = parser.cleanSeriesTitleAndYear(primary.seriesTitle).title || primary.seriesTitle
-
-        const transaction = await this.db.transaction('write')
-        this.setTransactionContext(transaction, null)
+        const canonicalKey = identity
         try {
           for (const sec of secondaryRows) {
-            const secondaryIdentityKey = sec.seriesIdentityKey || deriveSeriesIdentityKey({
-              sourceId: scopeSourceId,
-              libraryId: scopeLibraryId,
-              folderRelativePath: sec.seriesTitle,
-              tmdbId: sec.tmdbId,
-              tvdbId: sec.tvdbId,
-            })
+            const secondaryIdentityKey = sec.seriesIdentityKey
+            if (!secondaryIdentityKey) throw new Error(`TV summary ${sec.id} has no persisted identity key`)
             await this.db.execute({
               sql: `UPDATE media_items
                     SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
-                    WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
-                      AND (series_identity_key = ? OR (series_identity_key IS NULL AND series_title = ?))`,
-              args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, secondaryIdentityKey, sec.seriesTitle]
+                    WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+              args: [canonicalKey, primary.seriesTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, secondaryIdentityKey]
             })
           }
-          const primaryIdentityKey = primary.seriesIdentityKey || deriveSeriesIdentityKey({
-            sourceId: scopeSourceId,
-            libraryId: scopeLibraryId,
-            folderRelativePath: primary.seriesTitle,
-            tmdbId: primary.tmdbId,
-            tvdbId: primary.tvdbId,
-          })
+          const primaryIdentityKey = primary.seriesIdentityKey
+          if (!primaryIdentityKey) throw new Error(`TV summary ${primary.id} has no persisted identity key`)
           await this.db.execute({
             sql: `UPDATE media_items
                   SET series_identity_key = ?, series_title = ?, series_tmdb_id = COALESCE(?, series_tmdb_id)
-                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
-                    AND (series_identity_key = ? OR (series_identity_key IS NULL AND series_title = ?))`,
-            args: [canonicalKey, cleanTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, primaryIdentityKey, primary.seriesTitle]
+                  WHERE type = 'episode' AND source_id = ? AND library_id = ? AND series_identity_key = ?`,
+            args: [canonicalKey, primary.seriesTitle, mergedTmdbId, scopeSourceId, scopeLibraryId, primaryIdentityKey]
           })
 
           for (const secId of secondaryIds) {
@@ -823,7 +804,7 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
                     COUNT(*) as owned_episodes,
                     SUM(file_size) as total_size
                   FROM media_items
-                  WHERE type = 'episode' AND source_id = ? AND (library_id = ? OR library_id IS NULL OR library_id = '')
+                  WHERE type = 'episode' AND source_id = ? AND library_id = ?
                     AND series_identity_key = ?`,
             args: [scopeSourceId, scopeLibraryId, canonicalKey]
           })
@@ -833,8 +814,8 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             total_size: number | null
           }
 
-          const totalEpisodes = Math.max(primary.totalEpisodes || 0, Number(epStats?.owned_episodes || 0))
-          const totalSeasons = Math.max(primary.totalSeasons || 0, Number(epStats?.owned_seasons || 0))
+          const totalEpisodes = Math.max(...cluster.map(row => row.totalEpisodes || 0), Number(epStats?.owned_episodes || 0))
+          const totalSeasons = Math.max(...cluster.map(row => row.totalSeasons || 0), Number(epStats?.owned_seasons || 0))
           const ownedEpisodes = Number(epStats?.owned_episodes || primary.ownedEpisodes || 0)
           const ownedSeasons = Number(epStats?.owned_seasons || primary.ownedSeasons || 0)
           const completenessPct = primary.completenessPercentage == null
@@ -843,22 +824,27 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
               ? (ownedEpisodes / totalEpisodes) * 100
               : primary.completenessPercentage
 
+          for (const secId of secondaryIds) {
+            await this.db.execute({
+              sql: `DELETE FROM series_completeness WHERE id = ? AND source_id = ? AND library_id = ?`,
+              args: [secId, scopeSourceId, scopeLibraryId]
+            })
+          }
+
           await this.db.execute({
             sql: `UPDATE series_completeness
-                  SET series_title = ?, series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
-                      poster_url = ?, backdrop_url = ?, status = ?, user_fixed_match = ?,
+                  SET series_identity_key = ?, tmdb_id = ?, tvdb_id = ?,
+                      poster_url = ?, backdrop_url = ?, status = ?,
                       total_seasons = ?, total_episodes = ?, owned_seasons = ?, owned_episodes = ?,
                       completeness_percentage = ?, total_size = ?, updated_at = datetime('now')
                   WHERE id = ?`,
             args: [
-              cleanTitle,
               canonicalKey,
               mergedTmdbId,
               mergedTvdbId,
               mergedPosterUrl,
               mergedBackdropUrl,
               mergedStatus,
-              mergedUserFixed,
               totalSeasons,
               totalEpisodes,
               ownedSeasons,
@@ -869,27 +855,16 @@ export class TVShowRepository extends BaseRepository<typeof schema.seriesComplet
             ]
           })
 
-          for (const secId of secondaryIds) {
-            await this.db.execute({
-              sql: `DELETE FROM series_completeness WHERE id = ?`,
-              args: [secId]
-            })
-          }
-
-          await transaction.commit()
           mergedCount++
-          logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records into canonical ID ${primary.id} ("${cleanTitle}")`)
+          logging.info('[TVShowRepository]', `Merged ${cluster.length} duplicate TV show records with verified ${identity} identity into canonical ID ${primary.id}`)
         } catch (err) {
-          await transaction.rollback()
           logging.error('[TVShowRepository]', `Failed to merge duplicate cluster for "${primary.seriesTitle}": ${getErrorMessage(err)}`)
           throw err
-        } finally {
-          this.setTransactionContext(null, null)
         }
       }
     }
 
-    return mergedCount
+    return { merged: mergedCount, preservedLocked, ambiguous }
   }
 
   private mapDrizzleToCompleteness(r: typeof schema.seriesCompleteness.$inferSelect): SeriesCompleteness {

@@ -9,6 +9,85 @@ describe('TVShowRepository duplicate consolidation', () => {
     await getDatabase().initialize(':memory:')
   })
 
+  it('consolidates duplicate summaries only for the same verified provider identity and owner', async () => {
+    const db = getDatabase()
+    const sourceId = 'verified-duplicate-source'
+    const libraryId = 'tv-main'
+    const now = new Date().toISOString()
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tmdb')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tvdb')
+    await db.db.execute('DROP TRIGGER IF EXISTS trg_series_completeness_identity_insert')
+    await db.db.execute({
+      sql: `INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id, total_seasons,
+        total_episodes, owned_seasons, owned_episodes, missing_seasons, missing_episodes,
+        completeness_percentage, tmdb_id, tvdb_id, created_at, updated_at
+      ) VALUES
+        ('Star Trek', 'legacy:star-trek-one', ?, ?, 5, 50, 1, 10, '[]', '[]', 20, '253', '371980', ?, ?),
+        ('Different local title', 'legacy:star-trek-two', ?, ?, 5, 50, 1, 5, '[]', '[]', 10, '253', '371980', ?, ?),
+        ('Star Trek', 'tmdb:253', ?, 'tv-other', 5, 50, 1, 8, '[]', '[]', 16, '253', '371980', ?, ?)` ,
+      args: [sourceId, libraryId, now, now, sourceId, libraryId, now, now, sourceId, now, now],
+    })
+
+    const outcome = await db.tvShows.mergeDuplicateShowsWithOutcome(sourceId, libraryId)
+    expect(outcome).toEqual({ merged: 1, preservedLocked: 0, ambiguous: 0 })
+    const owned = await db.tvShows.getAllCompleteness(sourceId, libraryId)
+    expect(owned).toHaveLength(1)
+    expect(owned[0].series_identity_key).toBe('tmdb:253')
+    expect(await db.tvShows.getAllCompleteness(sourceId, 'tv-other')).toHaveLength(1)
+  })
+
+  it('preserves locked summaries when duplicate provider identity is shared', async () => {
+    const db = getDatabase()
+    const sourceId = 'locked-duplicate-source'
+    const libraryId = 'tv'
+    const now = new Date().toISOString()
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tmdb')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tvdb')
+    await db.db.execute('DROP TRIGGER IF EXISTS trg_series_completeness_identity_insert')
+    await db.db.execute({
+      sql: `INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id, total_seasons,
+        total_episodes, owned_seasons, owned_episodes, missing_seasons, missing_episodes,
+        completeness_percentage, tmdb_id, user_fixed_match, created_at, updated_at
+      ) VALUES
+        ('Same title', 'legacy:locked-one', ?, ?, 1, 1, 1, 1, '[]', '[]', 100, '999', 1, ?, ?),
+        ('Unrelated title', 'legacy:locked-two', ?, ?, 1, 1, 1, 1, '[]', '[]', 100, '999', 0, ?, ?)` ,
+      args: [sourceId, libraryId, now, now, sourceId, libraryId, now, now],
+    })
+
+    const outcome = await db.tvShows.mergeDuplicateShowsWithOutcome(sourceId, libraryId)
+    expect(outcome).toEqual({ merged: 0, preservedLocked: 1, ambiguous: 0 })
+    expect(await db.tvShows.getAllCompleteness(sourceId, libraryId)).toHaveLength(2)
+  })
+
+  it('reports and preserves duplicate groups with conflicting provider identities', async () => {
+    const db = getDatabase()
+    const sourceId = 'conflicting-duplicate-source'
+    const libraryId = 'tv'
+    const now = new Date().toISOString()
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_unique')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tmdb')
+    await db.db.execute('DROP INDEX IF EXISTS idx_series_completeness_tvdb')
+    await db.db.execute('DROP TRIGGER IF EXISTS trg_series_completeness_identity_insert')
+    await db.db.execute({
+      sql: `INSERT INTO series_completeness (
+        series_title, series_identity_key, source_id, library_id, total_seasons,
+        total_episodes, owned_seasons, owned_episodes, missing_seasons, missing_episodes,
+        completeness_percentage, tmdb_id, tvdb_id, created_at, updated_at
+      ) VALUES
+        ('First title', 'legacy:first', ?, ?, 1, 1, 1, 1, '[]', '[]', 100, '123', '456', ?, ?),
+        ('Second title', 'legacy:second', ?, ?, 1, 1, 1, 1, '[]', '[]', 100, '123', '789', ?, ?)` ,
+      args: [sourceId, libraryId, now, now, sourceId, libraryId, now, now],
+    })
+
+    const outcome = await db.tvShows.mergeDuplicateShowsWithOutcome(sourceId, libraryId)
+    expect(outcome).toEqual({ merged: 0, preservedLocked: 0, ambiguous: 1 })
+    expect(await db.tvShows.getAllCompleteness(sourceId, libraryId)).toHaveLength(2)
+  })
+
   it('does not let one unresolved row bridge distinct resolved same-title identities', async () => {
     const db = getDatabase()
     const sourceId = 'duplicate-source'
@@ -93,7 +172,7 @@ describe('TVShowRepository duplicate consolidation', () => {
       .toEqual(['/tv/602/S01E01.mkv'])
   })
 
-  it('consolidates an unresolved duplicate when exactly one resolved identity matches', async () => {
+  it('preserves unresolved and resolved same-title rows without identity ownership', async () => {
     const db = getDatabase()
     const sourceId = 'duplicate-source'
     const libraryId = 'tv'
@@ -141,17 +220,17 @@ describe('TVShowRepository duplicate consolidation', () => {
       file_path: '/tv/701/S01E02.mkv',
     })
 
-    expect(await db.tvShows.mergeDuplicateShows(sourceId, libraryId)).toBe(1)
+    expect(await db.tvShows.mergeDuplicateShows(sourceId, libraryId)).toBe(0)
 
     const rows = (await db.tvShows.getAllCompleteness(sourceId, libraryId))
       .filter(row => row.series_title === title)
-    expect(rows).toHaveLength(1)
-    expect(rows[0].series_identity_key).toBe('tmdb:701')
+    expect(rows).toHaveLength(2)
+    expect(rows.map(row => row.series_identity_key).sort()).toEqual([unresolvedKey, 'tmdb:701'].sort())
     expect((await db.tvShows.getEpisodes(title, sourceId, 'tmdb:701', libraryId)).map(item => item.file_path).sort())
-      .toEqual(['/tv/701/S01E02.mkv', '/tv/single-unresolved/S01E01.mkv'].sort())
+      .toEqual(['/tv/701/S01E02.mkv'])
   })
 
-  it('consolidates unresolved duplicates without absorbing ambiguous resolved identities', async () => {
+  it('preserves unresolved duplicates and ambiguous resolved identities with the same title', async () => {
     const db = getDatabase()
     const sourceId = 'duplicate-source'
     const libraryId = 'tv'
@@ -179,16 +258,13 @@ describe('TVShowRepository duplicate consolidation', () => {
       ],
     })
 
-    expect(await db.tvShows.mergeDuplicateShows(sourceId, libraryId)).toBe(1)
+    expect(await db.tvShows.mergeDuplicateShows(sourceId, libraryId)).toBe(0)
 
     const rows = (await db.tvShows.getAllCompleteness(sourceId, libraryId))
       .filter(row => row.series_title === title)
-    expect(rows).toHaveLength(3)
-    expect(rows.map(row => row.series_identity_key).sort()).toEqual([
-      'tmdb:801',
-      'tmdb:802',
-      unresolvedKey,
-    ].sort())
+    expect(rows).toHaveLength(4)
+    expect(rows.map(row => row.series_identity_key).filter(Boolean).sort()).toEqual(['tmdb:801', 'tmdb:802'])
+    expect(rows.filter(row => !row.series_identity_key)).toHaveLength(2)
   })
 
   it('does not consume an unresolved row when upserting a second resolved same-title identity', async () => {

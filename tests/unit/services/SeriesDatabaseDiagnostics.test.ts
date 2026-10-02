@@ -105,9 +105,9 @@ describe('SeriesDatabaseDiagnostics and Conflict Resolution', () => {
       await db.tvShows.mergeDuplicateShows('src-st', 'tv')
 
       const allRows = await db.tvShows.getAllCompleteness('src-st', 'tv')
-      expect(allRows.length).toBe(1)
-      expect(allRows[0].id).toBe(canonicalId)
-      expect(allRows[0].tmdb_id).toBe('253')
+      expect(allRows.length).toBe(2)
+      expect(allRows.some(row => row.id === canonicalId && row.tmdb_id === '253')).toBe(true)
+      expect(allRows.some(row => row.id === unresolvedId && row.series_identity_key?.startsWith('unresolved:'))).toBe(true)
     })
   })
 

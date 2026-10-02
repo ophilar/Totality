@@ -33,7 +33,7 @@
 - Production FFprobe packet examples with trailing delimiters parse correctly; malformed values fail with a precise diagnostic.
 - Complete analyses and scores preceding a failed file remain readable after restart. The task reports partial/failed status with correct counts.
 - H.264 media receives a configured score; unconfigured codecs stay explicitly unknown.
-- TV list, count, and aggregates return correctly for each library and initial letter. Every completed series analysis reconciles each affected library after one SQLite backup, even when the caller omits `libraryId`; cleanup removes only verified unlocked orphan summaries and preserves locked or ambiguous records.
+- TV list, count, and aggregates return correctly for each library and initial letter. Successful series analysis backs up before transactional cleanup, consolidates only same-owner summaries with matching persisted TMDB/TVDB identity, and removes only verified unlocked orphans. Same-title unrelated rows, provider-identity conflicts, locked matches, and ambiguous ownership remain preserved and reported. Partial library analyses clean only successfully analyzed series.
 - Movies and episodes open Optimize when assessed actionable, sample-required, already optimized, or insufficient; execution still passes measured review, source freshness, compatibility, output verification, and activation checks.
 - Collection 404, missing track metadata, unsupported encoder, and exhausted MusicBrainz requests remain visible and never appear as successful completeness results.
 - Full tests and Windows package build pass; live database changes occur only via the application after SQLite backup and verified scan.
