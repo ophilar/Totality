@@ -344,6 +344,7 @@ export class TranscodingService {
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
     if (!analysis.success || analysis.filePath !== file || analysis.fileSize !== stat.size || !analysis.audioTracks.length) throw new Error('Persisted file analysis is stale; analyze the item before stream pruning')
     const retained = analysis.audioTracks.filter(track => track.isDefault || track.isCommentary || track.isAudioDescription || track.isAccessibility || track.hasObjectAudio).map(track => track.index)
+    if (retained.length === 0) throw new Error('No audio stream is safe to retain automatically; choose retained streams in the review plan.')
     if (retained.length === analysis.audioTracks.length) throw new Error('No safe stream pruning operation is available; every audio stream must be retained')
     const streamSelection: StreamSelectionPolicy = { audio: 'explicit', audioIndexes: retained, subtitle: 'all' }
     // The preflight stores the explicit retained stream indexes as reviewed evidence.

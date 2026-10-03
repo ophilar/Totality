@@ -84,7 +84,7 @@ describe('TranscodingService', () => {
       'Movie.quarantine-123.mkv', 'Show.S01E01.1080p.Remux.mkv',
       'Show.S01E01.1080p.WEB-DL.mkv',
       'Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv',
-      'stream.ts', 'video.mp4', 'invalid-input.mkv',
+      'stream.ts', 'video.mp4', 'invalid-input.mkv', 'unmarked-audio.mkv',
     ].map(filename => fsPromises.writeFile(mediaPath(filename), Buffer.alloc(4_000))))
     service = new TranscodingService()
   })
@@ -323,6 +323,35 @@ describe('TranscodingService', () => {
   })
 
   describe('preflightShowTranscode Advisory', () => {
+    it('rejects stream-pruning preflight when no audio stream has verified retained status', async () => {
+      const filePath = mediaPath('unmarked-audio.mkv')
+      const mediaItemId = await upsertMediaItem({
+        id: 950,
+        title: 'Unmarked audio',
+        type: 'episode',
+        file_path: filePath,
+        source_id: 'src1',
+        library_id: 'tv',
+      })
+      const analysis = {
+        success: true,
+        filePath,
+        fileSize: 4_000,
+        duration: 120_000,
+        video: { index: 0, codec: 'h264', width: 1920, height: 1080 },
+        audioTracks: [
+          { index: 1, codec: 'aac', channels: 2, bitrate: 128, isDefault: false, hasObjectAudio: false },
+          { index: 2, codec: 'aac', channels: 2, bitrate: 128, isDefault: false, hasObjectAudio: false },
+        ],
+        subtitleTracks: [],
+      }
+      await db.media.updatePathAndStats(mediaItemId, filePath, analysis)
+
+      await expect(service.preflightRemux(mediaItemId)).rejects.toThrow(
+        'No audio stream is safe to retain automatically; choose retained streams in the review plan.'
+      )
+    })
+
     it('requires the scoped analysis job to persist file evidence before optimization preflight', async () => {
       const moviePath = mediaPath('Movie.avi')
       const mediaItemId = await upsertMediaItem({
