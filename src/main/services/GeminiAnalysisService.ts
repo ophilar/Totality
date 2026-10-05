@@ -92,6 +92,7 @@ export class GeminiAnalysisService {
    */
   async generateQualityReport(
     onDelta: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ text: string; skipped?: boolean }> {
     const gemini = getGeminiService()
     if (!gemini.isConfigured()) {
@@ -108,6 +109,7 @@ export class GeminiAnalysisService {
       sortOrder: 'asc',
       limit: 20,
     })
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Stats',
@@ -141,6 +143,7 @@ export class GeminiAnalysisService {
         ],
         system: APP_CONFIG.ai.qualityReport,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -153,6 +156,7 @@ export class GeminiAnalysisService {
    */
   async generateUpgradePriorities(
     onDelta: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ text: string; skipped?: boolean }> {
     const gemini = getGeminiService()
     if (!gemini.isConfigured()) {
@@ -175,6 +179,7 @@ export class GeminiAnalysisService {
     })
 
     const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -221,6 +226,7 @@ export class GeminiAnalysisService {
         ],
         system: APP_CONFIG.ai.upgradePriorities,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -233,6 +239,7 @@ export class GeminiAnalysisService {
    */
   async generateCompletenessInsights(
     onDelta: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ text: string; skipped?: boolean }> {
     const gemini = getGeminiService()
     if (!gemini.isConfigured()) {
@@ -244,6 +251,7 @@ export class GeminiAnalysisService {
     const incompleteSeries = await db.tvShows.getIncomplete()
     const incompleteCollections = await db.movieCollections.getIncompleteCollections()
     const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -299,6 +307,7 @@ export class GeminiAnalysisService {
         ],
         system: APP_CONFIG.ai.completenessInsights,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )
@@ -311,6 +320,7 @@ export class GeminiAnalysisService {
    */
   async generateWishlistAdvice(
     onDelta: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ text: string; skipped?: boolean }> {
     const gemini = getGeminiService()
     if (!gemini.isConfigured()) {
@@ -321,6 +331,7 @@ export class GeminiAnalysisService {
 
     const wishlistItems = await db.wishlist.getItems({ status: WishlistStatus.Active, limit: 50 })
     const stats = await db.stats.getLibraryStats()
+    signal?.throwIfAborted()
 
     const dataContext = [
       '## Library Overview',
@@ -353,6 +364,7 @@ export class GeminiAnalysisService {
         ],
         system: APP_CONFIG.ai.wishlistAdvice,
         maxTokens: 4096,
+        signal,
       },
       onDelta,
     )

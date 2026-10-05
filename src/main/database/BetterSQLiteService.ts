@@ -243,7 +243,7 @@ export class BetterSQLiteService {
     }
   }
 
-  public async exportData(): Promise<ExportData> {
+  public async exportData(signal?: AbortSignal): Promise<ExportData> {
     const data: ExportData = { _meta: [{ version: 1, exported_at: new Date().toISOString() }] }
     const tables = [
       'settings',
@@ -266,8 +266,10 @@ export class BetterSQLiteService {
       const existingTables = new Set(tableCheck.rows.map(row => row.name as string))
 
       for (const t of tables) {
+        signal?.throwIfAborted()
         if (!existingTables.has(t)) continue
         const result = await this.db.execute(`SELECT * FROM "${t.replace(/"/g, '""')}"`)
+        signal?.throwIfAborted()
         data[t] = result.rows as ExportRow[]
       }
     } catch (e) {
@@ -286,19 +288,23 @@ export class BetterSQLiteService {
     })
   }
 
-  public async importData(data: ExportData): Promise<{ imported: number, errors: number }> {
+  public async importData(data: ExportData, signal?: AbortSignal, beginCommit?: () => void): Promise<{ imported: number, errors: number }> {
     let imported = 0
     await this.withBatch(async () => {
+      signal?.throwIfAborted()
       const tableCheck = await this.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      signal?.throwIfAborted()
       const validTables = new Set(tableCheck.rows.map(row => row.name as string))
 
       for (const [table, rows] of Object.entries(data)) {
+        signal?.throwIfAborted()
         if (table === '_meta' || !Array.isArray(rows) || !validTables.has(table)) continue
 
         const colCheck = await this.db.execute(`PRAGMA table_info("${table.replace(/"/g, '""')}")`)
         const validCols = new Set(colCheck.rows.map(row => row.name as string))
 
         for (const row of rows) {
+          signal?.throwIfAborted()
           const validEntries = Object.entries(row).filter(([key]) => validCols.has(key))
           if (validEntries.length === 0) continue
 
@@ -314,6 +320,8 @@ export class BetterSQLiteService {
           imported++
         }
       }
+      signal?.throwIfAborted()
+      beginCommit?.()
     }).catch((e) => {
       throw new Error(`Database import failed transactionally: ${getErrorMessage(e)}`)
     })

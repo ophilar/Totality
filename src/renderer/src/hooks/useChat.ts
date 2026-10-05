@@ -35,10 +35,13 @@ interface RateLimitState {
 export function useChat(viewContext?: ViewContext) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
   const [activeTools, setActiveTools] = useState<string[]>([])
   const [rateLimit, setRateLimit] = useState<RateLimitState>({ limited: false, retryAfterSeconds: 0 })
   const [error, setError] = useState<string | null>(null)
   const requestIdRef = useRef(0)
+  const activeRequestIdRef = useRef<string | null>(null)
+  const cancellationRequestedRef = useRef(false)
   const toolsForCurrentRequest = useRef<string[]>([])
   const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -65,7 +68,7 @@ export function useChat(viewContext?: ViewContext) {
     const cleanup = window.electronAPI.onAiChatStreamDelta?.((data) => {
       setMessages((prev) =>
         prev.map((m) => {
-          if (m.isLoading && m.role === 'assistant') {
+          if (m.isLoading && m.role === 'assistant' && m.id === `assistant-${activeRequestIdRef.current?.replace('chat-', '')}`) {
             return { ...m, content: m.content + data.delta }
           }
           return m
@@ -102,6 +105,8 @@ export function useChat(viewContext?: ViewContext) {
 
     setError(null)
     const requestId = `chat-${++requestIdRef.current}`
+    activeRequestIdRef.current = requestId
+    cancellationRequestedRef.current = false
     toolsForCurrentRequest.current = []
 
     // Add user message
@@ -173,28 +178,47 @@ export function useChat(viewContext?: ViewContext) {
         )
       }
     } catch (err: unknown) {
+      if (cancellationRequestedRef.current) {
+        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: 'Cancelled', isLoading: false } : m))
+        return
+      }
       const errorObj = err as { error?: string }
       setError(errorObj.error || 'Failed to send message')
       // Remove the placeholder assistant message on error
       setMessages((prev) => prev.filter((m) => m.id !== assistantId))
     } finally {
+      activeRequestIdRef.current = null
+      cancellationRequestedRef.current = false
       setIsLoading(false)
+      setIsCancelling(false)
       setActiveTools([])
     }
   }, [isLoading, messages, startRateLimitCountdown, viewContext])
 
+  const cancelMessage = useCallback(async () => {
+    const requestId = activeRequestIdRef.current
+    if (!requestId || cancellationRequestedRef.current) return
+    cancellationRequestedRef.current = true
+    setIsCancelling(true)
+    setError(null)
+    await window.electronAPI.aiCancelRequest(requestId)
+  }, [])
+
   const clearHistory = useCallback(() => {
+    void cancelMessage()
     setMessages([])
     setError(null)
-  }, [])
+  }, [cancelMessage])
 
   return {
     messages,
     isLoading,
+    isCancelling,
     activeTools,
     rateLimit,
     error,
     sendMessage,
+    cancelMessage,
     clearHistory,
   }
 }

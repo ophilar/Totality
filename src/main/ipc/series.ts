@@ -1,16 +1,18 @@
 import { z } from 'zod'
+import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { getSeriesCompletenessService } from '@main/services/SeriesCompletenessService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getTMDBService } from '@main/services/TMDBService'
 import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
 import { NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, SeriesGetSeasonDetailsTupleSchema, SeriesGetEpisodeStillTupleSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
-import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 import { deriveSeriesIdentityKey } from '@main/services/SeriesIdentityService'
 import type { MediaItem } from '@main/types/database'
 
 import { getStatsCacheService } from '@main/services/StatsCacheService'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 
 const ScopedStringSchema = z.string().min(1).max(200)
 
@@ -58,7 +60,15 @@ export function registerSeriesHandlers() {
   const service = getSeriesCompletenessService()
   const db = getDatabase()
   const tmdb = getTMDBService()
-
+  createIpcHandler(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_STATE, async () => tmdb.getValidationState())
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.TMDB_TEST_API_KEY, z.object({ requestId: z.string().min(1), apiKey: z.string().trim().min(1) }), async (event, input) => {
+    const operation = operationRequestRegistry.register(event.sender, input.requestId)
+    try {
+      return await tmdb.testApiKey(input.apiKey, operation.signal)
+    } finally {
+      operation.dispose()
+    }
+  })
   async function analyzeIdentityScoped(
     title: string,
     sourceId: string,

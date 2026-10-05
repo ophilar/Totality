@@ -7,7 +7,6 @@ import type {
   MediaProvider,
   ScanResult,
   ProgressCallback,
-  MediaLibrary,
   ScanProgress,
 } from '@main/providers/base/MediaProvider'
 
@@ -106,7 +105,7 @@ export class SourceScannerService {
 
       if (result.success && !this.scanCancelled && result.cancelled !== true && library) {
         await this.db.sources.updateLibraryScanTime(sourceId, libraryId, result.itemsScanned)
-        await this.startPostScanTasks(sourceId, libraryId, library)
+        result.postScanAnalysis = await this.startPostScanTasks(sourceId, libraryId)
       }
 
       return result
@@ -162,7 +161,6 @@ export class SourceScannerService {
                 if (onProgress) onProgress(source.source_id, source.display_name, progress)
               }
             })
-            results.set(`${source.source_id}:${library.id}`, result)
             this.logging.info(
               '[SourceScannerService]',
               `Scan finished: provider=${provider.providerType}, sourceId=${source.source_id}, libraryId=${library.id}, success=${result.success}, cancelled=${result.cancelled === true}, scanned=${result.itemsScanned}, added=${result.itemsAdded}, updated=${result.itemsUpdated}, removed=${result.itemsRemoved}, durationMs=${result.durationMs}, errors=${result.errors.length}`
@@ -172,8 +170,9 @@ export class SourceScannerService {
             }
             if (result.success && !this.scanCancelled && result.cancelled !== true) {
               await this.db.sources.updateLibraryScanTime(source.source_id, library.id, result.itemsScanned)
-              await this.startPostScanTasks(source.source_id, library.id, library)
+              result.postScanAnalysis = await this.startPostScanTasks(source.source_id, library.id)
             }
+            results.set(`${source.source_id}:${library.id}`, result)
           }
         } catch (error) {
           if (this.scanCancelled) break
@@ -183,14 +182,7 @@ export class SourceScannerService {
             `Failed to scan source ${source.source_id}${currentLibraryId === undefined ? '' : `, library ${currentLibraryId}`}:`,
             error
           )
-          const followUpFailure = errorMsg.startsWith('Scan completed; analysis could not be queued:')
-          if (followUpFailure && currentLibraryId) {
-            results.set(`${source.source_id}:${currentLibraryId}`, {
-              success: true, itemsScanned: 0, itemsAdded: 0, itemsUpdated: 0,
-              itemsRemoved: 0, errors: [errorMsg], durationMs: 0,
-            })
-          }
-          if (!followUpFailure) results.set(`${source.source_id}:*`, {
+          results.set(`${source.source_id}:*`, {
             success: false,
             itemsScanned: 0,
             itemsAdded: 0,
@@ -221,12 +213,15 @@ export class SourceScannerService {
     }
   }
 
-  private async startPostScanTasks(sourceId: string, libraryId: string, _library: MediaLibrary): Promise<void> {
-    const { getSourceManager } = await import('./SourceManager')
+  private async startPostScanTasks(sourceId: string, libraryId: string): Promise<NonNullable<ScanResult['postScanAnalysis']>> {
     try {
+      const { getSourceManager } = await import('./SourceManager')
       await getSourceManager().triggerPostScanAnalysis(sourceId, libraryId)
+      return { status: 'queued' }
     } catch (error) {
-      throw new Error(`Scan completed; analysis could not be queued: ${error instanceof Error ? error.message : String(error)}`)
+      const message = error instanceof Error ? error.message : String(error)
+      this.logging.warn('[SourceScannerService]', `Scan completed, but post-scan analysis could not be queued for source ${sourceId}, library ${libraryId}: ${message}`)
+      return { status: 'failed', error: message }
     }
   }
 }

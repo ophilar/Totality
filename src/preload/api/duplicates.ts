@@ -11,7 +11,7 @@ export const duplicatesApi = {
   /**
    * Manually trigger a duplicate scan
    */
-  duplicatesScan: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DUPLICATES.SCAN, sourceId),
+  duplicatesScan: (sourceId: string | undefined, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DUPLICATES.SCAN, sourceId, requestId),
 
   /**
    * Get retention recommendation for a duplicate group

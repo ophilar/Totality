@@ -61,8 +61,8 @@ describe('TranscodingHardwareCard', () => {
 
     expect(screen.getByText('Engines:')).toBeTruthy()
     expect(screen.getByText('ffmpeg')).toBeTruthy()
-    expect(screen.getByText('Encoders:')).toBeTruthy()
-    expect(screen.getByText('nvenc_av1, nvenc_h265, qsv_av1, qsv_h265, svt_av1, x265, libx264')).toBeTruthy()
+    expect(screen.getByText('Verified encoders:')).toBeTruthy()
+    expect(screen.getByText('nvenc_av1, nvenc_h265')).toBeTruthy()
   })
 
   it('allows changing GPU selection', async () => {

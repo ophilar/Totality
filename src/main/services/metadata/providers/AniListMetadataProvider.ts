@@ -28,7 +28,8 @@ export class AniListMetadataProvider implements IMetadataProvider {
 
   private readonly graphqlEndpoint = 'https://graphql.anilist.co'
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const gqlQuery = `
       query ($search: String) {
         Page(perPage: 10) {
@@ -58,7 +59,8 @@ export class AniListMetadataProvider implements IMetadataProvider {
       const res = await fetch(this.graphqlEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ query: gqlQuery, variables: { search: query.title } })
+        body: JSON.stringify({ query: gqlQuery, variables: { search: query.title } }),
+        signal,
       })
 
       if (!res.ok) {
@@ -86,6 +88,7 @@ export class AniListMetadataProvider implements IMetadataProvider {
         )
       }))
     } catch (err) {
+      if (signal?.aborted) throw err
       console.error('[AniListMetadataProvider] Search error:', err)
       return []
     }

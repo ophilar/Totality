@@ -13,7 +13,7 @@ import { PathUtils } from '@main/services/utils/PathUtils'
 import { GpuDetector, type GpuInfo } from '@main/services/utils/GpuDetector'
 import { TranscodeCommandFactory } from './transcoding/TranscodeCommandFactory'
 import { validateHdrTranscode } from './transcoding/HdrTranscodingPolicy'
-import { buildTranscodingCapabilities, resolveSelectedGpuId, TranscodingCapabilities } from './TranscodingCapabilities'
+import { buildTranscodingCapabilities, TranscodingCapabilities } from './TranscodingCapabilities'
 import type { FileAnalysisResult } from './MediaFileAnalyzer'
 import type { StreamSelectionPolicy } from './transcoding/StreamSelectionPlan'
 import { buildStreamSelectionPlan } from './transcoding/StreamSelectionPlan'
@@ -145,7 +145,7 @@ export interface ShowTranscodePreflight {
     sourceSize: number
     sourceMtimeMs: number
     recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
-    decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence'
+    decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence' | 'incompatible'
     evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
     confidence?: 'high' | 'medium' | 'low' | 'none'
     estimatedSavingsBytes?: number | null
@@ -213,7 +213,8 @@ export class TranscodingService {
     this.activeJobs.clear()
   }
 
-  async preflightShowTranscode(request: ShowTranscodeRequest): Promise<ShowTranscodePreflight> {
+  async preflightShowTranscode(request: ShowTranscodeRequest, operation?: { signal: AbortSignal; beginCommit: () => void }): Promise<ShowTranscodePreflight> {
+    operation?.signal.throwIfAborted()
     if (!request.sourceId.trim()) throw new Error('Source ID is required')
     if (request.mediaItemId === undefined && (!request.seriesTitle?.trim() || !request.seriesIdentityKey?.trim() || !request.libraryId?.trim())) throw new Error('TV series identity and library are required')
     const profileId = request.options.targetProfileId || await getDatabase().config.getSetting('optimization_default_target_profile_id')
@@ -234,6 +235,7 @@ export class TranscodingService {
         : episode.title
       const fallbackMediaItemId = episode.id || 0
       try {
+        operation?.signal.throwIfAborted()
         if (!episode.id || !episode.file_path || !episode.source_id) {
           throw new Error(`Episode "${label}" has no local source identity`)
         }
@@ -258,7 +260,8 @@ export class TranscodingService {
         const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility.overall === 'incompatible'))
         const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
         if (!shouldEncode && !streamsChanged && !containerChanged) {
-          return { mediaItemId: episode.id, label, compatible: sourceCompatibility.overall === 'compatible', reason: sourceCompatibility.overall === 'incompatible' ? 'Retained streams do not satisfy the selected playback profile' : undefined, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, recommendedAction: 'already_optimized', decisionStatus: 'already_optimized', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
+          const compatible = sourceCompatibility.overall === 'compatible'
+          return { mediaItemId: episode.id, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, recommendedAction: compatible ? 'already_optimized' : undefined, decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
         }
         if (shouldEncode) {
           options.maxOutputBytes = (await this.resolveMaximumOutputBytes(stat.size, options, getDatabase()))!
@@ -270,7 +273,7 @@ export class TranscodingService {
         let targetCompatibility = sourceCompatibility
         try {
           if (shouldEncode) {
-            const measuredParameters = await this.selectMeasuredParameters(episode.file_path, options, sampleDirectory)
+          const measuredParameters = await this.selectMeasuredParameters(episode.file_path, options, sampleDirectory, operation?.signal)
             Object.assign(options, measuredParameters)
             options.useGpu = measuredParameters.encoder !== 'x265' && measuredParameters.encoder !== 'svt_av1'
             if (!options.useGpu) options.gpuId = undefined
@@ -279,7 +282,7 @@ export class TranscodingService {
           if (shouldEncode) {
             params.measuredCandidate = (options as TranscodeOptions & { measuredCandidate?: MeasuredCandidate }).measuredCandidate
             for (const samplePath of params.measuredCandidate!.samplePaths!) {
-              const sample = await getMediaFileAnalyzer().analyzeFile(samplePath)
+              const sample = await getMediaFileAnalyzer().analyzeFile(samplePath, operation?.signal)
               this.verifyPlannedStreams(analysis, sample, options, params)
               targetCompatibility = evaluatePlaybackTarget(targetProfile, sample)
               if (targetCompatibility.overall !== 'compatible') throw new Error(`Measured sample is incompatible: ${Object.values(targetCompatibility.findings).filter(finding => finding.status === 'incompatible').map(finding => finding.rule).join('; ')}`)
@@ -299,6 +302,7 @@ export class TranscodingService {
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
         }
       } catch (error) {
+        if (operation?.signal.aborted) throw error
         const errorMsg = getErrorMessage(error)
         getLoggingService().warn('[TranscodingService]', `Episode preflight incompatible: "${label}": ${errorMsg}`)
         return {
@@ -323,11 +327,16 @@ export class TranscodingService {
     const results: ShowTranscodePreflight['episodes'] = []
     for (let i = 0; i < episodes.length; i += CONCURRENCY) {
       const chunk = episodes.slice(i, i + CONCURRENCY)
-      const chunkResults = await Promise.all(chunk.map(ep => processEpisode(ep)))
-      results.push(...chunkResults)
+      const chunkResults = await Promise.allSettled(chunk.map(ep => processEpisode(ep)))
+      const rejected = chunkResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (rejected) throw rejected.reason
+      results.push(...chunkResults.map(result => (result as PromiseFulfilledResult<ShowTranscodePreflight['episodes'][0]>).value))
+      operation?.signal.throwIfAborted()
     }
 
     const result = { preflightId, batchId, seriesTitle: request.seriesTitle || episodes[0]?.title || 'Selected media', episodeCount: episodes.length, compatible: results.some(episode => episode.compatible), expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), userApproved: false, episodes: results }
+    operation?.signal.throwIfAborted()
+    operation?.beginCommit()
     this.showPreflights.set(preflightId, { request, result })
     await getDatabase().config.setSetting(`transcoding.preflight.${preflightId}`, JSON.stringify({ request, result }))
     return result
@@ -544,15 +553,17 @@ export class TranscodingService {
         GpuDetector.detectGpus({ refresh: options.refresh })
       ])
       const persistedSelection = await getDatabase().config.getSetting('selected_transcoding_gpu_id')
-      const selectedGpuId = resolveSelectedGpuId(gpus, persistedSelection === null ? undefined : persistedSelection || null)
-      if (persistedSelection === null) {
-        await getDatabase().config.setSetting('selected_transcoding_gpu_id', selectedGpuId || '')
-      }
+      const selectedGpuId = persistedSelection && gpus.some(gpu => gpu.id === persistedSelection)
+        ? persistedSelection
+        : null
       const encoderProbe = await this.probeFfmpegEncoders(gpus)
       if (encoderProbe.failures.length > 0) {
         getLoggingService().error('[TranscodingService]', `FFmpeg encoder verification failed: ${encoderProbe.failures.join('; ')}`)
       }
-      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders, encoderProbe.failures)
+      const savedGpuUnavailable = persistedSelection && !gpus.some(gpu => gpu.id === persistedSelection)
+        ? [`Saved GPU selection is unavailable: ${persistedSelection}`]
+        : []
+      const capabilities = buildTranscodingCapabilities(availability, gpus, selectedGpuId, encoderProbe.encoders, [...encoderProbe.failures, ...savedGpuUnavailable])
       getLoggingService().info('[TranscodingService]', `Hardware snapshot captured at ${capabilities.detectedAt}: ${gpus.length} GPU(s), encoders=${capabilities.encoders.join(',') || 'none'}`)
       return capabilities
     })()
@@ -1122,9 +1133,10 @@ export class TranscodingService {
     }
   }
 
-  async selectMeasuredParameters(filePath: string, options: TranscodeOptions, sampleDirectory?: string): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
+  async selectMeasuredParameters(filePath: string, options: TranscodeOptions, sampleDirectory?: string, signal?: AbortSignal): Promise<Pick<TranscodingParams, 'encoder' | 'crf' | 'preset' | 'measuredCandidate'>> {
     if (!options.targetCodec || !options.qualityProfile || !options.encoderPolicy) throw new Error('Target codec, quality profile, and encoder policy are required for measurement')
-    const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath)
+    signal?.throwIfAborted()
+    const analysis = this.analysisCache.get(filePath) ?? await getMediaFileAnalyzer().analyzeFile(filePath, signal)
     if (!analysis.success || !analysis.video || !analysis.duration) throw new Error(analysis.error || 'Complete media analysis is required for measurement')
     const capabilities = options.encoderPolicy === 'software' ? undefined : await this.getCapabilities()
     const hardwareVendor = capabilities?.gpus.find(gpu => gpu.id === (options.gpuId || capabilities.selectedGpuId))?.vendor
@@ -1146,7 +1158,8 @@ export class TranscodingService {
       const referenceBytes = options.targetConversion?.inputArgs.length ? options.targetConversion.width * options.targetConversion.height * (options.targetConversion.bitDepth > 8 ? 3 : 1.5) * analysis.video.frameRate! * sampleSeconds : 0
       const requiredBytes = Math.ceil((plannedBitrate ? plannedBitrate / 8 * sampleSeconds : options.maxOutputBytes ?? stat.size) * candidates.length + referenceBytes + (options.targetConversion?.maximumVideoBitrate ?? 0) / 4)
       if (Number(space.bavail) * Number(space.bsize) < requiredBytes) throw new Error('Insufficient disk headroom for episode sampling')
-      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.duration, outputExtension: options.targetConversion?.container === 'mp4' ? '.mp4' : '.mkv', referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates })
+      const measured = await this.measuredOptimizationService.measure({ inputPath: filePath, outputDirectory, durationMs: analysis.duration, outputExtension: options.targetConversion?.container === 'mp4' ? '.mp4' : '.mkv', referenceFilter: options.targetConversion?.videoFilter, referenceInputArgs: options.targetConversion?.inputArgs, candidates, signal })
+      signal?.throwIfAborted()
       const selected = selectMeasuredCandidate(options.qualityProfile, measured.candidates)
       for (const candidate of measured.candidates) if (candidate !== selected) for (const sample of candidate.samplePaths!) await fs.unlink(sample)
       return { encoder: selected.encoder, crf: selected.quality, preset: selected.preset, measuredCandidate: selected }

@@ -4,7 +4,6 @@ import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import { getLoggingService } from '@main/services/LoggingService'
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { NotificationType } from '@main/types/monitoring'
 import type { BrowserWindow } from 'electron'
 
 type EventCallback = (...args: unknown[]) => void
@@ -111,20 +110,20 @@ describe('AutoUpdateService', () => {
 
   it('should trigger download update when packaged', async () => {
     app.isPackaged = true
-    await service.downloadUpdate()
+    await service.downloadUpdate(new AbortController().signal)
     expect(autoUpdater.downloadUpdate).toHaveBeenCalled()
   })
 
   it('should not trigger download update when not packaged', async () => {
     app.isPackaged = false
-    await service.downloadUpdate()
+    await expect(service.downloadUpdate(new AbortController().signal)).rejects.toThrow('Update downloads are available only in the packaged application.')
     expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 
   it('should handle download error', async () => {
     app.isPackaged = true
     vi.mocked(autoUpdater.downloadUpdate).mockRejectedValueOnce(new Error('Download failed'))
-    await service.downloadUpdate()
+    await expect(service.downloadUpdate(new AbortController().signal)).rejects.toThrow('Download failed')
     expect(service.getState().status).toBe('error')
     expect(service.getState().error).toBe('Download failed')
   })
@@ -223,20 +222,15 @@ describe('AutoUpdateService', () => {
       expect(service.getState().status).toBe('checking')
     })
 
-    it('handles update-available', async () => {
+    it('handles update-available in update status without creating a notification', async () => {
       ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('update-available', { version: '1.2.3', releaseNotes: 'Fixed bugs' })
       const state = service.getState()
       expect(state.status).toBe('available')
       expect(state.version).toBe('1.2.3')
       expect(state.releaseNotes).toBe('Fixed bugs')
 
-      // Wait a tick for the async DB insertion to complete
-      await new Promise(resolve => setTimeout(resolve, 50))
-
       const notifications = await db.notifications.getNotifications()
-      expect(notifications.length).toBe(1)
-      expect(notifications[0].title).toBe('Update available')
-      expect(notifications[0].type).toBe(NotificationType.Info)
+      expect(notifications).toHaveLength(0)
     })
 
     it('handles update-not-available', () => {
@@ -263,18 +257,14 @@ describe('AutoUpdateService', () => {
       })
     })
 
-    it('handles update-downloaded', async () => {
+    it('handles update-downloaded in update status without creating a notification', async () => {
       ;(autoUpdater as unknown as TestAutoUpdater).__triggerEvent('update-downloaded', { version: '1.2.3' })
       const state = service.getState()
       expect(state.status).toBe('downloaded')
       expect(state.version).toBe('1.2.3')
 
-      // Wait a tick for the async DB insertion to complete
-      await new Promise(resolve => setTimeout(resolve, 50))
-
       const notifications = await db.notifications.getNotifications()
-      expect(notifications.length).toBe(1)
-      expect(notifications[0].title).toBe('Update ready')
+      expect(notifications).toHaveLength(0)
     })
 
     it('handles error', () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { setupTestDb, cleanupTestDb, setupRealIntegratedBridge, createAuthorizedIpcEvent } from '@tests/TestUtils'
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import type { TimelineRecipeSummary, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
@@ -45,22 +46,22 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
   })
 
   it('requires explicit authorization for the exact stale snapshot and rejects another source', async () => {
-    const resolved = await handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }) as ResolvedTimelineResult
+    const resolved = await handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }, randomUUID(), false) as ResolvedTimelineResult
     resolved.timeline.refreshError = 'Publisher unavailable'
     await db.config.setSetting(`timeline_snapshot:${resolved.snapshotId}`, JSON.stringify(resolved))
     const sync = handlers.get(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST)!
     const payload = { sourceId: 'src-plex', recipeId: resolved.timeline.id, playlistTitle: 'Acceptance', snapshotId: resolved.snapshotId }
-    await expect(sync(createAuthorizedIpcEvent(), payload)).rejects.toThrow('Explicit authorization')
-    await expect(sync(createAuthorizedIpcEvent(), { ...payload, sourceId: 'other', allowStale: true })).rejects.toThrow('another source')
-    await expect(sync(createAuthorizedIpcEvent(), { ...payload, allowStale: true })).rejects.toThrow('connected Plex server')
+    await expect(sync(createAuthorizedIpcEvent(), payload, randomUUID())).rejects.toThrow('Explicit authorization')
+    await expect(sync(createAuthorizedIpcEvent(), { ...payload, sourceId: 'other', allowStale: true }, randomUUID())).rejects.toThrow('another source')
+    await expect(sync(createAuthorizedIpcEvent(), { ...payload, allowStale: true }, randomUUID())).rejects.toThrow('connected Plex server')
   })
 
   it('resolves a different source from the opened snapshot without fetching the guide again', async () => {
     const resolve = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
-    const opened = await resolve(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }) as ResolvedTimelineResult
+    const opened = await resolve(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', { refresh: true }, randomUUID(), false) as ResolvedTimelineResult
     await rm(path.join(timelineDirectory, 'example-saga-viewing-order.json'))
     await db.sources.upsertSource({ source_id: 'src-other', source_type: 'plex', display_name: 'Other acceptance server', connection_config: '{}', is_enabled: 1 })
-    const switched = await resolve(createAuthorizedIpcEvent(), opened.timeline.id, 'src-other', { snapshotId: opened.snapshotId }) as ResolvedTimelineResult
+    const switched = await resolve(createAuthorizedIpcEvent(), opened.timeline.id, 'src-other', { snapshotId: opened.snapshotId }, randomUUID(), false) as ResolvedTimelineResult
     expect(switched.sourceId).toBe('src-other')
     expect(switched.timeline).toEqual(opened.timeline)
     expect(switched.snapshotId).not.toBe(opened.snapshotId)
@@ -111,7 +112,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
     expect(resolveHandler).toBeDefined()
 
-    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', undefined, randomUUID(), false)) as ResolvedTimelineResult
     expect(result).toBeDefined()
     expect(result.totalCount).toBeGreaterThan(0)
     expect(result.matchedCount).toBeGreaterThanOrEqual(1)
@@ -136,7 +137,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     } as never)
 
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
-    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', undefined, randomUUID(), false)) as ResolvedTimelineResult
 
     const khanItem = result.items.find((i) => i.title.includes('Wrath of Khan'))
     expect(khanItem).toBeDefined()
@@ -161,7 +162,7 @@ describe('Timelines IPC Handlers (Real Integrated Bridge)', () => {
     } as never)
 
     const resolveHandler = handlers.get(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE)!
-    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex')) as ResolvedTimelineResult
+    const result = (await resolveHandler(createAuthorizedIpcEvent(), 'example-saga-viewing-order', 'src-plex', undefined, randomUUID(), false)) as ResolvedTimelineResult
 
     const tosItem = result.items.find((i) => i.title === 'Example Saga: The Original Series' || i.seriesTitle === 'Example Saga: The Original Series')
     expect(tosItem).toBeDefined()

@@ -84,6 +84,7 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
   }
 
   async testConnection(): Promise<ConnectionTestResult> {
+    let testDb: DatabaseSync | null = null
     try {
       if (!this.databasePath) {
         return { success: false, error: 'Database path not configured' }
@@ -93,14 +94,16 @@ export class MediaMonkeyProvider extends BaseMediaProvider {
         return { success: false, error: `File not found: ${this.databasePath}` }
       }
 
-      const testDb = new DatabaseSync(this.databasePath, { readOnly: true })
-      testDb.prepare('SELECT COUNT(*) as count FROM Songs').get()
+      testDb = new DatabaseSync(this.databasePath, { readOnly: true })
+      testDb.prepare('SELECT 1 FROM Songs LIMIT 1').get()
       
       return {
         success: true
       }
     } catch (error: unknown) {
       return { success: false, error: `Failed to open MediaMonkey database: ${error instanceof Error ? error.message : String(error)}` }
+    } finally {
+      testDb?.close()
     }
   }
 

@@ -1,12 +1,10 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useEffectEvent } from 'react'
 import type { AnalysisProgress } from '@/components/library/types'
 
 interface UseLibraryEventListenersOptions {
   activeSourceId: string | null
-  loadMedia: () => Promise<void>
   loadStats: (sourceId?: string) => Promise<void>
   loadCompletenessData: () => Promise<void>
-  loadMusicData: () => Promise<void>
   loadMusicCompletenessData: (overrideEps?: boolean, overrideSingles?: boolean) => Promise<void>
   loadActiveSourceLibraries: () => Promise<void>
   loadEpSingleSettings: () => Promise<void>
@@ -35,10 +33,8 @@ interface UseLibraryEventListenersOptions {
  */
 export function useLibraryEventListeners({
   activeSourceId,
-  loadMedia,
   loadStats,
   loadCompletenessData,
-  loadMusicData,
   loadMusicCompletenessData,
   loadActiveSourceLibraries,
   loadEpSingleSettings,
@@ -51,39 +47,14 @@ export function useLibraryEventListeners({
   markLibraryAsNew,
   addToast,
 }: UseLibraryEventListenersOptions): void {
-  // Debounced library update handler for live refresh during scans/analysis
-  const pendingUpdateRef = useRef<NodeJS.Timeout | null>(null)
-
-  const handleLibraryUpdate = useCallback(
-    (data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
-      // Debounce updates to avoid excessive refreshes
-      if (pendingUpdateRef.current) {
-        clearTimeout(pendingUpdateRef.current)
-      }
-      pendingUpdateRef.current = setTimeout(() => {
-        if (data.type === 'libraryToggle') {
-          // Refresh enabled libraries when a library is toggled
-          // Only refresh if it's the active source or no sourceId specified
-          if (!data.sourceId || data.sourceId === activeSourceId) {
-            loadActiveSourceLibraries()
-          }
-        } else if (data.type === 'media' || data.type === 'music') {
-          // Automatic reload for media/music when library is updated (e.g. during scan)
-          if (!data.sourceId || data.sourceId === activeSourceId) {
-            loadMedia()
-            loadStats(data.sourceId)
-          }
-        }
-        pendingUpdateRef.current = null
-      }, 1000) // 1000ms debounce for live updates during scans
-    },
-    [
-      activeSourceId,
-      loadActiveSourceLibraries,
-      loadMedia,
-      loadStats,
-    ]
-  )
+  const handleLibraryUpdate = useEffectEvent((data: { type: 'media' | 'music' | 'libraryToggle'; sourceId?: string }) => {
+    if (data.sourceId && data.sourceId !== activeSourceId) return
+    if (data.type === 'libraryToggle') {
+      void loadActiveSourceLibraries()
+      return
+    }
+    void loadStats(data.sourceId)
+  })
 
   useEffect(() => {
     // Listen for completeness analysis progress
@@ -118,14 +89,11 @@ export function useLibraryEventListeners({
 
     const flushCompletedTasks = () => {
       if (pendingTaskTypes.has('quality-analysis')) {
-        loadMedia()
         loadStats(activeSourceId || undefined)
       }
       if (pendingTaskTypes.has('analysis')) {
-        loadMedia()
         loadStats(activeSourceId || undefined)
         loadCompletenessData()
-        loadMusicData()
         loadMusicCompletenessData()
       }
       if (pendingTaskTypes.has('series-completeness') || pendingTaskTypes.has('collection-completeness')) {
@@ -196,7 +164,6 @@ export function useLibraryEventListeners({
         const freshEps = (epsVal as string) !== 'false'
         const freshSingles = (singlesVal as string) !== 'false'
         loadEpSingleSettings()
-        loadMusicData()
         loadMusicCompletenessData(freshEps, freshSingles)
       }
     })
@@ -263,9 +230,6 @@ export function useLibraryEventListeners({
 
     // Cleanup all listeners on unmount
     return () => {
-      if (pendingUpdateRef.current) {
-        clearTimeout(pendingUpdateRef.current)
-      }
       cleanupSeriesProgress?.()
       cleanupCollectionsProgress?.()
       cleanupMusicAnalysisProgress?.()
@@ -282,8 +246,6 @@ export function useLibraryEventListeners({
     }
   }, [
     activeSourceId,
-    handleLibraryUpdate,
-    loadMedia,
     loadStats,
     addToast,
     setActiveSource,
@@ -296,6 +258,5 @@ export function useLibraryEventListeners({
     loadEpSingleSettings,
     loadCompletenessData,
     loadMusicCompletenessData,
-    loadMusicData,
   ])
 }

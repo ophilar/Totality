@@ -6,6 +6,8 @@ import {
   MetadataType,
 } from '../IMetadataProvider'
 import { getLoggingService } from '../../LoggingService'
+import type { ProviderHealthResult } from '@shared/serviceHealth'
+import { fetchWithTimeout } from '@main/services/utils/httpClient'
 
 interface OmdbItem {
   imdbID: string
@@ -44,7 +46,31 @@ export class OMDbMetadataProvider implements IMetadataProvider {
 
   constructor(private apiKeyGetter: () => string | null | Promise<string | null>) {}
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async testSavedCredential(signal: AbortSignal): Promise<ProviderHealthResult> {
+    const apiKey = await this.apiKeyGetter()
+    if (!apiKey) return { status: 'not-configured', message: null }
+    const url = new URL('https://www.omdbapi.com/')
+    url.searchParams.set('apikey', apiKey)
+    url.searchParams.set('t', 'The Matrix')
+    try {
+      const response = await fetchWithTimeout(url.toString(), { signal }, 10000)
+      if (response.status === 401) return { status: 'invalid-credential', message: 'OMDb rejected the saved API key.' }
+      if (response.status === 429) return { status: 'rate-limited', message: 'OMDb rate limit reached.' }
+      if (!response.ok) return { status: 'unavailable', message: `OMDb returned HTTP ${response.status}.` }
+      const result = await response.json() as { Response?: string; Error?: string }
+      if (result.Response === 'True' || result.Error === 'Movie not found!') return { status: 'valid', message: null }
+      if (result.Error === 'Invalid API key!') return { status: 'invalid-credential', message: 'OMDb rejected the saved API key.' }
+      if (result.Error?.toLowerCase().includes('limit')) return { status: 'rate-limited', message: 'OMDb rate limit reached.' }
+      return { status: 'unavailable', message: result.Error || 'OMDb returned an unrecognized validation response.' }
+    } catch (error) {
+      if (signal.aborted) throw error
+      if (error instanceof Error && /timed out/i.test(error.message)) return { status: 'timed-out', message: 'OMDb validation timed out.' }
+      return { status: 'unavailable', message: 'OMDb could not be reached.' }
+    }
+  }
+
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const apiKey = await this.apiKeyGetter()
     if (!apiKey) return []
 
@@ -52,7 +78,7 @@ export class OMDbMetadataProvider implements IMetadataProvider {
     const url = `https://www.omdbapi.com/?apikey=${apiKey}&s=${encodeURIComponent(query.title)}${query.year ? `&y=${query.year}` : ''}&type=${typeParam}`
 
     try {
-      const res = await fetch(url)
+      const res = await fetchWithTimeout(url, { signal }, 10000)
       if (!res.ok) {
         getLoggingService().error(
           '[OMDbMetadataProvider]',
@@ -78,6 +104,7 @@ export class OMDbMetadataProvider implements IMetadataProvider {
         externalIds: { imdbId: item.imdbID },
       }))
     } catch (err) {
+      if (signal?.aborted) throw err
       getLoggingService().error('[OMDbMetadataProvider]', 'Search error:', err)
       return []
     }

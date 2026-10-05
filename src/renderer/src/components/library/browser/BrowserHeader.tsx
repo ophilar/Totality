@@ -4,7 +4,6 @@ import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshC
 import logoImage from '@/assets/totality_header_logo.png'
 import { SearchAutocomplete } from '@/components/library/browser/SearchAutocomplete'
 import { ScanningStatus } from '@/components/library/browser/ScanningStatus'
-import { ActivityPanel } from '@/components/ui/ActivityPanel'
 import type { MediaViewType } from '@/components/library/types'
 import type { SearchAutocompleteProps } from '@/components/library/browser/SearchAutocomplete'
 
@@ -146,8 +145,6 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
             <Star className="w-4 h-4" />
             {wishlistCount > 0 && <span className="text-xs font-medium" style={showWishlistPanel ? undefined : { color: themeAccentColor }}>{wishlistCount}</span>}
           </button>
-
-          <ActivityPanel />
 
           <button onClick={onOpenSettings} className="p-2.5 rounded-md transition-colors shrink-0 bg-card text-muted-foreground hover:bg-muted">
             <Settings className="w-4 h-4" />

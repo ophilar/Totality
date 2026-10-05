@@ -59,4 +59,30 @@ describe('Database Export/Import Transactional Integrity', () => {
     expect(await db.config.getSetting('new_key_1')).toBeNull()
     expect(await db.config.getSetting('stable_key')).toBe('initial_value')
   })
+
+  it('rejects an import cancelled before its transaction begins without changing records', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const data = {
+      _meta: [{ version: 1, exported_at: new Date().toISOString() }],
+      settings: [{ key: 'cancelled_import', value: 'must-not-commit' }],
+    }
+
+    await expect(db.importData(data, controller.signal)).rejects.toThrow('aborted')
+    expect(await db.config.getSetting('cancelled_import')).toBeNull()
+  })
+
+  it('finishes the import once the commit boundary has been entered', async () => {
+    let commitStarted = false
+    const data = {
+      _meta: [{ version: 1, exported_at: new Date().toISOString() }],
+      settings: [{ key: 'committed_import', value: 'persisted' }],
+    }
+
+    const result = await db.importData(data, undefined, () => { commitStarted = true })
+
+    expect(commitStarted).toBe(true)
+    expect(result.imported).toBe(1)
+    expect(await db.config.getSetting('committed_import')).toBe('persisted')
+  })
 })

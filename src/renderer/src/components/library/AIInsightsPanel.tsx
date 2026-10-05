@@ -34,6 +34,9 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
   const contentRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
   const activeRequestId = useRef<string | null>(null)
+  const closePanel = useCallback(() => {
+    onClose()
+  }, [onClose])
 
   const generateReport = useCallback(async (type: ReportType) => {
     setSelectedReport(type)
@@ -53,7 +56,22 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
       }
       const apiMethod = apiMethods[type]
 
-      await apiMethod({ requestId })
+      const response = await apiMethod({ requestId }) as { text?: string; cancelled?: boolean; error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
+      if (response.cancelled) {
+        setIsGenerating(false)
+        activeRequestId.current = null
+      } else if (response.error) {
+        setIsGenerating(false)
+        activeRequestId.current = null
+        setError(response.error)
+        if (response.rateLimited && response.retryAfterSeconds) {
+          setRateLimited({ limited: true, retryAfterSeconds: response.retryAfterSeconds })
+        }
+      } else if (response.text) {
+        setReportContent(response.text)
+        setIsGenerating(false)
+        activeRequestId.current = null
+      }
     } catch (err: unknown) {
       const errorObj = err as { error?: string; rateLimited?: boolean; retryAfterSeconds?: number }
       if (errorObj.rateLimited && errorObj.retryAfterSeconds) {
@@ -72,12 +90,6 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
   // Adjust state when panel opens/closes (React 19 recommended pattern instead of useEffect)
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen)
-    if (!isOpen) {
-      // Reset state when panel closes (gated checks to avoid unnecessary re-renders)
-      if (selectedReport !== null) setSelectedReport(null)
-      if (reportContent !== '') setReportContent('')
-      if (error !== null) setError(null)
-    }
   }
 
   // Check if AI is configured and auto-start if initialReport specified
@@ -104,6 +116,7 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
 
   // Listen for streaming deltas
   useEffect(() => {
+    if (!isOpen) return
     const cleanupDelta = window.electronAPI.onAiAnalysisStreamDelta((data) => {
       if (data.requestId === activeRequestId.current) {
         setReportContent((prev) => prev + data.delta)
@@ -115,11 +128,19 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
         activeRequestId.current = null
       }
     })
+    const requestId = activeRequestId.current
+    if (requestId) {
+      void window.electronAPI.operationsGetResult(requestId).then((result) => {
+        if (activeRequestId.current === requestId && typeof result === 'object' && result && 'text' in result && typeof result.text === 'string') {
+          setReportContent(result.text)
+        }
+      }).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+    }
     return () => {
       cleanupDelta()
       cleanupComplete()
     }
-  }, [])
+  }, [isOpen])
 
   // Auto-scroll while streaming
   useEffect(() => {
@@ -152,7 +173,7 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
   return (
     <div className="fixed inset-0 z-150 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60" onClick={closePanel} />
 
       {/* Modal */}
       <div className="relative w-full max-w-2xl max-h-[80vh] mx-4 bg-sidebar-gradient rounded-xl shadow-2xl flex flex-col overflow-hidden">
@@ -168,7 +189,7 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={closePanel}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             title="Close"
           >
@@ -256,6 +277,8 @@ export function AIInsightsPanel({ isOpen: propIsOpen, onClose: propOnClose, onOp
                   <span className="text-xs">Generating...</span>
                 </div>
               )}
+
+              {isGenerating && <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="mt-3 text-xs text-primary hover:underline">Manage this report in Activity</button>}
 
               {error && (
                 <div className="flex items-center gap-2 px-3 py-2 mt-3 text-xs bg-destructive/10 text-destructive rounded-lg">

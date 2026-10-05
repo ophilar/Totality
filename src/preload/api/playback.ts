@@ -7,6 +7,7 @@ export interface PlaybackAPI {
   listPlaybackTargetProfiles: () => Promise<PlaybackTargetProfile[]>
   createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
   updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
+  duplicatePlaybackTargetProfile: (sourceId: string, name: string) => Promise<PlaybackTargetProfile>
   deletePlaybackTargetProfile: (id: string) => Promise<boolean>
   evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => Promise<PlaybackCompatibilityResult>
 }
@@ -15,6 +16,7 @@ export const playbackApi: PlaybackAPI = {
   listPlaybackTargetProfiles: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_LIST),
   createPlaybackTargetProfile: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_CREATE, input),
   updatePlaybackTargetProfile: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_UPDATE, input),
+  duplicatePlaybackTargetProfile: (sourceId, name) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_DUPLICATE, { sourceId, name }),
   deletePlaybackTargetProfile: id => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_TARGET_PROFILES_DELETE, id),
   evaluatePlaybackCompatibility: input => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.PLAYBACK_COMPATIBILITY_EVALUATE, input),
 }

@@ -28,6 +28,7 @@ import { NotificationType } from '@main/types/monitoring'
 import type { AnalysisScope } from '@shared/analysisScope'
 import { planAnalysisStages } from '@main/services/AnalysisTaskPlanner'
 import { LibraryType } from '@main/types/database'
+import type { ScanResult } from '@main/providers/base/MediaProvider'
 
 interface CollectionProgress { current: number; total: number; percentage?: number; phase: string; currentItem?: string }
 
@@ -552,6 +553,7 @@ export class TaskQueueService {
     try {
       switch (task.type) {
         case TaskType.LibraryScan:
+        case TaskType.MusicScan:
           await this.executeLibraryScan(task, onProgress)
           break
         case TaskType.SourceScan:
@@ -565,9 +567,6 @@ export class TaskQueueService {
           break
         case TaskType.MusicCompleteness:
           await this.executeMusicCompleteness(task, onProgress)
-          break
-        case TaskType.MusicScan:
-          await this.executeMusicScan(task, onProgress)
           break
         case TaskType.QualityAnalysis:
           await this.executeQualityAnalysis(task, onProgress)
@@ -587,7 +586,7 @@ export class TaskQueueService {
         this.logging.info('[TaskQueue]', `Task cancelled: ${task.label}`)
       } else if (task.result?.status === 'partial' || task.result?.status === 'deferred') {
         task.status = TaskStatus.Partial
-        task.error = 'Analysis completed with required work deferred or failed'
+        task.error ??= 'Analysis completed with required work deferred or failed'
       } else if (task.result?.status === 'failed' && task.type === TaskType.Analysis) {
         task.status = TaskStatus.Failed
         task.error = task.error || 'All required analysis stages failed'
@@ -680,18 +679,49 @@ export class TaskQueueService {
   private async executeLibraryScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
     const manager = this.getSourceManager()
-    await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+    const result = await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
+    await this.recordScanResults(task, [result])
+  }
+
+  private async recordScanResults(task: QueuedTask, results: ScanResult[]): Promise<void> {
+    const failures = results.flatMap(result => result.postScanAnalysis?.status === 'failed'
+      ? [result.postScanAnalysis.error]
+      : [])
+    task.result = {
+      itemsScanned: results.reduce((total, result) => total + result.itemsScanned, 0),
+      itemsAdded: results.reduce((total, result) => total + result.itemsAdded, 0),
+      itemsUpdated: results.reduce((total, result) => total + result.itemsUpdated, 0),
+      itemsRemoved: results.reduce((total, result) => total + result.itemsRemoved, 0),
+      status: failures.length ? 'partial' : 'completed',
+      ...(results.some(result => result.postScanAnalysis) ? {
+        postScanAnalysis: failures.length ? { status: 'failed', errors: failures } : { status: 'queued' },
+      } : {}),
+    }
+    if (failures.length) {
+      task.error = `Scan completed, but post-scan analysis could not be queued: ${failures.join('; ')}`
+      try {
+        await this.db.notifications.addNotification({
+          type: NotificationType.Info,
+          title: 'Scan completed; analysis not queued',
+          message: task.error,
+          reference_id: task.sourceId,
+        })
+      } catch (error) {
+        this.logging.error('[TaskQueue]', 'Could not notify about post-scan analysis scheduling failure', error)
+      }
+    }
   }
 
   private async executeSourceScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
     if (!task.sourceId) throw new Error('Missing sourceId')
     const manager = this.getSourceManager()
-      await manager.scanSource(task.sourceId, onProgress)
+    const results = await manager.scanSource(task.sourceId, onProgress)
+    await this.recordScanResults(task, results)
   }
 
   private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, existingBackupPath?: string): Promise<void> {
     const service = this.getSeriesCompleteness()
-    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined, existingBackupPath)
+    const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined, existingBackupPath, this.currentTaskAbortController?.signal)
 
     task.result = {
       itemsScanned: outcome.processedCount,
@@ -752,7 +782,7 @@ export class TaskQueueService {
         phase: prog.phase,
         currentItem: prog.currentItem
       })
-    })
+    }, this.currentTaskAbortController?.signal)
     if (result.skipped) throw new Error('TMDB configuration is required for collection completeness analysis')
 
     task.result = {
@@ -763,7 +793,6 @@ export class TaskQueueService {
       errors: result.errors,
       status: !result.completed ? 'cancelled' : result.errors.length ? 'partial' : 'completed',
     }
-    if (result.errors.length > 0) throw new Error(result.errors[0])
   }
 
   private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
@@ -782,7 +811,8 @@ export class TaskQueueService {
           })
         },
         task.sourceId,
-        { libraryId: task.libraryId, artistId: task.artistId }
+        { libraryId: task.libraryId, artistId: task.artistId },
+        this.currentTaskAbortController?.signal,
       )
       if (outcome.completedCount === undefined || outcome.failedCount === undefined) {
         throw new Error('Music analysis returned incomplete outcome counts')
@@ -872,12 +902,6 @@ export class TaskQueueService {
       phase: 'complete',
       currentItem: artist.name
     })
-  }
-
-  private async executeMusicScan(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
-    if (!task.sourceId || !task.libraryId) throw new Error('Missing sourceId or libraryId')
-    const manager = this.getSourceManager()
-    await manager.scanLibrary(task.sourceId, task.libraryId, onProgress)
   }
 
   private async executeQualityAnalysis(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
@@ -1071,8 +1095,9 @@ export class TaskQueueService {
         const message = getErrorMessage(error)
         if (parseDatabaseError(error).isDatabaseError) persistenceFailure = error instanceof Error ? error : new Error(message)
         const blocked = /required|not found|no local|not enabled|ownership changed|identity/i.test(message)
-        outcomes.push({ stage: stage.name, status: this.cancelRequested ? 'skipped' : blocked ? 'blocked' : 'failed', error: message, code: this.cancelRequested ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', diagnostics: [{ itemType: scope.kind === 'show' ? 'series' : scope.kind === 'item' ? 'movie' : scope.kind === 'collection' ? 'collection' : scope.kind === 'album' ? 'album' : scope.kind === 'artist' ? 'artist' : 'library', itemId: scope.kind === 'item' ? scope.mediaId : scope.kind === 'artist' ? scope.artistId : scope.kind === 'album' ? scope.albumId : undefined, itemName: task.label, stage: stage.name, category: this.cancelRequested ? 'cancelled' : blocked ? 'identity' : 'unresolved', code: this.cancelRequested ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', message }] })
-        this.logging.error('[TaskQueue]', `Analysis stage ${stage.name} failed`, error)
+        const wasCancelled = this.cancelRequested && error instanceof Error && (error.name === 'AbortError' || /cancelled/i.test(message))
+        outcomes.push({ stage: stage.name, status: wasCancelled ? 'skipped' : blocked ? 'blocked' : 'failed', error: message, code: wasCancelled ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', diagnostics: [{ itemType: scope.kind === 'show' ? 'series' : scope.kind === 'item' ? 'movie' : scope.kind === 'collection' ? 'collection' : scope.kind === 'album' ? 'album' : scope.kind === 'artist' ? 'artist' : 'library', itemId: scope.kind === 'item' ? scope.mediaId : scope.kind === 'artist' ? scope.artistId : scope.kind === 'album' ? scope.albumId : undefined, itemName: task.label, stage: stage.name, category: wasCancelled ? 'cancelled' : blocked ? 'identity' : 'unresolved', code: wasCancelled ? 'CANCELLED' : blocked ? 'WORK_BLOCKED' : 'STAGE_FAILED', message }] })
+        if (!wasCancelled) this.logging.error('[TaskQueue]', `Analysis stage ${stage.name} failed`, error)
         if (persistenceFailure) break
       }
     }

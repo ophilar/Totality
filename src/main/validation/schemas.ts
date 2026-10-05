@@ -569,6 +569,7 @@ export const CancelTranscodeSchema = z.tuple([
 
 export const PreflightShowTranscodeSchema = z.tuple([
   z.object({
+    requestId: z.string().min(1).max(100),
     mediaItemId: z.number().int().positive().optional(),
     seriesTitle: z.string().min(1).optional(),
     seriesIdentityKey: z.string().min(1).optional(),

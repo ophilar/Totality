@@ -81,9 +81,11 @@ type LocalItem = typeof schema.mediaItems.$inferSelect
 export class TimelineResolutionEngine {
   constructor(private readonly db: LibSQLDatabase<typeof schema>) {}
 
-  async resolveTimeline(timeline: TimelineDefinition, sourceId?: string): Promise<ResolvedTimelineResult> {
+  async resolveTimeline(timeline: TimelineDefinition, sourceId?: string, signal?: AbortSignal): Promise<ResolvedTimelineResult> {
     const local = sourceId ? await this.db.select().from(schema.mediaItems).where(eq(schema.mediaItems.sourceId, sourceId)) : []
+    signal?.throwIfAborted()
     const completeness = sourceId ? await this.db.select().from(schema.seriesCompleteness).where(eq(schema.seriesCompleteness.sourceId, sourceId)) : []
+    signal?.throwIfAborted()
     const items: ResolvedTimelineItem[] = []
     const append = (item: TimelineItem, candidates: LocalItem[]) => {
       const match = candidates.length === 1 ? candidates[0] : undefined
@@ -93,7 +95,11 @@ export class TimelineResolutionEngine {
         matchedMediaItem: match ? { id: match.id, plexId: match.plexId, sourceId: match.sourceId, sourceType: match.sourceType, title: match.title, filePath: match.filePath, resolution: match.resolution, videoCodec: match.videoCodec, duration: match.duration } : undefined,
       })
     }
-    for (const item of timeline.items) {
+    for (const [index, item] of timeline.items.entries()) {
+      if (index % 128 === 0) {
+        await new Promise<void>(resolve => setImmediate(resolve))
+        signal?.throwIfAborted()
+      }
       if (item.identityIssue) {
         items.push({ ...item, order: items.length + 1, status: 'ambiguous', reason: item.identityIssue })
         continue
@@ -124,6 +130,7 @@ export class TimelineResolutionEngine {
     }
     const seenEpisodes = new Set<string>()
     for (const item of items) {
+      signal?.throwIfAborted()
       if (item.type !== 'episode') continue
       const identity = JSON.stringify([item.identifiers.tmdbId, item.identifiers.tvdbId, item.identifiers.imdbId, normalizeMediaTitle(item.seriesTitle || ''), item.seasonNumber, item.episodeNumber])
       if (seenEpisodes.has(identity) && !item.deliberateRepeat) {
@@ -133,6 +140,7 @@ export class TimelineResolutionEngine {
       seenEpisodes.add(identity)
     }
     const matchedCount = items.filter(item => item.status === 'matched').length
+    signal?.throwIfAborted()
     const ambiguousCount = items.filter(item => item.status === 'ambiguous').length
     return { timeline, sourceId, items, totalCount: items.length, matchedCount, ambiguousCount, missingCount: items.filter(item => item.status === 'missing').length, completionPercentage: items.length ? Math.round(matchedCount / items.length * 100) : 0 }
   }

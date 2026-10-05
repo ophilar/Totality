@@ -54,6 +54,21 @@ describe('MediaFileAnalyzer deep analysis with system FFmpeg tools', () => {
     expect(result.deepAnalysis?.bitrateVariance).toBeGreaterThanOrEqual(0)
   })
 
+  it('keeps exact stream byte and bitrate metrics in complete analysis', async () => {
+    const analyzer = new MediaFileAnalyzer()
+    const complete = await analyzer.analyzeCompleteFile(videoFixture, { detectVolume: false })
+    const streamBytes = await analyzer.measureStreamBytes(videoFixture)
+    const bitrate = await analyzer.deepAnalyzeFile(videoFixture, { scanBitrate: true, detectVolume: false })
+
+    expect(complete.streamBytes).toEqual(streamBytes)
+    expect(complete.deepAnalysis).toMatchObject({
+      peakBitrate: bitrate.deepAnalysis?.peakBitrate,
+      avgBitrate: bitrate.deepAnalysis?.avgBitrate,
+      bitrateVariance: bitrate.deepAnalysis?.bitrateVariance,
+      isVariableBitrate: bitrate.deepAnalysis?.isVariableBitrate,
+    })
+  })
+
   it('propagates FFmpeg failure for a missing media file', async () => {
     const missingFile = path.join(fixtureDirectory, 'missing.wav')
 

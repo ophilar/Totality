@@ -77,6 +77,8 @@ export function TimelinesView() {
   }, [activeSourceId, plexSources])
 
   const resolveSourceId = activeSourceId || undefined
+  const timelineContextRef = useRef({ recipeId: selectedRecipeId, sourceId: resolveSourceId })
+  timelineContextRef.current = { recipeId: selectedRecipeId, sourceId: resolveSourceId }
   const visibleExistingPlaylists = selectedPlexSourceId ? existingPlaylists : []
 
   useEffect(() => {
@@ -135,6 +137,7 @@ export function TimelinesView() {
     if (!selectedRecipeId) return
     if (importedSnapshot.current === selectedRecipeId) { importedSnapshot.current = null; return }
     let isMounted = true
+    const requestId = crypto.randomUUID()
     setSelectedTimelineResult(null)
 
     const fetchResolvedTimeline = async () => {
@@ -142,7 +145,8 @@ export function TimelinesView() {
       try {
         const snapshot = openedGuide.current
         const options = snapshot?.recipeId === selectedRecipeId && snapshot.refreshToken === recipeRefreshToken ? { snapshotId: snapshot.snapshotId } : { refresh: true }
-        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options)
+        const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, options, requestId, false)
+        if ('cancelled' in result) return
         if (!isMounted) return
         if (result.snapshotId) openedGuide.current = { recipeId: selectedRecipeId, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
         setSelectedTimelineResult(result)
@@ -165,6 +169,7 @@ export function TimelinesView() {
 
     return () => {
       isMounted = false
+      void window.electronAPI.dbCancelOperation(requestId)
     }
   }, [selectedRecipeId, resolveSourceId, addToast, recipeRefreshToken])
 
@@ -172,10 +177,14 @@ export function TimelinesView() {
     e.preventDefault()
     const input = customImportInput.trim()
     if (!input) return
+    const submittedContext = { recipeId: selectedRecipeId, sourceId: resolveSourceId }
 
     setIsImporting(true)
+    const requestId = crypto.randomUUID()
     try {
-      const result = await window.electronAPI.timelinesResolveTimeline(input, resolveSourceId, { refresh: true })
+      const result = await window.electronAPI.timelinesResolveTimeline(input, resolveSourceId, { refresh: true }, requestId, true)
+      if ('cancelled' in result) return
+      if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       const timeline = result.timeline
       if (result.snapshotId) openedGuide.current = { recipeId: timeline.id, refreshToken: recipeRefreshToken, snapshotId: result.snapshotId }
       importedSnapshot.current = timeline.id === selectedRecipeId ? null : timeline.id
@@ -279,6 +288,7 @@ export function TimelinesView() {
 
     if (selectedTimelineResult.timeline.refreshError && !window.confirm(`Refresh failed: ${selectedTimelineResult.timeline.refreshError}. Authorize syncing this exact snapshot from ${selectedTimelineResult.timeline.retrievedAt}?`)) return
     setIsSyncingPlaylist(true)
+    const requestId = crypto.randomUUID()
     try {
       const result = await window.electronAPI.timelinesSyncPlexPlaylist({
         sourceId: selectedPlexSourceId,
@@ -287,7 +297,8 @@ export function TimelinesView() {
         snapshotId: selectedTimelineResult.snapshotId!,
         playlistRatingKey: playlistRatingKey || undefined,
         allowStale: Boolean(selectedTimelineResult.timeline.refreshError),
-      })
+      }, requestId)
+      if ('cancelled' in result) return
 
       addToast({
         type: 'success',
@@ -321,9 +332,13 @@ export function TimelinesView() {
 
   const handleRefresh = async () => {
     if (!selectedTimelineResult) return
+    const submittedContext = { recipeId: selectedRecipeId, sourceId: resolveSourceId }
     setIsRefreshingWeb(true)
+    const requestId = crypto.randomUUID()
     try {
-      const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, { refresh: true })
+      const result = await window.electronAPI.timelinesResolveTimeline(selectedRecipeId, resolveSourceId, { refresh: true }, requestId, true)
+      if ('cancelled' in result) return
+      if (timelineContextRef.current.recipeId !== submittedContext.recipeId || timelineContextRef.current.sourceId !== submittedContext.sourceId) return
       setSelectedTimelineResult(result)
       addToast({ type: result.timeline.refreshError ? 'error' : 'success', title: 'Timeline Refresh', message: result.timeline.refreshError || `Loaded ${result.totalCount} items.` })
     } catch (err: unknown) {
@@ -451,6 +466,12 @@ export function TimelinesView() {
 
         {/* Universal Importer Footer */}
         <div className="p-3 border-t border-border bg-card/50 shrink-0">
+          {(isImporting || isRefreshingWeb || isSyncingPlaylist) && (
+            <div className="mb-2 flex items-center justify-between gap-2 text-xs" role="status">
+              <span className="text-muted-foreground">{isSyncingPlaylist ? 'Plex playlist sync in progress…' : 'Timeline work in progress…'}</span>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-primary hover:underline">Manage in Activity</button>
+            </div>
+          )}
           {parserEditorOpen && (
             <div className="mb-3 space-y-2">
               <label className="block text-xs font-medium">Parser definition (JSON)</label>

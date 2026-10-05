@@ -39,6 +39,7 @@ const TABS: Tab[] = [
 
 export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'general')
+  const [playbackHasUnsavedChanges, setPlaybackHasUnsavedChanges] = useState(false)
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
 
   // Adjust state when modal opens (React 19 recommended pattern instead of useEffect)
@@ -67,12 +68,24 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
   }, [isOpen])
 
   // Handle Escape key to close modal
+  const requestClose = useCallback(() => {
+    if (playbackHasUnsavedChanges && !window.confirm('Discard unsaved playback profile changes and close Settings?')) return
+    setPlaybackHasUnsavedChanges(false)
+    onClose()
+  }, [onClose, playbackHasUnsavedChanges])
+
+  const requestTabChange = useCallback((tab: TabId) => {
+    if (activeTab === 'playback' && tab !== 'playback' && playbackHasUnsavedChanges && !window.confirm('Discard unsaved playback profile changes?')) return
+    setPlaybackHasUnsavedChanges(false)
+    setActiveTab(tab)
+  }, [activeTab, playbackHasUnsavedChanges])
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
-      onClose()
+      requestClose()
     }
-  }, [onClose])
+  }, [requestClose])
 
   // Handle keyboard navigation in tab list
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent, index: number) => {
@@ -93,19 +106,19 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
     }
 
     if (newIndex !== index) {
-      setActiveTab(TABS[newIndex].id)
+      requestTabChange(TABS[newIndex].id)
       // Focus the new tab button
       const tabButtons = tabListRef.current?.querySelectorAll('[role="tab"]')
       if (tabButtons && tabButtons[newIndex]) {
         (tabButtons[newIndex] as HTMLElement).focus()
       }
     }
-  }, [])
+  }, [requestTabChange])
 
   // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose()
+      requestClose()
     }
   }
 
@@ -122,7 +135,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
       case 'library':
         return <LibrarySettingsTab />
       case 'playback':
-        return <PlaybackTargetProfilesTab />
+        return <PlaybackTargetProfilesTab onDirtyChange={setPlaybackHasUnsavedChanges} />
       case 'quality':
         return <QualitySettingsTab />
       case 'services':
@@ -169,7 +182,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
               <h2 id={titleId} className="text-lg font-semibold">Settings</h2>
               <button
                 ref={closeButtonRef}
-                onClick={onClose}
+                  onClick={requestClose}
                 className="p-1.5 rounded-md hover:bg-muted transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary"
                 aria-label="Close settings"
               >
@@ -187,7 +200,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab }: SettingsPanelProp
                   aria-controls={`tabpanel-${tab.id}`}
                   id={`tab-${tab.id}`}
                   tabIndex={isActive ? 0 : -1}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => requestTabChange(tab.id)}
                   onKeyDown={(e) => handleTabKeyDown(e, index)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left whitespace-nowrap focus:outline-hidden focus:ring-2 focus:ring-primary ${
                     isActive

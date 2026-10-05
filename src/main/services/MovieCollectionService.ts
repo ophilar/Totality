@@ -31,7 +31,8 @@ export class MovieCollectionService {
     this.cancelRequested = true
   }
 
-  async analyzeAllCollections(sourceId?: string, libraryId?: string, onProgress?: (prog: CollectionProgress) => void): Promise<{ total: number; analyzed: number; complete: number; errors: string[]; completed: boolean; skipped?: boolean }> {
+  async analyzeAllCollections(sourceId?: string, libraryId?: string, onProgress?: (prog: CollectionProgress) => void, signal?: AbortSignal): Promise<{ total: number; analyzed: number; complete: number; errors: string[]; completed: boolean; skipped?: boolean }> {
+    signal?.throwIfAborted()
     this.cancelRequested = false
     const result = { total: 0, analyzed: 0, complete: 0, errors: [] as string[] }
 
@@ -180,8 +181,9 @@ export class MovieCollectionService {
             }
           } catch (e: unknown) {
             const errMsg = e instanceof Error ? e.message : String(e)
-            result.errors.push(errMsg)
-            getLoggingService().warn('[MovieCollectionService]', `Failed to analyze collection "${c.collection_name}": ${errMsg}`)
+            const diagnostic = `Collection "${c.collection_name}" (TMDB ${c.tmdb_collection_id}): ${errMsg}`
+            result.errors.push(diagnostic)
+            getLoggingService().warn('[MovieCollectionService]', diagnostic)
           }
         }))
       }

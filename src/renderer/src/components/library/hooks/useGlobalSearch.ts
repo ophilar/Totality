@@ -30,6 +30,9 @@ interface UseGlobalSearchOptions {
 export interface UseGlobalSearchReturn {
   searchInput: string
   setSearchInput: (value: string) => void
+  searchStatus: 'idle' | 'waiting' | 'searching' | 'error'
+  searchError: string | null
+  retrySearch: () => void
   showSearchResults: boolean
   setShowSearchResults: (show: boolean) => void
   searchResultIndex: number
@@ -59,25 +62,48 @@ export function useGlobalSearch({
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchGenerationRef = useRef(0)
+  const [retryGeneration, setRetryGeneration] = useState(0)
+  const [searchState, setSearchState] = useState<{ query: string; results: GlobalSearchResults } | null>(null)
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'waiting' | 'searching' | 'error'>('idle')
+  const [searchError, setSearchError] = useState<string | null>(null)
 
-  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResults>({
-    movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: []
-  })
-  const visibleSearchResults = useMemo(() => searchInput.trim().length >= 2 ? globalSearchResults : EMPTY_SEARCH_RESULTS, [searchInput, globalSearchResults])
+  const query = searchInput.trim()
+  const visibleSearchResults = useMemo(
+    () => query.length >= 2 && searchState?.query === query ? searchState.results : EMPTY_SEARCH_RESULTS,
+    [query, searchState],
+  )
 
   useEffect(() => {
-    if (!searchInput.trim() || searchInput.length < 2) {
+    const generation = ++searchGenerationRef.current
+    const queryAtSchedule = searchInput.trim()
+    if (queryAtSchedule.length < 2) {
+      setSearchStatus('idle')
+      setSearchError(null)
       return
     }
 
+    setSearchStatus('waiting')
+    setSearchError(null)
     const timer = setTimeout(() => {
-      window.electronAPI.searchGlobal(searchInput)
-        .then(results => setGlobalSearchResults(results))
-        .catch(err => console.error('Global search failed:', err))
+      setSearchStatus('searching')
+      window.electronAPI.searchGlobal(queryAtSchedule)
+        .then(results => {
+          if (generation !== searchGenerationRef.current) return
+          setSearchState({ query: queryAtSchedule, results })
+          setSearchStatus('idle')
+        })
+        .catch(err => {
+          if (generation !== searchGenerationRef.current) return
+          setSearchError(err instanceof Error ? err.message : String(err))
+          setSearchStatus('error')
+        })
     }, 250)
 
-    return () => clearTimeout(timer)
-  }, [searchInput])
+    return () => { clearTimeout(timer); searchGenerationRef.current++ }
+  }, [searchInput, retryGeneration])
+
+  const retrySearch = useCallback(() => setRetryGeneration(value => value + 1), [])
 
   const hasSearchResults =
     visibleSearchResults.movies.length > 0 ||
@@ -189,6 +215,9 @@ export function useGlobalSearch({
   return {
     searchInput,
     setSearchInput,
+    searchStatus,
+    searchError,
+    retrySearch,
     showSearchResults,
     setShowSearchResults,
     searchResultIndex,

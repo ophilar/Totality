@@ -1,10 +1,19 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
+import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
 
 export const appApi = {
   // App lifecycle
   appReady: () => ipcRenderer.send('app:ready'),
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP.GET_VERSION),
+  operationsGetActivity: () => ipcRenderer.invoke(IPC_CHANNELS.OPERATIONS.GET_ACTIVITY) as Promise<{ revision: number; operations: ActivityOperation[] }>,
+  operationsGetResult: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.OPERATIONS.GET_RESULT, requestId),
+  operationsDismiss: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.OPERATIONS.DISMISS, requestId),
+  onOperationsUpdated: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: { revision: number; operations: ActivityOperation[] }) => callback(snapshot)
+    ipcRenderer.on(IPC_CHANNELS.OPERATIONS.UPDATED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OPERATIONS.UPDATED, handler)
+  },
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
   // General
@@ -26,7 +35,7 @@ export const appApi = {
   // ============================================================================
   autoUpdateGetState: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.GET_STATE),
   autoUpdateCheckForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES),
-  autoUpdateDownloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE),
+  autoUpdateDownloadUpdate: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE, requestId),
   autoUpdateInstallUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE),
   onAutoUpdateStateChanged: (callback: (state: {
     status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -53,6 +62,10 @@ export interface AppAPI {
   // App lifecycle
   appReady: () => void
   getAppVersion: () => Promise<string>
+  operationsGetActivity: () => Promise<{ revision: number; operations: ActivityOperation[] }>
+  operationsGetResult: (requestId: string) => Promise<unknown>
+  operationsDismiss: (requestId: string) => Promise<void>
+  onOperationsUpdated: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => () => void
   openExternal: (url: string) => Promise<void>
 
   // General
@@ -73,7 +86,7 @@ export interface AppAPI {
     lastChecked?: string
   }>
   autoUpdateCheckForUpdates: () => Promise<{ success: boolean }>
-  autoUpdateDownloadUpdate: () => Promise<{ success: boolean }>
+  autoUpdateDownloadUpdate: (requestId: string) => Promise<{ success: true } | { cancelled: true }>
   autoUpdateInstallUpdate: () => Promise<{ success: boolean }>
   onAutoUpdateStateChanged: (callback: (state: {
     status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'

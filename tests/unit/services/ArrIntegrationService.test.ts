@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { ArrIntegrationService } from '@main/services/ArrIntegrationService'
+import { createServer } from 'node:http'
 
 describe('ArrIntegrationService', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -52,5 +53,24 @@ describe('ArrIntegrationService', () => {
 
     await expect(service.waitForCommand(42, { pollIntervalMs: 1, timeoutMs: 100 })).resolves.toMatchObject({ status: 'completed' })
     expect(getCommand).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels command polling and its active HTTP request through the caller signal', async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ status: 'started' }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Local HTTP server did not expose its address')
+    const controller = new AbortController()
+    const service = new ArrIntegrationService({ baseUrl: `http://127.0.0.1:${address.port}`, apiKey: 'test-key' })
+    const waiting = service.waitForCommand(42, { pollIntervalMs: 10_000, timeoutMs: 30_000 }, controller.signal)
+    setTimeout(() => controller.abort(), 20)
+    try {
+      await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    } finally {
+      server.close()
+    }
   })
 })

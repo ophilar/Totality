@@ -57,8 +57,9 @@ export function TranscodingHardwareCard() {
           </select>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div><span className="text-muted-foreground">Engines:</span> {capabilities.engines.join(', ') || 'none'}</div>
-            <div><span className="text-muted-foreground">Encoders:</span> {capabilities.encoders.join(', ') || 'none'}</div>
+            <div><span className="text-muted-foreground">Verified encoders:</span> {capabilities.verifiedEncoders.join(', ') || 'none'}</div>
           </div>
+          {capabilities.probeFailures.length > 0 && <div role="status" className="space-y-1 text-xs text-amber-500">{capabilities.probeFailures.map((failure, index) => <p key={`${index}:${failure}`}>{failure}</p>)}</div>}
           <p className="text-[10px] text-muted-foreground">Snapshot: {new Date(capabilities.detectedAt).toLocaleString()}</p>
         </>}
         {error && <div className="flex gap-2 items-start text-xs text-red-400"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</div>}

@@ -21,16 +21,22 @@ export class DeduplicationService {
   /**
    * Scan for duplicates in a specific source or across all sources
    */
-  async scanForDuplicates(sourceId?: string): Promise<number> {
+  async scanForDuplicates(sourceId?: string, signal?: AbortSignal, beginCommit?: () => void): Promise<number> {
     const db = getDatabase()
     const allMovies = await db.media.getItems({ type: MediaItemType.Movie, sourceId })
+    signal?.throwIfAborted()
     const allEpisodes = await db.media.getItems({ type: MediaItemType.Episode, sourceId })
+    signal?.throwIfAborted()
 
     let count = 0
 
     // Group movies by TMDB ID (or global key if cross-source scanning)
     const movieGroups = new Map<string, number[]>()
-    for (const movie of allMovies) {
+    for (const [index, movie] of allMovies.entries()) {
+      if (index > 0 && index % 512 === 0) {
+        await new Promise<void>(resolve => setImmediate(resolve))
+        signal?.throwIfAborted()
+      }
       if (movie.tmdb_id) {
         const key = sourceId ? `${movie.source_id}:${movie.tmdb_id}` : `global:${movie.tmdb_id}`
         if (!movieGroups.has(key)) movieGroups.set(key, [])
@@ -40,7 +46,11 @@ export class DeduplicationService {
 
     // Group episodes by TMDB ID/series title + season + episode
     const episodeGroups = new Map<string, number[]>()
-    for (const ep of allEpisodes) {
+    for (const [index, ep] of allEpisodes.entries()) {
+      if (index > 0 && index % 512 === 0) {
+        await new Promise<void>(resolve => setImmediate(resolve))
+        signal?.throwIfAborted()
+      }
       if (ep.season_number != null && ep.episode_number != null) {
         const seriesKey = ep.series_tmdb_id
           ? `tmdb:${ep.series_tmdb_id}`
@@ -92,10 +102,12 @@ export class DeduplicationService {
       }
 
       await db.duplicates.processInChunks(operations, 500, async (chunk: Array<() => Promise<unknown>>) => {
+        signal?.throwIfAborted()
         await Promise.all(chunk.map((fn: () => Promise<unknown>) => fn()))
         return []
       })
-
+      signal?.throwIfAborted()
+      beginCommit?.()
     })
 
     await db.tvShows.mergeDuplicateShows(sourceId)

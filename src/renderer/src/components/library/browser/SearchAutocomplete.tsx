@@ -15,6 +15,9 @@ export interface SearchAutocompleteProps {
   searchContainerRef: UseGlobalSearchReturn['searchContainerRef']
   searchInputRef: React.RefObject<HTMLInputElement | null>
   globalSearchResults: GlobalSearchResults
+  searchStatus: UseGlobalSearchReturn['searchStatus']
+  searchError: string | null
+  retrySearch: UseGlobalSearchReturn['retrySearch']
   hasSearchResults: boolean
   flattenedResults?: FlattenedResult[]
   handleSearchKeyDown: UseGlobalSearchReturn['handleSearchKeyDown']
@@ -31,6 +34,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   searchContainerRef,
   searchInputRef,
   globalSearchResults,
+  searchStatus,
+  searchError,
+  retrySearch,
   hasSearchResults,
   handleSearchKeyDown,
   handleSearchResultClick,
@@ -43,7 +49,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   const tracks = globalSearchResults?.tracks || []
 
   return (
-    <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64" role="combobox" aria-expanded={showSearchResults && hasSearchResults} aria-haspopup="listbox">
+    <div ref={searchContainerRef} className="relative shrink min-w-24 max-w-80 w-64" role="combobox" aria-expanded={showSearchResults && hasSearchResults} aria-haspopup="listbox" aria-busy={searchStatus === 'searching' || searchStatus === 'waiting'}>
       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" aria-hidden="true" />
       <input
         ref={searchInputRef}
@@ -257,7 +263,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         </div>
       )}
 
-      {showSearchResults && searchInput.length >= 2 && !hasSearchResults && (
+      {showSearchResults && searchInput.trim().length >= 2 && searchStatus !== 'idle' && searchStatus !== 'error' && (
+        <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl p-4 z-9999" role="status" aria-live="polite">
+          <div className="text-sm text-muted-foreground text-center">{searchStatus === 'waiting' ? 'Waiting to search…' : 'Searching library…'}</div>
+        </div>
+      )}
+      {showSearchResults && searchInput.trim().length >= 2 && searchStatus === 'error' && (
+        <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-destructive/40 rounded-lg shadow-2xl p-4 z-9999" role="alert">
+          <p className="text-sm text-destructive">Search failed: {searchError}</p>
+          <button type="button" onClick={retrySearch} className="mt-2 text-sm text-primary hover:underline">Retry search</button>
+        </div>
+      )}
+      {showSearchResults && searchInput.trim().length >= 2 && searchStatus === 'idle' && !hasSearchResults && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-2xl p-4 z-9999">
           <div className="text-sm text-muted-foreground text-center">No results found</div>
         </div>

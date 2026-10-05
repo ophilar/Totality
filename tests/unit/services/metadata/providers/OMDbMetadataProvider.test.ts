@@ -70,7 +70,8 @@ describe('OMDbMetadataProvider', () => {
         }),
       })
       const result = await provider.search({ title: 'Movie', type: 'movie', year: 2020 })
-      expect(mockFetch).toHaveBeenCalledWith('https://www.omdbapi.com/?apikey=test-api-key&s=Movie&y=2020&type=movie')
+      expect(mockFetch.mock.calls[0][0]).toBe('https://www.omdbapi.com/?apikey=test-api-key&s=Movie&y=2020&type=movie')
+      expect(mockFetch.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
 
       expect(result).toHaveLength(3)
 
@@ -114,7 +115,8 @@ describe('OMDbMetadataProvider', () => {
         json: vi.fn().mockResolvedValueOnce({ Response: 'True', Search: [] }),
       })
       await provider.search({ title: 'TV Show', type: 'tv' })
-      expect(mockFetch).toHaveBeenCalledWith('https://www.omdbapi.com/?apikey=test-api-key&s=TV%20Show&type=series')
+      expect(mockFetch.mock.calls[0][0]).toBe('https://www.omdbapi.com/?apikey=test-api-key&s=TV%20Show&type=series')
+      expect(mockFetch.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
     })
 
     it('should catch exceptions and return empty array', async () => {

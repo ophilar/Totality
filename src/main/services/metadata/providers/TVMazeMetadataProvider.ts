@@ -21,14 +21,16 @@ export class TVMazeMetadataProvider implements IMetadataProvider {
 
   private readonly baseUrl = 'https://api.tvmaze.com'
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
     if (query.type !== 'tv') return []
+    signal?.throwIfAborted()
     try {
-      const response = await fetch(`${this.baseUrl}/search/shows?q=${encodeURIComponent(query.title)}`)
+      const response = await fetch(`${this.baseUrl}/search/shows?q=${encodeURIComponent(query.title)}`, { signal })
       if (!response.ok) return []
       const entries = await response.json() as Array<{ score?: number; show?: TVMazeShow }>
       return entries.slice(0, 10).flatMap(entry => entry.show ? [this.mapShow(entry.show, query.type)] : [])
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error
       return []
     }
   }

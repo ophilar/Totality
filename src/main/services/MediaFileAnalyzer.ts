@@ -204,77 +204,9 @@ export class MediaFileAnalyzer {
   }
 
   private async analyzeBitrateVariance(filePath: string, requestId?: string, signal?: AbortSignal): Promise<{ peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }> {
-    const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
-    const ffprobeCommand = this.requireFFprobePath()
-    return new Promise((resolve, reject) => {
-      // Use ffprobe to get packet sizes for the first video stream
-      const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=size,duration_time', '-of', 'compact=p=0:nk=1', `file:${sanitizedPath}`]
-      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
-      if (requestId) this.deepProcesses.set(requestId, proc)
-
-      let stdout = ''
-      proc.stdout.on('data', (d) => { stdout += d.toString() })
-
-      proc.on('close', (code) => {
-        if (requestId) this.deepProcesses.delete(requestId)
-        if (code !== 0) return reject(new Error(`FFprobe exited with code ${code}`))
-
-        const lines = stdout.trim().split('\n')
-        if (lines.length < 10) return reject(new Error('Insufficient data for bitrate analysis'))
-
-        let totalBytes = 0
-        let totalDuration = 0
-        let maxBitrate = 0
-
-        // Windowed bitrate calculation (1-second sliding window)
-        const windowSize = 1.0 // seconds
-        let currentWindowBytes = 0
-        let currentWindowDuration = 0
-        const windowQueue: Array<{ bytes: number, duration: number }> = []
-        const bitrates: number[] = []
-
-        for (const line of lines) {
-          const [durStr, sizeStr] = line.split('|')
-          const size = parseInt(sizeStr, 10)
-          const duration = parseFloat(durStr)
-          if (isNaN(size) || isNaN(duration)) continue
-
-          totalBytes += size
-          totalDuration += duration
-
-          currentWindowBytes += size
-          currentWindowDuration += duration
-          windowQueue.push({ bytes: size, duration })
-
-          while (currentWindowDuration > windowSize && windowQueue.length > 0) {
-            const first = windowQueue.shift()!
-            currentWindowBytes -= first.bytes
-            currentWindowDuration -= first.duration
-          }
-
-          if (currentWindowDuration > 0.5) { // Only sample if we have at least half a second
-            const windowBitrate = (currentWindowBytes * 8) / currentWindowDuration / 1000 // kbps
-            if (windowBitrate > maxBitrate) maxBitrate = windowBitrate
-            bitrates.push(windowBitrate)
-          }
-        }
-
-        const avgBitrate = (totalBytes * 8) / totalDuration / 1000
-
-        // Calculate variance
-        const squareDiffs = bitrates.map(b => Math.pow(b - avgBitrate, 2))
-        const variance = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length
-        const stdDev = Math.sqrt(variance)
-
-        resolve({
-          peakBitrate: Math.round(maxBitrate),
-          avgBitrate: Math.round(avgBitrate),
-          bitrateVariance: Math.round(stdDev),
-          isVariableBitrate: stdDev > (avgBitrate * 0.1) // More than 10% deviation
-        })
-      })
-      proc.on('error', reject)
-    })
+    const metrics = await this.measurePacketMetrics(filePath, 'first', signal, requestId)
+    if (!metrics.bitrate) throw new Error('Insufficient data for bitrate analysis')
+    return metrics.bitrate
   }
 
   /**
@@ -335,17 +267,22 @@ export class MediaFileAnalyzer {
       const fileAnalysis = await this.analyzeFile(filePath, options.signal)
       logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - startedAt}ms`)
 
-      stage = 'stream byte measurement'
-      const streamBytesStartedAt = Date.now()
+      stage = 'packet metrics'
+      const packetMetricsStartedAt = Date.now()
       logging.debug('[MediaFileAnalyzer]', `Starting ${stage}`)
-      const streamBytes = await this.measureStreamBytes(filePath, options.signal)
-      logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - streamBytesStartedAt}ms`)
+      const packetMetrics = await this.measurePacketMetrics(
+        filePath,
+        (options.scanBitrate ?? true) ? fileAnalysis.video?.index : undefined,
+        options.signal,
+        options.requestId,
+      )
+      logging.debug('[MediaFileAnalyzer]', `Completed ${stage} in ${Date.now() - packetMetricsStartedAt}ms`)
 
       stage = 'deep analysis'
       const deepAnalysisStartedAt = Date.now()
       logging.debug('[MediaFileAnalyzer]', `Starting ${stage}`)
       const deepAnalysis = await this.deepAnalyzeFile(filePath, {
-        scanBitrate: options.scanBitrate ?? true,
+        scanBitrate: false,
         detectVolume: options.detectVolume ?? true,
         requestId: options.requestId,
         signal: options.signal,
@@ -355,9 +292,9 @@ export class MediaFileAnalyzer {
 
       return {
         ...fileAnalysis,
-        streamBytes,
+        streamBytes: packetMetrics.streamBytes,
         audioTracks: deepAnalysis.audioTracks?.length ? deepAnalysis.audioTracks : fileAnalysis.audioTracks,
-        deepAnalysis: deepAnalysis.deepAnalysis,
+        deepAnalysis: { ...packetMetrics.bitrate, ...deepAnalysis.deepAnalysis },
       }
     } catch (error) {
       if (options.signal?.aborted) {
@@ -370,23 +307,34 @@ export class MediaFileAnalyzer {
   }
 
   async measureStreamBytes(filePath: string, signal?: AbortSignal): Promise<Record<number, number>> {
+    return (await this.measurePacketMetrics(filePath, undefined, signal)).streamBytes
+  }
+
+  private async measurePacketMetrics(
+    filePath: string,
+    videoStreamIndex: number | 'first' | undefined,
+    signal?: AbortSignal,
+    requestId?: string,
+  ): Promise<{ streamBytes: Record<number, number>; bitrate?: { peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean } }> {
     const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
     const ffprobeCommand = this.requireFFprobePath()
     return new Promise((resolve, reject) => {
       const args = [
         '-v', 'error',
-        '-show_entries', 'packet=stream_index,size:packet_side_data=',
+        ...(videoStreamIndex === 'first' ? ['-select_streams', 'v:0'] : []),
+        '-show_entries', 'packet=stream_index,size,duration_time:packet_side_data=',
         '-of', 'compact=p=1:nk=0',
         `file:${sanitizedPath}`,
       ]
       const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
-      const streamByteAccumulator = new StreamByteAccumulator()
+      if (requestId) this.deepProcesses.set(requestId, proc)
+      const packetAccumulator = new StreamByteAccumulator(videoStreamIndex)
       let stderr = ''
       let outputError: unknown
       proc.stdout.on('data', data => {
         if (outputError) return
         try {
-          streamByteAccumulator.write(data.toString())
+          packetAccumulator.write(data.toString())
         } catch (error) {
           outputError = error
           proc.kill('SIGKILL')
@@ -394,19 +342,21 @@ export class MediaFileAnalyzer {
       })
       proc.stderr.on('data', data => { stderr += data.toString() })
       proc.once('error', error => {
+        if (requestId) this.deepProcesses.delete(requestId)
         reject(error)
       })
       proc.once('close', code => {
+        if (requestId) this.deepProcesses.delete(requestId)
         if (outputError) {
           reject(outputError)
           return
         }
         if (code !== 0) {
-          reject(new Error(stderr || `FFprobe stream byte measurement exited with code ${code}: ${sanitizedPath}`))
+          reject(new Error(stderr || `FFprobe packet analysis exited with code ${code}: ${sanitizedPath}`))
           return
         }
         try {
-          resolve(streamByteAccumulator.finish())
+          resolve(packetAccumulator.finishWithBitrate())
         } catch (error) {
           reject(error)
         }

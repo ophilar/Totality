@@ -28,7 +28,8 @@ export class RemoteRegistryRecipeProvider implements ITimelineRecipeProvider {
     const cached = await this.cacheService.getRecipe(id)
     if (cached && !options.refresh) return cached
 
-    const response = await fetch(`${this.registryBaseUrl}/recipes/${id}.json`, { signal: AbortSignal.timeout(10000) })
+    const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000)
+    const response = await fetch(`${this.registryBaseUrl}/recipes/${id}.json`, { signal })
     if (!response.ok) {
       throw new Error(`Failed to fetch timeline '${id}' from remote registry (${response.status}: ${response.statusText}).`)
     }

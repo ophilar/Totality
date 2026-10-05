@@ -22,15 +22,14 @@ export function selectDefaultGpu(gpus: GpuInfo[]): GpuInfo | undefined {
 }
 
 export function resolveSelectedGpuId(gpus: GpuInfo[], persistedGpuId?: string | null): string | null {
-  if (persistedGpuId === null) return null
   if (persistedGpuId && gpus.some(gpu => gpu.id === persistedGpuId)) return persistedGpuId
-  return selectDefaultGpu(gpus)?.id ?? null
+  return null
 }
 
 export function buildTranscodingCapabilities(
   availability: TranscodingAvailability,
   gpus: GpuInfo[],
-  selectedGpuId: string | null = resolveSelectedGpuId(gpus),
+  selectedGpuId: string | null = null,
   verifiedEncoders: string[] = [],
   probeFailures: string[] = []
 ): TranscodingCapabilities {

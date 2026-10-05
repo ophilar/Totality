@@ -1,4 +1,6 @@
 import { IMetadataProvider, MetadataSearchQuery, MetadataSearchResult, MediaMetadataDetails, MetadataType } from '../IMetadataProvider'
+import type { ProviderHealthResult } from '@shared/serviceHealth'
+import { fetchWithTimeout } from '@main/services/utils/httpClient'
 
 interface TVDBConfig { apiKey: string | null; pin?: string | null }
 interface TVDBSearchItem {
@@ -22,17 +24,55 @@ export class TVDBMetadataProvider implements IMetadataProvider {
   readonly supportedTypes: MetadataType[] = ['tv']
   private readonly baseUrl = 'https://api4.thetvdb.com/v4'
   private token: string | null = null
+  private tokenConfiguration: string | null = null
 
   constructor(private readonly getConfig: () => TVDBConfig | Promise<TVDBConfig> = () => ({ apiKey: '' })) {}
 
-  private async authenticate(): Promise<string | null> {
+  async testSavedCredential(signal: AbortSignal): Promise<ProviderHealthResult> {
+    const config = await this.getConfig()
+    if (!config.apiKey) return { status: 'not-configured', message: null }
+    const configIdentity = JSON.stringify([config.apiKey, config.pin ?? null])
+    if (this.tokenConfiguration !== configIdentity) {
+      this.token = null
+      this.tokenConfiguration = configIdentity
+    }
+    try {
+      const response = await fetchWithTimeout(`${this.baseUrl}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ apikey: config.apiKey, pin: config.pin || undefined }),
+        signal,
+      }, 10000)
+      if (response.status === 401) return { status: 'invalid-credential', message: 'TVDB rejected the saved credentials.' }
+      if (response.status === 403) return { status: 'permission-denied', message: 'TVDB denied access for this account or subscription.' }
+      if (response.status === 429) return { status: 'rate-limited', message: 'TVDB rate limit reached.' }
+      if (!response.ok) return { status: 'unavailable', message: `TVDB returned HTTP ${response.status}.` }
+      const body = await response.json() as { data?: { token?: string } }
+      if (!body.data?.token) return { status: 'unavailable', message: 'TVDB returned no authentication token.' }
+      this.token = body.data.token
+      return { status: 'valid', message: null }
+    } catch (error) {
+      if (signal.aborted) throw error
+      if (error instanceof Error && /timed out/i.test(error.message)) return { status: 'timed-out', message: 'TVDB validation timed out.' }
+      return { status: 'unavailable', message: 'TVDB could not be reached.' }
+    }
+  }
+
+  private async authenticate(signal?: AbortSignal): Promise<string | null> {
+    signal?.throwIfAborted()
     const config = await this.getConfig()
     if (!config.apiKey) return null
-    if (this.token) return this.token
+    const configIdentity = JSON.stringify([config.apiKey, config.pin ?? null])
+    if (this.token && this.tokenConfiguration === configIdentity) return this.token
+    if (this.tokenConfiguration !== configIdentity) {
+      this.token = null
+      this.tokenConfiguration = configIdentity
+    }
     const response = await fetch(`${this.baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ apikey: config.apiKey, pin: config.pin || undefined })
+      body: JSON.stringify({ apikey: config.apiKey, pin: config.pin || undefined }),
+      signal,
     })
     if (!response.ok) return null
     const body = await response.json() as { data?: { token?: string } }
@@ -40,11 +80,13 @@ export class TVDBMetadataProvider implements IMetadataProvider {
     return this.token
   }
 
-  private async request<T>(path: string): Promise<T | null> {
-    const token = await this.authenticate()
+  private async request<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+    signal?.throwIfAborted()
+    const token = await this.authenticate(signal)
     if (!token) return null
     const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      signal,
     })
     if (response.status === 401) this.token = null
     if (!response.ok) return null
@@ -74,9 +116,10 @@ export class TVDBMetadataProvider implements IMetadataProvider {
     }
   }
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     if (!(await this.getConfig()).apiKey || !this.supportedTypes.includes(query.type)) return []
-    const body = await this.request<{ data?: TVDBSearchItem[] }>(`/search?query=${encodeURIComponent(query.title)}&type=series`)
+    const body = await this.request<{ data?: TVDBSearchItem[] }>(`/search?query=${encodeURIComponent(query.title)}&type=series`, signal)
     return (body?.data || []).filter(item => item.id && item.name).map(item => this.map(item))
   }
 

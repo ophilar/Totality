@@ -1,9 +1,10 @@
 export interface PacketByteRecord {
   streamIndex: number
   bytes: number | null
+  durationSeconds?: number
 }
 
-function parsePacketByteLine(line: string): PacketByteRecord | null {
+export function parsePacketByteLine(line: string): PacketByteRecord | null {
   const normalizedLine = line.trim()
   if (!normalizedLine) return null
   const fields = normalizedLine.split('|')
@@ -35,7 +36,13 @@ function parsePacketByteLine(line: string): PacketByteRecord | null {
   if (!Number.isSafeInteger(bytes) || bytes < 0) {
     throw new Error(`Invalid packet byte value: ${normalizedLine}`)
   }
-  return { streamIndex, bytes }
+  const rawDuration = packetFields.get('duration_time')?.trim()
+  if (rawDuration === undefined || rawDuration === '' || rawDuration === 'N/A') return { streamIndex, bytes }
+  const durationSeconds = Number(rawDuration)
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) {
+    throw new Error(`Invalid packet duration: ${normalizedLine}`)
+  }
+  return { streamIndex, bytes, durationSeconds }
 }
 
 export function parsePacketByteOutput(output: string): PacketByteRecord[] {
@@ -74,9 +81,85 @@ export function toStreamByteMap(records: PacketByteRecord[]): Record<number, num
   return Object.fromEntries([...totals].filter(([, total]) => total.complete).map(([index, total]) => [index, total.bytes]))
 }
 
+export interface PacketBitrateMetrics {
+  peakBitrate: number
+  avgBitrate: number
+  bitrateVariance: number
+  isVariableBitrate: boolean
+}
+
+class PacketBitrateAccumulator {
+  private readonly windowSize = 1
+  private currentWindowBytes = 0
+  private currentWindowDuration = 0
+  private readonly windowQueue: Array<{ bytes: number; duration: number }> = []
+  private totalBytes = 0
+  private totalDuration = 0
+  private maxBitrate = 0
+  private sampleCount = 0
+  private sumBitrates = 0
+  private sumSquaredBitrates = 0
+  private packetCount = 0
+
+  add(record: PacketByteRecord): void {
+    this.packetCount++
+    if (record.bytes === null || record.durationSeconds === undefined) return
+
+    const { bytes, durationSeconds: duration } = record
+    this.totalBytes += bytes
+    this.totalDuration += duration
+    this.currentWindowBytes += bytes
+    this.currentWindowDuration += duration
+    this.windowQueue.push({ bytes, duration })
+
+    while (this.currentWindowDuration > this.windowSize && this.windowQueue.length > 0) {
+      const first = this.windowQueue.shift()!
+      this.currentWindowBytes -= first.bytes
+      this.currentWindowDuration -= first.duration
+    }
+
+    if (this.currentWindowDuration > 0.5) {
+      const bitrate = (this.currentWindowBytes * 8) / this.currentWindowDuration / 1000
+      this.maxBitrate = Math.max(this.maxBitrate, bitrate)
+      this.sampleCount++
+      this.sumBitrates += bitrate
+      this.sumSquaredBitrates += bitrate * bitrate
+    }
+  }
+
+  finish(): PacketBitrateMetrics {
+    if (this.packetCount < 10 || this.totalDuration <= 0 || this.sampleCount === 0) {
+      throw new Error('Insufficient data for bitrate analysis')
+    }
+
+    const average = (this.totalBytes * 8) / this.totalDuration / 1000
+    const averageSquaredDifference = this.sumSquaredBitrates / this.sampleCount -
+      2 * average * this.sumBitrates / this.sampleCount + average * average
+    const standardDeviation = Math.sqrt(Math.max(0, averageSquaredDifference))
+
+    return {
+      peakBitrate: Math.round(this.maxBitrate),
+      avgBitrate: Math.round(average),
+      bitrateVariance: Math.round(standardDeviation),
+      isVariableBitrate: standardDeviation > average * 0.1,
+    }
+  }
+}
+
 export class StreamByteAccumulator {
   private pendingLine = ''
   private readonly totals = new Map<number, { bytes: number; complete: boolean }>()
+  private targetVideoStreamIndex: number | undefined
+  private findFirstPacketStream: boolean
+  private bitrate: PacketBitrateAccumulator | null = null
+
+  constructor(videoStreamIndex?: number | 'first') {
+    this.findFirstPacketStream = videoStreamIndex === 'first'
+    if (typeof videoStreamIndex === 'number') {
+      this.targetVideoStreamIndex = videoStreamIndex
+      this.bitrate = new PacketBitrateAccumulator()
+    }
+  }
 
   write(chunk: string): void {
     const lines = (this.pendingLine + chunk).split(/\r?\n/)
@@ -90,9 +173,20 @@ export class StreamByteAccumulator {
     return Object.fromEntries([...this.totals].filter(([, total]) => total.complete).map(([index, total]) => [index, total.bytes]))
   }
 
+  finishWithBitrate(): { streamBytes: Record<number, number>; bitrate?: PacketBitrateMetrics } {
+    const streamBytes = this.finish()
+    return { streamBytes, ...(this.bitrate ? { bitrate: this.bitrate.finish() } : {}) }
+  }
+
   private addLine(line: string): void {
     const record = parsePacketByteLine(line)
     if (!record) return
     addPacketByteRecord(this.totals, record)
+    if (this.findFirstPacketStream) {
+      this.targetVideoStreamIndex = record.streamIndex
+      this.findFirstPacketStream = false
+      this.bitrate = new PacketBitrateAccumulator()
+    }
+    if (record.streamIndex === this.targetVideoStreamIndex) this.bitrate?.add(record)
   }
 }

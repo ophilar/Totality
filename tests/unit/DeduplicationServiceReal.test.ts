@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, _vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DeduplicationService } from '@main/services/DeduplicationService'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 
@@ -47,6 +47,16 @@ describe('DeduplicationService (Real DB)', () => {
     // Check if item2 exists
     const item2 = await db.media.getItem(id2)
     expect(item2).toBeDefined()
+  })
+
+  it('does not persist groups when the scan is cancelled before analysis completes', async () => {
+    await db.media.upsertItem({ source_id: 's1', plex_id: 'cancel-1', tmdb_id: '300', title: 'Movie C', type: 'movie', file_path: '/cancel-1' })
+    await db.media.upsertItem({ source_id: 's1', plex_id: 'cancel-2', tmdb_id: '300', title: 'Movie C', type: 'movie', file_path: '/cancel-2' })
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(service.scanForDuplicates('s1', controller.signal)).rejects.toThrow('aborted')
+    expect(await db.duplicates.getPendingDuplicates('s1')).toHaveLength(0)
   })
 })
 

@@ -44,7 +44,7 @@ export interface TimelineRecipeSummary {
   granularity?: TimelineDefinition['granularity']
 }
 
-export interface TimelineFetchOptions { refresh?: boolean; snapshotId?: string }
+export interface TimelineFetchOptions { refresh?: boolean; snapshotId?: string; signal?: AbortSignal }
 
 export interface ITimelineRecipeProvider {
   supports(input: string): Promise<boolean>

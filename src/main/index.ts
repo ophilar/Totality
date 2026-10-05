@@ -14,6 +14,7 @@ protocol.registerSchemesAsPrivileged([
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { resolveDatabasePath } from '@main/database/DatabasePath'
 import { getSourceManager } from '@main/services/SourceManager'
+import { getTMDBService } from '@main/services/TMDBService'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerQualityHandlers } from '@main/ipc/quality'
 import { registerSeriesHandlers } from '@main/ipc/series'
@@ -47,6 +48,7 @@ import { getGeminiService } from '@main/services/GeminiService'
 import { getAutoUpdateService } from '@main/services/AutoUpdateService'
 import { getWishlistCompletionService } from '@main/services/WishlistCompletionService'
 import { getMusicBrainzService } from '@main/services/MusicBrainzService'
+import { getSavedServiceHealthService } from '@main/services/SavedServiceHealthService'
 import { ApplicationShutdown } from '@main/services/ApplicationShutdown'
 import { PathUtils } from '@main/services/utils/PathUtils'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
@@ -308,9 +310,26 @@ app.whenReady().then(async () => {
     getLoggingService().setDatabaseGetter(() => getDatabase())
     await getLoggingService().initializeFileLogging()
 
+    await getTMDBService().initialize()
+    getTMDBService().validationEvents.on('changed', state => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_CHANGED, state)
+      }
+    })
+    getTMDBService().validateSavedCredential()
+    getGeminiService().validationEvents.on('changed', state => {
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.AI.VALIDATION_CHANGED, state)
+    })
     await getSourceManager().initialize()
     await getGeminiService().initialize()
     await getMusicBrainzService().initialize()
+    const savedServiceHealth = getSavedServiceHealthService()
+    savedServiceHealth.events.on('changed', state => {
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_CHANGED, state)
+    })
+    void savedServiceHealth.refreshSavedChecks().catch(error => {
+      getLoggingService().error('[ServiceHealth]', 'Unable to load saved provider health:', error)
+    })
     await getTaskQueueService().loadPersistedHistory()
 
     // Register all IPC handlers

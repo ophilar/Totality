@@ -8,6 +8,12 @@ export const IPC_CHANNELS = {
   APP: {
     GET_VERSION: 'app:getVersion',
   },
+  OPERATIONS: {
+    GET_ACTIVITY: 'operations:getActivity',
+    GET_RESULT: 'operations:getResult',
+    DISMISS: 'operations:dismiss',
+    UPDATED: 'operations:updated',
+  },
   ARR: {
     TEST_CONNECTION: 'arr:testConnection',
     SEARCH_MOVIE: 'arr:searchMovie',
@@ -29,6 +35,10 @@ export const IPC_CHANNELS = {
     GET_DECISION: 'optimization:getDecision'
   },
   DATABASE: {
+    TMDB_TEST_API_KEY: 'tmdb:testApiKey',
+    TMDB_VALIDATION_STATE: 'tmdb:validationState',
+    TMDB_VALIDATION_CHANGED: 'tmdb:validationChanged',
+    CANCEL_OPERATION: 'db:cancelOperation',
     PLAYBACK_TARGET_PROFILES_LIST: 'db:playbackTargetProfiles:list',
     PLAYBACK_TARGET_PROFILES_CREATE: 'db:playbackTargetProfiles:create',
     PLAYBACK_TARGET_PROFILES_UPDATE: 'db:playbackTargetProfiles:update',
@@ -188,6 +198,8 @@ export const IPC_CHANNELS = {
     COMPRESSION_ADVICE: 'ai:compressionAdvice',
     EXPLAIN_QUALITY: 'ai:explainQuality',
     GET_AVAILABLE_MODELS: 'ai:getAvailableModels',
+    VALIDATION_STATE: 'ai:validationState',
+    VALIDATION_CHANGED: 'ai:validationChanged',
   },
   JELLYFIN: {
     IS_QUICK_CONNECT_ENABLED: 'jellyfin:isQuickConnectEnabled',
@@ -225,6 +237,10 @@ export const IPC_CHANNELS = {
     GET_NFS_MAPPINGS: 'settings:getNfsMappings',
     SET_NFS_MAPPINGS: 'settings:setNfsMappings',
     TEST_NFS_MAPPING: 'settings:testNfsMapping',
+    SERVICE_HEALTH_STATE: 'settings:serviceHealthState',
+    SERVICE_HEALTH_CHANGED: 'settings:serviceHealthChanged',
+    SERVICE_HEALTH_REFRESH: 'settings:serviceHealthRefresh',
+    SERVICE_HEALTH_RETRY: 'settings:serviceHealthRetry',
   },
   MOVIE: {
     SEARCH_TMDB: 'movie:searchTMDB',

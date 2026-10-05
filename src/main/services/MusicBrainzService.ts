@@ -216,6 +216,19 @@ export class MusicBrainzService extends CancellableOperation {
     this.api.defaults.baseURL = this.baseURL
   }
 
+  async testAvailability(signal: AbortSignal): Promise<void> {
+    await this.initialize()
+    const artistId = 'b10bbbfc-cf9e-42e0-be17-e2c3c1e2600d'
+    await this.requestWithRetry(
+      requestSignal => this.api.get('/release', {
+        params: { artist: artistId, limit: 1, fmt: 'json' },
+        signal: requestSignal,
+      }),
+      'Saved MusicBrainz availability check',
+      signal,
+    )
+  }
+
   /**
    * Build Cover Art Archive URL for album artwork
    * @param releaseGroupId MusicBrainz release group ID
@@ -271,8 +284,8 @@ export class MusicBrainzService extends CancellableOperation {
    * Rate limit - ensures compliance with MusicBrainz 1 req/sec limit
    * Uses shared SimpleDelayRateLimiter (1.5s between requests)
    */
-  private async rateLimit(): Promise<void> {
-    await this.rateLimiter.waitForSlot()
+  private async rateLimit(signal = this.cancellationSignal): Promise<void> {
+    await this.rateLimiter.waitForSlot(signal)
   }
 
   /**
@@ -303,15 +316,16 @@ export class MusicBrainzService extends CancellableOperation {
    * Make a request with retry logic using exponential backoff
    */
   private async requestWithRetry<T>(
-    requestFn: () => Promise<T>,
-    context: string
+    requestFn: (signal: AbortSignal) => Promise<T>,
+    context: string,
+    signal = this.cancellationSignal,
   ): Promise<T> {
     try {
       const result = await retryWithBackoff(
         async () => {
-          await this.rateLimit()
+          await this.rateLimit(signal)
           try {
-            const data = await requestFn()
+            const data = await requestFn(signal)
             this.rateLimiter.recordSuccess()
             return data
           } catch (error: unknown) {
@@ -346,6 +360,7 @@ export class MusicBrainzService extends CancellableOperation {
           maxDelay: 30000,
           backoffFactor: 2,
           retryableStatuses: [429, 500, 502, 503, 504],
+          signal,
           onRetry: (attempt, error, delay) => {
             getLoggingService().warn('[MusicBrainzService]', `${context} - Retry ${attempt}/${this.MAX_RETRIES} after ${delay}ms: ${error.message}`)
           }
@@ -363,7 +378,7 @@ export class MusicBrainzService extends CancellableOperation {
   /**
    * Search for an artist by name
    */
-  async searchArtist(name: string): Promise<MBArtist[]> {
+  async searchArtist(name: string, signal?: AbortSignal): Promise<MBArtist[]> {
     if (isPlaceholderMusicTitle(name)) {
       return []
     }
@@ -372,16 +387,17 @@ export class MusicBrainzService extends CancellableOperation {
     // but first try exact name search in quotes.
     const cleanName = name.replace(/[&]/g, 'AND').replace(/[+]/g, ' ').trim()
 
-    return this.requestWithRetry(async () => {
+    return this.requestWithRetry(async signal => {
       const response = await this.api.get<MBArtistSearchResult>('/artist', {
         params: {
           query: `artist:"${name}" OR artist:"${cleanName}"`,
           fmt: 'json',
           limit: 10,
         },
+        signal,
       })
       return response.data.artists || []
-    }, `searchArtist(${name})`)
+    }, `searchArtist(${name})`, signal)
   }
 
   /**
@@ -389,13 +405,14 @@ export class MusicBrainzService extends CancellableOperation {
    */
   private async hasDigitalRelease(releaseGroupId: string): Promise<boolean> {
     try {
-      const releases = await this.requestWithRetry(async () => {
+      const releases = await this.requestWithRetry(async signal => {
         const response = await this.api.get<{ releases: MBRelease[] }>(`/release`, {
           params: {
             'release-group': releaseGroupId,
             fmt: 'json',
             limit: 50,
           },
+          signal,
         })
         return response.data.releases || []
       }, `checkDigitalRelease(${releaseGroupId})`)
@@ -439,12 +456,13 @@ export class MusicBrainzService extends CancellableOperation {
    * Get artist details by MusicBrainz ID
    */
   async getArtistDetails(musicbrainzId: string): Promise<MBArtist | null> {
-    return this.requestWithRetry(async () => {
+    return this.requestWithRetry(async signal => {
       try {
         const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
           params: {
             fmt: 'json',
           },
+          signal,
         })
         return response.data
       } catch (error: unknown) {
@@ -466,13 +484,14 @@ export class MusicBrainzService extends CancellableOperation {
     singles: MBReleaseGroup[]
   }> {
     // Get artist info with release groups in a single call for efficiency
-    const artist = await this.requestWithRetry(async () => {
+    const artist = await this.requestWithRetry(async signal => {
       try {
         const response = await this.api.get<MBArtist>(`/artist/${musicbrainzId}`, {
           params: {
             fmt: 'json',
             inc: 'release-groups',
           },
+          signal,
         })
         return response.data
       } catch (error: unknown) {
@@ -498,7 +517,7 @@ export class MusicBrainzService extends CancellableOperation {
 
     if (releaseGroups.length === 0) {
       // Fallback: fetch release groups separately if not included
-      releaseGroups = await this.requestWithRetry(async () => {
+      releaseGroups = await this.requestWithRetry(async signal => {
         const response = await this.api.get<{ 'release-groups': MBReleaseGroup[] }>(
           `/release-group`,
           {
@@ -507,6 +526,7 @@ export class MusicBrainzService extends CancellableOperation {
               fmt: 'json',
               limit: 100,
             },
+            signal,
           }
         )
         return response.data['release-groups'] || []
@@ -570,7 +590,7 @@ export class MusicBrainzService extends CancellableOperation {
   } | null> {
     try {
       // Get releases with media and recordings in a single call (optimization)
-      let releases = await this.requestWithRetry(async () => {
+      let releases = await this.requestWithRetry(async signal => {
         try {
           const response = await this.api.get(`/release`, {
             params: {
@@ -580,6 +600,7 @@ export class MusicBrainzService extends CancellableOperation {
               status: 'official',
               inc: 'media+recordings',  // Include tracks in the same request
             },
+            signal,
           })
           interface MBReleasesResponse { releases?: MBRelease[] }
           return (response.data as MBReleasesResponse)?.releases || []
@@ -595,7 +616,7 @@ export class MusicBrainzService extends CancellableOperation {
       // If no official releases, try without status filter
       if (releases.length === 0) {
         getLoggingService().info('[MusicBrainzService]', `No official releases found, trying all releases...`)
-        releases = await this.requestWithRetry(async () => {
+        releases = await this.requestWithRetry(async signal => {
           const response = await this.api.get(`/release`, {
             params: {
               'release-group': releaseGroupId,
@@ -603,6 +624,7 @@ export class MusicBrainzService extends CancellableOperation {
               limit: 5,
               inc: 'media+recordings',  // Include tracks in the same request
             },
+            signal,
           })
           interface MBReleasesResponse { releases?: MBRelease[] }
           return (response.data as MBReleasesResponse)?.releases || []
@@ -709,7 +731,7 @@ export class MusicBrainzService extends CancellableOperation {
   /**
    * Search for a release by artist and album title
    */
-  async searchRelease(artistName: string, albumTitle: string): Promise<Array<{
+  async searchRelease(artistName: string, albumTitle: string, signal?: AbortSignal): Promise<Array<{
     id: string
     title: string
     artist_credit: string
@@ -731,13 +753,14 @@ export class MusicBrainzService extends CancellableOperation {
         getLoggingService().info('[MusicBrainzService]', `Cleaned title for search: "${albumTitle}" -> "${cleanedTitle}"`)
       }
       const query = `release:"${cleanedTitle}" AND artist:"${artistName}"`
-      const releaseGroups = await this.requestWithRetry(async () => {
+      const releaseGroups = await this.requestWithRetry(async signal => {
         const response = await this.api.get('/release-group', {
           params: {
             query,
             fmt: 'json',
             limit: 5,
           },
+          signal,
         })
         interface MBReleaseGroupsResponse { 'release-groups'?: Array<{
           id: string
@@ -747,7 +770,7 @@ export class MusicBrainzService extends CancellableOperation {
           'artist-credit'?: Array<{ name?: string; artist?: { country?: string } }>
         }> }
         return (response.data as MBReleaseGroupsResponse)?.['release-groups'] || []
-      }, `searchRelease(${artistName} - ${albumTitle})`)
+      }, `searchRelease(${artistName} - ${albumTitle})`, signal)
 
       return releaseGroups.map((rg) => ({
         id: rg.id,  // MusicBrainz release group ID
@@ -759,6 +782,7 @@ export class MusicBrainzService extends CancellableOperation {
       }))
     } catch (error) {
       getLoggingService().error('[MusicBrainzService]', '[MusicBrainzService] Release search failed:', error)
+      if (signal?.aborted) throw error
       if (this.isRetryableConnectionError(error)) throw error
       return []
     }
@@ -1119,7 +1143,8 @@ export class MusicBrainzService extends CancellableOperation {
   async analyzeAllMusic(
     onProgress?: (progress: MusicAnalysisProgress) => void,
     sourceId?: string,
-    options: MusicAnalysisOptions & { libraryId?: string; artistId?: number } = {}
+    options: MusicAnalysisOptions & { libraryId?: string; artistId?: number } = {},
+    signal?: AbortSignal,
   ): Promise<AnalysisOutcome & { artistsAnalyzed: number; albumsAnalyzed: number; skipped: number; deferred: number }> {
     // Apply default options
     const {
@@ -1128,7 +1153,9 @@ export class MusicBrainzService extends CancellableOperation {
       filterVinylOnly = false,
     } = options
 
-    // Reset cancellation flag at start
+    signal?.throwIfAborted()
+
+    // Reset cancellation flag only after confirming this task was not cancelled before entry.
     this.resetCancellation()
 
     const db = getDatabase()

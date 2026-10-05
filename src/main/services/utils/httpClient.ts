@@ -51,11 +51,22 @@ export async function fetchWithTimeout(
   timeoutMs = 30_000
 ): Promise<Response> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const abortFromCaller = () => controller.abort(options.signal?.reason)
+  if (options.signal?.aborted) abortFromCaller()
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
   try {
     return await fetch(url, { ...options, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) throw new Error(`Request timed out after ${timeoutMs}ms`)
+    throw error
   } finally {
     clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortFromCaller)
   }
 }
 

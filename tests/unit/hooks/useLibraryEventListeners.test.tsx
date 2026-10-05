@@ -14,7 +14,6 @@ describe('useLibraryEventListeners', () => {
     loadMedia: vi.fn().mockResolvedValue(undefined),
     loadStats: vi.fn().mockResolvedValue(undefined),
     loadCompletenessData: vi.fn().mockResolvedValue(undefined),
-    loadMusicData: vi.fn().mockResolvedValue(undefined),
     loadMusicCompletenessData: vi.fn().mockResolvedValue(undefined),
     loadActiveSourceLibraries: vi.fn().mockResolvedValue(undefined),
     loadEpSingleSettings: vi.fn().mockResolvedValue(undefined),
@@ -63,7 +62,7 @@ describe('useLibraryEventListeners', () => {
     cleanupTestDb()
   })
 
-  it('handles debounced handleLibraryUpdate for active and non-active sources', async () => {
+  it('updates statistics for active sources without owning paginated media refreshes', async () => {
     const options = createOptions({ activeSourceId: 'src-1' })
     renderHook(() => useLibraryEventListeners(options))
 
@@ -94,7 +93,7 @@ describe('useLibraryEventListeners', () => {
       listeners.onLibraryUpdated({ type: 'music' })
       vi.advanceTimersByTime(1000)
     })
-    expect(options.loadMedia).toHaveBeenCalledTimes(1)
+    expect(options.loadMedia).not.toHaveBeenCalled()
     expect(options.loadStats).toHaveBeenCalledWith(undefined)
   })
 
@@ -155,7 +154,7 @@ describe('useLibraryEventListeners', () => {
       vi.advanceTimersByTime(250)
     })
 
-    expect(options.loadMedia).toHaveBeenCalledTimes(1)
+    expect(options.loadMedia).not.toHaveBeenCalled()
     expect(options.loadStats).toHaveBeenCalledWith('src-1')
     expect(options.loadCompletenessData).toHaveBeenCalledTimes(1)
     expect(options.loadMusicCompletenessData).toHaveBeenCalledTimes(1)
@@ -223,7 +222,7 @@ describe('useLibraryEventListeners', () => {
     })
 
     expect(options.loadEpSingleSettings).toHaveBeenCalled()
-    expect(options.loadMusicData).toHaveBeenCalled()
+    expect(options.loadMusicData).toBeUndefined()
     expect(options.loadMusicCompletenessData).toHaveBeenCalledWith(true, false)
   })
 

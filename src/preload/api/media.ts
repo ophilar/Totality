@@ -2,8 +2,26 @@ import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
 import type { GlobalSearchResults } from '@shared/globalSearch'
+import type { TMDBValidationState } from '@main/services/TMDBService'
+import type { SavedServiceHealthSnapshot, SavedServiceId } from '@shared/serviceHealth'
 
 export const mediaApi: MediaAPI = {
+  tmdbGetValidationState: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_STATE),
+  onTmdbValidationChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: TMDBValidationState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_CHANGED, listener)
+  },
+  tmdbTestApiKey: (apiKey: string, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.TMDB_TEST_API_KEY, { apiKey, requestId }),
+  tmdbCancelApiKeyTest: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
+  getSavedServiceHealth: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_STATE),
+  refreshSavedServiceHealth: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_REFRESH),
+  onSavedServiceHealthChanged: (callback: (snapshot: SavedServiceHealthSnapshot) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: SavedServiceHealthSnapshot) => callback(snapshot)
+    ipcRenderer.on(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_CHANGED, listener)
+  },
+  retrySavedServiceHealth: (service: SavedServiceId) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_RETRY, service),
   // Quality Analysis
   qualityGetDistribution: () => ipcRenderer.invoke('quality:getDistribution'),
   qualityGetRecommendedFormat: (mediaItemId: number) =>
@@ -67,14 +85,15 @@ export const mediaApi: MediaAPI = {
 
   // Database - Data Management
   dbGetPath: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_PATH),
-  dbExport: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT),
+  dbExport: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT, requestId),
   dbExportCSV: (options: {
     includeUpgrades: boolean
     includeMissingMovies: boolean
     includeMissingEpisodes: boolean
     includeMissingAlbums: boolean
-  }) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT_CSV, options),
-  dbImport: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.IMPORT),
+  }, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.EXPORT_CSV, options, requestId),
+  dbImport: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.IMPORT, requestId),
+  dbCancelOperation: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
   dbReset: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.RESET),
   dbOpenFolder: () => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.OPEN_FOLDER),
 
@@ -110,7 +129,7 @@ export const mediaApi: MediaAPI = {
 
   // Movie Match Fixing
   movieSearchTMDB: (query: string, year?: number, includeAdult?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.MOVIE.SEARCH_TMDB, query, year, includeAdult),
-  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean, artistName?: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult, artistName),
+  mediaSearchMetadata: (query: string, type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork' | undefined, includeAdult: boolean | undefined, artistName: string | undefined, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH_METADATA, query, type, includeAdult, artistName, requestId),
   movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MOVIE.FIX_MATCH, mediaItemId, providerId, externalId),
 
@@ -171,6 +190,14 @@ export interface MediaDeepAnalysisResult {
 }
 
 export interface MediaAPI {
+  tmdbGetValidationState: () => Promise<TMDBValidationState>
+  onTmdbValidationChanged: (callback: (state: TMDBValidationState) => void) => () => void
+  tmdbTestApiKey: (apiKey: string, requestId: string) => Promise<'valid' | 'invalid-credential' | 'unavailable'>
+  tmdbCancelApiKeyTest: (requestId: string) => Promise<{ success: boolean }>
+  getSavedServiceHealth: () => Promise<SavedServiceHealthSnapshot>
+  refreshSavedServiceHealth: () => Promise<SavedServiceHealthSnapshot>
+  onSavedServiceHealthChanged: (callback: (snapshot: SavedServiceHealthSnapshot) => void) => () => void
+  retrySavedServiceHealth: (service: SavedServiceId) => Promise<SavedServiceHealthSnapshot>
   // Quality Analysis
   qualityGetDistribution: () => Promise<{
     byTier: {
@@ -246,14 +273,15 @@ export interface MediaAPI {
 
   // Database - Data Management
   dbGetPath: () => Promise<string>
-  dbExport: () => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+  dbExport: (requestId: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
   dbExportCSV: (options: {
     includeUpgrades: boolean
     includeMissingMovies: boolean
     includeMissingEpisodes: boolean
     includeMissingAlbums: boolean
-  }) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
-  dbImport: () => Promise<{ success: boolean; imported?: number; errors?: string[]; cancelled?: boolean }>
+  }, requestId: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+  dbImport: (requestId: string) => Promise<{ success: boolean; imported?: number; errors?: string[]; cancelled?: boolean }>
+  dbCancelOperation: (requestId: string) => Promise<{ status: 'cancelling' | 'committing' | 'missing' }>
   dbReset: () => Promise<{ success: boolean }>
   dbOpenFolder: () => Promise<{ success: boolean }>
 
@@ -307,7 +335,7 @@ export interface MediaAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  mediaSearchMetadata: (query: string, type?: 'movie' | 'tv' | 'anime' | 'music' | 'artwork', includeAdult?: boolean, artistName?: string) => Promise<Array<{
+  mediaSearchMetadata: (query: string, type: 'movie' | 'tv' | 'anime' | 'music' | 'artwork' | undefined, includeAdult: boolean | undefined, artistName: string | undefined, requestId: string) => Promise<Array<{
     id: string
     provider: string
     title: string
@@ -330,7 +358,7 @@ export interface MediaAPI {
       anilistId?: string
       musicBrainzId?: string
     }
-  }>>
+  }> | { status: 'cancelled' }>
   movieFixMatch: (mediaItemId: number, providerId: string, externalId: string) => Promise<{
     success: boolean
     tmdbId: number

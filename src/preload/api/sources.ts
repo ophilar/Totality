@@ -34,8 +34,8 @@ export const sourcesApi = {
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TOGGLE, sourceId, enabled),
 
   // Connection Testing
-  sourcesTestConnection: (sourceId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId),
+  sourcesTestConnection: (sourceId: string, healthOnly?: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId, healthOnly),
 
   // Plex-specific Auth (new flow for multi-source)
   plexStartAuth: () => ipcRenderer.invoke(IPC_CHANNELS.SOURCES.PLEX.START_AUTH),
@@ -267,7 +267,7 @@ export interface SourcesAPI {
   sourcesToggle: (sourceId: string, enabled: boolean) => Promise<void>
 
   // Connection Testing
-  sourcesTestConnection: (sourceId: string) => Promise<ConnectionTestResult>
+  sourcesTestConnection: (sourceId: string, healthOnly?: boolean) => Promise<ConnectionTestResult>
 
   // Plex-specific Auth (new flow for multi-source)
   plexStartAuth: () => Promise<{ pinId: number; code: string; authUrl: string }>

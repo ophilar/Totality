@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -34,10 +34,13 @@ interface DuplicateGroup {
 export function DuplicatesView() {
   const { activeSourceId } = useSources()
   const { addToast } = useToast()
+  const activeSourceIdRef = useRef(activeSourceId)
+  activeSourceIdRef.current = activeSourceId
 
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
+  const scanRequestIdRef = useRef<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
@@ -138,18 +141,28 @@ export function DuplicatesView() {
   }, [activeSourceId, addToast, reloadTick])
 
   const handleScan = async () => {
+    if (scanRequestIdRef.current) return
+    const sourceSnapshot = activeSourceId || undefined
+    const requestId = crypto.randomUUID()
+    scanRequestIdRef.current = requestId
     setScanning(true)
     try {
-      const count = await window.electronAPI.duplicatesScan(activeSourceId || undefined)
+      const result = await window.electronAPI.duplicatesScan(sourceSnapshot, requestId)
+      if (typeof result === 'object' && result.cancelled) {
+        addToast({ title: 'Scan Cancelled', message: 'Duplicate scan stopped before its commit.', type: 'info' })
+        return
+      }
+      if (activeSourceIdRef.current !== sourceSnapshot) return
       addToast({
         title: 'Scan Complete',
-        message: `Scan complete. Found ${count} duplicate groups.`,
+        message: `Scan complete. Found ${result} duplicate groups.`,
         type: 'success',
       })
       setReloadTick((prev) => prev + 1)
     } catch (err) {
       addToast({ title: 'Scan Failed', message: 'Failed to scan for duplicates', type: 'error' })
     } finally {
+      scanRequestIdRef.current = null
       setScanning(false)
     }
   }
@@ -221,18 +234,19 @@ export function DuplicatesView() {
             </label>
           </div>
 
-          <button
-            onClick={handleScan}
-            disabled={scanning}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {scanning ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Search className="w-4 h-4" />
-            )}
-            {scanning ? 'Scanning...' : 'Scan for Duplicates'}
-          </button>
+          {scanning ? (
+            <div className="flex items-center gap-2" role="status">
+              <span className="text-xs text-muted-foreground">Scanning…</span>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-xs text-primary hover:underline">Manage in Activity</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => void handleScan()}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity"
+            >
+              <Search className="w-4 h-4" />Scan for Duplicates
+            </button>
+          )}
         </div>
       </div>
 
@@ -248,7 +262,8 @@ export function DuplicatesView() {
               Your library looks clean! All matched items appear to have unique physical files.
             </p>
             <button
-              onClick={handleScan}
+              onClick={() => void handleScan()}
+              disabled={scanning}
               className="text-primary font-medium hover:underline flex items-center gap-1"
             >
               Run a manual scan <RefreshCw className="w-3 h-3" />

@@ -10,8 +10,10 @@ import { getTMDBService } from '@main/services/TMDBService'
 import { MetadataRegistryService } from '@main/services/metadata/MetadataRegistryService'
 import { invalidateNfsMappingsCache } from '@main/providers/kodi/KodiDatabaseSchema'
 import { getErrorMessage } from '@main/services/utils/errorUtils'
-import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent, createIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { createValidatedIpcHandler, createIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
 import fs from 'fs/promises'
+import { randomUUID } from 'node:crypto'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 import {
   PositiveIntSchema,
   SecurityPinSchema,
@@ -36,9 +38,9 @@ import { getSourceManager } from '@main/services/SourceManager'
 import { MediaItemType, TaskType } from '@main/types/database'
 import type { MediaItem, MediaItemFilters, QualityScore } from '@main/types/database'
 import type { TMDBMovieSearchResult } from '@main/types/tmdb'
-import { getGeminiAnalysisService } from '@main/services/GeminiAnalysisService'
 import { getDeduplicationService } from '@main/services/DeduplicationService'
 import { getTaskQueueService } from '@main/services/TaskQueueService'
+import { getSavedServiceHealthService } from '@main/services/SavedServiceHealthService'
 
 import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
 
@@ -47,6 +49,25 @@ import { registerListHandlers } from '@main/ipc/utils/genericHandlers'
  */
 export function registerDatabaseHandlers() {
   const db = getDatabase()
+
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, z.string().min(1).max(100), async (event, requestId) => ({
+    status: operationRequestRegistry.cancel(event.sender.id, requestId),
+  }))
+
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.GET_ACTIVITY, z.tuple([]), async event => operationRequestRegistry.getSnapshot(event.sender.id))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.GET_RESULT, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.OPERATIONS.DISMISS, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
+
+  createIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_STATE, async () => getSavedServiceHealthService().getSnapshot())
+  createIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_REFRESH, async () => {
+    await getGeminiService().refreshApiKey()
+    await getSavedServiceHealthService().refreshSavedChecks()
+    return getSavedServiceHealthService().getSnapshot()
+  })
+  createValidatedIpcHandler(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_RETRY, z.enum(['omdb', 'tvdb', 'musicbrainz', 'sonarr', 'radarr']), async service => {
+    await getSavedServiceHealthService().retry(service)
+    return getSavedServiceHealthService().getSnapshot()
+  })
 
 
 
@@ -122,14 +143,10 @@ export function registerDatabaseHandlers() {
 
     if (key.startsWith('quality_')) getQualityAnalyzer().invalidateThresholdsCache()
     if (key === 'tmdb_api_key') {
-      getTMDBService().refreshApiKey()
-      if (value) getSourceManager().triggerPostScanAnalysis().catch(() => {})
+      await getTMDBService().refreshApiKey()
     }
-    if (['gemini_api_key', 'gemini_model', 'ai_enabled'].includes(key)) {
-      getGeminiService().refreshApiKey()
-      if (key === 'gemini_api_key' && value) {
-        getGeminiAnalysisService().generateCompletenessInsights(() => {}).catch(() => {})
-      }
+    if (key === 'ai_enabled') {
+      await getGeminiService().refreshApiKey()
     }
 
     if (key === 'ffprobe_enabled' && value === 'true') {
@@ -249,17 +266,20 @@ export function registerDatabaseHandlers() {
     return (res?.results || []).map((m: TMDBMovieSearchResult) => ({ id: m.id, title: m.title, release_date: m.release_date, overview: m.overview, poster_url: tmdb.buildImageUrl(m.poster_path, 'w500'), vote_average: m.vote_average }))
   })
 
-  createValidatedIpcHandler(
+  createValidatedIpcHandlerWithEvent(
     IPC_CHANNELS.MEDIA.SEARCH_METADATA,
-    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional(), NonEmptyStringSchema.optional()]),
-    async (query, type, includeAdult, artistName) => {
+    z.tuple([NonEmptyStringSchema, z.enum(['movie', 'tv', 'anime', 'music', 'artwork']).optional(), z.boolean().optional(), NonEmptyStringSchema.optional(), z.string().min(1).max(100)]),
+    async (event, query, type, includeAdult, artistName, requestId) => {
       const matchingService = MetadataRegistryService.getInstance().getMatchingService()
-      return await matchingService.matchMediaItem({
-        title: query,
-        type: type || 'movie',
-        includeAdult,
-        artistName
-      })
+      const operation = operationRequestRegistry.register(event.sender, requestId)
+      try {
+        return await matchingService.matchMediaItem({ title: query, type: type || 'movie', includeAdult, artistName }, operation.signal)
+      } catch (error) {
+        if (operation.signal.aborted) return { status: 'cancelled' as const }
+        throw error
+      } finally {
+        operation.dispose()
+      }
     }
   )
 
@@ -323,33 +343,79 @@ export function registerDatabaseHandlers() {
     return { success: true }
   })
 
-  createIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT, async (event) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT, z.string().min(1).max(100), async (event, requestId) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window')
-    const res = await dialog.showSaveDialog(win, { title: 'Export Database', defaultPath: `totality-backup-${new Date().toISOString().split('T')[0]}.json`, filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }] })
-    if (res.canceled || !res.filePath) return { success: false, cancelled: true }
-    await fs.writeFile(res.filePath, JSON.stringify(await db.exportData(), null, 2), 'utf-8')
-    return { success: true, path: res.filePath }
+    const operation = operationRequestRegistry.register(event.sender, requestId)
+    try {
+      const res = await dialog.showSaveDialog(win, { title: 'Export Database', defaultPath: `totality-backup-${new Date().toISOString().split('T')[0]}.json`, filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }] })
+      if (res.canceled || !res.filePath) return { success: false, cancelled: true }
+      operation.signal.throwIfAborted()
+      const temporaryPath = path.join(path.dirname(res.filePath), `.${path.basename(res.filePath)}.${randomUUID()}.tmp`)
+      try {
+        const data = await db.exportData(operation.signal)
+        operation.signal.throwIfAborted()
+        await fs.writeFile(temporaryPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', signal: operation.signal })
+        operation.beginCommit()
+        await fs.rename(temporaryPath, res.filePath)
+        return { success: true, path: res.filePath }
+      } finally {
+        await fs.rm(temporaryPath, { force: true })
+      }
+    } catch (error) {
+      if (operation.signal.aborted) return { success: false, cancelled: true }
+      throw error
+    } finally {
+      operation.dispose()
+    }
   })
 
-  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT_CSV, ExportCSVOptionsSchema, async (event, options) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.EXPORT_CSV, z.tuple([ExportCSVOptionsSchema, z.string().min(1).max(100)]), async (event, options, requestId) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window')
-    const res = await dialog.showSaveDialog(win, { title: 'Export Working Document', defaultPath: `totality-working-${new Date().toISOString().split('T')[0]}.csv`, filters: [{ name: 'CSV Files', extensions: ['csv'] }, { name: 'All Files', extensions: ['*'] }] })
-    if (res.canceled || !res.filePath) return { success: false, cancelled: true }
-    await fs.writeFile(res.filePath, await db.media.exportWorkingCSV(options), 'utf-8')
-    return { success: true, path: res.filePath }
+    const operation = operationRequestRegistry.register(event.sender, requestId)
+    try {
+      const res = await dialog.showSaveDialog(win, { title: 'Export Working Document', defaultPath: `totality-working-${new Date().toISOString().split('T')[0]}.csv`, filters: [{ name: 'CSV Files', extensions: ['csv'] }, { name: 'All Files', extensions: ['*'] }] })
+      if (res.canceled || !res.filePath) return { success: false, cancelled: true }
+      operation.signal.throwIfAborted()
+      const temporaryPath = path.join(path.dirname(res.filePath), `.${path.basename(res.filePath)}.${randomUUID()}.tmp`)
+      try {
+        const csv = await db.media.exportWorkingCSV(options)
+        operation.signal.throwIfAborted()
+        await fs.writeFile(temporaryPath, csv, { encoding: 'utf-8', signal: operation.signal })
+        operation.beginCommit()
+        await fs.rename(temporaryPath, res.filePath)
+        return { success: true, path: res.filePath }
+      } finally {
+        await fs.rm(temporaryPath, { force: true })
+      }
+    } catch (error) {
+      if (operation.signal.aborted) return { success: false, cancelled: true }
+      throw error
+    } finally {
+      operation.dispose()
+    }
   })
 
-  createIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.IMPORT, async (event) => {
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.DATABASE.IMPORT, z.string().min(1).max(100), async (event, requestId) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window')
-    const res = await dialog.showOpenDialog(win, { title: 'Import Database', filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }], properties: ['openFile'] })
-    if (res.canceled || res.filePaths.length === 0) return { success: false, cancelled: true }
-    const data = JSON.parse(await fs.readFile(res.filePaths[0], 'utf-8'))
-    if (!data._meta) throw new Error('Invalid format')
-    const result = await db.importData(data)
-    return { success: true, imported: result.imported, errors: result.errors }
+    const operation = operationRequestRegistry.register(event.sender, requestId)
+    try {
+      const res = await dialog.showOpenDialog(win, { title: 'Import Database', filters: [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }], properties: ['openFile'] })
+      if (res.canceled || res.filePaths.length === 0) return { success: false, cancelled: true }
+      const contents = await fs.readFile(res.filePaths[0], { encoding: 'utf-8', signal: operation.signal })
+      const data = JSON.parse(contents)
+      operation.signal.throwIfAborted()
+      if (!data._meta) throw new Error('Invalid format')
+      const result = await db.importData(data, operation.signal, operation.beginCommit)
+      return { success: true, imported: result.imported, errors: result.errors }
+    } catch (error) {
+      if (operation.signal.aborted) return { success: false, cancelled: true }
+      throw error
+    } finally {
+      operation.dispose()
+    }
   })
 
   createIpcHandler(IPC_CHANNELS.DATABASE.RESET, async () => {

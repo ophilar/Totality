@@ -7,6 +7,8 @@ import { TVDBMetadataProvider } from './providers/TVDBMetadataProvider'
 import { MusicBrainzMetadataProvider } from './providers/MusicBrainzMetadataProvider'
 import { MetadataMatchingService } from './MetadataMatchingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
+import type { ProviderHealthResult } from '@shared/serviceHealth'
+import type { IMetadataProvider } from './IMetadataProvider'
 
 /**
  * MetadataRegistryService - Singleton orchestrator for metadata provider strategies.
@@ -14,6 +16,7 @@ import { getDatabase } from '@main/database/BetterSQLiteService'
 export class MetadataRegistryService {
   private static instance: MetadataRegistryService
   private compositeProvider: CompositeMetadataProvider
+  private savedCredentialProviders = new Map<string, IMetadataProvider & { testSavedCredential: (signal: AbortSignal) => Promise<ProviderHealthResult> }>()
 
   private constructor() {
     this.compositeProvider = new CompositeMetadataProvider([], async () => {
@@ -52,6 +55,9 @@ export class MetadataRegistryService {
       pin: await getDatabase().config.getSetting('tvdb_pin'),
     }))
 
+    this.savedCredentialProviders.set('omdb', omdbProvider)
+    this.savedCredentialProviders.set('tvdb', tvdbProvider)
+
     this.compositeProvider.registerProvider(tmdbProvider)
     this.compositeProvider.registerProvider(aniListProvider)
     this.compositeProvider.registerProvider(omdbProvider)
@@ -66,5 +72,9 @@ export class MetadataRegistryService {
 
   public getMatchingService(): MetadataMatchingService {
     return new MetadataMatchingService(this.compositeProvider)
+  }
+
+  public testSavedCredential(providerId: 'omdb' | 'tvdb', signal: AbortSignal): Promise<ProviderHealthResult> {
+    return this.savedCredentialProviders.get(providerId)!.testSavedCredential(signal)
   }
 }

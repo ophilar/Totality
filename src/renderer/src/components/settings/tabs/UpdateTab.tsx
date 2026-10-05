@@ -8,7 +8,7 @@
  * - Download and install updates
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowUpCircle, RefreshCw, Download } from 'lucide-react'
 
 interface UpdateState {
@@ -57,8 +57,10 @@ function Toggle({
 export function UpdateTab() {
   const [isLoading, setIsLoading] = useState(true)
   const [appVersion, setAppVersion] = useState('')
-  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
+  const downloadRequestId = useRef<string | null>(null)
+  const [isDownloadRequestActive, setIsDownloadRequestActive] = useState(false)
 
   // Load initial state
   useEffect(() => {
@@ -99,7 +101,16 @@ export function UpdateTab() {
   }
 
   const handleDownloadUpdate = async () => {
-    await window.electronAPI.autoUpdateDownloadUpdate()
+    if (downloadRequestId.current) return
+    const requestId = crypto.randomUUID()
+    downloadRequestId.current = requestId
+    setIsDownloadRequestActive(true)
+    try {
+      await window.electronAPI.autoUpdateDownloadUpdate(requestId)
+    } finally {
+      downloadRequestId.current = null
+      setIsDownloadRequestActive(false)
+    }
   }
 
   const handleInstallUpdate = async () => {
@@ -144,14 +155,17 @@ export function UpdateTab() {
               </p>
             )}
             {status === 'downloaded' && (
-              <p className="text-xs text-green-500">Version {newVersion} ready to install</p>
+              <>
+                <p className="text-xs text-green-500">Version {newVersion} ready to install</p>
+                <p className="text-xs text-muted-foreground">Installing will close Totality. Installation cannot be cancelled after shutdown begins.</p>
+              </>
             )}
             {status === 'error' && (
               <p className="text-xs text-destructive">Update check failed</p>
             )}
           </div>
           <button
-            onClick={status === 'downloaded' ? handleInstallUpdate : status === 'available' ? handleDownloadUpdate : handleCheckForUpdates}
+            onClick={status === 'downloaded' ? handleInstallUpdate : status === 'available' ? () => void handleDownloadUpdate() : handleCheckForUpdates}
             disabled={isChecking || status === 'checking' || status === 'downloading'}
             className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
@@ -164,6 +178,7 @@ export function UpdateTab() {
              status === 'available' ? 'Download' :
              'Check for Updates'}
           </button>
+          {isDownloadRequestActive && <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-xs text-primary hover:underline">Manage download in Activity</button>}
         </div>
 
         {/* Download progress bar */}

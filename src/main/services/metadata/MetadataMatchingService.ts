@@ -92,7 +92,8 @@ export class MetadataMatchingService {
   /**
    * Matches a media item using the composite provider and returns a list of sorted candidates.
    */
-  async matchMediaItem(params: MatchMediaItemParams): Promise<MetadataSearchResult[]> {
+  async matchMediaItem(params: MatchMediaItemParams, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const candidates = new Map<string, MetadataSearchResult>()
     const keyByExternalId = new Map<string, string>()
 
@@ -190,6 +191,7 @@ export class MetadataMatchingService {
     )
 
     for (const query of queries) {
+      signal?.throwIfAborted()
       const searchQuery: MetadataSearchQuery = {
         title: query.title,
         year: query.year,
@@ -200,13 +202,16 @@ export class MetadataMatchingService {
       }
       const expanded = params.includeExpanded ?? params.includeAdult
       if (expanded !== undefined) searchQuery.includeExpanded = expanded
-      const results = await this.compositeProvider.searchAndFuse(searchQuery)
+      const results = signal
+        ? await this.compositeProvider.searchAndFuse(searchQuery, signal)
+        : await this.compositeProvider.searchAndFuse(searchQuery)
 
       for (const result of results) {
         registerCandidate(result)
       }
     }
 
+    signal?.throwIfAborted()
     return Array.from(candidates.values()).sort((a, b) => {
       const scoreA = Math.max(
         scoreTitleMatch(a.title, params.title, a.year, params.year),

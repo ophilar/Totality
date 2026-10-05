@@ -1,6 +1,7 @@
 import { TaskType } from '@main/types/database'
 import type { QueuedTask, TaskQueueState } from '@main/types/database'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   DndContext,
   pointerWithin,
@@ -110,6 +111,11 @@ interface AppNotification {
   created_at: string
 }
 
+interface ActivityNotification extends Omit<AppNotification, 'id'> {
+  id: string
+  notificationId?: number
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -125,6 +131,46 @@ export function ActivityPanel() {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showTelemetry, setShowTelemetry] = useState(true)
+  const [operations, setOperations] = useState<ActivityOperation[]>([])
+  const [cancellationRequests, setCancellationRequests] = useState<Set<string>>(new Set())
+  const [operationError, setOperationError] = useState<string | null>(null)
+  const [resultText, setResultText] = useState<string | null>(null)
+  const [clearingTaskHistory, setClearingTaskHistory] = useState(false)
+  const [taskHistoryError, setTaskHistoryError] = useState<string | null>(null)
+  const operationRevision = useRef(-1)
+  const activityNotifications = useMemo<ActivityNotification[]>(() => {
+    const analysisNotifications = queueState.completedTasks
+      .filter(task => task.type === TaskType.Analysis && task.result?.analysis)
+      .slice(0, 6)
+      .map(task => {
+        const result = task.result!.analysis!
+        const details = [
+          `${result.completedCount} stages complete`,
+          `${result.failedCount} failed`,
+          `${result.deferredCount} deferred`,
+          `${result.skippedCount} skipped`,
+        ]
+        if (result.reconciliation) details.push(`Summary cleanup: ${result.reconciliation.merged} merged, ${result.reconciliation.removed} removed, ${result.reconciliation.preservedLocked} locked preserved, ${result.reconciliation.ambiguous} ambiguous`)
+        if (result.diagnostics.length) details.push(...result.diagnostics.slice(0, 3).map(diagnostic => `${diagnostic.itemName}: ${diagnostic.message}`))
+        if (result.databaseBackupPath) details.push(`Backup: ${result.databaseBackupPath}`)
+        return {
+          id: `analysis:${task.id}`,
+          type: result.status === 'failed' ? 'error' : 'info',
+          title: `${task.label} · Analysis ${result.status}`,
+          message: details.join(' · '),
+          is_read: false,
+          created_at: task.completedAt ?? task.createdAt,
+        }
+      })
+    const persistedNotifications = notifications.map(notification => ({
+      ...notification,
+      id: `notification:${notification.id}`,
+      notificationId: notification.id,
+    }))
+    return [...persistedNotifications, ...analysisNotifications]
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      .slice(0, 50)
+  }, [notifications, queueState.completedTasks])
 
   // Configure dnd-kit sensors
   const sensors = useSensors(
@@ -144,7 +190,7 @@ export function ActivityPanel() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Calculate total pending tasks (queue + current)
-  const pendingCount = queueState.queue.length + (queueState.currentTask ? 1 : 0)
+  const pendingCount = queueState.queue.length + (queueState.currentTask ? 1 : 0) + operations.filter(operation => ['running', 'cancelling', 'finishing'].includes(operation.state)).length
 
   // Get the active theme from the document root so the dropdown can override
   // the top bar's forced dark scoping and follow the user's chosen theme
@@ -316,6 +362,40 @@ export function ActivityPanel() {
     window.electronAPI.taskQueueClearQueue?.()
   }, [])
 
+  const handleClearTaskHistory = useCallback(async () => {
+    setClearingTaskHistory(true)
+    setTaskHistoryError(null)
+    try {
+      await window.electronAPI.taskQueueClearTaskHistory()
+    } catch (error) {
+      setTaskHistoryError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setClearingTaskHistory(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const applySnapshot = (snapshot: { revision: number; operations: ActivityOperation[] }) => {
+      if (snapshot.revision <= operationRevision.current) return
+      operationRevision.current = snapshot.revision
+      setOperations(snapshot.operations)
+      setCancellationRequests(previous => new Set([...previous].filter(requestId =>
+        snapshot.operations.some(operation => operation.requestId === requestId && operation.state === 'cancelling')
+      )))
+      setOperationError(null)
+    }
+    const unsubscribe = window.electronAPI.onOperationsUpdated(applySnapshot)
+    void window.electronAPI.operationsGetActivity().then(applySnapshot).catch(error => {
+      setOperationError(error instanceof Error ? error.message : String(error))
+    })
+    const openActivity = () => setIsOpen(true)
+    window.addEventListener('operations:openActivity', openActivity)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('operations:openActivity', openActivity)
+    }
+  }, [])
+
   const handleMarkAllRead = useCallback(async () => {
     await window.electronAPI.notificationsMarkAllRead()
     loadNotifications()
@@ -434,17 +514,14 @@ export function ActivityPanel() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button
+            {(queueState.currentTask || queueState.queue.length > 0) && <button
               onClick={handlePauseResume}
               className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
               title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
+              aria-label={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
             >
-              {queueState.isPaused ? (
-                <Play className="w-4 h-4" />
-              ) : (
-                <Pause className="w-4 h-4" />
-              )}
-            </button>
+              {queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+            </button>}
             <button
               onClick={() => setIsOpen(false)}
               className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -483,14 +560,14 @@ export function ActivityPanel() {
                       <Activity className="w-4 h-4" />
                     </button>
                   )}
-                  <button
+                  {queueState.currentTask.status !== 'cancelling' && <button
                     onClick={handleCancelCurrent}
                     className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400"
                     title="Cancel Task"
                     aria-label="Cancel Task"
                   >
                     <XCircle className="w-4 h-4" />
-                  </button>
+                  </button>}
                 </div>
               </div>
               {queueState.currentTask.progress && (
@@ -543,6 +620,73 @@ export function ActivityPanel() {
             </div>
           )
         })()}
+
+        {operations.length > 0 && <section className="max-h-60 shrink-0 overflow-y-auto border-b border-border/30">
+          <div className="px-4 py-2 bg-muted/20 text-xs font-medium uppercase tracking-wider text-muted-foreground">Background operations</div>
+          {operations.map(operation => <div key={operation.requestId} className="border-t border-border/20 px-4 py-3 space-y-1.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{operation.label}</p>
+                {operation.context && <p className="text-xs text-muted-foreground">{operation.context}</p>}
+                <p className="text-xs text-muted-foreground" role="status">
+                  {operation.state === 'cancelling' || cancellationRequests.has(operation.requestId) ? 'Cancelling…' : operation.state === 'finishing' ? 'Finishing…' : operation.outcome?.message ?? operation.phase ?? 'In progress'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {operation.outcome?.hasResult && <button type="button" onClick={async () => {
+                  try {
+                    const result = await window.electronAPI.operationsGetResult(operation.requestId)
+                    setResultText(typeof result === 'string' ? result : JSON.stringify(result, null, 2) ?? '')
+                    setOperationError(null)
+                  } catch (error) {
+                    setOperationError(error instanceof Error ? error.message : String(error))
+                  }
+                }} className="text-xs text-primary hover:underline">View result</button>}
+                {operation.state === 'running' && !cancellationRequests.has(operation.requestId) && <button type="button" onClick={async () => {
+                  setCancellationRequests(previous => new Set(previous).add(operation.requestId))
+                  try {
+                    const result = await window.electronAPI.dbCancelOperation(operation.requestId)
+                    if (result.status !== 'cancelling') {
+                      setCancellationRequests(previous => {
+                        const next = new Set(previous)
+                        next.delete(operation.requestId)
+                        return next
+                      })
+                    }
+                    setOperationError(null)
+                  } catch (error) {
+                    setCancellationRequests(previous => {
+                      const next = new Set(previous)
+                      next.delete(operation.requestId)
+                      return next
+                    })
+                    setOperationError(error instanceof Error ? error.message : String(error))
+                  }
+                }} className="rounded border px-2 py-1 text-xs hover:bg-muted">
+                  {operation.kind === 'sonarr-wait' ? 'Stop waiting' : 'Cancel'}
+                </button>}
+                {operation.outcome && <button type="button" onClick={async () => {
+                  try {
+                    await window.electronAPI.operationsDismiss(operation.requestId)
+                    setOperationError(null)
+                  } catch (error) {
+                    setOperationError(error instanceof Error ? error.message : String(error))
+                  }
+                }} title="Dismiss" aria-label={`Dismiss ${operation.label}`} className="rounded p-1 text-muted-foreground hover:bg-muted"><X className="h-3.5 w-3.5" /></button>}
+              </div>
+            </div>
+            {operation.kind === 'sonarr-wait' && operation.state === 'running' && <p className="text-[11px] text-muted-foreground">The accepted command continues on Sonarr.</p>}
+            {operation.progress && <>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${operation.progress.percentage}%` }} /></div>
+              <p className="text-right text-[11px] text-muted-foreground">{Math.round(operation.progress.percentage)}% {operation.progress.currentItem}</p>
+            </>}
+          </div>)}
+        </section>}
+        {operationError && <p className="border-b border-border/30 px-4 py-2 text-xs text-destructive" role="alert">Could not load background activity: {operationError}</p>}
+        {resultText !== null && <div className="absolute inset-10 z-20 flex min-h-0 flex-col rounded-lg border border-border bg-card shadow-xl">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2 text-sm font-medium"><span>Operation result</span><button type="button" onClick={() => setResultText(null)} aria-label="Close result"><X className="h-4 w-4" /></button></div>
+          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 text-xs">{resultText}</pre>
+        </div>}
 
         {/* Queue - grows with panel resize */}
         <div className="flex-1 min-h-0 flex flex-col border-b border-border/30">
@@ -600,20 +744,6 @@ export function ActivityPanel() {
           </div>
         </div>
 
-        {queueState.completedTasks.some(task => task.type === TaskType.Analysis && task.result?.analysis) && <div className="max-h-52 overflow-y-auto border-b border-border/30 p-3 space-y-2">
-          <p className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Recent analysis</p>
-          {queueState.completedTasks.filter(task => task.type === TaskType.Analysis && task.result?.analysis).slice(0, 6).map(task => {
-            const result = task.result!.analysis!
-            return <div key={task.id} className="rounded-md bg-muted/30 p-2 text-xs">
-              <div className="flex justify-between gap-2"><span className="font-medium">{task.label}</span><span className="capitalize">{result.status}</span></div>
-              <p className="text-muted-foreground">{result.completedCount} stages complete · {result.failedCount} failed · {result.deferredCount} deferred · {result.skippedCount} skipped</p>
-              {result.reconciliation && <p className="text-muted-foreground">Summary cleanup: {result.reconciliation.merged} merged · {result.reconciliation.removed} removed · {result.reconciliation.preservedLocked} locked preserved · {result.reconciliation.ambiguous} ambiguous</p>}
-              {result.databaseBackupPath && <p className="truncate text-muted-foreground" title={result.databaseBackupPath}>Backup: {result.databaseBackupPath}</p>}
-              {result.diagnostics.length > 0 && <ul className="mt-1 list-disc pl-4 text-amber-200">{result.diagnostics.slice(0, 3).map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.itemName}: {diagnostic.message}</li>)}</ul>}
-            </div>
-          })}
-        </div>}
-
         {/* Notifications Section */}
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
@@ -624,6 +754,17 @@ export function ActivityPanel() {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {queueState.completedTasks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleClearTaskHistory()}
+                  disabled={clearingTaskHistory}
+                  title="Clear all completed task history"
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  {clearingTaskHistory ? 'Clearing…' : 'Clear history'}
+                </button>
+              )}
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllRead}
@@ -643,7 +784,8 @@ export function ActivityPanel() {
             </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 pb-6 p-2">
-            {notifications.length === 0 ? (
+            {taskHistoryError && <p className="px-2 py-1 text-xs text-destructive" role="alert">Could not clear task history: {taskHistoryError}</p>}
+            {activityNotifications.length === 0 ? (
               <div className="py-6 text-center">
                 <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">No notifications</p>
@@ -653,13 +795,13 @@ export function ActivityPanel() {
               </div>
             ) : (
               <div className="space-y-1">
-                {notifications.map((n) => (
+                {activityNotifications.map((n) => (
                   <div
                     key={n.id}
                     className={`py-2 px-2 rounded-lg cursor-pointer transition-colors ${
                       n.is_read ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/30'
                     }`}
-                    onClick={() => !n.is_read && handleMarkRead(n.id)}
+                    onClick={() => !n.is_read && n.notificationId !== undefined && handleMarkRead(n.notificationId)}
                   >
                     <div className="flex items-start gap-2">
                       <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>

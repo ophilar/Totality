@@ -21,11 +21,11 @@ export const timelinesApi = {
   timelinesGetRecipe: (recipeId: string, options?: TimelineFetchOptions): Promise<TimelineDefinition> =>
     ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.GET_RECIPE, recipeId, options),
 
-  timelinesResolveTimeline: (recipeId: string, sourceId?: string, options?: TimelineFetchOptions): Promise<ResolvedTimelineResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, recipeId, sourceId, options),
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean): Promise<ResolvedTimelineResult | { cancelled: true }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, recipeId, sourceId, options, requestId, showInActivity),
 
-  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }): Promise<PlexPlaylistSyncResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, payload),
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string): Promise<PlexPlaylistSyncResult | { cancelled: true }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, payload, requestId),
 
   timelinesGetPlexPlaylists: (sourceId: string): Promise<PlexPlaylistSummary[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.TIMELINES.GET_PLEX_PLAYLISTS, sourceId),

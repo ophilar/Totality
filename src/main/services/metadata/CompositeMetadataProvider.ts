@@ -40,12 +40,14 @@ export class CompositeMetadataProvider implements IMetadataProvider {
     return identity || `${normalizeTitleForMatching(candidate.title)}_${candidate.year || 'unknown'}_${candidate.type}`
   }
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
-    return this.searchAndFuse(query)
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    return this.searchAndFuse(query, signal)
   }
 
-  async searchAndFuse(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async searchAndFuse(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const settings = await this.providerSettings?.().catch(() => null)
+    signal?.throwIfAborted()
     const enabled = settings?.enabled
     const order = settings?.order
     const orderIndex = new Map((order || []).map((id, index) => [id, index]))
@@ -54,9 +56,11 @@ export class CompositeMetadataProvider implements IMetadataProvider {
       .sort((a, b) => (orderIndex.get(a.providerId) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.providerId) ?? Number.MAX_SAFE_INTEGER))
     const results = await Promise.allSettled(
       matchingProviders.map(async p => {
+        signal?.throwIfAborted()
         try {
-          return await p.search(query)
+          return signal ? await p.search(query, signal) : await p.search(query)
         } catch (err) {
+          if (signal?.aborted) throw err
           getLoggingService().error('[CompositeMetadataProvider]', `Provider ${p.providerId} search failed:`, err)
           return []
         }
@@ -65,6 +69,7 @@ export class CompositeMetadataProvider implements IMetadataProvider {
 
     const allCandidates: MetadataSearchResult[] = []
     for (const res of results) {
+      signal?.throwIfAborted()
       if (res.status === 'fulfilled' && Array.isArray(res.value)) {
         allCandidates.push(...res.value)
       } else if (res.status === 'rejected') {

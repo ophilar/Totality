@@ -66,27 +66,31 @@ export const DEFAULT_ANALYSIS_OPTIONS: Required<AnalysisOptions> = {
  * }
  */
 export class CancellableOperation {
-  private cancelled = false
+  private cancellationController = new AbortController()
 
   /**
    * Request cancellation of the current operation
    */
   cancel(): void {
-    this.cancelled = true
+    this.cancellationController.abort()
   }
 
   /**
    * Check if cancellation has been requested
    */
   isCancelled(): boolean {
-    return this.cancelled
+    return this.cancellationController.signal.aborted
+  }
+
+  protected get cancellationSignal(): AbortSignal {
+    return this.cancellationController.signal
   }
 
   /**
    * Reset the cancellation flag (call at start of new operation)
    */
   protected resetCancellation(): void {
-    this.cancelled = false
+    if (this.cancellationController.signal.aborted) this.cancellationController = new AbortController()
   }
 }
 

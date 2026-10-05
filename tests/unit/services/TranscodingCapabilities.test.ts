@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildTranscodingCapabilities, resolveSelectedGpuId, selectDefaultGpu } from '../../../src/main/services/TranscodingCapabilities'
 
 describe('TranscodingCapabilities', () => {
-  it('prefers NVIDIA over an integrated GPU for the default hardware encoder', () => {
+  it('exposes GPU preference ranking without selecting a device automatically', () => {
     expect(selectDefaultGpu([
       { id: 'intel', name: 'Intel UHD', vendor: 'Intel' },
       { id: 'nvidia', name: 'NVIDIA GeForce RTX', vendor: 'NVIDIA' }
@@ -12,8 +12,12 @@ describe('TranscodingCapabilities', () => {
   it('keeps an explicit software selection and discards unavailable device selections', () => {
     const gpus = [{ id: 'intel', name: 'Intel UHD', vendor: 'Intel' as const }]
     expect(resolveSelectedGpuId(gpus, null)).toBeNull()
-    expect(resolveSelectedGpuId(gpus, 'missing')).toBe('intel')
+    expect(resolveSelectedGpuId(gpus, 'missing')).toBeNull()
     expect(buildTranscodingCapabilities({ ffmpeg: true }, gpus, null).selectedGpuId).toBeNull()
+  })
+
+  it('leaves the hardware device unselected when no saved choice exists', () => {
+    expect(buildTranscodingCapabilities({ ffmpeg: true }, [{ id: 'gpu-1', name: 'GPU', vendor: 'NVIDIA' }]).selectedGpuId).toBeNull()
   })
 
   it('exposes only detected hardware vendors and retains software fallback', () => {

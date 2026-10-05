@@ -52,26 +52,10 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
   // Emby uses green branding, Jellyfin uses purple
   const serverIconColor = isEmby ? 'bg-green-500' : 'bg-purple-500'
 
-  useEffect(() => {
-    // Auto-discover on mount for both Jellyfin and Emby
-    queueMicrotask(() => { void (async () => {
-      setIsDiscovering(true)
-      setError(null)
-      const servers = isEmby
-        ? await window.electronAPI.embyDiscoverServers()
-        : await window.electronAPI.jellyfinDiscoverServers()
-      setDiscoveredServers(servers)
-      if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
-      setIsDiscovering(false)
-    })() })
-
-  }, [isEmby])
-
-  async function handleDiscover() {
+  const handleDiscover = async () => {
     setIsDiscovering(true)
     setError(null)
     try {
-      // Use the appropriate discovery service based on provider type
       const servers = isEmby
         ? await window.electronAPI.embyDiscoverServers()
         : await window.electronAPI.jellyfinDiscoverServers()
@@ -82,11 +66,35 @@ export function JellyfinAuthFlow({ onSuccess, onBack, isEmby = false }: Jellyfin
         setStep('server-select')
       }
     } catch (err: unknown) {
-      window.electronAPI.log.error('[JellyfinAuthFlow]', 'Discovery failed:', err)
+      setError(err instanceof Error ? err.message : 'Server discovery failed')
     } finally {
       setIsDiscovering(false)
     }
   }
+
+  useEffect(() => {
+    let isMounted = true
+    const discover = async () => {
+      setIsDiscovering(true)
+      setError(null)
+      try {
+        const servers = isEmby
+          ? await window.electronAPI.embyDiscoverServers()
+          : await window.electronAPI.jellyfinDiscoverServers()
+        if (!isMounted) return
+        setDiscoveredServers(servers)
+        if (servers.length === 1) setSelectedServer({ url: servers[0].address, name: servers[0].name })
+      } catch (err: unknown) {
+        if (isMounted) setError(err instanceof Error ? err.message : 'Server discovery failed')
+      } finally {
+        if (isMounted) setIsDiscovering(false)
+      }
+    }
+    void discover()
+    return () => {
+      isMounted = false
+    }
+  }, [isEmby])
 
   const handleTestManualUrl = async () => {
     if (!manualUrl.trim()) {

@@ -18,6 +18,14 @@ import { RateLimiters, SlidingWindowRateLimiter } from '@main/services/utils/Rat
 import { retryWithBackoff, getRateLimitRetryAfter } from '@main/services/utils/retryWithBackoff'
 
 import { APP_CONFIG } from '@main/config'
+import { fetchWithTimeout } from '@main/services/utils/httpClient'
+import { EventEmitter } from 'node:events'
+
+export interface TMDBValidationState {
+  status: 'idle' | 'testing' | 'valid' | 'invalid' | 'unavailable' | 'timed-out' | 'cancelled'
+  testedAt: string | null
+  revision: number
+}
 
 interface MissingTmdbItem {
   id?: number
@@ -35,6 +43,33 @@ interface MissingTmdbItem {
  * API Documentation: https://developer.themoviedb.org/reference/intro/getting-started
  */
 export class TMDBService {
+  readonly validationEvents = new EventEmitter()
+  private validationController: AbortController | null = null
+  private validationKey: string | null | undefined = undefined
+  private validationState: TMDBValidationState = { status: 'idle', testedAt: null, revision: 0 }
+
+  getValidationState(): TMDBValidationState {
+    return { ...this.validationState }
+  }
+
+  private publishValidation(status: TMDBValidationState['status'], testedAt: string | null): void {
+    this.validationState = { status, testedAt, revision: this.validationState.revision + 1 }
+    this.validationEvents.emit('changed', this.getValidationState())
+  }
+
+  private async validateSavedKey(apiKey: string, controller: AbortController): Promise<void> {
+    try {
+      const result = await this.testApiKey(apiKey, controller.signal)
+      if (this.validationController !== controller) return
+      this.publishValidation(result === 'invalid-credential' ? 'invalid' : result, new Date().toISOString())
+    } catch (error) {
+      if (this.validationController !== controller) return
+      const status = controller.signal.aborted ? 'cancelled' : error instanceof Error && error.message.startsWith('Request timed out') ? 'timed-out' : 'unavailable'
+      this.publishValidation(status, new Date().toISOString())
+    } finally {
+      if (this.validationController === controller) this.validationController = null
+    }
+  }
   private baseURL: string = APP_CONFIG.tmdb.baseUrl
   private static readonly IMAGE_BASE_URL = APP_CONFIG.tmdb.imageBaseUrl
   private static readonly CACHE_DURATION = APP_CONFIG.tmdb.cacheDuration
@@ -58,6 +93,7 @@ export class TMDBService {
     const db = getDatabase()
     this.apiKey = (await db.config.getSetting('tmdb_api_key')) || null
     this.baseURL = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
+    // Ordinary initialization also occurs during reads; validation belongs to startup/settings changes.
 
     // Dynamically configure rate limits from settings/config
     const requests = APP_CONFIG.tmdb.rateLimitRequests || 40
@@ -69,11 +105,46 @@ export class TMDBService {
     }
   }
 
+  validateSavedCredential(): void {
+    if (this.validationKey !== this.apiKey) {
+      this.validationController?.abort()
+      this.validationController = null
+      this.validationKey = this.apiKey
+      if (this.apiKey) {
+        const controller = new AbortController()
+        this.validationController = controller
+        this.publishValidation('testing', null)
+        void this.validateSavedKey(this.apiKey, controller)
+      } else {
+        this.publishValidation('idle', null)
+      }
+    }
+
+  }
+
+  async testApiKey(apiKey: string, signal: AbortSignal): Promise<'valid' | 'invalid-credential' | 'unavailable'> {
+    const db = getDatabase()
+    const baseUrl = (await db.config.getSetting('tmdb_base_url')) || APP_CONFIG.tmdb.baseUrl
+    const url = new URL('configuration', `${baseUrl.replace(/\/$/, '')}/`)
+    url.searchParams.set('api_key', apiKey)
+    try {
+      const response = await fetchWithTimeout(url.toString(), { signal }, TMDBService.REQUEST_TIMEOUT)
+      if (response.ok) return 'valid'
+      if (response.status === 401) return 'invalid-credential'
+      return 'unavailable'
+    } catch (error) {
+      if (signal.aborted) throw error
+      if (error instanceof Error && error.message.startsWith('Request timed out')) throw error
+      return 'unavailable'
+    }
+  }
+
   /**
    * Refresh API key from database (called when settings change)
    */
   async refreshApiKey(): Promise<void> {
     await this.initialize()
+    this.validateSavedCredential()
   }
 
   /**
@@ -822,7 +893,8 @@ let tmdbService: TMDBService | null = null
 export function getTMDBService(): TMDBService {
   if (!tmdbService) {
     tmdbService = new TMDBService()
-    tmdbService.initialize().catch(err => {
+    const service = tmdbService
+    service.initialize().then(() => service.validateSavedCredential()).catch(err => {
       getLoggingService().error('[TMDBService]', 'Failed to initialize TMDB service:', err)
     })
   }

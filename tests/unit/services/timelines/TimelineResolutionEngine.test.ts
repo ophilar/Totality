@@ -44,6 +44,17 @@ describe('TimelineResolutionEngine', () => {
     expect(result.items[0].reason).toContain('Select a media source')
   })
 
+  it('stops timeline matching when its registered operation is cancelled', async () => {
+    const controller = new AbortController()
+    const guide: TimelineDefinition = {
+      id: 'cancelled', franchise: 'Acceptance', name: 'Cancelled order', description: '', version: 1,
+      items: Array.from({ length: 256 }, (_, index) => ({ order: index + 1, type: 'movie' as const, title: `Movie ${index + 1}`, identifiers: { tmdbId: index + 1 } })),
+    }
+    const resolving = engine.resolveTimeline(guide, 'src-plex', controller.signal)
+    setTimeout(() => controller.abort(), 0)
+    await expect(resolving).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('rejects contradictory canonical identifiers', async () => {
     await db.media.upsertItem({ source_id: 'src-plex', source_type: 'plex', plex_id: 'movie', title: 'Movie', type: 'movie', tmdb_id: '1', imdb_id: 'tt2', file_path: 'D:/Acceptance/movie.mkv' })
     const guide: TimelineDefinition = { id: 'contradiction', franchise: 'Acceptance', name: 'Order', description: '', version: 1, items: [{ order: 1, type: 'movie', title: 'Movie', identifiers: { tmdbId: 1, imdbId: 'tt3' } }] }

@@ -6,7 +6,7 @@
  * Provides access to sources, scanning state, and source operations.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react'
 import { useToast } from '@/contexts/ToastContext'
 import { LibraryType, ProviderType } from '@main/types/database'
 import type { TaskQueueState } from '@main/types/database'
@@ -66,6 +66,8 @@ interface SourceContextType {
 
   // Connection status (real-time online/offline status per source)
   connectionStatus: Map<string, boolean>
+  connectionErrors: Map<string, string>
+  connectionChecking: Set<string>
 
   // Active source selection (for server-based navigation)
   activeSourceId: string | null
@@ -134,6 +136,9 @@ export function SourceProvider({ children }: SourceProviderProps) {
   const [supportedProviders, setSupportedProviders] = useState<ProviderType[]>([ProviderType.Plex])
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<Map<string, boolean>>(new Map())
+  const [connectionErrors, setConnectionErrors] = useState<Map<string, string>>(new Map())
+  const [connectionChecking, setConnectionChecking] = useState<Set<string>>(new Set())
+  const healthGeneration = useRef(0)
   const [newItemCounts, setNewItemCounts] = useState<Map<string, number>>(new Map())
   const { addToast } = useToast()
   const hasShownStartupToast = useRef(false)
@@ -145,6 +150,11 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Computed: active (enabled) sources
   const activeSources = sources.filter(s => s.is_enabled)
+  const healthSourceSignature = useMemo(() => JSON.stringify(
+    sources
+      .map(({ source_id, source_type, connection_config, is_enabled }) => ({ source_id, source_type, connection_config, is_enabled }))
+      .sort((a, b) => a.source_id.localeCompare(b.source_id))
+  ), [sources])
 
   // Set active source for server-based navigation
   const setActiveSource = useCallback((sourceId: string | null) => {
@@ -175,20 +185,27 @@ export function SourceProvider({ children }: SourceProviderProps) {
 
   // Check connection status for all enabled sources
   const checkAllConnections = useCallback(async () => {
+    const generation = ++healthGeneration.current
     const enabledSources = sourcesRef.current.filter(s => s.is_enabled)
     const newStatus = new Map<string, boolean>()
+    const newErrors = new Map<string, string>()
+    setConnectionChecking(new Set(enabledSources.map(source => source.source_id)))
 
     await Promise.all(
       enabledSources.map(async (source) => {
         try {
-          const result = await window.electronAPI.sourcesTestConnection(source.source_id)
+          const result = await window.electronAPI.sourcesTestConnection(source.source_id, true)
           newStatus.set(source.source_id, result.success)
+          if (result.error) newErrors.set(source.source_id, result.error)
         } catch (e) {
           window.electronAPI.log.error('[SourceContext]', `Failed to test connection for source ${source.source_id}:`, e)
           newStatus.set(source.source_id, false)
+          newErrors.set(source.source_id, e instanceof Error ? e.message : String(e))
         }
       })
     )
+
+    if (generation !== healthGeneration.current) return
 
     // Only update if something actually changed to prevent infinite re-renders
     setConnectionStatus(prev => {
@@ -202,20 +219,17 @@ export function SourceProvider({ children }: SourceProviderProps) {
       }
       return changed ? newStatus : prev
     })
+    setConnectionErrors(newErrors)
+    setConnectionChecking(new Set())
   }, [])
 
-  // Check connections when sources change and periodically
+  // Check configured sources when the source set changes. Monitoring owns periodic checks.
   useEffect(() => {
-    if (sources.length > 0) {
-      // Check immediately
+    if (healthSourceSignature !== '[]') {
       void Promise.resolve().then(checkAllConnections)
-
-      // Check every 30 seconds
-      const interval = setInterval(checkAllConnections, 30000)
-      return () => clearInterval(interval)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sources.length])
+    return () => { healthGeneration.current++ }
+  }, [healthSourceSignature, checkAllConnections])
 
   // Default activeSourceId is null (representing 'All Sources' aggregated mode)
 
@@ -530,6 +544,8 @@ export function SourceProvider({ children }: SourceProviderProps) {
     hasMusic,
     refreshLibraryTypes,
     connectionStatus,
+    connectionErrors,
+    connectionChecking,
     activeSourceId,
     setActiveSource,
     addSource,

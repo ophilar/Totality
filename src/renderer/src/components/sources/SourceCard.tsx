@@ -108,6 +108,8 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
     scanProgress,
     isScanning,
     refreshLibraryTypes,
+    connectionErrors,
+    connectionChecking,
   } = useSources()
 
   const [libraries, setLibraries] = useState<LibraryWithStatus[]>([])
@@ -306,6 +308,9 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium truncate">{source.display_name}</span>
+            {connectionChecking.has(source.source_id) && (
+              <span className="text-xs text-muted-foreground">Checking connection…</span>
+            )}
             {connectionStatus === 'connected' && (
               <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
             )}
@@ -317,6 +322,7 @@ export function SourceCard({ source, onScan, expanded = false, onToggleExpand }:
             {formattedProviderName} •{' '}
             Last scan: {formatLastScan(source.last_scan_at)}
           </div>
+          {source.is_enabled && connectionErrors.get(source.source_id) && <p className="truncate text-xs text-destructive" title={connectionErrors.get(source.source_id)}>Connection: {connectionErrors.get(source.source_id)}</p>}
         </div>
 
         {/* Toggle switch */}

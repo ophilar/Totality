@@ -9,6 +9,12 @@ export const aiApi = {
   aiIsConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.AI.IS_CONFIGURED),
   aiGetRateLimitInfo: () => ipcRenderer.invoke(IPC_CHANNELS.AI.GET_RATE_LIMIT_INFO),
   aiGetAvailableModels: () => ipcRenderer.invoke(IPC_CHANNELS.AI.GET_AVAILABLE_MODELS),
+  aiGetValidationState: () => ipcRenderer.invoke(IPC_CHANNELS.AI.VALIDATION_STATE),
+  onAiValidationChanged: (callback: (state: import('@main/services/GeminiService').GeminiValidationState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: import('@main/services/GeminiService').GeminiValidationState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.AI.VALIDATION_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AI.VALIDATION_CHANGED, handler)
+  },
   aiTestApiKey: (apiKey: string) => ipcRenderer.invoke(IPC_CHANNELS.AI.TEST_API_KEY, apiKey),
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -42,6 +48,7 @@ export const aiApi = {
       activeFilters?: string
     }
   }) => ipcRenderer.invoke(IPC_CHANNELS.AI.CHAT_MESSAGE, params),
+  aiCancelRequest: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; toolName: string; input: Record<string, unknown> }) => callback(data)
     ipcRenderer.on('ai:toolUse', handler)
@@ -100,6 +107,8 @@ export interface AiAPI {
   aiIsConfigured: () => Promise<boolean>
   aiGetRateLimitInfo: () => Promise<RateLimitInfo>
   aiGetAvailableModels: () => Promise<Array<{ name: string; displayName: string }>>
+  aiGetValidationState: () => Promise<import('@main/services/GeminiService').GeminiValidationState>
+  onAiValidationChanged: (callback: (state: import('@main/services/GeminiService').GeminiValidationState) => void) => () => void
   aiTestApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -125,6 +134,7 @@ export interface AiAPI {
       activeFilters?: string
     }
   }) => Promise<{ text: string; usage: { input_tokens: number; output_tokens: number }; requestId: string; actionableItems?: Array<{ title: string; year?: number; tmdb_id?: string; media_type: 'movie' | 'tv' }>; rateLimited?: boolean; retryAfterSeconds?: number }>
+  aiCancelRequest: (requestId: string) => Promise<{ status: 'cancelling' | 'committing' | 'missing' }>
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => () => void
   onAiChatStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => () => void
   onAiChatStreamComplete: (callback: (data: { requestId: string }) => void) => () => void

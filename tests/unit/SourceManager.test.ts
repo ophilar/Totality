@@ -128,7 +128,10 @@ describe('SourceManager (No Mocks)', () => {
     const taskQueue = (manager as unknown as { getTaskQueue: () => { clearQueue: () => Promise<void>; getTasks: () => Array<{ type: TaskType; sourceId?: string; analysisScope?: { kind: string; sourceId?: string; libraryId?: string } }> } }).getTaskQueue()
     await taskQueue.clearQueue()
 
-    await manager.scanLibrary(source.source_id, 'movie')
+    const scanResult = await manager.scanLibrary(source.source_id, 'movie')
+
+    expect(scanResult.success).toBe(true)
+    expect(scanResult.postScanAnalysis).toEqual({ status: 'queued' })
 
     const tasks = taskQueue.getTasks()
     const analysisTask = tasks.find((t) => t.type === TaskType.Analysis)

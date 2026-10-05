@@ -51,12 +51,19 @@ export function usePaginatedData<T, TFilters>({
   const offsetRef = useRef(0)
   const hasInitialLoadRef = useRef(false)
   const loadingRef = useRef(false)
+  const pendingRefreshRef = useRef(false)
   const requestGenerationRef = useRef(0)
+  const loadPageRef = useRef<(isReset?: boolean, preserveLoadedItems?: boolean) => Promise<void>>(async () => {})
 
-  const loadPage = useCallback(async (isReset = false) => {
+  const loadPage = useCallback(async (isReset = false, preserveLoadedItems = false) => {
     if (!enabled) return
-    // Only allow concurrent loads if it's a reset (e.g. filter change)
-    if (loadingRef.current && !isReset) return
+    if (loadingRef.current) {
+      if (isReset) {
+        requestGenerationRef.current++
+        pendingRefreshRef.current = true
+      }
+      return
+    }
     
     loadingRef.current = true
     setLoading(true)
@@ -64,6 +71,7 @@ export function usePaginatedData<T, TFilters>({
 
     const currentGeneration = ++requestGenerationRef.current
 
+    const previousDepth = offsetRef.current
     if (isReset) {
       offsetRef.current = 0
     }
@@ -77,22 +85,28 @@ export function usePaginatedData<T, TFilters>({
       }
 
       // Fetch count on reset or first load
+      let currentTotalCount = totalCount
       if (isReset || !hasInitialLoadRef.current) {
         const count = await countFn(currentFilters)
-        if (currentGeneration === requestGenerationRef.current) {
-          setTotalCount(count ?? 0)
-        }
+        if (currentGeneration !== requestGenerationRef.current) return
+        currentTotalCount = count ?? 0
+        setTotalCount(currentTotalCount)
       }
 
-      const fetched = await fetchFn(currentFilters)
-      if (currentGeneration !== requestGenerationRef.current) {
-        return
-      }
+      const refreshedItems: T[] = []
+      let pageOffset = offsetRef.current
+      const refreshDepth = preserveLoadedItems ? Math.min(previousDepth, currentTotalCount) : pageSize
+      do {
+        const fetched = await fetchFn({ ...currentFilters, offset: pageOffset })
+        if (currentGeneration !== requestGenerationRef.current) return
+        const newItems = Array.isArray(fetched) ? fetched : []
+        refreshedItems.push(...newItems)
+        pageOffset += newItems.length
+        if (newItems.length === 0 || (!preserveLoadedItems && newItems.length < pageSize)) break
+      } while (pageOffset < refreshDepth)
 
-      const newItems = Array.isArray(fetched) ? fetched : []
-      
-      setItems(prev => isReset ? newItems : [...(prev || []), ...newItems])
-      offsetRef.current += newItems.length
+      setItems(prev => isReset ? refreshedItems : [...prev, ...refreshedItems])
+      offsetRef.current = isReset ? refreshedItems.length : pageOffset
       hasInitialLoadRef.current = true
     } catch (err) {
       if (currentGeneration === requestGenerationRef.current) {
@@ -100,12 +114,24 @@ export function usePaginatedData<T, TFilters>({
         setError('Failed to load data')
       }
     } finally {
-      if (currentGeneration === requestGenerationRef.current) {
-        loadingRef.current = false
-        setLoading(false)
+      loadingRef.current = false
+      setLoading(false)
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false
+        void loadPageRef.current(true, true)
       }
     }
   }, [fetchFn, countFn, pageSize, activeSourceId, enabled])
+
+  loadPageRef.current = loadPage
+
+  const requestRefresh = useCallback(() => {
+    if (loadingRef.current) {
+      pendingRefreshRef.current = true
+      return
+    }
+    void loadPage(true, true)
+  }, [loadPage])
 
   const loadMore = useCallback(() => {
     if (items.length < totalCount && !loading) {
@@ -117,8 +143,8 @@ export function usePaginatedData<T, TFilters>({
     if (newFilters) {
       filtersRef.current = { ...filtersRef.current, ...newFilters }
     }
-    loadPage(true)
-  }, [loadPage])
+    requestRefresh()
+  }, [requestRefresh])
 
   const setFilters = useCallback((newFilters: Partial<TFilters>) => {
     const nextFilters = { ...filtersRef.current, ...newFilters }
@@ -138,7 +164,6 @@ export function usePaginatedData<T, TFilters>({
 
   const externalSetItems = useCallback((newItems: T[] | ((prev: T[]) => T[])) => {
     requestGenerationRef.current++
-    loadingRef.current = false
     setLoading(false)
     setItems(prev => {
       const result = typeof newItems === 'function' ? newItems(prev) : newItems
@@ -149,6 +174,12 @@ export function usePaginatedData<T, TFilters>({
   }, [])
 
   // Reload when active source changes
+  useEffect(() => {
+    if (enabled) return
+    requestGenerationRef.current++
+    pendingRefreshRef.current = false
+  }, [activeSourceId, enabled])
+
   useEffect(() => {
     if (!enabled) return
     // BOLT: If items were pre-loaded via bootstrap, don't trigger initial load
@@ -169,7 +200,7 @@ export function usePaginatedData<T, TFilters>({
       if (!event.sourceId || !activeSourceId || event.sourceId === activeSourceId) {
         if (debounceTimer) clearTimeout(debounceTimer)
         debounceTimer = setTimeout(() => {
-          loadPage(true)
+          requestRefresh()
         }, 400)
       }
     })
@@ -177,7 +208,7 @@ export function usePaginatedData<T, TFilters>({
       if (debounceTimer) clearTimeout(debounceTimer)
       unsubscribe?.()
     }
-  }, [activeSourceId, enabled, loadPage])
+  }, [activeSourceId, enabled, requestRefresh])
 
   return {
     items,

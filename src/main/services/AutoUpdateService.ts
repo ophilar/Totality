@@ -10,7 +10,7 @@ import { autoUpdater, type UpdateInfo, type ProgressInfo } from 'electron-update
 import { safeSend } from '@main/ipc/utils/safeSend'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
-import { NotificationType } from '@main/types/monitoring'
+import { CancellationToken } from 'builder-util-runtime'
 
 export type UpdateStatus =
   | 'idle'
@@ -42,7 +42,10 @@ export class AutoUpdateService {
   private mainWindow: BrowserWindow | null = null
   private state: UpdateState = { status: 'idle' }
   private checkTimer: NodeJS.Timeout | null = null
+  private firstCheckTimer: NodeJS.Timeout | null = null
+  private checkPromise: Promise<void> | null = null
   private initialized = false
+  private downloadProgressListener: ((progress: ProgressInfo) => void) | null = null
 
   initialize(): void {
     if (this.initialized) return
@@ -72,11 +75,6 @@ export class AutoUpdateService {
           ? info.releaseNotes
           : undefined,
       })
-      try {
-        getDatabase().notifications.addNotification({ type: NotificationType.Info, title: 'Update available', message: `Version ${info.version} is ready to download` })
-      } catch (e) {
-        getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
-      }
     })
 
     autoUpdater.on('update-not-available', (_info: UpdateInfo) => {
@@ -87,6 +85,7 @@ export class AutoUpdateService {
     })
 
     autoUpdater.on('download-progress', (progress: ProgressInfo) => {
+      this.downloadProgressListener?.(progress)
       this.setState({
         status: 'downloading',
         downloadProgress: {
@@ -104,11 +103,10 @@ export class AutoUpdateService {
         version: info.version,
         lastChecked: new Date().toISOString(),
       })
-      try {
-        getDatabase().notifications.addNotification({ type: NotificationType.Info, title: 'Update ready', message: `Version ${info.version} will install on restart` })
-      } catch (e) {
-        getLoggingService().error('[AutoUpdate]', 'Failed to dispatch update notification:', e)
-      }
+    })
+
+    autoUpdater.on('update-cancelled', (info: UpdateInfo) => {
+      this.setState({ status: 'available', version: info.version, downloadProgress: undefined })
     })
 
     autoUpdater.on('error', (err: Error) => {
@@ -120,13 +118,13 @@ export class AutoUpdateService {
     })
 
     // Schedule first check
-    setTimeout(() => {
-      this.autoCheckIfEnabled()
+    this.firstCheckTimer = setTimeout(() => {
+      void this.autoCheckIfEnabled().catch(error => this.reportCheckError(error))
     }, CHECK_DELAY_MS)
 
     // Schedule recurring checks
     this.checkTimer = setInterval(() => {
-      this.autoCheckIfEnabled()
+      void this.autoCheckIfEnabled().catch(error => this.reportCheckError(error))
     }, CHECK_INTERVAL_MS)
 
     getLoggingService().info('[AutoUpdateService]', '[AutoUpdate] Initialized')
@@ -144,27 +142,39 @@ export class AutoUpdateService {
    * Check for updates (manual trigger from UI)
    */
   async checkForUpdates(): Promise<void> {
-    try {
-      await autoUpdater.checkForUpdates()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Check failed:', msg)
-      this.setState({ status: 'error', error: msg })
-    }
+    if (this.checkPromise) return this.checkPromise
+    this.checkPromise = autoUpdater.checkForUpdates()
+      .then(() => undefined)
+      .catch(err => this.reportCheckError(err))
+      .finally(() => { this.checkPromise = null })
+    return this.checkPromise
   }
 
   /**
    * Download the available update
    */
-  async downloadUpdate(): Promise<void> {
-    if (!app.isPackaged) return
+  async downloadUpdate(signal: AbortSignal, onProgress?: (progress: ProgressInfo) => void): Promise<void> {
+    if (!app.isPackaged) throw new Error('Update downloads are available only in the packaged application.')
 
     try {
-      await autoUpdater.downloadUpdate()
+      signal.throwIfAborted()
+      this.downloadProgressListener = onProgress ?? null
+      const cancellationToken = new CancellationToken()
+      const cancelDownload = () => cancellationToken.cancel()
+      signal.addEventListener('abort', cancelDownload, { once: true })
+      try {
+        await autoUpdater.downloadUpdate(cancellationToken)
+      } finally {
+        signal.removeEventListener('abort', cancelDownload)
+        cancellationToken.dispose()
+        this.downloadProgressListener = null
+      }
     } catch (err: unknown) {
+      if (signal.aborted) throw err
       const msg = err instanceof Error ? err.message : 'Unknown error'
       getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Download failed:', msg)
       this.setState({ status: 'error', error: msg })
+      throw err
     }
   }
 
@@ -187,6 +197,10 @@ export class AutoUpdateService {
   }
 
   cleanup(): void {
+    if (this.firstCheckTimer) {
+      clearTimeout(this.firstCheckTimer)
+      this.firstCheckTimer = null
+    }
     if (this.checkTimer) {
       clearInterval(this.checkTimer)
       this.checkTimer = null
@@ -197,12 +211,15 @@ export class AutoUpdateService {
     // Read setting from database
     const db = getDatabase()
     const setting = await db.config.getSetting('auto_update_enabled')
-    // Default to enabled if setting not present
-    if (setting === 'false') {
-      return
-    }
+    if (setting === 'false') return
 
     await this.checkForUpdates()
+  }
+
+  private reportCheckError(err: unknown): void {
+    const msg = err instanceof Error ? err.message : String(err)
+    getLoggingService().error('[AutoUpdateService]', '[AutoUpdate] Check failed:', msg)
+    this.setState({ status: 'error', error: msg })
   }
 
   private setState(partial: Partial<UpdateState>): void {

@@ -170,8 +170,11 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const [isSuccess, setIsSuccess] = useState(false)
   const [busy, setBusy] = useState(false)
   const [preflightData, setPreflightData] = useState<ShowTranscodePreflight | null>(null)
+  const [preflightTermination, setPreflightTermination] = useState<'cancelling' | 'finishing' | null>(null)
   const [quarantineFiles, setQuarantineFiles] = useState<Array<{ mediaItemId: number; label: string; path: string; size: number; modifiedAt: string; owned: boolean }>>([])
   const modalRef = useRef<HTMLDivElement | null>(null)
+  const activePreflightRequestId = useRef<string | null>(null)
+  const closeAfterPreflight = useRef(false)
 
   // Live Task Queue tracking state for monitoring mode
   const [queueState, setQueueState] = useState<TaskQueueState>({
@@ -202,6 +205,18 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const handleGpuIdChange = useCallback((id: string) => setGpuId(id), [])
 
   const handleClose = useCallback(async () => {
+    const requestId = activePreflightRequestId.current
+    if (requestId) {
+      closeAfterPreflight.current = true
+      try {
+        const result = await window.electronAPI.dbCancelOperation(requestId)
+        setPreflightTermination(result.status === 'committing' ? 'finishing' : 'cancelling')
+      } catch (error) {
+        closeAfterPreflight.current = false
+        addToast({ type: 'error', title: 'Cancel optimization review', message: String(error) })
+      }
+      return
+    }
     try {
       if (preflightData && mode !== 'monitoring') await window.electronAPI.discardShow(preflightData.preflightId)
       onClose()
@@ -400,22 +415,45 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       throw new Error('A playback profile and output mode are required; choose an original language when stream pruning is enabled.')
     }
     if (adjustToTarget && optimizationMode !== 'remux_only' && (!qualityProfile || !encoderPolicy || !targetContainer || !targetHdrFormat)) throw new Error('Choose quality, encoder policy, container, and output color format before measuring samples.')
-    if (preflightData) await window.electronAPI.discardShow(preflightData.preflightId)
     setReviewedEpisodes([])
     const episodes = await window.electronAPI.seriesGetEpisodesByIdentity(show.series_title, sourceId, seriesIdentityKey, libraryId)
     if (episodes.some(episode => !episode.deep_analysis)) {
       setMessage('Analyzing this show before measuring samples…')
       await window.electronAPI.mediaAnalyze({ kind: 'show', title: show.series_title, sourceId, seriesIdentityKey, libraryId })
     }
-    const preflight = await window.electronAPI.preflightShow({
-      seriesTitle: show.series_title,
-      seriesIdentityKey,
-      sourceId,
-      libraryId,
-      options: getCleanOptions(overrides)
-    })
-    setPreflightData(preflight)
-    return preflight
+    if (preflightData) {
+      await window.electronAPI.discardShow(preflightData.preflightId)
+      setPreflightData(null)
+    }
+    const requestId = crypto.randomUUID()
+    activePreflightRequestId.current = requestId
+    setPreflightTermination(null)
+    let preflight: ShowTranscodePreflight | undefined
+    try {
+      preflight = await window.electronAPI.preflightShow({
+        requestId,
+        seriesTitle: show.series_title,
+        seriesIdentityKey,
+        sourceId,
+        libraryId,
+        options: getCleanOptions(overrides)
+      }) as ShowTranscodePreflight
+      setPreflightData(preflight)
+      return preflight
+    } finally {
+      activePreflightRequestId.current = null
+      setPreflightTermination(null)
+      if (closeAfterPreflight.current) {
+        closeAfterPreflight.current = false
+        try {
+          if (preflight) await window.electronAPI.discardShow(preflight.preflightId)
+          onClose()
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : String(error))
+          addToast({ type: 'error', title: 'Discard optimization review', message: String(error) })
+        }
+      }
+    }
   }
 
   const updatePlan = async (next: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string }) => {
@@ -1213,9 +1251,11 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
             <>
               <button
                 onClick={() => void handleClose()}
+                disabled={preflightTermination !== null}
+                title={preflightTermination === 'cancelling' ? 'Cancelling optimization review' : preflightTermination === 'finishing' ? 'Finishing optimization review' : undefined}
                 className="px-5 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
-                Cancel
+                {preflightTermination === 'cancelling' ? 'Cancelling…' : preflightTermination === 'finishing' ? 'Finishing…' : 'Cancel'}
               </button>
 
               <div className="flex items-center gap-2">

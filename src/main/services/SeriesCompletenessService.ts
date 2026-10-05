@@ -49,6 +49,7 @@ export class SeriesCompletenessService {
     onProgress?: (prog: SeriesProgress) => void,
     requestedSeries?: { title: string; seriesIdentityKey: string },
     existingBackupPath?: string,
+    signal?: AbortSignal,
   ): Promise<AnalysisOutcome & {
     totalSeries: number
     analyzed: number
@@ -57,6 +58,7 @@ export class SeriesCompletenessService {
     reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
     databaseBackupPath?: string
   }> {
+    signal?.throwIfAborted()
     this.cancelRequested = false
     const result = { totalSeries: 0, analyzed: 0, complete: 0, incomplete: 0, errors: [] as string[], diagnostics: [] as AnalysisDiagnostic[] }
 

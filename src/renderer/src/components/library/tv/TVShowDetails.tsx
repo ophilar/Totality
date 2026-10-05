@@ -54,6 +54,7 @@ export function TVShowDetails({
   const [copiedTitle, setCopiedTitle] = useState(false)
   const [showOverview, setShowOverview] = useState<string | null>(null)
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  const [isArrWaitActive, setIsArrWaitActive] = useState(false)
   const [audioLanguages, setAudioLanguages] = useState<string[]>([])
   const [optimizingEpisodeId, setOptimizingEpisodeId] = useState<number | null>(null)
   const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
@@ -136,18 +137,26 @@ export function TVShowDetails({
     const baseUrl = await window.electronAPI.getSetting('sonarr_url')
     const apiKey = await window.electronAPI.getSetting('sonarr_api_key')
     if (!baseUrl || !apiKey) return
-    if (!window.confirm(`Ask Sonarr to search for a better release of “${selectedShowData.title}”?`)) return
+    if (!window.confirm(`Ask Sonarr to search for a better release of “${selectedShowData.title}”? Sonarr may accept this command immediately; Totality cannot recall an accepted command. You can cancel waiting for its result.`)) return
     setArrStatus('working')
     try {
       const managed = await window.electronAPI.arrFindManagedSeries({ baseUrl, apiKey }, Number(completenessData.tvdb_id)) as { id?: number } | null
       if (!managed?.id) throw new Error('This series is not managed by Sonarr')
       const command = await window.electronAPI.arrSearchSeries({ baseUrl, apiKey }, managed.id) as { id?: number }
       if (!command.id) throw new Error('Sonarr did not return a command ID')
-      await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id)
+      const requestId = crypto.randomUUID()
+      setIsArrWaitActive(true)
+      const result = await window.electronAPI.arrWaitForCommand({ baseUrl, apiKey }, command.id, undefined, requestId) as { cancelled?: boolean }
+      if (result.cancelled) {
+        setArrStatus('idle')
+        return
+      }
       setArrStatus('success')
     } catch (err: unknown) {
       setArrStatus('error')
       window.alert(`Sonarr Search Failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setIsArrWaitActive(false)
     }
   }
 
@@ -283,6 +292,11 @@ export function TVShowDetails({
               <button onClick={handleSonarrSearch} disabled={arrStatus === 'working'} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-muted rounded-md hover:bg-muted/80 disabled:opacity-50" title="Search in Sonarr">
                 {arrStatus === 'working' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
                 {arrStatus === 'working' ? 'Searching...' : 'Search in Sonarr'}
+              </button>
+            )}
+            {isArrWaitActive && (
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-xs text-primary hover:underline">
+                Manage wait in Activity
               </button>
             )}
           </div>

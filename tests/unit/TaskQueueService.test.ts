@@ -81,6 +81,19 @@ describe('TaskQueueService', () => {
       expect(service.getQueueState().queue.length).toBe(0)
     })
 
+    it('clears completed task history without clearing pending work', async () => {
+      service.pauseQueue()
+      const completedTaskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Removed task', sourceId: 'src1', libraryId: 'lib1' } satisfies TaskDefinition)
+      await service.removeTask(completedTaskId)
+      const pendingTaskId = await service.addTask({ type: TaskType.LibraryScan, label: 'Pending task', sourceId: 'src2', libraryId: 'lib2' } satisfies TaskDefinition)
+
+      expect(service.getTaskHistory().map(task => task.id)).toContain(completedTaskId)
+      await service.clearTaskHistory()
+
+      expect(service.getTaskHistory()).toHaveLength(0)
+      expect(service.getQueueState().queue.map(task => task.id)).toEqual([pendingTaskId])
+    })
+
     it('should return false when removing non-existent task', async () => {
       const removed = await service.removeTask('non-existent-id')
       expect(removed).toBe(false)

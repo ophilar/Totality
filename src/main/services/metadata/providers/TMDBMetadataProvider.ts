@@ -37,7 +37,8 @@ export class TMDBMetadataProvider implements IMetadataProvider {
 
   constructor(private apiKeyGetter: () => string | null | Promise<string | null>) {}
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const apiKey = await this.apiKeyGetter()
     if (!apiKey) return []
 
@@ -48,7 +49,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
 
     try {
       const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query.title)}${yearParam}${adultParam}`
-      const res = await fetch(url)
+      const res = await fetch(url, { signal })
         if (!res.ok) throw new Error(`TMDB search HTTP ${res.status}`)
       const data = await res.json() as Record<string, unknown>
       const items = Array.isArray(data.results) ? data.results.filter(isTmdbItem) : []
@@ -76,13 +77,13 @@ export class TMDBMetadataProvider implements IMetadataProvider {
       // Expanded search is entity-aware: resolve people, then search their credits.
       // The original query and year are never rewritten.
       const personUrl = `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${encodeURIComponent(query.title)}&include_adult=true`
-      const personResponse = await fetch(personUrl)
+      const personResponse = await fetch(personUrl, { signal })
       if (!personResponse.ok) return results
       const people = (await personResponse.json() as Record<string, unknown>).results
       const personIds = Array.isArray(people) ? people.filter(isTmdbItem).slice(0, 5).map(person => person.id) : []
       const credits = await Promise.all(personIds.map(async personId => {
         const creditsUrl = `https://api.themoviedb.org/3/person/${personId}/${query.type === 'movie' ? 'movie_credits' : 'tv_credits'}?api_key=${apiKey}`
-        const creditsResponse = await fetch(creditsUrl)
+        const creditsResponse = await fetch(creditsUrl, { signal })
         if (!creditsResponse.ok) return []
         const body = await creditsResponse.json() as Record<string, unknown>
         return (Array.isArray(body.cast) ? body.cast : []).filter(isTmdbItem)
@@ -99,6 +100,7 @@ export class TMDBMetadataProvider implements IMetadataProvider {
         overview: item.overview, externalIds: { tmdbId: String(item.id) }, score: item.vote_average
       }))]
     } catch (err) {
+      if (signal?.aborted) throw err
       console.error('[TMDBMetadataProvider] Search error:', err)
       return []
     }

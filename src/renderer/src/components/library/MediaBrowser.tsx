@@ -116,6 +116,10 @@ export function MediaBrowser({
 
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [movieOptimizationSummary, setMovieOptimizationSummary] = useState<OptimizationMetricsSummary | null>(null)
+  const movieSummaryGeneration = useRef(0)
+  const completenessGeneration = useRef(0)
+  const episodeGeneration = useRef(0)
+  const albumGeneration = useRef(0)
   const [hasMusic, setHasMusic] = useState(false)
   const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null)
   const [albumSortColumn, setAlbumSortColumn] = useState<'title' | 'artist'>('title')
@@ -240,6 +244,15 @@ export function MediaBrowser({
 
   // Filters
   const [searchInput, setSearchInput] = useState('')
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState('')
+  useEffect(() => {
+    if (!searchInput.trim()) {
+      setDebouncedSearchInput('')
+      return
+    }
+    const timer = setTimeout(() => setDebouncedSearchInput(searchInput), 250)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters(searchInput)
   const normalizedSortBy = (sortBy === 'waste' || sortBy === 'recoverable') ? 'recoverable' : (sortBy === 'weighted_efficiency' && view !== 'tv' ? 'efficiency' : sortBy)
   const commonFilters = useMemo(() => ({
@@ -248,10 +261,10 @@ export function MediaBrowser({
     qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
     tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
     alphabetFilter: alphabetFilter || undefined,
-    searchQuery: searchInput.trim() || undefined,
+    searchQuery: debouncedSearchInput.trim() || undefined,
     libraryId: activeLibraryId || undefined,
     slimDown: slimDown || undefined
-  }), [normalizedSortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, searchInput, activeLibraryId, slimDown])
+  }), [normalizedSortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, debouncedSearchInput, activeLibraryId, slimDown])
   const movieFilters = useMemo(() => ({ ...commonFilters, type: 'movie' } as MediaItemFilters), [commonFilters])
 
   useEffect(() => {
@@ -269,17 +282,20 @@ export function MediaBrowser({
   }, [view, musicViewMode, sortBy, normalizedSortBy, commonFilters, movieFilters, setMoviesFilters, setShowsFilters, setArtistsFilters, setAlbumsFilters, setTracksFilters])
 
   const loadMovieOptimizationSummary = useCallback(async () => {
+    const generation = ++movieSummaryGeneration.current
     try {
       const summary = await window.electronAPI.getMediaOptimizationSummary({
         ...movieFilters,
         sourceId: activeSourceId || undefined,
       })
+      if (generation !== movieSummaryGeneration.current) return
       setMovieOptimizationSummary(summary)
     } catch (error) {
-      setMovieOptimizationSummary(null)
+      if (generation !== movieSummaryGeneration.current) return
       window.electronAPI.log.error('[MediaBrowser]', 'Failed to load movie optimization summary:', error)
+      addToast({ type: 'error', title: 'Failed to refresh movie optimization summary', message: error instanceof Error ? error.message : String(error) })
     }
-  }, [movieFilters, activeSourceId])
+  }, [movieFilters, activeSourceId, addToast])
 
   useEffect(() => {
     if (view === 'movies') queueMicrotask(() => void loadMovieOptimizationSummary())
@@ -289,7 +305,7 @@ export function MediaBrowser({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const {
     showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex,
-    searchContainerRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
+    searchContainerRef, globalSearchResults, searchStatus, searchError, retrySearch, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
   } = useGlobalSearch({
     searchInputRef,
     onNavigateToMovie: (id) => setSelectedMediaId(id, 'movie'),
@@ -348,6 +364,7 @@ export function MediaBrowser({
 
   // Load episodes/tracks
   useEffect(() => {
+    const generation = ++episodeGeneration.current
     if (!selectedShow) {
       queueMicrotask(() => { setSelectedShowEpisodes([]) })
       return
@@ -356,10 +373,12 @@ export function MediaBrowser({
     queueMicrotask(() => { setSelectedShowEpisodesLoading(true) })
     void loadShowEpisodes(selectedShow)
       .then(eps => {
+        if (generation !== episodeGeneration.current) return
         setSelectedShowEpisodes(eps)
         setSelectedShowEpisodesLoading(false)
       })
       .catch(error => {
+        if (generation !== episodeGeneration.current) return
         setSelectedShowEpisodes([])
         setSelectedShowEpisodesLoading(false)
         addToast({
@@ -368,19 +387,23 @@ export function MediaBrowser({
           message: error instanceof Error ? error.message : String(error),
         })
       })
+    return () => { episodeGeneration.current++ }
   }, [selectedShow, loadShowEpisodes, addToast])
 
   useEffect(() => {
+    const generation = ++albumGeneration.current
     if (selectedAlbum) {
       queueMicrotask(() => { setAlbumTracksLoading(true) })
       void Promise.all([
         window.electronAPI.musicGetTracksByAlbum(selectedAlbum.id!),
         window.electronAPI.musicGetAlbumCompleteness(selectedAlbum.id!)
       ]).then(([tracks, completeness]) => {
+        if (generation !== albumGeneration.current) return
         setAlbumTracks(tracks as MusicTrack[])
         setSelectedAlbumCompleteness(completeness as AlbumCompletenessData)
         setAlbumTracksLoading(false)
       }).catch(error => {
+        if (generation !== albumGeneration.current) return
         setAlbumTracks([])
         setSelectedAlbumCompleteness(null)
         setAlbumTracksLoading(false)
@@ -392,6 +415,7 @@ export function MediaBrowser({
         })
       })
     } else queueMicrotask(() => { setAlbumTracks([]); setSelectedAlbumCompleteness(null) })
+    return () => { albumGeneration.current++ }
   }, [selectedAlbum, addToast])
 
   const currentTypeLibraries = useMemo(() =>
@@ -421,6 +445,7 @@ export function MediaBrowser({
   }, [addToast])
 
   const loadCompletenessData = useCallback(async () => {
+    const generation = ++completenessGeneration.current
     try {
       const [
         seriesData,
@@ -437,6 +462,7 @@ export function MediaBrowser({
         window.electronAPI.getSetting(SETTING_KEYS.exclude_empty_seasons),
         window.electronAPI.getSetting(SETTING_KEYS.collection_theatrical_lag_days),
       ])
+      if (generation !== completenessGeneration.current) return
 
       const excludeEmptySeasons = emptySeasonsSetting === 'true'
       const theatricalLagDays = parseInt((theatricalLagSetting as string) || '0', 10) || 0
@@ -514,6 +540,7 @@ export function MediaBrowser({
       })
       setSeriesCompleteness(sMap)
     } catch (error) {
+      if (generation !== completenessGeneration.current) return
       setMovieCollections([])
       setSeriesCompleteness(new Map())
       window.electronAPI.log.error('[MediaBrowser]', 'Failed to load completeness data:', error)
@@ -529,6 +556,7 @@ export function MediaBrowser({
 
   const {
     isAnalyzing, setIsAnalyzing, analysisProgress, setAnalysisProgress, analysisType, setAnalysisType,
+    tmdbApiKeySet, setTmdbApiKeySet,
     handleAnalyzeAll, handleAnalyzeSingleSeries, checkTmdbApiKey,
   } = useAnalysisManager()
 
@@ -561,9 +589,9 @@ export function MediaBrowser({
   }, [refreshMovies, refreshShows, view, loadMovieOptimizationSummary, selectedShow, loadShowEpisodes])
 
   useLibraryEventListeners({
-    activeSourceId, loadMedia: reloadMedia, loadStats, loadCompletenessData, loadMusicData: async () => {}, loadMusicCompletenessData,
+    activeSourceId, loadStats, loadCompletenessData, loadMusicCompletenessData,
     loadActiveSourceLibraries, loadEpSingleSettings, setIsAnalyzing, setAnalysisType, setAnalysisProgress,
-    setTmdbApiKeySet: () => {}, setIsAutoRefreshing, setActiveSource, markLibraryAsNew, addToast,
+    setTmdbApiKeySet, setIsAutoRefreshing, setActiveSource, markLibraryAsNew, addToast,
   })
 
   useEffect(() => {
@@ -593,11 +621,11 @@ export function MediaBrowser({
       {!hideHeader && (
         <BrowserHeader
           view={view} setView={setView} hasMovies={(stats?.totalMovies ?? 0) > 0} hasTV={(stats?.totalShows ?? 0) > 0} hasMusic={hasMusic}
-          wishlistCount={wishlistCount} isAutoRefreshing={isAutoRefreshing} tmdbApiKeySet={true} themeAccentColor={themeAccentColor}
+          wishlistCount={wishlistCount} isAutoRefreshing={isAutoRefreshing} tmdbApiKeySet={tmdbApiKeySet} themeAccentColor={themeAccentColor}
           showCompletenessPanel={showCompletenessPanel} setShowCompletenessPanel={setShowCompletenessPanel}
           showWishlistPanel={showWishlistPanel} setShowWishlistPanel={setShowWishlistPanel}
           onOpenSettings={onOpenSettings || (() => {})} onNavigateHome={onNavigateHome}
-          searchProps={{ searchInput, setSearchInput, showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex, searchContainerRef, searchInputRef, globalSearchResults, hasSearchResults, handleSearchKeyDown, handleSearchResultClick }}
+          searchProps={{ searchInput, setSearchInput, showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex, searchContainerRef, searchInputRef, globalSearchResults, searchStatus, searchError, retrySearch, hasSearchResults, handleSearchKeyDown, handleSearchResultClick }}
         />
       )}
 

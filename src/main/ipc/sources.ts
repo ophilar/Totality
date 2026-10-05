@@ -119,8 +119,8 @@ export function registerSourceHandlers(): void {
   // CONNECTION TESTING
   // ============================================================================
 
-  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TEST_CONNECTION, SourceIdSchema, async (sourceId) => {
-    return await manager.testConnection(sourceId)
+  createValidatedIpcHandler(IPC_CHANNELS.SOURCES.TEST_CONNECTION, z.tuple([SourceIdSchema, z.boolean().optional()]), async (sourceId, healthOnly) => {
+    return await manager.testConnection(sourceId, healthOnly)
   })
 
   // ============================================================================

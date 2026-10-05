@@ -6,6 +6,8 @@ import { resetTaskQueueServiceForTesting } from '@main/services/TaskQueueService
 import * as _dbFuncs from '@main/database/BetterSQLiteService'
 import path from 'node:path'
 import fs from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 
 /**
@@ -46,14 +48,24 @@ export function cleanupTestDb() {
 }
 
 export function createAuthorizedIpcEvent(): IpcMainInvokeEvent {
+  const sender = new EventEmitter() as EventEmitter & { id: number; send: ReturnType<typeof vi.fn>; isDestroyed: ReturnType<typeof vi.fn> }
+  sender.id = 1
+  sender.send = vi.fn()
+  sender.isDestroyed = vi.fn(() => false)
   return {
-    sender: { send: vi.fn() },
+    sender,
     senderFrame: { url: 'file:///totality-test/index.html' },
   } as unknown as IpcMainInvokeEvent
 }
 
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { registerSeriesHandlers } from '@main/ipc/series'
+import { getTMDBService } from '@main/services/TMDBService'
+import type { TMDBValidationState } from '@main/services/TMDBService'
+import { getGeminiService } from '@main/services/GeminiService'
+import type { GeminiValidationState } from '@main/services/GeminiService'
+import { getSavedServiceHealthService } from '@main/services/SavedServiceHealthService'
+import type { SavedServiceHealthSnapshot, SavedServiceId } from '@shared/serviceHealth'
 import { registerDatabaseHandlers } from '@main/ipc/database'
 import { registerMediaHandlers } from '@main/ipc/media'
 import { registerMusicHandlers } from '@main/ipc/music'
@@ -120,6 +132,20 @@ const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
   // Create an exhaustive API object that matches preload scripts
 const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) => void>; __triggerTaskQueueUpdate: (state: unknown) => void } = {
     invoke,
+    tmdbGetValidationState: () => invoke(IPC_CHANNELS.DATABASE.TMDB_VALIDATION_STATE),
+    onTmdbValidationChanged: (callback: (state: TMDBValidationState) => void) => {
+      const events = getTMDBService().validationEvents
+      events.on('changed', callback)
+      return () => events.off('changed', callback)
+    },
+    getSavedServiceHealth: () => invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_STATE),
+    onSavedServiceHealthChanged: (callback: (snapshot: SavedServiceHealthSnapshot) => void) => {
+      const events = getSavedServiceHealthService().events
+      events.on('changed', callback)
+      return () => events.off('changed', callback)
+    },
+    refreshSavedServiceHealth: () => invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_REFRESH),
+    retrySavedServiceHealth: (service: SavedServiceId) => invoke(IPC_CHANNELS.SETTINGS.SERVICE_HEALTH_RETRY, service),
     // Database / Media retrieval
     getMediaItems: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_LIST, f),
     countMediaItems: (f: unknown) => invoke(IPC_CHANNELS.DATABASE.MEDIA_COUNT, f),
@@ -212,7 +238,13 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     sourcesGetActive: () => invoke(IPC_CHANNELS.SOURCES.GET_ACTIVE),
     sourcesGetLibrariesWithStatus: (sId: string) => invoke(IPC_CHANNELS.SOURCES.GET_LIBRARIES_WITH_STATUS, sId),
     sourcesGetStats: (sId?: string) => invoke(IPC_CHANNELS.SOURCES.GET_STATS, sId),
-    sourcesTestConnection: (sourceId: string) => invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId),
+    sourcesTestConnection: (sourceId: string, healthOnly?: boolean) => invoke(IPC_CHANNELS.SOURCES.TEST_CONNECTION, sourceId, healthOnly),
+    aiGetValidationState: () => invoke(IPC_CHANNELS.AI.VALIDATION_STATE),
+    onAiValidationChanged: (callback: (state: GeminiValidationState) => void) => {
+      const events = getGeminiService().validationEvents
+      events.on('changed', callback)
+      return () => events.off('changed', callback)
+    },
     sourcesGetSupportedProviders: () => invoke(IPC_CHANNELS.SOURCES.GET_SUPPORTED_PROVIDERS),
     sourcesUpsert: (s: unknown) => invoke(IPC_CHANNELS.SOURCES.UPSERT, s),
     sourcesDelete: (id: string) => invoke(IPC_CHANNELS.SOURCES.DELETE, id),
@@ -294,7 +326,9 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     // Timelines API
     timelinesListRecipes: () => invoke(IPC_CHANNELS.TIMELINES.LIST_RECIPES),
     timelinesGetRecipe: (recipeId: string) => invoke(IPC_CHANNELS.TIMELINES.GET_RECIPE, recipeId),
-    timelinesResolveTimeline: (recipeId: string, sourceId?: string) => invoke(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, recipeId, sourceId),
+    timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: unknown, requestId: string, showInActivity: boolean) => invoke(IPC_CHANNELS.TIMELINES.RESOLVE_TIMELINE, recipeId, sourceId, options, requestId, showInActivity),
+    dbCancelOperation: (requestId: string) => invoke(IPC_CHANNELS.DATABASE.CANCEL_OPERATION, requestId),
+    arrWaitForCommand: (config: unknown, commandId: number, options?: unknown, requestId = randomUUID()) => invoke(IPC_CHANNELS.ARR.WAIT_COMMAND, config, commandId, options, requestId),
     timelinesSyncPlexPlaylist: (payload: unknown) => invoke(IPC_CHANNELS.TIMELINES.SYNC_PLEX_PLAYLIST, payload),
 
     getAppVersion: () => invoke('app:getVersion'),
@@ -303,7 +337,7 @@ const api: Record<string, unknown> & { __taskListeners: Array<(state: unknown) =
     // Auto Update
     autoUpdateGetState: () => invoke(IPC_CHANNELS.AUTO_UPDATE.GET_STATE),
     autoUpdateCheckForUpdates: () => invoke(IPC_CHANNELS.AUTO_UPDATE.CHECK_FOR_UPDATES),
-    autoUpdateDownloadUpdate: () => invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE),
+    autoUpdateDownloadUpdate: (requestId = randomUUID()) => invoke(IPC_CHANNELS.AUTO_UPDATE.DOWNLOAD_UPDATE, requestId),
     autoUpdateInstallUpdate: () => invoke(IPC_CHANNELS.AUTO_UPDATE.INSTALL_UPDATE),
     onAutoUpdateStateChanged: (_cb: (state: unknown) => void) => () => {},
 

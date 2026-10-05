@@ -25,11 +25,13 @@ export class TimelineRecipeProviderFactory implements ITimelineRecipeProvider {
   async fetchTimeline(idOrInput: string, options: TimelineFetchOptions = {}): Promise<TimelineDefinition> {
     const input = idOrInput.trim()
     for (const provider of this.providers) {
+      options.signal?.throwIfAborted()
       if (!await provider.supports(input)) continue
       const cache = getTimelineCacheService()
       const previous = await cache.getRecipe(input, true)
       try {
         const timeline = await provider.fetchTimeline(input, options)
+        options.signal?.throwIfAborted()
         if (provider instanceof TimelineParserPluginProvider) await this.resolveIdentities(timeline)
         const result: TimelineDefinition = {
           ...timeline,
@@ -38,9 +40,11 @@ export class TimelineRecipeProviderFactory implements ITimelineRecipeProvider {
           refreshError: undefined,
           granularity: timeline.granularity ?? (timeline.items.some(item => item.type === 'show') ? 'series-blocks' : 'episode-interleaved'),
         }
+        options.signal?.throwIfAborted()
         await cache.setRecipe(input, result)
         return result
       } catch (error) {
+        if (options.signal?.aborted) throw error
         if (!options.refresh || !previous) throw error
         return { ...previous, refreshError: error instanceof Error ? error.message : String(error) }
       }

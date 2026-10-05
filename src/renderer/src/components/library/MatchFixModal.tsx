@@ -84,16 +84,48 @@ export function MatchFixModal({
   const [searchQuery, setSearchQuery] = useState(currentTitle)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [isCancellingSearch, setIsCancellingSearch] = useState(false)
   const [isFixing, setIsFixing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
   const [expandedOverviews, setExpandedOverviews] = useState<Record<number, boolean>>({})
   const modalRef = useRef<HTMLDivElement | null>(null)
+  const activeSearchRequestId = useRef<string | null>(null)
+  const searchCancellationRequested = useRef(false)
 
   // Focus trap
   useFocusTrap(isOpen, modalRef)
 
   const [includeExpanded, setIncludeExpanded] = useState(false)
+
+  const cancelSearch = useCallback(async () => {
+    const requestId = activeSearchRequestId.current
+    if (!requestId || searchCancellationRequested.current) return
+    searchCancellationRequested.current = true
+    setIsCancellingSearch(true)
+    try {
+      const result = await window.electronAPI.dbCancelOperation(requestId)
+      if (result.status === 'committing') {
+        setError('The search is finishing its current request.')
+      }
+    } catch (error) {
+      searchCancellationRequested.current = false
+      setIsCancellingSearch(false)
+      setError(`Could not cancel the search: ${(error as Error).message}`)
+      window.electronAPI.log.error('[MatchFixModal]', 'Could not cancel metadata search:', error)
+    }
+  }, [])
+
+  const handleClose = useCallback(() => {
+    void cancelSearch()
+    onClose()
+  }, [cancelSearch, onClose])
+
+  useEffect(() => {
+    if (!isOpen) void cancelSearch()
+  }, [isOpen, cancelSearch])
+
+  useEffect(() => () => { void cancelSearch() }, [cancelSearch])
 
   // Reset state when modal opens
   useEffect(() => {
@@ -132,7 +164,10 @@ export function MatchFixModal({
   }, [isOpen, currentTitle, type, mediaItemId])
 
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return
+    if (!searchQuery.trim() || activeSearchRequestId.current) return
+    const requestId = crypto.randomUUID()
+    activeSearchRequestId.current = requestId
+    searchCancellationRequested.current = false
 
     window.electronAPI.log.info(
       '[MatchFixModal]',
@@ -147,7 +182,7 @@ export function MatchFixModal({
     setExpandedOverviews({})
 
     try {
-      let results: SearchResult[] = []
+      let results: SearchResult[] | { status: 'cancelled' } = []
 
       switch (type) {
         case 'series':
@@ -155,24 +190,37 @@ export function MatchFixModal({
           results = await window.electronAPI.mediaSearchMetadata(
             searchQuery,
             type === 'movie' ? 'movie' : 'tv',
-            includeExpanded
+            includeExpanded,
+            undefined,
+            requestId,
           )
           break
         case 'artist':
-          results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music')
+          results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, undefined, requestId)
           break
         case 'album':
-          if (artistName) results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, artistName)
+          if (artistName) results = await window.electronAPI.mediaSearchMetadata(searchQuery, 'music', undefined, artistName, requestId)
           break
       }
 
+      if (!Array.isArray(results)) {
+        setError('Search cancelled.')
+        return
+      }
       window.electronAPI.log.info('[MatchFixModal]', '[MatchFixModal] Got results:', results.length, results)
+      if (searchCancellationRequested.current) return
       setSearchResults(results)
     } catch (err: unknown) {
+      if (searchCancellationRequested.current) return
       window.electronAPI.log.error('[MatchFixModal]', '[MatchFixModal] Search error:', err)
       setError((err as Error).message || 'Search failed')
     } finally {
-      setIsSearching(false)
+      if (activeSearchRequestId.current === requestId) {
+        activeSearchRequestId.current = null
+        setIsSearching(false)
+        setIsCancellingSearch(false)
+        searchCancellationRequested.current = false
+      }
     }
   }, [searchQuery, type, artistName, includeExpanded])
 
@@ -227,17 +275,17 @@ export function MatchFixModal({
       }
 
       onMatchFixed?.()
-      onClose()
+      handleClose()
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to fix match')
     } finally {
       setIsFixing(false)
     }
-  }, [selectedResult, type, currentTitle, sourceId, seriesIdentityKey, libraryId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
+  }, [selectedResult, type, currentTitle, sourceId, seriesIdentityKey, libraryId, mediaItemId, artistId, albumId, onMatchFixed, handleClose])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      onClose()
+      handleClose()
     } else if (e.key === 'Enter' && !isSearching) {
       handleSearch()
     }
@@ -314,7 +362,7 @@ export function MatchFixModal({
   return createPortal(
     <div
       className="fixed inset-0 z-200 flex items-center justify-center bg-black/60"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         ref={modalRef}
@@ -336,7 +384,7 @@ export function MatchFixModal({
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-md hover:bg-muted transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
@@ -369,6 +417,15 @@ export function MatchFixModal({
               )}
               Search
             </button>
+            {isSearching && (
+              <button
+                onClick={() => void cancelSearch()}
+                disabled={isCancellingSearch}
+                className="px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {isCancellingSearch ? 'Cancelling…' : 'Cancel search'}
+              </button>
+            )}
           </div>
 
           {error && (
@@ -531,7 +588,7 @@ export function MatchFixModal({
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t border-border/30">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted transition-colors"
           >
             Cancel

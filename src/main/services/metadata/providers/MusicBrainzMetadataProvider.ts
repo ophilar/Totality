@@ -6,7 +6,8 @@ export class MusicBrainzMetadataProvider implements IMetadataProvider {
   readonly providerName = 'MusicBrainz'
   readonly supportedTypes: MetadataType[] = ['music']
 
-  async search(query: MetadataSearchQuery): Promise<MetadataSearchResult[]> {
+  async search(query: MetadataSearchQuery, signal?: AbortSignal): Promise<MetadataSearchResult[]> {
+    signal?.throwIfAborted()
     const mb = getMusicBrainzService()
     if (query.type !== 'music') return []
     if (query.externalIds?.musicbrainz_id) {
@@ -14,10 +15,10 @@ export class MusicBrainzMetadataProvider implements IMetadataProvider {
       return details ? [details] : []
     }
     if (query.artistName) {
-      const releaseResults = await mb.searchRelease(query.artistName, query.title)
+      const releaseResults = await mb.searchRelease(query.artistName, query.title, signal)
       return releaseResults.map((release) => ({ id: String(release.id), provider: this.providerId, title: release.title || query.title, type: 'music' as MetadataType, year: release.date ? Number(String(release.date).slice(0, 4)) : undefined, score: release.score, externalIds: { musicBrainzId: String(release.id) } }))
     }
-    const artistResults = await mb.searchArtist(query.title)
+    const artistResults = await mb.searchArtist(query.title, signal)
     return artistResults.map((artist) => ({
       id: String(artist.id), provider: this.providerId, title: artist.name || query.title,
       type: 'music' as MetadataType, score: artist.score, overview: artist.disambiguation,

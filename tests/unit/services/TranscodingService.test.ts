@@ -101,6 +101,7 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         targetCodec: 'hevc',
         useGpu: true,
+        gpuId: 'gpu-0',
         encoder: 'nvenc_h265',
         crf: 20,
         preset: 'p6',
@@ -272,6 +273,7 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         optimizationMode: 'smart',
         useGpu: true,
+        gpuId: 'gpu-0',
         targetCodec: 'hevc',
         encoder: 'nvenc_h265',
         crf: 20,
@@ -308,6 +310,7 @@ describe('TranscodingService', () => {
       const options: TranscodeOptions = {
         optimizationMode: 'transcode',
         useGpu: true,
+        gpuId: 'gpu-0',
         targetCodec: 'hevc',
         encoder: 'nvenc_h265',
         crf: 20,
@@ -429,6 +432,29 @@ describe('TranscodingService', () => {
       expect(preflight.episodes[0].recommendedAction).toBe('already_optimized')
       expect(preflight.episodes[0].sourceTier).toBe('WEB-DL')
       expect(preflight.episodes[0].adviceReason).toBeDefined()
+
+      const compatibleProfile = await db.playbackTargetProfiles.get('builtin:plex-webos-4-lg-b8')
+      if (!compatibleProfile) throw new Error('Built-in playback profile is missing from the test database')
+      const incompatibleProfileId = 'test:h264-incompatible'
+      await db.playbackTargetProfiles.create({
+        ...compatibleProfile,
+        id: incompatibleProfileId,
+        name: 'H.264 incompatible target',
+        isBuiltin: false,
+        definition: { ...compatibleProfile.definition, video: { ...compatibleProfile.definition.video, codecs: ['hevc'] } },
+      })
+      const incompatiblePreflight = await service.preflightShowTranscode({
+        seriesTitle: 'Example Saga Strange New Worlds',
+        seriesIdentityKey: 'tmdb:85552',
+        sourceId: 'src1',
+        libraryId: 'tv',
+        options: { optimizationMode: 'remux_only', targetProfileId: incompatibleProfileId },
+      })
+      expect(incompatiblePreflight.episodes[0]).toMatchObject({
+        compatible: false,
+        decisionStatus: 'incompatible',
+        recommendedAction: undefined,
+      })
     })
   })
 

@@ -13,6 +13,6 @@ describe('MediaFileAnalyzer process failures', () => {
 
     const missingFile = path.join(os.tmpdir(), 'totality-media-analyzer-process-failure', 'missing.mkv')
     await expect(analyzer.deepAnalyzeFile(missingFile, { scanBitrate: true }))
-      .rejects.toThrow(/FFprobe exited with code [1-9]\d*/)
+      .rejects.toThrow(/missing\.mkv: No such file or directory/i)
   })
 })

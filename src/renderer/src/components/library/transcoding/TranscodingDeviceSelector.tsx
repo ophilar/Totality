@@ -25,7 +25,7 @@ export const TranscodingDeviceSelector = memo(function TranscodingDeviceSelector
   variant = 'compact',
   className = ''
 }: TranscodingDeviceSelectorProps) {
-  const selectedGpu = gpus.find(g => g.id === selectedGpuId) || gpus[0]
+  const selectedGpu = gpus.find(g => g.id === selectedGpuId)
   const hasHardwareGpu = gpus.length > 0
 
   const handleDeviceChange = (gpuId: string) => {
@@ -71,10 +71,11 @@ export const TranscodingDeviceSelector = memo(function TranscodingDeviceSelector
           {useGpu && hasHardwareGpu && (
             <div className="pt-2 border-t border-border/20 space-y-1 animate-in fade-in duration-200">
               <select
-                value={selectedGpuId || selectedGpu?.id || ''}
+                value={selectedGpuId || ''}
                 onChange={(e) => handleDeviceChange(e.target.value)}
                 className="w-full bg-background/80 border border-border/50 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-1 focus:ring-primary focus:outline-none cursor-pointer"
               >
+                <option value="">Choose a GPU</option>
                 {gpus.map((gpu) => (
                   <option key={gpu.id} value={gpu.id}>
                     {gpu.name} ({gpu.vendor})

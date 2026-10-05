@@ -8,7 +8,7 @@
  * - Database reset (danger zone)
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2, FolderOpen, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, X, Database, RefreshCw } from 'lucide-react'
 
 interface CSVExportOptions {
@@ -63,7 +63,44 @@ export function DataManagementTab() {
     includeMissingEpisodes: true,
     includeMissingAlbums: true,
   })
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
+  const [activeOperation, setActiveOperation] = useState<{ requestId: string; label: string; state: 'running' | 'cancelling' | 'committing' } | null>(null)
+  const activeOperationRef = useRef<typeof activeOperation>(null)
+
+  const startOperation = (label: string) => {
+    const operation = { requestId: crypto.randomUUID(), label, state: 'running' as const }
+    activeOperationRef.current = operation
+    setActiveOperation(operation)
+    return operation.requestId
+  }
+
+  const finishOperation = (requestId: string) => {
+    if (activeOperationRef.current?.requestId !== requestId) return
+    activeOperationRef.current = null
+    setActiveOperation(null)
+  }
+
+  const cancelOperation = async () => {
+    const operation = activeOperationRef.current
+    if (!operation || operation.state !== 'running') return
+    activeOperationRef.current = { ...operation, state: 'cancelling' }
+    setActiveOperation(activeOperationRef.current)
+    const result = await window.electronAPI.dbCancelOperation(operation.requestId)
+    if (result.status === 'committing') {
+      activeOperationRef.current = { ...operation, state: 'committing' }
+      setActiveOperation(activeOperationRef.current)
+    }
+  }
+
+  const closeCSVExport = () => {
+    if (activeOperationRef.current?.label === 'CSV export' && activeOperationRef.current.state === 'running') void cancelOperation()
+    setShowCSVExportModal(false)
+  }
+
+  useEffect(() => () => {
+    const operation = activeOperationRef.current
+    if (operation) void window.electronAPI.dbCancelOperation(operation.requestId)
+  }, [])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -75,18 +112,20 @@ export function DataManagementTab() {
   }, [])
 
   const handleExport = async () => {
+    const requestId = startOperation('Database export')
     setIsExporting(true)
     setMessage(null)
     try {
-      const result = await window.electronAPI.dbExport()
+      const result = await window.electronAPI.dbExport(requestId)
       if (result.cancelled) {
-        // User cancelled, no message needed
+        if (activeOperationRef.current?.state === 'cancelling') setMessage({ type: 'info', text: 'Export cancelled; temporary output removed.' })
       } else if (result.success) {
         setMessage({ type: 'success', text: `Database exported to: ${result.path}` })
       }
     } catch (error: unknown) {
       setMessage({ type: 'error', text: (error as Error).message || 'Failed to export database' })
     } finally {
+      finishOperation(requestId)
       setIsExporting(false)
     }
   }
@@ -99,12 +138,13 @@ export function DataManagementTab() {
       return
     }
 
+    const requestId = startOperation('CSV export')
     setIsExportingCSV(true)
     setMessage(null)
     try {
-      const result = await window.electronAPI.dbExportCSV(csvOptions)
+      const result = await window.electronAPI.dbExportCSV(csvOptions, requestId)
       if (result.cancelled) {
-        // User cancelled, no message needed
+        if (activeOperationRef.current?.state === 'cancelling') setMessage({ type: 'info', text: 'CSV export cancelled; temporary output removed.' })
       } else if (result.success) {
         setMessage({ type: 'success', text: `Working document exported to: ${result.path}` })
         setShowCSVExportModal(false)
@@ -112,17 +152,19 @@ export function DataManagementTab() {
     } catch (error: unknown) {
       setMessage({ type: 'error', text: (error as Error).message || 'Failed to export CSV' })
     } finally {
+      finishOperation(requestId)
       setIsExportingCSV(false)
     }
   }
 
   const handleImport = async () => {
+    const requestId = startOperation('Database import')
     setIsImporting(true)
     setMessage(null)
     try {
-      const result = await window.electronAPI.dbImport()
+      const result = await window.electronAPI.dbImport(requestId)
       if (result.cancelled) {
-        // User cancelled, no message needed
+        if (activeOperationRef.current?.state === 'cancelling') setMessage({ type: 'info', text: 'Import cancelled before commit; no records were changed.' })
       } else if (result.success) {
         const errorText = result.errors && result.errors.length > 0
           ? ` (${result.errors.length} warnings)`
@@ -135,6 +177,7 @@ export function DataManagementTab() {
     } catch (error: unknown) {
       setMessage({ type: 'error', text: (error as Error).message || 'Failed to import database' })
     } finally {
+      finishOperation(requestId)
       setIsImporting(false)
     }
   }
@@ -209,6 +252,7 @@ export function DataManagementTab() {
             </div>
             <button
               onClick={() => setShowCSVExportModal(true)}
+              disabled={Boolean(activeOperation)}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
@@ -229,7 +273,7 @@ export function DataManagementTab() {
             </div>
             <button
               onClick={handleExport}
-              disabled={isExporting}
+              disabled={Boolean(activeOperation)}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {isExporting ? (
@@ -260,7 +304,7 @@ export function DataManagementTab() {
             </div>
             <button
               onClick={handleImport}
-              disabled={isImporting}
+              disabled={Boolean(activeOperation)}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {isImporting ? (
@@ -338,11 +382,20 @@ export function DataManagementTab() {
       </div>
 
       {/* Status message */}
+      {activeOperation && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs" role="status">
+          <span>{activeOperation.state === 'cancelling' ? `Cancelling ${activeOperation.label.toLowerCase()}…` : activeOperation.state === 'committing' ? `Finishing ${activeOperation.label.toLowerCase()}; its commit has started.` : `${activeOperation.label} in progress`}</span>
+          {activeOperation.state === 'running' && <button onClick={() => void cancelOperation()} className="shrink-0 underline underline-offset-2">Cancel</button>}
+        </div>
+      )}
+
       {message && (
         <div
           className={`p-3 rounded-lg text-xs ${
-            message.type === 'success'
-              ? 'bg-green-500/10 border border-green-500/30 text-green-400'
+          message.type === 'success'
+            ? 'bg-green-500/10 border border-green-500/30 text-green-400'
+            : message.type === 'info'
+              ? 'bg-muted border border-border text-muted-foreground'
               : 'bg-red-500/10 border border-red-500/30 text-red-400'
           }`}
         >
@@ -358,7 +411,8 @@ export function DataManagementTab() {
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-base font-medium">Export Working Document</h2>
               <button
-                onClick={() => setShowCSVExportModal(false)}
+                onClick={closeCSVExport}
+                disabled={activeOperation?.state === 'committing'}
                 className="p-1 hover:bg-muted rounded transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -383,6 +437,7 @@ export function DataManagementTab() {
                   <Toggle
                     checked={csvOptions.includeUpgrades}
                     onChange={() => toggleCSVOption('includeUpgrades')}
+                    disabled={Boolean(activeOperation)}
                   />
                 </div>
 
@@ -397,6 +452,7 @@ export function DataManagementTab() {
                   <Toggle
                     checked={csvOptions.includeMissingMovies}
                     onChange={() => toggleCSVOption('includeMissingMovies')}
+                    disabled={Boolean(activeOperation)}
                   />
                 </div>
 
@@ -411,6 +467,7 @@ export function DataManagementTab() {
                   <Toggle
                     checked={csvOptions.includeMissingEpisodes}
                     onChange={() => toggleCSVOption('includeMissingEpisodes')}
+                    disabled={Boolean(activeOperation)}
                   />
                 </div>
 
@@ -425,6 +482,7 @@ export function DataManagementTab() {
                   <Toggle
                     checked={csvOptions.includeMissingAlbums}
                     onChange={() => toggleCSVOption('includeMissingAlbums')}
+                    disabled={Boolean(activeOperation)}
                   />
                 </div>
               </div>
@@ -433,14 +491,15 @@ export function DataManagementTab() {
             {/* Modal Footer */}
             <div className="flex gap-3 justify-end p-4 border-t border-border">
               <button
-                onClick={() => setShowCSVExportModal(false)}
+                onClick={closeCSVExport}
+                disabled={activeOperation?.state === 'cancelling' || activeOperation?.state === 'committing'}
                 className="px-3 py-1.5 text-xs hover:bg-muted rounded-md transition-colors"
               >
-                Cancel
+                {activeOperation?.label === 'CSV export' ? activeOperation.state === 'running' ? 'Cancel export' : activeOperation.state === 'cancelling' ? 'Cancelling…' : 'Finishing…' : 'Cancel'}
               </button>
               <button
                 onClick={handleExportCSV}
-                disabled={isExportingCSV}
+                disabled={Boolean(activeOperation)}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 {isExportingCSV ? (

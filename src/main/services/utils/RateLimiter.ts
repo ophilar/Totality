@@ -13,7 +13,7 @@ export interface RateLimiter {
    * Wait until a request slot is available
    * Call this before making each API request
    */
-  waitForSlot(): Promise<void>
+  waitForSlot(signal?: AbortSignal): Promise<void>
 
   /**
    * Reset the rate limiter state
@@ -51,7 +51,7 @@ export class SlidingWindowRateLimiter implements RateLimiter {
     this.bufferMs = bufferMs
   }
 
-  async waitForSlot(): Promise<void> {
+  async waitForSlot(signal?: AbortSignal): Promise<void> {
     while (true) {
       const now = Date.now()
 
@@ -70,10 +70,10 @@ export class SlidingWindowRateLimiter implements RateLimiter {
       const waitTime = this.windowMs - (now - oldestTimestamp) + this.bufferMs
 
       if (waitTime > 0) {
-        await this.delay(waitTime)
+        await this.delay(waitTime, signal)
       } else {
         // Yield to the event loop briefly to prevent busy loop in edge cases
-        await this.delay(1)
+        await this.delay(1, signal)
       }
     }
 
@@ -85,8 +85,13 @@ export class SlidingWindowRateLimiter implements RateLimiter {
     this.requestTimestamps = []
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+  private delay(ms: number, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, ms)
+      const abort = () => { clearTimeout(timer); reject(signal?.reason) }
+      signal?.addEventListener('abort', abort, { once: true })
+    })
   }
 
   /**
@@ -136,7 +141,8 @@ export class SimpleDelayRateLimiter implements RateLimiter {
     this.maxDelayMs = maxDelayMs
   }
 
-  async waitForSlot(): Promise<void> {
+  async waitForSlot(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     const now = Date.now()
     // Schedule slots sequentially: whichever is later, current timestamp or previous scheduled + currentDelayMs
     const scheduledTime = Math.max(now, this.lastScheduledTime === 0 ? now : this.lastScheduledTime + this.currentDelayMs)
@@ -144,7 +150,7 @@ export class SimpleDelayRateLimiter implements RateLimiter {
     const waitMs = scheduledTime - now
 
     if (waitMs > 0) {
-      await this.delay(waitMs)
+      await this.delay(waitMs, signal)
     }
   }
 
@@ -186,8 +192,13 @@ export class SimpleDelayRateLimiter implements RateLimiter {
     this.consecutiveSuccesses = 0
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+  private delay(ms: number, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, ms)
+      const abort = () => { clearTimeout(timer); reject(signal?.reason) }
+      signal?.addEventListener('abort', abort, { once: true })
+    })
   }
 
   /**

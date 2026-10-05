@@ -345,3 +345,64 @@
 - [x] Route stream pruning through reviewed preflight and queued optimization; remove renderer-callable direct remux and obsolete series-analysis/dry-run entry points.
   - [x] Run full automated suite and Windows package build; packaged UI and live database flows remain acceptance gates.
   - [ ] Exercise packaged UI and real-database scan, scoped cleanup, restart, cancellation, and optimization flows.
+# 2026-10-03 — UI responsiveness and cancellation
+
+- Implemented library refresh ownership/coalescing, stale-result protection, TMDB draft testing, guided playback target editing, collection partial outcomes, and cancellation for provider waits, TMDB tests, AI chat/reports, and existing queued tasks.
+- Verification passed: `npm test` (208 files passed, 2 skipped; 1,600 tests passed, 7 skipped) and packaged Windows `npm run build`.
+- Remaining acceptance: standalone operation cancellation audit, packaged performance comparison, constrained playback layout, and live TMDB key test.
+- Details and boundaries are recorded in `totality_work_log_20261003.md` and `specs/ui-responsiveness-cancellation/spec.md`.
+
+## 2026-10-03 — Cancellation plumbing continuation [In Progress]
+- [x] Add renderer-scoped cancellation registry for direct long operations, with owner teardown and explicit pre-commit/committing state.
+- [x] Add cancellable database JSON/CSV export, pre-commit transactional import cancellation, and duplicate scan cancellation; retain existing task-queue ownership for queued work.
+- [x] Verify focused real-database/registry regressions, complete test suite, Windows package build, and whitespace checks.
+- [ ] Complete cancellation audit and implementation for timeline operations, metadata/source-provider actions, Arr command waits, and update downloads; establish documented native cancellation boundaries.
+- [ ] Complete live packaged performance comparison, constrained playback layout review, live TMDB credential test, and cancellation acceptance for every user-started long action.
+- [x] Add cancellation and a reachable control for timeline resolution/import/refresh, with cancellation checks between library-matching batches and an explicit snapshot commit boundary.
+- [ ] Implement/report cancellation for Plex playlist sync, metadata and source-provider actions, Arr command waits, and update downloads after documenting each owner's commit or external-acceptance boundary.
+- [ ] Complete live packaged performance, playback layout, TMDB credential, and full action-cancellation acceptance.
+- [x] Add cancellation for auto-update downloads through electron-updater's native CancellationToken; disclose the uncancellable install boundary.
+- [x] Add cancellation for Sonarr command polling and disclose that an accepted external search command continues after Totality stops waiting.
+- [ ] Continue cancellation coverage for Plex playlist sync and metadata/source-provider request flows; complete live acceptance.
+- [x] Propagate Sonarr command-wait cancellation through HTTP requests and abortable polling delays; explain the accepted-command boundary in the UI.
+- [ ] Implement cancellation for Plex staged playlist publication and remaining metadata/source-provider flows; verify all other long actions against the visible cancellation contract.
+- [x] Centralize direct background-operation state, cancellation, retained outcomes, and on-demand results in Activity; keep queue controls scoped to queued tasks and preserve AI/timeline results after view closure.
+- [ ] Complete provider/Plex cancellation audit and live packaged performance, playback-layout, and TMDB credential acceptance.
+
+2026-10-03: Automatic TMDB startup/saved-key validation implemented; live credential/UI acceptance remains pending.
+
+## Automatic service health and background operations — 2026-10-03 [In Progress]
+- [x] Add automatic, revisioned TMDB and Gemini saved-credential checks; preserve manual draft testing.
+- [x] Remove renderer-owned periodic source health checks; check only on configuration/enablement changes and discard stale responses.
+- [x] Verify source access through provider-owned read paths, including Plex/Jellyfin/Emby library access and non-recursive local directory checks.
+- [x] Keep GPU selection explicit; coalesce updater checks, expose download cancellation, and remove repeated update notifications.
+- [x] Record the full implementation plan and action-by-action cancellation audit under `specs/automatic-service-health/`.
+- [x] Move OMDb, TVDB, MusicBrainz, Sonarr, and Radarr saved status checks into provider-owned automatic health state and remove renderer-side provider fetches.
+- [ ] Close the cancellation audit for metadata/source authentication and discovery, preflight/compatibility, Plex playlist publication, and all remaining user-started long actions.
+- [ ] Complete live packaged performance comparison, saved TMDB validation, constrained/200% playback review, and Activity/cancellation acceptance. Keep this phase open until those checks pass.
+- Verification: `npm test` passed (209 files; 1,609 passed, 7 skipped); packaged `npm run build` passed and created `release/Totality-Setup-0.5.1.exe`.
+- [x] Add automatic saved-configuration health checks for OMDb, TVDB, MusicBrainz, Sonarr, and Radarr; retain status and retry/cancel state in main-process service ownership.
+- [ ] Complete cancellation coverage for metadata/source actions, preflight/compatibility, and Plex playlist publication; complete packaged live acceptance.
+- [x] Cancel foreground Match Fix metadata searches through the existing operation registry, propagate AbortSignal through provider fusion/search requests, discard post-cancel results, and return an explicit cancelled outcome.
+- [ ] Complete cancellation for source authentication/discovery, preflight/compatibility, Plex playlist publication, and remaining action paths; verify packaged live behavior.
+
+2026-10-04: Plex playlist sync now uses Activity cancellation through staging and verification; publication is the commit boundary. Focused tests, full suite, and packaged build passed. Source authentication/discovery, preflight/compatibility, remaining action audit, and live acceptance remain open.
+
+2026-10-04: Jellyfin/Emby UDP discovery now stops when the setup dialog closes, with no additional UI controls. Focused checks and TypeScript passed; the full suite had an intermittent AutoUpdateService native worker crash (3221225477), and the packaged build passed. Remaining source auth/test flows and live acceptance are open.
+
+2026-10-04: Cancellation surface refined: short automatic discovery and timeline loads stay quiet; saved health checks show status and Retry without Cancel. Global search now hides old-query results and exposes retryable failures. Paginated source/filter resets serialize against active reads. New playback profiles require explicit capability choices and the shared IPC schema rejects invalid required values. Final `npm test` passed (210 files; 1,613 passed, 7 skipped); packaged build passed. Live library performance, TMDB key, constrained playback layout, and remaining source/preflight cancellation acceptance remain open.
+
+2026-10-04 verification update: paginated sections discard results after deactivation. Final full suite passed (210 files; 1,614 passed, 7 skipped); final packaged Windows build succeeded. Live UI and real-library gates remain unverified.
+
+- [x] Combine complete-analysis packet accounting and bitrate-window metrics into one exact FFprobe pass; retain exact audio volume analysis.
+- [x] Preserve post-scan analysis queue failures as explicit partial scan outcomes and keep cancellation out of error notifications.
+- [x] Let Activity clear all completed queue history while retaining active work; show verified encoders only in Settings.
+- [ ] Validate responsiveness and cancellation against the actual library in the packaged app; inspect legacy timeline cache behavior before any cleanup.
+- Verification 2026-10-05: focused regression checks passed (6 files, 41 tests); full `npm test` passed (210 files, 1,616 passed, 7 skipped); packaged `npm run build` passed.
+
+## Activity and optimization review — 2026-10-05
+- [x] Show recent analysis summaries inside the chronological Notifications feed; remove the separate Recent analysis panel.
+- [x] Keep task-history clearing distinct from clearing persisted notifications.
+- [x] Make show optimization preflight cancellable through its existing operation registry; propagate cancellation through measured FFmpeg samples and sample analysis, stop later batches, and prevent cancelled reviews from being persisted.
+- [x] Report a no-change source that fails the selected playback profile as incompatible, not already optimized.
+- Verification: `npm test` passed (210 files; 1,616 passed, 7 skipped); `npm run build` passed. Real-library UI and performance acceptance remain unverified.

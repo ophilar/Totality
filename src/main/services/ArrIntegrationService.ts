@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises'
+
 export type ArrKind = 'sonarr' | 'radarr'
 
 export interface ArrConfig { baseUrl: string; apiKey: string; timeoutMs?: number }
@@ -13,13 +15,14 @@ export class ArrIntegrationService {
     this.timeoutMs = config.timeoutMs || 10000
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(path: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
     try {
+      const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
       const response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
-        signal: controller.signal,
+        signal: requestSignal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Api-Key': this.config.apiKey, ...(init?.headers || {}) }
       })
       if (!response.ok) throw new Error(`*arr request failed (${response.status})`)
@@ -27,9 +30,9 @@ export class ArrIntegrationService {
     } finally { clearTimeout(timeout) }
   }
 
-  async testConnection(): Promise<{ success: boolean; version?: string; error?: string }> {
+  async testConnection(signal?: AbortSignal): Promise<{ success: boolean; version?: string; error?: string }> {
     try {
-      const status = await this.request<{ version?: string }>('/api/v3/system/status')
+      const status = await this.request<{ version?: string }>('/api/v3/system/status', undefined, signal)
       return { success: true, version: status.version }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Connection failed' }
@@ -80,19 +83,20 @@ export class ArrIntegrationService {
     return { eligible: true, state }
   }
 
-  async getCommand(commandId: number): Promise<Record<string, unknown>> {
-    return this.request(`/api/v3/command/${commandId}`)
+  async getCommand(commandId: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.request(`/api/v3/command/${commandId}`, undefined, signal)
   }
 
-  async waitForCommand(commandId: number, options: { pollIntervalMs?: number; timeoutMs?: number } = {}): Promise<Record<string, unknown>> {
+  async waitForCommand(commandId: number, options: { pollIntervalMs?: number; timeoutMs?: number } = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
     const pollIntervalMs = options.pollIntervalMs ?? 2000
     const timeoutMs = options.timeoutMs ?? 120000
     const deadline = Date.now() + timeoutMs
     const terminal = new Set(['completed', 'failed', 'aborted'])
     while (Date.now() <= deadline) {
-      const command = await this.getCommand(commandId)
+      signal?.throwIfAborted()
+      const command = await this.getCommand(commandId, signal)
       if (terminal.has(String(command.status).toLowerCase())) return command
-      await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
+      await delay(pollIntervalMs, undefined, { signal })
     }
     throw new Error('*arr command polling timed out')
   }

@@ -93,7 +93,7 @@ export class TraktRecipeProvider implements ITimelineRecipeProvider {
         'trakt-api-version': '2',
         'trakt-api-key': this.traktClientId,
       },
-      signal: AbortSignal.timeout(10000),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     })
 
     if (!response.ok) {

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Bot, X, Send, Trash2, AlertCircle, Settings } from 'lucide-react'
+import { Bot, X, Send, Square, Trash2, AlertCircle, Settings } from 'lucide-react'
 import { useChat, type ViewContext } from '@/hooks/useChat'
 import { ChatMessage } from '@/components/chat/ChatMessage'
 
@@ -16,11 +16,15 @@ export function ChatPanel({ isOpen: propIsOpen, onClose: propOnClose, onOpenSett
   const { showChatPanel, setShowChatPanel } = usePanel()
   const isOpen = propIsOpen !== undefined ? propIsOpen : showChatPanel
   const onClose = propOnClose !== undefined ? propOnClose : () => setShowChatPanel(false)
-  const { messages, isLoading, activeTools, rateLimit, error, sendMessage, clearHistory } = useChat(viewContext)
+  const { messages, isLoading, isCancelling, activeTools, rateLimit, error, sendMessage, cancelMessage, clearHistory } = useChat(viewContext)
   const [input, setInput] = useState('')
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isOpen && isLoading) void cancelMessage()
+  }, [isOpen, isLoading, cancelMessage])
 
   // Check if AI is configured
   useEffect(() => {
@@ -205,6 +209,7 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
 
           {/* Input area */}
           <div className="px-3 pb-3 pt-2 border-t border-border/30">
+            {isCancelling && <p className="mb-2 text-xs text-muted-foreground" role="status">Cancelling…</p>}
             <div className="flex gap-2">
               <textarea
                 ref={inputRef}
@@ -223,12 +228,12 @@ className={`app-side-panel fixed top-[88px] bottom-4 right-4 w-80 bg-sidebar-gra
                 }}
               />
               <button
-                onClick={handleSubmit}
-                disabled={!input.trim() || isLoading || rateLimit.limited}
+                onClick={isLoading ? cancelMessage : handleSubmit}
+                disabled={(!input.trim() && !isLoading) || rateLimit.limited}
                 className="shrink-0 p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                title="Send message"
+                title={isCancelling ? 'Cancelling response' : isLoading ? 'Cancel response' : 'Send message'}
               >
-                <Send className="w-4 h-4" />
+                {isLoading ? <Square className="w-4 h-4" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
           </div>

@@ -24,6 +24,8 @@ import type {
   ProgressCallback,
   MediaLibrary,
 } from '@main/providers/base/MediaProvider'
+import { access, opendir } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
 
 export interface SourceManagerDependencies {
   db?: BetterSQLiteService
@@ -88,31 +90,16 @@ export class SourceManager {
   private async loadSources(): Promise<void> {
     const db = this.db
     const sources = await db.sources.getSources()
-    const unavailableSources: Array<{ name: string; type: string }> = []
-
     await Promise.allSettled(
-      sources.map(source => this.loadSingleSource(source, unavailableSources))
+      sources.map(source => this.loadSingleSource(source))
     )
 
     this.logging.info('[SourceManager]', `Initialized with ${this.providers.size} providers`)
 
-    if (unavailableSources.length > 0) {
-      const names = unavailableSources.map(s => s.name).join(', ')
-      try {
-        db.notifications.addNotification({
-          type: 'error',
-          title: 'Media source unavailable',
-          message: unavailableSources.length === 1
-            ? `"${unavailableSources[0].name}" could not be reached at startup.`
-            : `${unavailableSources.length} sources could not be reached at startup: ${names}.`,
-        })
-      } catch { /* ignore */ }
-    }
   }
 
   private async loadSingleSource(
     source: MediaSource,
-    unavailableSources: Array<{ name: string; type: string }>
   ): Promise<void> {
     try {
       const connectionConfig = JSON.parse(source.connection_config)
@@ -127,16 +114,15 @@ export class SourceManager {
       const provider = createProvider(source.source_type as ProviderType, config)
       this.providers.set(source.source_id, provider)
 
-      if (source.source_type === ProviderType.Plex && connectionConfig.serverId && connectionConfig.token) {
+      if (source.is_enabled && source.source_type === ProviderType.Plex && connectionConfig.serverId && connectionConfig.token) {
         const plexProvider = provider as PlexProvider
         try {
-          const success = await Promise.race([
+          await Promise.race([
             plexProvider.selectServer(connectionConfig.serverId as string),
             new Promise<boolean>((_, r) => setTimeout(() => r(new Error('Timeout')), 5000))
           ])
-          if (!success) unavailableSources.push({ name: source.display_name, type: source.source_type })
         } catch {
-          unavailableSources.push({ name: source.display_name, type: source.source_type })
+          this.logging.warn('[SourceManager]', `Saved Plex source ${source.source_id} is unavailable at startup`)
         }
       }
     } catch (error) {
@@ -154,17 +140,19 @@ export class SourceManager {
     return await scanner.scanLibrary(sourceId, libraryId, onProgress)
   }
 
-  async scanSource(sourceId: string, onProgress?: ProgressCallback): Promise<void> {
+  async scanSource(sourceId: string, onProgress?: ProgressCallback): Promise<ScanResult[]> {
     await this.initialize()
     const provider = this.providers.get(sourceId)
     if (!provider) throw new Error(`Source not found: ${sourceId}`)
     const libraries = await provider.getLibraries()
     const enabledLibraries = await this.db.sources.getEnabledLibraries(sourceId)
+    const results: ScanResult[] = []
     for (const library of libraries) {
       if (library.type === LibraryType.Music) continue
       if (!enabledLibraries.has(library.id)) continue
-      await this.scanLibrary(sourceId, library.id, onProgress)
+      results.push(await this.scanLibrary(sourceId, library.id, onProgress))
     }
+    return results
   }
 
   async scanAllSources(onProgress?: AggregateProgressCallback): Promise<Map<string, ScanResult>> {
@@ -266,16 +254,41 @@ export class SourceManager {
     return p?.providerType === ProviderType.Plex ? p as PlexProvider : undefined
   }
 
-  async testConnection(sourceId: string): Promise<ConnectionTestResult> {
+  async testConnection(sourceId: string, healthOnly = false): Promise<ConnectionTestResult> {
     await this.initialize()
     const provider = this.providers.get(sourceId)
     if (!provider) return { success: false, error: 'Not found' }
     if (provider.providerType === ProviderType.Plex && !(provider as PlexProvider).hasSelectedServer()) return { success: false, error: 'No server selected' }
+
+    const source = await this.db.sources.getSourceById(sourceId)
+    if (healthOnly && source?.source_type === ProviderType.Local) {
+      const config = JSON.parse(source.connection_config) as { folderPath?: string; customLibraries?: Array<{ path: string; enabled: boolean }> }
+      const paths = [config.folderPath, ...(config.customLibraries ?? []).filter(library => library.enabled).map(library => library.path)].filter((value): value is string => Boolean(value))
+      if (!paths.length) return { success: false, error: 'No local folder is configured' }
+      await Promise.all(paths.map(async folderPath => {
+        await access(folderPath, fsConstants.R_OK)
+        const directory = await opendir(folderPath)
+        await directory.close()
+      }))
+      return { success: true }
+    }
+    if (healthOnly && (provider.providerType === ProviderType.Jellyfin || provider.providerType === ProviderType.Emby) && !(await provider.isAuthenticated())) {
+      return { success: false, error: 'Authentication required' }
+    }
+
+    if (healthOnly && provider.providerType === ProviderType.Plex) {
+      const libraries = await provider.getLibraries()
+      return { success: true, serverName: `${source?.display_name ?? 'Plex'} · ${libraries.length} libraries` }
+    }
+
+    if (healthOnly && (provider.providerType === ProviderType.Jellyfin || provider.providerType === ProviderType.Emby)) {
+      const libraries = await provider.getLibraries()
+      return { success: true, serverName: `${source?.display_name ?? provider.providerType} · ${libraries.length} libraries` }
+    }
     
     // Auth check for JF/Emby
     if (provider.providerType === ProviderType.Jellyfin || provider.providerType === ProviderType.Emby) {
-      const source = await this.db.sources.getSourceById(sourceId)
-      if (source) {
+      if (source && !healthOnly) {
         const config = JSON.parse(source.connection_config)
         if (config.username && config.password && !config.accessToken) {
           const res = await provider.authenticate({ serverUrl: config.serverUrl, username: config.username, password: config.password })
@@ -289,7 +302,7 @@ export class SourceManager {
     }
 
     const res = await this.providers.get(sourceId)!.testConnection()
-    if (res.success) await this.db.sources.updateSourceConnectionTime(sourceId)
+    if (res.success && !healthOnly) await this.db.sources.updateSourceConnectionTime(sourceId)
     return res
   }
 
@@ -318,12 +331,10 @@ export class SourceManager {
     const tq = this.getTaskQueue()
     for (const source of sources) {
       if (!source) continue
-      const libs = await this.getLibraries(source.source_id)
-      const enabledLibraries = await this.db.sources.getEnabledLibraries(source.source_id)
-      for (const lib of (libraryId ? libs.filter(l => l.id === libraryId) : libs)) {
-        if (!enabledLibraries.has(lib.id)) continue
-
-        await tq.submitAnalysis({ kind: 'library', sourceId: source.source_id, libraryId: lib.id })
+      const libraries = await this.db.sources.getSourceLibraries(source.source_id)
+      for (const library of libraries) {
+        if (library.isEnabled !== 1 || (libraryId && library.libraryId !== libraryId)) continue
+        await tq.submitAnalysis({ kind: 'library', sourceId: source.source_id, libraryId: library.libraryId })
       }
     }
     try {

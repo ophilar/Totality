@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
+import { getDatabase } from '@main/database/BetterSQLiteService'
 import type { AddressInfo } from 'node:net'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PlexPlaylistSyncService } from '@main/services/timelines/PlexPlaylistSyncService'
@@ -18,11 +19,17 @@ describe('PlexPlaylistSyncService', () => {
   let serverUri: string
   let responses: Array<{ method: string; path: string; body: unknown }>
   let requests: PlexResponse[]
+  let abortAfterPath: string | undefined
+  let abortAfterMethod: string | undefined
+  let abortController: AbortController | undefined
 
   beforeEach(async () => {
     await setupTestDb()
     responses = []
     requests = []
+    abortAfterPath = undefined
+    abortAfterMethod = undefined
+    abortController = undefined
     server = createServer((request, response) => {
       void captureRequest(request, response)
     })
@@ -50,7 +57,12 @@ describe('PlexPlaylistSyncService', () => {
       response.writeHead(500).end(JSON.stringify({ error: `Unexpected request ${request.method} ${url.pathname}` }))
       return
     }
+    if (request.method === 'GET' && url.pathname === '/playlists' && abortController?.signal.aborted && typeof next.body === 'object' && next.body !== null) {
+      const container = (next.body as { MediaContainer?: { Metadata?: Array<{ title: string }> } }).MediaContainer
+      if (container?.Metadata?.length) container.Metadata[0].title = requests.find(entry => entry.method === 'POST' && entry.path === '/playlists')?.body.title as string
+    }
     response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(next.body))
+    if (url.pathname === abortAfterPath && request.method === abortAfterMethod) abortController?.abort(new DOMException('Cancelled in test', 'AbortError'))
   }
 
   function respond(method: string, path: string, body: unknown): void {
@@ -78,6 +90,10 @@ describe('PlexPlaylistSyncService', () => {
     }
   }
 
+  function syncControl() {
+    return { signal: new AbortController().signal, onCommitBeginning: () => {}, onPhase: (_phase: string) => {} }
+  }
+
   const playlistResponse = (ratingKey: string, title: string) => ({
     MediaContainer: { Metadata: [{ ratingKey, title, playlistType: 'video' }] },
   })
@@ -87,12 +103,12 @@ describe('PlexPlaylistSyncService', () => {
     respond('POST', '/playlists', playlistResponse('staged', 'Staging'))
     respond('PUT', '/playlists/staged/items', {})
     respond('GET', '/playlists/staged/items', { MediaContainer: { Metadata: [{ ratingKey: '2' }, { ratingKey: '1' }] } })
-    await expect(service.syncPlaylist({ serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', playlistRatingKey: 'existing', sourceId: 'src-1', items: [matchedItem(1, '1'), matchedItem(2, '2')] })).rejects.toThrow('sequence does not match')
+    await expect(service.syncPlaylist({ ...syncControl(), serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', playlistRatingKey: 'existing', sourceId: 'src-1', items: [matchedItem(1, '1'), matchedItem(2, '2')] })).rejects.toThrow('sequence does not match')
     expect(requests.some(request => request.method === 'DELETE' || request.path === '/playlists/staged' && request.method === 'PUT')).toBe(false)
   })
 
   it('rejects cross-server identities before sending playlist requests', async () => {
-    await expect(service.syncPlaylist({ serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', sourceId: 'another-server', items: [matchedItem(1, '1')] })).rejects.toThrow('selected Plex source')
+    await expect(service.syncPlaylist({ ...syncControl(), serverUri, accessToken: 'plex-token', machineIdentifier: 'machine', playlistTitle: 'Reviewed order', sourceId: 'another-server', items: [matchedItem(1, '1')] })).rejects.toThrow('selected Plex source')
     expect(requests).toHaveLength(0)
   })
 
@@ -106,6 +122,7 @@ describe('PlexPlaylistSyncService', () => {
     }]
 
     await expect(service.syncPlaylist({
+      ...syncControl(),
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
@@ -131,6 +148,7 @@ describe('PlexPlaylistSyncService', () => {
     }, matchedItem(3, '1003')]
 
     const result = await service.syncPlaylist({
+      ...syncControl(),
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
@@ -173,6 +191,7 @@ describe('PlexPlaylistSyncService', () => {
     respond('DELETE', '/playlists/old-playlist-123', {})
 
     const result = await service.syncPlaylist({
+      ...syncControl(),
       serverUri,
       accessToken: 'plex-token',
       machineIdentifier: 'mach-123',
@@ -192,6 +211,32 @@ describe('PlexPlaylistSyncService', () => {
     ])
     expect(requests[0].headers['x-plex-token']).toBe('plex-token')
     expect(requests[1].headers['x-plex-token']).toBe('plex-token')
+  })
+
+  it('removes a staged playlist and publication record when cancellation arrives before publication', async () => {
+    abortController = new AbortController()
+    abortAfterPath = '/playlists'
+    abortAfterMethod = 'POST'
+    respond('GET', '/playlists', { MediaContainer: { Metadata: [] } })
+    respond('POST', '/playlists', playlistResponse('staged', 'Staging'))
+    respond('GET', '/playlists', playlistResponse('staged', 'Reviewed order — Totality staging'))
+    respond('DELETE', '/playlists/staged', {})
+
+    await expect(service.syncPlaylist({
+      ...syncControl(),
+      signal: abortController.signal,
+      serverUri,
+      accessToken: 'plex-token',
+      machineIdentifier: 'machine',
+      playlistTitle: 'Reviewed order',
+      sourceId: 'src-1',
+      items: [matchedItem(1, '1')],
+    })).rejects.toThrow()
+
+    expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      'GET /playlists', 'POST /playlists', 'GET /playlists', 'DELETE /playlists/staged',
+    ])
+    expect(await getDatabase().config.getSettingsByPrefix('timeline_publication:machine:')).toEqual({})
   })
 
   it('retrieves existing playlists from Plex', async () => {

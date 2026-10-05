@@ -234,6 +234,7 @@ export interface ScanResult {
   errors: string[]
   durationMs: number
   cancelled?: boolean
+  postScanAnalysis?: { status: 'queued' } | { status: 'failed'; error: string }
 }
 
 // Source configuration stored in database

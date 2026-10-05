@@ -3,7 +3,8 @@ import { shell } from 'electron'
 import { getTranscodingService } from '@main/services/TranscodingService'
 import { GetTranscodeParamsByMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, NonEmptyStringSchema, SourceIdSchema, LibraryIdSchema } from '@main/validation/schemas'
 import { getLoggingService } from '@main/services/LoggingService'
-import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
@@ -51,8 +52,22 @@ export function registerTranscodingHandlers(): void {
     return getTranscodingService().cancelTranscode(mediaItemId)
   })
 
-  createValidatedIpcHandler('transcoding:preflightShow', PreflightShowTranscodeSchema, async (request) => {
-    return await getTranscodingService().preflightShowTranscode(request)
+  createValidatedIpcHandlerWithEvent('transcoding:preflightShow', PreflightShowTranscodeSchema, async (event, request) => {
+    const { requestId, ...preflightRequest } = request
+    const operation = operationRequestRegistry.register(event.sender, requestId)
+    try {
+      const result = await getTranscodingService().preflightShowTranscode(preflightRequest, {
+        signal: operation.signal,
+        beginCommit: operation.beginCommit,
+      })
+      operation.complete('completed', 'Optimization review is ready')
+      return result
+    } catch (error) {
+      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', error instanceof Error ? error.message : String(error))
+      throw error
+    } finally {
+      operation.dispose()
+    }
   })
   createValidatedIpcHandler('transcoding:preflightRemux', z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
 
