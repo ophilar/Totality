@@ -1,5 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { QualityAnalyzer, OptimizationAdvice } from '@main/services/QualityAnalyzer'
+import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { setupTestDb, cleanupTestDb } from '@tests/TestUtils'
 import type { MediaItem } from '@main/types/database'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
@@ -15,6 +19,105 @@ describe('QualityAnalyzer TRaSH Advisory', () => {
 
   afterEach(() => {
     cleanupTestDb()
+  })
+
+  it('reuses persisted file analysis while the source file fingerprint is unchanged', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'totality-analysis-cache-'))
+    try {
+      const filePath = path.join(directory, 'movie.mkv')
+      await writeFile(filePath, 'unchanged media bytes')
+      const file = await stat(filePath)
+      const analysis: FileAnalysisResult = {
+        success: true,
+        filePath,
+        duration: 120_000,
+        video: { index: 0, codec: 'h264', width: 1280, height: 720, bitrate: 2500 },
+        audioTracks: [{ index: 1, codec: 'aac', channels: 2, bitrate: 192, language: 'en', isDefault: true, hasObjectAudio: false }],
+        subtitleTracks: [],
+        streamBytes: { 1: 1_000 },
+      }
+      const item: MediaItem = {
+        id: 9001,
+        source_id: 'cache-test-source',
+        library_id: 'cache-test-library',
+        plex_id: 'cache-test-item',
+        title: 'Cached movie',
+        type: 'movie',
+        file_path: filePath,
+        file_size: file.size,
+        file_mtime: file.mtimeMs,
+        deep_analysis: JSON.stringify(analysis),
+        deep_analysis_at: new Date().toISOString(),
+        duration: 120_000,
+        resolution: '720p',
+        video_codec: 'h264',
+        video_bitrate: 2500,
+        audio_codec: 'aac',
+        audio_channels: 2,
+        audio_bitrate: 192,
+      }
+      await _db.media.upsertItem(item)
+      const cachedItem = await _db.media.getItemByPath(filePath)
+      expect(cachedItem).toMatchObject({ file_size: file.size, file_mtime: file.mtimeMs, deep_analysis_at: expect.any(String) })
+      const analyzeCompleteFile = vi.spyOn(getMediaFileAnalyzer(), 'analyzeCompleteFile')
+
+      const result = await analyzer.analyzeMediaItemFileEvidence(item)
+
+      expect(result.analysis).toMatchObject({ success: true, filePath })
+      expect(analyzeCompleteFile).not.toHaveBeenCalled()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('reanalyzes persisted results when the source file changes', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'totality-analysis-cache-'))
+    try {
+      const filePath = path.join(directory, 'movie.mkv')
+      await writeFile(filePath, 'old bytes')
+      const oldFile = await stat(filePath)
+      const oldAnalysis: FileAnalysisResult = {
+        success: true,
+        filePath,
+        duration: 120_000,
+        video: { index: 0, codec: 'h264', width: 1280, height: 720, bitrate: 2500 },
+        audioTracks: [],
+        subtitleTracks: [],
+        streamBytes: {},
+      }
+      const item: MediaItem = {
+        id: 9002,
+        source_id: 'cache-test-source',
+        library_id: 'cache-test-library',
+        plex_id: 'cache-test-item-changed',
+        title: 'Changed movie',
+        type: 'movie',
+        file_path: filePath,
+        file_size: oldFile.size,
+        file_mtime: oldFile.mtimeMs,
+        deep_analysis: JSON.stringify(oldAnalysis),
+        deep_analysis_at: new Date().toISOString(),
+        duration: 120_000,
+        resolution: '720p',
+        video_codec: 'h264',
+        video_bitrate: 2500,
+        audio_codec: 'aac',
+        audio_channels: 2,
+        audio_bitrate: 192,
+      }
+      await _db.media.upsertItem(item)
+      await writeFile(filePath, 'new bytes with a different size')
+      const changedAnalysis: FileAnalysisResult = { ...oldAnalysis, video: { ...oldAnalysis.video!, bitrate: 3000 } }
+      const analyzeCompleteFile = vi.spyOn(getMediaFileAnalyzer(), 'analyzeCompleteFile').mockResolvedValue(changedAnalysis)
+
+      const result = await analyzer.analyzeMediaItemFileEvidence(item)
+
+      expect(analyzeCompleteFile).toHaveBeenCalledOnce()
+      expect(result.analysis.video?.bitrate).toBe(3000)
+      expect(JSON.parse((await _db.media.getItemByPath(filePath))!.deep_analysis!).fileAnalysisFingerprint).toBeDefined()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('scores canonical H.264 labels through the shared codec normalizer', async () => {

@@ -9,6 +9,8 @@ import { isProtectedAudioTrack } from '@main/services/utils/audioTrackUtils'
 import { buildOptimizationSavingsBreakdown } from '@main/services/OptimizationSavingsService'
 import { getMediaFileAnalyzer } from '@main/services/MediaFileAnalyzer'
 import { normalizeVideoCodec } from '@main/services/MediaNormalizer'
+import { stat } from 'node:fs/promises'
+import { PathUtils } from '@main/services/utils/PathUtils'
 
 export interface OptimizationAdvice {
   action: 'video_transcode' | 'stream_pruning' | 'already_optimized'
@@ -587,11 +589,63 @@ export class QualityAnalyzer {
     }
   }
 
-  async analyzeMediaItemFileEvidence(mediaItem: MediaItem, signal?: AbortSignal): Promise<{ analysis: FileAnalysisResult; qualityScore: QualityScore }> {
+  async analyzeMediaItemFileEvidence(
+    mediaItem: MediaItem,
+    signal?: AbortSignal,
+    options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {},
+  ): Promise<{ analysis: FileAnalysisResult; qualityScore: QualityScore }> {
     if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
-    const analysis = await getMediaFileAnalyzer().analyzeCompleteFile(mediaItem.file_path, { signal })
+    const db = getDatabase()
+    const filePath = mediaItem.file_path
+    const source = await stat(filePath)
+    const persistedItem = await db.media.getItemByPath(filePath)
+    const cachedItem = persistedItem ?? mediaItem
+    const requestedAnalysisOptions = {
+      scanBitrate: options.scanBitrate ?? true,
+      detectVolume: options.detectVolume ?? true,
+    }
+    type PersistedFileAnalysis = FileAnalysisResult & {
+      fileAnalysisFingerprint?: { size: number; mtimeMs: number }
+      analysisOptions?: { scanBitrate: boolean; detectVolume: boolean }
+    }
+    const cachedAnalysis = cachedItem.deep_analysis
+      ? JSON.parse(cachedItem.deep_analysis) as PersistedFileAnalysis
+      : null
+    const fingerprintMatches = cachedAnalysis?.fileAnalysisFingerprint
+      ? cachedAnalysis.fileAnalysisFingerprint.size === source.size && cachedAnalysis.fileAnalysisFingerprint.mtimeMs === source.mtimeMs
+      : cachedItem.deep_analysis_at != null &&
+        cachedItem.file_size === source.size &&
+        cachedItem.file_mtime != null &&
+        Math.trunc(cachedItem.file_mtime) === Math.trunc(source.mtimeMs)
+    const analysisIsReusable = Boolean(
+      cachedAnalysis?.success &&
+      cachedAnalysis.filePath &&
+      PathUtils.arePathsEqual(cachedAnalysis.filePath, filePath) &&
+      fingerprintMatches &&
+      (cachedAnalysis.analysisOptions
+        ? cachedAnalysis.analysisOptions.scanBitrate === requestedAnalysisOptions.scanBitrate && cachedAnalysis.analysisOptions.detectVolume === requestedAnalysisOptions.detectVolume
+        : requestedAnalysisOptions.scanBitrate && requestedAnalysisOptions.detectVolume),
+    )
+
+    let analysis: PersistedFileAnalysis
+    if (analysisIsReusable) {
+      analysis = cachedAnalysis!
+    } else {
+      analysis = await getMediaFileAnalyzer().analyzeCompleteFile(filePath, { ...options, signal })
+      if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
+      const afterAnalysis = await stat(filePath)
+      if (source.size !== afterAnalysis.size || source.mtimeMs !== afterAnalysis.mtimeMs) {
+        throw new Error(`Media file changed during analysis: ${filePath}`)
+      }
+      analysis = {
+        ...analysis,
+        fileAnalysisFingerprint: { size: source.size, mtimeMs: source.mtimeMs },
+        analysisOptions: requestedAnalysisOptions,
+      }
+      await db.media.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
+    }
+
     if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
-    await getDatabase().media.updateDeepAnalysisByPath(mediaItem.file_path, analysis, new Date().toISOString())
     const analyzedItem: MediaItem = {
       ...mediaItem,
       video_codec: analysis.video?.codec ?? mediaItem.video_codec,
