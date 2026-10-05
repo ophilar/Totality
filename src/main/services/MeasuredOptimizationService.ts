@@ -6,6 +6,7 @@ import { PathUtils } from './utils/PathUtils'
 import { APP_CONFIG } from '@main/config'
 import type { MeasuredCandidate } from './MeasuredOptimizationPolicy'
 import { getErrorMessage } from './utils/errorUtils'
+import { requireFfmpegFilters } from './transcoding/FfmpegFilterCapabilities'
 
 export interface MeasurementProcessRunner {
   run(binary: string, args: string[], signal?: AbortSignal): Promise<string>
@@ -38,7 +39,21 @@ export interface MeasuredSampleRequest {
 export interface MeasuredSampleResult { candidates: MeasuredCandidate[]; vmafAvailable: boolean; cambiAvailable: boolean }
 
 export class MeasuredOptimizationService {
+  private readonly filterListings = new Map<string, Promise<string>>()
+
   constructor(private readonly processRunner: MeasurementProcessRunner = new ChildProcessMeasurementRunner()) {}
+
+  private getFilterListing(binary: string): Promise<string> {
+    const cached = this.filterListings.get(binary)
+    if (cached) return cached
+
+    const listing = this.processRunner.run(binary, ['-hide_banner', '-filters']).catch(error => {
+      this.filterListings.delete(binary)
+      throw error
+    })
+    this.filterListings.set(binary, listing)
+    return listing
+  }
 
   async measure(request: MeasuredSampleRequest): Promise<MeasuredSampleResult> {
     const analyzer = getMediaFileAnalyzer()
@@ -46,6 +61,10 @@ export class MeasuredOptimizationService {
     const binary = analyzer.getFFmpegPath()!
     if (!request.candidates.length) throw new Error('At least one measured encoder candidate is required')
     const durationSeconds = request.durationMs / 1000
+    const filterListing = await this.getFilterListing(binary)
+    const requiredFilters = ['libvmaf', ...(request.referenceFilter?.includes('libplacebo') ? ['libplacebo'] : [])]
+    requireFfmpegFilters(filterListing, requiredFilters)
+    request.signal?.throwIfAborted()
     const length = Math.min(APP_CONFIG.transcoding.sampleDurationSeconds, durationSeconds / APP_CONFIG.transcoding.samplePositions.length)
     const starts = APP_CONFIG.transcoding.samplePositions.map(position => Math.max(0, Math.min(durationSeconds - length, durationSeconds * position - length / 2)))
     await fs.mkdir(request.outputDirectory, { recursive: true })

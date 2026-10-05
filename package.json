@@ -17,6 +17,8 @@
         "typecheck": "tsc --noEmit",
         "test": "tsc --noEmit && vitest run",
         "test:run": "npm run test",
+        "test:acceptance": "cross-env TOTALITY_TEST_SUITE=acceptance vitest run",
+        "test:media-integration": "cross-env TOTALITY_TEST_SUITE=media-integration vitest run",
         "test:watch": "vitest",
         "test:ui": "vitest --ui",
         "test:coverage": "tsc --noEmit && vitest run --coverage",

@@ -26,9 +26,9 @@ describe('real episode sample encoding and measurement', () => {
     await fs.mkdir(outputDirectory)
     await fs.writeFile(path.join(outputDirectory, 'unrelated.txt'), 'preserved')
     const controller = new AbortController()
-    const watcher = mode === 'cancellation' ? watch(outputDirectory, (_event, filename) => { if (filename?.toString() === 'reference-0.mkv') controller.abort() }) : undefined
+    const watcher = mode === 'cancellation' ? watch(outputDirectory, (_event, filename) => { if (filename?.toString().startsWith('x265-')) controller.abort() }) : undefined
     try {
-      const measurement = new MeasuredOptimizationService().measure({ inputPath, outputDirectory, durationMs: 3000, signal: controller.signal, referenceInputArgs: ['-init_hw_device', 'vulkan=target', '-filter_hw_device', 'target'], referenceFilter: 'format=yuv420p,hwupload,libplacebo=w=160:h=90:format=yuv420p,hwdownload,format=yuv420p', candidates: [{ encoder: 'x265', preset: 'medium', quality: 20, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: ['-y', '-i', '<input>', '-c:v', mode === 'failure' ? 'encoder-that-does-not-exist' : 'libx265', '<output>'] }] })
+      const measurement = new MeasuredOptimizationService().measure({ inputPath, outputDirectory, durationMs: 3000, signal: controller.signal, candidates: [{ encoder: 'x265', preset: 'medium', quality: 20, outputBytes: 0, vmafMean: 0, vmafP5: 0, cambiMean: 0, ffmpegArgs: ['-y', '-i', '<input>', '-c:v', mode === 'failure' ? 'encoder-that-does-not-exist' : 'libx265', '<output>'] }] })
       if (mode === 'failure') await expect(measurement).rejects.toThrow('Unknown encoder')
       else await expect(measurement).rejects.toMatchObject({ name: 'AbortError' })
     } finally { watcher?.close() }

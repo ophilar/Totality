@@ -14,9 +14,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-and-build:
-    name: Test and Build
-    runs-on: ubuntu-latest
+  unit:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
     steps:
       - uses: actions/checkout@v4
 
@@ -25,14 +29,53 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck and run portable unit tests
+        run: npm run test:run
+
+  media-integration:
+    name: Media acceptance and integration
+    needs: unit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the pinned FFmpeg integration toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl mesa-vulkan-drivers
+          archive="$RUNNER_TEMP/ffmpeg.tar.xz"
+          archive_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-05-13-07/ffmpeg-n9.0.2-22-g46d8f462ee-linux64-gpl-9.0.tar.xz"
+          curl --fail --location --silent --show-error "$archive_url" --output "$archive"
+          echo "31674015a97489288add11e2a944d18eb1dbff14f23b0d69a7d78a731ff61314  $archive" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/ffmpeg"
+          tar -xJf "$archive" --strip-components=1 -C "$RUNNER_TEMP/ffmpeg"
+          export PATH="$RUNNER_TEMP/ffmpeg/bin:$PATH"
+          echo "$RUNNER_TEMP/ffmpeg/bin" >> "$GITHUB_PATH"
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          ffmpeg -hide_banner -filters 2>&1 | grep -q 'libvmaf'
+          ffmpeg -hide_banner -filters 2>&1 | grep -q 'libplacebo'
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q 'libx265'
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q 'libsvtav1'
+          ffmpeg -hide_banner -init_hw_device vulkan=ci -f lavfi -i color=s=16x16:d=0.1 -frames:v 1 -f null -
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Run tests
-        run: npm run test:run
+      - name: Run FFmpeg acceptance tests
+        run: npm run test:acceptance
+
+      - name: Run measured media integration tests
+        run: npm run test:media-integration
 
       - name: Build
         run: npm run build -- --publish never

@@ -95,9 +95,7 @@ describe('TranscodingService', () => {
   })
 
   describe('getTranscodeParameters', () => {
-    it('delegates to TranscodeCommandFactory to get hardware builders', async () => {
-      const getBuilderSpy = vi.spyOn(TranscodeCommandFactory, 'getBuilder')
-
+    it('builds NVIDIA command arguments without requiring NVIDIA hardware in the unit test', async () => {
       const options: TranscodeOptions = {
         targetCodec: 'hevc',
         useGpu: true,
@@ -110,18 +108,13 @@ describe('TranscodingService', () => {
         ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
       }
 
-      const params = await service.getTranscodeParameters('input.mp4', options)
+      const analysis = await mockAnalyzerInstance.analyzeFile('input.mp4')
+      const builder = TranscodeCommandFactory.getBuilder('NVIDIA', options)
+      const args = builder.buildFFmpegArgs('input.mp4', 'output.mp4', options, analysis)
 
-      expect(getBuilderSpy).toHaveBeenCalledWith('NVIDIA', expect.objectContaining({
-        targetCodec: 'hevc',
-        useGpu: true,
-        crf: 20,
-        preset: 'p6'
-      }))
-
-      expect(params.ffmpegArgs).toContain('-hwaccel')
-      expect(params.ffmpegArgs).toContain('cuda')
-      expect(params.ffmpegArgs).toContain('hevc_nvenc')
+      expect(args).toContain('-hwaccel')
+      expect(args).toContain('cuda')
+      expect(args).toContain('hevc_nvenc')
     })
 
     it('delegates to SoftwareCommandBuilder when useGpu is false', async () => {
@@ -272,18 +265,18 @@ describe('TranscodingService', () => {
 
       const options: TranscodeOptions = {
         optimizationMode: 'smart',
-        useGpu: true,
-        gpuId: 'gpu-0',
+        useGpu: false,
         targetCodec: 'hevc',
-        encoder: 'nvenc_h265',
+        encoder: 'x265',
         crf: 20,
-        preset: 'p6'
-        ,qualityProfile: 'balanced', encoderPolicy: 'hardware'
+        preset: 'medium',
+        qualityProfile: 'balanced',
+        encoderPolicy: 'software'
       }
 
       const params = await service.getTranscodeParameters(mediaPath('Show.S01E01.1080p.Remux.mkv'), options)
-      expect(params.encoder).toBe('nvenc_h265')
-      expect(params.ffmpegArgs).toContain('hevc_nvenc')
+      expect(params.encoder).toBe('x265')
+      expect(params.ffmpegArgs).toContain('libx265')
     })
 
     it('forces video transcode when user specifies optimizationMode transcode on a WEB-DL', async () => {
@@ -309,19 +302,18 @@ describe('TranscodingService', () => {
 
       const options: TranscodeOptions = {
         optimizationMode: 'transcode',
-        useGpu: true,
-        gpuId: 'gpu-0',
+        useGpu: false,
         targetCodec: 'hevc',
-        encoder: 'nvenc_h265',
+        encoder: 'x265',
         crf: 20,
         preset: 'p6',
         qualityProfile: 'balanced',
-        encoderPolicy: 'hardware'
+        encoderPolicy: 'software'
       }
 
       const params = await service.getTranscodeParameters(mediaPath('Show.S01E01.1080p.WEB-DL.mkv'), options)
-      expect(params.encoder).toBe('nvenc_h265')
-      expect(params.ffmpegArgs).toContain('hevc_nvenc')
+      expect(params.encoder).toBe('x265')
+      expect(params.ffmpegArgs).toContain('libx265')
     })
   })
 
@@ -356,7 +348,7 @@ describe('TranscodingService', () => {
     })
 
     it('requires the scoped analysis job to persist file evidence before optimization preflight', async () => {
-      const moviePath = mediaPath('Movie.avi')
+      const moviePath = mediaPath('movie.avi')
       const mediaItemId = await upsertMediaItem({
         title: 'Movie', type: 'movie', file_path: moviePath, file_size: 4_000, duration: 120_000,
         source_id: 'src1', source_type: 'local', library_id: 'movies', video_codec: 'h264', video_bitrate: 6000,

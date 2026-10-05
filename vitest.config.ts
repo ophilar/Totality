@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import path from 'path'
 
+const mediaIntegrationSuite = process.env.TOTALITY_TEST_SUITE === 'media-integration'
+const acceptanceSuite = process.env.TOTALITY_TEST_SUITE === 'acceptance'
+
 export default defineConfig({
   server: {
     watch: {
@@ -32,8 +35,20 @@ export default defineConfig({
     },
     setupFiles: ['./tests/setup.ts'],
     globalSetup: ['./tests/globalSetup.ts'],
-    include: ['tests/**/*.test.{ts,tsx}'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
+    // Windows worker forks intermittently crash while loading renderer suites.
+    fileParallelism: process.platform !== 'win32',
+    include: mediaIntegrationSuite
+      ? ['tests/integration/**/*.test.{ts,tsx}']
+      : acceptanceSuite
+        ? ['tests/acceptance/**/*.test.{ts,tsx}']
+        : ['tests/**/*.test.{ts,tsx}'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/dist-electron/**',
+      ...(mediaIntegrationSuite ? [] : ['tests/integration/**']),
+      ...(acceptanceSuite ? [] : ['tests/acceptance/**']),
+    ],
     deps: {
       optimizer: {
         client: {
