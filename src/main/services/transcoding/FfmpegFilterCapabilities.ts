@@ -1,5 +1,5 @@
 export function parseFfmpegFilterNames(listing: string): string[] {
-  return Array.from(listing.matchAll(/^\s*[TSC.]{3}\s+([a-z0-9_]+)/gim), match => match[1])
+  return Array.from(listing.matchAll(/^[ \t]?([TSC. ]{3})[ \t]+([a-z0-9_]+)\b/gim), match => match[2])
 }
 
 export function requireFfmpegFilters(listing: string, requiredFilters: readonly string[]): void {
