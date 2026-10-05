@@ -355,14 +355,14 @@ export class TaskQueueService {
   /**
    * Clear the entire queue
    */
-  async clearQueue(batchId?: string): Promise<void> {
+  async clearQueue(batchId?: string, cancelCurrent = true): Promise<void> {
     const count = this.queue.length
     const removed = this.queue.filter(task => !batchId || task.batchId === batchId)
     this.queue = this.queue.filter(task => batchId && task.batchId !== batchId)
-    if (this.currentTask && (!batchId || this.currentTask.batchId === batchId)) await this.cancelCurrent()
+    if (cancelCurrent && this.currentTask && (!batchId || this.currentTask.batchId === batchId)) await this.cancelCurrent()
     for (const task of removed) if (task.type === TaskType.Transcode) await this.getTranscoding().discardTaskSamples(task)
     for (const task of removed) if (task.type === TaskType.Transcode && task.batchId !== this.currentTask?.batchId) await this.getTranscoding().discardBatchSamples(task)
-    if (!batchId) this.getTranscoding().abortAll()
+    if (!batchId && cancelCurrent) this.getTranscoding().abortAll()
     this.logging.info('[TaskQueue]', `Queue cleared (${count} tasks removed)`)
     await this.saveState()
     this.notifyListeners()
@@ -955,6 +955,7 @@ export class TaskQueueService {
     let databaseBackupPath: string | undefined
     const reconciliation = { merged: 0, removed: 0, preservedLocked: 0, ambiguous: 0 }
     const stages: Array<{ name: string; execute: () => Promise<void> }> = []
+    let activeStageIndex = 0
     const quality = (sourceId?: string, libraryId?: string, series?: { title: string; seriesIdentityKey: string }, mediaItemId?: number, collectionId?: number) => stages.push({ name: 'quality', execute: async () => {
       if (mediaItemId !== undefined) {
         const item = await this.db.media.getItemById(mediaItemId)
@@ -986,7 +987,15 @@ export class TaskQueueService {
         task.result = { ...task.result, itemsScanned: analyzed }
         return
       }
-      const count = await this.getQualityAnalyzer().analyzeAllMediaItems(undefined, () => this.cancelRequested, sourceId, libraryId, this.currentTaskAbortController?.signal, series)
+      const count = await this.getQualityAnalyzer().analyzeAllMediaItems((current, total) => {
+        onProgress({
+          current,
+          total,
+          percentage: Math.floor(((activeStageIndex + (total > 0 ? current / total : 1)) / stages.length) * 100),
+          phase: 'quality',
+          currentItem: `${current} of ${total} media items`,
+        })
+      }, () => this.cancelRequested, sourceId, libraryId, this.currentTaskAbortController?.signal, series)
       if (this.cancelRequested) throw new Error('Quality analysis was cancelled')
       task.result = { ...task.result, itemsScanned: count }
     } })
@@ -1092,6 +1101,7 @@ export class TaskQueueService {
         break
       }
       const stage = stages[index]
+      activeStageIndex = index
       onProgress({ current: index, total: stages.length, percentage: Math.floor(index * 100 / stages.length), phase: stage.name })
       try {
         await stage.execute()

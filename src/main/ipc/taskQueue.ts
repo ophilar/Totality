@@ -31,8 +31,8 @@ export function registerTaskQueueHandlers(): void {
     return { success: true }
   })
 
-  createValidatedIpcHandler('taskQueue:clearQueue', z.string().min(1).optional(), async (batchId) => {
-    await service.clearQueue(batchId)
+  createValidatedIpcHandler('taskQueue:clearQueue', z.object({ batchId: z.string().min(1).optional(), cancelCurrent: z.boolean().optional() }), async ({ batchId, cancelCurrent }) => {
+    await service.clearQueue(batchId, cancelCurrent)
     return { success: true }
   })
 

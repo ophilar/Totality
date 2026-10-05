@@ -20,31 +20,27 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   TowerControl,
-  Bell,
   X,
-  Pause,
-  Play,
   GripVertical,
-  XCircle,
-  Clock,
   Loader2,
-  Scaling,
-  Activity,
-  Zap,
-  Gauge
 } from 'lucide-react'
+
+interface AppNotification {
+  id: number
+  type: string
+  title: string
+  message: string
+  is_read: boolean
+  created_at: string
+}
 
 // ============================================================================
 // Component
 // ============================================================================
 
-// Default and min/max dimensions for resizable panel
+// Activity panel dimensions
 const DEFAULT_WIDTH = 450
 const DEFAULT_HEIGHT = 500
-const MIN_WIDTH = 350
-const MIN_HEIGHT = 300
-const MAX_WIDTH = 700
-const MAX_HEIGHT = 800
 
 // ============================================================================
 // Sortable Queue Item Component
@@ -100,16 +96,6 @@ function SortableQueueItem({
   )
 }
 
-interface AppNotification {
-  id: number
-  type: string
-  title: string
-  message: string
-  reference_id?: string
-  is_read: boolean
-  created_at: string
-}
-
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -124,14 +110,12 @@ export function ActivityPanel() {
   })
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationError, setNotificationError] = useState<string | null>(null)
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [showTelemetry, setShowTelemetry] = useState(true)
+  const [doneActionError, setDoneActionError] = useState<string | null>(null)
   const [operations, setOperations] = useState<ActivityOperation[]>([])
   const [cancellationRequests, setCancellationRequests] = useState<Set<string>>(new Set())
   const [operationError, setOperationError] = useState<string | null>(null)
   const [resultText, setResultText] = useState<string | null>(null)
-  const [clearingTaskHistory, setClearingTaskHistory] = useState(false)
-  const [taskHistoryError, setTaskHistoryError] = useState<string | null>(null)
+  const [taskActionError, setTaskActionError] = useState<string | null>(null)
   const operationRevision = useRef(-1)
   // Configure dnd-kit sensors
   const sensors = useSensors(
@@ -141,14 +125,8 @@ export function ActivityPanel() {
     })
   )
 
-  // Resize state
-  const [panelSize, setPanelSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
-  const [isResizing, setIsResizing] = useState(false)
-  const resizeStartRef = useRef({ x: 0, y: 0, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
-
   const dropdownRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Calculate total pending tasks (queue + current)
   const pendingCount = queueState.queue.length + (queueState.currentTask ? 1 : 0) + operations.filter(operation => ['running', 'cancelling', 'finishing'].includes(operation.state)).length
@@ -185,34 +163,6 @@ export function ActivityPanel() {
     }
   }, [])
 
-  // Load notifications
-  const loadNotifications = useCallback(async () => {
-    try {
-      const [items, counts] = await Promise.all([
-        window.electronAPI.notificationsGetAll({ limit: 50 }),
-        window.electronAPI.notificationsGetCount(),
-      ])
-      setNotifications(items)
-      setUnreadCount(counts.unread)
-      setNotificationError(null)
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : String(error))
-    }
-  }, [])
-
-  useEffect(() => {
-    // Wrap in Promise.resolve().then() to avoid "set-state-in-effect" cascading render warning
-    void Promise.resolve().then(() => {
-      loadNotifications()
-    })
-
-    // Refresh notifications periodically when panel is open
-    if (isOpen) {
-      const interval = setInterval(loadNotifications, 10000)
-      return () => clearInterval(interval)
-    }
-  }, [isOpen, loadNotifications])
-
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -246,97 +196,62 @@ export function ActivityPanel() {
     }
   }, [isOpen])
 
-  // Resize handlers - using requestAnimationFrame for smooth updates
-  useEffect(() => {
-    if (!isResizing) return
-
-    let animationFrameId: number
-
-    const handleMouseMove = (e: MouseEvent) => {
-      // Cancel any pending animation frame
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-      }
-
-      // Use requestAnimationFrame for smooth updates
-      animationFrameId = requestAnimationFrame(() => {
-        const deltaX = resizeStartRef.current.x - e.clientX // Inverted for bottom-left resize
-        const deltaY = e.clientY - resizeStartRef.current.y
-
-        const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeStartRef.current.width + deltaX))
-        const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, resizeStartRef.current.height + deltaY))
-
-        setPanelSize({ width: newWidth, height: newHeight })
-      })
-    }
-
-    const handleMouseUp = () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-      }
-      setIsResizing(false)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-      }
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing])
-
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizeStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      width: panelSize.width,
-      height: panelSize.height,
-    }
-    setIsResizing(true)
-  }, [panelSize])
-
   // ============================================================================
   // Handlers
   // ============================================================================
 
-  const handlePauseResume = useCallback(() => {
-    if (queueState.isPaused) {
-      window.electronAPI.taskQueueResume?.()
-    } else {
-      window.electronAPI.taskQueuePause?.()
-    }
-  }, [queueState.isPaused])
-
-  const handleCancelCurrent = useCallback(() => {
+  const handleCancelCurrent = useCallback(async () => {
     const task = queueState.currentTask
-    if (task) window.electronAPI.taskQueueCancelTask?.(task.id)
+    if (!task) return
+    setTaskActionError(null)
+    try {
+      await window.electronAPI.taskQueueCancelTask?.(task.id)
+    } catch (error) {
+      setTaskActionError(error instanceof Error ? error.message : String(error))
+    }
   }, [queueState.currentTask])
 
   const handleRemoveTask = useCallback((taskId: string) => {
     window.electronAPI.taskQueueRemoveTask?.(taskId)
   }, [])
 
-  const handleClearQueue = useCallback(() => {
-    window.electronAPI.taskQueueClearQueue?.()
-  }, [])
-
-  const handleClearTaskHistory = useCallback(async () => {
-    setClearingTaskHistory(true)
-    setTaskHistoryError(null)
+  const handleClearQueue = useCallback(async () => {
+    setTaskActionError(null)
     try {
-      await window.electronAPI.taskQueueClearTaskHistory()
+      await window.electronAPI.taskQueueClearQueue(undefined, false)
     } catch (error) {
-      setTaskHistoryError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setClearingTaskHistory(false)
+      setTaskActionError(error instanceof Error ? error.message : String(error))
     }
   }, [])
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      setNotifications(await window.electronAPI.notificationsGetAll({ limit: 50 }))
+      setNotificationError(null)
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadNotifications()
+    if (!isOpen) return
+    const interval = setInterval(loadNotifications, 10000)
+    return () => clearInterval(interval)
+  }, [isOpen, loadNotifications])
+
+  const handleClearPast = useCallback(async () => {
+    setDoneActionError(null)
+    try {
+      await Promise.all([
+        window.electronAPI.notificationsClear(),
+        window.electronAPI.taskQueueClearTaskHistory(),
+      ])
+      await loadNotifications()
+    } catch (error) {
+      setDoneActionError(error instanceof Error ? error.message : String(error))
+    }
+  }, [loadNotifications])
 
   useEffect(() => {
     const applySnapshot = (snapshot: { revision: number; operations: ActivityOperation[] }) => {
@@ -360,21 +275,6 @@ export function ActivityPanel() {
     }
   }, [])
 
-  const handleMarkAllRead = useCallback(async () => {
-    await window.electronAPI.notificationsMarkAllRead()
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleMarkRead = useCallback(async (id: number) => {
-    await window.electronAPI.notificationsMarkRead([id])
-    loadNotifications()
-  }, [loadNotifications])
-
-  const handleClearNotifications = useCallback(async () => {
-    await window.electronAPI.notificationsClear()
-    loadNotifications()
-  }, [loadNotifications])
-
   // dnd-kit drag handler
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -392,28 +292,6 @@ export function ActivityPanel() {
       })
     }
   }, [])
-
-  // ============================================================================
-  // Helpers
-  // ============================================================================
-
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'scan_complete': return '✓'
-      case 'source_change': return '↻'
-      case 'error': return '!'
-      default: return 'i'
-    }
-  }
-
-  const getNotificationIconColor = (type: string) => {
-    switch (type) {
-      case 'scan_complete': return 'bg-green-500/20 text-green-400'
-      case 'source_change': return 'bg-blue-500/20 text-blue-400'
-      case 'error': return 'bg-red-500/20 text-red-400'
-      default: return 'bg-muted text-muted-foreground'
-    }
-  }
 
   // ============================================================================
   // Render
@@ -445,47 +323,22 @@ export function ActivityPanel() {
         )}
       </button>
 
-      {/* Activity Panel Dropdown */}
+      {/* Activity Panel */}
       <div
         ref={dropdownRef}
-        className={`${getActiveTheme()} absolute right-0 top-full mt-2 bg-card rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden ${
-          isResizing ? 'select-none' : 'transition-all duration-300 ease-out'
-        } ${
+        className={`${getActiveTheme()} absolute right-0 top-full mt-2 bg-card rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
           isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
         }`}
         style={{
-          width: panelSize.width,
-          height: panelSize.height,
+          width: DEFAULT_WIDTH,
+          height: DEFAULT_HEIGHT,
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 12px 24px -8px rgba(0, 0, 0, 0.3)'
         }}
       >
-        {/* Resize Handle - Bottom Left Corner */}
-        <div
-          onMouseDown={handleResizeStart}
-          className="absolute bottom-2.5 left-2.5 cursor-sw-resize z-10 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-        >
-          <Scaling className="w-4 h-4 rotate-180" />
-        </div>
-
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">Activity</h3>
-            {queueState.isPaused && (
-              <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400 rounded-full">
-                Paused
-              </span>
-            )}
-          </div>
+          <h3 className="text-sm font-semibold">Activity</h3>
           <div className="flex items-center gap-1">
-            {(queueState.currentTask || queueState.queue.length > 0) && <button
-              onClick={handlePauseResume}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-              title={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
-              aria-label={queueState.isPaused ? 'Resume queue' : 'Pause queue'}
-            >
-              {queueState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            </button>}
             <button
               onClick={() => setIsOpen(false)}
               className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -496,47 +349,21 @@ export function ActivityPanel() {
           </div>
         </div>
 
-        {/* Current Task */}
-        {queueState.currentTask && (() => {
-          const isTranscodeTask = queueState.currentTask.type === TaskType.Transcode || 
-            queueState.currentTask.label.toLowerCase().includes('transcode') || 
-            queueState.currentTask.label.toLowerCase().includes('optimize') ||
-            Boolean(queueState.currentTask.mediaItemId) ||
-            queueState.currentTask.progress?.fps !== undefined
+        <div className="flex-1 min-h-0 overflow-y-auto">
+        <section className="shrink-0 border-b border-border/30">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/20">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">In progress</h4>
+            {queueState.currentTask && queueState.currentTask.status !== 'cancelling' && <button type="button" onClick={handleCancelCurrent} className="text-xs text-muted-foreground hover:text-destructive">Cancel</button>}
+          </div>
 
-          return (
-            <div className="p-4 border-b border-border/30 bg-muted/30">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2 min-w-0 pr-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
-                  <span className="text-sm font-medium truncate">{queueState.currentTask.status === 'cancelling' ? 'Cancelling…' : `${queueState.currentTask.label}${queueState.currentTask.type === TaskType.Analysis && queueState.currentTask.progress?.phase ? ` · ${queueState.currentTask.progress.phase}` : ''}`}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {isTranscodeTask && (
-                    <button
-                      onClick={() => setShowTelemetry(!showTelemetry)}
-                      className={`p-1.5 rounded transition-colors ${
-                        showTelemetry ? 'bg-primary/20 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                      }`}
-                      title={showTelemetry ? 'Hide Live Telemetry' : 'Show Live Telemetry'}
-                      aria-label="Toggle Live Telemetry"
-                    >
-                      <Activity className="w-4 h-4" />
-                    </button>
-                  )}
-                  {queueState.currentTask.status !== 'cancelling' && <button
-                    onClick={handleCancelCurrent}
-                    className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-red-400"
-                    title="Cancel Task"
-                    aria-label="Cancel Task"
-                  >
-                    <XCircle className="w-4 h-4" />
-                  </button>}
-                </div>
+        {queueState.currentTask && <div className="px-4 py-3" role="status" aria-live="polite" aria-label="Current task progress">
+              <div className="mb-2 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                <span className="text-sm font-medium truncate">{queueState.currentTask.status === 'cancelling' ? 'Cancelling…' : `${queueState.currentTask.label}${queueState.currentTask.type === TaskType.Analysis && queueState.currentTask.progress?.phase ? ` · ${queueState.currentTask.progress.phase}` : ''}`}</span>
               </div>
               {queueState.currentTask.progress && (
                 <>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden mb-1.5" role="progressbar" aria-label={`${queueState.currentTask.label} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(queueState.currentTask.progress.percentage)}>
                     <div
                       className="h-full bg-primary transition-all duration-300"
                       style={{ width: `${queueState.currentTask.progress.percentage}%` }}
@@ -550,44 +377,11 @@ export function ActivityPanel() {
                     <span className="font-medium shrink-0">{Math.round(queueState.currentTask.progress.percentage)}%</span>
                   </div>
 
-                  {/* Live Transcoding Telemetry expansion */}
-                  {showTelemetry && isTranscodeTask && (
-                    <div className="mt-3 pt-3 border-t border-border/20 grid grid-cols-3 gap-2 text-center animate-in fade-in duration-200">
-                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
-                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
-                          <Gauge className="w-3 h-3 text-primary" /> Framerate
-                        </div>
-                        <div className="text-xs font-bold text-primary mt-0.5">
-                          {queueState.currentTask.progress.fps ? `${queueState.currentTask.progress.fps} FPS` : 'Encoding'}
-                        </div>
-                      </div>
-                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
-                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
-                          <Zap className="w-3 h-3 text-yellow-400" /> Speed
-                        </div>
-                        <div className="text-xs font-bold text-foreground mt-0.5">
-                          {queueState.currentTask.progress.fps ? `${(queueState.currentTask.progress.fps / 24).toFixed(1)}x` : '1.0x'}
-                        </div>
-                      </div>
-                      <div className="bg-background/80 p-2 rounded-xl border border-border/30">
-                        <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center justify-center gap-1">
-                          <Clock className="w-3 h-3 text-blue-400" /> ETA
-                        </div>
-                        <div className="text-xs font-bold text-foreground mt-0.5 truncate">
-                          {queueState.currentTask.progress.eta || 'Calculating...'}
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
-            </div>
-          )
-        })()}
-
-        {operations.length > 0 && <section className="max-h-60 shrink-0 overflow-y-auto border-b border-border/30">
-          <div className="px-4 py-2 bg-muted/20 text-xs font-medium uppercase tracking-wider text-muted-foreground">Background operations</div>
-          {operations.map(operation => <div key={operation.requestId} className="border-t border-border/20 px-4 py-3 space-y-1.5">
+            </div>}
+        {!queueState.currentTask && operations.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">Nothing in progress</p>}
+        {operations.map(operation => <div key={operation.requestId} className="border-t border-border/20 px-4 py-3 space-y-1.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate">{operation.label}</p>
@@ -645,42 +439,20 @@ export function ActivityPanel() {
               <p className="text-right text-[11px] text-muted-foreground">{Math.round(operation.progress.percentage)}% {operation.progress.currentItem}</p>
             </>}
           </div>)}
-        </section>}
         {operationError && <p className="border-b border-border/30 px-4 py-2 text-xs text-destructive" role="alert">Could not load background activity: {operationError}</p>}
+        {taskActionError && <p className="px-4 py-2 text-xs text-destructive" role="alert">Could not update tasks: {taskActionError}</p>}
+        </section>
         {resultText !== null && <div className="absolute inset-10 z-20 flex min-h-0 flex-col rounded-lg border border-border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-3 py-2 text-sm font-medium"><span>Operation result</span><button type="button" onClick={() => setResultText(null)} aria-label="Close result"><X className="h-4 w-4" /></button></div>
           <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-3 text-xs">{resultText}</pre>
         </div>}
 
-        {/* Queue - grows with panel resize */}
-        <div className="flex-1 min-h-0 flex flex-col border-b border-border/30">
-          <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
-            <div className="flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Queue {queueState.queue.length > 0 && `(${queueState.queue.length})`}
-              </span>
-            </div>
-            {(queueState.queue.length > 0 || Boolean(queueState.currentTask)) && (
-              <button
-                onClick={handleClearQueue}
-                className="text-xs text-muted-foreground hover:text-red-400 transition-colors"
-                title="Clear queue and stop active task"
-              >
-                Clear All
-              </button>
-            )}
+        <section className="shrink-0 border-b border-border/30">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/20">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Up next</h4>
+            {queueState.queue.length > 0 && <button type="button" onClick={() => void handleClearQueue()} className="text-xs text-muted-foreground hover:text-destructive">Cancel all</button>}
           </div>
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {queueState.queue.length === 0 ? (
-              <div className="py-6 text-center">
-                <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Queue empty</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">
-                  Tasks will appear here when queued
-                </p>
-              </div>
-            ) : (
+          {queueState.queue.length > 0 ? (
               <DndContext
                 sensors={sensors}
                 collisionDetection={pointerWithin}
@@ -699,101 +471,33 @@ export function ActivityPanel() {
                       />
                     ))}
                   </div>
-                  <p className="px-4 py-1.5 text-xs text-muted-foreground/60 italic border-t border-border/20">
-                    Drag to reorder
-                  </p>
                 </SortableContext>
               </DndContext>
-            )}
-          </div>
-        </div>
+          ) : <p className="px-4 py-3 text-sm text-muted-foreground">Nothing queued</p>}
+        </section>
 
-        {/* Notifications Section */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 bg-muted/20 shrink-0">
-            <div className="flex items-center gap-2">
-              <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Notifications {unreadCount > 0 && `(${unreadCount})`}
+        <section className="shrink-0">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/20">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Done</h4>
+            <button type="button" onClick={() => void handleClearPast()} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>
+          </div>
+          {doneActionError && <p className="px-4 py-2 text-xs text-destructive" role="alert">Could not clear completed activity: {doneActionError}</p>}
+          {notificationError ? <div className="px-4 py-3 text-sm text-destructive" role="alert">
+            <span>Could not load completed activity: {notificationError}</span>
+            <button type="button" onClick={() => void loadNotifications()} className="ml-2 underline">Retry</button>
+          </div> : notifications.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">Nothing completed yet</p> : <div className="divide-y divide-border/20">
+            {notifications.map(notification => <div key={notification.id} className="flex items-start gap-2 px-4 py-2.5">
+              <span className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${notification.type === 'scan_complete' ? 'bg-green-500/20 text-green-400' : notification.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-muted text-muted-foreground'}`}>
+                {notification.type === 'scan_complete' ? '✓' : notification.type === 'error' ? '!' : '·'}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {queueState.completedTasks.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void handleClearTaskHistory()}
-                  disabled={clearingTaskHistory}
-                  title="Clear all completed task history"
-                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                >
-                  {clearingTaskHistory ? 'Clearing…' : 'Clear task history'}
-                </button>
-              )}
-              {unreadCount > 0 && (
-                <button
-                  onClick={handleMarkAllRead}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Mark all read
-                </button>
-              )}
-              {notifications.length > 0 && (
-                <button
-                  onClick={handleClearNotifications}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Clear notifications
-                </button>
-              )}
-            </div>
-          </div>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 pb-6 p-2">
-            {taskHistoryError && <p className="px-2 py-1 text-xs text-destructive" role="alert">Could not clear task history: {taskHistoryError}</p>}
-            {notificationError ? (
-              <div className="p-4 text-center" role="alert">
-                <p className="text-sm text-destructive">Could not load notifications: {notificationError}</p>
-                <button type="button" onClick={() => void loadNotifications()} className="mt-2 text-sm text-primary hover:underline">Retry</button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{notification.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{notification.message}</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground/60">{new Date(notification.created_at).toLocaleString()}</p>
               </div>
-            ) : notifications.length === 0 ? (
-              <div className="py-6 text-center">
-                <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No notifications</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">
-                  Scan completions and library changes will appear here
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {notifications.map((n) => (
-                  <button
-                    type="button"
-                    key={n.id}
-                    className={`w-full text-left py-2 px-2 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
-                      n.is_read ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/30'
-                    }`}
-                    onClick={() => !n.is_read && handleMarkRead(n.id)}
-                    aria-label={`${n.is_read ? 'Read' : 'Mark read'} notification: ${n.title}. ${n.message}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
-                        {getNotificationIcon(n.type)}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium truncate">{n.title}</span>
-                          {!n.is_read && <span className="w-1.5 h-1.5 bg-accent rounded-full shrink-0" />}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                        <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
-                            {new Date(n.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            </div>)}
+          </div>}
+        </section>
         </div>
       </div>
     </div>
