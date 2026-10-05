@@ -445,12 +445,6 @@ export class TranscodingService {
     }
     if (preflight.result.userApproved && preflight.result.approvalFingerprint !== this.preflightFingerprint(preflight.result)) throw new Error('Approved show plan changed; run preflight again')
     for (const episode of queueableEpisodes) {
-      if (episode.options?.optimizationMode === 'remux_only' && episode.sourceAnalysis) {
-        const item = await getDatabase().media.getItemById(episode.mediaItemId)
-        if (!item?.file_path) throw new Error('Remux source path is missing; run preflight again')
-        const current = await getMediaFileAnalyzer().analyzeCompleteFile(item.file_path)
-        if (!current.success || JSON.stringify(current.audioTracks) !== JSON.stringify(episode.sourceAnalysis.audioTracks)) throw new Error('Remux stream plan is stale; run preflight again')
-      }
       if (episode.targetProfile && JSON.stringify(await getDatabase().playbackTargetProfiles.get(episode.targetProfile.id)) !== JSON.stringify(episode.targetProfile)) throw new Error('Playback profile changed after review; run preflight again')
       if (episode.samplePaths && (await Promise.all(episode.samplePaths.map(sha256File))).some((hash, index) => hash !== episode.sampleHashes![index])) throw new Error('Reviewed samples changed; run preflight again')
     }
