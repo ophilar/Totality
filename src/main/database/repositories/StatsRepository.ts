@@ -1,6 +1,6 @@
 import { eq, and, sql, asc, desc, lt, countDistinct, exists, count, avg, sum } from 'drizzle-orm'
 import type { SQLWrapper } from 'drizzle-orm'
-import type { DashboardSummary, MovieCollection, MusicAlbum, MusicCompletenessStats } from '@main/types/database'
+import type { DashboardDataSection, DashboardSummary, MovieCollection, MusicAlbum, MusicCompletenessStats } from '@main/types/database'
 
 import { LibSQLDatabase } from 'drizzle-orm/libsql'
 import * as schema from '@main/database/drizzleSchema'
@@ -11,7 +11,11 @@ export class StatsRepository {
     private drizzle: LibSQLDatabase<typeof schema>
   ) {}
 
-  public async getDashboardSummary(sourceId?: string): Promise<DashboardSummary> {
+  public async getDashboardSummary(
+    sourceId?: string,
+    sections: DashboardDataSection[] = ['upgrades', 'collections', 'series', 'artists']
+  ): Promise<DashboardSummary> {
+    const refreshes = new Set(sections)
     // 1. Settings
     const settingsList = await this.drizzle.select({ key: schema.settings.key, value: schema.settings.value })
       .from(schema.settings)
@@ -146,15 +150,15 @@ export class StatsRepository {
       collectionsRows, seriesRows, artistsRows,
       collEx, serEx, artEx
     ] = await Promise.all([
-      movieUpgradesQuery.all(),
-      tvUpgradesQuery.all(),
-      musicUpgradesQuery.all(),
-      collectionsQuery.all(),
-      seriesQuery.all(),
-      artistsQuery.all(),
-      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'collection_movie')).all(),
-      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'series_episode')).all(),
-      this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'artist_album')).all()
+      refreshes.has('upgrades') ? movieUpgradesQuery.all() : [],
+      refreshes.has('upgrades') ? tvUpgradesQuery.all() : [],
+      refreshes.has('upgrades') ? musicUpgradesQuery.all() : [],
+      refreshes.has('collections') ? collectionsQuery.all() : [],
+      refreshes.has('series') ? seriesQuery.all() : [],
+      refreshes.has('artists') ? artistsQuery.all() : [],
+      refreshes.has('collections') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'collection_movie')).all() : [],
+      refreshes.has('series') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'series_episode')).all() : [],
+      refreshes.has('artists') ? this.drizzle.select({ reference_key: schema.exclusions.referenceKey, parent_key: schema.exclusions.parentKey }).from(schema.exclusions).where(eq(schema.exclusions.exclusionType, 'artist_album')).all() : []
     ])
 
     // Mapper helper
@@ -183,7 +187,7 @@ export class StatsRepository {
     }
 
     // 8. Storage Waste
-    const storageWasteRows = await this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
+    const storageWasteRows = refreshes.has('upgrades') ? await this.drizzle.select({ item: schema.mediaItems, q: schema.qualityScores })
       .from(schema.mediaItems)
       .innerJoin(schema.qualityScores, eq(schema.mediaItems.id, schema.qualityScores.mediaItemId))
       .where(and(
@@ -195,7 +199,7 @@ export class StatsRepository {
       ))
       .orderBy(desc(schema.qualityScores.storageDebtBytes))
       .limit(50)
-      .all()
+      .all() : []
 
     return {
       movieUpgrades: movieUpgradesRows.map(mapItem),

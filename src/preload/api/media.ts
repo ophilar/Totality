@@ -1,6 +1,6 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
-import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
+import type { MediaItem, MediaItemFilters, TVShowSummary, TVShowFilters, MusicArtist, MusicAlbum, MusicTrack, LibraryStats, DashboardDataSection, DashboardSummary, SeriesCompleteness, OptimizationMetricsSummary } from '@main/types/database'
 import type { GlobalSearchResults } from '@shared/globalSearch'
 import type { TMDBValidationState } from '@main/services/TMDBService'
 import type { SavedServiceHealthSnapshot, SavedServiceId } from '@shared/serviceHealth'
@@ -152,7 +152,7 @@ export const mediaApi: MediaAPI = {
 
   // Database - Statistics
   getLibraryStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_LIBRARY_STATS, sourceId),
-  getDashboardSummary: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, sourceId),
+  getDashboardSummary: (request: { sourceId?: string; sections: DashboardDataSection[] }) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, request),
 
   // Database - Global Search
   mediaSearch: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH, query),
@@ -401,7 +401,7 @@ export interface MediaAPI {
     tvNeedsUpgradeCount: number
     tvAverageQualityScore: number
   }>
-  getDashboardSummary: (sourceId?: string) => Promise<DashboardSummary>
+  getDashboardSummary: (request: { sourceId?: string; sections: DashboardDataSection[] }) => Promise<DashboardSummary>
 
   // Database - Global Search
   mediaSearch: (query: string) => Promise<GlobalSearchResults>

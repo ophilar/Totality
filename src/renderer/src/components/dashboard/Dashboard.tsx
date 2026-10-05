@@ -34,6 +34,7 @@ export function Dashboard({
     series,
     artists,
     isLoading, error,
+    refreshError,
     upgradeSortBy, setUpgradeSortBy, upgradeSortOrder, setUpgradeSortOrder,
     collectionSortBy, setCollectionSortBy,
     seriesSortBy, setSeriesSortBy,
@@ -127,7 +128,7 @@ export function Dashboard({
         parentKey,
         episode.episode_title || `${episode.series_title} S${episode.season_number}E${episode.episode_number}`
       )
-      loadDashboardData()
+      loadDashboardData(['series'])
     }
   }, [loadDashboardData])
 
@@ -139,12 +140,12 @@ export function Dashboard({
       album.artist_mbid,
       album.title
     )
-    loadDashboardData()
+    loadDashboardData(['artists'])
   }, [loadDashboardData])
 
   const handleDismissCollectionMovie = useCallback((_index: number, movie: MissingMovie) => {
     emitDismissCollectionMovie({ collectionId: '', tmdbId: movie.tmdb_id?.toString() || '' })
-    loadDashboardData()
+    loadDashboardData(['collections'])
   }, [loadDashboardData])
 
   const hasNothing = !hasMovies && !hasTV && !hasMusic || (
@@ -159,13 +160,14 @@ export function Dashboard({
         style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}
       >
         <div className="text-destructive mb-4">{error}</div>
-        <button onClick={loadDashboardData} className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">Try Again</button>
+        <button onClick={() => void loadDashboardData()} className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">Try Again</button>
       </div>
     )
   }
 
   return (
     <div className="flex-1 h-full flex flex-col overflow-hidden">
+      {refreshError && <div className="mx-4 mt-2 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="status">{refreshError}</div>}
       {isLoading ? (
         <DashboardSkeleton hasMovies={hasMovies} hasTV={hasTV} hasMusic={hasMusic} />
       ) : hasNothing ? (

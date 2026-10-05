@@ -1162,3 +1162,5 @@ export interface DashboardSummary {
     artistSortOrder: 'asc' | 'desc'
   }
 }
+
+export type DashboardDataSection = 'upgrades' | 'collections' | 'series' | 'artists'

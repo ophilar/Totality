@@ -253,9 +253,14 @@ export function registerDatabaseHandlers() {
     return await db.stats.getLibraryStats(sourceId)
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, OptionalSourceIdSchema, async (sourceId) => {
-    return await db.stats.getDashboardSummary(sourceId)
-  })
+  createValidatedIpcHandler(
+    IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY,
+    z.object({
+      sourceId: OptionalSourceIdSchema,
+      sections: z.array(z.enum(['upgrades', 'collections', 'series', 'artists'])).min(1),
+    }),
+    async ({ sourceId, sections }) => await db.stats.getDashboardSummary(sourceId, sections)
+  )
 
   const OptionalYearSchema = z.number().int().min(1800).max(2100).optional()
 

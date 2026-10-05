@@ -29,21 +29,18 @@ describe('useDashboardData', () => {
   }
 
   let settingsChangedCb: ((data: { key: string }) => void) | null = null
-  let scanCompletedCb: (() => void) | null = null
-  let taskQueueTaskCompleteCb: (() => void) | null = null
-  let libraryUpdatedCb: (() => void) | null = null
+  let scanCompletedCb: ((scan: { sourceId?: string; libraryId?: string; libraryName: string; itemsAdded: number; itemsUpdated: number; itemsScanned: number; isFirstScan: boolean }) => void) | null = null
+  let taskQueueTaskCompleteCb: ((task: unknown) => void) | null = null
 
   const cleanupSettingsChanged = vi.fn()
   const cleanupScanCompleted = vi.fn()
   const cleanupTaskQueueTaskComplete = vi.fn()
-  const cleanupLibraryUpdated = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
     settingsChangedCb = null
     scanCompletedCb = null
     taskQueueTaskCompleteCb = null
-    libraryUpdatedCb = null
 
     const mockApi = {
       getDashboardSummary: vi.fn().mockResolvedValue(mockDashboardSummary),
@@ -71,10 +68,7 @@ describe('useDashboardData', () => {
         taskQueueTaskCompleteCb = cb
         return cleanupTaskQueueTaskComplete
       }),
-      onLibraryUpdated: vi.fn((cb) => {
-        libraryUpdatedCb = cb
-        return cleanupLibraryUpdated
-      })
+      sourcesGetLibrariesWithStatus: vi.fn().mockResolvedValue([{ id: 'library-123', type: 'movie', name: 'Movies' }])
     }
 
     Object.assign(window, { electronAPI: mockApi })
@@ -93,7 +87,10 @@ describe('useDashboardData', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    expect(window.electronAPI.getDashboardSummary).toHaveBeenCalledWith(undefined)
+    expect(window.electronAPI.getDashboardSummary).toHaveBeenCalledWith({
+      sourceId: undefined,
+      sections: ['upgrades', 'collections', 'series', 'artists'],
+    })
     expect(window.electronAPI.getSetting).toHaveBeenCalledWith('dashboard_upgrade_sort_order')
 
     expect(result.current.movieUpgrades).toEqual(mockDashboardSummary.movieUpgrades)
@@ -123,7 +120,10 @@ describe('useDashboardData', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    expect(window.electronAPI.getDashboardSummary).toHaveBeenCalledWith('source-123')
+    expect(window.electronAPI.getDashboardSummary).toHaveBeenCalledWith({
+      sourceId: 'source-123',
+      sections: ['upgrades', 'collections', 'series', 'artists'],
+    })
   })
 
   it('should set error state and log when getDashboardSummary fails', async () => {
@@ -184,7 +184,7 @@ describe('useDashboardData', () => {
     })
   })
 
-  it('should reload dashboard data on IPC scan, task queue, and library update events', async () => {
+  it('refreshes only affected dashboard sections after scans and analysis', async () => {
     const { result } = renderHook(() => useDashboardData(null))
 
     await waitFor(() => {
@@ -194,24 +194,33 @@ describe('useDashboardData', () => {
     const initialCalls = vi.mocked(window.electronAPI.getDashboardSummary).mock.calls.length
 
     await act(async () => {
-      scanCompletedCb?.()
+      scanCompletedCb?.({
+        sourceId: 'source-123',
+        libraryId: 'library-123',
+        libraryName: 'Movies',
+        itemsAdded: 0,
+        itemsUpdated: 0,
+        itemsScanned: 0,
+        isFirstScan: false,
+      })
     })
     await waitFor(() => {
       expect(vi.mocked(window.electronAPI.getDashboardSummary).mock.calls.length).toBe(initialCalls + 1)
     })
+    expect(window.electronAPI.getDashboardSummary).toHaveBeenLastCalledWith({
+      sourceId: undefined,
+      sections: ['upgrades', 'collections'],
+    })
 
     await act(async () => {
-      taskQueueTaskCompleteCb?.()
+      taskQueueTaskCompleteCb?.({ type: 'quality-analysis' })
     })
     await waitFor(() => {
       expect(vi.mocked(window.electronAPI.getDashboardSummary).mock.calls.length).toBe(initialCalls + 2)
     })
-
-    await act(async () => {
-      libraryUpdatedCb?.()
-    })
-    await waitFor(() => {
-      expect(vi.mocked(window.electronAPI.getDashboardSummary).mock.calls.length).toBe(initialCalls + 3)
+    expect(window.electronAPI.getDashboardSummary).toHaveBeenLastCalledWith({
+      sourceId: undefined,
+      sections: ['upgrades'],
     })
   })
 
@@ -247,7 +256,6 @@ describe('useDashboardData', () => {
     expect(cleanupSettingsChanged).toHaveBeenCalled()
     expect(cleanupScanCompleted).toHaveBeenCalled()
     expect(cleanupTaskQueueTaskComplete).toHaveBeenCalled()
-    expect(cleanupLibraryUpdated).toHaveBeenCalled()
     expect(removeEventListenerSpy).toHaveBeenCalledWith('exclusions-changed', expect.any(Function))
   })
 })
