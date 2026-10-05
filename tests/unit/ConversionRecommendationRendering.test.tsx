@@ -34,7 +34,7 @@ const decision = (overrides: Partial<OptimizationDecision> = {}): OptimizationDe
   ...overrides,
 })
 
-const item = { id: 901, title: 'Evidence Movie', type: 'movie' } as MediaItem
+const item = { id: 901, title: 'Evidence Movie', type: 'movie', file_path: 'H:/Media/Evidence Movie.mkv' } as MediaItem
 
 describe('ConversionRecommendation evidence rendering', () => {
   beforeEach(() => {
@@ -50,7 +50,7 @@ describe('ConversionRecommendation evidence rendering', () => {
     render(<ConversionRecommendation item={item} />)
 
     await waitFor(() => expect(screen.getByText(/Estimated savings/)).toBeTruthy())
-    expect(screen.getByRole('button', { name: 'Transcode video' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Review optimization' })).toBeTruthy()
     expect(screen.getByText(/2 KB/)).toBeTruthy()
   })
 
@@ -61,7 +61,7 @@ describe('ConversionRecommendation evidence rendering', () => {
 
     await waitFor(() => expect(screen.getAllByText('Insufficient evidence').length).toBeGreaterThan(0))
     expect(screen.queryByRole('button', { name: /audio tracks|transcode/i })).toBeNull()
-    expect(screen.getByText('No executable disk optimization is available.')).toBeTruthy()
+    expect(screen.getByText('No supported optimization action is available.')).toBeTruthy()
   })
 
   it('coalesces concurrent decision requests for the same media item', async () => {
@@ -78,14 +78,14 @@ describe('ConversionRecommendation evidence rendering', () => {
 
     await waitFor(() => expect(window.electronAPI.optimizationGetDecision).toHaveBeenCalledTimes(1))
     resolveDecision(decision())
-    await waitFor(() => expect(screen.getAllByText('No executable disk optimization is available.')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('No supported optimization action is available.')).toHaveLength(2))
   })
 
   it('does not reuse a resolved decision after the component remounts', async () => {
     vi.mocked(window.electronAPI.optimizationGetDecision).mockResolvedValueOnce(decision())
 
     const first = render(<ConversionRecommendation item={{ ...item, id: 904 }} />)
-    await waitFor(() => expect(screen.getByText('No executable disk optimization is available.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No supported optimization action is available.')).toBeTruthy())
     first.unmount()
 
     vi.mocked(window.electronAPI.optimizationGetDecision).mockResolvedValueOnce(decision({
@@ -96,6 +96,6 @@ describe('ConversionRecommendation evidence rendering', () => {
     render(<ConversionRecommendation item={{ ...item, id: 904 }} />)
 
     await waitFor(() => expect(window.electronAPI.optimizationGetDecision).toHaveBeenCalledTimes(2))
-    expect(await screen.findByRole('button', { name: 'Transcode video' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Review optimization' })).toBeTruthy()
   })
 })

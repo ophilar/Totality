@@ -375,7 +375,7 @@ describe('TranscodingService', () => {
       expect(await db.media.getQualityScoreByMediaId(mediaItemId)).toBeNull()
     })
 
-    it('populates recommendedAction, sourceTier, and adviceReason in preflight episode items', async () => {
+    it('populates planned operations, source tier, and advice reason in preflight episode items', async () => {
       const episodePath = mediaPath('Star.Trek.Strange.New.Worlds.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264.mkv')
       const episodeFileSize = (await fsPromises.stat(episodePath)).size
       await upsertMediaItem({
@@ -429,7 +429,8 @@ describe('TranscodingService', () => {
 
       expect(preflight.compatible).toBe(true)
       expect(preflight.episodes.length).toBe(1)
-      expect(preflight.episodes[0].recommendedAction).toBe('already_optimized')
+      expect(preflight.episodes[0].operations).toEqual([])
+      expect(preflight.episodes[0].decisionStatus).toBe('already_optimized')
       expect(preflight.episodes[0].sourceTier).toBe('WEB-DL')
       expect(preflight.episodes[0].adviceReason).toBeDefined()
 
@@ -453,7 +454,7 @@ describe('TranscodingService', () => {
       expect(incompatiblePreflight.episodes[0]).toMatchObject({
         compatible: false,
         decisionStatus: 'incompatible',
-        recommendedAction: undefined,
+        operations: [],
       })
     })
   })
@@ -560,8 +561,8 @@ describe('TranscodingService', () => {
           compatible: true,
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           episodes: [
-            { mediaItemId: 1, label: 'E01', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'already_optimized' },
-            { mediaItemId: 2, label: 'E02', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, recommendedAction: 'stream_pruning', decisionStatus: 'actionable' }
+            { mediaItemId: 1, label: 'E01', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, operations: [], decisionStatus: 'already_optimized' },
+            { mediaItemId: 2, label: 'E02', compatible: true, hdrFormat: 'SDR', sourceSize: 100, sourceMtimeMs: 1, operations: ['stream_pruning'], decisionStatus: 'actionable' }
           ]
         }
       })
@@ -589,7 +590,7 @@ describe('TranscodingService', () => {
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           episodes: [
             { mediaItemId: 101, label: 'E01 Corrupt', compatible: false, reason: 'Media analysis failed', hdrFormat: 'Unknown', sourceSize: 0, sourceMtimeMs: 0 },
-            { mediaItemId: 102, label: 'E02 Valid', compatible: true, hdrFormat: 'SDR', sourceSize: 200, sourceMtimeMs: 1, recommendedAction: 'stream_pruning', decisionStatus: 'actionable' }
+            { mediaItemId: 102, label: 'E02 Valid', compatible: true, hdrFormat: 'SDR', sourceSize: 200, sourceMtimeMs: 1, operations: ['stream_pruning'], decisionStatus: 'actionable' }
           ]
         }
       })

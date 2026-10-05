@@ -94,7 +94,7 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
           {show.owned_regular_seasons == null ? `${seasonCount} ${seasonCount === 1 ? 'Season' : 'Seasons'} • ${totalEpisodes} Episodes` : `${show.owned_regular_seasons}/${show.total_regular_seasons ?? '—'} Seasons • ${show.owned_regular_episodes ?? 0}/${show.total_regular_episodes ?? '—'} Episodes${show.special_episode_count ? ` • ${show.special_episode_count} Specials` : ''}`}
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
-        <ScopedOptimizationSummary totalCount={show.episode_count} analyzedCount={show.scored_episode_count} recoverableBytes={show.total_recoverable_bytes} className="mt-1" />
+        <ScopedOptimizationSummary totalCount={show.episode_count} analyzedCount={show.scored_episode_count} className="mt-1" />
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">

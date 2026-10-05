@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   Zap, 
@@ -22,7 +22,7 @@ import {
 import { useToast } from '@/contexts/ToastContext'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import type { TVShowSummary, MediaItem } from './types'
-import type { GpuInfo, ShowTranscodePreflight } from './transcoding/types'
+import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
 import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
 import { getTVShowIdentity } from './tv/showIdentity'
@@ -78,50 +78,63 @@ function getSourceTierBadge(tier?: string) {
   }
 }
 
-function getAdvisoryBadge(action?: string, compatible: boolean = true, decisionStatus?: string) {
+function getAdvisoryBadges(operations: PlannedOptimizationOperation[], compatible: boolean = true, decisionStatus?: string) {
+  const badges: ReactNode[] = []
   if (!compatible) {
-    return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
+    badges.push(
+      <span key="incompatible" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
         <AlertCircle className="w-3 h-3" /> Incompatible
       </span>
     )
-  }
-  if (decisionStatus === 'insufficient_evidence') {
-    return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+  } else if (decisionStatus === 'insufficient_evidence') {
+    badges.push(
+      <span key="insufficient-evidence" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
         <AlertCircle className="w-3 h-3" /> Insufficient Evidence
       </span>
     )
-  }
-  if (decisionStatus === 'sample_required') {
-    return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+  } else if (decisionStatus === 'sample_required') {
+    badges.push(
+      <span key="sample-required" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
         <Eye className="w-3 h-3" /> Sample Required
       </span>
     )
+  } else if (decisionStatus === 'already_optimized') {
+    badges.push(
+      <span key="already-optimized" className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border/40 flex items-center gap-1">
+        <CheckCircle2 className="w-3 h-3" /> Already Optimized
+      </span>
+    )
   }
-  switch (action) {
-    case 'video_transcode':
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1">
+  if (compatible) {
+    for (const operation of operations) {
+      if (operation === 'video_transcode') {
+        badges.push(
+        <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1">
           <Zap className="w-3 h-3" /> Video Transcode
         </span>
-      )
-    case 'stream_pruning':
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-          <Scissors className="w-3 h-3" /> Lossless Stream Copy
-        </span>
-      )
-    case 'already_optimized':
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border/40 flex items-center gap-1">
-          <CheckCircle2 className="w-3 h-3" /> Already Optimized
-        </span>
-      )
-    default:
-      return null
+        )
+      } else if (operation === 'stream_pruning') {
+        badges.push(
+          <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+            <Scissors className="w-3 h-3" /> Stream Pruning
+          </span>
+        )
+      } else if (operation === 'audio_transcode') {
+        badges.push(
+          <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+            <Volume2 className="w-3 h-3" /> Audio Transcode
+          </span>
+        )
+      } else if (operation === 'container_change') {
+        badges.push(
+          <span key={operation} className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+            <Layers className="w-3 h-3" /> Container Change
+          </span>
+        )
+      }
+    }
   }
+  return <div className="flex flex-wrap justify-end gap-1">{badges}</div>
 }
 
 function formatBytes(bytes?: number): string {
@@ -389,9 +402,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
       targetCodec: codec,
       qualityProfile: qualityProfile || undefined,
       encoderPolicy: encoderPolicy || undefined,
-      targetContainer: targetContainer || undefined,
-      targetAudioCodec: targetAudioCodec || undefined,
-      targetHdrFormat: targetHdrFormat || undefined,
+      targetContainer: shouldAdjustToTarget ? targetContainer || undefined : undefined,
+      targetAudioCodec: shouldAdjustToTarget ? targetAudioCodec || undefined : undefined,
+      targetHdrFormat: shouldAdjustToTarget ? targetHdrFormat || undefined : undefined,
       transcodingEngine: 'ffmpeg' as const,
       outputMode,
       useGpu: effectiveOptimizationMode === 'remux_only' ? false : useGpu,
@@ -406,10 +419,12 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
   const runPreflight = async (overrides: { removeUnnecessaryStreams?: boolean; adjustToTarget?: boolean; targetProfileId?: string } = {}) => {
     const shouldRemoveStreams = overrides.removeUnnecessaryStreams ?? removeUnnecessaryStreams
-    if (!targetProfileId || !outputMode || (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim())) {
+    const shouldAdjustToTarget = overrides.adjustToTarget ?? adjustToTarget
+    const effectiveTargetProfileId = overrides.targetProfileId ?? targetProfileId
+    if (!effectiveTargetProfileId || !outputMode || (shouldRemoveStreams && audio === 'original-and-protected' && !language.trim())) {
       throw new Error('A playback profile and output mode are required; choose an original language when stream pruning is enabled.')
     }
-    if (adjustToTarget && optimizationMode !== 'remux_only' && (!qualityProfile || !encoderPolicy || !targetContainer || !targetHdrFormat)) throw new Error('Choose quality, encoder policy, container, and output color format before measuring samples.')
+    if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!qualityProfile || !encoderPolicy || !targetContainer || !targetHdrFormat)) throw new Error('Choose quality, encoder policy, container, and output color format before measuring samples.')
     setReviewedEpisodes([])
     const episodes = await window.electronAPI.seriesGetEpisodesByIdentity(show.series_title, sourceId, seriesIdentityKey, libraryId)
     if (episodes.some(episode => !episode.deep_analysis)) {
@@ -994,20 +1009,20 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                 <details open={removeUnnecessaryStreams} className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
                     <input type="checkbox" checked={removeUnnecessaryStreams} onChange={event => { event.preventDefault(); void updatePlan({ removeUnnecessaryStreams: event.target.checked }) }} className="h-4 w-4 accent-primary" />
-                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'stream_pruning').length} episodes · preserve only the selected audio and subtitle policy</span></span>
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Remove unnecessary streams</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.operations.includes('stream_pruning')).length} episodes · preserve only the selected audio and subtitle policy</span></span>
                   </summary>
                   <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Audio: {audio === 'all' ? 'all tracks' : 'original and protected tracks'} · Subtitles: {subtitleList.length ? subtitleList.join(', ') : 'preserve all'}</div>
                 </details>
                 <details open={adjustToTarget} className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
                     <input type="checkbox" checked={adjustToTarget} onChange={event => { event.preventDefault(); void updatePlan({ adjustToTarget: event.target.checked }) }} className="h-4 w-4 accent-primary" />
-                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'video_transcode').length} episodes · apply the selected target strategy</span></span>
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Adjust to target</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.operations.includes('video_transcode') || e.operations.includes('audio_transcode') || e.operations.includes('container_change')).length} episodes · apply the selected target strategy</span></span>
                   </summary>
                   <div className="border-t border-border/40 px-10 py-3 text-xs text-muted-foreground">Profile: {targetProfileName || 'default playback profile'} · Codec: {codec.toUpperCase()} · Strategy: {optimizationMode}</div>
                 </details>
                 <details className="group">
                   <summary className="flex cursor-pointer list-none items-center gap-3 p-3">
-                    <span className="text-emerald-400">✓</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Already optimized</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.recommendedAction === 'already_optimized').length} episodes need no changes</span></span>
+                    <span className="text-emerald-400">✓</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Already optimized</span><span className="block text-xs text-muted-foreground">{preflightData.episodes.filter(e => e.decisionStatus === 'already_optimized').length} episodes need no changes</span></span>
                   </summary>
                 </details>
                 <details className="group">
@@ -1019,7 +1034,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
             </div>
 
             <button disabled={busy} className="text-xs underline" onClick={() => { setBusy(true); void window.electronAPI.mediaAnalyze({ kind: 'show', title: show.series_title, sourceId, seriesIdentityKey, libraryId }).then(() => setMessage('Series analysis completed. Refresh the plan.')).catch(error => setMessage(String(error))).finally(() => setBusy(false)) }}>Analyze show using series analysis</button>
-            <p className="text-xs">Actionable: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Playback review: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Blocked: {preflightData.episodes.filter(ep => !ep.compatible).length} · Unchanged: {preflightData.episodes.filter(ep => ep.decisionStatus === 'already_optimized').length}</p>
+            <p className="text-xs">Actionable: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'actionable').length} · Playback review: {preflightData.episodes.filter(ep => ep.compatible && ep.decisionStatus === 'sample_required').length} · Blocked: {preflightData.episodes.filter(ep => !ep.compatible).length}</p>
             {/* Episodes breakdown */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
@@ -1035,7 +1050,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                       <span className="font-bold text-xs text-foreground truncate">{ep.label}</span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {getSourceTierBadge(ep.sourceTier)}
-                        {getAdvisoryBadge(ep.recommendedAction, ep.compatible, ep.decisionStatus)}
+                        {getAdvisoryBadges(ep.operations, ep.compatible, ep.decisionStatus)}
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground">

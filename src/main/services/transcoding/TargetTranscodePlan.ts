@@ -46,9 +46,17 @@ export function buildTargetTranscodePlan(analysis: FileAnalysisResult, profile: 
   if (hdrFormat !== sourceHdr) changes.push(`Convert ${sourceHdr} to ${hdrFormat}${sourceHdr === 'Dolby Vision' || sourceHdr === 'HDR10+' ? '; dynamic HDR metadata will not be retained' : ''}`)
   const audio = analysis.audioTracks.filter(track => streams.audioStreamIndexes.includes(track.index)).map(track => {
     if (track.channels > definition.audio.maxChannels || (track.hasObjectAudio && !definition.audio.objectAudio)) throw new Error(`Audio stream ${track.index} is incompatible; channel count and object audio must be preserved`)
+    const protectedTrack = track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility
+    const requestedCodec = options.targetAudioCodec
+    if (requestedCodec && !protectedTrack && requestedCodec !== track.codec) {
+      if (!definition.audio.codecs.includes(requestedCodec)) throw new Error(`Audio codec ${requestedCodec} is not supported by ${profile.name}`)
+      const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
+      changes.push(`Convert audio stream ${track.index} from ${track.codec} to ${requestedCodec}, preserving ${track.channels} channels`)
+      return { sourceIndex: track.index, codec: requestedCodec, bitrateKbps }
+    }
     if (definition.audio.codecs.includes(track.codec)) return { sourceIndex: track.index, codec: track.codec }
-    if (track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility) throw new Error(`Protected audio stream ${track.index} requires codec preservation`)
-    const codec = options.targetAudioCodec
+    if (protectedTrack) throw new Error(`Protected audio stream ${track.index} requires codec preservation`)
+    const codec = requestedCodec
     if (!codec || !definition.audio.codecs.includes(codec) || !['aac', 'ac3', 'eac3'].includes(codec)) throw new Error(`Select a supported audio codec for stream ${track.index}`)
     const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
     changes.push(`Convert audio stream ${track.index} from ${track.codec} to ${codec}, preserving ${track.channels} channels`)

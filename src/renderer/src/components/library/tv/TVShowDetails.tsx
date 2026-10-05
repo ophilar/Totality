@@ -3,7 +3,6 @@ import { Virtuoso } from 'react-virtuoso'
 import { RefreshCw, Pencil, ChevronDown, ChevronUp, Copy, Check, Database, Zap } from 'lucide-react'
 import { EpisodeRow } from '@/components/library/tv/EpisodeRow'
 import { MissingEpisodeRowWithArtwork } from '@/components/library/tv/MissingEpisodeRowWithArtwork'
-import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { parseMissingEpisodes, parseMissingSeasons } from '@/components/library/tv/completenessParsing'
 import { getTVShowIdentity } from '@/components/library/tv/showIdentity'
 import { getStatusBadge, formatSeasonLabel, formatLanguage } from '@/components/library/mediaUtils'
@@ -56,7 +55,6 @@ export function TVShowDetails({
   const [arrStatus, setArrStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
   const [isArrWaitActive, setIsArrWaitActive] = useState(false)
   const [audioLanguages, setAudioLanguages] = useState<string[]>([])
-  const [optimizingEpisodeId, setOptimizingEpisodeId] = useState<number | null>(null)
   const [taskQueueState, setTaskQueueState] = useState<TaskQueueState | null>(null)
   const { seriesIdentityKey, sourceId, libraryId, key: seriesMapKey } = getTVShowIdentity(selectedShow)
 
@@ -364,7 +362,6 @@ export function TVShowDetails({
                           onDismissUpgrade={onDismissUpgrade}
                           isExpanded={expandedRecommendations.has(item.episode.id!)}
                           onToggleOptimize={() => onToggleOptimize(item.episode.id!)}
-                          onOptimize={(ep) => setOptimizingEpisodeId(ep.id!)}
                           transcodeProgress={transcodeProgress}
                           isQueuedTranscode={isQueuedTranscode}
                         />
@@ -400,9 +397,6 @@ export function TVShowDetails({
         />
       </div>
 
-      {optimizingEpisodeId !== null && (
-        <TranscodeModal mediaId={optimizingEpisodeId} onClose={() => setOptimizingEpisodeId(null)} />
-      )}
     </div>
   )
 }

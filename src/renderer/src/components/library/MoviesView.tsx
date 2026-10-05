@@ -550,7 +550,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
           <div className="min-w-0">
             <h4 className="font-medium text-sm truncate">{movie.title}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <QualityBadges item={movie} whiteBg={false} />
+              <QualityBadges item={movie} whiteBg={false} showEfficiency={false} />
               {movie.evidence_status && <EvidenceStatusBadge status={movie.evidence_status} />}
               {collectionData && <span className="text-[0.65rem] text-muted-foreground bg-muted/50 px-1 rounded flex items-center gap-1"><Layers className="w-2.5 h-2.5" />{collectionData.owned_movies}/{collectionData.total_movies}</span>}
             </div>

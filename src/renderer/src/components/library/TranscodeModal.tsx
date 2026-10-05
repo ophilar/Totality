@@ -21,10 +21,12 @@ import { useFocusTrap } from '@/hooks/useFocusTrap'
 interface TranscodeModalProps {
   mediaId: number
   onClose: () => void
-  mode?: 'transcode' | 'remux'
+  initialOptimizationMode?: 'remux_only' | 'transcode'
+  initialStreamPruning?: boolean
+  initialAudioTranscode?: boolean
 }
 
-export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: TranscodeModalProps) {
+export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'transcode', initialStreamPruning = false, initialAudioTranscode = false }: TranscodeModalProps) {
   const [media, setMedia] = useState<MediaItem | null>(null)
   const [availability, setAvailability] = useState<Availability | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,6 +36,7 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
   const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
   const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[]; adviceReason?: string }> } | null>(null)
   const [samplesReviewed, setSamplesReviewed] = useState(false)
+  const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(initialAudioTranscode)
   const [analysisRequired, setAnalysisRequired] = useState(false)
   const [analysisTaskId, setAnalysisTaskId] = useState<string | null>(null)
   const { analyze, taskQueueState } = useAnalysisManager()
@@ -41,7 +44,7 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
     ? [taskQueueState.currentTask, ...taskQueueState.queue, ...taskQueueState.completedTasks].find(task => task?.id === analysisTaskId)
     : undefined
 
-  const [options, setOptions] = useState<TranscodeOptions>({
+  const [options, setOptions] = useState<TranscodeOptions>(() => ({
     targetCodec: '' as TranscodeOptions['targetCodec'],
     outputMode: 'quarantine-replace',
     useGpu: false,
@@ -53,8 +56,9 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
     transcodingEngine: 'ffmpeg',
     targetSize: '',
     qualityProfile: undefined,
-    encoderPolicy: undefined
-  })
+    encoderPolicy: undefined,
+    optimizationMode: initialOptimizationMode
+  }))
 
   const [status, setStatus] = useState<'idle' | 'generating' | 'encoding' | 'complete' | 'failed'>('idle')
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
@@ -72,7 +76,20 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
         window.electronAPI.getCapabilities()
       ])
       
-      if (item) setMedia(item as MediaItem)
+      if (item) {
+        const loadedMedia = item as MediaItem
+        setMedia(loadedMedia)
+        if (initialStreamPruning && loadedMedia.original_language) {
+          setOptions(prev => ({
+            ...prev,
+            streamSelection: {
+              audio: 'original-and-protected',
+              originalLanguage: loadedMedia.original_language!,
+              subtitle: 'all'
+            }
+          }))
+        }
+      }
       const avail = capabilities || { ffmpeg: false }
       const detectedGpus = capabilities?.gpus || []
       setAvailability(avail)
@@ -93,7 +110,7 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
     } finally {
       setLoading(false)
     }
-  }, [mediaId, addToast])
+  }, [mediaId, addToast, initialStreamPruning])
 
   useEffect(() => {
     queueMicrotask(() => { void loadInitialData() })
@@ -183,10 +200,10 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
     failureReportedRef.current = false
     setStatus('generating')
     try {
+      if (audioTranscodeEnabled && !options.targetAudioCodec) throw new Error('Choose an output audio codec before reviewing this optimization.')
       if (!preflight) {
-        const result = (mode === 'remux'
-          ? await window.electronAPI.preflightRemux(media.id)
-          : await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options })) as typeof preflight
+        const preflightOptions = { ...options, targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined }
+        const result = await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options: preflightOptions }) as typeof preflight
         if (!result) throw new Error('Optimization review could not be created')
         setPreflight(result)
         setStatus('idle')
@@ -338,6 +355,70 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
           )}
 
           {/* Active Tab Content */}
+          {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={options.optimizationMode === 'transcode'}
+                onChange={event => setOptions(prev => ({ ...prev, optimizationMode: event.target.checked ? 'transcode' : 'remux_only' }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-medium">Transcode video</span>
+                <span className="block text-xs text-muted-foreground">Apply the selected codec and quality settings to the video stream.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={options.streamSelection?.audio === 'original-and-protected'}
+                disabled={!media.original_language}
+                onChange={event => setOptions(prev => ({
+                  ...prev,
+                  streamSelection: event.target.checked && media.original_language
+                    ? { audio: 'original-and-protected', originalLanguage: media.original_language, subtitle: 'all' }
+                    : undefined
+                }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-medium">Prune non-original audio tracks</span>
+                <span className="block text-xs text-muted-foreground">
+                  {media.original_language
+                    ? `Keep ${media.original_language} audio and protected tracks; remove other audio in the same operation.`
+                    : 'Unavailable because the original audio language is unknown.'}
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={audioTranscodeEnabled}
+                onChange={event => {
+                  setAudioTranscodeEnabled(event.target.checked)
+                  if (!event.target.checked) setOptions(prev => ({ ...prev, targetAudioCodec: undefined }))
+                }}
+                className="mt-0.5"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Transcode audio</span>
+                <span className="block text-xs text-muted-foreground">Convert eligible retained tracks; protected tracks keep their original codec.</span>
+              </span>
+              <select
+                aria-label="Target audio codec"
+                value={options.targetAudioCodec || ''}
+                disabled={!audioTranscodeEnabled}
+                onChange={event => setOptions(prev => ({ ...prev, targetAudioCodec: event.target.value ? event.target.value as NonNullable<TranscodeOptions['targetAudioCodec']> : undefined }))}
+                className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
+              >
+                <option value="">Choose codec</option>
+                <option value="aac">AAC</option>
+                <option value="ac3">AC-3</option>
+                <option value="eac3">E-AC-3</option>
+              </select>
+            </label>
+          </div>}
+
           {activeTab === 'presets' && (
             <QuickPresetsTab
               options={options}
@@ -378,7 +459,8 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
                 {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
                 {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index)}>Open measured sample {index + 1}</button>)}
               </div>)}
-              {mode === 'remux' && preflight.episodes.map(item => <p key={item.mediaItemId} className="text-muted-foreground">Retained audio streams are listed in the reviewed preflight plan: {item.adviceReason}</p>)}
+              {options.streamSelection?.audio === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}
+              {audioTranscodeEnabled && options.targetAudioCodec && <p className="text-muted-foreground">Eligible retained audio tracks will be converted to {options.targetAudioCodec.toUpperCase()}.</p>}
               {preflight.episodes.some(item => item.decisionStatus === 'sample_required') && <label className="flex gap-2 text-sm"><input type="checkbox" checked={samplesReviewed} onChange={event => setSamplesReviewed(event.target.checked)} /> I reviewed and approve the measured sample</label>}
             </section>
           )}
@@ -415,11 +497,11 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
 
               <button 
                 onClick={startTranscode}
-                disabled={!availability?.ffmpeg || status === 'generating' || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))}
+                disabled={!availability?.ffmpeg || status === 'generating' || (audioTranscodeEnabled && !options.targetAudioCodec) || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))}
                 className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
               >
                 <Play className="w-4 h-4 fill-current" />
-                {status === 'generating' ? 'Preparing…' : preflight ? (mode === 'remux' ? 'Queue Stream Pruning' : 'Queue Optimization') : 'Review Optimization'}
+                {status === 'generating' ? 'Preparing…' : preflight ? 'Queue Optimization' : 'Review Optimization'}
               </button>
             </div>
           </div>

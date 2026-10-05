@@ -124,7 +124,7 @@ export function buildStreamSelectionPlan(analysis: FileAnalysisResult, options: 
   }
 }
 
-export function appendStreamMappingArgs(args: string[], analysis: FileAnalysisResult, options: TranscodeOptions): void {
+export function appendStreamMappingArgs(args: string[], analysis: FileAnalysisResult, options: TranscodeOptions): StreamSelectionPlan {
   if (!analysis.video) throw new Error('Transcoding requires an analyzed video stream')
   const plan = buildStreamSelectionPlan(analysis, options)
   args.push('-map', `0:${analysis.video.index}`)
@@ -142,4 +142,5 @@ export function appendStreamMappingArgs(args: string[], analysis: FileAnalysisRe
       args.push(`-disposition:s:${plan.subtitleStreamIndexes.indexOf(plan.defaultSubtitle)}`, 'default')
     }
   }
+  return plan
 }

@@ -62,6 +62,7 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
           episodeCount: 5,
           episodes: []
         }),
+        approveShow: vi.fn().mockResolvedValue(undefined),
         queueShow: vi.fn().mockResolvedValue({
           batchId: 'batch-123',
           queuedMediaItemIds: [1, 2, 3, 4, 5]
@@ -280,7 +281,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
           hdrFormat: 'HDR10',
           sourceSize: 15000000000,
           sourceTier: 'Remux',
-          recommendedAction: 'video_transcode',
+          operations: ['video_transcode', 'stream_pruning'],
+          decisionStatus: 'sample_required',
           adviceReason: 'High bitrate AVC Remux benefits from video transcoding.'
         },
         {
@@ -290,7 +292,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
           hdrFormat: 'SDR',
           sourceSize: 4500000000,
           sourceTier: 'WEB-DL',
-          recommendedAction: 'stream_pruning',
+          operations: ['stream_pruning'],
+          decisionStatus: 'actionable',
           adviceReason: 'WEB-DL with secondary dub bloat. Stream pruning preserves video quality.'
         },
         {
@@ -300,7 +303,8 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
           hdrFormat: 'SDR',
           sourceSize: 2000000000,
           sourceTier: 'WEB-DL',
-          recommendedAction: 'already_optimized',
+          operations: [],
+          decisionStatus: 'already_optimized',
           adviceReason: 'Already optimized efficient release.'
         }
       ]
@@ -344,7 +348,9 @@ describe('TVShowDetails & ShowTranscodeModal Optimization Flow', () => {
 
     // Verify TRaSH Advisory Badges
     expect(screen.getAllByText(/Video Transcode/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/Lossless Stream Copy/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Stream Pruning/i).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/2 episodes · preserve only the selected audio and subtitle policy/i)).toBeTruthy()
+    expect(screen.getByText(/1 episodes · apply the selected target strategy/i)).toBeTruthy()
     expect(screen.getAllByText(/Already Optimized/i).length).toBeGreaterThanOrEqual(1)
 
     // Verify Advice Reasons

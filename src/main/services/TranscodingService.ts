@@ -58,6 +58,7 @@ export interface TranscodeOptions {
   targetProfileId?: string
   targetContainer?: 'mkv' | 'mp4'
   targetAudioCodec?: 'aac' | 'ac3' | 'eac3'
+  audioConversions?: Array<{ sourceIndex: number; codec: string; bitrateKbps: number }>
   targetHdrFormat?: 'SDR' | 'HDR10'
   targetConversion?: TargetTranscodePlan
 }
@@ -126,6 +127,31 @@ export interface QuarantinedShowFile {
   owned: boolean
 }
 
+function buildAudioConversions(analysis: FileAnalysisResult, options: TranscodeOptions): NonNullable<TranscodeOptions['audioConversions']> {
+  if (!options.targetAudioCodec) return []
+  const codec = options.targetAudioCodec
+  const selected = new Set(buildStreamSelectionPlan(analysis, options).audioStreamIndexes)
+  return analysis.audioTracks.flatMap(track => {
+    const protectedTrack = track.hasObjectAudio || track.isCommentary || track.isAudioDescription || track.isAccessibility
+    if (!selected.has(track.index) || protectedTrack || track.codec === codec) return []
+    if (track.bitrate == null || !Number.isFinite(track.bitrate) || track.bitrate <= 0 || analysis.duration == null || analysis.duration <= 0) {
+      throw new Error(`Audio stream ${track.index} needs measured bitrate and duration before transcoding`)
+    }
+    const bitrateKbps = track.channels >= 6 ? APP_CONFIG.transcoding.audioSurroundTargetBitrateKbps : APP_CONFIG.transcoding.audioStereoTargetBitrateKbps
+    return [{ sourceIndex: track.index, codec, bitrateKbps }]
+  })
+}
+
+function estimateAudioConversionSavings(analysis: FileAnalysisResult, conversions: NonNullable<TranscodeOptions['audioConversions']>): number {
+  const durationSeconds = analysis.duration! / 1000
+  return conversions.reduce((total, conversion) => {
+    const source = analysis.audioTracks.find(track => track.index === conversion.sourceIndex)!
+    return total + Math.max(0, Math.round(((source.bitrate! - conversion.bitrateKbps) * 1000 / 8) * durationSeconds))
+  }, 0)
+}
+
+export type PlannedOptimizationOperation = 'video_transcode' | 'audio_transcode' | 'stream_pruning' | 'container_change'
+
 export interface ShowTranscodePreflight {
   preflightId: string
   batchId: string
@@ -144,7 +170,7 @@ export interface ShowTranscodePreflight {
     hdrFormat: string
     sourceSize: number
     sourceMtimeMs: number
-    recommendedAction?: 'video_transcode' | 'stream_pruning' | 'already_optimized'
+    operations: PlannedOptimizationOperation[]
     decisionStatus?: 'actionable' | 'already_optimized' | 'sample_required' | 'insufficient_evidence' | 'incompatible'
     evidenceStatus?: 'measured' | 'estimated' | 'insufficient'
     confidence?: 'high' | 'medium' | 'low' | 'none'
@@ -254,19 +280,29 @@ export class TranscodingService {
         const sourcePlan = buildStreamSelectionPlan(analysis, request.options)
         const streamsChanged = sourcePlan.audioStreamIndexes.length !== analysis.audioTracks.length || sourcePlan.subtitleStreamIndexes.length !== analysis.subtitleTracks.length
         const selectedAnalysis = { ...analysis, audioTracks: analysis.audioTracks.filter(track => sourcePlan.audioStreamIndexes.includes(track.index)), subtitleTracks: analysis.subtitleTracks.filter(track => sourcePlan.subtitleStreamIndexes.includes(track.index)) }
+        if (request.options.targetAudioCodec && !targetProfile.definition.audio.codecs.includes(request.options.targetAudioCodec)) {
+          throw new Error(`Audio codec ${request.options.targetAudioCodec} is not supported by ${targetProfile.name}`)
+        }
+        const plannedAudioConversions = buildAudioConversions(selectedAnalysis, request.options)
+        const compatibleAudioTracks = selectedAnalysis.audioTracks.map(track => {
+          const conversion = plannedAudioConversions.find(item => item.sourceIndex === track.index)
+          return conversion ? { ...track, codec: conversion.codec, bitrate: conversion.bitrateKbps } : track
+        })
         const plannedContainer = request.options.targetContainer === 'mp4' ? 'mp4' : request.options.targetContainer === 'mkv' ? 'matroska' : analysis.container
         const containerChanged = !analysis.container?.split(',').includes(plannedContainer!)
-        const sourceCompatibility = evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, container: plannedContainer })
+        const sourceCompatibility = evaluatePlaybackTarget(targetProfile, { ...selectedAnalysis, audioTracks: compatibleAudioTracks, container: plannedContainer })
         const shouldEncode = request.options.optimizationMode === 'transcode' || (request.options.optimizationMode === 'smart' && (advice.action === 'video_transcode' || sourceCompatibility.overall === 'incompatible'))
-        const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
-        if (!shouldEncode && !streamsChanged && !containerChanged) {
+        const options: TranscodeOptions = { ...request.options, optimizationMode: shouldEncode ? 'transcode' : 'remux_only', audioConversions: shouldEncode ? undefined : plannedAudioConversions, encoderPolicy: request.options.encoderPolicy, useGpu: shouldEncode && request.options.encoderPolicy !== 'software', gpuId: shouldEncode && request.options.encoderPolicy !== 'software' ? request.options.gpuId : undefined }
+        if (!shouldEncode && !streamsChanged && !containerChanged && plannedAudioConversions.length === 0) {
           const compatible = sourceCompatibility.overall === 'compatible'
-          return { mediaItemId: episode.id, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, recommendedAction: compatible ? 'already_optimized' : undefined, decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
+          return { mediaItemId: episode.id, label, compatible, reason: compatible ? undefined : 'Retained streams do not satisfy the selected playback profile', hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, operations: [], decisionStatus: compatible ? 'already_optimized' : 'incompatible', targetCompatibility: sourceCompatibility, sourceTier: advice.sourceTier, adviceReason: advice.reason }
         }
         if (shouldEncode) {
           options.maxOutputBytes = (await this.resolveMaximumOutputBytes(stat.size, options, getDatabase()))!
           options.targetConversion = buildTargetTranscodePlan(analysis, targetProfile, options)
         }
+        const audioConversions = options.targetConversion?.audio.flatMap(track => track.bitrateKbps === undefined ? [] : [{ sourceIndex: track.sourceIndex, codec: track.codec, bitrateKbps: track.bitrateKbps }]) ?? options.audioConversions ?? []
+        const audioConversionSavings = shouldEncode ? 0 : estimateAudioConversionSavings(analysis, audioConversions)
         const sourceSha256 = await sha256File(episode.file_path)
         const sampleDirectory = path.join(app.getPath('userData'), 'transcoding-samples', preflightId, String(episode.id))
         let params: TranscodingParams
@@ -296,9 +332,15 @@ export class TranscodingService {
         const samplePaths = params.measuredCandidate?.samplePaths
         return {
           mediaItemId: episode.id, label, compatible: true, hdrFormat: analysis.video.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256,
-          recommendedAction: shouldEncode ? 'video_transcode' : 'stream_pruning', decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus: shouldEncode ? 'measured' : advice.evidence_status, confidence: shouldEncode ? 'high' : advice.confidence,
-          estimatedSavingsBytes: shouldEncode ? null : advice.estimatedSavingsBytes, savingsBasis: shouldEncode ? 'video_sample_encode' : advice.savings_basis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : advice.reason,
-          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: options.targetConversion?.changes,
+          operations: [
+            ...(streamsChanged ? ['stream_pruning' as const] : []),
+            ...(containerChanged ? ['container_change' as const] : []),
+            ...(shouldEncode ? ['video_transcode' as const] : []),
+            ...(audioConversions.length > 0 ? ['audio_transcode' as const] : []),
+          ],
+          decisionStatus: shouldEncode ? 'sample_required' : 'actionable', evidenceStatus: shouldEncode || audioConversions.length > 0 ? 'measured' : advice.evidence_status, confidence: shouldEncode || audioConversions.length > 0 ? 'high' : advice.confidence,
+          estimatedSavingsBytes: shouldEncode ? null : audioConversions.length > 0 ? audioConversionSavings : advice.estimatedSavingsBytes, savingsBasis: shouldEncode ? 'video_sample_encode' : audioConversions.length > 0 ? 'audio_transcode_model' : advice.savings_basis, sourceTier: advice.sourceTier, adviceReason: shouldEncode ? 'Measured encoding passed the selected quality gates. Review all three samples before approval.' : audioConversions.length > 0 ? `Measured audio tracks can be converted to ${request.options.targetAudioCodec?.toUpperCase()}.` : advice.reason,
+          targetCompatibility, options, params, sourceAnalysis: analysis, targetProfile, samplePaths, sampleHashes: samplePaths ? await Promise.all(samplePaths.map(sha256File)) : undefined, changes: [...(options.targetConversion?.changes ?? []), ...audioConversions.map(track => `Convert audio stream ${track.sourceIndex} to ${track.codec.toUpperCase()} at ${track.bitrateKbps} kbps`)],
           measuredParameters: { encoder: params.encoder, crf: params.crf, preset: params.preset },
         }
       } catch (error) {
@@ -313,7 +355,7 @@ export class TranscodingService {
           hdrFormat: 'Unknown',
           sourceSize: 0,
           sourceMtimeMs: 0,
-          recommendedAction: undefined,
+          operations: [],
           decisionStatus: 'insufficient_evidence',
           evidenceStatus: 'insufficient',
           confidence: 'none',
@@ -369,7 +411,7 @@ export class TranscodingService {
       compatible: true,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       userApproved: false,
-      episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, recommendedAction: 'stream_pruning', decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
+      episodes: [{ mediaItemId, label: item.title, compatible: true, hdrFormat: analysis.video?.hdrFormat || 'SDR', sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs, sourceSha256: fingerprint, operations: ['stream_pruning'], decisionStatus: 'actionable', evidenceStatus: 'measured', confidence: 'high', savingsBasis: `retained audio streams: ${retainedAudioIndexes.join(', ')}`, adviceReason: 'Review explicit retained audio streams before queueing.', options, sourceAnalysis: analysis }],
     }
     const request: ShowTranscodeRequest = { mediaItemId, sourceId: item.source_id, libraryId: item.library_id, options }
     this.showPreflights.set(id, { request, result })
@@ -396,7 +438,7 @@ export class TranscodingService {
     }
     const { getTaskQueueService } = await import('./TaskQueueService')
     const queueableEpisodes = preflight.result.episodes.filter(episode =>
-      episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true)) && episode.recommendedAction !== 'already_optimized'
+      episode.compatible && (episode.decisionStatus === 'actionable' || (episode.decisionStatus === 'sample_required' && preflight?.result.userApproved === true))
     )
     if (queueableEpisodes.length === 0) {
       throw new Error('No episodes have sufficient evidence for a safe optimization action.')
@@ -671,6 +713,7 @@ export class TranscodingService {
 
     if (effectiveOptions.optimizationMode === 'remux_only' || effectiveOptions.encoder === 'remux' || effectiveOptions.encoder === 'copy') {
       const plan = buildStreamSelectionPlan(analysis, effectiveOptions)
+      effectiveOptions.audioConversions ??= buildAudioConversions(analysis, effectiveOptions)
       const builder = new StreamRemuxCommandBuilder()
       const ffmpegArgs = builder.buildFFmpegArgs('<input>', '<output>', effectiveOptions, analysis)
       if (effectiveOptions.customArgs) {
@@ -687,9 +730,11 @@ export class TranscodingService {
         ffmpegArgs.splice(outputIndex, 0, ...safeParts)
       }
       return {
-        summary: 'Lossless container stream remuxing (copy video)',
+        summary: effectiveOptions.audioConversions?.length
+          ? `Lossless video remux with ${effectiveOptions.audioConversions.length} audio stream conversion${effectiveOptions.audioConversions.length === 1 ? '' : 's'}`
+          : 'Lossless container stream remuxing (copy video)',
         ffmpegArgs,
-        expectedSizeReduction: 'Stream pruning only',
+        expectedSizeReduction: effectiveOptions.audioConversions?.length ? 'Estimated from measured audio bitrates' : 'Stream pruning only',
         warnings: [],
         encoder: 'copy',
         sourceHdrFormat: analysis.video?.hdrFormat,
@@ -993,7 +1038,7 @@ export class TranscodingService {
       for (const [index, sourceIndex] of streamPlan.audioStreamIndexes.entries()) {
         const source = sourceAnalysis.audioTracks.find(track => track.index === sourceIndex)!, output = outputAnalysis.audioTracks[index]
         if (source.durationMs === undefined || output.durationMs === undefined) throw new Error(`Audio stream ${sourceIndex} has no complete duration evidence`)
-        const converted = options.targetConversion?.audio.find(track => track.sourceIndex === sourceIndex)?.bitrateKbps !== undefined
+      const converted = (options.targetConversion?.audio.find(track => track.sourceIndex === sourceIndex)?.bitrateKbps ?? options.audioConversions?.find(track => track.sourceIndex === sourceIndex)?.bitrateKbps) !== undefined
         const toleranceMs = converted ? 2 * (output.codec === 'aac' ? 1024 : 1536) * 1000 / output.sampleRate! : Math.max(source.timestampPrecisionMs!, output.timestampPrecisionMs!)
         if (Math.abs(source.durationMs - output.durationMs) > toleranceMs) throw new Error(`Audio stream ${sourceIndex} duration changed beyond its timestamp or coded sample precision`)
       }
@@ -1124,7 +1169,7 @@ export class TranscodingService {
     for (const [index, sourceIndex] of streamPlan.audioStreamIndexes.entries()) {
       const source = sourceAnalysis.audioTracks.find(track => track.index === sourceIndex)!
       const output = outputAnalysis.audioTracks[index]
-      const conversion = options.targetConversion?.audio.find(track => track.sourceIndex === sourceIndex)
+      const conversion = options.targetConversion?.audio.find(track => track.sourceIndex === sourceIndex) ?? options.audioConversions?.find(track => track.sourceIndex === sourceIndex)
       if (output.codec !== (conversion?.codec ?? source.codec) || output.channels !== source.channels || output.language !== source.language || output.title !== source.title || output.hasObjectAudio !== source.hasObjectAudio) throw new Error(`Retained audio stream ${sourceIndex} changed unexpectedly`)
     }
     for (const [index, sourceIndex] of streamPlan.subtitleStreamIndexes.entries()) {

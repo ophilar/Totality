@@ -1,19 +1,10 @@
 import { useState, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Trash2, HardDrive, Zap } from 'lucide-react'
+import { RefreshCw, MoreVertical, CircleFadingArrowUp, EyeOff, Zap } from 'lucide-react'
 import { QualityBadges } from '@/components/library/QualityBadges'
 import { EpisodePlaceholder } from '@/components/ui/MediaPlaceholders'
 import { ConversionRecommendation } from '@/components/library/ConversionRecommendation'
 import { useMenuClose } from '@/hooks/useMenuClose'
 import type { MediaItem } from '@/components/library/types'
-
-// Utility to format bytes into readable strings
-const formatBytes = (bytes: number) => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
 
 export const EpisodeRow = memo(({
   episode,
@@ -22,7 +13,6 @@ export const EpisodeRow = memo(({
   onDismissUpgrade,
   isExpanded,
   onToggleOptimize,
-  onOptimize,
   transcodeProgress,
   isQueuedTranscode
 }: {
@@ -32,7 +22,6 @@ export const EpisodeRow = memo(({
   onDismissUpgrade?: (episode: MediaItem) => void
   isExpanded?: boolean
   onToggleOptimize?: () => void
-  onOptimize?: (episode: MediaItem) => void
   transcodeProgress?: {
     percentage?: number
     phase?: string
@@ -77,7 +66,7 @@ export const EpisodeRow = memo(({
 
 
   const needsUpgrade = episode.tier_quality === 'LOW' || !!episode.needs_upgrade
-  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize || onOptimize
+  const showMenuButton = (onRescan && episode.file_path) || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
     <div className={`flex flex-col relative ${showMenu ? 'z-50' : 'z-10'}`}>
@@ -198,16 +187,6 @@ export const EpisodeRow = memo(({
               <CircleFadingArrowUp className="w-6 h-6 text-red-500" />
             </div>
           )}
-          {episode.efficiency_score != null && episode.efficiency_score < 60 && (
-            <div title={`Low Efficiency (${episode.efficiency_score}%). Upgrade recommended to save space.`}>
-              <Trash2 className="w-6 h-6 text-orange-500" />
-            </div>
-          )}
-          {episode.storage_debt_bytes != null && episode.storage_debt_bytes > 2 * 1024 * 1024 * 1024 && (
-            <div title={`Significant Storage Debt (${formatBytes(episode.storage_debt_bytes)}). Re-encode to save space.`}>
-              <HardDrive className="w-6 h-6 text-blue-500" />
-            </div>
-          )}
         </div>
 
         {/* 3-dot menu */}
@@ -229,26 +208,13 @@ export const EpisodeRow = memo(({
 
             {showMenu && !isRescanning && (
               <div className="absolute top-8 right-0 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] z-50">
-                {onOptimize && episode.file_path && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowMenu(false)
-                      onOptimize(episode)
-                    }}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 text-primary font-medium cursor-pointer"
-                  >
-                    <Zap className="w-3.5 h-3.5 fill-current" />
-                    Optimize Episode...
-                  </button>
-                )}
                 {onToggleOptimize && (
                   <button
                     onClick={handleToggleOptimize}
                     className={`w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2 ${isExpanded ? 'text-primary font-medium' : ''}`}
                   >
                     <Zap className="w-3.5 h-3.5" />
-                    {isExpanded ? 'Hide Optimization' : 'Optimization Details'}
+                    {isExpanded ? 'Hide Optimization' : 'Optimize…'}
                   </button>
                 )}
                 {onRescan && episode.file_path && (

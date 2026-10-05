@@ -1,5 +1,5 @@
 import React from 'react'
-import { Film, Tv, Disc3, Trash2, EyeOff } from 'lucide-react'
+import { Film, Tv, Disc3, EyeOff } from 'lucide-react'
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MediaItem } from '@/components/library/types'
 import type { MusicAlbumUpgrade } from '@/components/dashboard/types'
@@ -30,11 +30,6 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
               <Film className="w-5 h-5 text-muted-foreground/50" />
             </div>
           )}
-          {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
-            <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
-              <Trash2 className="w-2.5 h-2.5 text-white" />
-            </div>
-          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{item.title}</div>
@@ -43,12 +38,11 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {wasteGB != null && parseFloat(wasteGB) > 0.5 && <span className="text-[10px] font-bold text-orange-400">{wasteGB}GB WASTE</span>}
           </div>
         </div>
         </button>
         <div className="flex items-center gap-1 shrink-0">
-          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage waste details`} onClick={() => onToggleExpand(item.id!)} className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage details`} onClick={() => onToggleExpand(item.id!)} title="Estimated size reduction if replaced with an HEVC encode" className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
           <AddToWishlistButton
             mediaType="movie"
             title={item.title}
@@ -94,11 +88,6 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
               <Tv className="w-5 h-5 text-muted-foreground/50" />
             </div>
           )}
-          {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
-            <div className="absolute top-0 right-0 p-0.5 bg-orange-600 rounded-bl-sm shadow-sm" title={`${wasteGB}GB WASTE`}>
-              <Trash2 className="w-2.5 h-2.5 text-white" />
-            </div>
-          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{item.series_title || item.title}</div>
@@ -109,12 +98,11 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {wasteGB != null && parseFloat(wasteGB) > 0.5 && <span className="text-[10px] font-bold text-orange-400">{wasteGB}GB WASTE</span>}
           </div>
         </div>
         </button>
         <div className="flex items-center gap-1 shrink-0">
-          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage waste details`} onClick={() => onToggleExpand(item.id!)} className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage details`} onClick={() => onToggleExpand(item.id!)} title="Estimated size reduction if replaced with an HEVC encode" className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
           <AddToWishlistButton
             mediaType="episode"
             title={item.title!}
