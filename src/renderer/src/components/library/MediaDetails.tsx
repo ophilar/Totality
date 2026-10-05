@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   X, 
@@ -14,6 +14,7 @@ import { TranscodeModal } from '@/components/library/TranscodeModal'
 import { useToast } from '@/contexts/ToastContext'
 import { toSafeNumber, toSafeString } from '@/utils/typeSafety'
 import { formatDuration } from '@/components/library/mediaUtils'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { Zap } from 'lucide-react'
 import type { MediaItem, MediaItemVersion } from '@main/types/database'
 
@@ -33,6 +34,8 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   const [deepAnalysis, setDeepAnalysis] = useState<{ peakBitrate?: number; avgBitrate?: number; scanDurationMs?: number } | null>(null)
   const [expandedSection, setExpandedSection] = useState<'playback' | 'video' | 'audio' | 'file' | 'analysis' | null>(null)
   const { addToast } = useToast()
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(!!media, modalRef)
 
   useEffect(() => {
     let active = true
@@ -102,6 +105,11 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="media-details-title"
+        tabIndex={-1}
         className="relative bg-card border border-border rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
@@ -129,7 +137,7 @@ export function MediaDetails({ mediaId, onClose, onFixMatch }: MediaDetailsProps
           {/* Header */}
           <div className="p-6 pb-4 border-b border-border/10 flex justify-between items-start gap-4">
             <div className="min-w-0">
-              <h2 className="text-2xl font-bold truncate leading-tight">{media.title}</h2>
+              <h2 id="media-details-title" className="text-2xl font-bold truncate leading-tight">{media.title}</h2>
               <div className="flex items-center gap-2 mt-1.5 text-sm text-muted-foreground font-medium">
                 {media.year && <span className="bg-muted px-2 py-0.5 rounded text-xs">{media.year}</span>}
                 {toSafeNumber(sv?.duration ?? media.duration) > 0 && <><span className="mx-0.5">·</span><span>{formatDuration(toSafeNumber(sv?.duration ?? media.duration))}</span></>}

@@ -111,7 +111,7 @@ export const CollectionModal = memo(function CollectionModal({
 
   return (
     <>
-      {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title">
+      {createPortal(<div className="fixed inset-0 z-150 flex items-center justify-center p-4">
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/60"
@@ -119,7 +119,7 @@ export const CollectionModal = memo(function CollectionModal({
         />
 
         {/* Modal */}
-        <div ref={modalRef} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+        <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="collection-modal-title" tabIndex={-1} className="relative bg-card border border-border rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl shrink-0">
             <div>

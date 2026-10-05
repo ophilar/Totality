@@ -4,6 +4,7 @@ import { Disc3, RefreshCw, Copy, Check, CircleFadingArrowUp, MoreVertical, X, Ey
 import { AddToWishlistButton } from '@/components/wishlist/AddToWishlistButton'
 import type { MusicArtist, MusicAlbum, MusicTrack, AlbumCompletenessData, MissingTrack } from '@/components/library/types'
 import { ScopedOptimizationSummary } from '@/components/library/ScopedOptimizationSummary'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 export function MusicAlbumDetails({
   selectedAlbum,
@@ -29,6 +30,7 @@ export function MusicAlbumDetails({
   const [trackMenuOpen, setTrackMenuOpen] = useState<string | number | null>(null)
   const [rescanningTrackId, setRescanningTrackId] = useState<string | number | null>(null)
   const trackMenuRef = useRef<HTMLDivElement>(null)
+  const qualityDialogRef = useRef<HTMLDivElement | null>(null)
 
   const [selectedTrackForQuality, setSelectedTrackForQuality] = useState<{
     title: string
@@ -41,6 +43,7 @@ export function MusicAlbumDetails({
     artist_name?: string
     album_title?: string
   } | null>(null)
+  useFocusTrap(!!selectedTrackForQuality, qualityDialogRef)
 
   // Click-outside and Escape key handler for track menu
   useEffect(() => {
@@ -376,12 +379,12 @@ export function MusicAlbumDetails({
 
         return createPortal(
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200] p-6" onClick={() => setSelectedTrackForQuality(null)}>
-            <div className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border" onClick={(e) => e.stopPropagation()}>
+            <div ref={qualityDialogRef} role="dialog" aria-modal="true" aria-labelledby="track-quality-title" tabIndex={-1} className="bg-card rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-border" onClick={(e) => e.stopPropagation()}>
               <div className="flex gap-4 p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h2 className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
+                      <h2 id="track-quality-title" className="text-lg font-medium truncate">{selectedTrackForQuality.title}</h2>
                       {(selectedTrackForQuality.artist_name || selectedTrackForQuality.album_title) && (
                         <p className="text-sm text-muted-foreground truncate">
                           {[selectedTrackForQuality.artist_name, selectedTrackForQuality.album_title].filter(Boolean).join(' · ')}

@@ -51,7 +51,11 @@ export const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, 
 
   return (
     <div
-      className={`group cursor-pointer hover-scale relative ${showMenu ? 'z-50' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open artist ${artist.name}`}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}
+      className={`group cursor-pointer hover-scale relative focus-visible:ring-2 focus-visible:ring-primary ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}
     >
       <div className="relative">
@@ -63,7 +67,10 @@ export const ArtistCard = memo(({ artist, onClick, showSourceBadge, onFixMatch, 
                 e.stopPropagation()
                 setShowMenu(!showMenu)
               }}
-              className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+              type="button"
+              aria-label={`More actions for ${artist.name}`}
+              aria-expanded={showMenu}
+              className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
             >
               <MoreVertical className="w-4 h-4" />
             </button>

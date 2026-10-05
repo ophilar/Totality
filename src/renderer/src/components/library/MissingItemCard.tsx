@@ -38,6 +38,8 @@ export const MissingItemCard = memo(function MissingItemCard({
   return (
     <div
       ref={cardRef}
+      role="button"
+      aria-label={`Open ${title}`}
       tabIndex={0}
       className="group cursor-pointer hover-scale outline-hidden"
       onClick={onClick}

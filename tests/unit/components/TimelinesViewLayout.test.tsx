@@ -180,7 +180,7 @@ describe('TimelinesView Master-Detail Layout', () => {
 
     // Verify root layout structure
     const root = container.firstElementChild
-    expect(root?.className).toContain('flex flex-row')
+    expect(root?.className).toContain('flex flex-col lg:flex-row')
     expect(root?.className).toContain('h-full')
     expect(root?.className).toContain('overflow-hidden')
 

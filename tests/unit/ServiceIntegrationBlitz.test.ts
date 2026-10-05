@@ -190,8 +190,8 @@ describe('Service Integration Blitz (No Mocks)', () => {
         const dups = await db.duplicates.getPendingDuplicates()
         expect(dups).toHaveLength(1)
 
-        const success = await service.resolveDuplicate(dups[0].id!, id1, false)
-        expect(success).toBe(true)
+        const outcome = await service.resolveDuplicate(dups[0].id!, id1, false)
+        expect(outcome.status).toBe('kept')
 
         const remaining = await db.duplicates.getPendingDuplicates()
         expect(remaining).toHaveLength(0)

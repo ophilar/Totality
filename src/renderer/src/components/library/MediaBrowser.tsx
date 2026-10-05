@@ -34,7 +34,6 @@ import { useMediaActions } from '@/components/library/hooks/useMediaActions'
 import { useAnalysisManager } from '@/components/library/hooks/useAnalysisManager'
 import { useDismissHandlers } from '@/components/library/hooks/useDismissHandlers'
 import { useLibraryEventListeners } from '@/components/library/hooks/useLibraryEventListeners'
-import { useGlobalSearch } from '@/components/library/hooks/useGlobalSearch'
 import { getTVShowIdentity, getTVShowIdentityKey } from '@/components/library/tv/showIdentity'
 import { SETTING_KEYS } from '@shared/settingKeys'
 
@@ -243,17 +242,7 @@ export function MediaBrowser({
   })
 
   // Filters
-  const [searchInput, setSearchInput] = useState('')
-  const [debouncedSearchInput, setDebouncedSearchInput] = useState('')
-  useEffect(() => {
-    if (!searchInput.trim()) {
-      setDebouncedSearchInput('')
-      return
-    }
-    const timer = setTimeout(() => setDebouncedSearchInput(searchInput), 250)
-    return () => clearTimeout(timer)
-  }, [searchInput])
-  const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters(searchInput)
+  const { tierFilter, setTierFilter, alphabetFilter, setAlphabetFilter, slimDown, setSlimDown } = useLibraryFilters('')
   const normalizedSortBy = (sortBy === 'waste' || sortBy === 'recoverable') ? 'recoverable' : (sortBy === 'weighted_efficiency' && view !== 'tv' ? 'efficiency' : sortBy)
   const commonFilters = useMemo(() => ({
     sortBy: normalizedSortBy,
@@ -261,10 +250,9 @@ export function MediaBrowser({
     qualityTier: tierFilter !== 'all' ? tierFilter : undefined,
     tierQuality: qualityFilter !== 'all' ? qualityFilter : undefined,
     alphabetFilter: alphabetFilter || undefined,
-    searchQuery: debouncedSearchInput.trim() || undefined,
     libraryId: activeLibraryId || undefined,
     slimDown: slimDown || undefined
-  }), [normalizedSortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, debouncedSearchInput, activeLibraryId, slimDown])
+  }), [normalizedSortBy, sortOrder, tierFilter, qualityFilter, alphabetFilter, activeLibraryId, slimDown])
   const movieFilters = useMemo(() => ({ ...commonFilters, type: 'movie' } as MediaItemFilters), [commonFilters])
 
   useEffect(() => {
@@ -300,67 +288,6 @@ export function MediaBrowser({
   useEffect(() => {
     if (view === 'movies') queueMicrotask(() => void loadMovieOptimizationSummary())
   }, [view, loadMovieOptimizationSummary])
-
-  // Search
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const {
-    showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex,
-    searchContainerRef, globalSearchResults, searchStatus, searchError, retrySearch, hasSearchResults, handleSearchKeyDown, handleSearchResultClick,
-  } = useGlobalSearch({
-    searchInputRef,
-    onNavigateToMovie: (id) => setSelectedMediaId(id, 'movie'),
-    onNavigateToTVShow: (identityKey) => {
-      window.electronAPI.getTVShows({ searchQuery: identityKey }).then(shows => {
-        const show = shows.find(s => s.series_identity_key === identityKey)
-        if (show) setSelectedShow(show)
-        setView('tv')
-      })
-    },
-    onNavigateToEpisode: (id, seriesIdentityKey, sourceId, libraryId) => {
-      if (!seriesIdentityKey || !sourceId || !libraryId) {
-        addToast({ type: 'error', title: 'TV series identity unavailable', message: `Episode ${id} is missing scoped series identity.` })
-      } else {
-        window.electronAPI.getTVShows({ searchQuery: seriesIdentityKey }).then(shows => {
-          const show = shows.find(candidate =>
-            candidate.series_identity_key === seriesIdentityKey
-            && candidate.source_id === sourceId
-            && candidate.library_id === libraryId
-          )
-          if (show) setSelectedShow(show)
-          setSelectedMediaId(id, 'episode')
-          setView('tv')
-        })
-      }
-    },
-    onNavigateToArtist: async (id) => {
-      const artist = await window.electronAPI.musicGetArtist(id)
-      if (artist) {
-        setSelectedArtist(artist as MusicArtist)
-        setMusicViewMode('albums')
-        setView('music')
-      }
-    },
-    onNavigateToAlbum: async (id) => {
-      const album = await window.electronAPI.musicGetAlbum(id) as MusicAlbum
-      if (album) {
-        const artist = await window.electronAPI.musicGetArtist(album.artist_id!)
-        if (artist) setSelectedArtist(artist as MusicArtist)
-        setSelectedAlbum(album)
-        setMusicViewMode('albums')
-        setView('music')
-      }
-    },
-    onNavigateToTrack: async (albumId) => {
-      const album = await window.electronAPI.musicGetAlbum(albumId) as MusicAlbum
-      if (album) {
-        const artist = await window.electronAPI.musicGetArtist(album.artist_id!)
-        if (artist) setSelectedArtist(artist as MusicArtist)
-        setSelectedAlbum(album)
-        setMusicViewMode('albums')
-        setView('music')
-      }
-    }
-  })
 
   // Load episodes/tracks
   useEffect(() => {
@@ -625,7 +552,6 @@ export function MediaBrowser({
           showCompletenessPanel={showCompletenessPanel} setShowCompletenessPanel={setShowCompletenessPanel}
           showWishlistPanel={showWishlistPanel} setShowWishlistPanel={setShowWishlistPanel}
           onOpenSettings={onOpenSettings || (() => {})} onNavigateHome={onNavigateHome}
-          searchProps={{ searchInput, setSearchInput, showSearchResults, setShowSearchResults, searchResultIndex, setSearchResultIndex, searchContainerRef, searchInputRef, globalSearchResults, searchStatus, searchError, retrySearch, hasSearchResults, handleSearchKeyDown, handleSearchResultClick }}
         />
       )}
 

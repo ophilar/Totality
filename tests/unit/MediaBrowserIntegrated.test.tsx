@@ -63,10 +63,10 @@ describe('MediaBrowser (Integrated Stack)', () => {
     return result
   }
 
-  it('should render the library browser with all filters', async () => {
+  it('keeps app-wide search out of the library browser', async () => {
     await renderBrowser()
     
-    expect(screen.getByPlaceholderText(/Search all libraries/i)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/Search all libraries/i)).toBeNull()
     expect(screen.getAllByText(/Movies/i).length).toBeGreaterThan(0)
   })
 

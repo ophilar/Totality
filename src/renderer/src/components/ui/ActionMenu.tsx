@@ -39,7 +39,9 @@ export function ActionMenu({ items, isWorking = false, buttonClassName, menuPosi
             onOpenChange?.(next)
           }
         }}
-        className={buttonClassName || "w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"}
+        aria-label={isWorking ? 'Action in progress' : 'More actions'}
+        aria-expanded={isOpen}
+        className={buttonClassName || "w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"}
       >
         {isWorking ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
       </button>

@@ -59,6 +59,8 @@ export const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge
   return (
     <div
       ref={cardRef}
+      role="button"
+      aria-label={`Open ${show.series_title}`}
       tabIndex={0}
       className={`focus-poster-only cursor-pointer hover-scale relative group outline-hidden ${isMenuOpen ? 'z-50' : ''}`}
       onClick={onClick}

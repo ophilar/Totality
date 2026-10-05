@@ -17,7 +17,8 @@ export const AlbumListItem = memo(({ album, onClick, showArtist = true, showSour
 
   return (
     <div
-      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center"
+      role="button" tabIndex={0} aria-label={`Open album ${album.title}`} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}
+      className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center focus-visible:ring-2 focus-visible:ring-primary"
       onClick={onClick}
     >
       {/* Album Thumbnail */}

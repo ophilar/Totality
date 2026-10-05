@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PlaybackTargetDefinition, PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { playbackTargetProfileInputSchema } from '@shared/playbackTargetValidation'
 
@@ -170,6 +170,7 @@ export function PlaybackTargetProfilesTab({ onDirtyChange }: { onDirtyChange: (d
     setDefaultProfileId(storedDefault || null)
     setSelectedId(current => current && loaded.some(profile => profile.id === current) ? current : loaded[0]?.id ?? null)
     setError(storedDefault && !loaded.some(profile => profile.id === storedDefault) ? 'The saved default profile no longer exists. Choose a replacement.' : null)
+    return loaded
   }, [])
 
   useEffect(() => { void loadProfiles().catch(e => setError(e instanceof Error ? e.message : String(e))) }, [loadProfiles])
@@ -208,8 +209,8 @@ export function PlaybackTargetProfilesTab({ onDirtyChange }: { onDirtyChange: (d
         savedId = created.id
         setSelectedId(savedId)
       }
-      await loadProfiles()
-      const saved = (await window.electronAPI.listPlaybackTargetProfiles()).find(profile => profile.id === savedId)
+      const loaded = await loadProfiles()
+      const saved = loaded.find(profile => profile.id === savedId)
       if (saved) setDraft(createDraft(saved.name, saved.definition))
       return true
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); return false } finally { setIsSaving(false) }
@@ -244,7 +245,13 @@ export function PlaybackTargetProfilesTab({ onDirtyChange }: { onDirtyChange: (d
     if (!selectedProfile || selectedProfile.isBuiltin) return true
     return JSON.stringify(draft) !== JSON.stringify(createDraft(selectedProfile.name, selectedProfile.definition))
   }
-  useEffect(() => { onDirtyChange(hasUnsavedChanges()) })
+  const dirtyState = hasUnsavedChanges()
+  const lastDirtyState = useRef(dirtyState)
+  useEffect(() => {
+    if (lastDirtyState.current === dirtyState) return
+    lastDirtyState.current = dirtyState
+    onDirtyChange(dirtyState)
+  }, [dirtyState, onDirtyChange])
   const field = (key: string) => draft?.text[key] ?? ''
   const setText = (key: string, value: string) => setDraft(current => current ? { ...current, text: { ...current.text, [key]: value } } : current)
 

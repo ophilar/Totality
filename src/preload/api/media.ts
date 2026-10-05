@@ -155,7 +155,6 @@ export const mediaApi: MediaAPI = {
   getDashboardSummary: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.GET_DASHBOARD_SUMMARY, sourceId),
 
   // Database - Global Search
-  searchGlobal: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.DATABASE.SEARCH_GLOBAL, query),
   mediaSearch: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.MEDIA.SEARCH, query),
 
   // Database - Exclusions
@@ -216,7 +215,6 @@ export interface MediaAPI {
   getMediaItems: (filters?: MediaItemFilters) => Promise<MediaItem[]>
   countMediaItems: (filters?: unknown) => Promise<number>
   getMediaOptimizationSummary: (filters?: MediaItemFilters) => Promise<OptimizationMetricsSummary>
-  searchGlobal: (query: string) => Promise<GlobalSearchResults>
   mediaList: (filters?: unknown) => Promise<unknown[]>
   mediaCount: (filters?: unknown) => Promise<number>
   getTVShows: (filters?: TVShowFilters) => Promise<TVShowSummary[]>
@@ -406,14 +404,7 @@ export interface MediaAPI {
   getDashboardSummary: (sourceId?: string) => Promise<DashboardSummary>
 
   // Database - Global Search
-  mediaSearch: (query: string) => Promise<{
-    movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
-    tvShows: Array<{ id: number; title: string; poster_url?: string }>
-    episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
-    artists: Array<{ id: number; name: string; thumb_url?: string }>
-    albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
-    tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string }>
-  }>
+  mediaSearch: (query: string) => Promise<GlobalSearchResults>
 
   // Deep Analysis
   mediaDeepAnalyze: (options: { filePath: string; scanBitrate?: boolean; detectVolume?: boolean; requestId?: string }) => Promise<MediaDeepAnalysisResult>

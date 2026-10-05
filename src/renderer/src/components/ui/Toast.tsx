@@ -29,6 +29,9 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) 
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`
         bg-card border border-border/50 rounded-lg shadow-lg p-4 min-w-[300px] max-w-[400px]
         transform transition-all duration-200 ease-out

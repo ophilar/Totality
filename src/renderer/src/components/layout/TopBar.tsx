@@ -4,7 +4,7 @@
  * Contains logo, search, library tabs, and panel toggles.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, X, Home, Film, Tv, Music, Library, Star, Settings, RefreshCw, Disc3, User, Bot, ArrowLeft, ArrowRight, ListOrdered } from 'lucide-react'
 
 import { useSources } from '@/contexts/SourceContext'
@@ -13,16 +13,7 @@ import { useNavigation } from '@/contexts/NavigationContext'
 import { ActivityPanel } from '@/components/ui/ActivityPanel'
 import logoImage from '@/assets/totality_header_logo.png'
 import type { MediaViewType } from '@/components/library/types'
-
-// Search results type
-interface SearchResults {
-  movies: Array<{ id: number; title: string; year?: number; poster_url?: string }>
-  tvShows: Array<{ id: number; title: string; poster_url?: string }>
-  episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
-  artists: Array<{ id: number; name: string; thumb_url?: string }>
-  albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
-  tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string }>
-}
+import type { GlobalSearchResults } from '@shared/globalSearch'
 
 import { usePanel } from '@/contexts/PanelContext'
 
@@ -98,32 +89,45 @@ export function TopBar({
 
   // Search state
   const [searchInput, setSearchInput] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResults | null>(null)
+  const [searchState, setSearchState] = useState<{ query: string; results: GlobalSearchResults } | null>(null)
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
-  const [isSearching, setIsSearching] = useState(false)
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'waiting' | 'searching' | 'error'>('idle')
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [retryGeneration, setRetryGeneration] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchGenerationRef = useRef(0)
+  const query = searchInput.trim()
+  const searchResults = searchState?.query === query ? searchState.results : null
 
-  // Debounced search
-  const performSearch = useCallback(async (query: string) => {
-    if (!query || query.length < 2) {
-      setSearchResults(null)
+  useEffect(() => {
+    const generation = ++searchGenerationRef.current
+    if (query.length < 2) {
+      setSearchStatus('idle')
+      setSearchError(null)
       return
     }
 
-    setIsSearching(true)
-    try {
-      const results = await window.electronAPI.mediaSearch(query)
-      setSearchResults(results)
-    } catch (error) {
-      window.electronAPI.log.error('[TopBar]', 'Search failed:', error)
-      setSearchResults(null)
-    } finally {
-      setIsSearching(false)
+    setSearchStatus('waiting')
+    setSearchError(null)
+    const timer = setTimeout(() => {
+      setSearchStatus('searching')
+      void window.electronAPI.mediaSearch(query).then(results => {
+        if (generation !== searchGenerationRef.current) return
+        setSearchState({ query, results })
+        setSearchStatus('idle')
+      }).catch(error => {
+        if (generation !== searchGenerationRef.current) return
+        setSearchError(error instanceof Error ? error.message : String(error))
+        setSearchStatus('error')
+      })
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      if (generation === searchGenerationRef.current) searchGenerationRef.current++
     }
-  }, [])
+  }, [query, retryGeneration])
 
   // Handle search input change with debounce
   const handleSearchInputChange = (value: string) => {
@@ -131,13 +135,6 @@ export function TopBar({
     setShowSearchResults(true)
     setSearchResultIndex(-1)
 
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current)
-    }
-
-    searchDebounceRef.current = setTimeout(() => {
-      performSearch(value)
-    }, 200)
   }
 
   // Check if we have any results
@@ -155,36 +152,35 @@ export function TopBar({
     ...searchResults.movies.map(m => ({ type: 'movie' as const, id: m.id })),
     ...searchResults.tvShows.map(s => ({ type: 'tv' as const, id: s.id, title: s.title })),
     ...searchResults.episodes.map(e => ({ type: 'episode' as const, id: e.id, series_title: e.series_title, season_number: e.season_number })),
-    ...searchResults.artists.map(a => ({ type: 'artist' as const, id: a.id, name: a.name })),
+    ...searchResults.artists.map(a => ({ type: 'artist' as const, id: a.id, name: a.title })),
     ...searchResults.albums.map(a => ({ type: 'album' as const, id: a.id })),
     ...searchResults.tracks.map(t => ({ type: 'track' as const, id: t.id, album_id: t.album_id })),
   ] : []
 
   // Handle result selection
-  const handleResultClick = (type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track', id: number, extra?: { series_title?: string; season_number?: number; album_id?: number; title?: string; name?: string }) => {
+  const handleResultClick = (type: 'movie' | 'tv' | 'episode' | 'artist' | 'album' | 'track', id: number | string, extra?: { series_title?: string | null; season_number?: number | null; album_id?: number; title?: string; name?: string }) => {
     setShowSearchResults(false)
     setSearchInput('')
-    setSearchResults(null)
 
     // Navigate to appropriate library tab and item
     if (type === 'movie') {
       onNavigateToLibrary('movies')
-      navigateTo({ type: 'movie', id })
+      navigateTo({ type: 'movie', id: Number(id) })
     } else if (type === 'tv') {
       onNavigateToLibrary('tv')
       navigateTo({ type: 'tv', id: extra?.title || String(id) })
     } else if (type === 'episode') {
       onNavigateToLibrary('tv')
-      navigateTo({ type: 'episode', id, seriesTitle: extra?.series_title, seasonNumber: extra?.season_number })
+      navigateTo({ type: 'episode', id: Number(id), seriesTitle: extra?.series_title ?? undefined, seasonNumber: extra?.season_number ?? undefined })
     } else if (type === 'artist') {
       onNavigateToLibrary('music')
-      navigateTo({ type: 'artist', id, artistName: extra?.name })
+      navigateTo({ type: 'artist', id: Number(id), artistName: extra?.name })
     } else if (type === 'album') {
       onNavigateToLibrary('music')
-      navigateTo({ type: 'album', id })
+      navigateTo({ type: 'album', id: Number(id) })
     } else if (type === 'track') {
       onNavigateToLibrary('music')
-      navigateTo({ type: 'track', id, albumId: extra?.album_id })
+      navigateTo({ type: 'track', id: Number(id), albumId: extra?.album_id })
     }
   }
 
@@ -265,12 +261,22 @@ export function TopBar({
               onKeyDown={handleSearchKeyDown}
               className="w-full pl-10 pr-8 py-2 bg-white/10 border border-white/15 rounded-full text-sm text-white placeholder:text-white/40 focus:outline-hidden focus:ring-2 focus:ring-white/30 focus:border-white/25 transition-all duration-300"
               aria-label="Search all libraries"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={showSearchResults && query.length >= 2}
+              aria-controls={searchStatus === 'idle' && hasResults ? 'topbar-search-listbox' : undefined}
+              aria-haspopup="listbox"
+              aria-activedescendant={searchResultIndex >= 0 ? `topbar-search-option-${searchResultIndex}` : undefined}
+              aria-busy={searchStatus === 'waiting' || searchStatus === 'searching'}
             />
             {searchInput && (
               <button
                 onClick={() => {
                   setSearchInput('')
-                  setSearchResults(null)
+                  setSearchState(null)
+                  setSearchStatus('idle')
+                  setSearchError(null)
+                  searchGenerationRef.current++
                   setShowSearchResults(false)
                 }}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white z-10"
@@ -281,18 +287,29 @@ export function TopBar({
             )}
 
             {/* Search Results Dropdown */}
-            {showSearchResults && searchInput.length >= 2 && (
+            {showSearchResults && query.length >= 2 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-popover border border-border rounded-lg shadow-2xl z-9999 max-h-[400px] overflow-y-auto overflow-x-hidden">
-                {isSearching && (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">Searching...</div>
+                {searchStatus === 'waiting' && (
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center" role="status">Waiting to search…</div>
                 )}
 
-                {!isSearching && !hasResults && (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">No results found</div>
+                {searchStatus === 'searching' && (
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center" role="status">Searching library…</div>
                 )}
 
-                {!isSearching && hasResults && searchResults && (
-                  <>
+                {searchStatus === 'error' && (
+                  <div className="px-3 py-4 text-sm text-center" role="alert">
+                    <p className="text-destructive">Search failed: {searchError}</p>
+                    <button type="button" className="mt-2 text-primary hover:underline" onClick={() => setRetryGeneration(value => value + 1)}>Retry search</button>
+                  </div>
+                )}
+
+                {searchStatus === 'idle' && !hasResults && (
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center" role="status" aria-live="polite">No results found</div>
+                )}
+
+                {searchStatus === 'idle' && hasResults && searchResults && (
+                  <div id="topbar-search-listbox" role="listbox" aria-label="Search results">
                     {/* Movies */}
                     {searchResults.movies.length > 0 && (
                       <div>
@@ -305,6 +322,9 @@ export function TopBar({
                           return (
                             <button
                               key={`movie-${movie.id}`}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
                               onClick={() => handleResultClick('movie', movie.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
@@ -341,6 +361,9 @@ export function TopBar({
                           return (
                             <button
                               key={`tv-${show.id}`}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
                               onClick={() => handleResultClick('tv', show.id, { title: show.title })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
@@ -374,14 +397,17 @@ export function TopBar({
                           return (
                             <button
                               key={`episode-${episode.id}`}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
                               onClick={() => handleResultClick('episode', episode.id, { series_title: episode.series_title, season_number: episode.season_number })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-8 h-12 bg-muted rounded overflow-hidden shrink-0">
-                                {episode.poster_url ? (
-                                  <img src={episode.poster_url} alt="" className="w-full h-full object-cover" />
+                                {episode.thumb_url ? (
+                                  <img src={episode.thumb_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <Tv className="w-4 h-4 text-muted-foreground/50" />
@@ -412,7 +438,10 @@ export function TopBar({
                           return (
                             <button
                               key={`artist-${artist.id}`}
-                              onClick={() => handleResultClick('artist', artist.id, { name: artist.name })}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
+                              onClick={() => handleResultClick('artist', artist.id, { name: artist.title })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
@@ -426,7 +455,7 @@ export function TopBar({
                                   </div>
                                 )}
                               </div>
-                              <div className="text-sm font-medium truncate">{artist.name}</div>
+                              <div className="text-sm font-medium truncate">{artist.title}</div>
                             </button>
                           )
                         })}
@@ -445,6 +474,9 @@ export function TopBar({
                           return (
                             <button
                               key={`album-${album.id}`}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
                               onClick={() => handleResultClick('album', album.id)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
@@ -462,7 +494,7 @@ export function TopBar({
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-medium truncate">{album.title}</div>
                                 <div className="text-xs text-muted-foreground truncate">
-                                  {album.artist_name}{album.year && ` · ${album.year}`}
+                                  {album.subtitle}{album.year && ` · ${album.year}`}
                                 </div>
                               </div>
                             </button>
@@ -483,14 +515,17 @@ export function TopBar({
                           return (
                             <button
                               key={`track-${track.id}`}
+                              id={`topbar-search-option-${flatIndex}`}
+                              role="option"
+                              aria-selected={searchResultIndex === flatIndex}
                               onClick={() => handleResultClick('track', track.id, { album_id: track.album_id })}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
                                 searchResultIndex === flatIndex ? 'bg-primary/20' : 'hover:bg-muted/50'
                               }`}
                             >
                               <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
-                                {track.album_thumb_url ? (
-                                  <img src={track.album_thumb_url} alt="" className="w-full h-full object-cover" />
+                                {track.thumb_url ? (
+                                  <img src={track.thumb_url} alt="" className="w-full h-full object-cover" />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <Music className="w-4 h-4 text-muted-foreground/50" />
@@ -508,7 +543,7 @@ export function TopBar({
                         })}
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             )}
@@ -546,7 +581,7 @@ export function TopBar({
 
         {/* Library Buttons - Centered */}
         {!showEmptyState && (
-          <div className="shrink-0" role="tablist" aria-label="Navigation">
+          <nav className="shrink-0" aria-label="Primary navigation">
             <div className="flex gap-1">
               {/* Home Button */}
               <button
@@ -556,8 +591,7 @@ export function TopBar({
                     ? 'bg-white text-black'
                     : 'text-white hover:bg-white/10'
                 }`}
-                role="tab"
-                aria-selected={isDashboard}
+                aria-current={isDashboard ? 'page' : undefined}
                 aria-label="Dashboard"
               >
                 <Home className="w-4 h-4" />
@@ -577,8 +611,7 @@ export function TopBar({
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
-                  role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'movies'}
+                  aria-current={!isDashboard && libraryTab === 'movies' ? 'page' : undefined}
                 >
                   <Film className="w-4 h-4" />
                   <span>Movies</span>
@@ -594,8 +627,7 @@ export function TopBar({
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
-                  role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'tv'}
+                  aria-current={!isDashboard && libraryTab === 'tv' ? 'page' : undefined}
                 >
                   <Tv className="w-4 h-4" />
                   <span>TV Shows</span>
@@ -611,8 +643,7 @@ export function TopBar({
                       ? 'bg-white text-black'
                       : 'text-white hover:bg-white/10'
                   }`}
-                  role="tab"
-                  aria-selected={!isDashboard && libraryTab === 'music'}
+                  aria-current={!isDashboard && libraryTab === 'music' ? 'page' : undefined}
                 >
                   <Music className="w-4 h-4" />
                   <span>Music</span>
@@ -627,8 +658,7 @@ export function TopBar({
                     ? 'bg-white text-black'
                     : 'text-white hover:bg-white/10'
                 }`}
-                role="tab"
-                aria-selected={!isDashboard && libraryTab === 'timelines'}
+                aria-current={!isDashboard && libraryTab === 'timelines' ? 'page' : undefined}
               >
                 <ListOrdered className="w-4 h-4" />
                 <span>Timelines</span>
@@ -643,7 +673,7 @@ export function TopBar({
                 </div>
               )}
             </div>
-          </div>
+          </nav>
         )}
 
         {/* Right Section: Panel Toggles & Settings */}

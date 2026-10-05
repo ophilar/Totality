@@ -43,6 +43,7 @@ export function DuplicatesView() {
   const scanRequestIdRef = useRef<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [resolvingId, setResolvingId] = useState<number | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ groupId: number; itemId: number; count: number } | null>(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
   const [comparisonSort, setComparisonSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'quality', direction: 'desc' })
@@ -177,15 +178,28 @@ export function DuplicatesView() {
   }
 
   const handleResolve = async (groupId: number, keepItemId: number) => {
+    if (deleteFiles && confirmDelete?.groupId !== groupId) {
+      setConfirmDelete({ groupId, itemId: keepItemId, count: groups.find(group => group.id === groupId)?.items?.length ?? 1 })
+      return
+    }
     setResolvingId(groupId)
     try {
-      await window.electronAPI.duplicatesResolve(groupId, keepItemId, deleteFiles)
-      addToast({ title: 'Resolved', message: 'Duplicate resolved successfully', type: 'success' })
-      setReloadTick((prev) => prev + 1)
+      const outcome = await window.electronAPI.duplicatesResolve(groupId, keepItemId, deleteFiles)
+      if (outcome.status === 'policy-blocked') {
+        addToast({ title: 'Deletion blocked', message: 'Retention policy prevents deleting these files. No files or records were changed.', type: 'error' })
+      } else if (outcome.status === 'partial' || outcome.status === 'failed') {
+        const details = outcome.errors.map(error => error.message).join('; ')
+        addToast({ title: outcome.status === 'partial' ? 'Deletion partially completed' : 'Deletion failed', message: `${outcome.committedCount} of ${outcome.requestedCount} items committed. ${details}`, type: 'error' })
+        if (outcome.committedCount > 0) setReloadTick((prev) => prev + 1)
+      } else {
+        addToast({ title: 'Resolved', message: outcome.status === 'deleted' ? `Deleted ${outcome.committedCount} duplicate files.` : 'Kept the selected item and marked the group resolved.', type: 'success' })
+        setReloadTick((prev) => prev + 1)
+      }
     } catch (err) {
-      addToast({ title: 'Error', message: 'Failed to resolve duplicate', type: 'error' })
+      addToast({ title: 'Resolution failed', message: err instanceof Error ? err.message : String(err), type: 'error' })
     } finally {
       setResolvingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -230,7 +244,7 @@ export function DuplicatesView() {
               className="rounded border-border text-primary focus:ring-primary"
             />
             <label htmlFor="delete-files" className="cursor-pointer select-none">
-              Delete files from disk on resolve
+              Request deletion of duplicate files
             </label>
           </div>
 
@@ -422,7 +436,7 @@ export function DuplicatesView() {
                                   <td className="py-3 pr-2 text-right">
                                     <button
                                       disabled={resolvingId !== null}
-                                      onClick={() => handleResolve(group.id, item.id!)}
+                                      onClick={() => void handleResolve(group.id, item.id!)}
                                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                                         isRec
                                           ? 'bg-primary text-primary-foreground hover:opacity-90'
@@ -432,9 +446,18 @@ export function DuplicatesView() {
                                       {resolvingId === group.id ? (
                                         <RefreshCw className="w-3 h-3 animate-spin" />
                                       ) : (
-                                        'Keep'
+                                        deleteFiles ? 'Review deletion' : 'Keep'
                                       )}
                                     </button>
+                                    {confirmDelete?.groupId === group.id && confirmDelete.itemId === item.id && (
+                                      <div className="mt-2 flex flex-col items-end gap-1" role="group" aria-label="Confirm duplicate deletion">
+                                        <span className="max-w-64 text-xs text-muted-foreground">Delete up to {Math.max(0, confirmDelete.count - 1)} other files? This cannot be undone.</span>
+                                        <div className="flex gap-2">
+                                          <button type="button" className="px-2 py-1 text-xs border rounded" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                                          <button type="button" className="px-2 py-1 text-xs bg-destructive text-destructive-foreground rounded" onClick={() => void handleResolve(group.id, item.id!)}>Delete files</button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </td>
                                 </tr>
                               )

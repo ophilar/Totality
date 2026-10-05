@@ -104,7 +104,7 @@ describe('ShowCard', () => {
       />
     )
 
-    const menuButton = screen.getByRole('button')
+    const menuButton = screen.getByRole('button', { name: /more actions/i })
     await act(async () => { fireEvent.click(menuButton) })
 
     const analyzeOption = screen.getByText('Analyze')
@@ -126,7 +126,7 @@ describe('ShowCard', () => {
       />
     )
 
-    const menuButton = screen.getByRole('button')
+    const menuButton = screen.getByRole('button', { name: /more actions/i })
     await act(async () => { fireEvent.click(menuButton) })
 
     const optimizeOption = screen.getByText('Optimize Series')

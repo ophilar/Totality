@@ -560,13 +560,13 @@ export class TaskQueueService {
           await this.executeSourceScan(task, onProgress)
           break
         case TaskType.SeriesCompleteness:
-          await this.executeSeriesCompleteness(task, onProgress)
+          await this.executeSeriesCompleteness(task, onProgress, undefined, true)
           break
         case TaskType.CollectionCompleteness:
           await this.executeCollectionCompleteness(task, onProgress)
           break
         case TaskType.MusicCompleteness:
-          await this.executeMusicCompleteness(task, onProgress)
+          await this.executeMusicCompleteness(task, onProgress, true)
           break
         case TaskType.QualityAnalysis:
           await this.executeQualityAnalysis(task, onProgress)
@@ -633,6 +633,27 @@ export class TaskQueueService {
       }
     } finally {
       await flushProgressWrite()
+      if (task.type === TaskType.Analysis && task.result?.analysis && task.status !== TaskStatus.Cancelled && task.status !== TaskStatus.Failed) {
+        const result = task.result.analysis
+        const message = [
+          `${result.completedCount} stages complete`,
+          `${result.failedCount} failed`,
+          `${result.deferredCount} deferred`,
+          `${result.skippedCount} skipped`,
+          ...(result.reconciliation ? [`Summary cleanup: ${result.reconciliation.merged} merged, ${result.reconciliation.removed} removed, ${result.reconciliation.preservedLocked} locked preserved, ${result.reconciliation.ambiguous} ambiguous`] : []),
+          ...result.diagnostics.slice(0, 3).map(diagnostic => `${diagnostic.itemName}: ${diagnostic.message}`),
+        ].join(' · ')
+        try {
+          await this.db.notifications.addNotification({
+            type: task.status === TaskStatus.Completed ? NotificationType.ScanComplete : NotificationType.Info,
+            title: `${task.label} · Analysis ${result.status}`,
+            message,
+            reference_id: task.sourceId,
+          })
+        } catch (error) {
+          this.logging.error('[TaskQueue]', 'Could not persist analysis outcome notification', error)
+        }
+      }
       task.completedAt = new Date().toISOString()
       this.completedTasks.unshift(task)
       if (this.completedTasks.length > this.historyLimit) {
@@ -719,7 +740,7 @@ export class TaskQueueService {
     await this.recordScanResults(task, results)
   }
 
-  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, existingBackupPath?: string): Promise<void> {
+  private async executeSeriesCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, existingBackupPath: string | undefined, notifyOutcome: boolean): Promise<void> {
     const service = this.getSeriesCompleteness()
     const outcome = await service.analyzeAllSeries(task.sourceId, task.libraryId, onProgress, task.seriesIdentityKey && task.seriesTitle ? { title: task.seriesTitle, seriesIdentityKey: task.seriesIdentityKey } : undefined, existingBackupPath, this.currentTaskAbortController?.signal)
 
@@ -747,14 +768,14 @@ export class TaskQueueService {
     if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
       const summary = `Series analysis partially completed: ${outcome.processedCount}/${outcome.totalCount} analyzed; ${outcome.diagnostics.length} failed`
       this.logging.warn('[TaskQueue]', summary, { totalCount: outcome.totalCount, processedCount: outcome.processedCount, diagnostics: outcome.diagnostics })
-      await this.db.notifications.addNotification({
+      if (notifyOutcome) await this.db.notifications.addNotification({
         type: 'info',
         title: 'Series analysis partially completed',
         message: summary,
         reference_id: task.sourceId,
       })
     } else if (outcome.status === 'completed' && !this.cancelRequested) {
-      await this.db.notifications.addNotification({
+      if (notifyOutcome) await this.db.notifications.addNotification({
         type: 'scan_complete',
         title: 'Series analysis completed',
         message: `Series analysis completed: ${outcome.processedCount} analyzed`,
@@ -795,7 +816,7 @@ export class TaskQueueService {
     }
   }
 
-  private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void): Promise<void> {
+  private async executeMusicCompleteness(task: QueuedTask, onProgress: (p: TaskProgress) => void, notifyOutcome: boolean): Promise<void> {
     const service = this.getMusicBrainz()
     const db = this.db
     
@@ -840,14 +861,14 @@ export class TaskQueueService {
       if ((outcome.status === 'partial' || outcome.status === 'deferred') && !this.cancelRequested) {
         const summary = `Music analysis ${outcome.status}: ${completedCount}/${totalCount} analyzed; ${outcome.deferredCount} deferred; ${outcome.diagnostics.length} issues`
         this.logging.warn('[TaskQueue]', summary, { totalCount, completedCount, deferredCount: outcome.deferredCount })
-        await db.notifications.addNotification({
+        if (notifyOutcome) await db.notifications.addNotification({
           type: 'info',
           title: `Music analysis ${outcome.status}`,
           message: summary,
           reference_id: task.sourceId,
         })
       } else if (outcome.status === 'completed' && !this.cancelRequested) {
-        await db.notifications.addNotification({
+        if (notifyOutcome) await db.notifications.addNotification({
           type: 'scan_complete',
           title: 'Music analysis completed',
           message: `Music analysis completed: ${completedCount} analyzed`,
@@ -971,7 +992,7 @@ export class TaskQueueService {
     } })
     const series = (sourceId?: string, libraryId?: string, identity?: { title: string; seriesIdentityKey: string }) => stages.push({ name: 'series-completeness', execute: async () => {
       const seriesTask = { ...task, type: TaskType.SeriesCompleteness, sourceId, libraryId, ...(identity ? { seriesTitle: identity.title, seriesIdentityKey: identity.seriesIdentityKey } : {}) }
-      await this.executeSeriesCompleteness(seriesTask, onProgress, databaseBackupPath)
+      await this.executeSeriesCompleteness(seriesTask, onProgress, databaseBackupPath, false)
       task.result = seriesTask.result
     } })
     const collections = (sourceId?: string, libraryId?: string) => stages.push({ name: 'collection-completeness', execute: async () => {
@@ -979,7 +1000,7 @@ export class TaskQueueService {
       if (task.result?.status === 'cancelled') throw new Error('Collection completeness was cancelled')
     } })
     const music = (sourceId?: string, libraryId?: string, albumId?: number) => stages.push({ name: 'music-completeness', execute: async () => {
-      await this.executeMusicCompleteness({ ...task, type: TaskType.MusicCompleteness, sourceId, libraryId, albumId }, onProgress)
+      await this.executeMusicCompleteness({ ...task, type: TaskType.MusicCompleteness, sourceId, libraryId, albumId }, onProgress, false)
     } })
     const artistCompleteness = (artistId: number) => stages.push({ name: 'artist-completeness', execute: async () => {
       const artist = await this.db.music.getArtistById(artistId)

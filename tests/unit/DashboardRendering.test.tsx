@@ -65,7 +65,7 @@ describe('Dashboard Rendering (Integrated Stack)', () => {
     await renderDashboard()
     
     await waitFor(() => {
-      expect(screen.getByText('All caught up!')).toBeTruthy()
+      expect(screen.getByText('No current recommendations')).toBeTruthy()
     }, { timeout: 5000 })
   })
 

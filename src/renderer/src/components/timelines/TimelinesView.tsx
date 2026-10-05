@@ -380,9 +380,9 @@ export function TimelinesView() {
   }, [selectedTimelineResult, filterMode, searchQuery])
 
   return (
-    <div className="flex flex-row h-full overflow-hidden bg-background text-foreground">
+    <div className="flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-background text-foreground">
       {/* Left Column / Master List Pane */}
-      <div className="w-80 sm:w-88 border-r border-border flex flex-col shrink-0 bg-card/30">
+      <div className="w-full h-1/3 min-h-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col shrink-0 bg-card/30 lg:w-80 lg:h-full">
         {/* Header & Master Search */}
         <div className="p-4 border-b border-border space-y-3 shrink-0">
           <div className="flex items-center gap-2.5">

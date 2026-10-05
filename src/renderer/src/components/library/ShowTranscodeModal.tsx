@@ -13,16 +13,11 @@ import {
   FileCheck,
   Gauge,
   Clock,
-  Pause,
-  Play,
-  XCircle,
   Activity,
-  ListOrdered,
   Languages,
   Scissors,
   Eye,
-  ArrowLeft,
-  Trash2
+  ArrowLeft
 } from 'lucide-react'
 import { useToast } from '@/contexts/ToastContext'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
@@ -31,7 +26,7 @@ import type { GpuInfo, ShowTranscodePreflight } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
 import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
 import { getTVShowIdentity } from './tv/showIdentity'
-import type { QueuedTask, TaskQueueState } from '@main/types/database'
+import type { TaskQueueState } from '@main/types/database'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { TaskType } from '@main/types/database'
@@ -529,45 +524,6 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     }
   }
 
-  const handlePauseResume = async () => {
-    try {
-      if (queueState.isPaused) {
-        await window.electronAPI.taskQueueResume()
-      } else {
-        await window.electronAPI.taskQueuePause()
-      }
-    } catch (error) {
-      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to change transcode queue pause state', error)
-    }
-  }
-
-  const handleCancelCurrent = async () => {
-    try {
-      await window.electronAPI.taskQueueCancelCurrent(activeBatchId)
-      addToast({ title: 'Cancelled current episode encoding', type: 'info' })
-    } catch (error) {
-      addToast({ type: 'error', title: 'Cancel episode', message: String(error) })
-    }
-  }
-
-  const handleClearQueue = async () => {
-    try {
-      await window.electronAPI.taskQueueClearQueue(activeBatchId)
-      addToast({ title: 'Cleared this show batch', type: 'info' })
-    } catch (error) {
-      addToast({ type: 'error', title: 'Clear show batch', message: String(error) })
-    }
-  }
-
-  const handleRemoveTask = async (taskId: string) => {
-    try {
-      await window.electronAPI.taskQueueRemoveTask(taskId)
-      addToast({ title: 'Removed task from queue', type: 'info' })
-    } catch (error) {
-      window.electronAPI.log.error('ShowTranscodeModal', 'Failed to remove transcode task from queue', error)
-    }
-  }
-
   // Filter tasks belonging to transcoding
   const vendor = gpus.find(gpu => gpu.id === gpuId)?.vendor
   const hardwareEncoder = vendor === 'NVIDIA' ? (codec === 'av1' ? 'nvenc_av1' : 'nvenc_h265') : vendor === 'Intel' ? (codec === 'av1' ? 'qsv_av1' : 'qsv_h265') : undefined
@@ -591,14 +547,15 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
 
   return createPortal(
     <div 
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="show-transcode-modal-title"
+      tabIndex={-1}
       className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={busy ? undefined : () => void handleClose()}
     >
       <div 
-        ref={modalRef}
         className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-2xl w-full h-dvh sm:h-auto sm:max-h-[92vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
@@ -1197,50 +1154,9 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
               </div>
             )}
 
-            {/* Upcoming Queue Items */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                <span className="flex items-center gap-1.5">
-                  <ListOrdered className="w-3.5 h-3.5 text-primary" /> Upcoming Episodes in Queue ({batchQueue.length})
-                </span>
-                <div className="flex items-center gap-2">
-                  {queueState.isPaused && (
-                    <span className="px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-[10px]">Queue Paused</span>
-                  )}
-                  {batchQueue.length > 0 && (
-                    <button
-                      onClick={handleClearQueue}
-                      className="text-[11px] text-destructive hover:underline font-semibold cursor-pointer"
-                      title="Clear remaining queued episodes"
-                    >
-                      Clear Queue
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="max-h-36 overflow-y-auto rounded-xl border border-border/30 divide-y divide-border/20 bg-background/50">
-                {batchQueue.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground">
-                    No further episodes in queue
-                  </div>
-                ) : (
-                  batchQueue.slice(0, 15).map((task: QueuedTask, idx: number) => (
-                    <div key={task.id} className="p-2.5 flex items-center justify-between text-xs gap-2">
-                      <span className="truncate flex-1">{idx + 1}. {task.label}</span>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] text-muted-foreground px-2 py-0.5 rounded bg-muted capitalize">{task.status}</span>
-                        <button
-                          onClick={() => handleRemoveTask(task.id)}
-                          className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                          title="Remove from queue"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+            <div className="flex items-center justify-between rounded-xl border border-border/30 p-3 text-sm">
+              <span>{batchQueue.length} episodes queued{queueState.isPaused ? ' · queue paused' : ''}</span>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-primary hover:underline">Open Activity</button>
             </div>
           </div>
         )}
@@ -1308,38 +1224,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePauseResume}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border bg-card/60 hover:bg-card text-xs font-bold transition-all cursor-pointer"
-                  title={queueState.isPaused ? 'Resume transcode queue' : 'Pause transcode queue'}
-                >
-                  {queueState.isPaused ? <Play className="w-3.5 h-3.5 text-emerald-400" /> : <Pause className="w-3.5 h-3.5 text-yellow-400" />}
-                  <span>{queueState.isPaused ? 'Resume Global Queue' : 'Pause Global Queue'}</span>
-                </button>
-
-                {currentTask && (
-                  <button
-                    onClick={handleCancelCurrent}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all cursor-pointer"
-                    title="Cancel currently encoding episode"
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>Cancel Episode</span>
-                  </button>
-                )}
-
-                {(batchQueue.length > 0 || Boolean(currentTask)) && (
-                  <button
-                    onClick={handleClearQueue}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all cursor-pointer"
-                    title="Clear all tasks from queue"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Clear Show Batch</span>
-                  </button>
-                )}
-              </div>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('operations:openActivity'))} className="text-sm text-primary hover:underline">Open Activity</button>
 
               <button 
                 onClick={() => void handleClose()}

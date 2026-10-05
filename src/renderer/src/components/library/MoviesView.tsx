@@ -299,6 +299,8 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
   return (
     <div
       ref={cardRef}
+      role="button"
+      aria-label={`Open ${collection.collection_name}`}
       tabIndex={0}
       className="focus-poster-only cursor-pointer hover-scale outline-hidden"
       onClick={onClick}
@@ -353,9 +355,12 @@ const CollectionCard = memo(({ collection, onClick }: { collection: MovieCollect
 function CollectionListItem({ collection, onClick }: { collection: MovieCollectionData; onClick: () => void }) {
   return (
     <div
+      role="button"
+      aria-label={`Open collection ${collection.collection_name}`}
       tabIndex={0}
       className="group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden"
       onClick={onClick}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}
     >
       <div className="w-16 h-24 bg-muted rounded-md overflow-hidden shrink-0 relative shadow-md shadow-black/20">
         {collection.poster_url ? (
@@ -420,9 +425,12 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
 
   return (
     <div
+      role="button"
+      aria-label={`Open ${movie.title}`}
       tabIndex={0}
       className={`focus-poster-only group cursor-pointer hover-scale outline-hidden relative ${showMenu ? 'z-50' : ''}`}
       onClick={handleCardClick}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleCardClick() } }}
     >
       <div className="aspect-2/3 bg-muted relative rounded-md shadow-lg shadow-black/30">
         <div className="absolute inset-0 overflow-hidden rounded-md">
@@ -532,7 +540,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
   const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade) || onToggleOptimize
 
   return (
-    <div tabIndex={0} className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none border-b border-border/10 flex items-center gap-4 relative ${showMenu ? 'z-50' : ''}`} onClick={onClick}>
+    <div role="button" tabIndex={0} aria-label={`Open ${movie.title}`} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }} className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 px-4 py-2 outline-none focus-visible:ring-2 focus-visible:ring-primary border-b border-border/10 flex items-center gap-4 relative ${showMenu ? 'z-50' : ''}`} onClick={onClick}>
       <div className="grid grid-cols-[1fr_80px_100px_100px_120px_120px_100px_80px_40px] gap-4 items-center flex-1">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 relative shadow-sm">
@@ -562,7 +570,7 @@ const MovieListItem = memo(({ movie, onClick, showSourceBadge, collectionData, o
         <div className="relative flex justify-center">
           {showMenuButton && (
             <div ref={menuRef}>
-              <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }} className={`w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground ${showMenu ? 'bg-muted text-foreground' : ''}`}>
+                                      <button type="button" aria-label="More movie actions" aria-expanded={showMenu} onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }} className={`w-8 h-8 rounded-full hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary flex items-center justify-center text-muted-foreground ${showMenu ? 'bg-muted text-foreground' : ''}`}>
                 {isRescanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
               </button>
               {showMenu && !isRescanning && (

@@ -1,7 +1,8 @@
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
 import { getDatabase } from '@main/database/BetterSQLiteService'
 import { getLoggingService } from '@main/services/LoggingService'
 import { MediaItemType, type MediaItem } from '@main/types/database'
+import type { DuplicateResolutionOutcome, DuplicateResolutionError } from '@shared/duplicateResolution'
 
 export interface RetentionPolicy {
   preferHighestResolution: boolean
@@ -190,53 +191,69 @@ export class DeduplicationService {
     duplicateId: number,
     keepItemId: number,
     deleteOthers: boolean = false
-  ): Promise<boolean> {
+  ): Promise<DuplicateResolutionOutcome> {
     const db = getDatabase()
     const duplicate = await db.duplicates.getById(duplicateId)
     if (!duplicate) throw new Error('Duplicate group not found')
 
     const allIds = JSON.parse(duplicate.media_item_ids) as number[]
+    if (!allIds.includes(keepItemId)) throw new Error('Selected item does not belong to this duplicate group')
     const discardIds = allIds.filter((id) => id !== keepItemId)
 
     const policy = await this.getRetentionPolicy()
-    const actualDelete = deleteOthers && policy.autoDelete // If manual resolve, we respect the deleteOthers flag and auto-delete settings
-
-    if (actualDelete) {
-      const items = await db.media.getItemsByIds(discardIds)
-      const idsToDelete: number[] = []
-      for (const item of items) {
-        if (item.file_path) {
-          try {
-            if (fs.existsSync(item.file_path)) {
-              getLoggingService().info(
-                '[DeduplicationService]',
-                `Deleting duplicate file: ${item.file_path}`
-              )
-              fs.unlinkSync(item.file_path)
-            }
-            // Only delete from DB if file unlinked successfully (or didn't exist)
-            if (item.id) idsToDelete.push(item.id)
-          } catch (err) {
-            getLoggingService().error(
-              '[DeduplicationService]',
-              `Failed to delete file ${item.file_path}:`,
-              err
-            )
-          }
-        } else {
-          // No path, just delete record
-          if (item.id) idsToDelete.push(item.id)
-        }
-      }
-      if (idsToDelete.length > 0) {
-        await db.media.deleteItems(idsToDelete)
-      }
-    } else {
-      // Just mark them as resolved but don't delete files
+    if (deleteOthers && !policy.autoDelete) {
+      return { status: 'policy-blocked', committedCount: 0, requestedCount: discardIds.length, errors: [] }
     }
 
-    await db.duplicates.resolveDuplicate(duplicateId, actualDelete ? 'deleted' : 'kept_canonical')
-    return true
+    if (!deleteOthers) {
+      await db.duplicates.resolveDuplicate(duplicateId, 'kept_canonical')
+      return { status: 'kept', committedCount: 0, requestedCount: discardIds.length, errors: [] }
+    }
+
+    const items = await db.media.getItemsByIds(discardIds)
+    if (items.length !== discardIds.length) {
+      const foundIds = new Set(items.map(item => item.id))
+      const errors: DuplicateResolutionError[] = discardIds
+        .filter(id => !foundIds.has(id))
+        .map(mediaItemId => ({ mediaItemId, message: 'Media record no longer exists in the library' }))
+      return { status: 'failed', committedCount: 0, requestedCount: discardIds.length, errors }
+    }
+
+    const deletedIds: number[] = []
+    const errors: DuplicateResolutionError[] = []
+    for (const item of items) {
+      try {
+        if (item.file_path) {
+          getLoggingService().info('[DeduplicationService]', `Deleting duplicate file: ${item.file_path}`)
+          await fs.unlink(item.file_path)
+        }
+        deletedIds.push(item.id!)
+      } catch (error) {
+        errors.push({ mediaItemId: item.id!, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+
+    if (deletedIds.length) {
+      try {
+        await db.media.deleteItems(deletedIds)
+      } catch (error) {
+        errors.push(...deletedIds.map(mediaItemId => ({
+          mediaItemId,
+          message: `File deletion completed, but its library record could not be removed: ${error instanceof Error ? error.message : String(error)}`,
+        })))
+      }
+    }
+    if (errors.length) {
+      return {
+        status: deletedIds.length ? 'partial' : 'failed',
+        committedCount: deletedIds.length,
+        requestedCount: discardIds.length,
+        errors,
+      }
+    }
+
+    await db.duplicates.resolveDuplicate(duplicateId, 'deleted')
+    return { status: 'deleted', committedCount: deletedIds.length, requestedCount: discardIds.length, errors: [] }
   }
 }
 

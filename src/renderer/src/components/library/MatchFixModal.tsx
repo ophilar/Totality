@@ -366,6 +366,10 @@ export function MatchFixModal({
     >
       <div
         ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="match-fix-modal-title"
+        tabIndex={-1}
         className="bg-card rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
@@ -373,7 +377,7 @@ export function MatchFixModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/30 bg-sidebar-gradient rounded-t-xl">
           <div className="min-w-0 flex-1 mr-4">
-            <h2 className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
+            <h2 id="match-fix-modal-title" className="text-lg font-semibold">Fix {getTypeLabel()} Match</h2>
             <p className="text-sm text-muted-foreground">
               Current: <span className="text-foreground">{currentTitle}</span>
             </p>

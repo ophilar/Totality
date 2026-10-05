@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Lock, X, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react'
 import { createPortal } from 'react-dom'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 interface PinEntryModalProps {
   isOpen: boolean
@@ -14,14 +15,13 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
   const [error, setError] = useState<string | null>(null)
   const [hasPin, setHasPin] = useState<boolean | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(isOpen, modalRef)
 
   useEffect(() => {
     if (isOpen) {
       // Check if a PIN is already set
       window.electronAPI.dbHasPin().then(setHasPin)
-      
-      // Focus input
-      setTimeout(() => inputRef.current?.focus(), 100)
     } else {
       queueMicrotask(() => {
         setPin('')
@@ -65,6 +65,11 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
       <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pin-entry-title"
+        tabIndex={-1}
         className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
@@ -81,7 +86,7 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
             <Lock className="w-6 h-6 text-primary" />
           </div>
           
-          <h2 className="text-xl font-bold">
+          <h2 id="pin-entry-title" className="text-xl font-bold">
             {hasPin === false ? 'Set Security PIN' : 'Unlock Library'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 px-4">
@@ -97,6 +102,7 @@ export function PinEntryModal({ isOpen, onClose, onSuccess }: PinEntryModalProps
             <div className="relative">
               <input
                 ref={inputRef}
+                autoFocus
                 type="password"
                 inputMode="numeric"
                 autoComplete="one-time-code"

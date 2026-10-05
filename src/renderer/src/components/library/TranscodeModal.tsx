@@ -16,6 +16,7 @@ import type { MediaItem } from '@main/types/database'
 import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding'
 import { QuickPresetsTab, AdvancedTab, LiveEncodingTab } from './transcoding'
 import { useAnalysisManager } from './hooks/useAnalysisManager'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 interface TranscodeModalProps {
   mediaId: number
@@ -59,6 +60,8 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
   const [progress, setProgress] = useState<TranscodeProgress | null>(null)
 
   const { addToast } = useToast()
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(!!media, modalRef)
   const failureReportedRef = useRef(false)
 
   const loadInitialData = useCallback(async () => {
@@ -243,6 +246,11 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
       onClick={status === 'encoding' ? undefined : onClose}
     >
       <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transcode-modal-title"
+        tabIndex={-1}
         className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 h-dvh sm:h-auto sm:max-h-[92vh]"
         onClick={e => e.stopPropagation()}
       >
@@ -253,7 +261,7 @@ export function TranscodeModal({ mediaId, onClose, mode = 'transcode' }: Transco
               <Zap className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold leading-tight flex items-center gap-2">
+              <h3 id="transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
                 AI Transcoder & Optimizer
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary">
                   VRAM Passthrough

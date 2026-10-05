@@ -2,10 +2,8 @@
 
 import { Film, Tv, Music, Layers, Heart, Library, Star, Settings, Home, RefreshCw } from 'lucide-react'
 import logoImage from '@/assets/totality_header_logo.png'
-import { SearchAutocomplete } from '@/components/library/browser/SearchAutocomplete'
 import { ScanningStatus } from '@/components/library/browser/ScanningStatus'
 import type { MediaViewType } from '@/components/library/types'
-import type { SearchAutocompleteProps } from '@/components/library/browser/SearchAutocomplete'
 
 interface BrowserHeaderProps {
   view: MediaViewType
@@ -25,8 +23,6 @@ interface BrowserHeaderProps {
   onNavigateHome?: () => void
   onLibraryTabChange?: (tab: MediaViewType) => void
   
-  // Search props
-  searchProps: SearchAutocompleteProps
 }
 
 export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
@@ -46,7 +42,6 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
   onOpenSettings,
   onNavigateHome,
   onLibraryTabChange,
-  searchProps
 }) => {
   const handleTabClick = (tab: MediaViewType) => {
     setView(tab)
@@ -58,11 +53,10 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2 sm:gap-4 basis-full lg:basis-auto lg:flex-1 min-w-0">
           <img src={logoImage} alt="Totality" className="h-10 shrink-0" />
-          <SearchAutocomplete {...searchProps} />
           <ScanningStatus />
         </div>
 
-        <div className="order-3 lg:order-none basis-full lg:basis-auto shrink-0 flex gap-1 overflow-x-auto pb-0.5" role="tablist">
+        <nav className="order-3 lg:order-none basis-full lg:basis-auto shrink-0 flex gap-1 overflow-x-auto pb-0.5" aria-label="Library navigation">
           {onNavigateHome && (
             <button onClick={onNavigateHome} className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-card text-muted-foreground hover:bg-muted">
               <Home className="w-4 h-4" />
@@ -73,6 +67,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
           <button
             onClick={() => handleTabClick('movies')}
             disabled={!hasMovies}
+            aria-current={view === 'movies' ? 'page' : undefined}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'movies' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
           >
             <Film className="w-4 h-4" />
@@ -82,6 +77,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
           <button
             onClick={() => handleTabClick('tv')}
             disabled={!hasTV}
+            aria-current={view === 'tv' ? 'page' : undefined}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
           >
             <Tv className="w-4 h-4" />
@@ -91,6 +87,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
           <button
             onClick={() => handleTabClick('music')}
             disabled={!hasMusic}
+            aria-current={view === 'music' ? 'page' : undefined}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'music' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'} disabled:opacity-40`}
           >
             <Music className="w-4 h-4" />
@@ -99,6 +96,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
 
           <button
             onClick={() => handleTabClick('duplicates')}
+            aria-current={view === 'duplicates' ? 'page' : undefined}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'duplicates' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
           >
             <Layers className="w-4 h-4" />
@@ -107,6 +105,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
 
           <button
             onClick={() => handleTabClick('wishlist')}
+            aria-current={view === 'wishlist' ? 'page' : undefined}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${view === 'wishlist' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}
           >
             <Heart className="w-4 h-4" />
@@ -119,7 +118,7 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({
               <span>Syncing</span>
             </div>
           )}
-        </div>
+        </nav>
 
         <div className="flex items-center justify-end lg:flex-1 gap-1 sm:gap-2 ml-auto">
           <button

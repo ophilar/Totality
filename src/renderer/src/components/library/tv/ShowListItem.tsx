@@ -53,6 +53,8 @@ export const ShowListItem = memo(({ show, onClick, completenessData, showSourceB
   return (
     <div
       ref={cardRef}
+      role="button"
+      aria-label={`Open ${show.series_title}`}
       tabIndex={0}
       className={`group cursor-pointer rounded-md bg-muted/20 hover:bg-muted/40 transition-all duration-200 p-4 flex gap-4 items-center outline-hidden relative ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}

@@ -53,7 +53,11 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
 
   return (
     <div
-      className={`cursor-pointer hover-scale group relative ${showMenu ? 'z-50' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open album ${album.title}`}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}
+      className={`cursor-pointer hover-scale group relative focus-visible:ring-2 focus-visible:ring-primary ${showMenu ? 'z-50' : ''}`}
       onClick={onClick}
     >
       <div className="aspect-square bg-muted relative rounded-md shadow-lg shadow-black/30">
@@ -78,7 +82,10 @@ export const AlbumCard = memo(({ album, onClick, showArtist = true, showSourceBa
           <div ref={menuRef} className="absolute top-2 right-2 z-30">
             <button
               onClick={handleMenuClick}
-              className={`w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white transition-opacity ${
+              type="button"
+              aria-label={`More actions for ${album.title}`}
+              aria-expanded={showMenu}
+              className={`w-7 h-7 rounded-full bg-black/60 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary flex items-center justify-center text-white transition-opacity ${
                 showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               } hover:bg-black/80`}
             >

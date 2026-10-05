@@ -406,3 +406,12 @@
 - [x] Make show optimization preflight cancellable through its existing operation registry; propagate cancellation through measured FFmpeg samples and sample analysis, stop later batches, and prevent cancelled reviews from being persisted.
 - [x] Report a no-change source that fails the selected playback profile as incompatible, not already optimized.
 - Verification: `npm test` passed (210 files; 1,616 passed, 7 skipped); `npm run build` passed. Real-library UI and performance acceptance remain unverified.
+
+## UI interaction ownership and correctness — 2026-10-05 [In Progress]
+- [x] Record UI consolidation stories, requirements, acceptance criteria, and scope in `specs/ui-consolidation/spec.md`.
+- [x] Return truthful typed duplicate outcomes, honor retention policy, confirm deletion, and preserve incomplete groups for review.
+- [x] Consolidate global search onto TopBar and registered `mediaSearch`; remove stale hidden search plumbing and unhandled IPC contract.
+- [x] Improve keyboard access, principal dialog semantics/focus, Activity task ownership, notification errors/actions, feedback states, text selection, reduced motion, timeline sizing, and profile save ownership.
+- [ ] Complete remaining secondary-action/overlay and responsive-layout audit, including narrow-window drawer behavior.
+- [x] Run the full suite and one packaged build. Default four-worker run hit a Windows worker exit; full suite passed with two workers (209 files, 1,618 tests; 2 files and 7 tests skipped). Packaged Windows build passed.
+- [ ] Complete live Electron acceptance at 1000×600, 1280×720, and 200% scaling; record real-library search/scroll/scan/analysis performance and verify nested modal focus.

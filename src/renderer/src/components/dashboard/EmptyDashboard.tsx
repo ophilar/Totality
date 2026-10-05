@@ -21,8 +21,8 @@ export function EmptyDashboard({ sourcesLength, onAddSource }: EmptyDashboardPro
       ) : (
         <>
           <Sparkles className="w-16 h-16 text-accent/50 mb-4" />
-          <h2 className="text-xl font-medium mb-2">All caught up!</h2>
-          <p className="text-muted-foreground max-w-md">Your library is in great shape. No urgent upgrades needed and all your collections and series are complete.</p>
+          <h2 className="text-xl font-medium mb-2">No current recommendations</h2>
+          <p className="text-muted-foreground max-w-md">There are no recommendations to show right now.</p>
         </>
       )}
     </div>

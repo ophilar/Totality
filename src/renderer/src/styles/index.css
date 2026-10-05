@@ -139,7 +139,7 @@
   }
 
   .app-main-content {
-    right: 1rem !important;
+    right: 21rem !important;
   }
 }
 
@@ -603,7 +603,6 @@
 @layer base {
   * {
     @apply border-border;
-    user-select: none;
   }
   body {
     @apply bg-background text-foreground;
@@ -615,6 +614,15 @@
   h1, h2, h3, h4, h5, h6 {
     font-weight: 700;
     letter-spacing: -0.02em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

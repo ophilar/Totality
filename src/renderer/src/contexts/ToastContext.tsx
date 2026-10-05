@@ -51,7 +51,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   const addToast = useCallback(
     (toast: Omit<Toast, 'id'>) => {
       const id = `toast-${crypto.randomUUID()}`
-      const duration = toast.duration ?? 5000
+      const duration = toast.duration ?? (toast.type === 'error' ? 0 : 5000)
 
       setToasts((prev) => [...prev, { ...toast, id }])
 

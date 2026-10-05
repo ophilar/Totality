@@ -83,6 +83,8 @@ export const EpisodeRow = memo(({
     <div className={`flex flex-col relative ${showMenu ? 'z-50' : 'z-10'}`}>
       <div
         ref={cardRef}
+        role="button"
+        aria-label={`Open ${episode.title}`}
         tabIndex={0}
         className="group flex gap-4 p-4 items-center hover:bg-muted/30 transition-colors cursor-pointer outline-hidden"
         onClick={onClick}

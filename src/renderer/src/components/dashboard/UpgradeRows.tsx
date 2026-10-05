@@ -19,9 +19,9 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
   return (
     <div className="px-2 overflow-hidden pb-1">
       <div
-        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(item.id!)}
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
       >
+        <button type="button" onClick={() => onSelect(item.id!)} aria-label={`Open ${item.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
           {item.poster_url ? (
             <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
@@ -43,19 +43,12 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
-                className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
-                  isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
-                }`}
-              >
-                {wasteGB}GB WASTE
-              </button>
-            )}
+            {wasteGB != null && parseFloat(wasteGB) > 0.5 && <span className="text-[10px] font-bold text-orange-400">{wasteGB}GB WASTE</span>}
           </div>
         </div>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage waste details`} onClick={() => onToggleExpand(item.id!)} className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
           <AddToWishlistButton
             mediaType="movie"
             title={item.title}
@@ -70,6 +63,8 @@ export const MovieUpgradeRow = React.memo(({ item, index, isExpanded, onToggleEx
             compact
           />
           <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${item.title}`}
             onClick={() => onDismiss(index)}
             className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
             title="Dismiss"
@@ -88,9 +83,9 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
   return (
     <div className="px-2 overflow-hidden pb-1">
       <div
-        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(item.id!)}
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
       >
+        <button type="button" onClick={() => onSelect(item.id!)} aria-label={`Open ${item.series_title || item.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <div className="w-10 h-14 bg-muted rounded overflow-hidden shrink-0 shadow-md shadow-black/40 relative">
           {item.poster_url ? (
             <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
@@ -114,19 +109,12 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
             <span className="text-[10px] text-muted-foreground">
               {item.quality_tier} · {item.tier_quality}
             </span>
-            {wasteGB != null && parseFloat(wasteGB) > 0.5 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onToggleExpand(item.id!) }}
-                className={`text-[10px] font-bold px-1 py-0.5 rounded leading-none transition-colors ${
-                  isExpanded ? 'bg-primary text-primary-foreground' : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
-                }`}
-              >
-                {wasteGB}GB WASTE
-              </button>
-            )}
+            {wasteGB != null && parseFloat(wasteGB) > 0.5 && <span className="text-[10px] font-bold text-orange-400">{wasteGB}GB WASTE</span>}
           </div>
         </div>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {wasteGB != null && parseFloat(wasteGB) > 0.5 && <button type="button" aria-pressed={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'Show'} storage waste details`} onClick={() => onToggleExpand(item.id!)} className="rounded px-1 py-1 text-[10px] font-bold text-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{wasteGB}GB</button>}
           <AddToWishlistButton
             mediaType="episode"
             title={item.title!}
@@ -144,6 +132,8 @@ export const TvUpgradeRow = React.memo(({ item, index, isExpanded, onToggleExpan
             compact
           />
           <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${item.title}`}
             onClick={() => onDismiss(index)}
             className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
             title="Dismiss"
@@ -167,9 +157,9 @@ export const MusicUpgradeRow = React.memo(({ album, index, onSelect, onDismiss }
   return (
     <div className="px-2 pb-1">
       <div
-        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row cursor-pointer"
-        onClick={() => onSelect(album.id!)}
+        className="flex items-center gap-3 px-2 py-2 hover:bg-muted/50 rounded-md transition-colors group/row"
       >
+        <button type="button" onClick={() => onSelect(album.id!)} aria-label={`Open album ${album.title}`} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <div className="w-10 h-10 bg-muted rounded overflow-hidden shrink-0">
           {album.thumb_url ? (
             <img src={album.thumb_url} alt="" className="w-full h-full object-cover" />
@@ -186,7 +176,8 @@ export const MusicUpgradeRow = React.memo(({ album, index, onSelect, onDismiss }
             {album.quality_tier} · {album.tier_quality}{album.best_audio_bitrate ? ` · ${Math.round(album.best_audio_bitrate)} kbps` : ''}
           </div>
         </div>
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        </button>
+        <div className="flex items-center gap-1 shrink-0">
           <AddToWishlistButton
             mediaType="album"
             title={album.title}
@@ -197,6 +188,8 @@ export const MusicUpgradeRow = React.memo(({ album, index, onSelect, onDismiss }
             compact
           />
           <button
+            type="button"
+            aria-label={`Dismiss upgrade for ${album.title}`}
             onClick={() => onDismiss(index)}
             className="opacity-0 group-hover/row:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
             title="Dismiss"

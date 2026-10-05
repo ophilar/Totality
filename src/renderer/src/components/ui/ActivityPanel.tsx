@@ -1,7 +1,6 @@
-import { TaskType } from '@main/types/database'
-import type { QueuedTask, TaskQueueState } from '@main/types/database'
+import { TaskType, type QueuedTask, type TaskQueueState } from '@main/types/database'
 import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   DndContext,
   pointerWithin,
@@ -111,11 +110,6 @@ interface AppNotification {
   created_at: string
 }
 
-interface ActivityNotification extends Omit<AppNotification, 'id'> {
-  id: string
-  notificationId?: number
-}
-
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -129,6 +123,7 @@ export function ActivityPanel() {
     completedTasks: [],
   })
   const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [notificationError, setNotificationError] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [showTelemetry, setShowTelemetry] = useState(true)
   const [operations, setOperations] = useState<ActivityOperation[]>([])
@@ -138,40 +133,6 @@ export function ActivityPanel() {
   const [clearingTaskHistory, setClearingTaskHistory] = useState(false)
   const [taskHistoryError, setTaskHistoryError] = useState<string | null>(null)
   const operationRevision = useRef(-1)
-  const activityNotifications = useMemo<ActivityNotification[]>(() => {
-    const analysisNotifications = queueState.completedTasks
-      .filter(task => task.type === TaskType.Analysis && task.result?.analysis)
-      .slice(0, 6)
-      .map(task => {
-        const result = task.result!.analysis!
-        const details = [
-          `${result.completedCount} stages complete`,
-          `${result.failedCount} failed`,
-          `${result.deferredCount} deferred`,
-          `${result.skippedCount} skipped`,
-        ]
-        if (result.reconciliation) details.push(`Summary cleanup: ${result.reconciliation.merged} merged, ${result.reconciliation.removed} removed, ${result.reconciliation.preservedLocked} locked preserved, ${result.reconciliation.ambiguous} ambiguous`)
-        if (result.diagnostics.length) details.push(...result.diagnostics.slice(0, 3).map(diagnostic => `${diagnostic.itemName}: ${diagnostic.message}`))
-        if (result.databaseBackupPath) details.push(`Backup: ${result.databaseBackupPath}`)
-        return {
-          id: `analysis:${task.id}`,
-          type: result.status === 'failed' ? 'error' : 'info',
-          title: `${task.label} · Analysis ${result.status}`,
-          message: details.join(' · '),
-          is_read: false,
-          created_at: task.completedAt ?? task.createdAt,
-        }
-      })
-    const persistedNotifications = notifications.map(notification => ({
-      ...notification,
-      id: `notification:${notification.id}`,
-      notificationId: notification.id,
-    }))
-    return [...persistedNotifications, ...analysisNotifications]
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-      .slice(0, 50)
-  }, [notifications, queueState.completedTasks])
-
   // Configure dnd-kit sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -231,9 +192,12 @@ export function ActivityPanel() {
         window.electronAPI.notificationsGetAll({ limit: 50 }),
         window.electronAPI.notificationsGetCount(),
       ])
-        setNotifications(items)
+      setNotifications(items)
       setUnreadCount(counts.unread)
-    } catch { /* ignore */ }
+      setNotificationError(null)
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : String(error))
+    }
   }, [])
 
   useEffect(() => {
@@ -762,7 +726,7 @@ export function ActivityPanel() {
                   title="Clear all completed task history"
                   className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
                 >
-                  {clearingTaskHistory ? 'Clearing…' : 'Clear history'}
+                  {clearingTaskHistory ? 'Clearing…' : 'Clear task history'}
                 </button>
               )}
               {unreadCount > 0 && (
@@ -778,14 +742,19 @@ export function ActivityPanel() {
                   onClick={handleClearNotifications}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  Clear
+                  Clear notifications
                 </button>
               )}
             </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 pb-6 p-2">
             {taskHistoryError && <p className="px-2 py-1 text-xs text-destructive" role="alert">Could not clear task history: {taskHistoryError}</p>}
-            {activityNotifications.length === 0 ? (
+            {notificationError ? (
+              <div className="p-4 text-center" role="alert">
+                <p className="text-sm text-destructive">Could not load notifications: {notificationError}</p>
+                <button type="button" onClick={() => void loadNotifications()} className="mt-2 text-sm text-primary hover:underline">Retry</button>
+              </div>
+            ) : notifications.length === 0 ? (
               <div className="py-6 text-center">
                 <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">No notifications</p>
@@ -795,13 +764,15 @@ export function ActivityPanel() {
               </div>
             ) : (
               <div className="space-y-1">
-                {activityNotifications.map((n) => (
-                  <div
+                {notifications.map((n) => (
+                  <button
+                    type="button"
                     key={n.id}
-                    className={`py-2 px-2 rounded-lg cursor-pointer transition-colors ${
+                    className={`w-full text-left py-2 px-2 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
                       n.is_read ? 'opacity-60 hover:opacity-80' : 'hover:bg-muted/30'
                     }`}
-                    onClick={() => !n.is_read && n.notificationId !== undefined && handleMarkRead(n.notificationId)}
+                    onClick={() => !n.is_read && handleMarkRead(n.id)}
+                    aria-label={`${n.is_read ? 'Read' : 'Mark read'} notification: ${n.title}. ${n.message}`}
                   >
                     <div className="flex items-start gap-2">
                       <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${getNotificationIconColor(n.type)}`}>
@@ -818,7 +789,7 @@ export function ActivityPanel() {
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

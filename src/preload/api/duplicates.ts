@@ -1,6 +1,7 @@
 import { IPC_CHANNELS } from '@main/constants/ipcChannels'
 import { ipcRenderer } from 'electron'
 import type { MediaDuplicate } from '@main/database/repositories/DuplicateRepository'
+import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
 
 export const duplicatesApi = {
   /**
@@ -21,7 +22,7 @@ export const duplicatesApi = {
   /**
    * Resolve a duplicate group
    */
-  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean) => 
+  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean): Promise<DuplicateResolutionOutcome> =>
     ipcRenderer.invoke(IPC_CHANNELS.DUPLICATES.RESOLVE, duplicateId, keepItemId, deleteOthers),
 }
 
