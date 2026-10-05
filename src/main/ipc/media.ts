@@ -62,12 +62,9 @@ export function registerMediaHandlers(): void {
     getLoggingService().info('[media]', `Starting deep analysis for: ${options.filePath}`)
     const item = (await getDatabase().media.getItems()).find(candidate => candidate.file_path === options.filePath)
     if (!item) throw new Error(`No media item is associated with ${options.filePath}`)
-    const persistedAnalysis = await analyzer.analyzeCompleteFile(options.filePath, options)
-    const fileAnalysis = persistedAnalysis
-    await getDatabase().media.updateDeepAnalysisByPath(options.filePath, persistedAnalysis, new Date().toISOString())
-    const quality = await getQualityAnalyzer().analyzeMediaItem({ ...item, video_codec: fileAnalysis.video?.codec ?? item.video_codec, video_bitrate: fileAnalysis.video?.bitrate ?? item.video_bitrate, width: fileAnalysis.video?.width ?? item.width, height: fileAnalysis.video?.height ?? item.height, duration: fileAnalysis.duration ?? item.duration, audio_codec: fileAnalysis.audioTracks[0]?.codec ?? item.audio_codec, audio_channels: fileAnalysis.audioTracks[0]?.channels ?? item.audio_channels, audio_bitrate: fileAnalysis.audioTracks[0]?.bitrate ?? item.audio_bitrate, audio_tracks: JSON.stringify(persistedAnalysis.audioTracks), subtitle_tracks: JSON.stringify(persistedAnalysis.subtitleTracks) })
-    await getDatabase().media.upsertQualityScore(quality)
-    return persistedAnalysis
+    const { analysis, qualityScore } = await getQualityAnalyzer().analyzeMediaItemFileEvidence(item, undefined, options)
+    await getDatabase().media.upsertQualityScore(qualityScore)
+    return analysis
   })
 
   createValidatedIpcHandler('media:cancelDeepAnalyze', z.string().min(1), async (requestId) => {
