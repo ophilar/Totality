@@ -1874,6 +1874,21 @@ export class DatabaseService {
   }
 
   /**
+   * Update deep analysis for a media item by file path
+   */
+  async updateDeepAnalysisByPath(filePath: string, analysis: unknown, timestamp?: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const deepAnalysisJson = typeof analysis === 'string' ? analysis : JSON.stringify(analysis)
+    const deepAnalysisAt = timestamp || new Date().toISOString()
+    this.db.run(
+      'UPDATE media_items SET deep_analysis = ?, deep_analysis_at = ?, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?',
+      [deepAnalysisJson, deepAnalysisAt, filePath]
+    )
+    await this.save()
+  }
+
+  /**
    * Delete a media item
    */
   async deleteMediaItem(id: number): Promise<void> {
