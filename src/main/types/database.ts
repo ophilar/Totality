@@ -170,6 +170,10 @@ export interface MediaItem {
   // File modification tracking (for skip-unchanged optimization)
   file_mtime?: number             // Unix timestamp of file modification time
 
+  // Deep FFprobe/FFmpeg analysis (JSON) and measurement timestamp
+  deep_analysis?: string
+  deep_analysis_at?: string
+
   // Metadata
   imdb_id?: string
   tmdb_id?: string

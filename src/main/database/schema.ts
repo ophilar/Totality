@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS media_items (
   -- File modification tracking (for skip-unchanged optimization)
   file_mtime INTEGER,
 
+  -- Deep FFprobe/FFmpeg analysis (JSON) and measurement timestamp
+  deep_analysis TEXT,
+  deep_analysis_at TEXT,
+
   -- Metadata
   imdb_id TEXT,
   tmdb_id TEXT,

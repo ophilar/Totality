@@ -18,6 +18,8 @@ import * as https from 'https'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, readFileSync } from 'fs'
 import { pipeline } from 'stream/promises'
+import { StreamByteAccumulator } from './transcoding/StreamByteAccounting'
+import { PathUtils } from './utils/PathUtils'
 
 // FFprobe JSON output types
 interface FFprobeStream {
@@ -173,6 +175,16 @@ export interface FileAnalysisResult {
   subtitleTracks: AnalyzedSubtitleStream[]
   embeddedArtwork?: EmbeddedArtwork
   embeddedMetadata?: EmbeddedMetadataTags
+  streamBytes?: Record<number, number>
+  deepAnalysis?: {
+    peakBitrate?: number
+    avgBitrate?: number
+    bitrateVariance?: number
+    isVariableBitrate?: boolean
+    [key: string]: unknown
+  }
+  fileAnalysisFingerprint?: { size: number; mtimeMs: number }
+  analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
 }
 
 // Singleton instance
@@ -853,6 +865,97 @@ export class MediaFileAnalyzer {
         audioTracks: [],
         subtitleTracks: [],
       }
+    }
+  }
+
+  /**
+   * Measure stream packet bytes and sliding-window bitrate metrics using streaming parsing
+   */
+  async measurePacketMetrics(
+    filePath: string,
+    videoStreamIndex?: number | 'first',
+    signal?: AbortSignal,
+    _requestId?: string
+  ): Promise<{
+    streamBytes: Record<number, number>
+    bitrate?: { peakBitrate: number; avgBitrate: number; bitrateVariance: number; isVariableBitrate: boolean }
+  }> {
+    const sanitizedPath = PathUtils.sanitizeAbsolutePath(filePath)
+    if (!this.ffprobePath) await this.isAvailable()
+    const ffprobeCommand = this.ffprobePath || 'ffprobe'
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-v', 'error',
+        ...(videoStreamIndex === 'first' ? ['-select_streams', 'v:0'] : []),
+        '-show_entries', 'packet=stream_index,size,duration_time:packet_side_data=',
+        '-of', 'compact=p=1:nk=0',
+        sanitizedPath,
+      ]
+
+      const proc = spawn(ffprobeCommand, args, { stdio: ['ignore', 'pipe', 'pipe'], signal })
+      const packetAccumulator = new StreamByteAccumulator(videoStreamIndex)
+      let stderr = ''
+      let outputError: unknown
+
+      proc.stdout.on('data', (data) => {
+        if (outputError) return
+        try {
+          packetAccumulator.write(data.toString())
+        } catch (error) {
+          outputError = error
+          proc.kill()
+        }
+      })
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      proc.on('close', (code) => {
+        if (outputError) return reject(outputError)
+        if (code === 0 || code === null) {
+          try {
+            resolve(packetAccumulator.finishWithBitrate())
+          } catch {
+            resolve({ streamBytes: packetAccumulator.finish() })
+          }
+        } else {
+          reject(new Error(stderr || `FFprobe packet analysis exited with code ${code}`))
+        }
+      })
+
+      proc.on('error', (err) => {
+        reject(new Error(`Failed to spawn FFprobe: ${err.message}`))
+      })
+    })
+  }
+
+  /**
+   * Complete file analysis combining container metadata, packet stream accounting, and bitrate metrics
+   */
+  async analyzeCompleteFile(
+    filePath: string,
+    options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string; signal?: AbortSignal } = {}
+  ): Promise<FileAnalysisResult> {
+    const fileAnalysis = await this.analyzeFile(filePath)
+    if (!fileAnalysis.success) return fileAnalysis
+
+    try {
+      const packetMetrics = await this.measurePacketMetrics(
+        filePath,
+        (options.scanBitrate ?? true) ? fileAnalysis.video?.index : undefined,
+        options.signal,
+        options.requestId
+      )
+
+      return {
+        ...fileAnalysis,
+        streamBytes: packetMetrics.streamBytes,
+        deepAnalysis: packetMetrics.bitrate ? { ...packetMetrics.bitrate } : undefined,
+      }
+    } catch {
+      return fileAnalysis
     }
   }
 

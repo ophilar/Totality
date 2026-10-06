@@ -287,6 +287,9 @@ export class BetterSQLiteService {
       // Watch history
       'ALTER TABLE media_items ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE media_items ADD COLUMN last_watched_at TEXT',
+      // Deep file analysis cache
+      'ALTER TABLE media_items ADD COLUMN deep_analysis TEXT',
+      'ALTER TABLE media_items ADD COLUMN deep_analysis_at TEXT',
     ]
 
     for (const statement of alterStatements) {
@@ -1523,6 +1526,20 @@ export class BetterSQLiteService {
 
     const stmt = this.db.prepare('SELECT * FROM media_items WHERE file_path = ?')
     return (stmt.get(filePath) as MediaItem) || null
+  }
+
+  /**
+   * Update deep analysis for a media item by file path
+   */
+  updateDeepAnalysisByPath(filePath: string, analysis: unknown, timestamp?: string): void {
+    if (!this.db) throw new Error('Database not initialized')
+
+    const deepAnalysisJson = typeof analysis === 'string' ? analysis : JSON.stringify(analysis)
+    const deepAnalysisAt = timestamp || new Date().toISOString()
+    const stmt = this.db.prepare(
+      'UPDATE media_items SET deep_analysis = ?, deep_analysis_at = ?, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?'
+    )
+    stmt.run(deepAnalysisJson, deepAnalysisAt, filePath)
   }
 
   /**
@@ -5373,11 +5390,11 @@ WHERE m.type = 'episode' AND m.series_title = ?`
   // ============================================================================
 
   /**
-   * Run a function in a transaction
+   * Run a function in a transaction (immediate write lock)
    */
   transaction<T>(fn: () => T): T {
     if (!this.db) throw new Error('Database not initialized')
-    return this.db.transaction(fn)()
+    return (this.db.transaction(fn) as unknown as { immediate: () => T }).immediate()
   }
 
   /**

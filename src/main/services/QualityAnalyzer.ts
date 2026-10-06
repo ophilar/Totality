@@ -1,6 +1,10 @@
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import type { MediaItem, MediaItemVersion, QualityScore, MusicAlbum, MusicTrack, MusicQualityScore, MusicQualityTier, AudioTrack } from '../types/database'
+import { stat } from 'node:fs/promises'
+import type * as fs from 'node:fs'
+import { getMediaFileAnalyzer, type FileAnalysisResult } from './MediaFileAnalyzer'
+import { PathUtils } from './utils/PathUtils'
 
 /**
  * Shared input shape for quality scoring.
@@ -499,6 +503,110 @@ export class QualityAnalyzer {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+  }
+
+  /**
+   * Analyze media item with deep file evidence, reusing cached analysis if file mtime and size are unchanged
+   */
+  async analyzeMediaItemFileEvidence(
+    mediaItem: MediaItem,
+    signal?: AbortSignal,
+    options: { scanBitrate?: boolean; detectVolume?: boolean; requestId?: string } = {}
+  ): Promise<{ analysis: FileAnalysisResult; qualityScore: QualityScore }> {
+    if (!mediaItem.file_path) throw new Error(`Media item ${mediaItem.id ?? mediaItem.title} has no local file path`)
+    const db = getDatabase()
+    const filePath = mediaItem.file_path
+    let sourceStat: fs.Stats | null = null
+    try {
+      sourceStat = await stat(filePath)
+    } catch {
+      // File may be unavailable or remote
+    }
+
+    const persistedItem = db.getMediaItemByPath(filePath)
+    const cachedItem = persistedItem ?? mediaItem
+    const requestedAnalysisOptions = {
+      scanBitrate: options.scanBitrate ?? true,
+      detectVolume: options.detectVolume ?? true,
+    }
+
+    type PersistedFileAnalysis = FileAnalysisResult & {
+      fileAnalysisFingerprint?: { size: number; mtimeMs: number }
+      analysisOptions?: { scanBitrate?: boolean; detectVolume?: boolean }
+    }
+
+    let cachedAnalysis: PersistedFileAnalysis | null = null
+    if (cachedItem.deep_analysis) {
+      try {
+        cachedAnalysis = JSON.parse(cachedItem.deep_analysis) as PersistedFileAnalysis
+      } catch {
+        cachedAnalysis = null
+      }
+    }
+
+    const fingerprintMatches = Boolean(
+      sourceStat &&
+      (cachedAnalysis?.fileAnalysisFingerprint
+        ? cachedAnalysis.fileAnalysisFingerprint.size === sourceStat.size &&
+          Math.trunc(cachedAnalysis.fileAnalysisFingerprint.mtimeMs) === Math.trunc(sourceStat.mtimeMs)
+        : cachedItem.deep_analysis_at != null &&
+          cachedItem.file_size === sourceStat.size &&
+          cachedItem.file_mtime != null &&
+          Math.trunc(cachedItem.file_mtime) === Math.trunc(sourceStat.mtimeMs))
+    )
+
+    const analysisIsReusable = Boolean(
+      sourceStat &&
+      cachedAnalysis?.success &&
+      cachedAnalysis.filePath &&
+      PathUtils.arePathsEqual(cachedAnalysis.filePath, filePath) &&
+      fingerprintMatches &&
+      (cachedAnalysis.analysisOptions
+        ? cachedAnalysis.analysisOptions.scanBitrate === requestedAnalysisOptions.scanBitrate &&
+          cachedAnalysis.analysisOptions.detectVolume === requestedAnalysisOptions.detectVolume
+        : requestedAnalysisOptions.scanBitrate && requestedAnalysisOptions.detectVolume)
+    )
+
+    let analysis: PersistedFileAnalysis
+    if (analysisIsReusable && cachedAnalysis) {
+      analysis = cachedAnalysis
+    } else {
+      analysis = await getMediaFileAnalyzer().analyzeCompleteFile(filePath, { ...requestedAnalysisOptions, ...options, signal })
+      if (!analysis.success) throw new Error(analysis.error || `File analysis failed for ${mediaItem.title}`)
+
+      if (sourceStat) {
+        try {
+          const afterStat = await stat(filePath)
+          if (sourceStat.size === afterStat.size && Math.trunc(sourceStat.mtimeMs) === Math.trunc(afterStat.mtimeMs)) {
+            analysis = {
+              ...analysis,
+              fileAnalysisFingerprint: { size: sourceStat.size, mtimeMs: sourceStat.mtimeMs },
+              analysisOptions: requestedAnalysisOptions,
+            }
+            db.updateDeepAnalysisByPath(filePath, analysis, new Date().toISOString())
+          }
+        } catch {
+          // Stat after analysis failed
+        }
+      }
+    }
+
+    const analyzedItem: MediaItem = {
+      ...mediaItem,
+      video_codec: analysis.video?.codec ?? mediaItem.video_codec,
+      video_bitrate: analysis.video?.bitrate ?? mediaItem.video_bitrate,
+      resolution: analysis.video?.height ? `${analysis.video.height}p` : mediaItem.resolution,
+      height: analysis.video?.height ?? mediaItem.height,
+      width: analysis.video?.width ?? mediaItem.width,
+      hdr_format: analysis.video?.hdrFormat ?? mediaItem.hdr_format,
+      color_bit_depth: analysis.video?.bitDepth ?? mediaItem.color_bit_depth,
+      audio_codec: analysis.audioTracks?.[0]?.codec ?? mediaItem.audio_codec,
+      audio_channels: analysis.audioTracks?.[0]?.channels ?? mediaItem.audio_channels,
+      audio_bitrate: analysis.audioTracks?.[0]?.bitrate ?? mediaItem.audio_bitrate,
+    }
+
+    const qualityScore = await this.analyzeMediaItem(analyzedItem)
+    return { analysis, qualityScore }
   }
 
   /**
