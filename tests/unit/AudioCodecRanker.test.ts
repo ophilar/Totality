@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { AudioCodecRanker } from '../../src/main/services/AudioCodecRanker'
-import type { AudioTrackInfo } from '../../src/main/services/AudioCodecRanker'
+import { AudioCodecRanker } from '@main/services/AudioCodecRanker'
+import type { AudioTrackInfo } from '@main/services/AudioCodecRanker'
 
 // ============================================================================
 // getTier
@@ -270,3 +270,6 @@ describe('AudioCodecRanker.hasObjectAudioSupport', () => {
     expect(AudioCodecRanker.hasObjectAudioSupport('aac')).toBe(false)
   })
 })
+
+
+
