@@ -1,0 +1,34 @@
+{
+  "id": "example-saga-viewing-order",
+  "franchise": "Example Saga",
+  "name": "Example Saga Viewing Order",
+  "description": "Episode and film order used by the timeline IPC integration tests.",
+  "version": 1,
+  "items": [
+    {
+      "order": 1,
+      "type": "episode",
+      "title": "Broken Bow",
+      "seriesTitle": "Example Saga: Enterprise",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "timelineEra": "2151",
+      "identifiers": { "tmdbId": 1478, "tvdbId": 75711 }
+    },
+    {
+      "order": 2,
+      "type": "show",
+      "title": "Example Saga: The Original Series",
+      "seriesTitle": "Example Saga: The Original Series",
+      "timelineEra": "2265-2269",
+      "identifiers": { "tmdbId": 253, "tvdbId": 77271 }
+    },
+    {
+      "order": 3,
+      "type": "movie",
+      "title": "Example Saga II: The Wrath of Khan",
+      "timelineEra": "2285",
+      "identifiers": { "tmdbId": 154, "imdbId": "tt0084726" }
+    }
+  ]
+}

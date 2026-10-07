@@ -22,6 +22,7 @@ import { SplashScreen } from './components/layout/SplashScreen'
 import { ToastContainer } from './components/ui/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SectionErrorBoundary } from './components/ui/SectionErrorBoundary'
+import { TimelinesView } from './components/timelines/TimelinesView'
 import type { MediaViewType, SeriesStats, CollectionStats, MusicCompletenessStats, AnalysisProgress } from './components/library/types'
 import { isWebMode, isAuthenticated, authenticate } from './services/webTransport'
 import { useMobileLayout } from './hooks/useMobileLayout'
@@ -30,7 +31,7 @@ import { MobileSearchOverlay } from './components/mobile/MobileSearchOverlay'
 import logoImage from './assets/logo.png'
 import { WebLoginScreen } from './components/auth/WebLoginScreen'
 
-type AppView = 'dashboard' | 'library'
+type AppView = 'dashboard' | 'library' | 'timelines'
 
 function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean; isTablet?: boolean }) {
   const { isLoading, sources, activeSourceId, hasMovies, hasTV, hasMusic } = useSources()
@@ -292,6 +293,11 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
     setCurrentView('dashboard')
   }
 
+  const handleNavigateToTimelines = () => {
+    if (!isRestoringRef.current) pushNavState({ view: 'timelines' })
+    setCurrentView('timelines')
+  }
+
   const handleBack = useCallback(() => {
     const restored = goBack()
     if (!restored) return
@@ -361,7 +367,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
   }
 
   const chatViewContext = useMemo((): ViewContext => ({
-    currentView: currentView as 'dashboard' | 'library',
+    currentView: currentView === 'timelines' ? 'dashboard' : currentView,
     libraryTab: currentView === 'library' ? libraryTab as 'movies' | 'tv' | 'music' : undefined,
     activeSourceId: activeSourceId || undefined,
   }), [currentView, libraryTab, activeSourceId])
@@ -393,6 +399,7 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           currentView={currentView}
           libraryTab={libraryTab}
           onNavigateHome={handleNavigateToDashboard}
+          onNavigateTimelines={handleNavigateToTimelines}
           onNavigateToLibrary={handleNavigateToLibrary}
           onOpenSettings={() => handleOpenSettings()}
           onToggleCompleteness={handleToggleCompleteness}
@@ -416,7 +423,13 @@ function AppContent({ isMobile = false, isTablet = false }: { isMobile?: boolean
           isMobile={isMobile}
         />}
 
-        {currentView === 'dashboard' && !isMobile ? (
+        {currentView === 'timelines' ? (
+          <main className="fixed top-[76px] bottom-0 transition-[left,right] duration-300 ease-out" style={{ left: sidebarCollapsed ? '96px' : '288px', right: '16px' }}>
+            <SectionErrorBoundary section="Timelines">
+              <TimelinesView />
+            </SectionErrorBoundary>
+          </main>
+        ) : currentView === 'dashboard' && !isMobile ? (
           <SectionErrorBoundary section="Dashboard">
             <Dashboard
               onNavigateToLibrary={handleNavigateToLibrary}

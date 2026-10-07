@@ -1,0 +1,28 @@
+{
+  "id": "dc-extended-universe",
+  "name": "DC Extended Universe Timeline",
+  "franchise": "DC Extended Universe (DCEU)",
+  "description": "Chronological order for the completed DCEU continuity.",
+  "sourceUrl": "https://www.gamesradar.com/how-to-watch-dc-movies-in-order-dceu/",
+  "attribution": "GamesRadar+, DC movies in chronological order",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "DCEU — Chronological Order",
+      "description": "The guide's current DCEU order. Series entries expand to available local episodes; the source does not interleave individual episodes.",
+      "order": {
+        "kind": "list",
+        "listSelector": "div.text-copy.bodyCopy.auto > ul",
+        "itemSelector": ":scope > li",
+        "listIndex": 3,
+        "format": "title-list",
+        "minimumItems": 15,
+        "defaultType": "movie",
+        "showMarkers": ["season "],
+        "excludedText": ["Wonder Woman (modern-day scenes)"],
+        "removeSuffixes": ["(main story)", "(alternate timeline scenes)"]
+      }
+    }
+  ]
+}

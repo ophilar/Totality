@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, useCallback, useId } from 'react'
 import { RotateCcw, Save, Loader2, RefreshCw, ChevronDown, Film, Music, Clapperboard, Copy, Check } from 'lucide-react'
+import { TranscodingHardwareCard } from '../TranscodingHardwareCard'
 
 // Default values for all quality settings
 const DEFAULT_SETTINGS = {
@@ -920,6 +921,7 @@ function HandbrakeGuide({
 
   return (
     <div className="space-y-4">
+      <TranscodingHardwareCard />
       {/* Resolution Tabs */}
       <div className="flex gap-1 bg-muted p-1 rounded-lg" role="tablist">
         {RESOLUTION_TABS.map((tab) => (

@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Import shared types from main process (type-only, no runtime code)
 import type { ConnectionTestResult } from '@main/types/ipc'
+import type { TimelineRecipeSummary } from '@main/services/timelines/ITimelineRecipeProvider'
+import type { ResolvedTimelineResult } from '@main/services/timelines/TimelineResolutionEngine'
+import type { TimelineParserPlugin, TimelineParserPluginInput } from '@main/services/timelines/TimelineParserPlugin'
+import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/timelines/ITimelineRecipeProvider'
+import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
+import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
+import type { TranscodeOptions } from '@main/services/TranscodingService'
 
 // Re-export for consumers of this module
 export type { ConnectionTestResult } from '@main/types/ipc'
@@ -807,6 +814,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: Electron.IpcRendererEvent, entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => callback(entry)
     ipcRenderer.on('logs:new', handler)
     return () => ipcRenderer.removeListener('logs:new', handler)
+  },
+  timelinesListRecipes: () => ipcRenderer.invoke('timelines:listRecipes'),
+  timelinesListParserPlugins: () => ipcRenderer.invoke('timelines:listParserPlugins'),
+  timelinesSaveParserPlugin: (plugin: unknown) => ipcRenderer.invoke('timelines:saveParserPlugin', plugin),
+  timelinesRemoveParserPlugin: (id: string) => ipcRenderer.invoke('timelines:removeParserPlugin', id),
+  timelinesGetRecipe: (recipeId: string, options?: { refresh?: boolean }) => ipcRenderer.invoke('timelines:getRecipe', recipeId, options),
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: { refresh?: boolean; snapshotId?: string } | undefined, requestId: string, showInActivity: boolean) => ipcRenderer.invoke('timelines:resolveTimeline', recipeId, sourceId, options, requestId, showInActivity),
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => ipcRenderer.invoke('timelines:syncPlexPlaylist', payload, requestId),
+  timelinesGetPlexPlaylists: (sourceId: string) => ipcRenderer.invoke('timelines:getPlexPlaylists', sourceId),
+  timelinesCancel: (requestId: string) => ipcRenderer.invoke('timelines:cancel', requestId),
+  transcodingGetCapabilities: (refresh = false) => ipcRenderer.invoke('transcoding:getCapabilities', refresh),
+  transcodingPreflightRemux: (mediaItemId: number) => ipcRenderer.invoke('transcoding:preflightRemux', mediaItemId),
+  transcodingTranscode: (mediaItemId: number, options: TranscodeOptions, requestId: string) => ipcRenderer.invoke('transcoding:transcode', mediaItemId, options, requestId),
+  transcodingCancel: (mediaItemId?: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  onTranscodingProgress: (callback: (data: { requestId: string; mediaItemId: number; progress: number }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; mediaItemId: number; progress: number }) => callback(data)
+    ipcRenderer.on('transcoding:progress', handler)
+    return () => ipcRenderer.removeListener('transcoding:progress', handler)
   },
 
   // ============================================================================
@@ -2111,7 +2136,6 @@ export interface ElectronAPI {
   setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) => Promise<{ success: boolean }>
   openLogFolder: () => Promise<{ success: boolean }>
   onNewLog?: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => () => void
-
   // Web Access
   webAccessGetStatus: () => Promise<{
     enabled: boolean
@@ -2122,6 +2146,22 @@ export interface ElectronAPI {
   }>
   webAccessStart: () => Promise<{ success: boolean; message?: string }>
   webAccessStop: () => Promise<{ success: boolean }>
+
+  // Timelines & Transcoding
+  timelinesListRecipes: () => Promise<TimelineRecipeSummary[]>
+  timelinesListParserPlugins: () => Promise<TimelineParserPlugin[]>
+  timelinesSaveParserPlugin: (plugin: TimelineParserPluginInput) => Promise<TimelineParserPlugin[]>
+  timelinesRemoveParserPlugin: (id: string) => Promise<TimelineParserPlugin[]>
+  timelinesGetRecipe: (recipeId: string, options?: TimelineFetchOptions) => Promise<TimelineDefinition>
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: TimelineFetchOptions | undefined, requestId: string, showInActivity: boolean) => Promise<ResolvedTimelineResult | { cancelled: true }>
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => Promise<PlexPlaylistSyncResult | { cancelled: true }>
+  timelinesGetPlexPlaylists: (sourceId: string) => Promise<PlexPlaylistSummary[]>
+  timelinesCancel: (requestId: string) => Promise<void>
+  transcodingGetCapabilities: (refresh?: boolean) => Promise<TranscodingCapabilities>
+  transcodingPreflightRemux: (mediaItemId: number) => Promise<unknown>
+  transcodingTranscode: (mediaItemId: number, options: TranscodeOptions, requestId: string) => Promise<{ outputPath: string; outputSize: number }>
+  transcodingCancel: (mediaItemId?: number) => Promise<boolean>
+  onTranscodingProgress: (callback: (data: { requestId: string; mediaItemId: number; progress: number }) => void) => () => void
 }
 
 declare global {

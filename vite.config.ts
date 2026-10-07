@@ -109,7 +109,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src/renderer/src'),
       '@main': path.resolve(__dirname, './src/main'),
-      '@preload': path.resolve(__dirname, './src/preload')
+      '@preload': path.resolve(__dirname, './src/preload'),
+      '@tests': path.resolve(__dirname, './tests')
     }
   },
   root: './src/renderer',

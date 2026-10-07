@@ -1,0 +1,11 @@
+{
+  "id": "example-order",
+  "franchise": "Example",
+  "name": "Example Order",
+  "description": "Synthetic timeline fixture.",
+  "version": 2,
+  "items": [
+    { "order": 1, "type": "movie", "title": "Example Film One", "identifiers": { "tmdbId": 1 } },
+    { "order": 2, "type": "movie", "title": "Example Film Two", "identifiers": { "tmdbId": 2 } }
+  ]
+}
