@@ -1,0 +1,37 @@
+{
+  "id": "star-trek",
+  "name": "Star Trek Viewing Guide",
+  "franchise": "Star Trek",
+  "description": "Episode-by-episode in-universe viewing order.",
+  "sourceUrl": "https://startrekviewingguide.com/lo-fi-print-ready-listing.html",
+  "attribution": "Star Trek Viewing Guide, full checklist",
+  "groupings": [],
+  "orders": [
+    {
+      "id": "chronological",
+      "name": "Star Trek — Viewing Guide Order",
+      "description": "The guide's episode and movie order; the publisher notes it is a viewing order rather than a strict chronology.",
+      "order": {
+        "kind": "list",
+        "listSelector": "ul.ps1030, ul.ps723",
+        "itemSelector": "li",
+        "format": "star-trek-guide",
+        "minimumItems": 900,
+        "seriesCodes": {
+          "ENT": "Star Trek: Enterprise",
+          "SHO": "Star Trek: Short Treks",
+          "TOS": "Star Trek: The Original Series",
+          "DIS": "Star Trek: Discovery",
+          "SNW": "Star Trek: Strange New Worlds",
+          "TAS": "Star Trek: The Animated Series",
+          "TNG": "Star Trek: The Next Generation",
+          "DS9": "Star Trek: Deep Space Nine",
+          "VOY": "Star Trek: Voyager",
+          "LDS": "Star Trek: Lower Decks",
+          "PRO": "Star Trek: Prodigy",
+          "PIC": "Star Trek: Picard"
+        }
+      }
+    }
+  ]
+}
