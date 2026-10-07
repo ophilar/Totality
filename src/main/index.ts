@@ -66,6 +66,8 @@ import { registerLoggingHandlers } from './ipc/logging'
 import { registerAutoUpdateHandlers } from './ipc/autoUpdate'
 import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
+import { registerTimelinesHandlers } from './ipc/timelines'
+import { registerTranscodingHandlers } from './ipc/transcoding'
 import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
@@ -462,6 +464,8 @@ app.whenReady().then(async () => {
     registerAutoUpdateHandlers()
     registerGeminiHandlers()
     registerMoodHandlers()
+    registerTimelinesHandlers()
+    registerTranscodingHandlers()
 
     // Initialize live monitoring service
     const liveMonitoringService = getLiveMonitoringService()

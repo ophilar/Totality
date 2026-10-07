@@ -45,3 +45,20 @@ CLAUDE.md
 
 # Test coverage
 coverage/
+test-results/
+
+# Database journals
+*.db-shm
+*.db-wal
+tests/tmp/
+
+# Repomix & CLI Scratch
+repomix-output.xml
+repomix-analysis.txt
+repomix.config.json
+repomix-output.txt
+.superpowers/
+
+# Local timeline data
+data/timelines/*.json
+

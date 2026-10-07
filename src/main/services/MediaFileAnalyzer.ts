@@ -114,6 +114,7 @@ export interface AnalyzedVideoStream {
   colorTransfer?: string
   colorPrimaries?: string
   hdrFormat?: string
+  dolbyVisionProfile?: number
 }
 
 export interface AnalyzedAudioStream {
@@ -1027,6 +1028,19 @@ export class MediaFileAnalyzer {
     return this.ffprobePath
   }
 
+  /**
+   * Get the current FFmpeg executable path
+   */
+  getFFmpegPath(): string | null {
+    if (this.ffprobePath) {
+      const ffmpegPath = this.ffprobePath.replace(/ffprobe(\.exe)?$/i, (match) =>
+        match.toLowerCase().endsWith('.exe') ? 'ffmpeg.exe' : 'ffmpeg'
+      )
+      if (fs.existsSync(ffmpegPath)) return ffmpegPath
+    }
+    return 'ffmpeg'
+  }
+
   // ============================================================================
   // PRIVATE METHODS
   // ============================================================================
@@ -1458,6 +1472,8 @@ export class MediaFileAnalyzer {
     const frameRate = this.parseFrameRate(stream.avg_frame_rate || stream.r_frame_rate)
     const bitDepth = this.extractBitDepth(stream)
     const hdrFormat = this.detectHdrFormat(stream)
+    const dvProfile = stream.side_data_list?.find(sideData => sideData.side_data_type.toLowerCase().includes('dolby vision'))?.dv_profile
+    const dolbyVisionProfile = typeof dvProfile === 'number' ? dvProfile : typeof dvProfile === 'string' && /^\d+$/.test(dvProfile) ? Number(dvProfile) : undefined
 
     return {
       index: stream.index,
@@ -1474,6 +1490,7 @@ export class MediaFileAnalyzer {
       colorTransfer: stream.color_transfer,
       colorPrimaries: stream.color_primaries,
       hdrFormat,
+      dolbyVisionProfile,
     }
   }
 

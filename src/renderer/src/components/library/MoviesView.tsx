@@ -5,6 +5,7 @@ import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors } from './mediaUtils'
 import type { MediaItem, MovieCollectionData } from './types'
+import { TranscodeModal } from './TranscodeModal'
 
 // Display item type for grouped movies view
 type MovieDisplayItem =
@@ -471,6 +472,7 @@ function CollectionListItem({ collection, onClick }: { collection: MovieCollecti
 
 const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFixMatch, onRescan, onDismissUpgrade }: { movie: MediaItem; onClick: () => void; collectionData?: MovieCollectionData; showSourceBadge?: boolean; onFixMatch?: (mediaItemId: number) => void; onRescan?: (mediaItemId: number) => Promise<void>; onDismissUpgrade?: (movie: MediaItem) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
+  const [showTranscode, setShowTranscode] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const menuRef = useMenuClose({ isOpen: showMenu, onClose: useCallback(() => setShowMenu(false), []) })
@@ -505,9 +507,10 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
   }
 
   const needsUpgrade = movie.tier_quality === 'LOW' || !!movie.needs_upgrade
-  const showMenuButton = onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
+  const showMenuButton = Boolean(movie.id && movie.file_path) || onFixMatch || onRescan || (onDismissUpgrade && needsUpgrade)
 
   return (
+    <>
     <div
       ref={cardRef}
       tabIndex={0}
@@ -558,6 +561,15 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     Fix Match
+                  </button>
+                )}
+                {movie.id && movie.file_path && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMenu(false); setShowTranscode(true) }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <CircleFadingArrowUp className="w-3.5 h-3.5" />
+                    Analyze &amp; Optimize
                   </button>
                 )}
                 {onDismissUpgrade && needsUpgrade && (
@@ -639,6 +651,8 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         </div>
       </div>
     </div>
+    {showTranscode && <TranscodeModal mediaItem={movie as import('@main/types/database').MediaItem} onClose={() => setShowTranscode(false)} />}
+    </>
   )
 }, (prevProps, nextProps) => {
   // Compare all props that affect rendering

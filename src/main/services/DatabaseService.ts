@@ -2730,6 +2730,12 @@ export class DatabaseService {
     return settings
   }
 
+  async deleteSetting(key: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized')
+    this.db.run('DELETE FROM settings WHERE key = ?', [key])
+    await this.save()
+  }
+
   // ============================================================================
   // TMDB CACHE (SQL.js: no-ops — in-memory DB has no persistence benefit)
   // ============================================================================
