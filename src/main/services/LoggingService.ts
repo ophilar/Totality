@@ -160,26 +160,24 @@ class LoggingService {
     const source = sourceMatch ? sourceMatch[0] : '[App]'
     const cleanMessage = sourceMatch ? message.slice(sourceMatch[0].length).trim() : message
 
-    // Format additional args, with special handling for Error objects
-    const details =
-      args.length > 1
-        ? args
-            .slice(1)
-            .map((arg) => {
-              // Handle Error objects specially to capture stack trace
-              if (arg instanceof Error) {
-                return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
-              }
-              try {
-                return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-              } catch {
-                return String(arg)
-              }
-            })
-            .join('\n\n')
-        : undefined
-
+    const details = args.length > 1 ? this.formatDetails(args.slice(1)) : undefined
     this.addEntry(level, source, cleanMessage, details)
+  }
+
+  private formatDetails(args: unknown[]): string | undefined {
+    if (args.length === 0) return undefined
+    return args
+      .map((arg) => {
+        if (arg instanceof Error) {
+          return `${arg.name}: ${arg.message}\n${arg.stack || 'No stack trace'}`
+        }
+        try {
+          return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        } catch {
+          return String(arg)
+        }
+      })
+      .join('\n\n')
   }
 
   private addEntry(level: LogLevel, source: string, message: string, details?: string): void {
@@ -252,10 +250,26 @@ class LoggingService {
     return this.verboseEnabled
   }
 
-  verbose(source: string, message: string, details?: string): void {
+  debug(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('debug', source, String(message), this.formatDetails(details))
+  }
+
+  verbose(source: string, message: unknown, ...details: unknown[]): void {
     if (this.verboseEnabled) {
-      this.addEntry('verbose', source, message, details)
+      this.addEntry('verbose', source, String(message), this.formatDetails(details))
     }
+  }
+
+  info(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('info', source, String(message), this.formatDetails(details))
+  }
+
+  warn(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('warn', source, String(message), this.formatDetails(details))
+  }
+
+  error(source: string, message: unknown, ...details: unknown[]): void {
+    this.addEntry('error', source, String(message), this.formatDetails(details))
   }
 
   getSessionInfo(): { sessionId: string; startedAt: string; uptimeMs: number } {
