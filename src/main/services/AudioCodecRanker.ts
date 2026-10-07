@@ -12,6 +12,8 @@
  * - Tier 1 (STANDARD): AC3, AAC, MP3 - standard lossy compression
  */
 
+import { APP_CONFIG } from '@main/config'
+
 export interface AudioTrackInfo {
   index: number
   codec: string
@@ -32,20 +34,10 @@ export class AudioCodecRanker {
   static readonly TIER_HIGH_LOSSY = 2    // EAC3, DTS
   static readonly TIER_STANDARD = 1      // AC3, AAC, MP3
 
-  // Codec patterns for each tier
-  private static readonly LOSSLESS_CODECS = [
-    'truehd', 'dts-hd ma', 'dtshd_ma', 'dtsma', 'dts-hd.ma',
-    'flac', 'alac', 'pcm', 'lpcm', 'wav', 'aiff'
-  ]
-
-  private static readonly NEAR_LOSSLESS_CODECS = [
-    'dts-hd hra', 'dtshd_hra', 'dts-hd.hra', 'dtshra'
-  ]
-
-  private static readonly HIGH_LOSSY_CODECS = [
-    'dts', 'eac3', 'ec-3', 'dd+', 'ddp', 'dolby digital plus',
-    'e-ac-3', 'atsc a/52b'
-  ]
+  // Codec patterns for each tier loaded from config
+  private static readonly LOSSLESS_CODECS = APP_CONFIG.audioCodecs.lossless
+  private static readonly NEAR_LOSSLESS_CODECS = APP_CONFIG.audioCodecs.nearLossless
+  private static readonly HIGH_LOSSY_CODECS = APP_CONFIG.audioCodecs.highLossy
 
   /**
    * Get the quality tier for an audio codec
@@ -189,4 +181,57 @@ export class AudioCodecRanker {
 
     return false
   }
+
+  /**
+   * Estimate nominal stream bitrate in kbps based on codec standards and channel count.
+   * Provides exact mathematical calculation for uncompressed LPCM/PCM and specification-grade
+   * standard bitrates for lossless and lossy bitstreams when container tags are missing.
+   */
+  static estimateBitrate(codec: string, channels = 2, sampleRate?: number, bitDepth?: number): number {
+    const codecLower = codec.toLowerCase()
+    const ch = Math.max(1, channels)
+
+    // Uncompressed LPCM/PCM: exact mathematical bit calculation
+    if (codecLower.includes('pcm') || codecLower.includes('raw') || codecLower.includes('wav')) {
+      const sr = sampleRate && sampleRate > 0 ? sampleRate : 48000
+      const bd = bitDepth && bitDepth > 0 ? bitDepth : 16
+      return Math.round((ch * sr * bd) / 1000)
+    }
+
+    // Lossless compressed codecs
+    if (codecLower.includes('truehd') || codecLower.includes('mlp')) {
+      return ch >= 8 ? 4800 : ch >= 6 ? 3500 : 1800
+    }
+    if (codecLower.includes('dts-hd ma') || codecLower.includes('dtshd ma') || codecLower.includes('dts_hd_ma')) {
+      return ch >= 8 ? 4200 : ch >= 6 ? 3200 : 1600
+    }
+    if (codecLower.includes('flac') || codecLower.includes('alac')) {
+      return ch >= 6 ? 2800 : 900
+    }
+
+    // Near-lossless & High-lossy codecs
+    if (codecLower.includes('dts-hd') || codecLower.includes('dtshd') || codecLower.includes('dts-hra')) {
+      return ch >= 6 ? 2048 : 1024
+    }
+    if (codecLower.includes('dts')) {
+      return ch >= 6 ? 1509 : 768
+    }
+    if (codecLower.includes('eac3') || codecLower.includes('ec-3') || codecLower.includes('dd+') || codecLower.includes('ddp')) {
+      return ch >= 6 ? 768 : 384
+    }
+    if (codecLower.includes('ac3') || codecLower.includes('ac-3') || codecLower.includes('dd')) {
+      return ch >= 6 ? 640 : 384
+    }
+
+    // Standard lossy codecs
+    if (codecLower.includes('opus')) {
+      return ch >= 6 ? 384 : 160
+    }
+    if (codecLower.includes('aac') || codecLower.includes('mp3') || codecLower.includes('vorbis')) {
+      return ch >= 6 ? 448 : 256
+    }
+
+    return ch >= 6 ? 640 : 256
+  }
 }
+
