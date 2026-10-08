@@ -12,11 +12,22 @@ import fs from 'fs/promises'
 import type { MediaItem } from '../types/database'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 
+import { operationRequestRegistry } from './utils/OperationRequestRegistry'
+import { createValidatedIpcHandlerWithEvent } from './utils/createHandler'
+
 /**
  * Register all database-related IPC handlers
  */
 export function registerDatabaseHandlers() {
   const db = getDatabase()
+
+  createValidatedIpcHandlerWithEvent('db:cancelOperation', z.string().min(1).max(100), async (event, requestId) => ({
+    status: operationRequestRegistry.cancel(event.sender.id, requestId),
+  }))
+
+  createValidatedIpcHandlerWithEvent('operations:getActivity', z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
+  createValidatedIpcHandlerWithEvent('operations:getResult', z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent('operations:dismiss', z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
 
   // ============================================================================
   // MEDIA ITEMS

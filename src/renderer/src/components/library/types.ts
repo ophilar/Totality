@@ -119,6 +119,15 @@ export interface MediaItem {
 
   // File information
   file_path?: string
+  file_size?: number
+
+  // Codecs and tracks
+  video_codec?: string
+  video_profile?: string
+  audio_codec?: string
+  audio_language?: string
+  audio_tracks?: string
+  original_language?: string
 
   // Enhanced quality metadata
   hdr_format?: string
@@ -128,6 +137,12 @@ export interface MediaItem {
 
   // Multi-version
   version_count?: number
+
+  // Quality & Storage Optimization
+  storage_debt_bytes?: number | null
+  efficiency_score?: number | null
+  evidence_status?: string | null
+  series_identity_key?: string | null
 
   // Source tracking
   source_id?: string
@@ -164,6 +179,8 @@ export interface TVShowSummary {
   poster_url?: string
   source_id?: string
   source_type?: string
+  library_id?: string
+  series_identity_key?: string
 }
 
 export interface MissingEpisode {
@@ -222,6 +239,9 @@ export interface SeriesCompletenessData {
   missing_episodes: MissingEpisode[]
   completeness_percentage: number
   tmdb_id?: string
+  source_id?: string
+  library_id?: string
+  series_identity_key?: string
   poster_url?: string
   status?: string
 }
@@ -381,5 +401,5 @@ export interface MatchFixModalData {
 export type TierFilter = 'all' | 'SD' | '720p' | '1080p' | '4K'
 export type QualityFilter = 'all' | 'low' | 'medium' | 'high'
 export type ViewType = 'grid' | 'list'
-export type MediaViewType = 'movies' | 'tv' | 'music'
+export type MediaViewType = 'movies' | 'tv' | 'music' | 'duplicates'
 export type MusicViewMode = 'artists' | 'albums' | 'tracks'

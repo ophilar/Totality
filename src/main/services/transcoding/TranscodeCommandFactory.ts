@@ -10,7 +10,12 @@ export class TranscodeCommandFactory {
     'Intel': () => new IntelCommandBuilder(),
   }
 
-  static resolveOutputMode(requestedOutputMode: NonNullable<TranscodeOptions['outputMode']>): NonNullable<TranscodeOptions['outputMode']> {
+  static resolveOutputMode(
+    requestedOutputMode: TranscodeOptions['outputMode'] | null | undefined,
+    _encoder?: string,
+    _hasCustomArgs = false
+  ): NonNullable<TranscodeOptions['outputMode']> {
+    if (!requestedOutputMode) throw new Error('Transcode output mode must be explicitly selected.')
     return requestedOutputMode
   }
 

@@ -48,7 +48,6 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
     const controller = new AbortController()
     activeTimelineRequests.set(args[3], controller)
     try {
-    let timeline
     if (args[2]?.snapshotId) {
       const raw = getDatabase().getSetting(snapshotKey(args[2].snapshotId))
       if (!raw) throw new Error('The saved timeline snapshot no longer exists; reopen the guide.')
@@ -56,8 +55,11 @@ export function registerTimelinesHandlers(timelineProvider: ITimelineRecipeProvi
       if (saved.timeline.id !== args[0]) throw new Error('The snapshot belongs to another viewing guide.')
       return saved
     }
-    timeline = await timelineProvider.fetchTimeline(args[0], { ...args[2], signal: controller.signal })
-    const resolved = await new TimelineResolutionEngine(sourceId => getDatabase().getMediaItems({ sourceId })).resolveTimeline(timeline, args[1], controller.signal)
+    const timeline = await timelineProvider.fetchTimeline(args[0], { ...args[2], signal: controller.signal })
+    const resolved = await new TimelineResolutionEngine(
+      sourceId => getDatabase().getMediaItems({ sourceId }),
+      sourceId => getDatabase().getSeriesCompleteness(sourceId)
+    ).resolveTimeline(timeline, args[1], controller.signal)
     resolved.snapshotId = randomUUID()
     await getDatabase().setSetting(snapshotKey(resolved.snapshotId), JSON.stringify(resolved))
     return resolved

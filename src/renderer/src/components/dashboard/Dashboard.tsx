@@ -45,7 +45,7 @@ interface SeasonGroup {
 
 
 interface DashboardProps {
-  onNavigateToLibrary: (view: 'movies' | 'tv' | 'music') => void
+  onNavigateToLibrary: (view: 'movies' | 'tv' | 'music' | 'duplicates') => void
   onAddSource?: () => void
   sidebarCollapsed?: boolean
   hasMovies?: boolean
@@ -1466,7 +1466,13 @@ export function Dashboard({
                       <span className="flex items-center gap-1.5"><Music className="w-3 h-3" /><AnimatedNumber value={musicStats.totalTracks} locale /> tracks</span>
                     )}
                     {duplicateCount > 0 && (
-                      <span className="flex items-center gap-1.5"><Library className="w-3 h-3" /><AnimatedNumber value={duplicateCount} /> dupes</span>
+                      <button
+                        onClick={() => _onNavigateToLibrary('duplicates')}
+                        className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-pointer text-left text-xs text-muted-foreground"
+                        title="View duplicate media files"
+                      >
+                        <Library className="w-3 h-3 text-primary" /><AnimatedNumber value={duplicateCount} /> dupes
+                      </button>
                     )}
                     {sources.length > 0 && (
                       <span className="flex items-center gap-1.5"><Users className="w-3 h-3" />{sources.length} source{sources.length !== 1 ? 's' : ''}</span>
@@ -1666,10 +1672,13 @@ export function Dashboard({
                   <CircleFadingArrowUp className="w-4 h-4 text-muted-foreground" />
                   <h2 className="text-sm font-semibold text-foreground">Upgrades</h2>
                   {duplicateCount > 0 && (
-                    <span className="text-xs bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium"
-                      title={`${duplicateCount} duplicate ${duplicateCount === 1 ? 'movie' : 'movies'} across sources`}>
+                    <button
+                      onClick={() => _onNavigateToLibrary('duplicates')}
+                      className="text-xs bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium hover:bg-amber-500/30 transition-colors cursor-pointer"
+                      title={`${duplicateCount} duplicate ${duplicateCount === 1 ? 'movie' : 'movies'} across sources. Click to review.`}
+                    >
                       {duplicateCount} dupe{duplicateCount !== 1 ? 's' : ''}
-                    </span>
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center gap-2">

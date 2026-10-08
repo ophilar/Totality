@@ -1,6 +1,6 @@
 {
   "name": "totality",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Analyze media library quality and recommend upgrades",
   "main": "dist-electron/main/index.cjs",
   "scripts": {
@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vitest run && tsc && vite build && electron-builder",
     "lint": "eslint --max-warnings 0",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "electron:dev": "vite",
     "electron:build": "vitest run && tsc && vite build && electron-builder",

@@ -646,7 +646,7 @@ const MovieCard = memo(({ movie, onClick, collectionData, showSourceBadge, onFix
         </div>
       </div>
     </div>
-    {showTranscode && <TranscodeModal mediaItem={movie as import('@main/types/database').MediaItem} onClose={() => setShowTranscode(false)} />}
+    {showTranscode && <TranscodeModal mediaId={movie.id} onClose={() => setShowTranscode(false)} />}
     </>
   )
 }, (prevProps, nextProps) => {

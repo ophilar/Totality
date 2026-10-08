@@ -8,6 +8,11 @@ import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/ti
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
+import type { MediaDuplicate } from '@main/types/database'
+import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
+import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
+import type { PlaybackTargetProfile, PlaybackTargetDefinition } from '@main/types/playbackTarget'
+import type { PlaybackCompatibilityResult } from '@main/services/PlaybackCompatibilityService'
 
 // Re-export for consumers of this module
 export type { ConnectionTestResult } from '@main/types/ipc'
@@ -362,11 +367,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
-  seriesAnalyze: (seriesTitle: string) => ipcRenderer.invoke('series:analyze', seriesTitle),
+  seriesAnalyze: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyze', seriesIdentityKey, sourceId, libraryId),
   seriesGetAll: (sourceId?: string) => ipcRenderer.invoke('series:getAll', sourceId),
   seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('series:getIncomplete', sourceId),
   seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
-  seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesTitle, sourceId),
+  seriesGetEpisodes: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesIdentityKey, sourceId, undefined, libraryId),
   seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
   tmdbGetMovieDetails: (tmdbId: string) =>
     ipcRenderer.invoke('tmdb:getMovieDetails', tmdbId) as Promise<{ overview: string | null; releaseDate: string | null; runtime: number | null } | null>,
@@ -833,6 +838,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('transcoding:progress', handler)
     return () => ipcRenderer.removeListener('transcoding:progress', handler)
   },
+  // Duplicates
+  duplicatesGetPending: (sourceId?: string) => ipcRenderer.invoke('duplicates:getPending', sourceId),
+  duplicatesScan: (sourceId: string | undefined, requestId: string) => ipcRenderer.invoke('duplicates:scan', sourceId, requestId),
+  duplicatesGetRecommendation: (mediaItemIds: number[]) => ipcRenderer.invoke('duplicates:getRecommendation', mediaItemIds),
+  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean) => ipcRenderer.invoke('duplicates:resolve', duplicateId, keepItemId, deleteOthers),
 
   // ============================================================================
   // WEB ACCESS
@@ -841,6 +851,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
   webAccessStart: () => ipcRenderer.invoke('webAccess:start'),
   webAccessStop: () => ipcRenderer.invoke('webAccess:stop'),
 
+  // Operations
+  dbCancelOperation: (requestId: string) => ipcRenderer.invoke('db:cancelOperation', requestId),
+  operationsGetActivity: () => ipcRenderer.invoke('operations:getActivity'),
+  operationsGetResult: (requestId: string) => ipcRenderer.invoke('operations:getResult', requestId),
+  operationsDismiss: (requestId: string) => ipcRenderer.invoke('operations:dismiss', requestId),
+  onOperationsUpdated: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: { revision: number; operations: ActivityOperation[] }) => callback(snapshot)
+    ipcRenderer.on('operations:updated', handler)
+    return () => ipcRenderer.removeListener('operations:updated', handler)
+  },
+
+  // Playback Target Profiles & Compatibility
+  listPlaybackTargetProfiles: () => ipcRenderer.invoke('db:playbackTargetProfiles:list'),
+  createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke('db:playbackTargetProfiles:create', input),
+  updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke('db:playbackTargetProfiles:update', input),
+  duplicatePlaybackTargetProfile: (sourceId: string, name: string) => ipcRenderer.invoke('db:playbackTargetProfiles:duplicate', { sourceId, name }),
+  deletePlaybackTargetProfile: (id: string) => ipcRenderer.invoke('db:playbackTargetProfiles:delete', id),
+  evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => ipcRenderer.invoke('db:playbackCompatibility:evaluate', input),
+
+  // Optimization
+  optimizationGetPending: () => ipcRenderer.invoke('optimization:getPending'),
+  optimizationGetDecision: (mediaItemId: number) => ipcRenderer.invoke('optimization:getDecision', mediaItemId),
+
+  // TV Show Optimization & Preflight
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('series:getEpisodesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('series:getAudioLanguagesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId: string, libraryId: string) => ipcRenderer.invoke('series:analyzeByIdentity', seriesIdentityKey, sourceId, libraryId),
+  preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
+  queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
+  approveShow: (preflightId: string) => ipcRenderer.invoke('transcoding:approveShow', preflightId),
+  discardShow: (preflightId: string) => ipcRenderer.invoke('transcoding:discardShow', preflightId),
+  openShowSample: (preflightId: string, mediaItemId: number, index: number) => ipcRenderer.invoke('transcoding:openShowSample', preflightId, mediaItemId, index),
+  listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:listShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:purgeShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+
+  // Single-Item Optimization & Transcoding Aliases
+  getMediaItem: (id: number) => ipcRenderer.invoke('db:getMediaItemById', id),
+  getCapabilities: () => ipcRenderer.invoke('transcoding:getCapabilities'),
+  refreshCapabilities: () => ipcRenderer.invoke('transcoding:refreshCapabilities'),
+  checkAvailability: () => ipcRenderer.invoke('transcoding:checkAvailability'),
+  setSelectedGpu: (gpuId: string | null) => ipcRenderer.invoke('transcoding:setSelectedGpu', gpuId),
+  getParameters: (mediaItemId: number, options?: unknown) => ipcRenderer.invoke('transcoding:getParameters', mediaItemId, options),
+  cancel: (mediaItemId?: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  onProgress: (callback: (data: any) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: any) => callback(progress)
+    ipcRenderer.on('transcoding:progress', handler)
+    return () => ipcRenderer.removeListener('transcoding:progress', handler)
+  },
 })
 
 // Type definitions for multi-source support
@@ -1394,7 +1452,7 @@ export interface ElectronAPI {
 
   // Series Completeness
   seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => Promise<{ completed: boolean; analyzed: number }>
-  seriesAnalyze: (seriesTitle: string) => Promise<unknown | null>
+  seriesAnalyze: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<unknown | null>
   seriesGetAll: (sourceId?: string) => Promise<unknown[]>
   seriesGetIncomplete: (sourceId?: string) => Promise<unknown[]>
   seriesGetStats: () => Promise<{
@@ -1404,7 +1462,7 @@ export interface ElectronAPI {
     totalMissingEpisodes: number
     averageCompleteness: number
   }>
-  seriesGetEpisodes: (seriesTitle: string, sourceId?: string) => Promise<unknown[]>
+  seriesGetEpisodes: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<unknown[]>
   seriesDelete: (id: number) => Promise<boolean>
   tmdbGetMovieDetails: (tmdbId: string) => Promise<{ overview: string | null; releaseDate: string | null; runtime: number | null } | null>
   tmdbGetTVShowDetails: (tmdbId: string) => Promise<{ overview: string | null } | null>
@@ -2162,6 +2220,41 @@ export interface ElectronAPI {
   transcodingTranscode: (mediaItemId: number, options: TranscodeOptions, requestId: string) => Promise<{ outputPath: string; outputSize: number }>
   transcodingCancel: (mediaItemId?: number) => Promise<boolean>
   onTranscodingProgress: (callback: (data: { requestId: string; mediaItemId: number; progress: number }) => void) => () => void
+  duplicatesGetPending: (sourceId?: string) => Promise<MediaDuplicate[]>
+  duplicatesScan: (sourceId: string | undefined, requestId: string) => Promise<number | { cancelled: true }>
+  duplicatesGetRecommendation: (mediaItemIds: number[]) => Promise<any>
+  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean) => Promise<DuplicateResolutionOutcome>
+  dbCancelOperation: (requestId: string) => Promise<{ status: string }>
+  operationsGetActivity: () => Promise<{ revision: number; operations: ActivityOperation[] }>
+  operationsGetResult: (requestId: string) => Promise<unknown>
+  operationsDismiss: (requestId: string) => Promise<void>
+  onOperationsUpdated?: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => () => void
+  listPlaybackTargetProfiles: () => Promise<PlaybackTargetProfile[]>
+  createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
+  updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => Promise<PlaybackTargetProfile>
+  duplicatePlaybackTargetProfile: (sourceId: string, name: string) => Promise<PlaybackTargetProfile>
+  deletePlaybackTargetProfile: (id: string) => Promise<boolean>
+  evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => Promise<PlaybackCompatibilityResult>
+  optimizationGetPending: () => Promise<any>
+  optimizationGetDecision: (mediaItemId: number) => Promise<any>
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
+  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId: string, libraryId: string) => Promise<any>
+  preflightShow: (request: any) => Promise<any>
+  queueShow: (preflightId: string) => Promise<any>
+  approveShow: (preflightId: string) => Promise<any>
+  discardShow: (preflightId: string) => Promise<any>
+  openShowSample: (preflightId: string, mediaItemId: number, index: number) => Promise<void>
+  listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
+  purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<{ purged: number }>
+  getMediaItem: (id: number) => Promise<any>
+  getCapabilities: () => Promise<any>
+  refreshCapabilities: () => Promise<any>
+  checkAvailability: () => Promise<any>
+  setSelectedGpu: (gpuId: string | null) => Promise<void>
+  getParameters: (mediaItemId: number, options?: any) => Promise<any>
+  cancel: (mediaItemId?: number) => Promise<boolean>
+  onProgress: (callback: (data: any) => void) => () => void
 }
 
 declare global {

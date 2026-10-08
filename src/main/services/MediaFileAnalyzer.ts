@@ -100,6 +100,8 @@ interface FFprobeOutput {
 
 // Analyzed result types
 export interface AnalyzedVideoStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
@@ -118,6 +120,8 @@ export interface AnalyzedVideoStream {
 }
 
 export interface AnalyzedAudioStream {
+  durationMs?: number
+  timestampPrecisionMs?: number
   index: number
   codec: string
   profile?: string
@@ -130,6 +134,9 @@ export interface AnalyzedAudioStream {
   title?: string
   isDefault: boolean
   hasObjectAudio: boolean
+  isCommentary?: boolean
+  isAudioDescription?: boolean
+  isAccessibility?: boolean
 }
 
 export interface AnalyzedSubtitleStream {
@@ -163,6 +170,7 @@ export interface EmbeddedMetadataTags {
 }
 
 export interface FileAnalysisResult {
+  sourceFingerprint?: { size: number; mtimeMs: number; sha256: string }
   success: boolean
   error?: string
   filePath: string

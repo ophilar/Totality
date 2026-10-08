@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
-import type { AnalysisProgress, MediaSource } from '../types'
+import type { AnalysisProgress, MediaSource, TVShowSummary } from '../types'
+import { getTVShowIdentity } from '../tv/showIdentity'
 
 type AnalysisType = 'series' | 'collections' | 'music'
 
@@ -29,7 +30,7 @@ interface UseAnalysisManagerReturn {
   handleAnalyzeSeries: (libraryId?: string) => Promise<void>
   handleAnalyzeCollections: (libraryId?: string) => Promise<void>
   handleAnalyzeMusic: () => Promise<void>
-  handleAnalyzeSingleSeries: (seriesTitle: string) => Promise<void>
+  handleAnalyzeSingleSeries: (showOrTitle: TVShowSummary | string) => Promise<void>
   handleCancelAnalysis: (type: 'series' | 'collections' | 'music') => Promise<void>
   checkTmdbApiKey: () => Promise<void>
 }
@@ -126,16 +127,29 @@ export function useAnalysisManager({
 
   // Analyze a single series for completeness
   const handleAnalyzeSingleSeries = useCallback(
-    async (seriesTitle: string) => {
+    async (showOrTitle: TVShowSummary | string) => {
       try {
-        console.log(`[useAnalysisManager] Analyzing series: ${seriesTitle}`)
-        await window.electronAPI.seriesAnalyze(seriesTitle)
+        if (typeof showOrTitle === 'object' && showOrTitle !== null) {
+          const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(showOrTitle)
+          console.log(`[useAnalysisManager] Analyzing series by identity: ${seriesIdentityKey} (${showOrTitle.series_title})`)
+          await window.electronAPI.seriesAnalyzeByIdentity(seriesIdentityKey, sourceId, libraryId)
+        } else if (
+          typeof showOrTitle === 'string' &&
+          (showOrTitle.startsWith('tmdb:') || showOrTitle.startsWith('tvdb:') || showOrTitle.startsWith('unresolved:'))
+        ) {
+          console.log(`[useAnalysisManager] Analyzing series by identity key: ${showOrTitle}`)
+          await window.electronAPI.seriesAnalyzeByIdentity(showOrTitle, activeSourceId || '', '')
+        } else {
+          throw new Error(
+            `Cannot analyze series without a canonical series identity key (received: "${showOrTitle}"). Title-based lookups are not permitted.`
+          )
+        }
         await loadCompletenessData()
       } catch (err) {
         console.error('Single series analysis failed:', err)
       }
     },
-    [loadCompletenessData]
+    [activeSourceId, loadCompletenessData]
   )
 
   // Cancel current analysis

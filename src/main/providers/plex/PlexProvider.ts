@@ -49,6 +49,7 @@ import type {
   PlexResource,
 } from '../../types/plex'
 import type { MediaItem, MediaItemVersion, AudioTrack, SubtitleTrack, MusicArtist, MusicAlbum, MusicTrack } from '../../types/database'
+import type { PlexPlaybackDecisionResponse } from './PlexPlaybackDecisionProvider'
 
 const PLEX_API_URL = 'https://plex.tv/api/v2'
 const CLIENT_IDENTIFIER = 'totality'
@@ -2091,5 +2092,50 @@ export class PlexProvider implements MediaProvider {
 
   setSelectedServer(server: PlexServer): void {
     this.selectedServer = server
+  }
+
+  async requestPlaybackDecision(
+    plexId: string,
+    client: { clientProduct: string; clientPlatform: string; clientVersion: string }
+  ): Promise<PlexPlaybackDecisionResponse> {
+    if (!this.selectedServer) throw new Error('No Plex server selected')
+    if (!plexId) throw new Error('Plex media identifier is required')
+    const url = buildUrl(`${this.selectedServer.uri}/video/:/transcode/universal/decision`, {
+      path: `/library/metadata/${encodeURIComponent(plexId)}`,
+      mediaIndex: -1,
+      partIndex: -1,
+    })
+    const response = await fetchJSON<{
+      MediaContainer?: {
+        transcodeDecisionText?: string
+        generalDecisionText?: string
+        transcodeDecisionCode?: number | string
+        generalDecisionCode?: number | string
+      }
+    }>(url, {
+      headers: {
+        ...this.defaultHeaders,
+        'X-Plex-Token': this.selectedServer.accessToken,
+        'X-Plex-Client-Identifier': CLIENT_IDENTIFIER,
+        'X-Plex-Client-Profile-Name': client.clientProduct,
+        'X-Plex-Platform': client.clientPlatform,
+        'X-Plex-Platform-Version': client.clientVersion,
+        'X-Plex-Device': client.clientProduct,
+      },
+      timeoutMs: 30000,
+    })
+    const container = response?.MediaContainer
+    const decisionText = String(container?.transcodeDecisionText || container?.generalDecisionText || '').toLowerCase()
+    const decisionCode = Number(container?.transcodeDecisionCode ?? container?.generalDecisionCode)
+    const directPlay = decisionCode === 1000 || decisionText.includes('direct play available')
+    const overall = directPlay ? 'direct-play' : decisionText.includes('direct stream') ? 'direct-stream' : decisionText.includes('transcod') || decisionCode > 0 ? 'transcode' : undefined
+    if (!overall) throw new Error('Plex returned no recognizable playback decision')
+    return {
+      overall,
+      video: overall,
+      audio: overall,
+      subtitle: overall,
+      evidence: String(container?.transcodeDecisionText || container?.generalDecisionText || `decision code ${decisionCode}`)
+    }
   }
 }

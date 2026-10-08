@@ -494,14 +494,120 @@ export const LetterOffsetSchema = z.object({
 })
 
 // ============================================================================
-// HELPER FUNCTIONS
+// TRANSCODING SCHEMAS
 // ============================================================================
+
+export const TranscodeOptionsSchema = z.object({
+  targetCodec: z.enum(['av1', 'hevc']).optional(),
+  outputMode: z.enum(['copy', 'quarantine-replace', 'replace']).optional(),
+  tempDirectory: z.string().optional(),
+  priority: z.enum(['low', 'normal', 'high']).optional(),
+  useGpu: z.boolean().optional(),
+  encoder: z.string().optional(),
+  crf: z.number().min(0).max(51).optional(),
+  preset: z.string().optional(),
+  customArgs: z.string().optional(),
+  gpuId: z.string().optional(),
+  transcodingEngine: z.literal('ffmpeg').optional(),
+  optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
+  qualityProfile: z.enum(['transparent', 'balanced', 'maximum_savings']).optional(),
+  encoderPolicy: z.enum(['hardware', 'software', 'compare']).optional(),
+  targetProfileId: z.string().min(1).optional(),
+  targetContainer: z.enum(['mkv', 'mp4']).optional(),
+  targetAudioCodec: z.enum(['aac', 'ac3', 'eac3']).optional(),
+  targetHdrFormat: z.enum(['SDR', 'HDR10']).optional(),
+  streamSelection: z.union([
+    z.object({
+      audio: z.literal('all'),
+      subtitle: z.literal('all'),
+      subtitleLanguageWhitelist: z.array(z.string()).optional(),
+      defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional()
+    }),
+    z.object({
+      audio: z.literal('original-and-protected'),
+      originalLanguage: z.string().min(1),
+      subtitle: z.literal('all'),
+      subtitleLanguageWhitelist: z.array(z.string()).optional(),
+      defaultSubtitle: z.union([z.literal('preserve'), z.literal('none'), z.object({ language: z.string().min(1).optional(), forced: z.boolean().optional(), hearingImpaired: z.boolean().optional(), title: z.string().min(1).optional() })]).optional()
+    })
+  ]).optional(),
+  targetSize: z.string().optional(),
+  maxOutputBytes: z.number().int().positive().optional(),
+}).optional()
+
+export const SetSelectedGpuSchema = z.string().min(1).max(200).nullable()
+
+export const CheckTranscoderAvailabilitySchema = z.unknown().optional()
+
+export const GetTranscodeParamsSchema = z.tuple([
+  FilePathSchema,
+  TranscodeOptionsSchema
+])
+export const GetTranscodeParamsByMediaItemSchema = z.tuple([
+  z.number().int().positive(),
+  TranscodeOptionsSchema
+])
+
+export const TranscodeMediaItemSchema = z.tuple([
+  z.number().int().positive(),
+  TranscodeOptionsSchema
+])
+
+export const CancelTranscodeSchema = z.tuple([
+  z.number().int().positive()
+])
+
+export const PreflightShowTranscodeSchema = z.tuple([
+  z.object({
+    requestId: z.string().min(1).max(100),
+    mediaItemId: z.number().int().positive().optional(),
+    seriesTitle: z.string().min(1).optional(),
+    seriesIdentityKey: z.string().min(1).optional(),
+    sourceId: z.string().min(1),
+    libraryId: z.string().min(1).optional(),
+    options: TranscodeOptionsSchema.unwrap()
+  })
+])
+
+export const QueueShowTranscodeSchema = z.tuple([z.string().min(1)])
+
+export const ShowQuarantineSchema = z.tuple([
+  z.string().min(1),
+  z.string().min(1),
+  z.string().min(1).optional()
+])
+
+function preprocessFilterKeys(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const clone: Record<string, unknown> = { ...input }
+  if ('tier' in clone && !('qualityTier' in clone)) {
+    clone.qualityTier = clone.tier
+    delete clone.tier
+  }
+  if ('quality' in clone && !('tierQuality' in clone)) {
+    clone.tierQuality = clone.quality
+    delete clone.quality
+  }
+  if ('alphabet' in clone && !('alphabetFilter' in clone)) {
+    clone.alphabetFilter = clone.alphabet
+    delete clone.alphabet
+  }
+  if ('search' in clone && !('searchQuery' in clone)) {
+    clone.searchQuery = clone.search
+    delete clone.search
+  }
+  if (clone.sortBy === 'waste') {
+    clone.sortBy = 'storage_debt'
+  }
+  return clone
+}
 
 /**
  * Validate and parse input, throwing a descriptive error on failure
  */
 export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context?: string): T {
-  const result = schema.safeParse(input)
+  const preprocessed = preprocessFilterKeys(input)
+  const result = schema.safeParse(preprocessed)
   if (!result.success) {
     const errors = result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
     throw new Error(`${context ? `[${context}] ` : ''}Validation failed: ${errors}`)
@@ -513,6 +619,37 @@ export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown, context
  * Safely validate input, returning null on failure instead of throwing
  */
 export function safeValidateInput<T>(schema: z.ZodSchema<T>, input: unknown): T | null {
-  const result = schema.safeParse(input)
+  const preprocessed = preprocessFilterKeys(input)
+  const result = schema.safeParse(preprocessed)
   return result.success ? result.data : null
 }
+
+// ============================================================================
+// IPC TUPLE SCHEMAS (Multi-argument handlers)
+// ============================================================================
+
+export const UpdateSourceTupleSchema = z.tuple([SourceIdSchema, UpdateSourceSchema])
+export const ToggleSourceTupleSchema = z.tuple([SourceIdSchema, BooleanSchema])
+export const ToggleLibraryTupleSchema = z.tuple([SourceIdSchema, SourceIdSchema, BooleanSchema])
+export const ScanLibraryTupleSchema = z.tuple([SourceIdSchema, SourceIdSchema])
+export const ScanItemTupleSchema = z.tuple([SourceIdSchema, z.string().nullable(), FilePathSchema])
+export const PlexAuthTupleSchema = z.tuple([z.string(), z.string()])
+export const PlexSelectServerTupleSchema = z.tuple([SourceIdSchema, z.string()])
+export const SetSettingTupleSchema = z.tuple([SettingKeySchema, SettingValueSchema])
+export const TestNfsMappingTupleSchema = z.tuple([z.unknown(), FilePathSchema])
+export const FixMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema, NonEmptyStringSchema])
+export const AddExclusionTupleSchema = z.tuple([z.string(), PositiveIntSchema.optional(), z.string().optional(), z.string().optional(), z.string().optional()])
+export const GetExclusionsTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
+export const FixArtistMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])
+export const SearchMbReleaseTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema])
+export const FixAlbumMatchTupleSchema = z.tuple([PositiveIntSchema, NonEmptyStringSchema])
+export const MbSearchTupleSchema = z.tuple([z.string(), z.enum(['artist', 'release', 'recording', 'release-group'])])
+export const SeriesAnalyzeAllTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
+export const SeriesGetEpisodesTupleSchema = z.tuple([NonEmptyStringSchema, z.string().optional()])
+export const SeriesGetSeasonDetailsTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative()])
+export const SeriesGetEpisodeStillTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative(), z.number().int().nonnegative()])
+export const SeriesFixMatchTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema])
+export const SeriesIdentityTupleSchema = z.tuple([NonEmptyStringSchema, SourceIdSchema, NonEmptyStringSchema, LibraryIdSchema])
+export const JellyfinQcStatusTupleSchema = z.tuple([z.string().url(), z.string()])
+export const JellyfinQcCompleteTupleSchema = z.tuple([z.string().url(), z.string(), NonEmptyStringSchema])
+export const JellyfinAuthCredentialsTupleSchema = z.tuple([z.string().url(), z.string(), z.string(), NonEmptyStringSchema, z.boolean().optional()])

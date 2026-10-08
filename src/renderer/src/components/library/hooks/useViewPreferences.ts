@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
 
-type MediaViewType = 'movies' | 'tv' | 'music'
+import type { MediaViewType } from '../types'
 
 interface UseViewPreferencesReturn {
   viewType: 'grid' | 'list'
