@@ -76,6 +76,14 @@ export const formatSampleRate = (sampleRate?: number): string => {
 /**
  * Format file size for display
  */
+export const formatBytes = (bytes?: number): string => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
 export const formatFileSize = (bytes?: number): string => {
   if (!bytes) return '--'
   if (bytes >= 1073741824) {
@@ -86,6 +94,17 @@ export const formatFileSize = (bytes?: number): string => {
   }
   return `${(bytes / 1024).toFixed(0)} KB`
 }
+
+export {
+  formatLanguage,
+  isSameLanguage,
+  normalizeLanguage,
+  toIso639_2,
+  CANONICAL_LANGUAGE_CODES,
+  LANGUAGE_OPTIONS,
+  LANGUAGE_ALIASES_TO_2,
+  ISO639_1_TO_3,
+} from '@main/constants/languages'
 
 // ============================================================================
 // Quality Assessment Functions

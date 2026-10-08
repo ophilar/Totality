@@ -24,6 +24,7 @@ export default defineConfig({
     alias: {
       '@main': path.resolve(__dirname, 'src/main'),
       '@preload': path.resolve(__dirname, 'src/preload'),
+      '@shared': path.resolve(__dirname, 'src/shared'),
       '@': path.resolve(__dirname, 'src/renderer/src'),
       '@tests': path.resolve(__dirname, 'tests'),
     },

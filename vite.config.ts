@@ -4,6 +4,14 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
 
+const commonAliases = {
+  '@': path.resolve(__dirname, './src/renderer/src'),
+  '@main': path.resolve(__dirname, './src/main'),
+  '@preload': path.resolve(__dirname, './src/preload'),
+  '@shared': path.resolve(__dirname, './src/shared'),
+  '@tests': path.resolve(__dirname, './tests')
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -16,6 +24,9 @@ export default defineConfig({
           args.startup()
         },
         vite: {
+          resolve: {
+            alias: commonAliases
+          },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
             minify: 'esbuild',
@@ -27,7 +38,7 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'electron', 'electron-updater', 'sql.js', 'better-sqlite3', 'mysql2',
-                'fsevents', 'chokidar', '@google/genai', 'ws', 'selfsigned',
+                'fsevents', 'chokidar', '@google/genai', 'jsdom', 'ws', 'selfsigned',
                 'fs', 'path', 'os', 'crypto', 'http', 'https', 'net', 'util', 'url',
                 'child_process', 'worker_threads', 'dgram', 'events', 'stream',
                 'fs/promises', 'stream/promises', 'node:path', 'node:url', 'node:fs/promises',
@@ -48,6 +59,9 @@ export default defineConfig({
         // FFprobe worker thread
         entry: path.resolve(__dirname, 'src/main/workers/ffprobe-worker.ts'),
         vite: {
+          resolve: {
+            alias: commonAliases
+          },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/main'),
             minify: 'esbuild',
@@ -77,6 +91,9 @@ export default defineConfig({
           args.reload()
         },
         vite: {
+          resolve: {
+            alias: commonAliases
+          },
           build: {
             outDir: path.resolve(__dirname, 'dist-electron/preload'),
             minify: 'esbuild',
@@ -110,6 +127,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src/renderer/src'),
       '@main': path.resolve(__dirname, './src/main'),
       '@preload': path.resolve(__dirname, './src/preload'),
+      '@shared': path.resolve(__dirname, './src/shared'),
       '@tests': path.resolve(__dirname, './tests')
     }
   },

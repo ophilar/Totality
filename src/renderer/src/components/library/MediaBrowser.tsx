@@ -11,7 +11,8 @@ import { ActivityPanel } from '../ui/ActivityPanel'
 import { MoviesView } from './MoviesView'
 import { TVShowsView } from './TVShowsView'
 import { MusicView } from './MusicView'
-import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home, SlidersHorizontal } from 'lucide-react'
+import { DuplicatesView } from './DuplicatesView'
+import { Grid3x3, List, Search, X, Library, Layers, Music, Disc3, User, RefreshCw, Film, Tv, CircleFadingArrowUp, Settings, Star, Home } from 'lucide-react'
 import { useSources } from '../../contexts/SourceContext'
 import { useNavigation } from '../../contexts/NavigationContext'
 import { useWishlist } from '../../contexts/WishlistContext'
@@ -58,6 +59,7 @@ import type {
   ArtistCompletenessData,
   AlbumCompletenessData,
   MediaBrowserProps,
+  MediaViewType,
 } from './types'
 
 export function MediaBrowser({
@@ -112,7 +114,7 @@ export function MediaBrowser({
   const mountedRef = useRef(true)
   useEffect(() => { return () => { mountedRef.current = false } }, [])
   const [stats, setStats] = useState<LibraryStats | null>(null)
-  const [view, setView] = useState<'movies' | 'tv' | 'music'>('movies')
+  const [view, setView] = useState<MediaViewType>('movies')
 
   // Music state (artists, albums, tracks pagination provided by usePagination hooks below)
   const [musicStats, setMusicStats] = useState<MusicStats | null>(null)
@@ -136,7 +138,7 @@ export function MediaBrowser({
   } = useLibraryFilters(searchInput)
    
   // Centralized view switcher — resets filters to prevent cross-tab contamination
-  const switchView = useCallback((newView: 'movies' | 'tv' | 'music') => {
+  const switchView = useCallback((newView: MediaViewType) => {
     setView(newView)
     setTierFilter('all')
     setQualityFilter('all')
@@ -606,12 +608,15 @@ export function MediaBrowser({
   // Load episodes when a show is selected
   useEffect(() => {
     if (selectedShow) {
-      loadSelectedShowEpisodes(selectedShow)
+      const summary = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (summary) {
+        loadSelectedShowEpisodes(summary)
+      }
     } else {
       setSelectedShowEpisodes([])
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedShow, loadSelectedShowEpisodes])
+  }, [selectedShow, paginatedShows, loadSelectedShowEpisodes])
 
   // Event listeners and initial data load placed after loadMusicCompletenessData (see below)
 
@@ -679,8 +684,11 @@ export function MediaBrowser({
   const reloadAfterRescan = useCallback(async () => {
     loadPaginatedMovies(true)
     loadPaginatedShows(true)
-    if (selectedShow) await loadSelectedShowEpisodes(selectedShow)
-  }, [loadPaginatedMovies, loadPaginatedShows, selectedShow, loadSelectedShowEpisodes])
+    if (selectedShow) {
+      const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (matched) await loadSelectedShowEpisodes(matched)
+    }
+  }, [loadPaginatedMovies, loadPaginatedShows, paginatedShows, selectedShow, loadSelectedShowEpisodes])
 
   const {
     matchFixModal, setMatchFixModal,
@@ -795,8 +803,11 @@ export function MediaBrowser({
   const reloadMediaForEvents = useCallback(async () => {
     loadPaginatedMovies(true)
     loadPaginatedShows(true)
-    if (selectedShow) loadSelectedShowEpisodes(selectedShow)
-  }, [loadPaginatedMovies, loadPaginatedShows, selectedShow, loadSelectedShowEpisodes])
+    if (selectedShow) {
+      const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+      if (matched) loadSelectedShowEpisodes(matched)
+    }
+  }, [loadPaginatedMovies, loadPaginatedShows, paginatedShows, selectedShow, loadSelectedShowEpisodes])
 
   // Load EP/Singles inclusion settings
   const loadEpSingleSettings = useCallback(async () => {
@@ -1715,6 +1726,29 @@ export function MediaBrowser({
                   <span>Music</span>
                 </button>
 
+                {/* Duplicates Button */}
+                <button
+                  onClick={() => {
+                    setView('duplicates')
+                    onLibraryTabChange?.('duplicates')
+                    setSelectedShow(null)
+                    setSelectedSeason(null)
+                    setSelectedArtist(null)
+                    setSelectedAlbum(null)
+                  }}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-hidden flex items-center gap-2 ${
+                    view === 'duplicates'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                  role="tab"
+                  aria-selected={view === 'duplicates'}
+                  aria-controls="library-content"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Duplicates</span>
+                </button>
+
                 {/* Auto-refresh indicator */}
                 {isAutoRefreshing && (
                   <div className="flex items-center gap-1.5 px-2 py-1 text-caption text-muted-foreground" title="Checking for new content...">
@@ -2159,8 +2193,15 @@ export function MediaBrowser({
             selectedShowData={selectedShowData}
             selectedShowLoading={selectedShowEpisodesLoading}
             onSelectShow={(show) => {
-              pushNavState({ view: 'library', tab: 'tv', selectedShow: show })
-              setSelectedShow(show)
+              if (!show) {
+                pushNavState({ view: 'library', tab: 'tv', selectedShow: null })
+                setSelectedShow(null)
+              } else {
+                const title = typeof show === 'string' ? show : show.series_title
+                pushNavState({ view: 'library', tab: 'tv', selectedShow: title })
+                setSelectedShow(title)
+                loadSelectedShowEpisodes(show)
+              }
             }}
             onSelectSeason={(season) => {
               pushNavState({ view: 'library', tab: 'tv', selectedShow, selectedSeason: season })
@@ -2195,6 +2236,8 @@ export function MediaBrowser({
             isMobile={isMobile}
             isTablet={isTablet}
           />
+        ) : view === 'duplicates' ? (
+          <DuplicatesView />
         ) : (
           <MusicView
             artists={musicArtists}
@@ -2437,7 +2480,10 @@ export function MediaBrowser({
             } else {
               loadPaginatedMovies(true)
               loadPaginatedShows(true)
-              if (selectedShow) loadSelectedShowEpisodes(selectedShow)
+              if (selectedShow) {
+                const matched = paginatedShows.find(s => s.series_title === selectedShow || s.series_identity_key === selectedShow)
+                if (matched) loadSelectedShowEpisodes(matched)
+              }
             }
           }}
         />

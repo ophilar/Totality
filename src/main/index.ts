@@ -68,6 +68,10 @@ import { registerGeminiHandlers } from './ipc/gemini'
 import { registerMoodHandlers, setMoodMainWindow } from './ipc/mood'
 import { registerTimelinesHandlers } from './ipc/timelines'
 import { registerTranscodingHandlers } from './ipc/transcoding'
+import { registerDuplicateHandlers } from './ipc/duplicates'
+import { registerPlaybackTargetProfileHandlers } from './ipc/playbackTargetProfiles'
+import { registerPlaybackCompatibilityHandlers } from './ipc/playbackCompatibility'
+import { registerOptimizationHandlers } from './ipc/optimization'
 import { getLiveMonitoringService } from './services/LiveMonitoringService'
 import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
@@ -457,6 +461,10 @@ app.whenReady().then(async () => {
     registerMoodHandlers()
     registerTimelinesHandlers()
     registerTranscodingHandlers()
+    registerDuplicateHandlers()
+    registerPlaybackTargetProfileHandlers()
+    registerPlaybackCompatibilityHandlers()
+    registerOptimizationHandlers()
     registerWebAccessHandlers()
 
     // Restore ipcMain.handle to original (interception complete)

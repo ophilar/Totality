@@ -33,12 +33,14 @@ import { getTMDBService } from './TMDBService'
 // ============================================================================
 
 export type TaskType =
+  | import('@main/types/database').TaskType
   | 'library-scan'
   | 'source-scan'
   | 'series-completeness'
   | 'collection-completeness'
   | 'music-completeness'
   | 'music-scan'
+  | 'transcode'
 
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 
@@ -57,6 +59,9 @@ export interface QueuedTask {
   sourceId?: string
   libraryId?: string
   artistId?: number
+  mediaItemId?: number
+  batchId?: string
+  options?: any
   status: TaskStatus
   progress?: TaskProgress
   createdAt: string
@@ -69,6 +74,9 @@ export interface QueuedTask {
     itemsUpdated?: number
     itemsRemoved?: number
     isFirstScan?: boolean
+    encodedReductionBytes?: number
+    retainedOriginalBytes?: number
+    physicallyReclaimedBytes?: number
   }
 }
 
@@ -78,6 +86,9 @@ export interface TaskDefinition {
   sourceId?: string
   libraryId?: string
   artistId?: number
+  mediaItemId?: number
+  batchId?: string
+  options?: any
 }
 
 export interface QueueState {
@@ -132,10 +143,16 @@ export class TaskQueueService {
    */
   addTask(definition: TaskDefinition): string {
     // Check for duplicate: same type + sourceId + libraryId already queued or running
-    const isDuplicate = (t: QueuedTask) =>
-      t.type === definition.type &&
-      t.sourceId === definition.sourceId &&
-      t.libraryId === definition.libraryId
+    const isDuplicate = (t: QueuedTask) => {
+      if (definition.type === 'transcode' && definition.mediaItemId !== undefined) {
+        return t.type === 'transcode' && t.mediaItemId === definition.mediaItemId
+      }
+      return (
+        t.type === definition.type &&
+        t.sourceId === definition.sourceId &&
+        t.libraryId === definition.libraryId
+      )
+    }
 
     // Check running task
     if (this.currentTask && isDuplicate(this.currentTask)) {
@@ -163,6 +180,9 @@ export class TaskQueueService {
       sourceId: definition.sourceId,
       libraryId: definition.libraryId,
       artistId: definition.artistId,
+      mediaItemId: definition.mediaItemId,
+      batchId: definition.batchId,
+      options: definition.options,
       status: 'queued',
       createdAt: new Date().toISOString(),
     }
@@ -175,6 +195,13 @@ export class TaskQueueService {
     this.processNext()
 
     return task.id
+  }
+
+  /**
+   * Add multiple tasks to the queue
+   */
+  addTasks(definitions: TaskDefinition[]): string[] {
+    return definitions.map(def => this.addTask(def))
   }
 
   /**
@@ -263,6 +290,9 @@ export class TaskQueueService {
       case 'collection-completeness':
         getMovieCollectionService().cancel()
         break
+      case 'transcode':
+        import('./TranscodingService').then(m => m.getTranscodingService().cancel()).catch(() => {})
+        break
     }
   }
 
@@ -290,6 +320,13 @@ export class TaskQueueService {
       isPaused: this.isPaused,
       completedTasks: [...this.completedTasks],
     }
+  }
+
+  /**
+   * Get all queued and currently running tasks
+   */
+  getTasks(): QueuedTask[] {
+    return [...this.queue, ...(this.currentTask ? [this.currentTask] : [])]
   }
 
   /**
@@ -713,8 +750,57 @@ export class TaskQueueService {
         this.sendLibraryUpdated('music')
         break
 
+      case 'transcode':
+        await this.executeTranscode(task, progressCallback)
+        break
+
       default:
         throw new Error(`Unknown task type: ${task.type}`)
+    }
+  }
+
+  private async executeTranscode(task: QueuedTask, onProgress: (p: { current?: number; total?: number; percentage?: number; phase?: string; currentItem?: string }) => void): Promise<void> {
+    if (!task.mediaItemId) throw new Error('Missing mediaItemId for transcode task')
+    const { getTranscodingService } = await import('./TranscodingService')
+    const service = getTranscodingService()
+
+    onProgress({
+      current: 0,
+      total: 100,
+      percentage: 0,
+      phase: 'initializing',
+      currentItem: task.label,
+    })
+
+    const success = await service.transcode(
+      task.mediaItemId,
+      task.options || {},
+      (p) => {
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          safeSend(this.mainWindow, 'transcoding:progress', { mediaItemId: task.mediaItemId, ...p })
+        }
+        onProgress({
+          current: Math.round(p.percent),
+          total: 100,
+          percentage: p.percent,
+          phase: p.status,
+          currentItem: task.label,
+        })
+      }
+    )
+    if (success) {
+      const db = getDatabase()
+      const job = await db.mediaRemuxJobs.getLatest(task.mediaItemId)
+      if (job?.outputAnalysis) {
+        const output = JSON.parse(job.outputAnalysis) as { encodedReductionBytes?: number; retainedOriginalBytes?: number; physicallyReclaimedBytes?: number }
+        task.result = {
+          encodedReductionBytes: output.encodedReductionBytes,
+          retainedOriginalBytes: output.retainedOriginalBytes,
+          physicallyReclaimedBytes: output.physicallyReclaimedBytes,
+        }
+      }
+    } else if (!this.cancelRequested) {
+      throw new Error('Transcoding ended without producing a verified output')
     }
   }
 

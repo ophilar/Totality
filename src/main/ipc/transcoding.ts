@@ -1,57 +1,97 @@
-import { ipcMain } from 'electron'
 import { z } from 'zod'
-import { getDatabase } from '../database/getDatabase'
-import { MediaPathAuthorization } from '../services/MediaPathAuthorization'
-import { getTranscodingService } from '../services/TranscodingService'
+import { shell } from 'electron'
+import { getTranscodingService } from '@main/services/TranscodingService'
+import { GetTranscodeParamsByMediaItemSchema, CancelTranscodeSchema, SetSelectedGpuSchema, PreflightShowTranscodeSchema, QueueShowTranscodeSchema, NonEmptyStringSchema, SourceIdSchema, LibraryIdSchema } from '@main/validation/schemas'
+import { getLoggingService } from '@main/services/LoggingService'
+import { createIpcHandler, createValidatedIpcHandler, createValidatedIpcHandlerWithEvent } from '@main/ipc/utils/createHandler'
+import { operationRequestRegistry } from '@main/ipc/utils/OperationRequestRegistry'
+import type { TranscodeOptions } from '@main/services/TranscodingService'
+import { getDatabase } from '@main/database/getDatabase'
+import { MediaPathAuthorization } from '@main/services/MediaPathAuthorization'
 
-const TranscodeOptionsSchema = z.object({
-  targetCodec: z.enum(['av1', 'hevc']).optional(),
-  useGpu: z.boolean().optional(),
-  gpuId: z.string().min(1).optional(),
-  encoder: z.string().min(1).optional(),
-  crf: z.number().int().min(0).max(51).optional(),
-  preset: z.string().min(1).optional(),
-  optimizationMode: z.enum(['smart', 'remux_only', 'transcode']).optional(),
-  targetContainer: z.enum(['mkv', 'mp4']).optional(),
-})
+const ShowQuarantineIdentitySchema = z.tuple([
+  NonEmptyStringSchema,
+  SourceIdSchema,
+  NonEmptyStringSchema,
+  LibraryIdSchema,
+])
 
-function getAuthorizedItem(mediaItemId: number) {
+async function authorizedMediaPath(mediaItemId: number): Promise<string> {
   const db = getDatabase()
-  const item = db.getMediaItemById(mediaItemId)
-  if (!item) throw new Error(`Media item ${mediaItemId} no longer exists.`)
-  if (!item.source_id) throw new Error(`Media item ${mediaItemId} has no registered source.`)
-  const source = db.getMediaSourceById(item.source_id)
-  if (!source) throw new Error(`Media source '${item.source_id}' no longer exists.`)
-  MediaPathAuthorization.assertMediaAuthorized(item, {
-    source_type: source.source_type,
-    connection_config: source.connection_config,
-  })
-  return item
+  const item = await db.media.getItemById(mediaItemId)
+  if (!item?.file_path || !item.source_id) throw new Error('Media item has no local source path')
+  const source = await db.sources.getSourceById(item.source_id)
+  if (!source) throw new Error('Media source was not found')
+  MediaPathAuthorization.assertMediaAuthorized(item, source)
+  return item.file_path
 }
 
 export function registerTranscodingHandlers(): void {
-  ipcMain.handle('transcoding:getCapabilities', async (_event, refresh: unknown) => {
-    const refreshValue = z.boolean().optional().parse(refresh)
-    return getTranscodingService().getCapabilities({ refresh: refreshValue })
+  createIpcHandler('transcoding:checkAvailability', async () => {
+    return await getTranscodingService().checkAvailability()
   })
-  ipcMain.handle('transcoding:cancel', (_event, mediaItemId: unknown) => {
-    const id = z.number().int().positive().optional().parse(mediaItemId)
-    return getTranscodingService().cancelTranscode(id)
+
+  createIpcHandler('transcoding:getCapabilities', async () => {
+    return await getTranscodingService().getCapabilities()
   })
-  ipcMain.handle('transcoding:preflightRemux', async (_event, mediaItemId: unknown) => {
-    const id = z.number().int().positive().parse(mediaItemId)
-    const item = getAuthorizedItem(id)
-    const analysis = await (await import('../services/MediaFileAnalyzer')).getMediaFileAnalyzer().analyzeCompleteFile(item.file_path)
-    if (!analysis.success) throw new Error(`Media analysis failed: ${analysis.error}`)
-    return { itemId: id, duration: analysis.duration, video: analysis.video, audioTracks: analysis.audioTracks, fileSize: analysis.fileSize }
+
+  createIpcHandler('transcoding:refreshCapabilities', async () => {
+    return await getTranscodingService().getCapabilities({ refresh: true })
   })
-  ipcMain.handle('transcoding:transcode', async (event, mediaItemId: unknown, options: unknown, requestId: unknown) => {
-    const id = z.number().int().positive().parse(mediaItemId)
-    const validOptions = TranscodeOptionsSchema.parse(options)
-    const request = z.string().min(1).max(100).parse(requestId)
-    const item = getAuthorizedItem(id)
-    return getTranscodingService().transcodeMediaItem(item, validOptions, progress => {
-      if (!event.sender.isDestroyed()) event.sender.send('transcoding:progress', { requestId: request, mediaItemId: id, progress })
-    })
+
+  createValidatedIpcHandler('transcoding:setSelectedGpu', SetSelectedGpuSchema, async (gpuId) => {
+    return await getTranscodingService().setSelectedGpu(gpuId)
   })
+
+  createValidatedIpcHandler('transcoding:getParameters', GetTranscodeParamsByMediaItemSchema, async (mediaItemId, options) => {
+    const filePath = await authorizedMediaPath(mediaItemId)
+    return await getTranscodingService().getTranscodeParameters(filePath, options as TranscodeOptions)
+  })
+
+  createValidatedIpcHandler('transcoding:cancel', CancelTranscodeSchema, async (mediaItemId) => {
+    return getTranscodingService().cancelTranscode(mediaItemId)
+  })
+
+  createValidatedIpcHandlerWithEvent('transcoding:preflightShow', PreflightShowTranscodeSchema, async (event, request) => {
+    const { requestId, ...preflightRequest } = request
+    const operation = operationRequestRegistry.register(event.sender, requestId)
+    try {
+      const result = await getTranscodingService().preflightShowTranscode(preflightRequest, {
+        signal: operation.signal,
+        beginCommit: operation.beginCommit,
+      })
+      operation.complete('completed', 'Optimization review is ready')
+      return result
+    } catch (error) {
+      operation.complete(operation.signal.aborted ? 'cancelled' : 'failed', error instanceof Error ? error.message : String(error))
+      throw error
+    } finally {
+      operation.dispose()
+    }
+  })
+  createValidatedIpcHandler('transcoding:preflightRemux', z.number().int().positive(), async (mediaItemId) => getTranscodingService().preflightRemux(mediaItemId))
+
+  createValidatedIpcHandler('transcoding:discardShow', QueueShowTranscodeSchema, async (preflightId) => getTranscodingService().discardShowPreflight(preflightId))
+  createValidatedIpcHandler('transcoding:openShowSample', z.tuple([NonEmptyStringSchema, z.number().int().positive(), z.number().int().nonnegative()]), async (preflightId, mediaItemId, index) => {
+    const saved = await getDatabase().config.getSetting(`transcoding.preflight.${preflightId}`)
+    if (!saved) throw new Error('Sample plan no longer exists')
+    const plan = JSON.parse(saved) as { result: import('@main/services/TranscodingService').ShowTranscodePreflight }
+    const sample = plan.result.episodes.find(episode => episode.mediaItemId === mediaItemId)?.samplePaths?.[index]
+    if (!sample) throw new Error('Sample is not part of the reviewed plan')
+    const error = await shell.openPath(sample)
+    if (error) throw new Error(error)
+  })
+
+  createValidatedIpcHandler('transcoding:queueShow', QueueShowTranscodeSchema, async (preflightId) => {
+    return await getTranscodingService().queueShowTranscode(preflightId)
+  })
+
+  createValidatedIpcHandler('transcoding:approveShow', QueueShowTranscodeSchema, async (preflightId) => {
+    return await getTranscodingService().approveShowTranscode(preflightId)
+  })
+
+  createValidatedIpcHandler('transcoding:listShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().listShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
+  createValidatedIpcHandler('transcoding:purgeShowQuarantine', ShowQuarantineIdentitySchema, async (seriesTitle, sourceId, seriesIdentityKey, libraryId) => getTranscodingService().purgeShowQuarantine(seriesTitle, sourceId, seriesIdentityKey, libraryId))
+
+  getLoggingService().info('[transcoding]', 'Transcoding IPC handlers registered')
 }

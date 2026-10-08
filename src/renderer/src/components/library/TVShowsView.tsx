@@ -1,23 +1,25 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
-import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, ChevronLeft, Copy, Check, Star } from 'lucide-react'
+import { RefreshCw, MoreVertical, Pencil, Folder, CircleFadingArrowUp, EyeOff, ChevronDown, ChevronUp, Copy, Check, Zap } from 'lucide-react'
 import { TvPlaceholder, EpisodePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { Button } from '../ui/Button'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
 import { MissingItemCard } from './MissingItemCard'
+import { ShowTranscodeModal } from './ShowTranscodeModal'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { providerColors, formatSeasonLabel, getStatusBadge } from './mediaUtils'
 import type { MediaItem, TVShow, TVShowSummary, SeasonInfo, TVSeason, SeriesCompletenessData, MissingEpisode } from './types'
 import type { ProviderType } from '../../contexts/SourceContext'
 
 // List item component for TV shows
-const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: {
+const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: {
   show: TVShowSummary
   onClick: () => void
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => Promise<void>
   onFixMatch?: (sourceId: string, folderPath?: string) => void
+  onOptimizeSeries?: (show: TVShowSummary) => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -129,6 +131,18 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
             {onFixMatch && (
               <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>
                 Fix Match
+              </DropdownMenuItem>
+            )}
+            {onOptimizeSeries && (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowMenu(false)
+                  onOptimizeSeries(show)
+                }}
+                icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
+              >
+                <span className="text-purple-300">Optimize Series</span>
               </DropdownMenuItem>
             )}
           </DropdownMenu>
@@ -318,7 +332,7 @@ export function TVShowsView({
   selectedSeason: number | null
   selectedShowData: TVShow | null
   selectedShowLoading: boolean
-  onSelectShow: (show: string | null) => void
+  onSelectShow: (show: TVShowSummary | string | null) => void
   onSelectSeason: (season: number | null) => void
   onSelectEpisode: (id: number) => void
   filterItem: (item: MediaItem) => boolean
@@ -338,7 +352,7 @@ export function TVShowsView({
     seriesTitle?: string
   } | null) => void
   showSourceBadge: boolean
-  onAnalyzeSeries: (seriesTitle: string) => void
+  onAnalyzeSeries: (showOrTitle: TVShowSummary | string) => void
   onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
   onDismissUpgrade?: (item: MediaItem) => void
@@ -424,6 +438,32 @@ export function TVShowsView({
     return () => observer.disconnect()
   }, [viewType, onLoadMoreShows, selectedShow])
 
+  // Optimization modal state
+  const [optimizingShow, setOptimizingShow] = useState<TVShowSummary | null>(null)
+
+  const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
+    if (showSummary) {
+      setOptimizingShow(showSummary)
+      return
+    }
+    const currentTitle = selectedShow || selectedShowData?.title
+    if (!currentTitle) return
+    const summary = shows.find(s => s.series_title === currentTitle)
+    if (summary) {
+      setOptimizingShow(summary)
+    } else if (selectedShowData) {
+      const firstEp = Array.from(selectedShowData.seasons.values())[0]?.episodes[0]
+      setOptimizingShow({
+        series_title: selectedShowData.title,
+        episode_count: Array.from(selectedShowData.seasons.values()).reduce((sum, s) => sum + s.episodes.length, 0),
+        season_count: selectedShowData.seasons.size,
+        poster_url: selectedShowData.poster_url,
+        source_id: firstEp?.source_id,
+        library_id: firstEp?.library_id,
+        series_identity_key: firstEp?.series_identity_key || selectedShowData.title
+      })
+    }
+  }, [selectedShow, selectedShowData, shows])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
@@ -513,7 +553,19 @@ export function TVShowsView({
           <div className="space-y-2 mt-4">
             {shows.map((show) => {
               const completeness = seriesCompleteness.get(show.series_title)
-              return <div key={`${show.source_id || ''}-${show.series_title}`} data-title={show.series_title}><ShowListItem show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={async () => { await onAnalyzeSeries(show.series_title) }} onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
+              return (
+                <div key={`${show.series_identity_key || show.source_id || ''}-${show.series_title}`} data-title={show.series_title}>
+                  <ShowListItem
+                    show={show}
+                    onClick={() => onSelectShow(show)}
+                    completenessData={completeness}
+                    showSourceBadge={showSourceBadge}
+                    onAnalyzeSeries={async () => { await onAnalyzeSeries(show) }}
+                    onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+                    onOptimizeSeries={handleOpenOptimize}
+                  />
+                </div>
+              )
             })}
           </div>
           <div ref={showSentinelRef} className="h-1" />
@@ -522,6 +574,12 @@ export function TVShowsView({
             <div className="text-center text-label text-muted-foreground py-2">
               {shows.length} of {totalShowCount} TV shows
             </div>
+          )}
+          {optimizingShow && (
+            <ShowTranscodeModal
+              show={optimizingShow}
+              onClose={() => setOptimizingShow(null)}
+            />
           )}
         </>
       )
@@ -534,7 +592,19 @@ export function TVShowsView({
         <div className={`${gridClassName} mt-4`} style={gridStyle}>
           {shows.map((show) => {
             const completeness = seriesCompleteness.get(show.series_title)
-            return <div key={`${show.source_id || ''}-${show.series_title}`} data-title={show.series_title}><ShowCard show={show} onClick={() => onSelectShow(show.series_title)} completenessData={completeness} showSourceBadge={showSourceBadge} onAnalyzeSeries={() => onAnalyzeSeries(show.series_title)} onFixMatch={onFixMatch ? (sourceId: string, folderPath?: string) => onFixMatch(show.series_title, sourceId, folderPath) : undefined} /></div>
+            return (
+              <div key={`${show.series_identity_key || show.source_id || ''}-${show.series_title}`} data-title={show.series_title}>
+                <ShowCard
+                  show={show}
+                  onClick={() => onSelectShow(show)}
+                  completenessData={completeness}
+                  showSourceBadge={showSourceBadge}
+                  onAnalyzeSeries={() => onAnalyzeSeries(show)}
+                  onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+                  onOptimizeSeries={handleOpenOptimize}
+                />
+              </div>
+            )
           })}
         </div>
         <div ref={showSentinelRef} className="h-1" />
@@ -543,6 +613,12 @@ export function TVShowsView({
           <div className="text-center text-label text-muted-foreground py-2">
             {shows.length} of {totalShowCount} TV shows
           </div>
+        )}
+        {optimizingShow && (
+          <ShowTranscodeModal
+            show={optimizingShow}
+            onClose={() => setOptimizingShow(null)}
+          />
         )}
       </>
     )
@@ -589,13 +665,102 @@ export function TVShowsView({
     return (
       <div className={isMobile ? '' : 'space-y-6'}>
         {/* Show Header */}
-        {isMobile ? (
-          <div className="relative px-4 pb-3 mb-4 -mx-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)', minHeight: '200px' }}>
-            {(selectedShowData.art_url || selectedShowData.poster_url) && (
-              <div className="absolute top-0 right-0 w-3/4 will-change-transform" style={{ height: '130%', transform: 'translateY(var(--parallax-y, 0px))' }}>
-                <img src={(selectedShowData.art_url || selectedShowData.poster_url)!} alt="" className="w-full h-full object-cover object-top" />
-                <div className="absolute inset-0 bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+        <div className={`flex ${isMobile ? 'gap-3 mb-4' : 'gap-6 mb-6'}`}>
+          {/* Poster */}
+          {selectedShowData.poster_url && (
+            <div className={`${isMobile ? 'w-24' : 'w-44'} aspect-2/3 bg-muted rounded-lg overflow-hidden shrink-0 shadow-lg shadow-black/30`}>
+              <img
+                src={selectedShowData.poster_url}
+                alt={selectedShowData.title}
+                loading="lazy"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            {/* Title */}
+            <div className="flex items-center gap-1.5">
+              <h3 className={`${isMobile ? 'text-lg' : 'text-3xl'} font-bold`}>{selectedShowData.title}</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(selectedShowData.title)
+                  setCopiedTitle(true)
+                  setTimeout(() => setCopiedTitle(false), 1500)
+                }}
+                className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy title"
+              >
+                {copiedTitle ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Metadata line */}
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              <span>{ownedSeasons.length} of {totalSeasons} Seasons</span>
+              {completenessData?.status && (
+                <>
+                  <span>•</span>
+                  <span>{getStatusBadge(completenessData.status)?.text || completenessData.status}</span>
+                </>
+              )}
+            </div>
+
+            {/* Action buttons row */}
+            <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
+              <button
+                onClick={() => {
+                  if (selectedShow) {
+                    const matched = shows.find(s => s.series_title === selectedShow)
+                    onAnalyzeSeries(matched || selectedShow)
+                  }
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                title="Analyze Series"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Analyze Series
+              </button>
+              <button
+                onClick={() => handleOpenOptimize()}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
+                title="Optimize Series"
+              >
+                <Zap className="w-3.5 h-3.5 text-purple-400" />
+                Optimize Series
+              </button>
+              {onFixMatch && (
+                <button
+                  onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  title="Fix Match"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Overview */}
+            {showOverview && (
+              <div className="mt-3 max-w-2xl">
+                <p className={`text-sm text-muted-foreground leading-relaxed ${showOverviewExpanded ? '' : 'line-clamp-3'}`}>
+                  {showOverview}
+                </p>
+                <button
+                  onClick={() => setShowOverviewExpanded(!showOverviewExpanded)}
+                  className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 mt-1 transition-colors"
+                >
+                  {showOverviewExpanded ? (
+                    <><span>Less</span><ChevronUp className="w-4 h-4" /></>
+                  ) : (
+                    <><span>More</span><ChevronDown className="w-4 h-4" /></>
+                  )}
+                </button>
               </div>
             )}
             {/* Breadcrumb — inside backdrop on mobile */}
@@ -808,6 +973,12 @@ export function TVShowsView({
             )
           ))}
         </div>
+        {optimizingShow && (
+          <ShowTranscodeModal
+            show={optimizingShow}
+            onClose={() => setOptimizingShow(null)}
+          />
+        )}
       </div>
     )
   }
@@ -895,8 +1066,21 @@ export function TVShowsView({
           </div>
         )}
 
-        {/* Episode filters — desktop only (mobile shows resolution/quality inline per episode row) */}
-        {!isMobile && (
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-bold">
+            {selectedShowData.title} - {formatSeasonLabel(selectedSeason!)}
+          </h3>
+          <button
+            onClick={() => handleOpenOptimize()}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600/20 text-purple-300 border border-purple-500/30 rounded-md hover:bg-purple-600/30 transition-colors"
+            title="Optimize Series"
+          >
+            <Zap className="w-3.5 h-3.5 text-purple-400" />
+            Optimize Series
+          </button>
+        </div>
+
+        {/* Episode filters */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-caption text-muted-foreground">Resolution</span>
@@ -976,6 +1160,12 @@ export function TVShowsView({
             )
           ))}
         </div>
+        {optimizingShow && (
+          <ShowTranscodeModal
+            show={optimizingShow}
+            onClose={() => setOptimizingShow(null)}
+          />
+        )}
       </div>
     )
   }
@@ -983,7 +1173,7 @@ export function TVShowsView({
   return null
 }
 
-const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (sourceId: string, folderPath?: string) => void }) => {
+const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (sourceId: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -1050,6 +1240,18 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
               {onFixMatch && (
                 <DropdownMenuItem onClick={handleFixMatch} icon={<Pencil className="w-3.5 h-3.5" />}>
                   Fix Match
+                </DropdownMenuItem>
+              )}
+              {onOptimizeSeries && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowMenu(false)
+                    onOptimizeSeries(show)
+                  }}
+                  icon={<Zap className="w-3.5 h-3.5 text-purple-400" />}
+                >
+                  <span className="text-purple-300">Optimize Series</span>
                 </DropdownMenuItem>
               )}
             </DropdownMenu>
