@@ -122,6 +122,19 @@ export type SavingsBasis =
   | 'mixed_measured_and_estimated'
   | 'insufficient_data'
 
+export interface MediaDuplicate {
+  id?: number
+  source_id: string
+  external_id: string
+  external_type: 'tmdb_movie' | 'tmdb_series' | 'musicbrainz_artist' | 'musicbrainz_album'
+  media_item_ids: string
+  status: 'pending' | 'resolved' | 'ignored'
+  resolution_strategy?: string
+  resolved_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface MediaItem {
   id?: number
 
@@ -190,10 +203,18 @@ export interface MediaItem {
   imdb_id?: string
   tmdb_id?: string
   series_tmdb_id?: string // Show-level TMDB ID for episodes (from Plex show metadata)
+  series_identity_key?: string | null
+  original_language?: string | null
+  audio_language?: string | null
   poster_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   summary?: string
+
+  // Storage efficiency & debt
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  evidence_status?: string | null
 
   // Ratings
   tmdb_rating?: number            // 0-10 scale from TMDB vote_average
@@ -294,6 +315,14 @@ export interface QualityScore {
   bitrate_score: number // Maps to bitrate_tier_score
   audio_score: number // Maps to audio_tier_score
 
+  // Efficiency metrics
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  estimated_savings_bytes?: number | null
+  evidence_status?: EvidenceStatus
+  confidence?: EvidenceConfidence
+  savings_basis?: SavingsBasis
+
   // Quality flags
   is_low_quality: boolean // Deprecated, use tier_quality === 'LOW'
   needs_upgrade: boolean // Maps to tier_quality === 'LOW'
@@ -324,6 +353,7 @@ export interface SeriesCompleteness {
   // Source/library scoping
   source_id?: string
   library_id?: string
+  series_identity_key?: string | null
 
   total_seasons: number
   total_episodes: number
@@ -418,6 +448,8 @@ export interface TVShowSummary {
   poster_url?: string
   source_id?: string
   source_type?: string
+  library_id?: string
+  series_identity_key?: string
   total_play_count?: number
   last_watched_at?: string
 }
@@ -760,3 +792,142 @@ export interface WishlistFilters {
   offset?: number
 }
 
+// ============================================================================
+// Task Queue & Optimization Types
+// ============================================================================
+
+export enum TaskType {
+  LibraryScan = 'library-scan',
+  SourceScan = 'source-scan',
+  SeriesCompleteness = 'series-completeness',
+  CollectionCompleteness = 'collection-completeness',
+  MusicCompleteness = 'music-completeness',
+  MusicScan = 'music-scan',
+  QualityAnalysis = 'quality-analysis',
+  Analysis = 'analysis',
+  Transcode = 'transcode'
+}
+
+export enum TaskStatus {
+  Queued = 'queued',
+  Running = 'running',
+  Cancelling = 'cancelling',
+  Completed = 'completed',
+  Partial = 'partial',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
+  Blocked = 'blocked'
+}
+
+export interface TaskProgress {
+  current: number
+  total: number
+  percentage: number
+  phase: string
+  currentItem?: string
+  fps?: number
+  eta?: string
+  speed?: string
+}
+
+export type AnalysisStatus =
+  | 'completed'
+  | 'partial'
+  | 'deferred'
+  | 'blocked'
+  | 'failed'
+  | 'cancelled'
+
+export interface AnalysisDiagnostic {
+  itemType: 'artist' | 'album' | 'series' | 'movie' | 'episode' | 'track' | 'collection' | 'library'
+  itemId?: string | number
+  itemName: string
+  stage?: string
+  category: 'provider' | 'database' | 'identity' | 'unresolved' | 'cancelled'
+  code: string
+  message: string
+  cause?: string
+  provider?: 'musicbrainz' | 'tmdb' | 'imdb'
+  identifier?: string
+  retryable?: boolean
+}
+
+export interface AnalysisOutcome {
+  status: AnalysisStatus
+  completedCount?: number
+  deferredCount: number
+  failedCount?: number
+  diagnostics: AnalysisDiagnostic[]
+  completed?: boolean
+  processedCount?: number
+  totalCount?: number
+  errors?: string[]
+}
+
+export type CalculationStatus = 'measured' | 'estimated' | 'insufficient' | 'unanalyzed' | 'unavailable' | 'complete' | 'partial' | 'unknown'
+
+export interface OptimizationMetricsSummary {
+  recoverableBytes: number | null
+  wasteBytes: number | null
+  efficiency: number | null
+  savingsBasis: string | null
+  evidenceStatus: EvidenceStatus
+  confidence: EvidenceConfidence
+  calculationStatus: CalculationStatus
+  status?: CalculationStatus
+  knownCount?: number
+  totalCount?: number
+  overallEfficiencyScore?: number | null
+  totalStorageDebtBytes?: number | null
+  recoverableWasteBytes?: number | null
+  confidenceScore?: number
+}
+
+export interface TaskResult {
+  itemsScanned?: number
+  itemsAdded?: number
+  itemsUpdated?: number
+  itemsRemoved?: number
+  status?: AnalysisStatus
+  completedCount?: number
+  failedCount?: number
+  deferredCount?: number
+  skippedCount?: number
+  reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
+  databaseBackupPath?: string
+  deferred?: number
+  diagnostics?: AnalysisDiagnostic[]
+  outcome?: AnalysisOutcome
+  [key: string]: unknown
+}
+
+export interface QueuedTask {
+  id: string
+  type: TaskType
+  label: string
+  sourceId?: string
+  libraryId?: string
+  mediaItemId?: number
+  artistId?: number
+  albumId?: number
+  collectionId?: number
+  status: TaskStatus
+  progress?: TaskProgress
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  error?: string
+  result?: TaskResult
+  options?: unknown
+  batchId?: string
+  seriesTitle?: string
+  seriesIdentityKey?: string
+  inputFingerprint?: string
+}
+
+export interface TaskQueueState {
+  currentTask: QueuedTask | null
+  queue: QueuedTask[]
+  isPaused: boolean
+  completedTasks: QueuedTask[]
+}

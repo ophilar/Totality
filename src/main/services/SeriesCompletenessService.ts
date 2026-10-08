@@ -93,11 +93,14 @@ export class SeriesCompletenessService extends CancellableOperation {
     const seriesNames = Array.from(seriesData.keys())
 
     // Pre-fetch existing completeness data for skip check
-    const existingCompleteness = new Map<string, string>()  // series_title -> updated_at
+    const existingCompleteness = new Map<string, string>() // key or series_title -> updated_at
     if (skipRecentlyAnalyzed) {
       const allCompleteness = db.getAllSeriesCompleteness(sourceId, libraryId)
       for (const sc of allCompleteness) {
-        if (sc.updated_at && sc.tmdb_id) {  // Only skip if we have TMDB data
+        if (sc.updated_at && sc.tmdb_id) { // Only skip if we have TMDB data
+          if (sc.series_identity_key) {
+            existingCompleteness.set(sc.series_identity_key, sc.updated_at)
+          }
           existingCompleteness.set(sc.series_title, sc.updated_at)
         }
       }
@@ -195,22 +198,38 @@ export class SeriesCompletenessService extends CancellableOperation {
   }
 
   /**
-   * Analyze a single series
-   * @param seriesTitle The series title to analyze
+   * Analyze a single series by canonical identity key
+   * @param seriesIdentityKey The canonical series identity key (tmdb:*, tvdb:*, or unresolved:*)
    * @param sourceId Optional source ID to scope analysis
    * @param libraryId Optional library ID to scope analysis
    * @param cachedTmdbId Optional pre-fetched TMDB ID from deduplication phase (avoids redundant API calls)
    */
-  async analyzeSeries(seriesTitle: string, sourceId?: string, libraryId?: string, cachedTmdbId?: string): Promise<SeriesCompleteness | null> {
-    const db = getDatabase()
+  async analyzeSeries(
+    seriesIdentityKey: string,
+    sourceId?: string,
+    libraryId?: string,
+    cachedTmdbId?: string
+  ): Promise<SeriesCompleteness | null> {
+    if (
+      !seriesIdentityKey ||
+      (!seriesIdentityKey.startsWith('tmdb:') &&
+        !seriesIdentityKey.startsWith('tvdb:') &&
+        !seriesIdentityKey.startsWith('unresolved:'))
+    ) {
+      throw new Error(
+        `analyzeSeries requires a canonical series identity key (received: "${seriesIdentityKey}"). Title-based lookups are not permitted.`
+      )
+    }
 
-    // Get all episodes for this series (optionally filtered by source/library)
-    const episodes = db.getEpisodesForSeries(seriesTitle, sourceId, libraryId)
+    const db = getDatabase()
+    const episodes = db.getEpisodes('', sourceId || '', seriesIdentityKey, libraryId || '')
 
     if (episodes.length === 0) {
-      console.log(`No episodes found for series: ${seriesTitle}`)
+      console.log(`No episodes found for series identity: ${seriesIdentityKey}`)
       return null
     }
+
+    const seriesTitle = episodes[0]?.series_title || seriesIdentityKey
 
     // Extract episode info
     const ownedEpisodes: EpisodeInfo[] = episodes.map((ep: { season_number?: number; episode_number?: number }) => ({
@@ -219,14 +238,19 @@ export class SeriesCompletenessService extends CancellableOperation {
     }))
 
     // Use cached TMDB ID if available, otherwise look it up
-    const tmdbId = cachedTmdbId || await this.findTMDBShowId(seriesTitle, episodes)
+    const tmdbId =
+      cachedTmdbId ||
+      (seriesIdentityKey.startsWith('tmdb:')
+        ? seriesIdentityKey.slice(5)
+        : await this.findTMDBShowId(seriesTitle, episodes))
 
     if (!tmdbId) {
-      console.log(`Could not find TMDB ID for series: ${seriesTitle}`)
+      console.log(`Could not find TMDB ID for series: ${seriesTitle} (${seriesIdentityKey})`)
       // Store with null data - user can manually match later
       const result = this.createUnmatchedResult(seriesTitle, ownedEpisodes, sourceId, libraryId)
+      ;(result as any).series_identity_key = seriesIdentityKey
       await db.upsertSeriesCompleteness(result)
-      return db.getSeriesCompletenessByTitle(seriesTitle, sourceId, libraryId)
+      return db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
     }
 
     // Check if source is a local drive (kodi-local or local) - these need artwork from TMDB
@@ -259,13 +283,14 @@ export class SeriesCompletenessService extends CancellableOperation {
         poster_url: analysis.posterUrl,
         backdrop_url: analysis.backdropUrl,
         status: analysis.status,
-      }
+        series_identity_key: seriesIdentityKey,
+      } as any
 
       getLoggingService().verbose('[SeriesCompletenessService]',
-        `"${seriesTitle}" (tmdb:${tmdbId}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
+        `"${seriesTitle}" (${seriesIdentityKey}) — ${analysis.ownedEpisodes}/${analysis.totalEpisodes} episodes, ${analysis.missingEpisodes.length} missing, ${analysis.completenessPercentage}% complete`)
 
       await db.upsertSeriesCompleteness(data)
-      return db.getSeriesCompletenessByTitle(seriesTitle, sourceId, libraryId)
+      return db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
     } catch (error) {
       console.error(`Error analyzing ${seriesTitle}:`, error)
       return null
@@ -273,7 +298,7 @@ export class SeriesCompletenessService extends CancellableOperation {
   }
 
   /**
-   * Get all series from media_items, grouped by series_title
+   * Get all series from media_items, grouped by series_identity_key
    * @param sourceId Optional source ID to filter by
    * @param libraryId Optional library ID to filter by
    */
@@ -288,11 +313,12 @@ export class SeriesCompletenessService extends CancellableOperation {
     const seriesMap = new Map<string, MediaItem[]>()
 
     for (const item of allItems) {
-      if (!item.series_title) continue
+      const key = item.series_identity_key || item.series_title
+      if (!key) continue
 
-      const episodes = seriesMap.get(item.series_title) || []
+      const episodes = seriesMap.get(key) || []
       episodes.push(item)
-      seriesMap.set(item.series_title, episodes)
+      seriesMap.set(key, episodes)
     }
 
     return seriesMap
@@ -323,24 +349,25 @@ export class SeriesCompletenessService extends CancellableOperation {
       return result
     }
 
-    // Get all episodes grouped by series_title first
-    const seriesByTitle = this.getSeriesFromMediaItems(undefined, libraryId)
-    const seriesTitles = Array.from(seriesByTitle.keys())
+    // Get all episodes grouped by series_identity_key
+    const seriesByIdentity = this.getSeriesFromMediaItems(undefined, libraryId)
+    const identityKeys = Array.from(seriesByIdentity.keys())
 
-    console.log(`[SeriesCompletenessService] Deduplicating ${seriesTitles.length} series by TMDB ID...`)
+    console.log(`[SeriesCompletenessService] Deduplicating ${identityKeys.length} series by TMDB ID...`)
 
     // First pass: Find TMDB IDs for all series
-    const tmdbIdMap = new Map<string, string>() // series_title -> tmdb_id
-    const titlesByTmdbId = new Map<string, string[]>() // tmdb_id -> series_titles
+    const tmdbIdMap = new Map<string, string>() // identity_key -> tmdb_id
+    const keysByTmdbId = new Map<string, string[]>() // tmdb_id -> identity_keys
 
-    for (let i = 0; i < seriesTitles.length; i++) {
-      const title = seriesTitles[i]
-      const episodes = seriesByTitle.get(title) || []
+    for (let i = 0; i < identityKeys.length; i++) {
+      const identityKey = identityKeys[i]
+      const episodes = seriesByIdentity.get(identityKey) || []
+      const displayTitle = episodes[0]?.series_title || identityKey
 
       onProgress?.({
         current: i + 1,
-        total: seriesTitles.length,
-        currentItem: `Finding TMDB ID for: ${title}`,
+        total: identityKeys.length,
+        currentItem: `Finding TMDB ID for: ${displayTitle}`,
         phase: 'scanning',
       })
 
@@ -349,33 +376,34 @@ export class SeriesCompletenessService extends CancellableOperation {
         break
       }
 
-      // Try to find TMDB ID
-      const tmdbId = await this.findTMDBShowId(title, episodes)
+      // If already a tmdb: key, use that directly
+      const tmdbId = identityKey.startsWith('tmdb:')
+        ? identityKey.slice(5)
+        : await this.findTMDBShowId(displayTitle, episodes)
 
       if (tmdbId) {
-        tmdbIdMap.set(title, tmdbId)
+        tmdbIdMap.set(identityKey, tmdbId)
 
-        // Group titles by TMDB ID
-        const titles = titlesByTmdbId.get(tmdbId) || []
-        titles.push(title)
-        titlesByTmdbId.set(tmdbId, titles)
+        // Group identity keys by TMDB ID
+        const keys = keysByTmdbId.get(tmdbId) || []
+        keys.push(identityKey)
+        keysByTmdbId.set(tmdbId, keys)
       }
     }
 
-    console.log(`[SeriesCompletenessService] Found ${tmdbIdMap.size} series with TMDB IDs, ${titlesByTmdbId.size} unique TMDB IDs`)
+    console.log(`[SeriesCompletenessService] Found ${tmdbIdMap.size} series with TMDB IDs, ${keysByTmdbId.size} unique TMDB IDs`)
 
     // Second pass: Merge episodes by TMDB ID
     const result = new Map<string, { episodes: MediaItem[]; tmdbId?: string; sourceIds: Set<string> }>()
 
-    // Process series with TMDB IDs - merge duplicates
-    for (const [tmdbId, titles] of titlesByTmdbId) {
-      // Use the first title as canonical (could be improved to use most common or TMDB title)
-      const canonicalTitle = titles[0]
+    // Process series with TMDB IDs - merge duplicates under canonical tmdb: key
+    for (const [tmdbId, keys] of keysByTmdbId) {
+      const canonicalKey = `tmdb:${tmdbId}`
       const allEpisodes: MediaItem[] = []
       const sourceIds = new Set<string>()
 
-      for (const title of titles) {
-        const episodes = seriesByTitle.get(title) || []
+      for (const key of keys) {
+        const episodes = seriesByIdentity.get(key) || []
         allEpisodes.push(...episodes)
 
         // Track source IDs
@@ -389,27 +417,27 @@ export class SeriesCompletenessService extends CancellableOperation {
       // Deduplicate episodes by season/episode number (keep highest quality version)
       const deduplicatedEpisodes = this.deduplicateEpisodes(allEpisodes)
 
-      if (titles.length > 1) {
-        console.log(`[SeriesCompletenessService] Merged ${titles.length} titles into "${canonicalTitle}" (TMDB ${tmdbId}): ${allEpisodes.length} -> ${deduplicatedEpisodes.length} episodes`)
+      if (keys.length > 1) {
+        console.log(`[SeriesCompletenessService] Merged ${keys.length} series keys into "${canonicalKey}": ${allEpisodes.length} -> ${deduplicatedEpisodes.length} episodes`)
       }
 
-      result.set(canonicalTitle, {
+      result.set(canonicalKey, {
         episodes: deduplicatedEpisodes,
         tmdbId,
         sourceIds,
       })
     }
 
-    // Add series without TMDB IDs
-    for (const [title, episodes] of seriesByTitle) {
-      if (!tmdbIdMap.has(title)) {
+    // Add series without TMDB IDs using their canonical identity keys
+    for (const [identityKey, episodes] of seriesByIdentity) {
+      if (!tmdbIdMap.has(identityKey)) {
         const sourceIds = new Set<string>()
         for (const ep of episodes) {
           if (ep.source_id) {
             sourceIds.add(ep.source_id)
           }
         }
-        result.set(title, {
+        result.set(identityKey, {
           episodes,
           tmdbId: undefined,
           sourceIds,

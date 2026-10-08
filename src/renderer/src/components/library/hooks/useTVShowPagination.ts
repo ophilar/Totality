@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import type { MediaItem, TVShowSummary } from '../types'
+import { getTVShowIdentity } from '../tv/showIdentity'
 
 const SHOWS_PAGE_SIZE = 10000
 
@@ -24,7 +25,7 @@ interface UseTVShowPaginationReturn {
   selectedShowEpisodesLoading: boolean
   loadPaginatedShows: (reset?: boolean, startOffset?: number) => Promise<void>
   loadMoreShows: () => void
-  loadSelectedShowEpisodes: (showTitle: string) => Promise<void>
+  loadSelectedShowEpisodes: (showTitleOrSummary: string | TVShowSummary) => Promise<void>
 }
 
 /**
@@ -95,10 +96,40 @@ export function useTVShowPagination({
     }
   }, [totalShowCount, showsLoading, loadPaginatedShows])
 
-  const loadSelectedShowEpisodes = useCallback(async (showTitle: string) => {
+  const loadSelectedShowEpisodes = useCallback(async (showTitleOrSummary: string | TVShowSummary) => {
     setSelectedShowEpisodesLoading(true)
     try {
-      const episodes = await window.electronAPI.seriesGetEpisodes(showTitle, activeSourceId || undefined)
+      let summary: TVShowSummary | undefined
+      if (typeof showTitleOrSummary === 'object' && showTitleOrSummary !== null) {
+        summary = showTitleOrSummary
+      } else {
+        summary = paginatedShows.find(s => s.series_identity_key === showTitleOrSummary || s.series_title === showTitleOrSummary)
+      }
+
+      let episodes: unknown[]
+      if (summary?.series_identity_key) {
+        const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(summary)
+        episodes = await window.electronAPI.seriesGetEpisodesByIdentity(
+          summary.series_title,
+          sourceId,
+          seriesIdentityKey,
+          libraryId
+        )
+      } else if (
+        typeof showTitleOrSummary === 'string' &&
+        (showTitleOrSummary.startsWith('tmdb:') || showTitleOrSummary.startsWith('tvdb:') || showTitleOrSummary.startsWith('unresolved:'))
+      ) {
+        episodes = await window.electronAPI.seriesGetEpisodesByIdentity(
+          '',
+          activeSourceId || '',
+          showTitleOrSummary,
+          activeLibraryId || ''
+        )
+      } else {
+        throw new Error(
+          `Cannot load episodes without a canonical series identity key (received: "${typeof showTitleOrSummary === 'object' ? showTitleOrSummary?.series_title : showTitleOrSummary}"). Title-based lookups are not permitted.`
+        )
+      }
       setSelectedShowEpisodes(episodes as MediaItem[])
     } catch (err) {
       console.error('Error loading episodes for show:', err)
@@ -106,7 +137,7 @@ export function useTVShowPagination({
     } finally {
       setSelectedShowEpisodesLoading(false)
     }
-  }, [activeSourceId])
+  }, [activeSourceId, paginatedShows])
 
   return {
     paginatedShows, setPaginatedShows,

@@ -63,15 +63,33 @@ export function registerSeriesHandlers() {
   })
 
   /**
-   * Analyze a single series by title
+   * Analyze a single series by canonical identity key
    */
-  ipcMain.handle('series:analyze', async (_event, seriesTitle: unknown) => {
-    const validSeriesTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:analyze.seriesTitle')
+  ipcMain.handle('series:analyzeByIdentity', async (_event, seriesIdentityKey: unknown, sourceId?: unknown, libraryId?: unknown) => {
+    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyzeByIdentity.seriesIdentityKey')
+    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyzeByIdentity.sourceId') : undefined
+    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyzeByIdentity.libraryId') : undefined
     try {
       const service = getSeriesCompletenessService()
-      return await service.analyzeSeries(validSeriesTitle)
+      return await service.analyzeSeries(validIdentityKey, validSourceId, validLibraryId)
     } catch (error) {
-      console.error(`Error analyzing series "${validSeriesTitle}":`, error)
+      console.error(`Error analyzing series by identity "${validIdentityKey}":`, error)
+      throw error
+    }
+  })
+
+  /**
+   * Analyze a single series by canonical identity key
+   */
+  ipcMain.handle('series:analyze', async (_event, seriesIdentityKey: unknown, sourceId?: unknown, libraryId?: unknown) => {
+    const validKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:analyze.seriesIdentityKey')
+    const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:analyze.sourceId') : undefined
+    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:analyze.libraryId') : undefined
+    try {
+      const service = getSeriesCompletenessService()
+      return await service.analyzeSeries(validKey, validSourceId, validLibraryId)
+    } catch (error) {
+      console.error(`Error analyzing series "${validKey}":`, error)
       throw error
     }
   })
@@ -123,16 +141,72 @@ export function registerSeriesHandlers() {
   })
 
   /**
-   * Get episodes for a specific series
+   * Get episodes for a specific series by canonical identity key
    */
-  ipcMain.handle('series:getEpisodes', async (_event, seriesTitle: unknown, sourceId?: unknown) => {
-    const validSeriesTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:getEpisodes.seriesTitle')
+  ipcMain.handle('series:getEpisodes', async (_event, seriesIdentityKey: unknown, sourceId?: unknown, explicitKey?: unknown, libraryId?: unknown) => {
+    const rawKey = (explicitKey || seriesIdentityKey) as string
+    const validKey = validateInput(NonEmptyStringSchema, rawKey, 'series:getEpisodes.seriesIdentityKey')
     const validSourceId = sourceId !== undefined ? validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodes.sourceId') : undefined
+    const validLibraryId = libraryId !== undefined ? validateInput(NonEmptyStringSchema, libraryId, 'series:getEpisodes.libraryId') : undefined
+
+    if (!validKey.startsWith('tmdb:') && !validKey.startsWith('tvdb:') && !validKey.startsWith('unresolved:')) {
+      throw new Error(`series:getEpisodes requires a canonical series identity key (received: "${validKey}"). Title-based queries are not permitted.`)
+    }
+
     try {
       const db = getDatabase()
-      return db.getEpisodesForSeries(validSeriesTitle, validSourceId)
+      return db.getEpisodes('', validSourceId || '', validKey, validLibraryId || '')
     } catch (error) {
-      console.error(`Error getting episodes for "${validSeriesTitle}":`, error)
+      console.error(`Error getting episodes for identity "${validKey}":`, error)
+      throw error
+    }
+  })
+
+  /**
+   * Get episodes for a series scoped by identity
+   */
+  ipcMain.handle('series:getEpisodesByIdentity', async (_event, seriesTitle: unknown, sourceId: unknown, seriesIdentityKey: unknown, libraryId: unknown) => {
+    const validTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:getEpisodesByIdentity.seriesTitle')
+    const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:getEpisodesByIdentity.sourceId')
+    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:getEpisodesByIdentity.seriesIdentityKey')
+    const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:getEpisodesByIdentity.libraryId')
+    try {
+      const db = getDatabase()
+      return db.getEpisodes(validTitle, validSourceId, validIdentityKey, validLibraryId)
+    } catch (error) {
+      console.error(`Error getting episodes for identity "${validIdentityKey}":`, error)
+      throw error
+    }
+  })
+
+  /**
+   * Get audio languages for a series scoped by identity
+   */
+  ipcMain.handle('series:getAudioLanguagesByIdentity', async (_event, seriesTitle: unknown, sourceId: unknown, seriesIdentityKey: unknown, libraryId: unknown) => {
+    const validTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:getAudioLanguagesByIdentity.seriesTitle')
+    const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:getAudioLanguagesByIdentity.sourceId')
+    const validIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:getAudioLanguagesByIdentity.seriesIdentityKey')
+    const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:getAudioLanguagesByIdentity.libraryId')
+    try {
+      const db = getDatabase()
+      const episodes = db.getEpisodes(validTitle, validSourceId, validIdentityKey, validLibraryId)
+      const languages = new Set<string>()
+      for (const ep of episodes) {
+        if (ep.audio_language) languages.add(ep.audio_language)
+        if (ep.audio_tracks) {
+          try {
+            const tracks = JSON.parse(ep.audio_tracks) as Array<{ language?: string }>
+            for (const t of tracks) {
+              if (t.language) languages.add(t.language)
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+      return Array.from(languages)
+    } catch (error) {
+      console.error(`Error getting audio languages for identity "${validIdentityKey}":`, error)
       throw error
     }
   })

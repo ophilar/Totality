@@ -1,86 +1,509 @@
-import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  X,
+  Zap,
+  Sliders,
+  Activity,
+  Play,
+  RefreshCw,
+  AlertTriangle,
+  Sparkles
+} from 'lucide-react'
+import { useToast } from '@/contexts/ToastContext'
 import type { MediaItem } from '@main/types/database'
-import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
-import type { TranscodeOptions } from '@main/services/TranscodingService'
 
-interface Props { mediaItem: MediaItem; onClose: () => void }
-interface Preflight { duration?: number; fileSize?: number; video?: { codec?: string; resolution?: string; hdrFormat?: string }; audio?: unknown[] }
+import type { TranscodeOptions, TranscodingParams, GpuInfo, Availability, TranscodeProgress } from './transcoding'
+import { QuickPresetsTab, AdvancedTab, LiveEncodingTab } from './transcoding'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
-export function TranscodeModal({ mediaItem, onClose }: Props) {
-  const [capabilities, setCapabilities] = useState<TranscodingCapabilities | null>(null)
-  const [preflight, setPreflight] = useState<Preflight | null>(null)
-  const [mode, setMode] = useState<'remux_only' | 'transcode' | ''>('')
-  const [codec, setCodec] = useState<'hevc' | 'av1' | ''>('')
-  const [encoder, setEncoder] = useState('')
-  const [gpuId, setGpuId] = useState('')
-  const [progress, setProgress] = useState<number | null>(null)
-  const [output, setOutput] = useState<{ outputPath: string; outputSize: number } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+interface TranscodeModalProps {
+  mediaId: number
+  onClose: () => void
+  initialOptimizationMode?: 'remux_only' | 'transcode'
+  initialStreamPruning?: boolean
+  initialAudioTranscode?: boolean
+}
+
+export function TranscodeModal({ mediaId, onClose, initialOptimizationMode = 'transcode', initialStreamPruning = false, initialAudioTranscode = false }: TranscodeModalProps) {
+  const [media, setMedia] = useState<MediaItem | null>(null)
+  const [availability, setAvailability] = useState<Availability | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [params, setParams] = useState<TranscodingParams | null>(null)
+  const [gpus, setGpus] = useState<GpuInfo[]>([])
+  const [activeTab, setActiveTab] = useState<'presets' | 'advanced' | 'monitor' | 'review'>('presets')
+  const [preflight, setPreflight] = useState<{ preflightId: string; episodes: Array<{ mediaItemId: number; label: string; compatible: boolean; reason?: string; decisionStatus?: string; params?: TranscodingParams; samplePaths?: string[]; adviceReason?: string }> } | null>(null)
+  const [samplesReviewed, setSamplesReviewed] = useState(false)
+  const [audioTranscodeEnabled, setAudioTranscodeEnabled] = useState(initialAudioTranscode)
+  const [analysisRequired, setAnalysisRequired] = useState(false)
+  const [analyzingItem, setAnalyzingItem] = useState(false)
+
+  const [options, setOptions] = useState<TranscodeOptions>(() => ({
+    targetCodec: '' as TranscodeOptions['targetCodec'],
+    outputMode: 'quarantine-replace',
+    useGpu: false,
+    gpuId: '',
+    encoder: '',
+    crf: undefined,
+    preset: '',
+    customArgs: '',
+    transcodingEngine: 'ffmpeg',
+    targetSize: '',
+    qualityProfile: undefined,
+    encoderPolicy: undefined,
+    optimizationMode: initialOptimizationMode
+  }))
+
+  const [status, setStatus] = useState<'idle' | 'generating' | 'encoding' | 'complete' | 'failed'>('idle')
+  const [progress, setProgress] = useState<TranscodeProgress | null>(null)
+
+  const { addToast } = useToast()
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(!!media, modalRef)
+  const failureReportedRef = useRef(false)
+
+  const loadInitialData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [item, capabilities] = await Promise.all([
+        window.electronAPI.getMediaItem(mediaId),
+        window.electronAPI.getCapabilities()
+      ])
+
+      if (item) {
+        const loadedMedia = item as MediaItem
+        setMedia(loadedMedia)
+        if (initialStreamPruning && loadedMedia.original_language) {
+          setOptions(prev => ({
+            ...prev,
+            streamSelection: {
+              audio: 'original-and-protected',
+              originalLanguage: loadedMedia.original_language!,
+              subtitle: 'all'
+            }
+          }))
+        }
+      }
+      const avail = capabilities || { ffmpeg: false }
+      const detectedGpus = capabilities?.gpus || []
+      setAvailability(avail)
+      setGpus(detectedGpus)
+
+      const defaultEngine = capabilities?.engines?.[0] || 'ffmpeg'
+      const firstGpu = detectedGpus.find((gpu: GpuInfo) => gpu.id === capabilities?.selectedGpuId)
+
+      setOptions(prev => ({
+        ...prev,
+        transcodingEngine: defaultEngine,
+        gpuId: firstGpu ? firstGpu.id : '',
+        useGpu: Boolean(firstGpu)
+      }))
+    } catch (err) {
+      console.error('Failed to load transcode data:', err)
+      addToast({ title: 'Failed to initialize transcoding subsystem', type: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }, [mediaId, addToast, initialStreamPruning])
 
   useEffect(() => {
-    let active = true
-    Promise.all([
-      window.electronAPI.transcodingGetCapabilities(),
-      window.electronAPI.transcodingPreflightRemux(mediaItem.id!),
-    ]).then(([caps, evidence]) => {
-      if (!active) return
-      setCapabilities(caps)
-      setPreflight(evidence as Preflight)
-    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : String(reason)) })
-    const unsubscribe = window.electronAPI.onTranscodingProgress(event => {
-      if (event.mediaItemId === mediaItem.id) setProgress(event.progress)
-    })
-    return () => { active = false; unsubscribe() }
-  }, [mediaItem.id])
+    queueMicrotask(() => { void loadInitialData() })
+  }, [loadInitialData])
 
-  const availableEncoders = (capabilities?.verifiedEncoders ?? []).filter(value => codec === 'hevc'
-    ? /(?:hevc|h265|x265)/i.test(value)
-    : codec === 'av1' ? /(?:av1|svt)/i.test(value) : false)
-  const canSubmit = Boolean(preflight && mode && (mode === 'remux_only' || (codec && encoder && (encoder.startsWith('nvenc_') || encoder.startsWith('qsv_') ? gpuId : true))))
-
-  const run = async () => {
-    if (!mediaItem.id || !canSubmit) return
-    setBusy(true)
-    setProgress(0)
-    setError(null)
-    const options: TranscodeOptions = mode === 'remux_only'
-      ? { optimizationMode: 'remux_only', encoder: 'remux', useGpu: false }
-      : {
-          optimizationMode: 'transcode', targetCodec: codec || undefined,
-          encoder, useGpu: encoder.startsWith('nvenc_') || encoder.startsWith('qsv_'),
-          ...(gpuId ? { gpuId } : {}),
+  useEffect(() => {
+    const unsub = window.electronAPI.onProgress((p: any) => {
+      if (p.mediaItemId === mediaId) {
+        setProgress(p)
+        if (p.status === 'encoding' || p.percent > 0) {
+          setStatus('encoding')
+          setActiveTab('monitor')
         }
+        if (p.status === 'complete') {
+          setStatus('complete')
+          setActiveTab('monitor')
+        }
+        if (p.status === 'cancelled') {
+          setStatus('idle')
+          setProgress(null)
+          addToast({ title: 'Optimization cancelled', type: 'info' })
+        }
+        if (p.status === 'failed') {
+          setStatus('failed')
+          setActiveTab('monitor')
+          if (!failureReportedRef.current) {
+            failureReportedRef.current = true
+            addToast({ title: `Transcode failed: ${p.error || 'Unknown error'}`, type: 'error' })
+          }
+        }
+      }
+    })
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [mediaId, addToast])
+
+  const paramSequenceRef = useRef(0)
+
+  // Dynamically update parameters preview when options change
+  useEffect(() => {
+    if (status === 'encoding' || status === 'generating' || !media || !media.file_path) return
+
+    const currentSeq = ++paramSequenceRef.current
+    const timer = setTimeout(async () => {
+      try {
+        const p = await window.electronAPI.getParameters(media.id!, options)
+        if (paramSequenceRef.current === currentSeq) {
+          setParams(p)
+        }
+      } catch (err) {
+        if (paramSequenceRef.current === currentSeq) {
+          console.error('Failed to update parameters preview:', err)
+        }
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [options, media, status])
+
+  const generateParams = async () => {
+    if (!media || !media.file_path) return
+    setGenerating(true)
+    setStatus('generating')
     try {
-      setOutput(await window.electronAPI.transcodingTranscode(mediaItem.id, options, crypto.randomUUID()))
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+        const p = await window.electronAPI.getParameters(media.id!, options)
+      setParams(p)
+
+      setOptions(prev => ({
+        ...prev,
+        encoder: p.encoder || prev.encoder,
+        crf: p.crf !== undefined ? p.crf : prev.crf,
+        preset: p.preset || prev.preset
+      }))
+
+      setStatus('idle')
+      addToast({ title: 'AI Transcoding parameters updated', type: 'info' })
+    } catch (err: unknown) {
+      addToast({ title: `AI parameter generation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
+      setStatus('idle')
     } finally {
-      setBusy(false)
+      setGenerating(false)
     }
   }
 
-  return <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/70 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <section className="w-full max-w-xl rounded-xl border border-border bg-card p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="transcode-title">
-      <header className="flex items-start justify-between gap-4">
-        <div><h2 id="transcode-title" className="text-lg font-semibold">Optimize {mediaItem.title}</h2><p className="mt-1 text-sm text-muted-foreground">Creates a separate output file. Your source stays untouched.</p></div>
-        <button className="rounded p-1 hover:bg-muted" onClick={onClose} disabled={busy} aria-label="Close"><X className="h-5 w-5" /></button>
-      </header>
-      {error && <p role="alert" className="mt-4 rounded bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
-      {!preflight && !error && <p className="mt-5 text-sm text-muted-foreground">Checking source access and media details…</p>}
-      {preflight && <div className="mt-5 space-y-4">
-        <div className="rounded-md bg-muted/40 p-3 text-sm"><div>{preflight.video?.resolution || 'Unknown resolution'} · {preflight.video?.codec || 'Unknown codec'}</div><div className="text-muted-foreground">{preflight.fileSize?.toLocaleString() ?? 'Unknown'} bytes · {preflight.video?.hdrFormat || 'No HDR data'}</div></div>
-        <label className="block text-sm">Operation<select className="mt-1 w-full rounded border border-border bg-background p-2" value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="">Choose explicitly</option><option value="remux_only">Lossless remux</option><option value="transcode">Re-encode video</option></select></label>
-        {mode === 'transcode' && <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">Video codec<select className="mt-1 w-full rounded border border-border bg-background p-2" value={codec} onChange={event => { setCodec(event.target.value as typeof codec); setEncoder(''); setGpuId('') }}><option value="">Choose codec</option><option value="hevc">HEVC</option><option value="av1">AV1</option></select></label>
-          <label className="text-sm">Verified encoder<select className="mt-1 w-full rounded border border-border bg-background p-2" value={encoder} onChange={event => { setEncoder(event.target.value); setGpuId('') }}><option value="">Choose encoder</option>{availableEncoders.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-          {(encoder.startsWith('nvenc_') || encoder.startsWith('qsv_')) && <label className="col-span-2 text-sm">GPU<select className="mt-1 w-full rounded border border-border bg-background p-2" value={gpuId} onChange={event => setGpuId(event.target.value)}><option value="">Choose GPU</option>{capabilities?.gpus.map(gpu => <option key={gpu.id} value={gpu.id}>{gpu.name}</option>)}</select></label>}
-        </div>}
-        {progress !== null && busy && <div className="text-sm">Progress: {progress}%</div>}
-        {output && <div role="status" className="break-all rounded bg-muted/40 p-3 text-sm">Created {output.outputPath} ({output.outputSize.toLocaleString()} bytes){preflight.fileSize !== undefined && <span className="block">{output.outputSize < preflight.fileSize ? `${(preflight.fileSize - output.outputSize).toLocaleString()} bytes smaller than the source` : `${(output.outputSize - preflight.fileSize).toLocaleString()} bytes larger than the source`}</span>}</div>}
-        <footer className="flex justify-end gap-2"><button className="rounded border border-border px-4 py-2 text-sm" onClick={onClose} disabled={busy}>Close</button><button className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50" onClick={run} disabled={!canSubmit || busy || !!output}>{busy ? 'Working…' : 'Create output'}</button></footer>
-      </div>}
-    </section>
-  </div>
+  const startTranscode = async () => {
+    if (!media?.source_id || media.id === undefined) return
+    failureReportedRef.current = false
+    setStatus('generating')
+    try {
+      if (audioTranscodeEnabled && !options.targetAudioCodec) throw new Error('Choose an output audio codec before reviewing this optimization.')
+      if (!preflight) {
+        const preflightOptions = { ...options, targetAudioCodec: audioTranscodeEnabled ? options.targetAudioCodec : undefined }
+        const result = await window.electronAPI.preflightShow({ mediaItemId: media.id, sourceId: media.source_id, libraryId: media.library_id, options: preflightOptions }) as typeof preflight
+        if (!result) throw new Error('Optimization review could not be created')
+        setPreflight(result)
+        setStatus('idle')
+        setActiveTab('review')
+        return
+      }
+      const item = preflight.episodes.find(entry => entry.mediaItemId === media.id)
+      if (!item?.compatible) throw new Error(item?.reason || 'This file has no safe optimization plan')
+      if (item.decisionStatus === 'sample_required' && !samplesReviewed) throw new Error('Review the measured samples before queuing this transcode')
+      if (item.decisionStatus === 'sample_required') await window.electronAPI.approveShow(preflight.preflightId)
+      await window.electronAPI.queueShow(preflight.preflightId)
+      setProgress(null)
+      setStatus('encoding')
+      setActiveTab('monitor')
+      addToast({ title: 'Optimization queued', type: 'success' })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (/persisted file analysis|analyze the item/i.test(message)) setAnalysisRequired(true)
+      setStatus('idle')
+      addToast({ title: `Optimization could not be queued: ${message}`, type: 'error' })
+    }
+  }
+
+  const analyzeRequiredEvidence = async () => {
+    if (!media?.file_path) return
+    try {
+      setAnalyzingItem(true)
+      await window.electronAPI.ffprobeAnalyzeFile(media.file_path)
+      setAnalysisRequired(false)
+      addToast({ title: 'Analysis complete. Refreshing optimization review…', type: 'success' })
+      void startTranscode()
+    } catch (error) {
+      addToast({ title: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`, type: 'error' })
+    } finally {
+      setAnalyzingItem(false)
+    }
+  }
+
+  const cancelTranscode = async () => {
+    try {
+      await window.electronAPI.cancel(mediaId)
+    } catch (err: unknown) {
+      addToast({ title: `Cancellation failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' })
+    }
+  }
+
+  if (loading) {
+    return createPortal(
+      <div className="fixed inset-0 z-250 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>,
+      document.body
+    )
+  }
+
+  if (!media) return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={status === 'encoding' ? undefined : onClose}
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transcode-modal-title"
+        tabIndex={-1}
+        className="relative bg-card border border-border sm:rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 h-dvh sm:h-auto sm:max-h-[92vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-border/10 flex justify-between items-center bg-muted/10">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 id="transcode-modal-title" className="text-lg font-bold leading-tight flex items-center gap-2">
+                AI Transcoder & Optimizer
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                  VRAM Passthrough
+                </span>
+              </h3>
+              <p className="text-xs text-muted-foreground truncate max-w-[450px]">{media.title}</p>
+            </div>
+          </div>
+          {status !== 'encoding' && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* 3-Tab Wizard Header */}
+        <div className="flex border-b border-border/20 bg-muted/30 px-3 sm:px-6 pt-2 sm:pt-3 gap-1 sm:gap-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('presets')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+              activeTab === 'presets'
+                ? 'bg-card text-primary border-primary shadow-xs'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            Quick Presets
+          </button>
+
+          <button
+            onClick={() => setActiveTab('advanced')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+              activeTab === 'advanced'
+                ? 'bg-card text-primary border-primary shadow-xs'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            Advanced Settings
+          </button>
+
+          <button
+            onClick={() => setActiveTab('monitor')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 relative ${
+              activeTab === 'monitor'
+                ? 'bg-card text-primary border-primary shadow-xs'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Encoding Monitor
+            {status === 'encoding' && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute top-2 right-2" />
+            )}
+          </button>
+        </div>
+
+        {/* Modal Body with Scroll */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
+          {/* Availability Warnings */}
+          {!availability?.ffmpeg && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-4">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-red-400">No Transcoding Engines Available</p>
+                <p className="text-xs text-muted-foreground">
+                  FFmpeg was not detected on your system. Please install or configure it in Settings.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Active Tab Content */}
+          {(activeTab === 'presets' || activeTab === 'advanced') && <div className="space-y-2">
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={options.optimizationMode === 'transcode'}
+                onChange={event => setOptions(prev => ({ ...prev, optimizationMode: event.target.checked ? 'transcode' : 'remux_only' }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-medium">Transcode video</span>
+                <span className="block text-xs text-muted-foreground">Apply the selected codec and quality settings to the video stream.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={options.streamSelection?.audio === 'original-and-protected'}
+                disabled={!media.original_language}
+                onChange={event => setOptions(prev => ({
+                  ...prev,
+                  streamSelection: event.target.checked && media.original_language
+                    ? { audio: 'original-and-protected', originalLanguage: media.original_language, subtitle: 'all' }
+                    : undefined
+                }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-medium">Prune non-original audio tracks</span>
+                <span className="block text-xs text-muted-foreground">
+                  {media.original_language
+                    ? `Keep ${media.original_language} audio and protected tracks; remove other audio in the same operation.`
+                    : 'Unavailable because the original audio language is unknown.'}
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                checked={audioTranscodeEnabled}
+                onChange={event => {
+                  setAudioTranscodeEnabled(event.target.checked)
+                  if (!event.target.checked) setOptions(prev => ({ ...prev, targetAudioCodec: undefined }))
+                }}
+                className="mt-0.5"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Transcode audio</span>
+                <span className="block text-xs text-muted-foreground">Convert eligible retained tracks; protected tracks keep their original codec.</span>
+              </span>
+              <select
+                aria-label="Target audio codec"
+                value={options.targetAudioCodec || ''}
+                disabled={!audioTranscodeEnabled}
+                onChange={event => setOptions(prev => ({ ...prev, targetAudioCodec: event.target.value ? event.target.value as NonNullable<TranscodeOptions['targetAudioCodec']> : undefined }))}
+                className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
+              >
+                <option value="">Choose codec</option>
+                <option value="aac">AAC</option>
+                <option value="ac3">AC-3</option>
+                <option value="eac3">E-AC-3</option>
+              </select>
+            </label>
+          </div>}
+
+          {activeTab === 'presets' && (
+            <QuickPresetsTab
+              options={options}
+              setOptions={setOptions}
+              params={params}
+              gpus={gpus}
+            />
+          )}
+
+          {activeTab === 'advanced' && (
+            <AdvancedTab
+              options={options}
+              setOptions={setOptions}
+              params={params}
+              gpus={gpus}
+              availability={availability}
+            />
+          )}
+
+          {activeTab === 'monitor' && (
+            <LiveEncodingTab
+              status={status}
+              progress={progress}
+              params={params}
+              mediaTitle={media.title}
+              onCancel={cancelTranscode}
+              onStart={startTranscode}
+              onClose={onClose}
+            />
+          )}
+
+          {activeTab === 'review' && preflight && (
+            <section className="space-y-4 rounded-xl border border-border p-4">
+              <h4 className="font-bold">Review optimization plan</h4>
+              <button className="text-sm underline" onClick={() => { setPreflight(null); setSamplesReviewed(false); setActiveTab('advanced') }}>Change optimization settings</button>
+              {preflight.episodes.map(item => <div key={item.mediaItemId} className="space-y-2 text-sm">
+                <p className="font-semibold">{item.label}: {item.compatible ? item.decisionStatus?.replace(/_/g, ' ') : item.reason}</p>
+                {item.params?.summary && <p className="text-muted-foreground">{item.params.summary}</p>}
+                {item.samplePaths?.map((sample, index) => <button key={sample} className="mr-3 underline" onClick={() => void window.electronAPI.openShowSample(preflight.preflightId, item.mediaItemId, index)}>Open measured sample {index + 1}</button>)}
+              </div>)}
+              {options.streamSelection?.audio === 'original-and-protected' && <p className="text-muted-foreground">This plan keeps original-language and protected audio tracks, removing other audio tracks.</p>}
+              {audioTranscodeEnabled && options.targetAudioCodec && <p className="text-muted-foreground">Eligible retained audio tracks will be converted to {options.targetAudioCodec.toUpperCase()}.</p>}
+              {preflight.episodes.some(item => item.decisionStatus === 'sample_required') && <label className="flex gap-2 text-sm"><input type="checkbox" checked={samplesReviewed} onChange={event => setSamplesReviewed(event.target.checked)} /> I reviewed and approve the measured sample</label>}
+            </section>
+          )}
+          {analysisRequired && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-sm">
+            <p className="font-semibold text-amber-200">Current persisted file analysis is required before optimization.</p>
+            <p className="text-muted-foreground">Run file analysis for this item, then refresh this review. Analysis does not approve or queue optimization.</p>
+            {analyzingItem ? <p>Analyzing media file…</p> : <button className="underline" onClick={() => { setPreflight(null); setAnalysisRequired(false); void startTranscode() }}>Refresh optimization review</button>}
+          </div>}
+        </div>
+
+        {/* Modal Footer Controls */}
+        {status !== 'encoding' && status !== 'complete' && (
+          <div className="p-4 sm:p-6 bg-muted/10 border-t border-border/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <button
+              onClick={onClose}
+              className="px-6 py-2.5 bg-muted hover:bg-muted/80 rounded-xl text-xs font-bold transition-all"
+            >
+              Cancel
+            </button>
+
+            <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-3">
+              {analysisRequired && <button onClick={() => void analyzeRequiredEvidence()} disabled={analyzingItem} className="px-5 py-2.5 rounded-xl border border-border text-xs font-bold disabled:opacity-50">{analyzingItem ? 'Analyzing…' : 'Analyze item'}</button>}
+              <button
+                onClick={generateParams}
+                disabled={generating || !availability?.ffmpeg}
+                className="flex items-center gap-2 px-5 py-2.5 bg-muted/60 hover:bg-muted rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-primary" />}
+                Re-Generate AI Tuned Strategy
+              </button>
+
+              <button
+                onClick={startTranscode}
+                disabled={!availability?.ffmpeg || status === 'generating' || (audioTranscodeEnabled && !options.targetAudioCodec) || (activeTab === 'review' && preflight?.episodes.some(item => !item.compatible))}
+                className="flex items-center gap-2 px-7 py-2.5 bg-primary text-primary-foreground font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-lg shadow-primary/20 hover:opacity-90"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                {status === 'generating' ? 'Preparing…' : preflight ? 'Queue Optimization' : 'Review Optimization'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  )
 }

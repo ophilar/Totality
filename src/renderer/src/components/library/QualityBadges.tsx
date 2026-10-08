@@ -4,23 +4,56 @@
  * Displays quality indicator badges (HDR, 10-bit, Atmos, HFR) for media items.
  */
 
+import { Trash2, HardDrive } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { MediaItem } from './types'
+import { normalizeHdrFormatValue } from '@main/types/mediaContracts'
 
 interface QualityBadgesProps {
   item: MediaItem
   whiteBg?: boolean
+  showEfficiency?: boolean
 }
 
-export function QualityBadges({ item, whiteBg = false }: QualityBadgesProps) {
-  const badges: Array<{ label: string; coloredClass: string }> = []
+/** Keep dynamic HDR formats distinct from the base HDR10 label. */
+export function formatHdrLabel(value?: string | null): string | undefined {
+  const normalized = normalizeHdrFormatValue(value)
+  return normalized === 'SDR' ? undefined : normalized
+}
+
+export function QualityBadges({ item, whiteBg = false, showEfficiency = true }: QualityBadgesProps) {
+  const badges: Array<{ label: string; coloredClass: string; icon?: LucideIcon }> = []
+
+  // Efficiency "Trash" badge - show if score is below threshold (60%)
+  if (showEfficiency && item.efficiency_score != null && item.efficiency_score > 0 && item.efficiency_score < 60) {
+    badges.push({
+      label: 'Bloated',
+      coloredClass: 'bg-orange-600/90 text-white',
+      icon: Trash2
+    })
+  }
+
+  // Storage Debt badge - show if over 5GB for movies, 2GB for episodes
+  const debtThreshold = item.type === 'movie' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
+  if (showEfficiency && item.storage_debt_bytes && item.storage_debt_bytes > debtThreshold) {
+    const gb = Math.round(item.storage_debt_bytes / (1024 * 1024 * 1024))
+    badges.push({
+      label: `${gb}GB Waste`,
+      coloredClass: 'bg-red-600/90 text-white',
+      icon: HardDrive
+    })
+  }
 
   // HDR badges - use same terminology as details page
-  if (item.hdr_format === 'Dolby Vision') {
-    badges.push({ label: 'Dolby Vision', coloredClass: 'bg-purple-600/90 text-white' })
-  } else if (item.hdr_format === 'HDR10') {
-    badges.push({ label: 'HDR10', coloredClass: 'bg-orange-600/90 text-white' })
-  } else if (item.hdr_format === 'HLG') {
-    badges.push({ label: 'HLG', coloredClass: 'bg-yellow-600/90 text-white' })
+  const hdrLabel = formatHdrLabel(item.hdr_format)
+  if (hdrLabel === 'Dolby Vision') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-purple-600/90 text-white' })
+  } else if (hdrLabel === 'HDR10+') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-pink-600/90 text-white' })
+  } else if (hdrLabel === 'HDR10') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-orange-600/90 text-white' })
+  } else if (hdrLabel === 'HLG') {
+    badges.push({ label: hdrLabel, coloredClass: 'bg-yellow-600/90 text-white' })
   }
 
   // 10-bit color - show actual bit depth like details page
@@ -47,7 +80,11 @@ export function QualityBadges({ item, whiteBg = false }: QualityBadgesProps) {
   return (
     <div className={`flex flex-wrap gap-1 ${whiteBg ? '' : 'mt-1'}`}>
       {badges.map((badge, idx) => (
-        <span key={idx} className={`px-1.5 py-0.5 rounded text-xs font-bold ${whiteBg ? badgeClass : badge.coloredClass}`}>
+        <span
+          key={idx}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${whiteBg ? badgeClass : badge.coloredClass}`}
+        >
+          {badge.icon && <badge.icon className="w-3 h-3" />}
           {badge.label}
         </span>
       ))}

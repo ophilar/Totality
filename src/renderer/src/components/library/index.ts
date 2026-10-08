@@ -7,6 +7,7 @@ export { MatchFixModal } from './MatchFixModal'
 export { MissingItemPopup } from './MissingItemPopup'
 export { MissingItemCard } from './MissingItemCard'
 export { QualityBadges } from './QualityBadges'
+export { DuplicatesView } from './DuplicatesView'
 
 // Export types
 export type * from './types'

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS media_items (
   year INTEGER,
   type TEXT NOT NULL CHECK(type IN ('movie', 'episode')),
   series_title TEXT,
+  series_identity_key TEXT,
   season_number INTEGER,
   episode_number INTEGER,
 
@@ -186,6 +187,8 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   tier_score INTEGER NOT NULL DEFAULT 0,
   bitrate_tier_score INTEGER NOT NULL DEFAULT 0,
   audio_tier_score INTEGER NOT NULL DEFAULT 0,
+  storage_debt_bytes INTEGER,
+  evidence_status TEXT,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
   overall_score INTEGER NOT NULL,
@@ -222,6 +225,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- TV series completeness tracking
 CREATE TABLE IF NOT EXISTS series_completeness (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  series_identity_key TEXT,
   series_title TEXT NOT NULL,
 
   -- Source/library scoping
@@ -239,8 +243,9 @@ CREATE TABLE IF NOT EXISTS series_completeness (
 
   completeness_percentage REAL NOT NULL,
 
-  -- TMDB metadata
+  -- External metadata
   tmdb_id TEXT,
+  tvdb_id TEXT,
   poster_url TEXT,
   backdrop_url TEXT,
   status TEXT,
@@ -739,7 +744,7 @@ CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completeness(tmdb_id) WHERE tmdb_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_series_completeness_title ON series_completeness(series_title);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_library ON series_completeness(source_id, library_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_title, source_id, library_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_series_completeness_unique ON series_completeness(series_identity_key, source_id, library_id);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_title_pct ON series_completeness(series_title, completeness_percentage);
 CREATE INDEX IF NOT EXISTS idx_series_completeness_incomplete ON series_completeness(completeness_percentage) WHERE tmdb_id IS NOT NULL AND completeness_percentage < 100;
 CREATE INDEX IF NOT EXISTS idx_movie_collections_tmdb_id ON movie_collections(tmdb_collection_id);
@@ -807,6 +812,58 @@ CREATE TABLE IF NOT EXISTS tmdb_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tmdb_cache_expires ON tmdb_cache(cached_at);
+
+-- ============================================================================
+-- MEDIA ITEM DUPLICATES
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS media_item_duplicates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  external_type TEXT NOT NULL CHECK(external_type IN ('tmdb_movie', 'tmdb_series', 'musicbrainz_artist', 'musicbrainz_album')),
+  media_item_ids TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'resolved', 'ignored')),
+  resolution_strategy TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(source_id, external_id, external_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_status ON media_item_duplicates(status);
+CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_source ON media_item_duplicates(source_id);
+
+-- ============================================================================
+-- MEDIA OPTIMIZATION JOBS
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS media_optimization_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+  operation_kind TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('planned', 'running', 'verified', 'promoted', 'failed')),
+  source_path TEXT NOT NULL,
+  source_size INTEGER NOT NULL,
+  source_mtime_ms INTEGER NOT NULL,
+  source_sha256 TEXT NOT NULL,
+  decision_snapshot TEXT NOT NULL,
+  stream_signatures TEXT NOT NULL,
+  quarantine_path TEXT,
+  error TEXT,
+  predicted_output_bytes INTEGER,
+  actual_output_bytes INTEGER,
+  bytes_saved INTEGER,
+  source_duration_ms INTEGER,
+  output_duration_ms INTEGER,
+  encoder_profile TEXT,
+  source_analysis TEXT,
+  output_analysis TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_optimization_jobs_item ON media_optimization_jobs(media_item_id, updated_at DESC);
 
 -- Create triggers for automatic updated_at timestamps
 CREATE TRIGGER IF NOT EXISTS update_media_items_timestamp
