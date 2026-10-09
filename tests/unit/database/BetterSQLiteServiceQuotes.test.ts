@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
-import { vi } from 'vitest'
 
 vi.unmock('sql.js')
 
