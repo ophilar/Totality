@@ -62,3 +62,13 @@
 | **Comprehensive Test Suite** | Pass | 47 test files, 959 tests passing cleanly |
 | **TypeScript Typecheck** | Pass | `npm run typecheck` (`tsc --noEmit`) passes with 0 errors |
 | **Whitespace Hygiene** | Pass | `git diff --check` passes cleanly with 0 errors |
+
+## Hotfix: SQLite String Literal Quotes & Plex Metadata JSON Negotiation (2026-10-09)
+
+| Component | Status | Notes |
+|---|---|---|
+| **SQLite Literal Quoting** | Complete | Replaced illegal double-quoted empty strings `""` with ANSI/SQLite single quotes `''` in `BetterSQLiteService.ts` (`upsertSeriesCompleteness`, `getEpisodesForSeries`); eliminates `SqliteError: no such column: ""` |
+| **Plex Metadata JSON Negotiation** | Complete | Added `defaultHeaders` (including `Accept: application/json` and client identifiers) to `getAlbumMetadata`, `getArtistMetadata`, and `getUserInfo` in `PlexProvider.ts`; eliminates `SyntaxError: Unexpected token '<', "<?xml vers"... is not valid JSON` |
+| **Targeted Unit Tests** | Pass | Added `BetterSQLiteServiceQuotes.test.ts` and `PlexProviderMetadata.test.ts` |
+| **Full Regression Suite** | Pass | 50 test files, 966 tests passing (100% pass rate) |
+| **TypeScript Typecheck** | Pass | `npm run typecheck` (`tsc --noEmit`) passes with 0 errors |
