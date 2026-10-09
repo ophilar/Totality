@@ -18,8 +18,8 @@ describe('PlexProvider - JSON Headers for Metadata Requests', () => {
 
     provider = new PlexProvider({
       sourceId: 'plex-test-1',
-      name: 'Test Plex',
-      type: 'plex',
+      displayName: 'Test Plex',
+      sourceType: 'plex',
       connectionConfig: {
         serverUrl: 'http://192.168.1.50:32400',
         token: 'test-plex-token-xyz',
