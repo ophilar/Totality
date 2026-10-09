@@ -959,7 +959,7 @@ export class PlexProvider implements MediaProvider {
 
     try {
       return await fetchJSON<PlexUser>(`${PLEX_API_URL}/user`, {
-        headers: { 'X-Plex-Token': this.authToken },
+        headers: { ...this.defaultHeaders, 'X-Plex-Token': this.authToken },
       })
     } catch (error) {
       console.error('Failed to get user info:', error)
@@ -1439,7 +1439,7 @@ export class PlexProvider implements MediaProvider {
     try {
       const responseData = await fetchJSON<{ MediaContainer?: { Metadata?: PlexMusicArtist[] } }>(
         `${this.selectedServer.uri}/library/metadata/${artistKey}`,
-        { headers: { Accept: 'application/json', 'X-Plex-Token': this.selectedServer.accessToken } }
+        { headers: { ...this.defaultHeaders, 'X-Plex-Token': this.selectedServer.accessToken }, timeoutMs: 30_000 }
       )
       return responseData?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {
@@ -1459,7 +1459,7 @@ export class PlexProvider implements MediaProvider {
     try {
       const responseData = await fetchJSON<{ MediaContainer?: { Metadata?: PlexMusicAlbum[] } }>(
         `${this.selectedServer.uri}/library/metadata/${albumKey}`,
-        { headers: { Accept: 'application/json', 'X-Plex-Token': this.selectedServer.accessToken } }
+        { headers: { ...this.defaultHeaders, 'X-Plex-Token': this.selectedServer.accessToken }, timeoutMs: 30_000 }
       )
       return responseData?.MediaContainer?.Metadata?.[0] || null
     } catch (error) {

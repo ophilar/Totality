@@ -323,3 +323,14 @@ Verification: focused regression checks passed (6 files, 41 tests); `npm test` p
   - Trigger-level write verification ensures zero empty or null `series_identity_key` entries can be written during runtime operations.
 - **Real SQLite WebAssembly Engine Testing:**
   - Migration regression tests execute directly against `sql.js` in-memory SQLite instances to validate genuine SQL execution, transaction rollbacks, savepoints, and trigger abort behavior.
+
+## SQLite Query Quoting Standards & External Provider HTTP Headers (2026-10-09)
+
+- **SQL Literal Quoting vs Identifier Quoting:**
+  - In SQL (and specifically SQLite with modern DQS restrictions or strict compilation), double quotes `"` designate identifiers (table and column names).
+  - String literals must exclusively use ANSI single quotes `'` (e.g. `series_identity_key = ''` or `series_identity_key != ''`).
+  - Double quotes around empty strings (`""`) trigger `SqliteError: no such column: ""` on statement preparation.
+- **Provider HTTP Protocol Negotiation:**
+  - Upstream Plex Media Server endpoints default to XML serialization unless clients explicitly negotiate JSON via headers.
+  - All Plex API requests must uniformly supply `defaultHeaders` which include `'Accept': 'application/json'` along with client identifiers (`X-Plex-Client-Identifier`, `X-Plex-Product`, `X-Plex-Version`, `X-Plex-Platform`).
+  - Omitting `Accept: application/json` causes XML responses (`<?xml version...`) to be returned to `fetchJSON`, triggering `SyntaxError: Unexpected token '<'` during JSON parsing.

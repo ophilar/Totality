@@ -257,9 +257,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     return this.db.prepare(sql).all(...params) as MediaItem[]
   }
 
-  constructor() {
+  constructor(customDbPath?: string) {
     const userDataPath = app.getPath('userData')
-    this.dbPath = path.join(userDataPath, 'totality-v2.db')
+    this.dbPath = customDbPath || path.join(userDataPath, 'totality-v2.db')
   }
 
   /**
@@ -4054,7 +4054,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Check if record exists by unique identity key (or title fallback for legacy)
     const stmt = this.db.prepare(
-      'SELECT id FROM series_completeness WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = ""))) AND source_id = ? AND library_id = ?'
+      'SELECT id FROM series_completeness WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = \'\'))) AND source_id = ? AND library_id = ?'
     )
     const row = stmt.get(seriesIdentityKey, data.series_title, sourceId, libraryId) as { id: number } | undefined
     const existingId = row?.id || null
@@ -4519,7 +4519,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       idSql += ' AND library_id = ?'
       idParams.push(libraryId)
     }
-    idSql += ' AND series_identity_key IS NOT NULL AND series_identity_key != "" LIMIT 1'
+    idSql += " AND series_identity_key IS NOT NULL AND series_identity_key != '' LIMIT 1"
     const found = this.db.prepare(idSql).get(...idParams) as { series_identity_key: string } | undefined
     if (found?.series_identity_key) {
       return this.getEpisodes(seriesTitle, sourceId || '', found.series_identity_key, libraryId || '')
