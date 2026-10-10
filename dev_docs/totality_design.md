@@ -334,3 +334,22 @@ Verification: focused regression checks passed (6 files, 41 tests); `npm test` p
   - Upstream Plex Media Server endpoints default to XML serialization unless clients explicitly negotiate JSON via headers.
   - All Plex API requests must uniformly supply `defaultHeaders` which include `'Accept': 'application/json'` along with client identifiers (`X-Plex-Client-Identifier`, `X-Plex-Product`, `X-Plex-Version`, `X-Plex-Platform`).
   - Omitting `Accept: application/json` causes XML responses (`<?xml version...`) to be returned to `fetchJSON`, triggering `SyntaxError: Unexpected token '<'` during JSON parsing.
+
+## Safe Language Remuxing & Canonical Application Shutdown Architecture (2026-10-10)
+
+- **Zero-Re-encode Stream-Copy Language Remuxing (`LanguageRemuxService`):**
+  - Uses `-c copy` exclusively, mapping the primary video stream (`0:v:0`), explicit retained audio streams (`0:${index}`), subtitles (`0:s?`), attachments (`0:t?`), chapters (`-map_chapters 0`), and metadata (`-map_metadata 0`).
+  - Retains original language audio streams and protected tracks (commentary, audio description, narration, accessibility) while pruning unnecessary foreign dubs.
+  - Verifies duration ($\Delta \le 1\text{s}$) and audio stream inventories before activating the temporary output file.
+  - Quarantines the original file safely prior to replacing the source file path. If activation fails, rolls back quarantine seamlessly.
+  - Enforces disk headroom checks ($\ge 1.2 \times \text{source size}$) via filesystem `statfs` before starting.
+- **Multi-Stage Graceful Shutdown Pipeline (`ApplicationShutdown`):**
+  - Executes sequentially in strict durability-critical order:
+    1. `stop-accepting-work`: Halts file watchers and auto-update polling.
+    2. `pause-task-queue`: Pauses background workers.
+    3. `shutdown-worker-pool`: Terminates FFprobe worker child processes cleanly.
+    4. `persist-interrupted-tasks`: Writes in-flight tasks to database as interrupted.
+    5. `checkpoint-wal`: Flushes SQLite WAL buffers to disk.
+    6. `close-database`: Closes database connections cleanly.
+    7. `shutdown-logging`: Flushes logging buffers to disk.
+  - Fails explicitly and halts at the exact stage of failure without swallowing underlying exceptions.

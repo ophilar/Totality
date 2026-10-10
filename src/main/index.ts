@@ -50,6 +50,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 import { getDatabaseServiceAsync, getDatabaseServiceSync } from './database/DatabaseFactory'
 import { getDatabase } from './database/getDatabase'
+import { ApplicationShutdown } from './services/ApplicationShutdown'
 import { getSourceManager } from './services/SourceManager'
 import { registerDatabaseHandlers } from './ipc/database'
 import { registerQualityHandlers } from './ipc/quality'
@@ -292,32 +293,48 @@ app.on('before-quit', async (event) => {
   isClosing = true
 
   // Stop web server
-  const { getWebServerService } = await import('./services/WebServerService')
-  getWebServerService()?.stop()
-
-  // Stop live monitoring (close file watchers and polling timers)
-  getLiveMonitoringService().stop()
-
-  // Cleanup auto-update timers
-  getAutoUpdateService().cleanup()
-
-  // Shutdown FFprobe worker pool (terminate workers before closing DB)
   try {
-    const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
-    await getFFprobeWorkerPool().shutdown()
+    const { getWebServerService } = await import('./services/WebServerService')
+    getWebServerService()?.stop()
   } catch {
-    // Pool may not have been initialized
+    // Web server may not have been initialized
   }
-
-  // Flush log buffer to disk
-  await getLoggingService().shutdown()
-
-  // Persist any in-flight tasks as interrupted
-  getTaskQueueService().persistInterruptedTasks()
-
-  // Close database
   const db = getDatabaseServiceSync()
-  await db.close()
+  const shutdown = new ApplicationShutdown({
+    stopAcceptingWork: () => {
+      getLiveMonitoringService().stop()
+      getAutoUpdateService().cleanup()
+    },
+    pauseTaskQueue: async () => {
+      getTaskQueueService().pauseQueue()
+    },
+    shutdownWorkerPool: async () => {
+      try {
+        const { getFFprobeWorkerPool } = await import('./services/FFprobeWorkerPool')
+        await getFFprobeWorkerPool().shutdown()
+      } catch {
+        // Pool may not have been initialized
+      }
+    },
+    persistInterruptedTasks: async () => {
+      getTaskQueueService().persistInterruptedTasks()
+    },
+    checkpointWal: async () => {
+      // WAL checkpoint
+    },
+    closeDatabase: async () => {
+      await db.close()
+    },
+    shutdownLogging: async () => {
+      await getLoggingService().shutdown()
+    },
+  })
+
+  try {
+    await shutdown.execute()
+  } catch (error) {
+    console.error('[App] Shutdown encountered error:', error)
+  }
 
   app.exit()
 })
