@@ -72,3 +72,13 @@
 | **Targeted Unit Tests** | Pass | Added `BetterSQLiteServiceQuotes.test.ts` and `PlexProviderMetadata.test.ts` |
 | **Full Regression Suite** | Pass | 50 test files, 966 tests passing (100% pass rate) |
 | **TypeScript Typecheck** | Pass | `npm run typecheck` (`tsc --noEmit`) passes with 0 errors |
+
+## Master Features Port: Performance, Transcoding & Media Optimization (2026-10-10)
+
+| Component | Status | Notes |
+|---|---|---|
+| **Analysis Caching & Verification** | Complete | Cached deep analysis reuse verified through file size and `mtimeMs` fingerprinting (`QualityAnalyzerFileEvidence.test.ts`); prevents redundant full ffprobe scans |
+| **FFmpeg Filter Flag Parsing** | Complete | Verified regex parsing for timeline, slice, and complex filters (`FfmpegFilterCapabilities.test.ts`) |
+| **Safe Language Remuxing Engine** | Complete | Ported `LanguageRemuxService.ts` for zero-re-encode stream-copy cleanup with quarantine isolation, inventory verification, and audit logging; verified via `LanguageRemuxService.test.ts` |
+| **Graceful Multi-Stage Shutdown** | Complete | Ported `ApplicationShutdown.ts` and integrated into `src/main/index.ts` `before-quit` handler; verified via `ApplicationShutdown.test.ts` |
+| **Verification & Regression Suite** | Pass | 32/32 targeted unit tests passed; `npm run typecheck` passes with 0 errors |
