@@ -23,7 +23,9 @@ const mockDb = {
   getSetting: vi.fn(() => 'fake-key'),
   getMediaItems: vi.fn(() => []),
   getMediaSources: vi.fn(() => []),
+  getEpisodes: vi.fn(() => []),
   getEpisodesForSeries: vi.fn(() => []),
+  getSeriesCompletenessByIdentity: vi.fn(() => null),
   getSeriesCompletenessByTitle: vi.fn(() => null),
   upsertSeriesCompleteness: vi.fn(() => 1),
   deleteSeriesCompleteness: vi.fn(),
@@ -58,34 +60,35 @@ describe('SeriesCompletenessService', () => {
 
   describe('analyzeSeries', () => {
     it('returns null when no episodes found', async () => {
-      mockDb.getEpisodesForSeries.mockReturnValue([])
+      mockDb.getEpisodes.mockReturnValue([])
 
-      const result = await service.analyzeSeries('Unknown Show')
+      const result = await service.analyzeSeries('unresolved:src1:lib1:unknown-show', 'src1', 'lib1')
 
       expect(result).toBeNull()
     })
 
     it('creates unmatched result when TMDB ID not found', async () => {
-      mockDb.getEpisodesForSeries.mockReturnValue([
-        { season_number: 1, episode_number: 1, series_tmdb_id: null, title: 'Ep1' },
+      mockDb.getEpisodes.mockReturnValue([
+        { season_number: 1, episode_number: 1, series_tmdb_id: null, title: 'Ep1', series_title: 'No Match Show', series_identity_key: 'unresolved:src1:lib1:no-match-show' },
       ])
       mockTmdb.searchTVShow.mockResolvedValue({ results: [] })
-      mockDb.getSeriesCompletenessByTitle.mockReturnValue({
+      mockDb.getSeriesCompletenessByIdentity.mockReturnValue({
         series_title: 'No Match Show',
+        series_identity_key: 'unresolved:src1:lib1:no-match-show',
         owned_episodes: 1,
         completeness_percentage: 0,
       })
 
-      const result = await service.analyzeSeries('No Match Show')
+      const result = await service.analyzeSeries('unresolved:src1:lib1:no-match-show', 'src1', 'lib1')
 
       expect(result).toBeDefined()
       expect(mockDb.upsertSeriesCompleteness).toHaveBeenCalled()
     })
 
     it('analyzes series with cached TMDB ID', async () => {
-      mockDb.getEpisodesForSeries.mockReturnValue([
-        { season_number: 1, episode_number: 1, series_tmdb_id: '1234' },
-        { season_number: 1, episode_number: 2, series_tmdb_id: '1234' },
+      mockDb.getEpisodes.mockReturnValue([
+        { season_number: 1, episode_number: 1, series_tmdb_id: '1234', series_title: 'Test Show', series_identity_key: 'tmdb:1234' },
+        { season_number: 1, episode_number: 2, series_tmdb_id: '1234', series_title: 'Test Show', series_identity_key: 'tmdb:1234' },
       ])
 
       mockTmdb.getTVShowDetails.mockResolvedValue({
@@ -108,14 +111,15 @@ describe('SeriesCompletenessService', () => {
         },
       })
 
-      mockDb.getSeriesCompletenessByTitle.mockReturnValue({
+      mockDb.getSeriesCompletenessByIdentity.mockReturnValue({
         series_title: 'Test Show',
+        series_identity_key: 'tmdb:1234',
         total_episodes: 3,
         owned_episodes: 2,
         completeness_percentage: 67,
       })
 
-      const result = await service.analyzeSeries('Test Show', undefined, undefined, '1234')
+      const result = await service.analyzeSeries('tmdb:1234', 'src1', 'lib1', '1234')
 
       expect(result).toBeDefined()
       expect(mockTmdb.getTVShowDetails).toHaveBeenCalledWith('1234')
@@ -129,9 +133,9 @@ describe('SeriesCompletenessService', () => {
     })
 
     it('excludes season 0 specials from owned count', async () => {
-      mockDb.getEpisodesForSeries.mockReturnValue([
-        { season_number: 0, episode_number: 1, series_tmdb_id: '100' }, // Special
-        { season_number: 1, episode_number: 1, series_tmdb_id: '100' },
+      mockDb.getEpisodes.mockReturnValue([
+        { season_number: 0, episode_number: 1, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' }, // Special
+        { season_number: 1, episode_number: 1, series_tmdb_id: '100', series_title: 'Show', series_identity_key: 'tmdb:100' },
       ])
 
       mockTmdb.getTVShowDetails.mockResolvedValue({
@@ -151,9 +155,9 @@ describe('SeriesCompletenessService', () => {
         },
       })
 
-      mockDb.getSeriesCompletenessByTitle.mockReturnValue({ completeness_percentage: 100 })
+      mockDb.getSeriesCompletenessByIdentity.mockReturnValue({ completeness_percentage: 100, series_identity_key: 'tmdb:100' })
 
-      await service.analyzeSeries('Show', undefined, undefined, '100')
+      await service.analyzeSeries('tmdb:100', 'src1', 'lib1', '100')
 
       const upsertCall = mockDb.upsertSeriesCompleteness.mock.calls[0][0]
       // owned_episodes should be 1 (season 0 excluded)
@@ -163,10 +167,10 @@ describe('SeriesCompletenessService', () => {
 
     it('clamps completeness to 100% max', async () => {
       // User has more episodes than TMDB knows about
-      mockDb.getEpisodesForSeries.mockReturnValue([
-        { season_number: 1, episode_number: 1, series_tmdb_id: '200' },
-        { season_number: 1, episode_number: 2, series_tmdb_id: '200' },
-        { season_number: 1, episode_number: 3, series_tmdb_id: '200' }, // Extra
+      mockDb.getEpisodes.mockReturnValue([
+        { season_number: 1, episode_number: 1, series_tmdb_id: '200', series_title: 'Show', series_identity_key: 'tmdb:200' },
+        { season_number: 1, episode_number: 2, series_tmdb_id: '200', series_title: 'Show', series_identity_key: 'tmdb:200' },
+        { season_number: 1, episode_number: 3, series_tmdb_id: '200', series_title: 'Show', series_identity_key: 'tmdb:200' }, // Extra
       ])
 
       mockTmdb.getTVShowDetails.mockResolvedValue({
@@ -183,9 +187,9 @@ describe('SeriesCompletenessService', () => {
         },
       })
 
-      mockDb.getSeriesCompletenessByTitle.mockReturnValue({ completeness_percentage: 100 })
+      mockDb.getSeriesCompletenessByIdentity.mockReturnValue({ completeness_percentage: 100, series_identity_key: 'tmdb:200' })
 
-      await service.analyzeSeries('Show', undefined, undefined, '200')
+      await service.analyzeSeries('tmdb:200', 'src1', 'lib1', '200')
 
       const upsertCall = mockDb.upsertSeriesCompleteness.mock.calls[0][0]
       expect(upsertCall.completeness_percentage).toBeLessThanOrEqual(100)

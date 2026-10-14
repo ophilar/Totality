@@ -257,11 +257,11 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     // Insert series completeness record
     ;(service as any).db.prepare(`
       INSERT INTO series_completeness (
-        series_title, source_id, library_id, tmdb_id,
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
         total_seasons, total_episodes, owned_seasons, owned_episodes,
         missing_seasons, missing_episodes, completeness_percentage
-      ) VALUES (?, ?, ?, '', 1, 5, 1, 2, '[]', '[]', 40)
-    `).run('Show A', 'src-1', 'lib-1')
+      ) VALUES (?, ?, ?, ?, '', 1, 5, 1, 2, '[]', '[]', 40)
+    `).run('unresolved:src-1:lib-1:show-a', 'Show A', 'src-1', 'lib-1')
 
     // Delete one episode
     const ep1 = service.getMediaItemByProviderId('ep1', 'src-1')
@@ -287,11 +287,11 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
 
     ;(service as any).db.prepare(`
       INSERT INTO series_completeness (
-        series_title, source_id, library_id, tmdb_id,
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
         total_seasons, total_episodes, owned_seasons, owned_episodes,
         missing_seasons, missing_episodes, completeness_percentage
-      ) VALUES (?, ?, ?, '', 1, 3, 1, 1, '[]', '[]', 33)
-    `).run('Solo Show', 'src-1', 'lib-1')
+      ) VALUES (?, ?, ?, ?, '', 1, 3, 1, 1, '[]', '[]', 33)
+    `).run('unresolved:src-1:lib-1:solo-show', 'Solo Show', 'src-1', 'lib-1')
 
     const ep = service.getMediaItemByProviderId('ep-only', 'src-1')
     service.deleteMediaItem(ep!.id!)
