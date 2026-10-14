@@ -224,20 +224,20 @@ describe('Series Completeness', () => {
     expect(records.length).toBe(2)
   })
 
-  it('unique constraint on (series_title, source_id, library_id)', () => {
+  it('unique constraint on (series_identity_key, source_id, library_id)', () => {
     db.prepare(`
-      INSERT INTO series_completeness (series_title, source_id, library_id, total_seasons, total_episodes,
+      INSERT INTO series_completeness (series_identity_key, series_title, source_id, library_id, total_seasons, total_episodes,
         owned_seasons, owned_episodes, missing_seasons, missing_episodes, completeness_percentage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('Show A', 'src1', 'lib1', 1, 10, 1, 10, '[]', '[]', 100)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tmdb:100', 'Show A', 'src1', 'lib1', 1, 10, 1, 10, '[]', '[]', 100)
 
     // Same key should conflict
     expect(() => {
       db.prepare(`
-        INSERT INTO series_completeness (series_title, source_id, library_id, total_seasons, total_episodes,
+        INSERT INTO series_completeness (series_identity_key, series_title, source_id, library_id, total_seasons, total_episodes,
           owned_seasons, owned_episodes, missing_seasons, missing_episodes, completeness_percentage)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('Show A', 'src1', 'lib1', 1, 10, 1, 10, '[]', '[]', 100)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('tmdb:100', 'Show A', 'src1', 'lib1', 1, 10, 1, 10, '[]', '[]', 100)
     }).toThrow()
   })
 })
