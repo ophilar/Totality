@@ -37,46 +37,31 @@ describe('BetterSQLiteService SQL Queries - SQLite Identifier vs String Literal 
     db.close()
   })
 
-  it('correctly handles empty string check with single quotes in upsertSeriesCompleteness query', () => {
-    // Insert a legacy record with empty series_identity_key
+  it('correctly queries series_completeness by canonical identity key under PRAGMA dqs = 0', () => {
     db.exec(`
       INSERT INTO series_completeness (series_identity_key, series_title, source_id, library_id)
-      VALUES ('', 'Lupin the Third: The Woman Called Fujiko Mine', 'src-1', 'lib-1');
+      VALUES ('tmdb:43924', 'Lupin the Third: The Woman Called Fujiko Mine', 'src-1', 'lib-1');
     `)
 
     const querySql =
-      'SELECT id FROM series_completeness WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = \'\'))) AND source_id = ? AND library_id = ?'
+      'SELECT id FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
 
     const stmt = db.prepare(querySql)
-    stmt.bind(['tmdb:43924', 'Lupin the Third: The Woman Called Fujiko Mine', 'src-1', 'lib-1'])
+    stmt.bind(['tmdb:43924', 'src-1', 'lib-1'])
     expect(stmt.step()).toBe(true)
     const row = stmt.getAsObject()
     expect(row.id).toBe(1)
     stmt.free()
   })
 
-  it('succeeds when using single quotes \'\' for empty string literal in upsertSeriesCompleteness query', () => {
+  it('succeeds when using single quotes for string literals in getEpisodes query under PRAGMA dqs = 0', () => {
     const validSql =
-      'SELECT id FROM series_completeness WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = \'\'))) AND source_id = ? AND library_id = ?'
-
-    // With single quotes, SQLite correctly treats '' as empty string literal
-    const stmt = db.prepare(validSql)
-    expect(stmt).toBeDefined()
-
-    // Test execution with parameters
-    stmt.bind(['tmdb:43924', 'Lupin the Third: The Woman Called Fujiko Mine', 'src-1', 'lib-1'])
-    expect(stmt.step()).toBe(false)
-    stmt.free()
-  })
-
-  it('succeeds when using single quotes \'\' in getEpisodesForSeries query', () => {
-    const validSql =
-      "SELECT series_identity_key FROM media_items WHERE type = 'episode' AND series_title = ? AND source_id = ? AND library_id = ? AND series_identity_key IS NOT NULL AND series_identity_key != '' LIMIT 1"
+      "SELECT m.* FROM media_items m WHERE m.type = 'episode' AND m.series_identity_key = ? AND m.source_id = ? AND m.library_id = ?"
 
     const stmt = db.prepare(validSql)
     expect(stmt).toBeDefined()
 
-    stmt.bind(['Lupin the Third: The Woman Called Fujiko Mine', 'src-1', 'lib-1'])
+    stmt.bind(['tmdb:43924', 'src-1', 'lib-1'])
     expect(stmt.step()).toBe(false)
     stmt.free()
   })
