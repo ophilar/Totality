@@ -166,8 +166,8 @@ export class BetterSQLiteService {
     return {
       getEpisodes: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) =>
         this.getEpisodes(seriesTitle, sourceId, seriesIdentityKey, libraryId),
-      getCompletenessByTitle: (title: string, sourceId?: string, libraryId?: string) =>
-        this.getSeriesCompletenessByTitle(title, sourceId, libraryId)
+      getCompletenessByIdentity: (identityKey: string, sourceId?: string, libraryId?: string) =>
+        this.getSeriesCompletenessByIdentity(identityKey, sourceId, libraryId)
     }
   }
 
@@ -1870,12 +1870,24 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   upsertMediaItem(item: MediaItem): number {
     if (!this.db) throw new Error('Database not initialized')
 
-    const seriesIdentityKey = item.series_identity_key || (item.type === 'episode' && item.series_title ? deriveSeriesIdentityKey({
-      sourceId: item.source_id || 'legacy',
-      libraryId: item.library_id || '',
-      folderRelativePath: item.series_title,
-      tmdbId: item.series_tmdb_id || item.tmdb_id,
-    }) : null)
+    let seriesIdentityKey = item.series_identity_key
+    if (item.type === 'episode') {
+      const isCanonical =
+        typeof seriesIdentityKey === 'string' &&
+        (seriesIdentityKey.startsWith('tmdb:') ||
+          seriesIdentityKey.startsWith('tvdb:') ||
+          seriesIdentityKey.startsWith('unresolved:'))
+      if (!isCanonical) {
+        seriesIdentityKey = deriveSeriesIdentityKey({
+          sourceId: item.source_id || 'legacy',
+          libraryId: item.library_id || '',
+          folderRelativePath: item.series_title || item.file_path || 'unknown',
+          tmdbId: item.series_tmdb_id || item.tmdb_id,
+        })
+      }
+    } else {
+      seriesIdentityKey = null
+    }
 
     const stmt = this.db.prepare(`
       INSERT INTO media_items (
@@ -2009,15 +2021,35 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     // Before deleting, update affected collections and series completeness
     try {
       const item = db.prepare(
-        'SELECT tmdb_id, source_id, library_id, type, series_title, season_number, episode_number, title FROM media_items WHERE id = ?'
-      ).get(id) as { tmdb_id?: string; source_id: string; library_id?: string; type: string; series_title?: string; season_number?: number; episode_number?: number; title?: string } | undefined
+        'SELECT tmdb_id, series_tmdb_id, series_identity_key, file_path, source_id, library_id, type, series_title, season_number, episode_number, title FROM media_items WHERE id = ?'
+      ).get(id) as {
+        tmdb_id?: string
+        series_tmdb_id?: number | string
+        series_identity_key?: string
+        file_path?: string
+        source_id: string
+        library_id?: string
+        type: string
+        series_title?: string
+        season_number?: number
+        episode_number?: number
+        title?: string
+      } | undefined
 
       if (item) {
         if (item.tmdb_id && item.type === 'movie') {
           this.updateCollectionsAfterDeletion([String(item.tmdb_id)], item.source_id)
         }
-        if (item.type === 'episode' && item.series_title) {
+        if (item.type === 'episode') {
           const libraryId = item.library_id || ''
+          const seriesIdentityKey =
+            item.series_identity_key ||
+            deriveSeriesIdentityKey({
+              sourceId: item.source_id || 'legacy',
+              libraryId,
+              folderRelativePath: item.series_title || item.file_path || 'unknown',
+              tmdbId: item.series_tmdb_id != null ? String(item.series_tmdb_id) : (item.tmdb_id ? String(item.tmdb_id) : undefined),
+            })
 
           // Delete the episode first so the recount is accurate
           db.prepare('DELETE FROM media_item_versions WHERE media_item_id = ?').run(id)
@@ -2029,29 +2061,29 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           // Use old updated_at so auto-completeness won't skip this series
           db.prepare(`
             UPDATE series_completeness SET
-              owned_episodes = (SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
-              owned_seasons = (SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
+              owned_episodes = (SELECT COUNT(*) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
+              owned_seasons = (SELECT COUNT(DISTINCT season_number) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'),
               completeness_percentage = CASE WHEN total_episodes > 0
-                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND type = 'episode') AS REAL) * 100.0 / total_episodes)
+                THEN ROUND(CAST((SELECT COUNT(*) FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode') AS REAL) * 100.0 / total_episodes)
                 ELSE 0 END,
               updated_at = datetime('now', '-30 days')
-            WHERE series_title = ? AND source_id = ? AND library_id = ?
+            WHERE series_identity_key = ? AND source_id = ? AND library_id = ?
           `).run(
-            item.series_title, item.source_id, libraryId,
-            item.series_title, item.source_id, libraryId,
-            item.series_title, item.source_id, libraryId,
-            item.series_title, item.source_id, libraryId
+            seriesIdentityKey, item.source_id, libraryId,
+            seriesIdentityKey, item.source_id, libraryId,
+            seriesIdentityKey, item.source_id, libraryId,
+            seriesIdentityKey, item.source_id, libraryId
           )
 
           db.prepare(
-            'DELETE FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ? AND owned_episodes <= 0'
-          ).run(item.series_title, item.source_id, libraryId)
+            'DELETE FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND owned_episodes <= 0'
+          ).run(seriesIdentityKey, item.source_id, libraryId)
 
           // Update missing_episodes/missing_seasons JSON to include the deleted episode
           if (item.season_number != null && item.episode_number != null) {
             const scRow = db.prepare(
-              'SELECT id, missing_episodes, missing_seasons FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
-            ).get(item.series_title, item.source_id, libraryId) as { id: number; missing_episodes: string; missing_seasons: string } | undefined
+              'SELECT id, missing_episodes, missing_seasons FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+            ).get(seriesIdentityKey, item.source_id, libraryId) as { id: number; missing_episodes: string; missing_seasons: string } | undefined
 
             if (scRow) {
               // Add deleted episode to missing list
@@ -2073,8 +2105,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
               // Check if the deleted episode's season is now fully missing
               const missingSeasonsArr: number[] = JSON.parse(scRow.missing_seasons || '[]')
               const remainingInSeason = db.prepare(
-                "SELECT COUNT(*) as cnt FROM media_items WHERE series_title = ? AND source_id = ? AND library_id = ? AND season_number = ? AND type = 'episode'"
-              ).get(item.series_title, item.source_id, libraryId, item.season_number) as { cnt: number }
+                "SELECT COUNT(*) as cnt FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND season_number = ? AND type = 'episode'"
+              ).get(seriesIdentityKey, item.source_id, libraryId, item.season_number) as { cnt: number }
               if (remainingInSeason.cnt === 0 && !missingSeasonsArr.includes(item.season_number!)) {
                 missingSeasonsArr.push(item.season_number!)
                 missingSeasonsArr.sort((a, b) => a - b)
@@ -2171,26 +2203,31 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           UPDATE series_completeness SET
             owned_episodes = (
               SELECT COUNT(*) FROM media_items mi
-              WHERE mi.series_title = series_completeness.series_title
+              WHERE mi.series_identity_key = series_completeness.series_identity_key
                 AND mi.source_id = series_completeness.source_id
+                AND mi.library_id = series_completeness.library_id
                 AND mi.type = 'episode'
             ),
             completeness_percentage = CASE WHEN total_episodes > 0
               THEN ROUND(CAST((
                 SELECT COUNT(*) FROM media_items mi
-                WHERE mi.series_title = series_completeness.series_title
+                WHERE mi.series_identity_key = series_completeness.series_identity_key
                   AND mi.source_id = series_completeness.source_id
+                  AND mi.library_id = series_completeness.library_id
                   AND mi.type = 'episode'
               ) AS REAL) * 100.0 / total_episodes)
               ELSE 0 END
         `).run()
-        // Remove truly orphaned series — no matching episodes in any source
+        // Remove truly orphaned series — no matching episodes in source and library
         cleaned += db.prepare(`
           DELETE FROM series_completeness WHERE id IN (
             SELECT sc.id FROM series_completeness sc
             WHERE NOT EXISTS (
               SELECT 1 FROM media_items mi
-              WHERE mi.series_title = sc.series_title AND mi.type = 'episode'
+              WHERE mi.series_identity_key = sc.series_identity_key
+                AND mi.source_id = sc.source_id
+                AND mi.library_id = sc.library_id
+                AND mi.type = 'episode'
             )
           )
         `).run().changes
@@ -2309,8 +2346,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         WHERE ${sourceId ? 'sc.source_id = ? AND' : ''}
         sc.owned_episodes != (
           SELECT COUNT(*) FROM media_items mi
-          WHERE mi.series_title = sc.series_title
+          WHERE mi.series_identity_key = sc.series_identity_key
             AND mi.source_id = sc.source_id
+            AND mi.library_id = sc.library_id
             AND mi.type = 'episode'
         )
       )
@@ -4052,11 +4090,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       tvdbId: (data as any).tvdb_id,
     })
 
-    // Check if record exists by unique identity key (or title fallback for legacy)
+    // Check if record exists by canonical series identity key
     const stmt = this.db.prepare(
-      'SELECT id FROM series_completeness WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = \'\'))) AND source_id = ? AND library_id = ?'
+      'SELECT id FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
     )
-    const row = stmt.get(seriesIdentityKey, data.series_title, sourceId, libraryId) as { id: number } | undefined
+    const row = stmt.get(seriesIdentityKey, sourceId, libraryId) as { id: number } | undefined
     const existingId = row?.id || null
 
     if (existingId !== null) {
@@ -4201,33 +4239,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     const stmt = this.db.prepare(sql)
     return (stmt.all(...params) as SeriesCompleteness[]).map(BetterSQLiteService.parseSeriesRow)
-  }
-
-  /**
-   * Get series completeness by title
-   */
-  getSeriesCompletenessByTitle(
-    seriesTitle: string,
-    sourceId?: string,
-    libraryId?: string
-  ): SeriesCompleteness | null {
-    if (!this.db) throw new Error('Database not initialized')
-
-    let sql = 'SELECT * FROM series_completeness WHERE series_title = ?'
-    const params: unknown[] = [seriesTitle]
-
-    if (sourceId) {
-      sql += ' AND source_id = ?'
-      params.push(sourceId)
-    }
-    if (libraryId) {
-      sql += ' AND library_id = ?'
-      params.push(libraryId)
-    }
-
-    const stmt = this.db.prepare(sql)
-    const row = (stmt.get(...params) as SeriesCompleteness) || null
-    return row ? BetterSQLiteService.parseSeriesRow(row) : null
   }
 
   /**
@@ -4498,34 +4509,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     return result?.count || 0
   }
 
-  /**
-   * Get episodes for a series
-   */
-  getEpisodesForSeries(
-    seriesTitle: string,
-    sourceId?: string,
-    libraryId?: string
-  ): MediaItem[] {
-    if (!this.db) throw new Error('Database not initialized')
-
-    // Find the canonical series_identity_key for this series title
-    let idSql = `SELECT series_identity_key FROM media_items WHERE type = 'episode' AND series_title = ?`
-    const idParams: unknown[] = [seriesTitle]
-    if (sourceId) {
-      idSql += ' AND source_id = ?'
-      idParams.push(sourceId)
-    }
-    if (libraryId) {
-      idSql += ' AND library_id = ?'
-      idParams.push(libraryId)
-    }
-    idSql += " AND series_identity_key IS NOT NULL AND series_identity_key != '' LIMIT 1"
-    const found = this.db.prepare(idSql).get(...idParams) as { series_identity_key: string } | undefined
-    if (found?.series_identity_key) {
-      return this.getEpisodes(seriesTitle, sourceId || '', found.series_identity_key, libraryId || '')
-    }
-    return []
-  }
 
   /**
    * Get series completeness statistics
@@ -5528,8 +5511,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
    * Update series match (TMDB ID) for all episodes of a series
    */
   updateSeriesMatch(
-    seriesTitle: string,
+    seriesIdentityKey: string,
     sourceId: string,
+    libraryId: string,
     tmdbId: string,
     posterUrl?: string,
     newSeriesTitle?: string
@@ -5549,28 +5533,41 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       params.push(newSeriesTitle)
     }
 
-    sql += " WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    params.push(seriesTitle, sourceId)
+    sql += " WHERE (series_identity_key = ? OR (series_title = ? AND (series_identity_key IS NULL OR series_identity_key = '')))"
+    sql += " AND source_id = ? AND type = 'episode'"
+    params.push(seriesIdentityKey, seriesIdentityKey, sourceId)
+
+    if (libraryId) {
+      sql += ' AND library_id = ?'
+      params.push(libraryId)
+    }
 
     this.db.prepare(sql).run(...params)
 
     // Update series_completeness
-    this.db.prepare(
-      'UPDATE series_completeness SET series_identity_key = ?, tmdb_id = ? WHERE (series_title = ? OR series_identity_key = ?) AND source_id = ?'
-    ).run(newIdentityKey, tmdbId, seriesTitle, newIdentityKey, sourceId)
-
-    if (newSeriesTitle && newSeriesTitle !== seriesTitle) {
-      this.db.prepare(
-        'UPDATE series_completeness SET series_title = ? WHERE series_identity_key = ? AND source_id = ?'
-      ).run(newSeriesTitle, newIdentityKey, sourceId)
+    let scSql = 'UPDATE series_completeness SET series_identity_key = ?, tmdb_id = ?'
+    const scParams: unknown[] = [newIdentityKey, tmdbId]
+    if (newSeriesTitle) {
+      scSql += ', series_title = ?'
+      scParams.push(newSeriesTitle)
     }
+    scSql += ' WHERE (series_identity_key = ? OR series_title = ?) AND source_id = ?'
+    scParams.push(seriesIdentityKey, seriesIdentityKey, sourceId)
+    if (libraryId) {
+      scSql += ' AND library_id = ?'
+      scParams.push(libraryId)
+    }
+    this.db.prepare(scSql).run(...scParams)
 
     // Return count of updated episodes
-    const titleToQuery = newSeriesTitle || seriesTitle
-    const countStmt = this.db.prepare(
-      "SELECT COUNT(*) as count FROM media_items WHERE series_title = ? AND source_id = ? AND type = 'episode'"
-    )
-    return (countStmt.get(titleToQuery, sourceId) as { count: number }).count
+    let countSql = "SELECT COUNT(*) as count FROM media_items WHERE series_identity_key = ? AND source_id = ? AND type = 'episode'"
+    const countParams: unknown[] = [newIdentityKey, sourceId]
+    if (libraryId) {
+      countSql += ' AND library_id = ?'
+      countParams.push(libraryId)
+    }
+    const countStmt = this.db.prepare(countSql)
+    return (countStmt.get(...countParams) as { count: number })?.count || 0
   }
 
   /**

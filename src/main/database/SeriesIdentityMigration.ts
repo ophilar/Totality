@@ -299,5 +299,37 @@ export function enforceSeriesIdentityConstraints(db: Database.Database): void {
     BEGIN
       SELECT RAISE(ABORT, 'series_identity_key is required');
     END;
+
+    DROP TRIGGER IF EXISTS trg_media_items_episode_identity_insert;
+    CREATE TRIGGER trg_media_items_episode_identity_insert
+    BEFORE INSERT ON media_items
+    FOR EACH ROW
+    WHEN NEW.type = 'episode' AND (
+      NEW.series_identity_key IS NULL OR
+      (
+        NOT (NEW.series_identity_key GLOB 'tmdb:*') AND
+        NOT (NEW.series_identity_key GLOB 'tvdb:*') AND
+        NOT (NEW.series_identity_key GLOB 'unresolved:*')
+      )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'series_identity_key must be a canonical key starting with tmdb:, tvdb:, or unresolved: for episode media items');
+    END;
+
+    DROP TRIGGER IF EXISTS trg_media_items_episode_identity_update;
+    CREATE TRIGGER trg_media_items_episode_identity_update
+    BEFORE UPDATE OF type, series_identity_key ON media_items
+    FOR EACH ROW
+    WHEN NEW.type = 'episode' AND (
+      NEW.series_identity_key IS NULL OR
+      (
+        NOT (NEW.series_identity_key GLOB 'tmdb:*') AND
+        NOT (NEW.series_identity_key GLOB 'tvdb:*') AND
+        NOT (NEW.series_identity_key GLOB 'unresolved:*')
+      )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'series_identity_key must be a canonical key starting with tmdb:, tvdb:, or unresolved: for episode media items');
+    END;
   `)
 }

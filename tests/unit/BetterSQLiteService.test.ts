@@ -92,21 +92,24 @@ describe('Media Items', () => {
       resolution: '1080p', width: 1920, height: 1080,
       video_codec: 'HEVC', video_bitrate: 5000,
       audio_codec: 'AAC', audio_channels: 2, audio_bitrate: 320,
+      series_identity_key: type === 'episode' ? 'tmdb:100' : null,
       ...overrides,
     }
     return db.prepare(`
       INSERT INTO media_items (
         source_id, source_type, library_id, plex_id, title, type,
         file_path, file_size, duration, resolution, width, height,
-        video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+        series_identity_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       defaults.source_id, defaults.source_type, defaults.library_id,
       plex_id, title, type,
       defaults.file_path, defaults.file_size, defaults.duration,
       defaults.resolution, defaults.width, defaults.height,
       defaults.video_codec, defaults.video_bitrate,
-      defaults.audio_codec, defaults.audio_channels, defaults.audio_bitrate
+      defaults.audio_codec, defaults.audio_channels, defaults.audio_bitrate,
+      defaults.series_identity_key
     )
   }
 

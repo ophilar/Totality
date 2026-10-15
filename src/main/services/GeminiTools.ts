@@ -102,7 +102,9 @@ export const LIBRARY_TOOLS: GeminiToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        series_title: { type: 'string', description: 'Optional: filter to a specific series by title' },
+        series_identity_key: { type: 'string', description: 'Optional: canonical series identity key (e.g. tmdb:123, tvdb:456, unresolved:...)' },
+        source_id: { type: 'string', description: 'Optional: source ID for scoping series query' },
+        library_id: { type: 'string', description: 'Optional: library ID for scoping series query' },
         incomplete_only: { type: 'boolean', description: 'Only return incomplete series (default false)' },
         limit: { type: 'number', description: 'Max results (default 20, max 50)' },
       },
@@ -631,18 +633,21 @@ export async function executeTool(
     }
 
     case 'get_series_completeness': {
-      let series
-      const seriesTitle = toolString(input, 'series_title', 300)
-      if (seriesTitle) {
-        const single = db.getSeriesCompletenessByTitle(seriesTitle)
+      let series: SeriesCompleteness[]
+      const seriesIdentityKey = toolString(input, 'series_identity_key', 300)
+      const sourceId = toolString(input, 'source_id', 100) || undefined
+      const libraryId = toolString(input, 'library_id', 100) || undefined
+
+      if (seriesIdentityKey) {
+        const single = db.getSeriesCompletenessByIdentity(seriesIdentityKey, sourceId, libraryId)
         series = single ? [single] : []
       } else if (toolBoolean(input, 'incomplete_only')) {
-        series = db.getIncompleteSeries()
+        series = db.getIncompleteSeries(sourceId)
       } else {
-        series = db.getAllSeriesCompleteness()
+        series = db.getAllSeriesCompleteness(sourceId, libraryId)
       }
       const seriesLimit = toolNumber(input, 'limit', 1, 50) || 20
-      const limited = (series as SeriesCompleteness[]).slice(0, seriesLimit)
+      const limited = series.slice(0, seriesLimit)
       const simplified = limited.map((s) => {
         const missingEps = s.missing_episodes || []
         const missingCount = missingEps.length

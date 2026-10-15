@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockDb = {
   getEpisodes: vi.fn(),
-  getEpisodesForSeries: vi.fn(),
   upsertSeriesCompleteness: vi.fn(),
   getSeriesCompletenessByIdentity: vi.fn(),
   getMediaSourceById: vi.fn(),
   startBatch: vi.fn(),
+  endBatch: vi.fn(),
   commitBatch: vi.fn(),
   getAllSeriesCompleteness: vi.fn(),
   getMediaItems: vi.fn(),
@@ -64,11 +64,10 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
       /Title-based lookups are not permitted/
     )
 
-    expect(mockDb.getEpisodesForSeries).not.toHaveBeenCalled()
     expect(mockDb.getEpisodes).not.toHaveBeenCalled()
   })
 
-  it('queries database strictly by seriesIdentityKey via db.getEpisodes without calling getEpisodesForSeries', async () => {
+  it('queries database strictly by seriesIdentityKey via db.getEpisodes', async () => {
     mockDb.getEpisodes.mockReturnValue([
       {
         id: 101,
@@ -101,7 +100,6 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
     const result = await service.analyzeSeries('tmdb:1396', 'src-1', 'lib-1')
 
     expect(mockDb.getEpisodes).toHaveBeenCalledWith('', 'src-1', 'tmdb:1396', 'lib-1')
-    expect(mockDb.getEpisodesForSeries).not.toHaveBeenCalled()
     expect(result).toBeDefined()
     expect(result?.series_identity_key).toBe('tmdb:1396')
   })
@@ -155,9 +153,66 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
 
     expect(mockDb.getEpisodes).toHaveBeenCalledWith('', 'src-uk', 'tmdb:2996', 'lib-uk')
     expect(mockDb.getEpisodes).toHaveBeenCalledWith('', 'src-us', 'tmdb:2353', 'lib-us')
-    expect(mockDb.getEpisodesForSeries).not.toHaveBeenCalled()
 
     expect(ukShow?.series_identity_key).toBe('tmdb:2996')
     expect(usShow?.series_identity_key).toBe('tmdb:2353')
+  })
+
+  it('analyzeAllSeries groups episodes strictly by persisted series_identity_key and skips unkeyed rows', async () => {
+    mockDb.getMediaItems.mockReturnValue([
+      {
+        id: 401,
+        title: 'Episode 1',
+        type: 'episode',
+        series_title: 'Keyed Show',
+        series_identity_key: 'tmdb:99999',
+        source_id: 'src-1',
+        library_id: 'lib-1',
+        series_tmdb_id: 99999,
+        season_number: 1,
+        episode_number: 1,
+      },
+      {
+        id: 402,
+        title: 'Corrupt Episode',
+        type: 'episode',
+        series_title: 'Unkeyed Show',
+        series_identity_key: '', // Invariant violation: unkeyed
+        source_id: 'src-1',
+        library_id: 'lib-1',
+        season_number: 1,
+        episode_number: 2,
+      },
+    ])
+    mockDb.getEpisodes.mockReturnValue([
+      {
+        id: 401,
+        title: 'Episode 1',
+        type: 'episode',
+        series_title: 'Keyed Show',
+        series_identity_key: 'tmdb:99999',
+        season_number: 1,
+        episode_number: 1,
+      },
+    ])
+    mockTMDB.getTVShowWithSeasons.mockResolvedValue({
+      seasons: [{ season_number: 1, episode_count: 1 }],
+      'season/1': {
+        season_number: 1,
+        episodes: [{ episode_number: 1, name: 'Episode 1' }],
+      },
+    })
+    mockDb.getSeriesCompletenessByIdentity.mockReturnValue({
+      id: 999,
+      series_title: 'Keyed Show',
+      series_identity_key: 'tmdb:99999',
+    })
+
+    const result = await service.analyzeAllSeries(undefined, 'src-1', 'lib-1', {
+      skipRecentlyAnalyzed: false,
+    })
+
+    expect(result.analyzed).toBe(1)
+    expect(mockDb.getEpisodes).toHaveBeenCalledWith('', 'src-1', 'tmdb:99999', 'lib-1')
   })
 })

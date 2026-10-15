@@ -13,7 +13,7 @@ const mockDb = {
   getMediaItems: vi.fn(() => []),
   getTVShows: vi.fn(() => []),
   getLibraryStats: vi.fn(() => ({})),
-  getSeriesCompletenessByTitle: vi.fn(() => null),
+  getSeriesCompletenessByIdentity: vi.fn(() => null),
   getIncompleteSeries: vi.fn(() => []),
   getAllSeriesCompleteness: vi.fn(() => []),
   getIncompleteMovieCollections: vi.fn(() => []),
@@ -142,6 +142,34 @@ describe('GeminiTools', () => {
     it('should return error for unknown tool', async () => {
       const result = await executeTool('nonexistent_tool', {})
       expect(JSON.parse(result)).toEqual({ error: 'Unknown tool: nonexistent_tool' })
+    })
+  })
+
+  describe('get_series_completeness tool routing', () => {
+    it('queries by series_identity_key when provided, passing source and library scopes', async () => {
+      await executeTool('get_series_completeness', {
+        series_identity_key: 'tmdb:1399',
+        source_id: 'src-1',
+        library_id: 'lib-1',
+      })
+      expect(mockDb.getSeriesCompletenessByIdentity).toHaveBeenCalledWith('tmdb:1399', 'src-1', 'lib-1')
+    })
+
+    it('queries all series completeness without title lookups when specific key is omitted', async () => {
+      await executeTool('get_series_completeness', {
+        source_id: 'src-1',
+        library_id: 'lib-1',
+      })
+      expect(mockDb.getAllSeriesCompleteness).toHaveBeenCalledWith('src-1', 'lib-1')
+      expect(mockDb.getSeriesCompletenessByIdentity).not.toHaveBeenCalled()
+    })
+
+    it('queries incomplete series with source scope when incomplete_only is true', async () => {
+      await executeTool('get_series_completeness', {
+        incomplete_only: true,
+        source_id: 'src-2',
+      })
+      expect(mockDb.getIncompleteSeries).toHaveBeenCalledWith('src-2')
     })
   })
 })

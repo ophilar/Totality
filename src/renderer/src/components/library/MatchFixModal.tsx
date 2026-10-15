@@ -43,6 +43,8 @@ interface MatchFixModalProps {
   filePath?: string    // File path for context
   artistName?: string  // For album searches
   sourceId?: string    // For series
+  libraryId?: string   // For series
+  seriesIdentityKey?: string // For series
   mediaItemId?: number // For movies
   artistId?: number    // For artists
   albumId?: number     // For albums
@@ -58,6 +60,8 @@ export function MatchFixModal({
   filePath,
   artistName,
   sourceId,
+  libraryId,
+  seriesIdentityKey,
   mediaItemId,
   artistId,
   albumId,
@@ -131,9 +135,11 @@ export function MatchFixModal({
       switch (type) {
         case 'series':
           if (sourceId) {
+            const identityKey = seriesIdentityKey || currentTitle
             await window.electronAPI.seriesFixMatch(
-              currentTitle,
+              identityKey,
               sourceId,
+              libraryId || '',
               (selectedResult as TMDBSearchResult).id
             )
           }

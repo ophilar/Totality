@@ -130,15 +130,20 @@ export interface DatabaseServiceInterface {
   countTVShows(filters?: any): number
   countTVEpisodes(filters?: TVShowFilters): number
   getLetterOffset(schema: string, letter: string, filters?: Record<string, unknown>): number
-  getEpisodesForSeries(seriesTitle: string, sourceId?: string, libraryId?: string): MediaItem[]
+  getEpisodes(
+    seriesTitle: string,
+    sourceId: string,
+    seriesIdentityKey: string,
+    libraryId: string
+  ): MediaItem[]
   getEpisodeCountBySeriesTmdbId(tmdbId: string | number): number
 
   // --- Series Completeness ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   upsertSeriesCompleteness(data: any): number | Promise<number>
   getSeriesCompleteness(sourceId?: string): SeriesCompleteness[]
+  getSeriesCompletenessByIdentity(seriesIdentityKey: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null
   getAllSeriesCompleteness(sourceId?: string, libraryId?: string): SeriesCompleteness[]
-  getSeriesCompletenessByTitle(seriesTitle: string, sourceId?: string, libraryId?: string): SeriesCompleteness | null
   getIncompleteSeries(sourceId?: string): SeriesCompleteness[]
   deleteSeriesCompleteness(id: number): boolean | Promise<boolean>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -274,7 +279,14 @@ export interface DatabaseServiceInterface {
   deletePersonCompleteness(id: number): void | Promise<void>
 
   // --- Metadata Matching ---
-  updateSeriesMatch(seriesTitle: string, newTmdbId: string, sourceId: string, newTitle?: string, posterUrl?: string): void | Promise<void>
+  updateSeriesMatch(
+    seriesIdentityKey: string,
+    sourceId: string,
+    libraryId: string,
+    newTmdbId: string,
+    posterUrl?: string,
+    newSeriesTitle?: string
+  ): number | void | Promise<number | void>
   updateMovieMatch(mediaItemId: number, tmdbId: string, posterUrl?: string, title?: string, year?: number): void | Promise<void>
   updateArtistMatch(artistId: number, musicbrainzId: string): void | Promise<void>
   updateAlbumMatch(albumId: number, musicbrainzReleaseGroupId: string): void | Promise<void>

@@ -418,27 +418,28 @@ export function TVShowsView({
 
   const handleOpenOptimize = useCallback((showSummary?: TVShowSummary | null) => {
     if (showSummary) {
+      if (!showSummary.series_identity_key) return
       setOptimizingShow(showSummary)
       return
     }
-    const currentTitle = selectedShow || selectedShowData?.title
-    if (!currentTitle) return
-    const summary = shows.find(s => s.series_title === currentTitle)
-    if (summary) {
+    const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
+    if (!firstEp?.series_identity_key) return
+
+    const summary = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
+    if (summary && summary.series_identity_key) {
       setOptimizingShow(summary)
     } else if (selectedShowData) {
-      const firstEp = Array.from(selectedShowData.seasons.values())[0]?.episodes[0]
       setOptimizingShow({
         series_title: selectedShowData.title,
         episode_count: Array.from(selectedShowData.seasons.values()).reduce((sum, s) => sum + s.episodes.length, 0),
         season_count: selectedShowData.seasons.size,
         poster_url: selectedShowData.poster_url,
-        source_id: firstEp?.source_id,
-        library_id: firstEp?.library_id,
-        series_identity_key: firstEp?.series_identity_key || selectedShowData.title
+        source_id: firstEp.source_id,
+        library_id: firstEp.library_id,
+        series_identity_key: firstEp.series_identity_key
       })
     }
-  }, [selectedShow, selectedShowData, shows])
+  }, [selectedShowData, shows])
   const posterMinWidth = useMemo(() => {
     const widthMap: Record<number, number> = {
       1: 120, 2: 140, 3: 160, 4: 180, 5: 200, 6: 240, 7: 300
@@ -705,9 +706,21 @@ export function TVShowsView({
             <div className="flex items-center gap-3 mt-3" ref={showDetailMenuRef}>
               <button
                 onClick={() => {
-                  if (selectedShow) {
-                    const matched = shows.find(s => s.series_title === selectedShow)
-                    onAnalyzeSeries(matched || selectedShow)
+                  const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
+                  if (!firstEp?.series_identity_key) return
+                  const matched = shows.find(s => s.series_identity_key === firstEp.series_identity_key)
+                  if (matched && matched.series_identity_key) {
+                    onAnalyzeSeries(matched)
+                  } else if (selectedShowData) {
+                    onAnalyzeSeries({
+                      series_title: selectedShowData.title,
+                      episode_count: Array.from(selectedShowData.seasons.values()).reduce((sum, s) => sum + s.episodes.length, 0),
+                      season_count: selectedShowData.seasons.size,
+                      poster_url: selectedShowData.poster_url,
+                      source_id: firstEp.source_id,
+                      library_id: firstEp.library_id,
+                      series_identity_key: firstEp.series_identity_key
+                    })
                   }
                 }}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"

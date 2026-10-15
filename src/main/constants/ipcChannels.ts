@@ -65,7 +65,6 @@ export const IPC_CHANNELS = {
     GET_QUALITY_SCORE_BY_MEDIA_ID: 'db:getQualityScoreByMediaId',
     UPSERT_QUALITY_SCORE: 'db:upsertQualityScore',
     SET_LIBRARY_PROTECTED: 'db:setLibraryProtected',
-    SET_LIBRARY_ALLOW_EXPANDED_MATCHING: 'db:setLibraryAllowExpandedMatching',
     VERIFY_PIN: 'db:verifyPin',
     SET_PIN: 'db:setPin',
     HAS_PIN: 'db:hasPin',

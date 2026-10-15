@@ -356,46 +356,74 @@ export function registerSeriesHandlers() {
 
   /**
    * Fix the TMDB match for a TV series
-   * Updates all episodes of the series with the new TMDB ID and title
+   * Updates all episodes of the series with the new TMDB ID, canonical identity key, and title
    */
-  ipcMain.handle('series:fixMatch', async (_event, seriesTitle: unknown, sourceId: unknown, tmdbId: unknown) => {
-    const validSeriesTitle = validateInput(NonEmptyStringSchema, seriesTitle, 'series:fixMatch.seriesTitle')
-    const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:fixMatch.sourceId')
-    const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'series:fixMatch.tmdbId')
-    try {
-      const db = getDatabase()
-      const tmdb = getTMDBService()
-      const service = getSeriesCompletenessService()
+  ipcMain.handle(
+    'series:fixMatch',
+    async (
+      _event,
+      seriesIdentityKey: unknown,
+      sourceId: unknown,
+      libraryIdOrTmdbId: unknown,
+      maybeTmdbId?: unknown
+    ) => {
+      let rawLibraryId = ''
+      let rawTmdbId: unknown = maybeTmdbId
 
-      // Get show details from TMDB for the poster and title
-      await tmdb.initialize()
-      const showDetails = await tmdb.getTVShowDetails(validTmdbId.toString())
-      const posterUrl = tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined
-      const newSeriesTitle = showDetails.name
-
-      // Update all episodes with the new TMDB ID and series title
-      const updatedCount = await db.updateSeriesMatch(
-        validSeriesTitle,
-        validSourceId,
-        validTmdbId.toString(),
-        posterUrl,
-        newSeriesTitle
-      )
-
-      // Re-analyze the series with the new title
-      const completeness = await service.analyzeSeries(newSeriesTitle, validSourceId)
-
-      return {
-        success: true,
-        updatedEpisodes: updatedCount,
-        completeness,
-        newTitle: newSeriesTitle,
+      if (typeof libraryIdOrTmdbId === 'number' && maybeTmdbId === undefined) {
+        rawTmdbId = libraryIdOrTmdbId
+        rawLibraryId = ''
+      } else if (typeof libraryIdOrTmdbId === 'string') {
+        rawLibraryId = libraryIdOrTmdbId
       }
-    } catch (error) {
-      console.error('Error fixing series match:', error)
-      throw error
+
+      const validSeriesIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:fixMatch.seriesIdentityKey')
+      const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:fixMatch.sourceId')
+      const validTmdbId = validateInput(PositiveIntSchema, rawTmdbId, 'series:fixMatch.tmdbId')
+      const validLibraryId = rawLibraryId
+      try {
+        const db = getDatabase()
+        const tmdb = getTMDBService()
+        const service = getSeriesCompletenessService()
+
+        // Get show details from TMDB for the poster and title
+        await tmdb.initialize()
+        const showDetails = await tmdb.getTVShowDetails(validTmdbId.toString())
+        const posterUrl = tmdb.buildImageUrl(showDetails.poster_path, 'w500') || undefined
+        const newSeriesTitle = showDetails.name
+
+        // Update all episodes with the new TMDB ID, canonical identity key, and series title
+        const updatedCount = await db.updateSeriesMatch(
+          validSeriesIdentityKey,
+          validSourceId,
+          validLibraryId,
+          validTmdbId.toString(),
+          posterUrl,
+          newSeriesTitle
+        )
+
+        // Re-analyze the series with the canonical identity key and library scope
+        const newIdentityKey = `tmdb:${validTmdbId}`
+        const completeness = await service.analyzeSeries(
+          newIdentityKey,
+          validSourceId,
+          validLibraryId,
+          validTmdbId.toString()
+        )
+
+        return {
+          success: true,
+          updatedEpisodes: updatedCount,
+          completeness,
+          newTitle: newSeriesTitle,
+          newIdentityKey,
+        }
+      } catch (error) {
+        console.error('Error fixing series match:', error)
+        throw error
+      }
     }
-  })
+  )
 
   console.log('Series completeness IPC handlers registered')
 }

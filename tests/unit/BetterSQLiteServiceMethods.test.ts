@@ -230,6 +230,140 @@ describe('BetterSQLiteService — Media Items', () => {
     service.deleteMediaItem(id)
     expect(service.getMediaItem(id)).toBeNull()
   })
+
+  it('upsertMediaItem automatically derives canonical series_identity_key for episodes when omitted', () => {
+    const id = service.upsertMediaItem(
+      makeMediaItem({
+        plex_id: 'ep-auto-1',
+        type: 'episode',
+        series_title: 'Severance',
+        series_tmdb_id: 111110,
+        season_number: 1,
+        episode_number: 1,
+      })
+    )
+    const item = service.getMediaItem(id)
+    expect(item?.series_identity_key).toBe('tmdb:111110')
+  })
+
+  it('getEpisodes retrieves episodes by canonical series_identity_key with source and library scopes', () => {
+    service.upsertMediaItem(
+      makeMediaItem({
+        plex_id: 'ep-single-1',
+        type: 'episode',
+        series_title: 'Chernobyl',
+        series_tmdb_id: 87108,
+        library_id: 'lib-1',
+        season_number: 1,
+        episode_number: 1,
+      })
+    )
+    const eps = service.getEpisodes('Chernobyl', 'src-1', 'tmdb:87108', 'lib-1')
+    expect(eps.length).toBe(1)
+    expect(eps[0].series_identity_key).toBe('tmdb:87108')
+  })
+
+  it('fails at SQLite boundary when inserting an episode with missing or empty series_identity_key', () => {
+    expect(() => {
+      ;(service as any).db.prepare(`
+        INSERT INTO media_items (
+          source_id, source_type, library_id, plex_id, title, type,
+          file_path, file_size, duration, resolution, width, height,
+          video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+          series_title, series_identity_key
+        ) VALUES (
+          'src-1', 'plex', 'lib-1', 'bad-ep-1', 'Bad Episode', 'episode',
+          '/path/to/bad.mkv', 1000, 100, '1080p', 1920, 1080,
+          'h264', 5000, 'aac', 2, 192,
+          'Bad Show', ''
+        )
+      `).run()
+    }).toThrow(/series_identity_key must be a canonical key/)
+  })
+
+  it('fails at SQLite boundary when inserting an episode with non-canonical raw title key', () => {
+    expect(() => {
+      ;(service as any).db.prepare(`
+        INSERT INTO media_items (
+          source_id, source_type, library_id, plex_id, title, type,
+          file_path, file_size, duration, resolution, width, height,
+          video_codec, video_bitrate, audio_codec, audio_channels, audio_bitrate,
+          series_title, series_identity_key
+        ) VALUES (
+          'src-1', 'plex', 'lib-1', 'bad-ep-2', 'Bad Episode', 'episode',
+          '/path/to/bad2.mkv', 1000, 100, '1080p', 1920, 1080,
+          'h264', 5000, 'aac', 2, 192,
+          'Raw Show Title', 'Raw Show Title'
+        )
+      `).run()
+    }).toThrow(/series_identity_key must be a canonical key/)
+  })
+
+  it('upsertMediaItem derives canonical key when caller supplies non-canonical raw title as series_identity_key', () => {
+    const id = service.upsertMediaItem(
+      makeMediaItem({
+        plex_id: 'ep-noncanonical-raw',
+        type: 'episode',
+        series_title: 'Unfixed Show',
+        series_identity_key: 'Unfixed Show', // non-canonical raw string
+        series_tmdb_id: 12345,
+        library_id: 'lib-1',
+        season_number: 1,
+        episode_number: 1,
+      })
+    )
+    const item = service.getMediaItem(id)
+    expect(item?.series_identity_key).toBe('tmdb:12345')
+  })
+
+  it('updateSeriesMatch updates episodes and completeness by canonical identity and library scope', () => {
+    // Show 1: The Office (UK)
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'uk-match-1', type: 'episode', series_title: 'The Office', series_tmdb_id: 2996,
+      season_number: 1, episode_number: 1, library_id: 'lib-uk',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('tmdb:2996', 'The Office', 'src-1', 'lib-uk', '2996', 1, 12, 1, 1, '[]', '[]', 8)
+    `).run()
+
+    // Show 2: The Office (US) in different library
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'us-match-1', type: 'episode', series_title: 'The Office', series_tmdb_id: 2353,
+      season_number: 1, episode_number: 1, library_id: 'lib-us',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('tmdb:2353', 'The Office', 'src-1', 'lib-us', '2353', 9, 201, 1, 1, '[]', '[]', 1)
+    `).run()
+
+    // Fix match of UK show to a new TMDB ID (e.g. rematched ID 99999)
+    const updated = service.updateSeriesMatch(
+      'tmdb:2996',
+      'src-1',
+      'lib-uk',
+      '99999',
+      'https://image.tmdb.org/poster.jpg',
+      'The Office (UK Rematched)'
+    )
+    expect(updated).toBe(1)
+
+    // Verify UK show was updated to new identity key and title
+    const ukEp = service.getMediaItemByProviderId('uk-match-1', 'src-1')
+    expect(ukEp?.series_identity_key).toBe('tmdb:99999')
+    expect(ukEp?.series_title).toBe('The Office (UK Rematched)')
+
+    // Verify US show was NOT touched (collision immunity across library & key scopes)
+    const usEp = service.getMediaItemByProviderId('us-match-1', 'src-1')
+    expect(usEp?.series_identity_key).toBe('tmdb:2353')
+    expect(usEp?.series_title).toBe('The Office')
+  })
 })
 
 // ============================================================================
@@ -269,8 +403,8 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
 
     // Verify: owned_episodes decremented
     const sc = (service as any).db.prepare(
-      'SELECT owned_episodes, missing_episodes FROM series_completeness WHERE series_title = ? AND source_id = ? AND library_id = ?'
-    ).get('Show A', 'src-1', 'lib-1') as any
+      'SELECT owned_episodes, missing_episodes FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+    ).get('unresolved:src-1:lib-1:show-a', 'src-1', 'lib-1') as any
     expect(sc).toBeDefined()
     expect(sc.owned_episodes).toBe(1)
 
@@ -297,9 +431,59 @@ describe('BetterSQLiteService — deleteMediaItem episode cascade', () => {
     service.deleteMediaItem(ep!.id!)
 
     const sc = (service as any).db.prepare(
-      'SELECT * FROM series_completeness WHERE series_title = ? AND source_id = ?'
-    ).get('Solo Show', 'src-1')
+      'SELECT * FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+    ).get('unresolved:src-1:lib-1:solo-show', 'src-1', 'lib-1')
     expect(sc).toBeUndefined()
+  })
+
+  it('isolates series completeness updates by series_identity_key when deleting episodes of same-titled shows', () => {
+    // UK Show (The Office, tmdb:2996)
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'uk-ep1', type: 'episode', series_title: 'The Office', series_tmdb_id: 2996,
+      season_number: 1, episode_number: 1, library_id: 'lib-uk',
+    }))
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'uk-ep2', type: 'episode', series_title: 'The Office', series_tmdb_id: 2996,
+      season_number: 1, episode_number: 2, library_id: 'lib-uk',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES (?, ?, ?, ?, '2996', 1, 12, 1, 2, '[]', '[]', 17)
+    `).run('tmdb:2996', 'The Office', 'src-1', 'lib-uk')
+
+    // US Show (The Office, tmdb:2353)
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'us-ep1', type: 'episode', series_title: 'The Office', series_tmdb_id: 2353,
+      season_number: 1, episode_number: 1, library_id: 'lib-us',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES (?, ?, ?, ?, '2353', 9, 201, 1, 1, '[]', '[]', 1)
+    `).run('tmdb:2353', 'The Office', 'src-1', 'lib-us')
+
+    // Delete episode 1 of UK show
+    const ukEp1 = service.getMediaItemByProviderId('uk-ep1', 'src-1')
+    service.deleteMediaItem(ukEp1!.id!)
+
+    // UK show completeness should be decremented to 1 owned episode
+    const scUk = (service as any).db.prepare(
+      'SELECT owned_episodes FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+    ).get('tmdb:2996', 'src-1', 'lib-uk') as any
+    expect(scUk).toBeDefined()
+    expect(scUk.owned_episodes).toBe(1)
+
+    // US show completeness must remain completely untouched (still 1 owned episode)
+    const scUs = (service as any).db.prepare(
+      'SELECT owned_episodes FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
+    ).get('tmdb:2353', 'src-1', 'lib-us') as any
+    expect(scUs).toBeDefined()
+    expect(scUs.owned_episodes).toBe(1)
   })
 })
 
