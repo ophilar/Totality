@@ -315,10 +315,9 @@ export class SeriesCompletenessService extends CancellableOperation {
     for (const item of allItems) {
       const key = item.series_identity_key
       if (!key || key.trim() === '') {
-        console.warn(
-          `[SeriesCompletenessService] Invariant violation: episode media_item ${item.id} has no persisted series_identity_key. Skipping invalid record.`
+        throw new Error(
+          `[SeriesCompletenessService] Invariant violation: episode media_item ${item.id} ('${item.title || 'unknown'}') has no persisted series_identity_key`
         )
-        continue
       }
 
       const episodes = seriesMap.get(key) || []
