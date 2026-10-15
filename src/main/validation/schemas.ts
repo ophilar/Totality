@@ -647,8 +647,11 @@ export const MbSearchTupleSchema = z.tuple([z.string(), z.enum(['artist', 'relea
 export const SeriesAnalyzeAllTupleSchema = z.tuple([z.string().optional(), z.string().optional()])
 export const SeriesGetEpisodesTupleSchema = z.tuple([NonEmptyStringSchema, z.string().optional()])
 export const SeriesGetSeasonDetailsTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative()])
-export const SeriesGetEpisodeStillTupleSchema = z.tuple([NonEmptyStringSchema, z.number().int().nonnegative(), z.number().int().nonnegative()])
-export const SeriesFixMatchTupleSchema = z.tuple([NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema, NonEmptyStringSchema])
+export const CanonicalSeriesIdentityKeySchema = z.string().min(1).refine(
+  (key) => key.startsWith('tmdb:') || key.startsWith('tvdb:') || key.startsWith('unresolved:'),
+  { message: 'seriesIdentityKey must be a canonical key starting with tmdb:, tvdb:, or unresolved:' }
+)
+export const SeriesFixMatchTupleSchema = z.tuple([CanonicalSeriesIdentityKeySchema, NonEmptyStringSchema, NonEmptyStringSchema, PositiveIntSchema])
 export const SeriesIdentityTupleSchema = z.tuple([NonEmptyStringSchema, SourceIdSchema, NonEmptyStringSchema, LibraryIdSchema])
 export const JellyfinQcStatusTupleSchema = z.tuple([z.string().url(), z.string()])
 export const JellyfinQcCompleteTupleSchema = z.tuple([z.string().url(), z.string(), NonEmptyStringSchema])

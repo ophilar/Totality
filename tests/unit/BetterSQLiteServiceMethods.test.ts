@@ -364,6 +364,56 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(usEp?.series_identity_key).toBe('tmdb:2353')
     expect(usEp?.series_title).toBe('The Office')
   })
+
+  it('handles collision gracefully when series_completeness already contains target tmdb key in scope', () => {
+    // Show 1: Unresolved show
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'collide-ep-1', type: 'episode', series_title: 'Mystery Show',
+      series_identity_key: 'unresolved:src-1:lib-1:mystery-show',
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('unresolved:src-1:lib-1:mystery-show', 'Mystery Show', 'src-1', 'lib-1', '', 1, 1, 1, 1, '[]', '[]', 100)
+    `).run()
+
+    // Existing target row for tmdb:1396 already exists in lib-1
+    ;(service as any).db.prepare(`
+      INSERT INTO series_completeness (
+        series_identity_key, series_title, source_id, library_id, tmdb_id,
+        total_seasons, total_episodes, owned_seasons, owned_episodes,
+        missing_seasons, missing_episodes, completeness_percentage
+      ) VALUES ('tmdb:1396', 'Breaking Bad', 'src-1', 'lib-1', '1396', 5, 62, 0, 0, '[]', '[]', 0)
+    `).run()
+
+    // Rematching mystery show to tmdb:1396 should merge without UNIQUE constraint failure
+    expect(() => {
+      service.updateSeriesMatch(
+        'unresolved:src-1:lib-1:mystery-show',
+        'src-1',
+        'lib-1',
+        '1396',
+        'https://image.tmdb.org/poster.jpg',
+        'Breaking Bad'
+      )
+    }).not.toThrow()
+
+    // Episode key updated
+    const ep = service.getMediaItemByProviderId('collide-ep-1', 'src-1')
+    expect(ep?.series_identity_key).toBe('tmdb:1396')
+    expect(ep?.series_title).toBe('Breaking Bad')
+
+    // Single surviving completeness row exists
+    const rows = (service as any).db.prepare(
+      'SELECT id, series_identity_key, tmdb_id, series_title FROM series_completeness WHERE source_id = ? AND library_id = ?'
+    ).all('src-1', 'lib-1') as any[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].series_identity_key).toBe('tmdb:1396')
+    expect(rows[0].tmdb_id).toBe('1396')
+  })
 })
 
 // ============================================================================

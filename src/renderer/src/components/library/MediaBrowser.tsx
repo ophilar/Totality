@@ -2100,7 +2100,17 @@ export function MediaBrowser({
             onMissingItemClick={setSelectedMissingItem}
             showSourceBadge={!activeSourceId && sources.length > 1}
             onAnalyzeSeries={handleAnalyzeSingleSeries}
-            onFixMatch={(title, sourceId, folderPath) => setMatchFixModal({ isOpen: true, type: 'series', title, sourceId, filePath: folderPath })}
+            onFixMatch={(seriesIdentityKey, title, sourceId, libraryId, folderPath) =>
+              setMatchFixModal({
+                isOpen: true,
+                type: 'series',
+                title,
+                sourceId,
+                libraryId,
+                seriesIdentityKey,
+                filePath: folderPath
+              })
+            }
             onRescanEpisode={async (episode) => {
               if (episode.source_id && episode.file_path) {
                 await handleRescanItem(episode.id, episode.source_id, episode.library_id || null, episode.file_path)
@@ -2375,6 +2385,8 @@ export function MediaBrowser({
           filePath={matchFixModal.filePath}
           artistName={matchFixModal.artistName}
           sourceId={matchFixModal.sourceId}
+          libraryId={matchFixModal.libraryId}
+          seriesIdentityKey={matchFixModal.seriesIdentityKey}
           mediaItemId={matchFixModal.mediaItemId}
           artistId={matchFixModal.artistId}
           albumId={matchFixModal.albumId}

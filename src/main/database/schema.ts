@@ -110,17 +110,7 @@ CREATE TABLE IF NOT EXISTS media_items (
 
   -- Timestamps
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-  CHECK (
-    type != 'episode' OR (
-      series_identity_key IS NOT NULL AND (
-        series_identity_key GLOB 'tmdb:*' OR
-        series_identity_key GLOB 'tvdb:*' OR
-        series_identity_key GLOB 'unresolved:*'
-      )
-    )
-  )
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Multiple versions/editions per media item (e.g., 4K HDR + 1080p theatrical)
@@ -966,37 +956,6 @@ AFTER UPDATE ON notifications
 WHEN NEW.is_read = 1 AND OLD.is_read = 0
 BEGIN
   UPDATE notifications SET read_at = datetime('now') WHERE id = NEW.id;
-END;
-
--- Enforce canonical series_identity_key on episode media items
-CREATE TRIGGER IF NOT EXISTS trg_media_items_episode_identity_insert
-BEFORE INSERT ON media_items
-FOR EACH ROW
-WHEN NEW.type = 'episode' AND (
-  NEW.series_identity_key IS NULL OR
-  (
-    NOT (NEW.series_identity_key GLOB 'tmdb:*') AND
-    NOT (NEW.series_identity_key GLOB 'tvdb:*') AND
-    NOT (NEW.series_identity_key GLOB 'unresolved:*')
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'series_identity_key must be a canonical key starting with tmdb:, tvdb:, or unresolved: for episode media items');
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_media_items_episode_identity_update
-BEFORE UPDATE OF type, series_identity_key ON media_items
-FOR EACH ROW
-WHEN NEW.type = 'episode' AND (
-  NEW.series_identity_key IS NULL OR
-  (
-    NOT (NEW.series_identity_key GLOB 'tmdb:*') AND
-    NOT (NEW.series_identity_key GLOB 'tvdb:*') AND
-    NOT (NEW.series_identity_key GLOB 'unresolved:*')
-  )
-)
-BEGIN
-  SELECT RAISE(ABORT, 'series_identity_key must be a canonical key starting with tmdb:, tvdb:, or unresolved: for episode media items');
 END;
 
 -- Insert default settings

@@ -17,7 +17,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => Promise<void>
-  onFixMatch?: (sourceId: string, folderPath?: string) => void
+  onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId: string, folderPath?: string) => void
   onOptimizeSeries?: (show: TVShowSummary) => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
@@ -28,6 +28,8 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
   const seasonCount = show.season_count
   const sourceType = show.source_type as ProviderType | undefined
   const sourceId = show.source_id
+  const libraryId = show.library_id
+  const seriesIdentityKey = show.series_identity_key
   const folderPath: string | undefined = undefined
 
   const handleAnalyze = async (e: React.MouseEvent) => {
@@ -43,8 +45,8 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
   const handleFixMatch = (e: React.MouseEvent) => {
     e.stopPropagation()
     setShowMenu(false)
-    if (onFixMatch && sourceId) {
-      onFixMatch(sourceId, folderPath)
+    if (onFixMatch && sourceId && seriesIdentityKey) {
+      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || '', folderPath)
     }
   }
 
@@ -328,7 +330,13 @@ export function TVShowsView({
   } | null) => void
   showSourceBadge: boolean
   onAnalyzeSeries: (showOrTitle: TVShowSummary | string) => void
-  onFixMatch?: (title: string, sourceId: string, folderPath?: string) => void
+  onFixMatch?: (
+    seriesIdentityKey: string,
+    title: string,
+    sourceId: string,
+    libraryId: string,
+    folderPath?: string
+  ) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
   onDismissUpgrade?: (item: MediaItem) => void
   onDismissMissingEpisode?: (episode: MissingEpisode, seriesTitle: string, tmdbId?: string) => void
@@ -537,7 +545,7 @@ export function TVShowsView({
                     completenessData={completeness}
                     showSourceBadge={showSourceBadge}
                     onAnalyzeSeries={async () => { await onAnalyzeSeries(show) }}
-                    onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+                    onFixMatch={onFixMatch}
                     onOptimizeSeries={handleOpenOptimize}
                   />
                 </div>
@@ -579,7 +587,7 @@ export function TVShowsView({
                   completenessData={completeness}
                   showSourceBadge={showSourceBadge}
                   onAnalyzeSeries={() => onAnalyzeSeries(show)}
-                  onFixMatch={onFixMatch ? (sourceId, folderPath) => onFixMatch(show.series_title, sourceId, folderPath) : undefined}
+                  onFixMatch={onFixMatch}
                   onOptimizeSeries={handleOpenOptimize}
                 />
               </div>
@@ -739,7 +747,18 @@ export function TVShowsView({
               </button>
               {onFixMatch && (
                 <button
-                  onClick={() => selectedShow && onFixMatch(selectedShow, '', undefined)}
+                  onClick={() => {
+                    const firstEp = selectedShowData ? Array.from(selectedShowData.seasons.values())[0]?.episodes[0] : undefined
+                    if (firstEp && firstEp.series_identity_key && firstEp.source_id) {
+                      onFixMatch(
+                        firstEp.series_identity_key,
+                        selectedShowData?.title || selectedShow || firstEp.series_title || '',
+                        firstEp.source_id,
+                        firstEp.library_id || '',
+                        undefined
+                      )
+                    }
+                  }}
                   className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                   title="Fix Match"
                 >
@@ -963,7 +982,7 @@ export function TVShowsView({
   return null
 }
 
-const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (sourceId: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
+const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -972,6 +991,8 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
   const totalEpisodes = show.episode_count
   const sourceType = show.source_type as ProviderType | undefined
   const sourceId = show.source_id
+  const libraryId = show.library_id
+  const seriesIdentityKey = show.series_identity_key
   const folderPath: string | undefined = undefined
 
   const handleAnalyze = async (e: React.MouseEvent) => {
@@ -987,8 +1008,8 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
   const handleFixMatch = (e: React.MouseEvent) => {
     e.stopPropagation()
     setShowMenu(false)
-    if (onFixMatch && sourceId) {
-      onFixMatch(sourceId, folderPath)
+    if (onFixMatch && sourceId && seriesIdentityKey) {
+      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || '', folderPath)
     }
   }
 

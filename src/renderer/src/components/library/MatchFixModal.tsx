@@ -134,15 +134,15 @@ export function MatchFixModal({
     try {
       switch (type) {
         case 'series':
-          if (sourceId) {
-            const identityKey = seriesIdentityKey || currentTitle
-            await window.electronAPI.seriesFixMatch(
-              identityKey,
-              sourceId,
-              libraryId || '',
-              (selectedResult as TMDBSearchResult).id
-            )
+          if (!seriesIdentityKey || !sourceId || !libraryId) {
+            throw new Error('Series identity key, source ID, and library ID are required to fix series match')
           }
+          await window.electronAPI.seriesFixMatch(
+            seriesIdentityKey,
+            sourceId,
+            libraryId,
+            (selectedResult as TMDBSearchResult).id
+          )
           break
         case 'movie':
           if (mediaItemId !== undefined) {

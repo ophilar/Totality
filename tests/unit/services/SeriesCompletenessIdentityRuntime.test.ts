@@ -158,7 +158,7 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
     expect(usShow?.series_identity_key).toBe('tmdb:2353')
   })
 
-  it('analyzeAllSeries groups episodes strictly by persisted series_identity_key and skips unkeyed rows', async () => {
+  it('analyzeAllSeries groups episodes strictly by persisted series_identity_key', async () => {
     mockDb.getMediaItems.mockReturnValue([
       {
         id: 401,
@@ -171,17 +171,6 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
         series_tmdb_id: 99999,
         season_number: 1,
         episode_number: 1,
-      },
-      {
-        id: 402,
-        title: 'Corrupt Episode',
-        type: 'episode',
-        series_title: 'Unkeyed Show',
-        series_identity_key: '', // Invariant violation: unkeyed
-        source_id: 'src-1',
-        library_id: 'lib-1',
-        season_number: 1,
-        episode_number: 2,
       },
     ])
     mockDb.getEpisodes.mockReturnValue([
@@ -214,5 +203,27 @@ describe('SeriesCompletenessService - Runtime Identity Path Enforcement', () => 
 
     expect(result.analyzed).toBe(1)
     expect(mockDb.getEpisodes).toHaveBeenCalledWith('', 'src-1', 'tmdb:99999', 'lib-1')
+  })
+
+  it('analyzeAllSeries fails visibly with an invariant violation error when an unkeyed episode is encountered', async () => {
+    mockDb.getMediaItems.mockReturnValue([
+      {
+        id: 402,
+        title: 'Corrupt Episode',
+        type: 'episode',
+        series_title: 'Unkeyed Show',
+        series_identity_key: '', // Invariant violation: unkeyed
+        source_id: 'src-1',
+        library_id: 'lib-1',
+        season_number: 1,
+        episode_number: 2,
+      },
+    ])
+
+    await expect(
+      service.analyzeAllSeries(undefined, 'src-1', 'lib-1', {
+        skipRecentlyAnalyzed: false,
+      })
+    ).rejects.toThrow(/Invariant violation: episode media_item 402 .* has no persisted series_identity_key/)
   })
 })

@@ -5,7 +5,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from '../services/TMDBService'
 import { getWindowFromEvent } from './utils/safeSend'
 import { createProgressUpdater } from './utils/progressUpdater'
-import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema } from '../validation/schemas'
+import { validateInput, NonEmptyStringSchema, OptionalSourceIdSchema, PositiveIntSchema, CanonicalSeriesIdentityKeySchema } from '../validation/schemas'
 import { getTaskQueueService } from '../services/TaskQueueService'
 
 /**
@@ -364,23 +364,13 @@ export function registerSeriesHandlers() {
       _event,
       seriesIdentityKey: unknown,
       sourceId: unknown,
-      libraryIdOrTmdbId: unknown,
-      maybeTmdbId?: unknown
+      libraryId: unknown,
+      tmdbId: unknown
     ) => {
-      let rawLibraryId = ''
-      let rawTmdbId: unknown = maybeTmdbId
-
-      if (typeof libraryIdOrTmdbId === 'number' && maybeTmdbId === undefined) {
-        rawTmdbId = libraryIdOrTmdbId
-        rawLibraryId = ''
-      } else if (typeof libraryIdOrTmdbId === 'string') {
-        rawLibraryId = libraryIdOrTmdbId
-      }
-
-      const validSeriesIdentityKey = validateInput(NonEmptyStringSchema, seriesIdentityKey, 'series:fixMatch.seriesIdentityKey')
+      const validSeriesIdentityKey = validateInput(CanonicalSeriesIdentityKeySchema, seriesIdentityKey, 'series:fixMatch.seriesIdentityKey')
       const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:fixMatch.sourceId')
-      const validTmdbId = validateInput(PositiveIntSchema, rawTmdbId, 'series:fixMatch.tmdbId')
-      const validLibraryId = rawLibraryId
+      const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:fixMatch.libraryId')
+      const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'series:fixMatch.tmdbId')
       try {
         const db = getDatabase()
         const tmdb = getTMDBService()

@@ -8,6 +8,8 @@ interface MatchFixModalState {
   filePath?: string
   artistName?: string
   sourceId?: string
+  libraryId?: string
+  seriesIdentityKey?: string
   mediaItemId?: number
   artistId?: number
   albumId?: number
