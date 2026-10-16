@@ -414,6 +414,42 @@ describe('BetterSQLiteService — Media Items', () => {
     expect(rows[0].series_identity_key).toBe('tmdb:1396')
     expect(rows[0].tmdb_id).toBe('1396')
   })
+
+  it('updates unscoped series match when libraryId is undefined or empty without leaking into scoped libraries', () => {
+    // Episode without libraryId (null)
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'unscoped-ep-1', type: 'episode', series_title: 'Unscoped Show',
+      series_identity_key: 'unresolved:src-1::unscoped-show',
+      season_number: 1, episode_number: 1, library_id: null as any,
+    }))
+    // Episode in specific library (lib-1)
+    service.upsertMediaItem(makeMediaItem({
+      plex_id: 'scoped-ep-1', type: 'episode', series_title: 'Unscoped Show',
+      series_identity_key: 'unresolved:src-1::unscoped-show',
+      season_number: 1, episode_number: 1, library_id: 'lib-1',
+    }))
+
+    const updated = service.updateSeriesMatch(
+      'unresolved:src-1::unscoped-show',
+      'src-1',
+      undefined,
+      '1396',
+      'https://image.tmdb.org/poster.jpg',
+      'Breaking Bad'
+    )
+
+    expect(updated).toBe(1)
+
+    // Unscoped episode was updated
+    const unscopedEp = service.getMediaItemByProviderId('unscoped-ep-1', 'src-1')
+    expect(unscopedEp?.series_identity_key).toBe('tmdb:1396')
+    expect(unscopedEp?.series_title).toBe('Breaking Bad')
+
+    // Scoped episode was NOT touched
+    const scopedEp = service.getMediaItemByProviderId('scoped-ep-1', 'src-1')
+    expect(scopedEp?.series_identity_key).toBe('unresolved:src-1::unscoped-show')
+    expect(scopedEp?.series_title).toBe('Unscoped Show')
+  })
 })
 
 // ============================================================================

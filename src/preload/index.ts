@@ -392,7 +392,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Series Match Fixing
   seriesSearchTMDB: (query: string) => ipcRenderer.invoke('series:searchTMDB', query),
-  seriesFixMatch: (seriesIdentityKey: string, sourceId: string, libraryId: string, tmdbId: number) =>
+  seriesFixMatch: (seriesIdentityKey: string, sourceId: string, libraryId: string | undefined, tmdbId: number) =>
     ipcRenderer.invoke('series:fixMatch', seriesIdentityKey, sourceId, libraryId, tmdbId),
 
   // Movie Match Fixing
@@ -1481,7 +1481,7 @@ export interface ElectronAPI {
     poster_url: string | null
     vote_average: number
   }>>
-  seriesFixMatch: (seriesIdentityKey: string, sourceId: string, libraryId: string, tmdbId: number) => Promise<{
+  seriesFixMatch: (seriesIdentityKey: string, sourceId: string, libraryId: string | undefined, tmdbId: number) => Promise<{
     success: boolean
     updatedEpisodes: number
     completeness: unknown

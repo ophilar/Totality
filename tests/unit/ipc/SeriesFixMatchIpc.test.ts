@@ -115,17 +115,42 @@ describe('series:fixMatch IPC Handler', () => {
     ).rejects.toThrow(/seriesIdentityKey/)
   })
 
-  it('rejects empty or missing libraryId', async () => {
+  it('successfully fixes series match when libraryId is undefined or empty string', async () => {
+    const handler = handlers.get('series:fixMatch')
+    expect(handler).toBeDefined()
+
+    const result = await handler!(
+      {} as any,
+      'tmdb:99999',
+      'plex-src-1',
+      undefined,
+      1396
+    )
+
+    expect(mockDb.updateSeriesMatch).toHaveBeenCalledWith(
+      'tmdb:99999',
+      'plex-src-1',
+      undefined,
+      '1396',
+      'https://image.tmdb.org/t/p/w500/path/poster.jpg',
+      'Breaking Bad'
+    )
+    expect(mockCompletenessService.analyzeSeries).toHaveBeenCalledWith(
+      'tmdb:1396',
+      'plex-src-1',
+      undefined,
+      '1396'
+    )
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects empty or missing sourceId', async () => {
     const handler = handlers.get('series:fixMatch')
     expect(handler).toBeDefined()
 
     await expect(
-      handler!({} as any, 'tmdb:12345', 'src-1', '', 1396)
-    ).rejects.toThrow(/libraryId/)
-
-    await expect(
-      handler!({} as any, 'tmdb:12345', 'src-1', undefined, 1396)
-    ).rejects.toThrow(/libraryId/)
+      handler!({} as any, 'tmdb:12345', '', 'lib-1', 1396)
+    ).rejects.toThrow(/sourceId/)
   })
 
   it('rejects invalid or non-positive tmdbId', async () => {

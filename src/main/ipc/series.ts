@@ -369,7 +369,7 @@ export function registerSeriesHandlers() {
     ) => {
       const validSeriesIdentityKey = validateInput(CanonicalSeriesIdentityKeySchema, seriesIdentityKey, 'series:fixMatch.seriesIdentityKey')
       const validSourceId = validateInput(NonEmptyStringSchema, sourceId, 'series:fixMatch.sourceId')
-      const validLibraryId = validateInput(NonEmptyStringSchema, libraryId, 'series:fixMatch.libraryId')
+      const validLibraryId = (typeof libraryId === 'string' && libraryId.trim() !== '') ? libraryId.trim() : undefined
       const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'series:fixMatch.tmdbId')
       try {
         const db = getDatabase()

@@ -282,7 +282,7 @@ export interface DatabaseServiceInterface {
   updateSeriesMatch(
     seriesIdentityKey: string,
     sourceId: string,
-    libraryId: string,
+    libraryId: string | null | undefined,
     newTmdbId: string,
     posterUrl?: string,
     newSeriesTitle?: string

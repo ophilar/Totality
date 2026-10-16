@@ -5513,7 +5513,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   updateSeriesMatch(
     seriesIdentityKey: string,
     sourceId: string,
-    libraryId: string,
+    libraryId: string | null | undefined,
     tmdbId: string,
     posterUrl?: string,
     newSeriesTitle?: string
@@ -5525,13 +5525,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     if (!sourceId || sourceId.trim() === '') {
       throw new Error('sourceId is required to update series match')
     }
-    if (!libraryId || libraryId.trim() === '') {
-      throw new Error('libraryId is required to update series match')
-    }
     if (!tmdbId || tmdbId.trim() === '') {
       throw new Error('tmdbId is required to update series match')
     }
 
+    const cleanLibraryId = (typeof libraryId === 'string' && libraryId.trim() !== '') ? libraryId.trim() : null
     const newIdentityKey = `tmdb:${tmdbId}`
 
     return this.db.transaction(() => {
@@ -5548,19 +5546,25 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         params.push(newSeriesTitle)
       }
 
-      sql += " WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'"
-      params.push(seriesIdentityKey, sourceId, libraryId)
+      if (cleanLibraryId !== null) {
+        sql += " WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'"
+        params.push(seriesIdentityKey, sourceId, cleanLibraryId)
+      } else {
+        sql += " WHERE series_identity_key = ? AND source_id = ? AND (library_id IS NULL OR library_id = '') AND type = 'episode'"
+        params.push(seriesIdentityKey, sourceId)
+      }
 
       this.db!.prepare(sql).run(...params)
 
       // 2. Handle series_completeness merge/update to prevent UNIQUE(series_identity_key, source_id, library_id) collision
+      const scLibraryId = cleanLibraryId || ''
       const existingNew = this.db!.prepare(
         'SELECT id FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
-      ).get(newIdentityKey, sourceId, libraryId) as { id: number } | undefined
+      ).get(newIdentityKey, sourceId, scLibraryId) as { id: number } | undefined
 
       const currentOld = this.db!.prepare(
         'SELECT id FROM series_completeness WHERE series_identity_key = ? AND source_id = ? AND library_id = ?'
-      ).get(seriesIdentityKey, sourceId, libraryId) as { id: number } | undefined
+      ).get(seriesIdentityKey, sourceId, scLibraryId) as { id: number } | undefined
 
       if (existingNew) {
         // If a row for newIdentityKey already exists in this scope, delete the old row so they do not collide
@@ -5598,10 +5602,17 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       }
 
       // Return count of updated episodes strictly in this library scope
-      const countStmt = this.db!.prepare(
-        "SELECT COUNT(*) as count FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'"
-      )
-      return (countStmt.get(newIdentityKey, sourceId, libraryId) as { count: number })?.count || 0
+      if (cleanLibraryId !== null) {
+        const countStmt = this.db!.prepare(
+          "SELECT COUNT(*) as count FROM media_items WHERE series_identity_key = ? AND source_id = ? AND library_id = ? AND type = 'episode'"
+        )
+        return (countStmt.get(newIdentityKey, sourceId, cleanLibraryId) as { count: number })?.count || 0
+      } else {
+        const countStmt = this.db!.prepare(
+          "SELECT COUNT(*) as count FROM media_items WHERE series_identity_key = ? AND source_id = ? AND (library_id IS NULL OR library_id = '') AND type = 'episode'"
+        )
+        return (countStmt.get(newIdentityKey, sourceId) as { count: number })?.count || 0
+      }
     })()
   }
 

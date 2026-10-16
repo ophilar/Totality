@@ -85,8 +85,11 @@ export function MatchFixModal({
       setSearchResults([])
       setSelectedResult(null)
       setError(null)
+      if (type === 'series' && (!seriesIdentityKey || !sourceId)) {
+        setError('Series identity key and source ID are required to fix series match.')
+      }
     }
-  }, [isOpen, currentTitle])
+  }, [isOpen, currentTitle, type, seriesIdentityKey, sourceId])
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
@@ -134,13 +137,13 @@ export function MatchFixModal({
     try {
       switch (type) {
         case 'series':
-          if (!seriesIdentityKey || !sourceId || !libraryId) {
-            throw new Error('Series identity key, source ID, and library ID are required to fix series match')
+          if (!seriesIdentityKey || !sourceId) {
+            throw new Error('Series identity key and source ID are required to fix series match')
           }
           await window.electronAPI.seriesFixMatch(
             seriesIdentityKey,
             sourceId,
-            libraryId,
+            libraryId || undefined,
             (selectedResult as TMDBSearchResult).id
           )
           break
