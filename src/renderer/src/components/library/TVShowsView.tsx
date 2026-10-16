@@ -18,7 +18,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
   completenessData?: SeriesCompletenessData
   showSourceBadge?: boolean
   onAnalyzeSeries?: () => Promise<void>
-  onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId: string, folderPath?: string) => void
+  onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId?: string, folderPath?: string) => void
   onOptimizeSeries?: (show: TVShowSummary) => void
 }) => {
   const [showMenu, setShowMenu] = useState(false)
@@ -47,7 +47,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
     e.stopPropagation()
     setShowMenu(false)
     if (onFixMatch && sourceId && seriesIdentityKey) {
-      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || '', folderPath)
+      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || undefined, folderPath)
     }
   }
 
@@ -359,7 +359,7 @@ export function TVShowsView({
     seriesIdentityKey: string,
     title: string,
     sourceId: string,
-    libraryId: string,
+    libraryId?: string,
     folderPath?: string
   ) => void
   onRescanEpisode?: (episode: MediaItem) => Promise<void>
@@ -764,7 +764,7 @@ export function TVShowsView({
                         firstEp.series_identity_key,
                         selectedShowData?.title || selectedShow || firstEp.series_title || '',
                         firstEp.source_id,
-                        firstEp.library_id || '',
+                        firstEp.library_id || undefined,
                         undefined
                       )
                     }
@@ -1205,7 +1205,7 @@ export function TVShowsView({
   return null
 }
 
-const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
+const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: { show: TVShowSummary; onClick: () => void; completenessData?: SeriesCompletenessData; showSourceBadge?: boolean; onAnalyzeSeries?: () => void; onFixMatch?: (seriesIdentityKey: string, title: string, sourceId: string, libraryId?: string, folderPath?: string) => void; onOptimizeSeries?: (show: TVShowSummary) => void }) => {
   const [showMenu, setShowMenu] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -1232,7 +1232,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
     e.stopPropagation()
     setShowMenu(false)
     if (onFixMatch && sourceId && seriesIdentityKey) {
-      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || '', folderPath)
+      onFixMatch(seriesIdentityKey, show.series_title, sourceId, libraryId || undefined, folderPath)
     }
   }
 
