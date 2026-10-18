@@ -1,3 +1,4 @@
+
 /**
  * WatchlistSyncService — imports watchlists from Trakt and Letterboxd into wishlist
  */
@@ -66,7 +67,7 @@ export class WatchlistSyncService {
           imdb_id: entry.movie.ids.imdb,
           poster_url: undefined as string | undefined,
           reason: 'missing' as const,
-          priority: 3,
+          priority: 3 as const,
           notes: 'Imported from Trakt',
         }
       }
@@ -79,7 +80,7 @@ export class WatchlistSyncService {
           imdb_id: entry.show.ids.imdb,
           poster_url: undefined as string | undefined,
           reason: 'missing' as const,
-          priority: 3,
+          priority: 3 as const,
           notes: 'Imported from Trakt',
         }
       }
@@ -303,7 +304,7 @@ export class WatchlistSyncService {
         tmdb_id: tmdbId,
         poster_url: undefined as string | undefined, // fetched from TMDB below
         reason: 'missing' as const,
-        priority: 3,
+        priority: 3 as const,
         notes: 'Imported from Plex Watchlist',
       }
     }).filter(item => item.title)

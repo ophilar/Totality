@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * LoggingService - Centralized logging with buffer and export
  *
@@ -207,7 +208,7 @@ class LoggingService {
 
     // Emit to renderer
     if (this.mainWindow) {
-      safeSend(this.mainWindow, 'logs:new', entry)
+      safeSend(this.mainWindow, IPC_CHANNELS.logsNew, entry)
     }
 
     // Append to file buffer

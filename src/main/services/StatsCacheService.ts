@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { BrowserWindow } from 'electron'
 import { safeSend } from '@main/ipc/utils/safeSend'
 
@@ -40,7 +41,7 @@ export class StatsCacheService {
 
     // Notify all open UI windows reactively via library:updated
     for (const win of BrowserWindow.getAllWindows()) {
-      safeSend(win, 'library:updated', { type: 'stats-cache-invalidated' })
+      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'stats-cache-invalidated' })
     }
   }
 }

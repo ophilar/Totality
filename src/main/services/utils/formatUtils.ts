@@ -1,3 +1,4 @@
+
 /**
  * Shared format utilities for the main process.
  * Used by GeminiTools, GeminiAnalysisService, and other services.

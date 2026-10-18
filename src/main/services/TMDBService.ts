@@ -1,3 +1,4 @@
+
 import {
   TMDBMovieDetails,
   TMDBCollection,
@@ -15,6 +16,7 @@ import {
 import { getDatabase } from '../database/getDatabase'
 import { getLoggingService } from './LoggingService'
 import { RateLimiters, SlidingWindowRateLimiter } from './utils/RateLimiter'
+import { fetchWithTimeout } from './utils/httpClient'
 import { retryWithBackoff, getRateLimitRetryAfter } from './utils/retryWithBackoff'
 
 /**
@@ -49,6 +51,10 @@ export class TMDBService {
     if (!this.apiKey || this.apiKey === '') {
       console.warn('TMDB API key not configured. Collection detection will be unavailable.')
     }
+  }
+
+  isConfigured(): boolean {
+    return this.apiKey !== null && this.apiKey !== ''
   }
 
   /**
@@ -240,20 +246,14 @@ export class TMDBService {
     const data = await retryWithBackoff<T>(
       async () => {
         console.log('[TMDB] Requesting:', urlForLogging)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), TMDBService.REQUEST_TIMEOUT)
-
         let response: Response
         try {
-          response = await fetch(url.toString(), { signal: controller.signal })
+          response = await fetchWithTimeout(url.toString(), {}, TMDBService.REQUEST_TIMEOUT)
         } catch (error: unknown) {
-          clearTimeout(timeoutId)
           if (error instanceof Error && error.name === 'AbortError') {
             throw new Error('TMDB API request timed out')
           }
           throw error
-        } finally {
-          clearTimeout(timeoutId)
         }
 
         // Handle rate limiting with Retry-After header
@@ -380,6 +380,7 @@ export class TMDBService {
       return { seriesTmdbId, episode, seriesName }
     } catch (error) {
       // Episode might not exist in TMDB
+      console.debug(`[TMDBService] Failed to load episode for ${seriesTitle} S${seasonNumber}E${episodeNumber}:`, error)
       return null
     }
   }

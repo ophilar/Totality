@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from '@google/genai'
 import type { Content, FunctionDeclaration, GenerateContentResponse } from '@google/genai'
 import { getDatabase } from '../database/getDatabase'

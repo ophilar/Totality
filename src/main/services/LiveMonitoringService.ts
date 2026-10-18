@@ -1,3 +1,4 @@
+
 import { getErrorMessage } from './utils/errorUtils'
 /**
  * LiveMonitoringService - Background service for detecting media library changes
@@ -23,6 +24,13 @@ import { getLoggingService } from './LoggingService'
 import { getSeriesCompletenessService } from './SeriesCompletenessService'
 import { getTMDBService } from './TMDBService'
 import { getTaskQueueService } from './TaskQueueService'
+import { getWishlistCompletionService } from './WishlistCompletionService'
+import { analyzeAlbumQuality } from './MusicQualityAnalyzer'
+import { PlexProvider } from '../providers/plex/PlexProvider'
+import { JellyfinEmbyBase } from '../providers/jellyfin-emby/JellyfinEmbyBase'
+import { KodiProvider } from '../providers/kodi/KodiProvider'
+import { KodiLocalProvider } from '../providers/kodi/KodiLocalProvider'
+import { getSupportedProviders } from '../providers/ProviderFactory'
 import type { ScanResult } from '../providers/base/MediaProvider'
 import { safeSend } from '../ipc/utils/safeSend'
 import { emitNotificationCreated } from '../ipc/utils/notificationEmitter'
@@ -144,8 +152,7 @@ export class LiveMonitoringService {
     this.config.pauseDuringManualScan = pauseDuringManualScan !== 'false' // Default true
 
     // Load per-provider intervals
-    const providerTypes: ProviderType[] = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey']
-    for (const provider of providerTypes) {
+    for (const provider of getSupportedProviders()) {
       const interval = db.getSetting(`monitoring_interval_${provider}`)
       if (interval) {
         const parsed = parseInt(interval, 10)
@@ -765,10 +772,8 @@ export class LiveMonitoringService {
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
-        })
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
       })
     }
 
@@ -1038,10 +1043,8 @@ export class LiveMonitoringService {
 
     // Check wishlist for auto-completion after items were added or updated
     if (events.some((e) => e.changeType === 'added' || e.changeType === 'updated' || e.changeType === 'mixed')) {
-      import('./WishlistCompletionService').then(({ getWishlistCompletionService }) => {
-        getWishlistCompletionService().checkAndComplete().catch((err) => {
-          console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
-        })
+      getWishlistCompletionService().checkAndComplete().catch((err) => {
+        console.error('[LiveMonitoring] Wishlist completion check failed:', getErrorMessage(err))
       })
     }
 
@@ -1097,7 +1100,6 @@ export class LiveMonitoringService {
         const provider = sourceManager.getProvider(sourceId)
         if (!provider) return false
 
-        const { PlexProvider } = await import('../providers/plex/PlexProvider')
         if (provider instanceof PlexProvider) {
           const plexTrackCount = await provider.getMusicTrackCount(libraryId)
           if (plexTrackCount !== dbTrackCount) {
@@ -1128,22 +1130,18 @@ export class LiveMonitoringService {
     }
 
     if (sourceType === 'plex') {
-      const { PlexProvider } = await import('../providers/plex/PlexProvider')
       if (provider instanceof PlexProvider) {
         return provider.scanMusicLibrary(libraryId)
       }
     } else if (sourceType === 'jellyfin' || sourceType === 'emby') {
-      const { JellyfinEmbyBase } = await import('../providers/jellyfin-emby/JellyfinEmbyBase')
       if (provider instanceof JellyfinEmbyBase) {
         return provider.scanMusicLibrary(libraryId)
       }
     } else if (sourceType === 'kodi') {
-      const { KodiProvider } = await import('../providers/kodi/KodiProvider')
       if (provider instanceof KodiProvider) {
         return provider.scanMusicLibrary()
       }
     } else if (sourceType === 'kodi-local') {
-      const { KodiLocalProvider } = await import('../providers/kodi/KodiLocalProvider')
       if (provider instanceof KodiLocalProvider) {
         return provider.scanMusicLibrary()
       }
@@ -1194,7 +1192,6 @@ export class LiveMonitoringService {
    */
   private autoRunMusicQualityAnalysis(sourceId: string, libraryName: string): void {
     const doAnalysis = async () => {
-      const { analyzeAlbumQuality } = await import('./MusicQualityAnalyzer')
       const db = getDatabase()
       console.log(`[LiveMonitoring] Auto-analyzing music quality for ${libraryName}...`)
       await analyzeAlbumQuality(db, sourceId)
@@ -1225,31 +1222,33 @@ export class LiveMonitoringService {
       const service = getSeriesCompletenessService()
 
       // Get distinct series in this library from media_items
-      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string }>
-      const currentSeries = new Map<string, number>()
+      const episodes = db.getMediaItems({ type: 'episode' as const, sourceId, libraryId }) as Array<{ series_title?: string; series_identity_key?: string | null }>
+      const currentSeries = new Map<string, { title: string; count: number }>()
       for (const ep of episodes) {
-        if (!ep.series_title) continue
-        currentSeries.set(ep.series_title, (currentSeries.get(ep.series_title) || 0) + 1)
+        const identityKey = ep.series_identity_key
+        if (!identityKey) throw new Error('Episode is missing its canonical series identity key')
+        const series = currentSeries.get(identityKey)
+        currentSeries.set(identityKey, { title: ep.series_title || identityKey, count: (series?.count || 0) + 1 })
       }
 
       // Get existing completeness records for this library
       const existing = db.getAllSeriesCompleteness(sourceId, libraryId)
       const existingMap = new Map<string, { owned_episodes: number }>(
-        existing.map((sc: { series_title: string; owned_episodes: number }) => [sc.series_title, { owned_episodes: sc.owned_episodes }])
+        existing.filter(sc => sc.series_identity_key).map(sc => [sc.series_identity_key!, { owned_episodes: sc.owned_episodes }])
       )
 
       // Find affected series
-      const affectedSeries: string[] = []
-      for (const [title, count] of currentSeries) {
-        const record = existingMap.get(title)
+      const affectedSeries: Array<{ identityKey: string; title: string }> = []
+      for (const [identityKey, { title, count }] of currentSeries) {
+        const record = existingMap.get(identityKey)
         if (!record || record.owned_episodes !== count) {
-          affectedSeries.push(title)
+          affectedSeries.push({ identityKey, title })
         }
       }
 
       // Removed series — delete completeness records
       for (const sc of existing) {
-        if (!currentSeries.has(sc.series_title) && sc.id) {
+        if (sc.series_identity_key && !currentSeries.has(sc.series_identity_key) && sc.id) {
           db.deleteSeriesCompleteness(sc.id)
           console.log(`[LiveMonitoring] Removed completeness for deleted series: ${sc.series_title}`)
         }
@@ -1260,14 +1259,14 @@ export class LiveMonitoringService {
         return
       }
 
-      console.log(`[LiveMonitoring] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.join(', ')}`)
+      console.log(`[LiveMonitoring] Analyzing ${affectedSeries.length} affected series in ${libraryName}: ${affectedSeries.map(series => series.title).join(', ')}`)
 
       const tmdb = getTMDBService()
       await tmdb.initialize()
 
-      for (const title of affectedSeries) {
+      for (const { identityKey, title } of affectedSeries) {
         try {
-          await service.analyzeSeries(title, sourceId, libraryId)
+          await service.analyzeSeries(identityKey, sourceId, libraryId)
           console.log(`[LiveMonitoring] Completed series analysis: ${title}`)
         } catch (err) {
           console.error(`[LiveMonitoring] Failed to analyze series "${title}":`, getErrorMessage(err))
