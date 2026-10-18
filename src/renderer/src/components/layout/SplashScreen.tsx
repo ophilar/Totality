@@ -8,7 +8,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../../contexts/ThemeContext'
 import logoAnimation from '../../assets/totality_anim.webm'
-import logoAnimationBlack from '../../assets/totality_anim_black.webm'
 import logoImage from '../../assets/logo.png'
 import logoBlackImage from '../../assets/logo_black.png'
 
@@ -79,7 +78,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
       >
         <video
           ref={videoRef}
-          src={effectiveIsDark ? logoAnimation : logoAnimationBlack}
+          src={logoAnimation}
           muted
           playsInline
           preload="auto"
@@ -88,6 +87,8 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           className="absolute inset-0 w-full h-full object-contain"
           style={{
             opacity: videoReady && !videoEnded ? 1 : 0,
+            filter: effectiveIsDark ? undefined : 'invert(1)',
+            mixBlendMode: effectiveIsDark ? 'normal' : 'multiply',
           }}
         />
         <img
