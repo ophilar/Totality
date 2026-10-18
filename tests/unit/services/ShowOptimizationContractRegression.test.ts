@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { calculateDryRunMetrics } from '@main/services/ShowOptimizationMetricsService'
 
-describe('TV optimization recovery contract', () => {
-  it('does not double-count fresh audio pruning already included in legacy recoverable bytes', () => {
+describe('TV estimated savings contract', () => {
+  it('does not double-count fresh audio pruning included in the combined estimate', () => {
     const result = calculateDryRunMetrics([
       {
         sizeBytes: 1_000_000_000,
-        recoverableBytes: 200_000_000,
-        efficiency: 80,
+        estimatedSavingsBytes: 200_000_000,
         durationSeconds: 1_000,
         audioStreams: [
           { index: 1, codec: 'aac', language: 'en', channels: 2, bit_rate: 192_000 },
@@ -17,19 +16,16 @@ describe('TV optimization recovery contract', () => {
     ], 'en')
 
     expect(result.audioPruningBytes).toBe(100_000_000)
-    expect(result.videoDebtBytes).toBe(100_000_000)
-    expect(result.totalRecoverableBytes).toBe(200_000_000)
-    expect(result.recoverableBytes).toBe(result.totalRecoverableBytes)
-    expect(result.totalCombinedSavingsBytes).toBe(result.totalRecoverableBytes)
+    expect(result.videoSavingsBytes).toBe(100_000_000)
+    expect(result.totalEstimatedSavingsBytes).toBe(200_000_000)
     expect(result.percentageSavings).toBeCloseTo(20)
   })
 
-  it('adds fresh audio pruning to explicit video-only debt', () => {
+  it('adds fresh audio pruning to an explicit video savings estimate', () => {
     const result = calculateDryRunMetrics([
       {
         sizeBytes: 1_000_000_000,
-        videoDebtBytes: 200_000_000,
-        efficiency: 80,
+        videoSavingsBytes: 200_000_000,
         durationSeconds: 1_000,
         audioStreams: [
           { index: 1, codec: 'aac', language: 'en', channels: 2, bit_rate: 192_000 },
@@ -39,18 +35,16 @@ describe('TV optimization recovery contract', () => {
     ], 'en')
 
     expect(result.audioPruningBytes).toBe(100_000_000)
-    expect(result.videoDebtBytes).toBe(200_000_000)
-    expect(result.totalRecoverableBytes).toBe(300_000_000)
-    expect(result.recoverableBytes).toBe(result.totalRecoverableBytes)
+    expect(result.videoSavingsBytes).toBe(200_000_000)
+    expect(result.totalEstimatedSavingsBytes).toBe(300_000_000)
     expect(result.percentageSavings).toBeCloseTo(30)
   })
 
-  it('counts an episode as scored only when efficiency evidence exists', () => {
+  it('keeps zero estimated savings distinct from missing evidence', () => {
     const result = calculateDryRunMetrics([
       {
         sizeBytes: 1_000_000_000,
-        recoverableBytes: 0,
-        efficiency: null,
+        videoSavingsBytes: 0,
         durationSeconds: 1_000,
         audioStreams: [
           { index: 1, codec: 'aac', language: 'en', channels: 2, bit_rate: 192_000 },
@@ -58,8 +52,7 @@ describe('TV optimization recovery contract', () => {
       },
     ], 'en')
 
-    expect(result.scoredEpisodes).toBe(0)
-    expect(result.unscoredEpisodes).toBe(1)
-    expect(result.weightedEfficiency).toBeNull()
+    expect(result.totalEstimatedSavingsBytes).toBe(0)
+    expect(result.coverage).toBe('partial')
   })
 })

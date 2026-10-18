@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef } from 'react'
-import { usePagination } from './usePagination'
+import { LIBRARY_PAGE_SIZE, usePagination } from './usePagination'
 import type { MediaItem, TVShowSummary } from '../types'
 import { getTVShowIdentity } from '../tv/showIdentity'
+import { descendingSortColumns } from '../sortDefinitions'
 
-export type TVShowSortBy = 'title' | 'play_count' | 'last_watched_at'
+export type TVShowSortBy = 'title' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes'
 
 interface UseTVShowPaginationOptions {
   activeSourceId: string | null
@@ -46,12 +47,10 @@ export function useTVShowPagination({
   const [selectedShowEpisodesLoading, setSelectedShowEpisodesLoading] = useState(false)
 
   const { items, setItems, totalCount, loading, load, loadMore } = usePagination<TVShowSummary>({
-    pageSize: 10000,
+    pageSize: LIBRARY_PAGE_SIZE,
     fetchItems: async (filters) => {
-      const [shows, , episodeCount] = await Promise.all([
+      const [shows, episodeCount] = await Promise.all([
         window.electronAPI.getTVShows(filters),
-        // Count is handled by usePagination via fetchCount
-        Promise.resolve(0),
         window.electronAPI.countTVEpisodes(filters),
       ])
       setTotalEpisodeCount(episodeCount as number)
@@ -60,7 +59,7 @@ export function useTVShowPagination({
     fetchCount: (filters) => window.electronAPI.countTVShows(filters) as Promise<number>,
     buildFilters: () => {
       const sortBy = tvSortByRef.current
-      const sortOrder = (sortBy === 'play_count' || sortBy === 'last_watched_at') ? 'desc' : 'asc'
+      const sortOrder = descendingSortColumns.has(sortBy) ? 'desc' : 'asc'
       const filters: Record<string, unknown> = { sortBy, sortOrder }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId
@@ -111,7 +110,7 @@ export function useTVShowPagination({
     } finally {
       setSelectedShowEpisodesLoading(false)
     }
-  }, [activeSourceId, items])
+  }, [activeSourceId, activeLibraryId, items])
 
   return {
     paginatedShows: items,

@@ -1,3 +1,4 @@
+
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
 import { getLoggingService } from './LoggingService'
@@ -70,6 +71,9 @@ export class SeriesCompletenessService extends CancellableOperation {
 
     // Initialize TMDB service (loads API key from settings)
     await tmdb.initialize()
+    if (!tmdb.isConfigured()) {
+      throw new Error('TMDB API key not configured. Please add your API key in Settings.')
+    }
 
     // Get all unique series from media_items (optionally filtered by source/library)
     // Use deduplication when analyzing all sources

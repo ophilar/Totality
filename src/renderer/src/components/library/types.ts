@@ -6,6 +6,14 @@
 
 import type { ProviderType } from '../../contexts/SourceContext'
 import type { MediaSourceResponse } from '@preload/index'
+import type { AnalysisProgress as TrackedAnalysisProgress } from '@main/services/utils/ProgressTracker'
+import type {
+  MissingAlbum as DatabaseMissingAlbum,
+  MissingEpisode as DatabaseMissingEpisode,
+  MissingMovie as DatabaseMissingMovie,
+  MissingTrack as DatabaseMissingTrack,
+  MusicArtist as DatabaseMusicArtist,
+} from '@main/types/database'
 
 // Re-export for convenience
 export type { ProviderType }
@@ -17,22 +25,11 @@ export type MediaSource = MediaSourceResponse
 // Music Types
 // ============================================================================
 
-export interface MusicArtist {
-  id: number
-  source_id: string
-  source_type: ProviderType
-  provider_id: string
-  name: string
-  sort_name?: string
-  musicbrainz_id?: string
-  genres?: string
-  country?: string
-  biography?: string
-  thumb_url?: string
-  art_url?: string
-  album_count?: number
-  track_count?: number
-}
+export type MusicArtist = Omit<Pick<DatabaseMusicArtist,
+  'id' | 'source_id' | 'source_type' | 'provider_id' | 'name' | 'sort_name' |
+  'musicbrainz_id' | 'genres' | 'country' | 'biography' | 'thumb_url' | 'art_url' |
+  'album_count' | 'track_count'
+>, 'id'> & { id: number }
 
 export interface MusicAlbum {
   id: number
@@ -111,8 +108,8 @@ export interface MediaItem {
   season_poster_url?: string
   overall_score?: number
   needs_upgrade?: boolean
-  quality_tier?: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH'
+  quality_tier?: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+  tier_quality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score?: number
   tmdb_id?: string
   issues?: string
@@ -139,9 +136,10 @@ export interface MediaItem {
   version_count?: number
 
   // Quality & Storage Optimization
-  storage_debt_bytes?: number | null
-  efficiency_score?: number | null
   evidence_status?: string | null
+  estimated_savings_bytes?: number | null
+  confidence?: string | null
+  savings_basis?: string | null
   series_identity_key?: string | null
 
   // Source tracking
@@ -177,17 +175,12 @@ export interface TVShowSummary {
   episode_count: number
   season_count: number
   poster_url?: string
+  tmdb_id?: string | number
   source_id?: string
   source_type?: string
   library_id?: string
   series_identity_key?: string
-}
-
-export interface MissingEpisode {
-  season_number: number
-  episode_number: number
-  title?: string
-  air_date?: string
+  estimated_savings_bytes?: number | null
 }
 
 // ============================================================================
@@ -213,20 +206,8 @@ export interface LibraryStats {
 // Completeness Types
 // ============================================================================
 
-export interface MissingEpisode {
-  season_number: number
-  episode_number: number
-  title?: string
-  air_date?: string
-}
-
-export interface MissingMovie {
-  tmdb_id: string
-  title: string
-  year?: number
-  poster_path?: string
-  release_date?: string
-}
+export type MissingEpisode = DatabaseMissingEpisode
+export type MissingMovie = DatabaseMissingMovie
 
 export interface SeriesCompletenessData {
   id: number
@@ -300,20 +281,8 @@ export interface ArtistCompletenessData {
   thumb_url?: string
 }
 
-export interface MissingAlbum {
-  musicbrainz_id: string
-  title: string
-  year?: number
-  album_type: 'album' | 'ep' | 'single'
-}
-
-export interface MissingTrack {
-  musicbrainz_id?: string
-  title: string
-  track_number?: number
-  disc_number?: number
-  duration_ms?: number
-}
+export type MissingAlbum = DatabaseMissingAlbum
+export type MissingTrack = DatabaseMissingTrack
 
 export interface AlbumCompletenessData {
   id?: number
@@ -332,11 +301,12 @@ export interface AlbumCompletenessData {
 // Analysis Types
 // ============================================================================
 
-export interface AnalysisProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: string
+export interface AnalysisProgress extends Omit<TrackedAnalysisProgress, 'currentItem'> {
+  currentItem?: string
+  artistsTotal?: number
+  albumsTotal?: number
+  phaseIndex?: number
+  skipped?: number
 }
 
 // ============================================================================

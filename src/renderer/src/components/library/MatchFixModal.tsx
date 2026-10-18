@@ -180,7 +180,7 @@ export function MatchFixModal({
     } finally {
       setIsFixing(false)
     }
-  }, [selectedResult, type, currentTitle, sourceId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
+  }, [selectedResult, type, seriesIdentityKey, sourceId, libraryId, mediaItemId, artistId, albumId, onMatchFixed, onClose])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {

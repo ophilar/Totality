@@ -25,8 +25,9 @@ import type { TVShowSummary, MediaItem } from './types'
 import type { GpuInfo, PlannedOptimizationOperation, ShowTranscodePreflight } from './transcoding/types'
 import { TranscodingDeviceSelector } from './transcoding/TranscodingDeviceSelector'
 import { formatLanguage, isSameLanguage, LANGUAGE_OPTIONS } from './mediaUtils'
+import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
 import { getTVShowIdentity } from './tv/showIdentity'
-import type { TaskQueueState } from '@main/types/database'
+import type { QueueState } from '@main/types/taskQueue'
 import type { PlaybackTargetProfile } from '@main/types/playbackTarget'
 import type { OptimizationQualityProfile } from '@main/services/MeasuredOptimizationPolicy'
 import { TaskType } from '@main/types/database'
@@ -145,7 +146,7 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onClose: () => void }) {
+export function ShowTranscodeModal({ show, episode, onClose }: { show: TVShowSummary; episode?: MediaItem; onClose: () => void }) {
   const { addToast } = useToast()
   const { seriesIdentityKey, sourceId, libraryId } = getTVShowIdentity(show)
   const [mode, setMode] = useState<'config' | 'preview' | 'monitoring'>('config')
@@ -185,7 +186,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   const closeAfterPreflight = useRef(false)
 
   // Live Task Queue tracking state for monitoring mode
-  const [queueState, setQueueState] = useState<TaskQueueState>({
+  const [queueState, setQueueState] = useState<QueueState>({
     currentTask: null,
     queue: [],
     isPaused: false,
@@ -359,10 +360,10 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
   // Subscribe to TaskQueue state updates
   useEffect(() => {
     const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
-      setQueueState(state as TaskQueueState)
+      setQueueState(state)
     })
     window.electronAPI.taskQueueGetState?.().then((state) => {
-      if (state) setQueueState(state as TaskQueueState)
+      setQueueState(state)
     }).catch((error) => {
       addToast({ type: 'error', title: 'Show queue state', message: String(error) })
     })
@@ -426,11 +427,6 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     }
     if (shouldAdjustToTarget && optimizationMode !== 'remux_only' && (!qualityProfile || !encoderPolicy || !targetContainer || !targetHdrFormat)) throw new Error('Choose quality, encoder policy, container, and output color format before measuring samples.')
     setReviewedEpisodes([])
-    const episodes = await window.electronAPI.seriesGetEpisodesByIdentity(show.series_title, sourceId, seriesIdentityKey, libraryId)
-    if (episodes.some(episode => !episode.deep_analysis)) {
-      setMessage('Analyzing this show before measuring samples…')
-      await window.electronAPI.seriesAnalyzeByIdentity(seriesIdentityKey, sourceId, libraryId)
-    }
     if (preflightData) {
       await window.electronAPI.discardShow(preflightData.preflightId)
       setPreflightData(null)
@@ -442,6 +438,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
     try {
       preflight = await window.electronAPI.preflightShow({
         requestId,
+        mediaItemId: episode?.id,
         seriesTitle: show.series_title,
         seriesIdentityKey,
         sourceId,
@@ -1071,7 +1068,7 @@ export function ShowTranscodeModal({ show, onClose }: { show: TVShowSummary; onC
                     {ep.samplePaths?.length && <div className="text-xs space-y-2">{ep.samplePaths.map((sample, index) => <button key={sample} className="mr-2 underline" onClick={() => void window.electronAPI.openShowSample(preflightData.preflightId, ep.mediaItemId, index).catch(error => setMessage(String(error)))}>Play sample {index + 1}</button>)}<label className="block"><input type="checkbox" checked={reviewedEpisodes.includes(ep.mediaItemId)} onChange={event => setReviewedEpisodes(ids => event.target.checked ? [...ids, ep.mediaItemId] : ids.filter(id => id !== ep.mediaItemId))} /> I approve playback of these samples and the listed conversions</label></div>}
                     <div className="flex items-center justify-between text-[10px] text-muted-foreground/80">
                       <span>{ep.evidenceStatus ? `Evidence: ${ep.evidenceStatus} (${ep.confidence || 'none'})` : 'Evidence: unavailable'}</span>
-                      <span>{ep.estimatedSavingsBytes != null ? `Savings: ${formatBytes(ep.estimatedSavingsBytes)}` : 'Savings: unknown'}</span>
+                      <span>Est. savings: <EstimatedSavingsDisplay bytes={ep.estimatedSavingsBytes} /></span>
                     </div>
                   </div>
                 ))}

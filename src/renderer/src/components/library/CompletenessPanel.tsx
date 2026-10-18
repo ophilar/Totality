@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { SETTING_KEYS } from '../../../../shared/settingKeys'
 import { X, RefreshCw, Tv, Film, Music, Square, Settings, Clock, Loader2, ListChecks } from 'lucide-react'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
-
-type CompletenessTaskType = 'series-completeness' | 'collection-completeness' | 'music-completeness'
+import type { QueueState, TaskType } from '@main/types/taskQueue'
+import type { AnalysisProgress } from './types'
 
 interface SeriesStats {
   totalSeries: number
@@ -28,18 +28,6 @@ interface MusicStats {
   incompleteArtists: number
   totalMissingAlbums: number
   averageCompleteness: number
-}
-
-interface AnalysisProgress {
-  current: number
-  total: number
-  currentItem: string
-  phase: string
-  // Enhanced fields for music analysis
-  artistsTotal?: number
-  albumsTotal?: number
-  phaseIndex?: number
-  skipped?: number  // Number of items skipped (already recently analyzed)
 }
 
 interface CompletenessPanelProps {
@@ -84,8 +72,7 @@ export function CompletenessPanel({
   libraries = []
 }: CompletenessPanelProps) {
   const [isKeyConfigured, setIsKeyConfigured] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [queueState, setQueueState] = useState<any>(null)
+  const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [selectedMovieLibraryId, setSelectedMovieLibraryId] = useState<string>('')
   const [selectedShowLibraryId, setSelectedShowLibraryId] = useState<string>('')
 
@@ -98,7 +85,7 @@ export function CompletenessPanel({
   const collectionsButtonRef = useRef<HTMLButtonElement>(null)
   const musicButtonRef = useRef<HTMLButtonElement>(null)
   // Helper to check if a task type is queued or running
-  const getTaskStatus = useCallback((taskType: CompletenessTaskType): 'queued' | 'running' | null => {
+  const getTaskStatus = useCallback((taskType: TaskType): 'queued' | 'running' | null => {
     if (!queueState) return null
 
     // Check if currently running
@@ -107,8 +94,7 @@ export function CompletenessPanel({
     }
 
     // Check if queued
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isQueued = queueState.queue?.some((task: any) => task.type === taskType)
+    const isQueued = queueState.queue.some(task => task.type === taskType)
     if (isQueued) return 'queued'
 
     return null
@@ -128,8 +114,7 @@ export function CompletenessPanel({
     loadQueueState()
 
     // Subscribe to queue updates
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state: any) => {
+    const cleanup = window.electronAPI.onTaskQueueUpdated?.((state) => {
       setQueueState(state)
     })
 
