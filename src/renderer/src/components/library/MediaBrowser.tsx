@@ -2036,7 +2036,7 @@ export function MediaBrowser({
             onLoadMoreShows={loadMoreShows}
             tvSortBy={tvSortBy}
             onTvSortChange={(sort) => {
-              setTvSortBy(sort as 'title' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes')
+              setTvSortBy(sort)
               setTimeout(() => loadPaginatedShows(true), 0)
             }}
             isMobile={isMobile}

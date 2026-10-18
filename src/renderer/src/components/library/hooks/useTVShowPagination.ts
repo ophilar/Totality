@@ -2,9 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { LIBRARY_PAGE_SIZE, usePagination } from './usePagination'
 import type { MediaItem, TVShowSummary } from '../types'
 import { getTVShowIdentity } from '../tv/showIdentity'
-import { descendingSortColumns } from '../sortDefinitions'
-
-export type TVShowSortBy = 'title' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes'
+import { getSortDirection, type TVShowSortBy } from '../sortDefinitions'
 
 interface UseTVShowPaginationOptions {
   activeSourceId: string | null
@@ -59,7 +57,7 @@ export function useTVShowPagination({
     fetchCount: (filters) => window.electronAPI.countTVShows(filters) as Promise<number>,
     buildFilters: () => {
       const sortBy = tvSortByRef.current
-      const sortOrder = descendingSortColumns.has(sortBy) ? 'desc' : 'asc'
+      const sortOrder = getSortDirection(sortBy)
       const filters: Record<string, unknown> = { sortBy, sortOrder }
       if (activeSourceId) filters.sourceId = activeSourceId
       if (activeLibraryId) filters.libraryId = activeLibraryId

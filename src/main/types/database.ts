@@ -1,4 +1,5 @@
 // Database type definitions
+import type { MediaItemSortField, TVShowSortField } from '../../shared/librarySortFields'
 
 // Provider types supported by the application
 export const PROVIDER_TYPES = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey'] as const
@@ -439,7 +440,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'play_count' | 'last_watched_at' | 'tmdb_rating' | 'estimated_savings_bytes'
+  sortBy?: MediaItemSortField
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -471,7 +472,7 @@ export interface TVShowFilters {
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'season_count' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes'
+  sortBy?: TVShowSortField
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number

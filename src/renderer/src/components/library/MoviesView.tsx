@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react'
 import { Layers, RefreshCw, MoreVertical, Pencil, CircleFadingArrowUp, EyeOff, ArrowUpDown } from 'lucide-react'
 import { AnimatedNumber } from '../ui/AnimatedNumber'
-import type { MovieSortBy } from './hooks/useMoviePagination'
+import { movieSortOptions, type MovieSortBy } from './sortDefinitions'
 import { MoviePlaceholder } from '../ui/MediaPlaceholders'
 import { DropdownMenu, DropdownMenuItem } from '../ui/DropdownMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -254,15 +254,6 @@ export function MoviesView({
     )
   }
 
-  const sortOptions: { value: MovieSortBy; label: string }[] = [
-    { value: 'title', label: 'Title' },
-    { value: 'year', label: 'Year' },
-    { value: 'tmdb_rating', label: 'Rating' },
-    { value: 'play_count', label: 'Most Watched' },
-    { value: 'last_watched_at', label: 'Recently Watched' },
-    { value: 'estimated_savings_bytes', label: 'Est. Savings' },
-  ]
-
   const statsBar = (
     <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
       <span><AnimatedNumber value={totalMovieCount} locale /> Movies</span>
@@ -275,9 +266,9 @@ export function MoviesView({
             onChange={(e) => onMovieSortChange(e.target.value as MovieSortBy)}
             className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
           >
-            {sortOptions.map(opt => (
-              <option key={opt.value} value={opt.value} className="bg-popover text-popover-foreground">
-                {opt.label}
+            {movieSortOptions.map(({ key, label }) => (
+              <option key={key} value={key} className="bg-popover text-popover-foreground">
+                {label}
               </option>
             ))}
           </select>

@@ -1,65 +1,34 @@
+import type { MediaItemSortField, TVShowSortField } from '../../../../shared/librarySortFields'
+
 export type SortDirection = 'asc' | 'desc'
-export type LibrarySortType = 'movie' | 'tv' | 'music'
-export interface SortOption { key: string; label: string }
 
-export const descendingSortColumns = new Set([
-  'size',
-  'completeness',
-  'play_count',
-  'last_watched_at',
-  'tmdb_rating',
-  'estimated_savings_bytes',
-])
+const sortOptions = {
+  title: { key: 'title', label: 'Title' },
+  year: { key: 'year', label: 'Year' },
+  tmdb_rating: { key: 'tmdb_rating', label: 'Rating' },
+  play_count: { key: 'play_count', label: 'Most Watched' },
+  last_watched_at: { key: 'last_watched_at', label: 'Recently Watched' },
+  estimated_savings_bytes: { key: 'estimated_savings_bytes', label: 'Est. Savings' },
+} as const
 
-export function nextSortDirection(
-  currentColumn: string,
-  nextColumn: string,
-  currentDirection: SortDirection
-): SortDirection {
-  if (currentColumn === nextColumn) return currentDirection === 'asc' ? 'desc' : 'asc'
-  return descendingSortColumns.has(nextColumn) ? 'desc' : 'asc'
+const movieSortKeys = ['title', 'year', 'tmdb_rating', 'play_count', 'last_watched_at', 'estimated_savings_bytes'] as const satisfies readonly MediaItemSortField[]
+const tvSortKeys = ['title', 'play_count', 'last_watched_at', 'estimated_savings_bytes'] as const satisfies readonly TVShowSortField[]
+
+export const movieSortOptions = movieSortKeys.map(key => sortOptions[key])
+export const tvSortOptions = tvSortKeys.map(key => sortOptions[key])
+
+export type MovieSortBy = typeof movieSortKeys[number]
+export type TVShowSortBy = typeof tvSortKeys[number]
+
+const sortDirections: Record<MovieSortBy | TVShowSortBy, SortDirection> = {
+  title: 'asc',
+  year: 'asc',
+  tmdb_rating: 'desc',
+  play_count: 'desc',
+  last_watched_at: 'desc',
+  estimated_savings_bytes: 'desc',
 }
 
-export const movieSortColumns = ['title', 'year', 'size'] as const
-export const tvSortColumns = ['title'] as const
-export const mediaSortColumns = ['title', 'size'] as const
-
-export const musicSortColumns = ['title', 'artist', 'album', 'year', 'size', 'quality'] as const
-
-const sortOptions: Record<LibrarySortType, SortOption[]> = {
-  movie: [
-    { key: 'title', label: 'Title' },
-    { key: 'year', label: 'Year' },
-    { key: 'size', label: 'Size' },
-  ],
-  tv: [
-    { key: 'title', label: 'Title' },
-  ],
-  music: [
-    { key: 'title', label: 'Title' },
-    { key: 'artist', label: 'Artist' },
-    { key: 'album', label: 'Album' },
-    { key: 'year', label: 'Year' },
-    { key: 'size', label: 'Size' },
-    { key: 'quality', label: 'Quality' },
-  ],
-}
-
-export function getSortOptions(type: LibrarySortType): SortOption[] {
-  return sortOptions[type]
-}
-
-export function normalizeSortForType(
-  type: LibrarySortType,
-  sortBy: string | undefined,
-  sortOrder: SortDirection | undefined
-): { sortBy: string; sortOrder: SortDirection } {
-  const supported = sortBy != null && getSortOptions(type).some(option => option.key === sortBy)
-  if (!supported) return { sortBy: 'title', sortOrder: 'asc' }
-  return { sortBy: sortBy!, sortOrder: sortOrder ?? (descendingSortColumns.has(sortBy!) ? 'desc' : 'asc') }
-}
-
-export function getSortLabel(type: LibrarySortType, key: string): string {
-  if (key === 'track_count' || key === 'trackCount') return 'Track Count'
-  return getSortOptions(type).find(option => option.key === key)?.label ?? key
+export function getSortDirection(sortBy: MovieSortBy | TVShowSortBy): SortDirection {
+  return sortDirections[sortBy]
 }

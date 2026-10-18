@@ -7,6 +7,7 @@
 
 import { z } from 'zod'
 import { PROVIDER_TYPES, WISHLIST_MEDIA_TYPES, WISHLIST_REASONS, WISHLIST_STATUSES } from '../types/database'
+import { MEDIA_ITEM_SORT_FIELDS, TV_SHOW_SORT_FIELDS } from '../../shared/librarySortFields'
 
 // ============================================================================
 // COMMON SCHEMAS
@@ -102,7 +103,7 @@ export const TVShowFiltersSchema = z.object({
   libraryId: z.string().optional(),
   alphabetFilter: z.string().max(1).optional(),
   searchQuery: z.string().max(500).optional(),
-  sortBy: z.enum(['title', 'episode_count', 'season_count', 'play_count', 'last_watched_at', 'estimated_savings_bytes']).optional(),
+  sortBy: z.enum(TV_SHOW_SORT_FIELDS).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   limit: z.number().int().positive().max(10000).optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -399,7 +400,7 @@ export const MediaItemFiltersSchema = z.object({
   sourceId: z.string().optional(),
   sourceType: ProviderTypeSchema.optional(),
   libraryId: z.string().optional(),
-  sortBy: z.enum(['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes']).optional(),
+  sortBy: z.enum(MEDIA_ITEM_SORT_FIELDS).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   includeDisabledLibraries: z.boolean().optional(),
   alphabetFilter: z.string().max(1).optional(),

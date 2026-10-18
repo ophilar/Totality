@@ -1,9 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { LIBRARY_PAGE_SIZE, usePagination } from './usePagination'
 import type { MediaItem } from '../types'
-import { descendingSortColumns } from '../sortDefinitions'
-
-export type MovieSortBy = 'title' | 'year' | 'play_count' | 'last_watched_at' | 'tmdb_rating' | 'estimated_savings_bytes'
+import { getSortDirection, type MovieSortBy } from '../sortDefinitions'
 
 interface UseMoviePaginationOptions {
   activeSourceId: string | null
@@ -48,7 +46,7 @@ export function useMoviePagination({
     fetchCount: (filters) => window.electronAPI.countMediaItems(filters) as Promise<number>,
     buildFilters: () => {
       const sortBy = movieSortByRef.current
-      const sortOrder = descendingSortColumns.has(sortBy) ? 'desc' : 'asc'
+      const sortOrder = getSortDirection(sortBy)
       const filters: Record<string, unknown> = {
         type: 'movie',
         sortBy,

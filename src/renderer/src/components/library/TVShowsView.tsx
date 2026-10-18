@@ -12,6 +12,7 @@ import type { ProviderType } from '../../contexts/SourceContext'
 import { QualityBadges } from './QualityBadges'
 import { ScopedOptimizationSummary } from './ScopedOptimizationSummary'
 import { EstimatedSavingsDisplay } from './EstimatedSavingsDisplay'
+import { tvSortOptions, type TVShowSortBy } from './sortDefinitions'
 
 // List item component for TV shows
 const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, onAnalyzeSeries, onFixMatch, onOptimizeSeries }: {
@@ -100,6 +101,7 @@ const ShowListItem = memo(({ show, onClick, completenessData, showSourceBadge, o
           {seasonCount} {seasonCount === 1 ? 'Season' : 'Seasons'} • {totalEpisodes} Episodes
           {completenessData?.status && ` • ${getStatusBadge(completenessData.status)?.text || completenessData.status}`}
         </p>
+        <ScopedOptimizationSummary totalCount={totalEpisodes} estimatedSavingsBytes={show.estimated_savings_bytes} className="mt-1" />
         {completenessData && (
           <div className="mt-2">
             <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
@@ -367,8 +369,8 @@ export function TVShowsView({
   totalEpisodeCount: number
   showsLoading: boolean
   onLoadMoreShows: () => void
-  tvSortBy?: string
-  onTvSortChange?: (sort: string) => void
+  tvSortBy?: TVShowSortBy
+  onTvSortChange?: (sort: TVShowSortBy) => void
   isMobile?: boolean
   isTablet?: boolean
 }) {
@@ -586,13 +588,12 @@ export function TVShowsView({
           <div className="flex items-center gap-1.5 ml-auto">
             <select
               value={tvSortBy}
-              onChange={(e) => onTvSortChange(e.target.value)}
+              onChange={(e) => onTvSortChange(e.target.value as TVShowSortBy)}
               className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
             >
-              <option value="title">Title</option>
-              <option value="play_count">Most Watched</option>
-              <option value="last_watched_at">Recently Watched</option>
-              <option value="estimated_savings_bytes">Est. Savings</option>
+              {tvSortOptions.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
             </select>
           </div>
         )}
@@ -1208,6 +1209,7 @@ const ShowCard = memo(({ show, onClick, completenessData, showSourceBadge, onAna
   return prevProps.show.series_title === nextProps.show.series_title &&
          prevProps.show.poster_url === nextProps.show.poster_url &&
          prevProps.show.episode_count === nextProps.show.episode_count &&
+         prevProps.show.estimated_savings_bytes === nextProps.show.estimated_savings_bytes &&
          prevProps.show.season_count === nextProps.show.season_count &&
          prevProps.showSourceBadge === nextProps.showSourceBadge &&
          prevProps.completenessData?.id === nextProps.completenessData?.id &&
