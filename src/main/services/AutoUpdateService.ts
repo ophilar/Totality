@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * AutoUpdateService - Handles automatic application updates via electron-updater
  *
@@ -173,8 +174,7 @@ export class AutoUpdateService {
     try {
       const db = getDatabaseServiceSync()
       if (db.forceSave) {
-        const result = db.forceSave()
-        if (result && typeof result.then === 'function') await result
+        await db.forceSave()
       }
       await db.close()
     } catch (err) {
@@ -246,7 +246,7 @@ export class AutoUpdateService {
   }
 
   private emitState(): void {
-    safeSend(this.mainWindow, 'autoUpdate:stateChanged', this.state)
+    safeSend(this.mainWindow, IPC_CHANNELS.autoUpdateStateChanged, this.state)
   }
 }
 

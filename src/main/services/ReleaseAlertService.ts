@@ -1,3 +1,4 @@
+
 /**
  * ReleaseAlertService — checks TMDB release dates for wishlist items
  * and notifies when digital/physical releases are upcoming.
@@ -121,7 +122,7 @@ export class ReleaseAlertService {
               type: 'info',
               title: `${item.title} — ${typeLabel} release`,
               message: `${item.title} has a ${typeLabel.toLowerCase()} release on ${formattedDate}${release.note ? ` (${release.note})` : ''}`,
-              metadata: JSON.stringify({ release_alert_tmdb_id: tmdbId, wishlist_id: item.id, release_type: release.type }),
+              metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id, release_type: release.type },
             })
             emitNotificationCreated()
             alertCount++
@@ -143,7 +144,7 @@ export class ReleaseAlertService {
                     type: 'info',
                     title: `${item.title} — New episode`,
                     message: `${item.title} has a new episode airing on ${formattedDate}`,
-                    metadata: JSON.stringify({ release_alert_tmdb_id: tmdbId, wishlist_id: item.id }),
+                    metadata: { release_alert_tmdb_id: tmdbId, wishlist_id: item.id },
                   })
                   emitNotificationCreated()
                   alertCount++

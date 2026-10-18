@@ -1,3 +1,4 @@
+
 import { getDatabase } from '../database/getDatabase'
 import { getTMDBService } from './TMDBService'
 import { getLoggingService } from './LoggingService'
@@ -84,7 +85,7 @@ export class MovieCollectionService extends CancellableOperation {
                 console.log(`[MovieCollectionService] Found "${movie.title}" via IMDB: ${tmdbId}`)
               }
             } catch (error) {
-              // Continue to title search
+              console.debug(`[MovieCollectionService] IMDB lookup failed for ${movie.title}; trying title and year:`, error)
             }
           }
 

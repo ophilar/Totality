@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * WishlistCompletionService - Automatic wishlist item completion
  *
@@ -96,7 +97,7 @@ export class WishlistCompletionService {
       }
 
       // Notify the renderer
-      safeSend(this.mainWindow, 'wishlist:autoCompleted', completed)
+      safeSend(this.mainWindow, IPC_CHANNELS.wishlistAutoCompleted, completed)
 
       console.log(
         `[WishlistCompletion] Auto-completed ${completed.length} item(s):`,

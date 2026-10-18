@@ -1,6 +1,8 @@
+
 import * as fs from 'fs/promises'
 import { getDatabase } from '@main/database/getDatabase'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 import type { MediaItem, MediaDuplicate } from '@main/types/database'
 import type { DuplicateResolutionOutcome, DuplicateResolutionError } from '@shared/duplicateResolution'
 
@@ -213,7 +215,7 @@ export class DeduplicationService {
         }
         deletedIds.push(item.id!)
       } catch (error) {
-        errors.push({ mediaItemId: item.id!, message: error instanceof Error ? error.message : String(error) })
+        errors.push({ mediaItemId: item.id!, message: getErrorMessage(error) })
       }
     }
 
@@ -224,7 +226,7 @@ export class DeduplicationService {
         } catch (error) {
           errors.push({
             mediaItemId: id,
-            message: `File deletion completed, but its library record could not be removed: ${error instanceof Error ? error.message : String(error)}`,
+            message: `File deletion completed, but its library record could not be removed: ${getErrorMessage(error)}`,
           })
         }
       }

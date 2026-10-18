@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 import { BrowserWindow } from 'electron'
 import { safeSend } from '../ipc/utils/safeSend'
 import type { GeminiToolDefinition } from './GeminiService'
@@ -5,6 +6,7 @@ import { getDatabase } from '../database/getDatabase'
 import { getQualityAnalyzer } from './QualityAnalyzer'
 import { getTMDBService } from './TMDBService'
 import { getMusicBrainzService } from './MusicBrainzService'
+import { WISHLIST_MEDIA_TYPES } from '../types/database'
 import type { SeriesCompleteness, MovieCollection } from '../types/database'
 import { formatSize } from './utils/formatUtils'
 
@@ -24,7 +26,7 @@ function collectItem(collector: ActionableItem[] | undefined, item: ActionableIt
 }
 
 /** Strip null/undefined/empty fields to reduce token usage */
-function compact(obj: Record<string, unknown>): Record<string, unknown> {
+function compact<T extends object>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
     if (v !== null && v !== undefined && v !== '') result[k] = v
@@ -497,8 +499,7 @@ function checkTVShowOwnership(
   // Fallback: title-based search
   const tvShows = db.getTVShows({ searchQuery: title, limit: 1 })
   if (tvShows.length > 0) {
-    const show = tvShows[0] as Record<string, unknown>
-    return { owned: true, episode_count: (show.episode_count as number) || 0 }
+    return { owned: true, episode_count: tvShows[0].episode_count }
   }
 
   return { owned: false, episode_count: 0 }
@@ -578,17 +579,20 @@ export async function executeTool(
 
     case 'get_media_items': {
       const limit = toolNumber(input, 'limit', 1, 50) || 20
+      const requestedSortBy = toolString(input, 'sort_by')
+      const sortBy = (['title', 'year', 'updated_at', 'created_at', 'tier_score', 'overall_score', 'play_count', 'last_watched_at', 'tmdb_rating', 'estimated_savings_bytes'] as const)
+        .find(value => value === requestedSortBy)
       const items = db.getMediaItems({
         type: toolString(input, 'type') as 'movie' | 'episode' | undefined || undefined,
         qualityTier: toolString(input, 'quality_tier') || undefined,
         tierQuality: toolString(input, 'tier_quality') || undefined,
         needsUpgrade: toolBoolean(input, 'needs_upgrade'),
         searchQuery: toolString(input, 'search_query', 200) || undefined,
-        sortBy: toolString(input, 'sort_by') || 'title',
+        sortBy: sortBy ?? 'title',
         sortOrder: (toolString(input, 'sort_order') as 'asc' | 'desc') || 'asc',
         limit,
       })
-      const simplified = items.map((item: Record<string, unknown>) => compact({
+      const simplified = items.map((item) => compact({
         title: item.title,
         year: item.year,
         type: item.type,
@@ -614,7 +618,7 @@ export async function executeTool(
         sortBy: (toolString(input, 'sort_by') as 'title' | 'episode_count' | 'season_count') || 'title',
         limit,
       })
-      const simplified = shows.map((s: Record<string, unknown>) => compact({
+      const simplified = shows.map((s) => compact({
         series_title: s.series_title,
         episode_count: s.episode_count,
         season_count: s.season_count,
@@ -709,7 +713,7 @@ export async function executeTool(
       const wlLimit = toolNumber(input, 'limit', 1, 50) || 20
       const items = db.getWishlistItems({
         reason: (toolString(input, 'reason') as 'missing' | 'upgrade') || undefined,
-        media_type: toolString(input, 'media_type') || undefined,
+        media_type: WISHLIST_MEDIA_TYPES.find(type => type === toolString(input, 'media_type')),
         limit: wlLimit,
         status: 'active',
       })
@@ -882,7 +886,7 @@ export async function executeTool(
             first_air_date: s.first_air_date,
             tmdb_id: s.id,
             overview: s.overview?.substring(0, 150) || null,
-            owned_episodes: match ? (match as Record<string, unknown>).episode_count : 0,
+            owned_episodes: match?.episode_count ?? 0,
             in_library: !!match,
           }
         })
@@ -1421,7 +1425,7 @@ export async function executeTool(
       // Notify renderer to refresh wishlist immediately
       if (added > 0) {
         for (const win of BrowserWindow.getAllWindows()) {
-          safeSend(win, 'wishlist:changed')
+          safeSend(win, IPC_CHANNELS.wishlistChanged)
         }
       }
 
@@ -1516,7 +1520,7 @@ export async function executeTool(
       for (const album of allAlbums) {
         const quality = db.getMusicQualityScore(album.id as number)
         if (quality) {
-          const tier = (quality as Record<string, unknown>).quality_tier as string
+          const tier = quality.quality_tier
           if (tier in tiers) tiers[tier]++
           else tiers.UNSCORED++
         } else {
@@ -1643,10 +1647,10 @@ export async function executeTool(
         avg_audio_bitrate: album.avg_audio_bitrate,
         best_sample_rate: album.best_sample_rate,
         best_bit_depth: album.best_bit_depth,
-        quality_tier: quality ? (quality as Record<string, unknown>).quality_tier : undefined,
-        tier_quality: quality ? (quality as Record<string, unknown>).tier_quality : undefined,
-        tier_score: quality ? (quality as Record<string, unknown>).tier_score : undefined,
-        needs_upgrade: quality ? (quality as Record<string, unknown>).needs_upgrade : undefined,
+        quality_tier: quality?.quality_tier,
+        tier_quality: quality?.tier_quality,
+        tier_score: quality?.tier_score,
+        needs_upgrade: quality?.needs_upgrade,
         completeness_percentage: completeness ? (completeness as unknown as Record<string, unknown>).completeness_percentage : undefined,
         tracks: trackData,
       })
@@ -1666,8 +1670,8 @@ export async function executeTool(
         sortOrder: 'desc',
         limit,
       })
-      const filtered = items.filter((i: Record<string, unknown>) => (i.play_count as number) > 0)
-      return JSON.stringify(filtered.map((i: Record<string, unknown>) => compact({
+      const filtered = items.filter((i) => (i.play_count ?? 0) > 0)
+      return JSON.stringify(filtered.map((i) => compact({
         title: i.title, year: i.year, type: i.type,
         play_count: i.play_count, last_watched_at: i.last_watched_at,
         quality_tier: i.quality_tier, series_title: i.series_title,
@@ -1753,8 +1757,8 @@ export async function executeTool(
         limit,
       })
       const minRating = toolNumber(input, 'min_rating') || 7.5
-      const filtered = items.filter((i: Record<string, unknown>) => ((i.tmdb_rating as number) || 0) >= minRating)
-      return JSON.stringify(filtered.map((i: Record<string, unknown>) => compact({
+      const filtered = items.filter((i) => (i.tmdb_rating ?? 0) >= minRating)
+      return JSON.stringify(filtered.map((i) => compact({
         title: i.title, year: i.year, type: i.type,
         tmdb_rating: i.tmdb_rating, quality_tier: i.quality_tier,
         series_title: i.series_title,
@@ -1821,7 +1825,7 @@ export async function executeTool(
       const tracks = db.getMusicTracks({
         artistName,
         limit: limit * 5, // fetch more to filter
-      }) as Record<string, unknown>[]
+      })
 
       // Aggregate mood/genre tags
       const moodCounts: Record<string, number> = {}
@@ -1830,7 +1834,7 @@ export async function executeTool(
 
       for (const track of tracks) {
         const moods = (track.mood as string || '').split(';').map(s => s.trim()).filter(Boolean)
-        const genres = (track.genre as string || '').split(';').map(s => s.trim()).filter(Boolean)
+        const genres = (track.genres || '').split(';').map(s => s.trim()).filter(Boolean)
 
         for (const m of moods) moodCounts[m] = (moodCounts[m] || 0) + 1
         for (const g of genres) genreCounts[g] = (genreCounts[g] || 0) + 1
@@ -1858,7 +1862,9 @@ export async function executeTool(
     }
 
     case 'get_recent_notifications': {
-      const notifType = toolString(input, 'type') || undefined
+      const requestedType = toolString(input, 'type')
+      const notifType = (['source_change', 'scan_complete', 'error', 'info'] as const)
+        .find(type => type === requestedType)
       const limit = Math.min(toolNumber(input, 'limit') || 20, 50)
 
       const notifications = db.getNotifications({ limit, type: notifType })

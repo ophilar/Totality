@@ -1,8 +1,10 @@
+
 import { getDatabase } from '@main/database/getDatabase'
 import type { FileAnalysisResult } from '@main/services/MediaFileAnalyzer'
 import { evaluatePlaybackTarget, type PlaybackTargetEvaluation, type PlaybackTargetProfile } from '@main/types/playbackTarget'
 import { getSourceManager } from '@main/services/SourceManager'
 import { PlexPlaybackDecisionProvider } from '@main/providers/plex/PlexPlaybackDecisionProvider'
+import { getErrorMessage } from '@main/services/utils/errorUtils'
 
 export type PlaybackDeliveryMode = 'direct-play' | 'direct-stream' | 'transcode'
 export interface ProviderPlaybackDecision { provider: 'plex'; overall: PlaybackDeliveryMode; video: PlaybackDeliveryMode; audio: PlaybackDeliveryMode; subtitle: PlaybackDeliveryMode; evidence: string }
@@ -23,7 +25,7 @@ export class PlaybackCompatibilityService {
     const analysis = JSON.parse(item.deep_analysis) as FileAnalysisResult
     if (!analysis.success || analysis.filePath !== item.file_path) throw new Error('Persisted file analysis is invalid')
     const evaluation = evaluatePlaybackTarget(profile, analysis)
-    if (item.source_type !== 'plex' || !item.source_id || !profile.definition.providers?.plex) return { profile, evaluation, presentation: evaluation.overall }
+    if (item.source_type !== 'plex' || !item.source_id || !profile.definition.client) return { profile, evaluation, presentation: evaluation.overall }
     const plex = this.providers.plex || await this.getConfiguredPlexProvider(item.source_id)
     if (!plex) return { profile, evaluation, presentation: evaluation.overall }
     try {
@@ -32,7 +34,7 @@ export class PlaybackCompatibilityService {
       const providerCompatible = providerDecision.overall === 'direct-play'
       return { profile, evaluation, providerDecision, presentation: providerCompatible === (evaluation.overall === 'compatible') ? (evaluation.overall) : 'conflict' }
     } catch (error) {
-      return { profile, evaluation, providerDecisionError: error instanceof Error ? error.message : String(error), presentation: 'provider-decision-unavailable' }
+      return { profile, evaluation, providerDecisionError: getErrorMessage(error), presentation: 'provider-decision-unavailable' }
     }
   }
 
