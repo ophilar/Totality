@@ -155,6 +155,10 @@ export function MoviesView({
       return items
     }
 
+    if (sortBy === 'estimated_savings_bytes') {
+      return movieList.map(movie => ({ type: 'movie' as const, movie }))
+    }
+
     // Non-title sorts: preserve server order, insert collection header at first occurrence
     const items: MovieDisplayItem[] = []
     const addedCollections = new Set<string>()

@@ -9,6 +9,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import { createTestDatabase, type TestDatabase } from '../helpers/testDatabase'
+import type { QualityScore } from '@main/types/database'
 
 // Unmock sql.js — we need the real implementation
 vi.unmock('sql.js')
@@ -90,6 +91,25 @@ function makeMediaItem(overrides: Record<string, any> = {}) {
     audio_channels: 2,
     audio_bitrate: 128,
     ...overrides,
+  }
+}
+
+function makeQualityScore(mediaItemId: number, estimatedSavingsBytes: number | null): Omit<QualityScore, 'created_at' | 'updated_at'> {
+  return {
+    media_item_id: mediaItemId,
+    quality_tier: '1080p',
+    tier_quality: 'LOW',
+    tier_score: 0,
+    bitrate_tier_score: 0,
+    audio_tier_score: 0,
+    overall_score: 0,
+    resolution_score: 0,
+    bitrate_score: 0,
+    audio_score: 0,
+    is_low_quality: true,
+    needs_upgrade: true,
+    issues: '[]',
+    estimated_savings_bytes: estimatedSavingsBytes,
   }
 }
 
@@ -216,6 +236,44 @@ describe('BetterSQLiteService — Media Items', () => {
     service.upsertMediaItem(makeMediaItem({ plex_id: 'e1', type: 'episode', series_title: 'Show' }))
     const movies = service.getMediaItems({ type: 'movie' })
     expect(movies.every((m: any) => m.type === 'movie')).toBe(true)
+  })
+
+  it('sorts movies by numeric estimated savings with missing estimates last', () => {
+    const lowerSavingsId = service.upsertMediaItem(makeMediaItem({ plex_id: 'lower-savings', title: 'Lower' }))
+    const higherSavingsId = service.upsertMediaItem(makeMediaItem({ plex_id: 'higher-savings', title: 'Higher' }))
+    const unknownSavingsId = service.upsertMediaItem(makeMediaItem({ plex_id: 'unknown-savings', title: 'Unknown' }))
+    service.upsertQualityScores([
+      makeQualityScore(lowerSavingsId, 900_000_000),
+      makeQualityScore(higherSavingsId, 2_400_000_000),
+      makeQualityScore(unknownSavingsId, null),
+    ])
+
+    const movies = service.getMediaItems({ type: 'movie', sortBy: 'estimated_savings_bytes', sortOrder: 'desc' })
+
+    expect(movies.map(movie => movie.title)).toEqual(['Higher', 'Lower', 'Unknown'])
+    expect(movies.map(movie => movie.estimated_savings_bytes)).toEqual([2_400_000_000, 900_000_000, null])
+  })
+
+  it('sorts shows by their aggregate numeric estimated savings', () => {
+    const episodeOneId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-a-1', title: 'Episode 1', type: 'episode', series_title: 'Show A', series_tmdb_id: 1001,
+    }))
+    const episodeTwoId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-a-2', title: 'Episode 2', type: 'episode', series_title: 'Show A', series_tmdb_id: 1001,
+    }))
+    const episodeThreeId = service.upsertMediaItem(makeMediaItem({
+      plex_id: 'show-b-1', title: 'Episode 1', type: 'episode', series_title: 'Show B', series_tmdb_id: 1002,
+    }))
+    service.upsertQualityScores([
+      makeQualityScore(episodeOneId, 700_000_000),
+      makeQualityScore(episodeTwoId, 600_000_000),
+      makeQualityScore(episodeThreeId, 1_000_000_000),
+    ])
+
+    const shows = service.getTVShows({ sortBy: 'estimated_savings_bytes', sortOrder: 'desc' })
+
+    expect(shows.map(show => show.series_title)).toEqual(['Show A', 'Show B'])
+    expect(shows.map(show => show.estimated_savings_bytes)).toEqual([1_300_000_000, 1_000_000_000])
   })
 
   it('countMediaItems counts by source', () => {

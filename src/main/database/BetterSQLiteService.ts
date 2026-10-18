@@ -4259,7 +4259,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         sql += ` ORDER BY last_watched_at IS NULL ASC, last_watched_at ${sortOrder}, COALESCE(sort_title, series_title) ASC`
         break
       case 'estimated_savings_bytes':
-        sql += ` ORDER BY COALESCE(estimated_savings_bytes, 0) ${sortOrder}, COALESCE(sort_title, series_title) ASC`
+        sql += ` ORDER BY COALESCE(SUM(q.estimated_savings_bytes), 0) ${sortOrder}, COALESCE(sort_title, series_title) ASC`
         break
       default:
         sql += ` ORDER BY COALESCE(sort_title, series_title) ${sortOrder}`
