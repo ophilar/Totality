@@ -14,7 +14,6 @@ vi.unmock('sql.js')
 import initSqlJs, { type Database } from 'sql.js'
 import {
   backfillSeriesIdentityKeys,
-  enforceSeriesIdentityConstraints,
 } from '../../../src/main/database/SeriesIdentityMigration'
 
 let SQL: Awaited<ReturnType<typeof initSqlJs>>

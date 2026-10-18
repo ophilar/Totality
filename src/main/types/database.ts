@@ -1,7 +1,8 @@
 // Database type definitions
 
 // Provider types supported by the application
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+export const PROVIDER_TYPES = ['plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey'] as const
+export type ProviderType = typeof PROVIDER_TYPES[number]
 
 // Syncable tag fields on music tracks
 export type SyncField = 'mood' | 'genre'
@@ -114,6 +115,7 @@ export type EvidenceStatus = 'measured' | 'estimated' | 'insufficient'
 export type EvidenceConfidence = 'high' | 'medium' | 'low' | 'none'
 export type SavingsBasis =
   | 'audio_stream_removal'
+  | 'audio_stream_removal_and_transcode_model'
   | 'audio_transcode_model'
   | 'video_sample_encode'
   | 'video_bitrate_estimate'
@@ -206,14 +208,18 @@ export interface MediaItem {
   series_identity_key?: string | null
   original_language?: string | null
   audio_language?: string | null
+  quality_tier?: string
+  tier_quality?: string
+  tier_score?: number
+  efficiency_score?: number | null
+  storage_debt_bytes?: number | null
+  needs_upgrade?: boolean
   poster_url?: string
   episode_thumb_url?: string
   season_poster_url?: string
   summary?: string
 
-  // Storage efficiency & debt
-  efficiency_score?: number | null
-  storage_debt_bytes?: number | null
+  // Estimated savings
   evidence_status?: string | null
 
   // Ratings
@@ -232,6 +238,10 @@ export interface MediaItem {
   // Timestamps
   created_at: string
   updated_at: string
+}
+
+export type MediaItemUpsert = Pick<MediaItem, 'plex_id' | 'title' | 'type'> & {
+  [Key in Exclude<keyof MediaItem, 'id' | 'plex_id' | 'title' | 'type' | 'created_at' | 'updated_at'>]?: MediaItem[Key] | null
 }
 
 // Represents one file/version of a media item (e.g., 4K HDR vs 1080p theatrical)
@@ -287,6 +297,7 @@ export interface MediaItemVersion {
   quality_tier?: string           // 'SD', '720p', '1080p', '4K'
   tier_quality?: string           // 'LOW', 'MEDIUM', 'HIGH'
   tier_score?: number
+  needs_upgrade?: boolean
   bitrate_tier_score?: number
   audio_tier_score?: number
 
@@ -303,8 +314,8 @@ export interface QualityScore {
   media_item_id: number
 
   // Tier-based scoring
-  quality_tier: 'SD' | '720p' | '1080p' | '4K'
-  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
+  quality_tier: 'SD' | '720p' | '1080p' | '4K' | 'UNKNOWN'
+  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score: number // 0-100 score within tier
   bitrate_tier_score: number // 0-100 bitrate score for tier
   audio_tier_score: number // 0-100 audio score for tier
@@ -315,9 +326,9 @@ export interface QualityScore {
   bitrate_score: number // Maps to bitrate_tier_score
   audio_score: number // Maps to audio_tier_score
 
-  // Efficiency metrics
   efficiency_score?: number | null
   storage_debt_bytes?: number | null
+
   estimated_savings_bytes?: number | null
   evidence_status?: EvidenceStatus
   confidence?: EvidenceConfidence
@@ -428,7 +439,7 @@ export interface MediaItemFilters {
   sourceType?: ProviderType
   libraryId?: string
   // Sorting
-  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'play_count' | 'last_watched_at' | 'tmdb_rating'
+  sortBy?: 'title' | 'year' | 'updated_at' | 'created_at' | 'tier_score' | 'overall_score' | 'play_count' | 'last_watched_at' | 'tmdb_rating' | 'estimated_savings_bytes'
   sortOrder?: 'asc' | 'desc'
   // Server-side filtering
   alphabetFilter?: string
@@ -452,6 +463,7 @@ export interface TVShowSummary {
   series_identity_key?: string
   total_play_count?: number
   last_watched_at?: string
+  estimated_savings_bytes?: number | null
 }
 
 export interface TVShowFilters {
@@ -459,7 +471,7 @@ export interface TVShowFilters {
   libraryId?: string
   alphabetFilter?: string    // 'A'-'Z' or '#' for non-alpha
   searchQuery?: string
-  sortBy?: 'title' | 'episode_count' | 'season_count' | 'play_count' | 'last_watched_at'
+  sortBy?: 'title' | 'episode_count' | 'season_count' | 'play_count' | 'last_watched_at' | 'estimated_savings_bytes'
   sortOrder?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -469,7 +481,7 @@ export interface TVShowFilters {
 // MUSIC TYPES
 // ============================================================================
 
-export type MusicQualityTier = 'LOSSY_LOW' | 'LOSSY_MID' | 'LOSSY_HIGH' | 'LOSSLESS' | 'HI_RES'
+export type MusicQualityTier = 'LOSSY_LOW' | 'LOSSY_MID' | 'LOSSY_HIGH' | 'LOSSLESS' | 'HI_RES' | 'UNKNOWN'
 export type AlbumType = 'album' | 'ep' | 'single' | 'compilation' | 'live' | 'soundtrack' | 'unknown'
 
 export interface MusicArtist {
@@ -609,7 +621,7 @@ export interface MusicQualityScore {
   album_id: number
 
   quality_tier: MusicQualityTier
-  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH'
+  tier_quality: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   tier_score: number
 
   codec_score: number
@@ -722,10 +734,14 @@ export interface MusicFilters {
 // WISHLIST / SHOPPING LIST
 // ============================================================================
 
-export type WishlistMediaType = 'movie' | 'episode' | 'season' | 'album' | 'track'
+export const WISHLIST_MEDIA_TYPES = ['movie', 'episode', 'season', 'album', 'track'] as const
+export const WISHLIST_REASONS = ['missing', 'upgrade'] as const
+export const WISHLIST_STATUSES = ['active', 'completed'] as const
+
+export type WishlistMediaType = typeof WISHLIST_MEDIA_TYPES[number]
 export type WishlistPriority = 1 | 2 | 3 | 4 | 5
-export type WishlistReason = 'missing' | 'upgrade'
-export type WishlistStatus = 'active' | 'completed'
+export type WishlistReason = typeof WISHLIST_REASONS[number]
+export type WishlistStatus = typeof WISHLIST_STATUSES[number]
 
 export interface WishlistItem {
   id?: number
@@ -734,44 +750,44 @@ export interface WishlistItem {
   media_type: WishlistMediaType
   title: string
   subtitle?: string
-  year?: number
+  year?: number | null
 
   // Wishlist reason
   reason: WishlistReason
 
   // External IDs for store linking
-  tmdb_id?: string
-  imdb_id?: string
-  musicbrainz_id?: string
+  tmdb_id?: string | null
+  imdb_id?: string | null
+  musicbrainz_id?: string | null
 
   // Series/Collection context (for TV)
-  series_title?: string
-  season_number?: number
-  episode_number?: number
-  collection_name?: string
+  series_title?: string | null
+  season_number?: number | null
+  episode_number?: number | null
+  collection_name?: string | null
 
   // Artist context (for music)
-  artist_name?: string
-  album_title?: string
+  artist_name?: string | null
+  album_title?: string | null
 
   // Artwork
-  poster_url?: string
+  poster_url?: string | null
 
   // User data
   priority: WishlistPriority
-  notes?: string
+  notes?: string | null
 
   // Status tracking
   status: WishlistStatus
   completed_at?: string
 
   // Upgrade-specific fields (only used when reason='upgrade')
-  current_quality_tier?: string
-  current_quality_level?: string
-  current_resolution?: string
-  current_video_codec?: string
-  current_audio_codec?: string
-  media_item_id?: number
+  current_quality_tier?: string | null
+  current_quality_level?: string | null
+  current_resolution?: string | null
+  current_video_codec?: string | null
+  current_audio_codec?: string | null
+  media_item_id?: number | null
 
   // Timestamps
   added_at: string
@@ -819,17 +835,6 @@ export enum TaskStatus {
   Blocked = 'blocked'
 }
 
-export interface TaskProgress {
-  current: number
-  total: number
-  percentage: number
-  phase: string
-  currentItem?: string
-  fps?: number
-  eta?: string
-  speed?: string
-}
-
 export type AnalysisStatus =
   | 'completed'
   | 'partial'
@@ -864,70 +869,8 @@ export interface AnalysisOutcome {
   errors?: string[]
 }
 
-export type CalculationStatus = 'measured' | 'estimated' | 'insufficient' | 'unanalyzed' | 'unavailable' | 'complete' | 'partial' | 'unknown'
-
 export interface OptimizationMetricsSummary {
-  recoverableBytes: number | null
-  wasteBytes: number | null
-  efficiency: number | null
-  savingsBasis: string | null
-  evidenceStatus: EvidenceStatus
-  confidence: EvidenceConfidence
-  calculationStatus: CalculationStatus
-  status?: CalculationStatus
-  knownCount?: number
-  totalCount?: number
-  overallEfficiencyScore?: number | null
-  totalStorageDebtBytes?: number | null
-  recoverableWasteBytes?: number | null
-  confidenceScore?: number
+  estimatedSavingsBytes: number | null
 }
 
-export interface TaskResult {
-  itemsScanned?: number
-  itemsAdded?: number
-  itemsUpdated?: number
-  itemsRemoved?: number
-  status?: AnalysisStatus
-  completedCount?: number
-  failedCount?: number
-  deferredCount?: number
-  skippedCount?: number
-  reconciliation?: { merged: number; removed: number; preservedLocked: number; ambiguous: number }
-  databaseBackupPath?: string
-  deferred?: number
-  diagnostics?: AnalysisDiagnostic[]
-  outcome?: AnalysisOutcome
-  [key: string]: unknown
-}
-
-export interface QueuedTask {
-  id: string
-  type: TaskType
-  label: string
-  sourceId?: string
-  libraryId?: string
-  mediaItemId?: number
-  artistId?: number
-  albumId?: number
-  collectionId?: number
-  status: TaskStatus
-  progress?: TaskProgress
-  createdAt: string
-  startedAt?: string
-  completedAt?: string
-  error?: string
-  result?: TaskResult
-  options?: unknown
-  batchId?: string
-  seriesTitle?: string
-  seriesIdentityKey?: string
-  inputFingerprint?: string
-}
-
-export interface TaskQueueState {
-  currentTask: QueuedTask | null
-  queue: QueuedTask[]
-  isPaused: boolean
-  completedTasks: QueuedTask[]
-}
+export type { QueuedTask, TaskProgress, TaskQueueState, TaskResult } from './taskQueue'

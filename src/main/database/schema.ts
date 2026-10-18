@@ -1,6 +1,10 @@
 // Database schema as a TypeScript constant
 // This ensures it's bundled correctly by Vite
 
+import { PROVIDER_TYPES } from '../types/database'
+
+export const PROVIDER_TYPES_SQL = PROVIDER_TYPES.map(provider => `'${provider}'`).join(', ')
+
 export const DATABASE_SCHEMA = `
 -- Totality Database Schema
 -- SQLite database for storing media library analysis and recommendations
@@ -9,7 +13,7 @@ export const DATABASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS media_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_id TEXT NOT NULL UNIQUE,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
+  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
   display_name TEXT NOT NULL,
 
   -- Connection details (JSON for flexibility)
@@ -31,7 +35,7 @@ CREATE TABLE IF NOT EXISTS media_items (
 
   -- Source tracking (for multi-provider support)
   source_id TEXT NOT NULL DEFAULT 'legacy',
-  source_type TEXT NOT NULL DEFAULT 'plex' CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
+  source_type TEXT NOT NULL DEFAULT 'plex' CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
   library_id TEXT, -- Library ID within the source (e.g., Plex library key)
 
   -- Provider item ID (was plex_id, now generic)
@@ -189,6 +193,9 @@ CREATE TABLE IF NOT EXISTS quality_scores (
   audio_tier_score INTEGER NOT NULL DEFAULT 0,
   storage_debt_bytes INTEGER,
   evidence_status TEXT,
+  estimated_savings_bytes INTEGER,
+  confidence TEXT,
+  savings_basis TEXT,
 
   -- Legacy scores (0-100 scale) - kept for backward compatibility
   overall_score INTEGER NOT NULL,
@@ -303,7 +310,7 @@ CREATE TABLE IF NOT EXISTS music_artists (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
+  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -337,7 +344,7 @@ CREATE TABLE IF NOT EXISTS music_albums (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
+  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID
@@ -393,7 +400,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
 
   -- Source tracking
   source_id TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK(source_type IN ('plex', 'jellyfin', 'emby', 'kodi', 'kodi-local', 'kodi-mysql', 'local', 'mediamonkey')),
+  source_type TEXT NOT NULL CHECK(source_type IN (${PROVIDER_TYPES_SQL})),
   library_id TEXT, -- Library ID within the source
 
   -- Provider item ID

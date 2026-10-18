@@ -15,29 +15,31 @@ import Database from 'better-sqlite3'
 import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
-import { DATABASE_SCHEMA } from './schema'
+import { DATABASE_SCHEMA, PROVIDER_TYPES_SQL } from './schema'
 import { getCredentialEncryptionService } from '../services/CredentialEncryptionService'
 import { getErrorMessage } from '../services/utils/errorUtils'
-import type {
-  MediaItem,
-  QualityScore,
-  MediaItemFilters,
-  MediaSource,
-  MusicArtist,
-  MusicAlbum,
-  MusicTrack,
-  SeriesCompleteness,
-  MovieCollection,
-  MusicQualityScore,
-  ArtistCompleteness,
-  AlbumCompleteness,
-  MusicFilters,
-  WishlistItem,
-  WishlistFilters,
-  TVShowSummary,
-  TVShowFilters,
-  MediaItemVersion,
-  MediaDuplicate,
+import {
+  PROVIDER_TYPES,
+  type MediaItem,
+  type MediaItemUpsert,
+  type QualityScore,
+  type MediaItemFilters,
+  type MediaSource,
+  type MusicArtist,
+  type MusicAlbum,
+  type MusicTrack,
+  type SeriesCompleteness,
+  type MovieCollection,
+  type MusicQualityScore,
+  type ArtistCompleteness,
+  type AlbumCompleteness,
+  type MusicFilters,
+  type WishlistItem,
+  type WishlistFilters,
+  type TVShowSummary,
+  type TVShowFilters,
+  type MediaItemVersion,
+  type MediaDuplicate,
 } from '../types/database'
 import type {
   Notification,
@@ -240,7 +242,8 @@ export class BetterSQLiteService {
     if (!seriesIdentityKey || seriesIdentityKey.trim() === '') {
       throw new Error('seriesIdentityKey is required to retrieve episodes')
     }
-    let sql = `SELECT m.*, q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score, q.issues
+    let sql = `SELECT m.*, q.overall_score, q.needs_upgrade, q.quality_tier, q.tier_quality, q.tier_score, q.issues,
+q.storage_debt_bytes, q.estimated_savings_bytes, q.evidence_status, q.confidence, q.savings_basis
 FROM media_items m
 LEFT JOIN quality_scores q ON m.id = q.media_item_id
 WHERE m.type = 'episode' AND m.series_identity_key = ?`
@@ -332,6 +335,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'ALTER TABLE quality_scores ADD COLUMN audio_tier_score INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE quality_scores ADD COLUMN storage_debt_bytes INTEGER',
       'ALTER TABLE quality_scores ADD COLUMN evidence_status TEXT',
+      'ALTER TABLE quality_scores ADD COLUMN estimated_savings_bytes INTEGER',
+      'ALTER TABLE quality_scores ADD COLUMN confidence TEXT',
+      'ALTER TABLE quality_scores ADD COLUMN savings_basis TEXT',
 
       // Media items enhancements
       'ALTER TABLE media_items ADD COLUMN series_identity_key TEXT',
@@ -417,22 +423,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       // Music quality upgrade tracking
       'ALTER TABLE music_quality_scores ADD COLUMN previous_quality_tier TEXT',
       'ALTER TABLE music_quality_scores ADD COLUMN upgraded_at TEXT',
-      // Person completeness table
-      `CREATE TABLE IF NOT EXISTS person_completeness (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        person_type TEXT NOT NULL CHECK(person_type IN ('director', 'actor', 'writer', 'composer', 'cinematographer', 'editor')),
-        person_name TEXT NOT NULL,
-        tmdb_person_id INTEGER NOT NULL,
-        total_movies INTEGER NOT NULL DEFAULT 0,
-        owned_movies INTEGER NOT NULL DEFAULT 0,
-        missing_movies TEXT NOT NULL DEFAULT '[]',
-        owned_movie_ids TEXT NOT NULL DEFAULT '[]',
-        completeness_percentage REAL NOT NULL DEFAULT 0,
-        profile_url TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(person_type, tmdb_person_id)
-      )`,
       // Ratings
       'ALTER TABLE media_items ADD COLUMN tmdb_rating REAL',
       // Watch history
@@ -441,22 +431,6 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       // Deep file analysis cache
       'ALTER TABLE media_items ADD COLUMN deep_analysis TEXT',
       'ALTER TABLE media_items ADD COLUMN deep_analysis_at TEXT',
-      // Media item duplicates table
-      `CREATE TABLE IF NOT EXISTS media_item_duplicates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source_id TEXT NOT NULL,
-        external_id TEXT NOT NULL,
-        external_type TEXT NOT NULL CHECK(external_type IN ('tmdb_movie', 'tmdb_series', 'musicbrainz_artist', 'musicbrainz_album')),
-        media_item_ids TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'resolved', 'ignored')),
-        resolution_strategy TEXT,
-        resolved_at TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(source_id, external_id, external_type)
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_status ON media_item_duplicates(status)',
-      'CREATE INDEX IF NOT EXISTS idx_media_item_duplicates_source ON media_item_duplicates(source_id)',
     ]
 
     for (const statement of alterStatements) {
@@ -466,199 +440,131 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         // Ignore "duplicate column" errors
         const msg = getErrorMessage(error)
         if (!msg?.includes('duplicate column name')) {
-          console.log(`[BetterSQLite] Migration note: ${msg}`)
+          throw error
         }
       }
     }
 
-    // Migration: Add 'kodi-mysql' to source_type CHECK constraints for existing databases
-    // Uses PRAGMA writable_schema to modify CHECK constraints in-place (SQLite limitation)
-    try {
-      const schemaRow = this.db.prepare(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='media_sources'"
-      ).get() as { sql: string } | undefined
-      if (schemaRow?.sql && !schemaRow.sql.includes('kodi-mysql')) {
-        const tableNames = ['media_sources', 'media_items', 'music_artists', 'music_albums', 'music_tracks']
-        this.db.exec('PRAGMA writable_schema = ON')
-        try {
-          for (const table of tableNames) {
-            // Handle migration 001 format (missing 'local')
-            this.db.prepare(
-              `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`
-            ).run(table)
-            // Handle schema.ts format (has 'local')
-            this.db.prepare(
-              `UPDATE sqlite_master SET sql = replace(sql, '''kodi-local'', ''local''))', '''kodi-local'', ''kodi-mysql'', ''local''))') WHERE type = 'table' AND name = ?`
-            ).run(table)
-          }
-        } finally {
-          this.db.exec('PRAGMA writable_schema = OFF')
-        }
-        // Verify database integrity after schema modification
-        const integrityResult = this.db.pragma('integrity_check') as Array<{ integrity_check: string }>
-        const isOk = integrityResult.length === 1 && integrityResult[0].integrity_check === 'ok'
-        if (!isOk) {
-          console.error('[BetterSQLite] Integrity check failed after CHECK migration:', integrityResult)
-        } else {
-          console.log('[BetterSQLite] Migration: Added kodi-mysql to source_type CHECK constraints')
-        }
-      }
-    } catch (error: unknown) {
-      console.log('[BetterSQLite] kodi-mysql CHECK migration note:', getErrorMessage(error))
+    // Migrate provider CHECK constraints using the canonical schema types.
+    let schemaChanged = false
+    const tablesToMigrate = ['media_sources', 'media_items', 'music_artists', 'music_albums', 'music_tracks',
+      'series_completeness', 'movie_collections']
+    const tableDefinitions = new Map<string, string>()
+    for (const table of tablesToMigrate) {
+      const row = this.db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?"
+      ).get(table) as { sql: string } | undefined
+      if (row?.sql) tableDefinitions.set(table, row.sql)
     }
-
-    // Migration: Add 'mediamonkey' to source_type CHECK constraints for existing databases.
-    // Uses table recreation — PRAGMA writable_schema doesn't work with better-sqlite3's schema cache.
-    // Test with an actual INSERT to detect if the compiled constraint accepts 'mediamonkey'.
-    try {
-      let needsMigration = false
+    const needsMigration = [...tableDefinitions.values()].some(sql =>
+      /CHECK\s*\(\s*source_type\s+IN\s*\(/i.test(sql) &&
+      PROVIDER_TYPES.some(provider => !sql.includes(`'${provider}'`))
+    )
+    if (needsMigration) {
+      console.log('[BetterSQLite] Recreating tables to update provider CHECK constraints...')
+      this.db.pragma('foreign_keys = OFF')
+      this.db.exec('BEGIN TRANSACTION')
       try {
-        this.db.exec("INSERT INTO music_tracks (source_id, source_type, provider_id, artist_name, title, audio_codec) VALUES ('__test__', 'mediamonkey', '__test__', 'test', 'test', 'test')")
-        this.db.exec("DELETE FROM music_tracks WHERE source_id = '__test__'")
-      } catch {
-        needsMigration = true
-      }
-      if (needsMigration) {
-        console.log('[BetterSQLite] Recreating tables to add mediamonkey to CHECK constraints...')
-        this.db.pragma('foreign_keys = OFF')
-        this.db.exec('BEGIN TRANSACTION')
-        try {
-          const tablesToMigrate = ['media_sources', 'media_items', 'music_artists', 'music_albums', 'music_tracks',
-            'series_completeness', 'movie_collections']
-          for (const table of tablesToMigrate) {
-            const row = this.db.prepare(
-              "SELECT sql FROM sqlite_master WHERE type='table' AND name=?"
-            ).get(table) as { sql: string } | undefined
-            if (!row?.sql || row.sql.includes('mediamonkey')) continue
-            // Build new CREATE TABLE SQL with 'mediamonkey' added to the CHECK constraint
-            const newSql = row.sql.replace(
-              /CHECK\s*\(\s*source_type\s+IN\s*\([^)]+\)\s*\)/i,
-              "CHECK(source_type IN ('plex','jellyfin','emby','kodi','kodi-local','kodi-mysql','local','mediamonkey'))"
-            )
-            if (newSql === row.sql) continue // No change needed
-            // Replace "CREATE TABLE tablename" with "CREATE TABLE tablename_new"
-            const createNewSql = newSql.replace(
-              new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${table}`, 'i'),
-              `CREATE TABLE ${table}_new`
-            )
-            this.db.exec(createNewSql)
-            // Copy data
-            const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-            const newCols = this.db.prepare(`PRAGMA table_info(${table}_new)`).all() as Array<{ name: string }>
-            const newColSet = new Set(newCols.map(c => c.name))
-            const commonCols = cols.filter(c => newColSet.has(c.name)).map(c => c.name).join(', ')
-            this.db.exec(`INSERT INTO ${table}_new (${commonCols}) SELECT ${commonCols} FROM ${table}`)
-            this.db.exec(`DROP TABLE ${table}`)
-            this.db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`)
-            console.log(`[BetterSQLite] Recreated ${table} with mediamonkey CHECK constraint`)
-          }
-          // Recreate indexes that were dropped with the tables
-          this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_media_sources_source_id ON media_sources(source_id)')
-          this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_music_tracks_source_provider ON music_tracks(source_id, provider_id)')
-          this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_music_artists_source_provider ON music_artists(source_id, provider_id)')
-          this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_music_albums_source_provider ON music_albums(source_id, provider_id)')
-          this.db.exec('COMMIT')
-          console.log('[BetterSQLite] Migration: All tables updated with mediamonkey CHECK constraint')
-        } catch (e) {
-          this.db.exec('ROLLBACK')
-          throw e
-        } finally {
-          this.db.pragma('foreign_keys = ON')
+        for (const table of tablesToMigrate) {
+          const tableSql = tableDefinitions.get(table)
+          if (!tableSql || !/CHECK\s*\(\s*source_type\s+IN\s*\(/i.test(tableSql) ||
+            PROVIDER_TYPES.every(provider => tableSql.includes(`'${provider}'`))) continue
+          const newSql = tableSql.replace(
+            /CHECK\s*\(\s*source_type\s+IN\s*\([^)]+\)\s*\)/i,
+            `CHECK(source_type IN (${PROVIDER_TYPES_SQL}))`
+          )
+          if (newSql === tableSql) throw new Error(`Could not update source_type CHECK constraint in ${table}`)
+          // Replace "CREATE TABLE tablename" with "CREATE TABLE tablename_new"
+          const createNewSql = newSql.replace(
+            new RegExp(`CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?${table}`, 'i'),
+            `CREATE TABLE ${table}_new`
+          )
+          if (createNewSql === newSql) throw new Error(`Could not rename ${table} while rebuilding its provider CHECK constraint`)
+          this.db.exec(createNewSql)
+          // Copy data
+          const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+          const newCols = this.db.prepare(`PRAGMA table_info(${table}_new)`).all() as Array<{ name: string }>
+          const newColSet = new Set(newCols.map(c => c.name))
+          const commonCols = cols.filter(c => newColSet.has(c.name)).map(c => c.name).join(', ')
+          this.db.exec(`INSERT INTO ${table}_new (${commonCols}) SELECT ${commonCols} FROM ${table}`)
+          this.db.exec(`DROP TABLE ${table}`)
+          this.db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`)
+          console.log(`[BetterSQLite] Recreated ${table} with current provider CHECK constraint`)
         }
+        this.db.exec('COMMIT')
+        console.log('[BetterSQLite] Migration: Provider CHECK constraints updated')
+        schemaChanged = true
+      } catch (e) {
+        this.db.exec('ROLLBACK')
+        throw e
+      } finally {
+        this.db.pragma('foreign_keys = ON')
       }
-    } catch (error: unknown) {
-      console.log('[BetterSQLite] mediamonkey CHECK migration error:', getErrorMessage(error))
     }
 
     // Migration: Expand person_type CHECK to include writer, composer, cinematographer, editor
-    try {
-      let needsPersonMigration = false
+    const personRow = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='person_completeness'").get() as { sql: string } | undefined
+    const personSql = personRow?.sql
+    const personTypes = ['writer', 'composer', 'cinematographer', 'editor']
+    if (personSql && personTypes.some(type => !personSql.includes(`'${type}'`))) {
+      console.log('[BetterSQLite] Expanding person_type CHECK constraint...')
+      const newSql = personSql.replace(
+        /CHECK\s*\(\s*person_type\s+IN\s*\([^)]+\)\s*\)/i,
+        "CHECK(person_type IN ('director','actor','writer','composer','cinematographer','editor'))"
+      ).replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?person_completeness/i, 'CREATE TABLE person_completeness_new')
+      if (newSql === personSql) throw new Error('Could not update person_type CHECK constraint')
+      this.db.pragma('foreign_keys = OFF')
+      this.db.exec('BEGIN TRANSACTION')
       try {
-        this.db.exec("INSERT INTO person_completeness (person_type, person_name, tmdb_person_id) VALUES ('writer', '__test__', -1)")
-        this.db.exec("DELETE FROM person_completeness WHERE tmdb_person_id = -1")
-      } catch {
-        needsPersonMigration = true
+        this.db.exec(newSql)
+        this.db.exec('INSERT INTO person_completeness_new SELECT * FROM person_completeness')
+        this.db.exec('DROP TABLE person_completeness')
+        this.db.exec('ALTER TABLE person_completeness_new RENAME TO person_completeness')
+        this.db.exec('COMMIT')
+        console.log('[BetterSQLite] Migration: person_type CHECK constraint expanded')
+        schemaChanged = true
+      } catch (e) {
+        this.db.exec('ROLLBACK')
+        throw e
+      } finally {
+        this.db.pragma('foreign_keys = ON')
       }
-      if (needsPersonMigration) {
-        console.log('[BetterSQLite] Expanding person_type CHECK constraint...')
-        const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='person_completeness'").get() as { sql: string } | undefined
-        if (row?.sql) {
-          const newSql = row.sql.replace(
-            /CHECK\s*\(\s*person_type\s+IN\s*\([^)]+\)\s*\)/i,
-            "CHECK(person_type IN ('director','actor','writer','composer','cinematographer','editor'))"
-          ).replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?person_completeness/i, 'CREATE TABLE person_completeness_new')
-          this.db.pragma('foreign_keys = OFF')
-          this.db.exec('BEGIN TRANSACTION')
-          try {
-            this.db.exec(newSql)
-            this.db.exec('INSERT INTO person_completeness_new SELECT * FROM person_completeness')
-            this.db.exec('DROP TABLE person_completeness')
-            this.db.exec('ALTER TABLE person_completeness_new RENAME TO person_completeness')
-            this.db.exec('COMMIT')
-            console.log('[BetterSQLite] Migration: person_type CHECK constraint expanded')
-          } catch (e) {
-            this.db.exec('ROLLBACK')
-            throw e
-          } finally {
-            this.db.pragma('foreign_keys = ON')
-          }
-        }
-      }
-    } catch (error: unknown) {
-      console.log('[BetterSQLite] person_type CHECK migration error:', getErrorMessage(error))
     }
 
     // Migration: Expand exclusion_type CHECK to include person_movie
-    try {
-      let needsExclusionMigration = false
+    const exclusionRow = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='exclusions'").get() as { sql: string } | undefined
+    const exclusionSql = exclusionRow?.sql
+    if (exclusionSql && !exclusionSql.includes("'person_movie'")) {
+      console.log('[BetterSQLite] Expanding exclusion_type CHECK constraint...')
+      const newSql = exclusionSql.replace(
+        /CHECK\s*\(\s*exclusion_type\s+IN\s*\([^)]+\)\s*\)/i,
+        "CHECK(exclusion_type IN ('media_upgrade','collection_movie','series_episode','artist_album','person_movie'))"
+      ).replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?exclusions/i, 'CREATE TABLE exclusions_new')
+      if (newSql === exclusionSql) throw new Error('Could not update exclusion_type CHECK constraint')
+      this.db.pragma('foreign_keys = OFF')
+      this.db.exec('BEGIN TRANSACTION')
       try {
-        this.db.exec("INSERT INTO exclusions (exclusion_type, title) VALUES ('person_movie', '__test__')")
-        this.db.exec("DELETE FROM exclusions WHERE title = '__test__'")
-      } catch {
-        needsExclusionMigration = true
+        this.db.exec(newSql)
+        this.db.exec('INSERT INTO exclusions_new SELECT * FROM exclusions')
+        this.db.exec('DROP TABLE exclusions')
+        this.db.exec('ALTER TABLE exclusions_new RENAME TO exclusions')
+        this.db.exec('COMMIT')
+        console.log('[BetterSQLite] Migration: exclusion_type CHECK constraint expanded')
+        schemaChanged = true
+      } catch (e) {
+        this.db.exec('ROLLBACK')
+        throw e
+      } finally {
+        this.db.pragma('foreign_keys = ON')
       }
-      if (needsExclusionMigration) {
-        console.log('[BetterSQLite] Expanding exclusion_type CHECK constraint...')
-        const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='exclusions'").get() as { sql: string } | undefined
-        if (row?.sql) {
-          const newSql = row.sql.replace(
-            /CHECK\s*\(\s*exclusion_type\s+IN\s*\([^)]+\)\s*\)/i,
-            "CHECK(exclusion_type IN ('media_upgrade','collection_movie','series_episode','artist_album','person_movie'))"
-          ).replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?exclusions/i, 'CREATE TABLE exclusions_new')
-          this.db.pragma('foreign_keys = OFF')
-          this.db.exec('BEGIN TRANSACTION')
-          try {
-            this.db.exec(newSql)
-            this.db.exec('INSERT INTO exclusions_new SELECT * FROM exclusions')
-            this.db.exec('DROP TABLE exclusions')
-            this.db.exec('ALTER TABLE exclusions_new RENAME TO exclusions')
-            this.db.exec('COMMIT')
-            console.log('[BetterSQLite] Migration: exclusion_type CHECK constraint expanded')
-          } catch (e) {
-            this.db.exec('ROLLBACK')
-            throw e
-          } finally {
-            this.db.pragma('foreign_keys = ON')
-          }
-        }
-      }
-    } catch (error: unknown) {
-      console.log('[BetterSQLite] exclusion_type CHECK migration error:', getErrorMessage(error))
     }
+
+    if (schemaChanged) this.db.exec(DATABASE_SCHEMA)
 
     // Create indexes for performance
-    try {
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_items_tmdb_id ON media_items(tmdb_id) WHERE tmdb_id IS NOT NULL')
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_items_imdb_id ON media_items(imdb_id) WHERE imdb_id IS NOT NULL')
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_items_year ON media_items(year) WHERE year IS NOT NULL')
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_series_completeness_tmdb_id ON series_completeness(tmdb_id) WHERE tmdb_id IS NOT NULL')
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_music_albums_type ON music_albums(album_type) WHERE album_type IS NOT NULL')
-    } catch {
-      // Indexes may already exist
-    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_items_tmdb_id ON media_items(tmdb_id) WHERE tmdb_id IS NOT NULL')
 
-    // Create FTS5 virtual tables + sync triggers (better-sqlite3 only; SQL.js lacks FTS5)
-    try {
+    // Create FTS5 virtual tables + sync triggers
       this.db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS media_fts USING fts5(
           title, series_title,
@@ -721,23 +627,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
           INSERT INTO music_track_fts(rowid, title, artist_name, album_name) VALUES (new.id, new.title, COALESCE(new.artist_name, ''), COALESCE(new.album_name, ''));
         END;
       `)
-    } catch (error: unknown) {
-      console.warn('[BetterSQLite] FTS5 table creation skipped:', getErrorMessage(error))
-    }
 
     // Populate FTS5 virtual tables from existing data (one-time; triggers handle future writes)
-    try {
-      const ftsReady = this.db.prepare("SELECT value FROM settings WHERE key = 'fts_populated'").get()
-      if (!ftsReady) {
-        this.db.exec(`INSERT INTO media_fts(rowid, title, series_title) SELECT id, title, COALESCE(series_title, '') FROM media_items`)
-        this.db.exec(`INSERT INTO music_artist_fts(rowid, name) SELECT id, name FROM music_artists`)
-        this.db.exec(`INSERT INTO music_album_fts(rowid, title, artist_name) SELECT id, title, COALESCE(artist_name, '') FROM music_albums`)
-        this.db.exec(`INSERT INTO music_track_fts(rowid, title, artist_name, album_name) SELECT id, title, COALESCE(artist_name, ''), COALESCE(album_name, '') FROM music_tracks`)
-        this.db.prepare("INSERT OR IGNORE INTO settings(key, value) VALUES ('fts_populated', '1')").run()
-        console.log('[BetterSQLite] FTS5 index populated from existing data')
-      }
-    } catch (error: unknown) {
-      console.warn('[BetterSQLite] FTS population skipped:', getErrorMessage(error))
+    const ftsReady = this.db.prepare("SELECT value FROM settings WHERE key = 'fts_populated'").get()
+    if (!ftsReady) {
+      this.db.exec(`INSERT INTO media_fts(rowid, title, series_title) SELECT id, title, COALESCE(series_title, '') FROM media_items`)
+      this.db.exec(`INSERT INTO music_artist_fts(rowid, name) SELECT id, name FROM music_artists`)
+      this.db.exec(`INSERT INTO music_album_fts(rowid, title, artist_name) SELECT id, title, COALESCE(artist_name, '') FROM music_albums`)
+      this.db.exec(`INSERT INTO music_track_fts(rowid, title, artist_name, album_name) SELECT id, title, COALESCE(artist_name, ''), COALESCE(album_name, '') FROM music_tracks`)
+      this.db.prepare("INSERT OR IGNORE INTO settings(key, value) VALUES ('fts_populated', '1')").run()
+      console.log('[BetterSQLite] FTS5 index populated from existing data')
     }
 
     // Fix music track album_id references — prior bug in upsertMusicAlbum returned
@@ -1095,11 +994,11 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         COUNT(DISTINCT CASE WHEN m.type = 'episode' THEN m.series_title END) as totalShows,
         SUM(CASE WHEN q.is_low_quality = 1 THEN 1 ELSE 0 END) as lowQualityCount,
         SUM(CASE WHEN q.needs_upgrade = 1 THEN 1 ELSE 0 END) as needsUpgradeCount,
-        COALESCE(AVG(q.overall_score), 0) as averageQualityScore,
+        COALESCE(AVG(CASE WHEN q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as averageQualityScore,
         SUM(CASE WHEN m.type = 'movie' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as movieNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'movie' THEN q.overall_score END), 0) as movieAverageQualityScore,
+        COALESCE(AVG(CASE WHEN m.type = 'movie' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as movieAverageQualityScore,
         SUM(CASE WHEN m.type = 'episode' AND q.needs_upgrade = 1 THEN 1 ELSE 0 END) as tvNeedsUpgradeCount,
-        COALESCE(AVG(CASE WHEN m.type = 'episode' THEN q.overall_score END), 0) as tvAverageQualityScore
+        COALESCE(AVG(CASE WHEN m.type = 'episode' AND q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0) as tvAverageQualityScore
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -1520,7 +1419,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         ls.library_id,
         ls.library_name,
         ls.library_type,
-        ROUND(COALESCE(AVG(q.overall_score), 0)) as avg_score,
+        ROUND(COALESCE(AVG(CASE WHEN q.tier_quality != 'UNKNOWN' THEN q.overall_score END), 0)) as avg_score,
         COUNT(q.media_item_id) as item_count
       FROM library_scans ls
       INNER JOIN media_items m ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -1638,7 +1537,8 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     let sql = `
       SELECT m.*,
              q.overall_score, q.needs_upgrade,
-             q.quality_tier, q.tier_quality, q.tier_score, q.issues
+             q.quality_tier, q.tier_quality, q.tier_score, q.issues,
+             q.storage_debt_bytes, q.estimated_savings_bytes, q.evidence_status, q.confidence, q.savings_basis
       FROM media_items m
       LEFT JOIN quality_scores q ON m.id = q.media_item_id
       LEFT JOIN library_scans ls ON m.source_id = ls.source_id AND m.library_id = ls.library_id
@@ -1710,12 +1610,13 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       'created_at': 'm.created_at',
       'tier_score': 'q.tier_score',
       'overall_score': 'q.overall_score',
-      'tmdb_rating': 'm.tmdb_rating'
+      'tmdb_rating': 'm.tmdb_rating',
+      'estimated_savings_bytes': 'q.estimated_savings_bytes'
     }
     const sortColumn = sortColumnMap[filters?.sortBy || 'title'] || 'COALESCE(m.sort_title, m.title)'
     const sortOrder = filters?.sortOrder?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
     // For watch history / rating sorts: NULLs last, secondary sort by title
-    if (filters?.sortBy === 'last_watched_at' || filters?.sortBy === 'tmdb_rating') {
+    if (filters?.sortBy === 'last_watched_at' || filters?.sortBy === 'tmdb_rating' || filters?.sortBy === 'estimated_savings_bytes') {
       sql += ` ORDER BY ${sortColumn} IS NULL ASC, ${sortColumn} ${sortOrder}, COALESCE(m.sort_title, m.title) ASC, m.id ASC`
     } else if (filters?.sortBy === 'play_count') {
       sql += ` ORDER BY ${sortColumn} ${sortOrder}, COALESCE(m.sort_title, m.title) ASC, m.id ASC`
@@ -1867,7 +1768,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Upsert media item
    */
-  upsertMediaItem(item: MediaItem): number {
+  upsertMediaItem(item: MediaItemUpsert): number {
     if (!this.db) throw new Error('Database not initialized')
 
     let seriesIdentityKey = item.series_identity_key
@@ -1954,8 +1855,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         updated_at = datetime('now')
     `)
 
+    const sourceId = item.source_id || 'legacy'
     stmt.run(
-      item.source_id || 'legacy',
+      sourceId,
       item.source_type || 'plex',
       item.library_id || null,
       item.plex_id,
@@ -2006,7 +1908,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
 
     // Always look up by unique key — lastInsertRowid is unreliable after
     // ON CONFLICT DO UPDATE (may return stale rowid from a prior INSERT)
-    const existing = this.getMediaItemByProviderId(item.plex_id, item.source_id)
+    const existing = this.getMediaItemByProviderId(item.plex_id, sourceId)
     return existing?.id || 0
   }
 
@@ -2709,7 +2611,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   private static readonly TIER_RANK: Record<string, number> = { 'SD': 0, '720p': 1, '1080p': 2, '4K': 3 }
   private static readonly MUSIC_TIER_RANK: Record<string, number> = { 'LOSSY_LOW': 0, 'LOSSY_MID': 1, 'LOSSY_HIGH': 2, 'LOSSLESS': 3, 'HI_RES': 4 }
 
-  upsertQualityScore(score: QualityScore): void {
+  upsertQualityScore(score: Omit<QualityScore, 'created_at' | 'updated_at'>): void {
     if (!this.db) throw new Error('Database not initialized')
 
     // Check existing tier to detect upgrades
@@ -2737,19 +2639,21 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
     const stmt = this.db.prepare(`
       INSERT INTO quality_scores (
         media_item_id, quality_tier, tier_quality, tier_score,
-        bitrate_tier_score, audio_tier_score, overall_score,
+        bitrate_tier_score, audio_tier_score, storage_debt_bytes, overall_score,
         resolution_score, bitrate_score, audio_score,
         is_low_quality, needs_upgrade, issues,
         previous_quality_tier, upgraded_at,
-        storage_debt_bytes, evidence_status,
+        evidence_status,
+        estimated_savings_bytes, confidence, savings_basis,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       ON CONFLICT(media_item_id) DO UPDATE SET
         quality_tier = excluded.quality_tier,
         tier_quality = excluded.tier_quality,
         tier_score = excluded.tier_score,
         bitrate_tier_score = excluded.bitrate_tier_score,
         audio_tier_score = excluded.audio_tier_score,
+        storage_debt_bytes = excluded.storage_debt_bytes,
         overall_score = excluded.overall_score,
         resolution_score = excluded.resolution_score,
         bitrate_score = excluded.bitrate_score,
@@ -2759,8 +2663,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         issues = excluded.issues,
         previous_quality_tier = excluded.previous_quality_tier,
         upgraded_at = excluded.upgraded_at,
-        storage_debt_bytes = excluded.storage_debt_bytes,
         evidence_status = excluded.evidence_status,
+        estimated_savings_bytes = excluded.estimated_savings_bytes,
+        confidence = excluded.confidence,
+        savings_basis = excluded.savings_basis,
         updated_at = datetime('now')
     `)
 
@@ -2771,6 +2677,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       score.tier_score,
       score.bitrate_tier_score,
       score.audio_tier_score,
+      score.storage_debt_bytes ?? null,
       score.overall_score,
       score.resolution_score,
       score.bitrate_score,
@@ -2780,8 +2687,10 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
       score.issues,
       prevTier,
       upgradedAt,
-      score.storage_debt_bytes ?? null,
-      score.evidence_status ?? null
+      score.evidence_status ?? null,
+      score.estimated_savings_bytes ?? null,
+      score.confidence ?? null,
+      score.savings_basis ?? null
     )
   }
 
@@ -2926,7 +2835,7 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
   /**
    * Add or update media source
    */
-  upsertMediaSource(source: MediaSource): void {
+  upsertMediaSource(source: Omit<MediaSource, 'id' | 'created_at' | 'updated_at'>): void {
     if (!this.db) throw new Error('Database not initialized')
 
     // Encrypt connection config
@@ -4294,13 +4203,16 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         COUNT(*) as episode_count,
         COUNT(DISTINCT m.season_number) as season_count,
         MAX(m.poster_url) as poster_url,
+        MAX(m.series_tmdb_id) as tmdb_id,
         MIN(m.source_id) as source_id,
         MIN(m.source_type) as source_type,
         MIN(m.library_id) as library_id,
         COALESCE(m.series_identity_key, MIN(m.series_identity_key)) as series_identity_key,
         COALESCE(SUM(m.play_count), 0) as total_play_count,
-        MAX(m.last_watched_at) as last_watched_at
+        MAX(m.last_watched_at) as last_watched_at,
+        SUM(q.estimated_savings_bytes) as estimated_savings_bytes
       FROM media_items m
+      LEFT JOIN quality_scores q ON q.media_item_id = m.id
       WHERE m.type = 'episode'
     `
     const params: unknown[] = []
@@ -4345,6 +4257,9 @@ WHERE m.type = 'episode' AND m.series_identity_key = ?`
         break
       case 'last_watched_at':
         sql += ` ORDER BY last_watched_at IS NULL ASC, last_watched_at ${sortOrder}, COALESCE(sort_title, series_title) ASC`
+        break
+      case 'estimated_savings_bytes':
+        sql += ` ORDER BY COALESCE(estimated_savings_bytes, 0) ${sortOrder}, COALESCE(sort_title, series_title) ASC`
         break
       default:
         sql += ` ORDER BY COALESCE(sort_title, series_title) ${sortOrder}`
