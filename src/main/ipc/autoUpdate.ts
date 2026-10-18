@@ -1,9 +1,10 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * IPC Handlers for Auto Update System
  */
 
-import { ipcMain } from 'electron'
 import { getAutoUpdateService } from '../services/AutoUpdateService'
+import { createIpcHandler, createSyncHandler } from './utils/createHandler'
 
 export function registerAutoUpdateHandlers(): void {
   const service = getAutoUpdateService()
@@ -11,55 +12,30 @@ export function registerAutoUpdateHandlers(): void {
   /**
    * Get current update state
    */
-  ipcMain.handle('autoUpdate:getState', () => {
-    try {
-      return service.getState()
-    } catch (error) {
-      console.error('[IPC autoUpdate:getState] Error:', error)
-      throw error
-    }
-  })
+  createSyncHandler(IPC_CHANNELS.autoUpdateGetState, () => service.getState())
 
   /**
    * Manually check for updates
    */
-  ipcMain.handle('autoUpdate:checkForUpdates', async () => {
-    try {
-      console.log('[IPC autoUpdate:checkForUpdates] Checking for updates')
-      await service.checkForUpdates()
-      return { success: true }
-    } catch (error) {
-      console.error('[IPC autoUpdate:checkForUpdates] Error:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.autoUpdateCheckForUpdates, async () => {
+    await service.checkForUpdates()
+    return { success: true }
   })
 
   /**
    * Download the available update
    */
-  ipcMain.handle('autoUpdate:downloadUpdate', async () => {
-    try {
-      console.log('[IPC autoUpdate:downloadUpdate] Downloading update')
-      await service.downloadUpdate()
-      return { success: true }
-    } catch (error) {
-      console.error('[IPC autoUpdate:downloadUpdate] Error:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.autoUpdateDownloadUpdate, async () => {
+    await service.downloadUpdate()
+    return { success: true }
   })
 
   /**
    * Quit and install the downloaded update
    */
-  ipcMain.handle('autoUpdate:installUpdate', async () => {
-    try {
-      console.log('[IPC autoUpdate:installUpdate] Installing update and restarting')
-      await service.installUpdate()
-      return { success: true }
-    } catch (error) {
-      console.error('[IPC autoUpdate:installUpdate] Error:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.autoUpdateInstallUpdate, async () => {
+    await service.installUpdate()
+    return { success: true }
   })
 
   console.log('[IPC] Auto-update handlers registered')

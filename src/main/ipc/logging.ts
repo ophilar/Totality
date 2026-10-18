@@ -1,10 +1,11 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * Logging IPC Handlers
  *
  * Provides IPC communication for log viewing and export functionality.
  */
 
-import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
+import { dialog, BrowserWindow, shell, app } from 'electron'
 import { getLoggingService } from '../services/LoggingService'
 import type { SourceInfo, DiagnosticInfo } from '../services/LoggingService'
 import { getSourceManager } from '../services/SourceManager'
@@ -15,6 +16,7 @@ import { getErrorMessage } from './utils'
 import { validateInput, BooleanSchema } from '../validation/schemas'
 import type { LogLevel } from '../services/LoggingService'
 import { z } from 'zod'
+import { createIpcHandler } from './utils/createHandler'
 
 const FileLoggingSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -25,156 +27,106 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 async function getSourceInfo(): Promise<SourceInfo[]> {
-  try {
-    const manager = getSourceManager()
-    const sources = await manager.getSources()
+  const manager = getSourceManager()
+  const sources = await manager.getSources()
 
-    const results = await Promise.all(
-      sources.map(async (source) => {
-        let serverVersion: string | null = null
-        const provider = manager.getProvider(source.source_id)
-        if (provider) {
-          try {
-            const test = await Promise.race([
-              provider.testConnection(),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-            ])
-            if (test && test.success) {
-              serverVersion = test.serverVersion || null
-            }
-          } catch {
-            // Source unreachable — leave version as null
+  return Promise.all(
+    sources.map(async (source) => {
+      let serverVersion: string | null = null
+      const provider = manager.getProvider(source.source_id)
+      if (provider) {
+        try {
+          const test = await Promise.race([
+            provider.testConnection(),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+          ])
+          if (test?.success) {
+            serverVersion = test.serverVersion || null
           }
+        } catch {
+          // An unreachable source has no server version to report.
         }
-        return {
-          displayName: source.display_name,
-          sourceType: source.source_type,
-          serverVersion,
-        }
-      })
-    )
-
-    return results
-  } catch {
-    return []
-  }
+      }
+      return {
+        displayName: source.display_name,
+        sourceType: source.source_type,
+        serverVersion,
+      }
+    })
+  )
 }
 
 async function getDiagnosticInfo(): Promise<DiagnosticInfo> {
-  try {
-    const analyzer = getMediaFileAnalyzer()
-    const db = getDatabase()
-    const monitoring = getLiveMonitoringService()
-    const manager = getSourceManager()
+  const analyzer = getMediaFileAnalyzer()
+  const db = getDatabase()
+  const monitoring = getLiveMonitoringService()
+  const manager = getSourceManager()
 
-    const [ffAvailable, ffVersion, ffBundled] = await Promise.all([
-      analyzer.isAvailable(),
-      analyzer.getVersion().catch(() => null),
-      analyzer.isBundledVersion().catch(() => false),
-    ])
+  const [ffAvailable, ffVersion, ffBundled] = await Promise.all([
+    analyzer.isAvailable(),
+    analyzer.getVersion(),
+    analyzer.isBundledVersion(),
+  ])
 
-    const dbPath = db.getDbPath()
-    let dbSizeMB = 0
-    try {
-      const stats = fs.statSync(dbPath)
-      dbSizeMB = Math.round((stats.size / 1024 / 1024) * 10) / 10
-    } catch {
-      // DB file may not exist yet
-    }
+  const dbPath = db.getDbPath()
+  const stats = await fs.promises.stat(dbPath)
+  const dbSizeMB = Math.round((stats.size / 1024 / 1024) * 10) / 10
 
-    const sources = await manager.getSources()
-    const libraries = sources.map((s) => ({
-      sourceName: s.display_name,
-      sourceType: s.source_type,
-      itemCount: db.getMediaItemsCountBySource(s.source_id),
-    }))
+  const sources = await manager.getSources()
+  const libraries = sources.map((s) => ({
+    sourceName: s.display_name,
+    sourceType: s.source_type,
+    itemCount: db.getMediaItemsCountBySource(s.source_id),
+  }))
 
-    return {
-      ffprobe: { available: ffAvailable, version: ffVersion, bundled: ffBundled },
-      database: { path: path.basename(dbPath), sizeMB: dbSizeMB },
-      libraries,
-      monitoring: { enabled: monitoring.isMonitoringActive() },
-    }
-  } catch {
-    return {
-      ffprobe: { available: false, version: null, bundled: false },
-      database: { path: 'unknown', sizeMB: 0 },
-      libraries: [],
-      monitoring: { enabled: false },
-    }
+  return {
+    ffprobe: { available: ffAvailable, version: ffVersion, bundled: ffBundled },
+    database: { path: path.basename(dbPath), sizeMB: dbSizeMB },
+    libraries,
+    monitoring: { enabled: monitoring.isMonitoringActive() },
   }
 }
 
 export function registerLoggingHandlers(): void {
-  ipcMain.handle('logs:getAll', async (_event, limit?: unknown) => {
-    try {
-      const validLimit = limit !== undefined ? validateInput(z.number().int().positive().max(100000), limit, 'logs:getAll') : undefined
-      return getLoggingService().getLogs(validLimit)
-    } catch (error) {
-      console.error('[IPC logs:getAll] Error:', error)
-      throw error
+  createIpcHandler(IPC_CHANNELS.logsGetAll, async (limit?: unknown) => {
+    const validLimit = limit !== undefined ? validateInput(z.number().int().positive().max(100000), limit, 'logs:getAll') : undefined
+    return getLoggingService().getLogs(validLimit)
+  })
+
+  createIpcHandler(IPC_CHANNELS.logsClear, async () => {
+    getLoggingService().clearLogs()
+  })
+
+  createIpcHandler(IPC_CHANNELS.logsSetVerbose, async (enabled: unknown) => {
+    const validEnabled = validateInput(BooleanSchema, enabled, 'logs:setVerbose')
+    getLoggingService().setVerboseLogging(validEnabled)
+    return { success: true }
+  })
+
+  createIpcHandler(IPC_CHANNELS.logsIsVerbose, async () => {
+    return getLoggingService().isVerboseEnabled()
+  })
+
+  createIpcHandler(IPC_CHANNELS.logsGetFileLoggingSettings, async () => {
+    const db = getDatabase()
+    return {
+      enabled: db.getSetting('file_logging_enabled') !== 'false',
+      minLevel: (db.getSetting('file_logging_min_level') || 'info') as LogLevel,
+      retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
     }
   })
 
-  ipcMain.handle('logs:clear', async () => {
-    try {
-      getLoggingService().clearLogs()
-    } catch (error) {
-      console.error('[IPC logs:clear] Error:', error)
-      throw error
-    }
+  createIpcHandler(IPC_CHANNELS.logsSetFileLoggingSettings, async (settings: unknown) => {
+    const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
+    const db = getDatabase()
+    if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
+    if (valid.minLevel !== undefined) db.setSetting('file_logging_min_level', valid.minLevel)
+    if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
+    getLoggingService().updateFileLoggingSettings(valid)
+    return { success: true }
   })
 
-  ipcMain.handle('logs:setVerbose', async (_event, enabled: unknown) => {
-    try {
-      const validEnabled = validateInput(BooleanSchema, enabled, 'logs:setVerbose')
-      getLoggingService().setVerboseLogging(validEnabled)
-      return { success: true }
-    } catch (error) {
-      console.error('[IPC logs:setVerbose] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:isVerbose', async () => {
-    try {
-      return getLoggingService().isVerboseEnabled()
-    } catch (error) {
-      console.error('[IPC logs:isVerbose] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:getFileLoggingSettings', async () => {
-    try {
-      const db = getDatabase()
-      return {
-        enabled: db.getSetting('file_logging_enabled') !== 'false',
-        minLevel: (db.getSetting('file_logging_min_level') || 'info') as LogLevel,
-        retentionDays: parseInt(db.getSetting('log_retention_days') || '7', 10),
-      }
-    } catch (error) {
-      console.error('[IPC logs:getFileLoggingSettings] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:setFileLoggingSettings', async (_event, settings: unknown) => {
-    try {
-      const valid = validateInput(FileLoggingSettingsSchema, settings, 'logs:setFileLoggingSettings')
-      const db = getDatabase()
-      if (valid.enabled !== undefined) db.setSetting('file_logging_enabled', String(valid.enabled))
-      if (valid.minLevel !== undefined) db.setSetting('file_logging_min_level', valid.minLevel)
-      if (valid.retentionDays !== undefined) db.setSetting('log_retention_days', String(valid.retentionDays))
-      getLoggingService().updateFileLoggingSettings(valid)
-      return { success: true }
-    } catch (error) {
-      console.error('[IPC logs:setFileLoggingSettings] Error:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('logs:export', async () => {
+  createIpcHandler(IPC_CHANNELS.logsExport, async () => {
     const win = BrowserWindow.getFocusedWindow()
     if (!win) return { success: false, error: 'No window' }
 
@@ -210,7 +162,7 @@ export function registerLoggingHandlers(): void {
     }
   })
 
-  ipcMain.handle('logs:openLogFolder', async () => {
+  createIpcHandler(IPC_CHANNELS.logsOpenLogFolder, async () => {
     const logDir = path.join(app.getPath('userData'), 'logs')
     try {
       await fs.promises.mkdir(logDir, { recursive: true })

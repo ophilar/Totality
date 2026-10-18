@@ -27,7 +27,7 @@ export function safeSend(win: BrowserWindow | null, channel: string, ...args: un
       return true
     }
   } catch (error) {
-    // Silently ignore - window was likely closed during operation
+    console.debug(`[IPC] Failed to send ${channel} to the Electron window`, error)
   }
   // Also broadcast to web clients
   try {

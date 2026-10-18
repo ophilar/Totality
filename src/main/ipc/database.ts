@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
+import { BrowserWindow, dialog, shell } from 'electron'
 import * as path from 'path'
 import { z } from 'zod'
 import { getDatabase } from '../database/getDatabase'
@@ -13,7 +14,7 @@ import type { MediaItem } from '../types/database'
 import { validateInput, PositiveIntSchema, NonEmptyStringSchema, SettingKeySchema, SettingValueSchema, MediaItemFiltersSchema, TVShowFiltersSchema, MediaItemSchema, QualityScoreSchema, NfsMappingsSchema, ExportCSVOptionsSchema, AddExclusionSchema, OptionalSourceIdSchema, FilePathSchema, LetterOffsetSchema } from '../validation/schemas'
 
 import { operationRequestRegistry } from './utils/OperationRequestRegistry'
-import { createValidatedIpcHandlerWithEvent } from './utils/createHandler'
+import { createIpcHandler, createIpcHandlerWithEvent, createValidatedIpcHandlerWithEvent } from './utils/createHandler'
 
 /**
  * Register all database-related IPC handlers
@@ -21,19 +22,19 @@ import { createValidatedIpcHandlerWithEvent } from './utils/createHandler'
 export function registerDatabaseHandlers() {
   const db = getDatabase()
 
-  createValidatedIpcHandlerWithEvent('db:cancelOperation', z.string().min(1).max(100), async (event, requestId) => ({
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.dbCancelOperation, z.string().min(1).max(100), async (event, requestId) => ({
     status: operationRequestRegistry.cancel(event.sender.id, requestId),
   }))
 
-  createValidatedIpcHandlerWithEvent('operations:getActivity', z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
-  createValidatedIpcHandlerWithEvent('operations:getResult', z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
-  createValidatedIpcHandlerWithEvent('operations:dismiss', z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetActivity, z.tuple([]), async (event) => operationRequestRegistry.getSnapshot(event.sender.id))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsGetResult, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.getResult(event.sender.id, requestId))
+  createValidatedIpcHandlerWithEvent(IPC_CHANNELS.operationsDismiss, z.string().min(1).max(100), async (event, requestId) => operationRequestRegistry.dismiss(event.sender.id, requestId))
 
   // ============================================================================
   // MEDIA ITEMS
   // ============================================================================
 
-  ipcMain.handle('db:getMediaItems', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetMediaItems, async (filters?: unknown) => {
     try {
       const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:getMediaItems') : undefined
       const items = db.getMediaItems(validFilters) as MediaItem[]
@@ -53,7 +54,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:countMediaItems', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbCountMediaItems, async (filters?: unknown) => {
     try {
       const validFilters = filters !== undefined ? validateInput(MediaItemFiltersSchema, filters, 'db:countMediaItems') : undefined
       return db.countMediaItems(validFilters)
@@ -67,7 +68,7 @@ export function registerDatabaseHandlers() {
   // TV SHOWS (grouped by series_title)
   // ============================================================================
 
-  ipcMain.handle('db:getTVShows', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetTVShows, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:getTVShows')
       return db.getTVShows(validFilters)
@@ -77,7 +78,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:countTVShows', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbCountTVShows, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVShows')
       return db.countTVShows(validFilters)
@@ -87,7 +88,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:countTVEpisodes', async (_event, filters?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbCountTVEpisodes, async (filters?: unknown) => {
     try {
       const validFilters = validateInput(TVShowFiltersSchema, filters, 'db:countTVEpisodes')
       return db.countTVEpisodes(validFilters)
@@ -97,7 +98,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getLetterOffset', async (_event, params: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetLetterOffset, async (params: unknown) => {
     try {
       const { table, letter, sourceId, libraryId } = validateInput(LetterOffsetSchema, params, 'db:getLetterOffset')
       return db.getLetterOffset(table, letter, { sourceId, libraryId })
@@ -107,7 +108,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getMediaItemById', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetMediaItemById, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:getMediaItemById')
       return db.getMediaItemById(validId)
@@ -117,7 +118,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:upsertMediaItem', async (_event, item: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbUpsertMediaItem, async (item: unknown) => {
     try {
       const validItem = validateInput(MediaItemSchema, item, 'db:upsertMediaItem')
       return await db.upsertMediaItem(validItem)
@@ -127,7 +128,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getMediaItemVersions', async (_event, mediaItemId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetMediaItemVersions, async (mediaItemId: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, mediaItemId, 'db:getMediaItemVersions')
       return db.getMediaItemVersions(validId)
@@ -137,7 +138,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:deleteMediaItem', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbDeleteMediaItem, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:deleteMediaItem')
       await db.deleteMediaItem(validId)
@@ -152,7 +153,7 @@ export function registerDatabaseHandlers() {
   // QUALITY SCORES
   // ============================================================================
 
-  ipcMain.handle('db:getQualityScores', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetQualityScores, async () => {
     try {
       return db.getQualityScores()
     } catch (error) {
@@ -161,7 +162,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getQualityScoreByMediaId', async (_event, mediaItemId: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetQualityScoreByMediaId, async (mediaItemId: unknown) => {
     try {
       const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'db:getQualityScoreByMediaId')
       return db.getQualityScoreByMediaId(validMediaItemId)
@@ -171,7 +172,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:upsertQualityScore', async (_event, score: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbUpsertQualityScore, async (score: unknown) => {
     try {
       const validScore = validateInput(QualityScoreSchema, score, 'db:upsertQualityScore')
       return await db.upsertQualityScore(validScore)
@@ -185,7 +186,7 @@ export function registerDatabaseHandlers() {
   // SETTINGS
   // ============================================================================
 
-  ipcMain.handle('db:getSetting', async (_event, key: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetSetting, async (key: unknown) => {
     try {
       const validKey = validateInput(SettingKeySchema, key, 'db:getSetting')
       return db.getSetting(validKey)
@@ -197,7 +198,7 @@ export function registerDatabaseHandlers() {
 
   const sensitiveSettingKeys = new Set(['plex_token', 'tmdb_api_key', 'musicbrainz_api_token', 'gemini_api_key'])
 
-  ipcMain.handle('db:setSetting', async (event, key: unknown, value: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.dbSetSetting, async (event, key: unknown, value: unknown) => {
     try {
       const validKey = validateInput(SettingKeySchema, key, 'db:setSetting')
       const validValue = validateInput(SettingValueSchema, value, 'db:setSetting')
@@ -221,7 +222,7 @@ export function registerDatabaseHandlers() {
 
       // Broadcast settings change event to all windows
       const win = BrowserWindow.fromWebContents(event.sender)
-      safeSend(win, 'settings:changed', { key: validKey, hasValue: !!validValue })
+      safeSend(win, IPC_CHANNELS.settingsChanged, { key: validKey, hasValue: !!validValue })
 
       return true
     } catch (error) {
@@ -230,7 +231,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getAllSettings', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetAllSettings, async () => {
     try {
       return db.getAllSettings()
     } catch (error) {
@@ -240,7 +241,7 @@ export function registerDatabaseHandlers() {
   })
 
   // NFS Mount Mappings (for Kodi NFS path conversion)
-  ipcMain.handle('settings:getNfsMappings', async () => {
+  createIpcHandler(IPC_CHANNELS.settingsGetNfsMappings, async () => {
     try {
       const json = db.getSetting('nfs_mount_mappings')
       return json ? JSON.parse(json) : {}
@@ -250,7 +251,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('settings:setNfsMappings', async (_event, mappings: unknown) => {
+  createIpcHandler(IPC_CHANNELS.settingsSetNfsMappings, async (mappings: unknown) => {
     try {
       const validMappings = validateInput(NfsMappingsSchema, mappings, 'settings:setNfsMappings')
       await db.setSetting('nfs_mount_mappings', JSON.stringify(validMappings))
@@ -262,7 +263,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('settings:testNfsMapping', async (_event, nfsPath: unknown, localPath: unknown) => {
+  createIpcHandler(IPC_CHANNELS.settingsTestNfsMapping, async (nfsPath: unknown, localPath: unknown) => {
     validateInput(NonEmptyStringSchema, nfsPath, 'settings:testNfsMapping')
     const validLocalPath = validateInput(FilePathSchema, localPath, 'settings:testNfsMapping')
     try {
@@ -301,7 +302,7 @@ export function registerDatabaseHandlers() {
   // STATISTICS
   // ============================================================================
 
-  ipcMain.handle('db:getLibraryStats', async (_event, sourceId?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetLibraryStats, async (sourceId?: unknown) => {
     try {
       const validSourceId = validateInput(OptionalSourceIdSchema, sourceId, 'db:getLibraryStats')
       return db.getLibraryStats(validSourceId)
@@ -311,7 +312,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getStorageAnalytics', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetStorageAnalytics, async () => {
     try {
       return db.getStorageAnalytics()
     } catch (error) {
@@ -320,7 +321,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getDuplicateMedia', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetDuplicateMedia, async () => {
     try {
       return db.getDuplicateMedia()
     } catch (error) {
@@ -329,7 +330,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getLibraryHealthScores', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetLibraryHealthScores, async () => {
     try {
       return db.getLibraryHealthScores()
     } catch (error) {
@@ -338,7 +339,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getRecentlyUpgraded', async (_event, days?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetRecentlyUpgraded, async (days?: unknown) => {
     try {
       const validDays = days !== undefined ? validateInput(z.number().int().min(1).max(365), days, 'db:getRecentlyUpgraded') : 30
       return db.getRecentlyUpgraded(validDays)
@@ -348,7 +349,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:getRecentlyAdded', async (_event, days?: unknown, limit?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetRecentlyAdded, async (days?: unknown, limit?: unknown) => {
     try {
       const validDays = days !== undefined ? validateInput(z.number().int().min(1).max(365), days, 'db:getRecentlyAdded') : 14
       const validLimit = limit !== undefined ? validateInput(z.number().int().min(1).max(500), limit, 'db:getRecentlyAdded') : 50
@@ -363,7 +364,7 @@ export function registerDatabaseHandlers() {
   // PERSON FILMOGRAPHY COMPLETENESS
   // ============================================================================
 
-  ipcMain.handle('person:getCompleteness', async (_event, personType?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.personGetCompleteness, async (personType?: unknown) => {
     try {
       const validType = personType ? validateInput(z.enum(['director', 'actor']), personType, 'person:getCompleteness') : undefined
       return db.getPersonCompleteness(validType)
@@ -373,7 +374,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('person:searchTMDB', async (_event, query: unknown) => {
+  createIpcHandler(IPC_CHANNELS.personSearchTMDB, async (query: unknown) => {
     try {
       const name = validateInput(z.string().min(1).max(200), query, 'person:searchTMDB')
       const tmdb = getTMDBService()
@@ -417,7 +418,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('person:analyze', async (_event, personName: unknown, personType: unknown) => {
+  createIpcHandler(IPC_CHANNELS.personAnalyze, async (personName: unknown, personType: unknown) => {
     try {
       const name = validateInput(z.string().min(1).max(200), personName, 'person:analyze')
       const type = validateInput(z.enum(['director', 'actor', 'writer', 'composer', 'cinematographer', 'editor']), personType, 'person:analyze')
@@ -495,7 +496,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('person:delete', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.personDelete, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'person:delete')
       db.deletePersonCompleteness(validId)
@@ -509,7 +510,7 @@ export function registerDatabaseHandlers() {
   // WATCHLIST SYNC (Trakt / Letterboxd)
   // ============================================================================
 
-  ipcMain.handle('sync:plex-watchlist', async () => {
+  createIpcHandler(IPC_CHANNELS.syncPlexWatchlist, async () => {
     try {
       // Get Plex token from saved settings
       const plexToken = db.getSetting('plex_token')
@@ -522,7 +523,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('sync:trakt', async (_event, username: unknown) => {
+  createIpcHandler(IPC_CHANNELS.syncTrakt, async (username: unknown) => {
     try {
       const validUsername = validateInput(z.string().min(1).max(100), username, 'sync:trakt')
       const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
@@ -535,7 +536,7 @@ export function registerDatabaseHandlers() {
 
 
 
-  ipcMain.handle('sync:fetchPlex', async () => {
+  createIpcHandler(IPC_CHANNELS.syncFetchPlex, async () => {
     try {
       const plexToken = db.getSetting('plex_token')
       if (!plexToken) throw new Error('No Plex account connected.')
@@ -547,7 +548,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('sync:fetchTrakt', async (_event, username: unknown) => {
+  createIpcHandler(IPC_CHANNELS.syncFetchTrakt, async (username: unknown) => {
     try {
       const validUsername = validateInput(z.string().min(1).max(100), username, 'sync:fetchTrakt')
       const { getWatchlistSyncService } = await import('../services/WatchlistSyncService')
@@ -562,7 +563,7 @@ export function registerDatabaseHandlers() {
   // RELEASE ALERTS
   // ============================================================================
 
-  ipcMain.handle('release-alerts:check', async () => {
+  createIpcHandler(IPC_CHANNELS.releaseAlertsCheck, async () => {
     try {
       const { getReleaseAlertService } = await import('../services/ReleaseAlertService')
       return await getReleaseAlertService().checkForReleases()
@@ -581,7 +582,7 @@ export function registerDatabaseHandlers() {
    */
   const OptionalYearSchema = z.number().int().min(1800).max(2100).optional()
 
-  ipcMain.handle('movie:searchTMDB', async (_event, query: unknown, year?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.movieSearchTMDB, async (query: unknown, year?: unknown) => {
     try {
       const validQuery = validateInput(NonEmptyStringSchema, query, 'movie:searchTMDB')
       const validYear = validateInput(OptionalYearSchema, year, 'movie:searchTMDB')
@@ -636,7 +637,7 @@ export function registerDatabaseHandlers() {
   /**
    * Fix the TMDB match for a movie
    */
-  ipcMain.handle('movie:fixMatch', async (event, mediaItemId: unknown, tmdbId: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.movieFixMatch, async (event, mediaItemId: unknown, tmdbId: unknown) => {
     try {
       const validMediaItemId = validateInput(PositiveIntSchema, mediaItemId, 'movie:fixMatch')
       const validTmdbId = validateInput(PositiveIntSchema, tmdbId, 'movie:fixMatch')
@@ -656,7 +657,7 @@ export function registerDatabaseHandlers() {
       await db.updateMovieMatch(validMediaItemId, validTmdbId.toString(), posterUrl, title, year)
 
       // Send library update for live refresh
-      safeSend(win, 'library:updated', { type: 'media' })
+      safeSend(win, IPC_CHANNELS.libraryUpdated, { type: 'media' })
 
       return {
         success: true,
@@ -678,7 +679,7 @@ export function registerDatabaseHandlers() {
   /**
    * Get the database file path
    */
-  ipcMain.handle('db:getPath', async () => {
+  createIpcHandler(IPC_CHANNELS.dbGetPath, async () => {
     try {
       return db.getDbPath()
     } catch (error) {
@@ -687,7 +688,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:openFolder', async () => {
+  createIpcHandler(IPC_CHANNELS.dbOpenFolder, async () => {
     try {
       const dbPath = db.getDbPath()
       const folder = path.dirname(dbPath)
@@ -702,7 +703,7 @@ export function registerDatabaseHandlers() {
   /**
    * Export database to JSON file
    */
-  ipcMain.handle('db:export', async (event) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.dbExport, async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) throw new Error('No window found')
@@ -735,7 +736,7 @@ export function registerDatabaseHandlers() {
   /**
    * Export working document CSV for tracking upgrades and completions
    */
-  ipcMain.handle('db:exportCSV', async (event, options: unknown) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.dbExportCSV, async (event, options: unknown) => {
     try {
       const validOptions = validateInput(ExportCSVOptionsSchema, options, 'db:exportCSV')
       const win = BrowserWindow.fromWebContents(event.sender)
@@ -756,7 +757,13 @@ export function registerDatabaseHandlers() {
       }
 
       // Export data as CSV
-      const csv = await db.exportWorkingCSV(validOptions)
+      const csv = await db.exportWorkingCSV({
+        includeUpgrades: validOptions.includeUpgrades,
+        includeMissingMovies: validOptions.includeMissingMovies,
+        includeMissingEpisodes: validOptions.includeMissingEpisodes,
+        includeMissingAlbums: validOptions.includeMissingAlbums,
+        includeMusicUpgrades: validOptions.includeMusicUpgrades,
+      })
       await fs.writeFile(result.filePath, csv, 'utf-8')
 
       return { success: true, path: result.filePath }
@@ -769,7 +776,7 @@ export function registerDatabaseHandlers() {
   /**
    * Import database from JSON file
    */
-  ipcMain.handle('db:import', async (event) => {
+  createIpcHandlerWithEvent(IPC_CHANNELS.dbImport, async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) throw new Error('No window found')
@@ -814,7 +821,7 @@ export function registerDatabaseHandlers() {
   /**
    * Reset the database (delete all data)
    */
-  ipcMain.handle('db:reset', async () => {
+  createIpcHandler(IPC_CHANNELS.dbReset, async () => {
     try {
       await db.resetDatabase()
       return { success: true }
@@ -824,7 +831,7 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:resetLibraryData', async () => {
+  createIpcHandler(IPC_CHANNELS.dbResetLibraryData, async () => {
     try {
       await db.resetLibraryData()
       return { success: true }
@@ -841,26 +848,21 @@ export function registerDatabaseHandlers() {
   /**
    * Search across all media types for global search bar
    */
-  ipcMain.handle('media:search', async (_event, query: unknown) => {
-    try {
-      const validQuery = validateInput(NonEmptyStringSchema, query, 'media:search')
-      return db.globalSearch(validQuery)
-    } catch (error) {
-      console.error('Error in global search:', error)
-      return { movies: [], tvShows: [], episodes: [], artists: [], albums: [], tracks: [] }
-    }
+  createIpcHandler(IPC_CHANNELS.mediaSearch, async (query: unknown) => {
+    const validQuery = validateInput(NonEmptyStringSchema, query, 'media:search')
+    return db.globalSearch(validQuery)
   })
 
   // ============================================================================
   // EXCLUSIONS
   // ============================================================================
 
-  ipcMain.handle('db:addExclusion', async (_event, exclusionType: unknown, referenceId?: unknown, referenceKey?: unknown, parentKey?: unknown, title?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbAddExclusion, async (exclusionType: unknown, referenceId?: unknown, referenceKey?: unknown, parentKey?: unknown, title?: unknown) => {
     try {
       const validArgs = validateInput(AddExclusionSchema, { exclusionType, referenceId, referenceKey, parentKey, title }, 'db:addExclusion')
       console.log('[IPC db:addExclusion]', validArgs.exclusionType, validArgs.title || validArgs.referenceKey || '')
       const result = db.addExclusion(validArgs.exclusionType, validArgs.referenceId, validArgs.referenceKey, validArgs.parentKey, validArgs.title)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, 'library:updated', { type: 'media' })
+      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.libraryUpdated, { type: 'media' })
       return result
     } catch (error) {
       console.error('Error adding exclusion:', error)
@@ -868,12 +870,12 @@ export function registerDatabaseHandlers() {
     }
   })
 
-  ipcMain.handle('db:removeExclusion', async (_event, id: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbRemoveExclusion, async (id: unknown) => {
     try {
       const validId = validateInput(PositiveIntSchema, id, 'db:removeExclusion')
       console.log('[IPC db:removeExclusion] id:', validId)
       db.removeExclusion(validId)
-      safeSend(BrowserWindow.getAllWindows()[0] || null, 'library:updated', { type: 'media' })
+      safeSend(BrowserWindow.getAllWindows()[0] || null, IPC_CHANNELS.libraryUpdated, { type: 'media' })
     } catch (error) {
       console.error('Error removing exclusion:', error)
       throw error
@@ -882,7 +884,7 @@ export function registerDatabaseHandlers() {
 
   const OptionalStringSchema = z.string().max(500).optional()
 
-  ipcMain.handle('db:getExclusions', async (_event, exclusionType?: unknown, parentKey?: unknown) => {
+  createIpcHandler(IPC_CHANNELS.dbGetExclusions, async (exclusionType?: unknown, parentKey?: unknown) => {
     try {
       const validExclusionType = validateInput(OptionalStringSchema, exclusionType, 'db:getExclusions')
       const validParentKey = validateInput(OptionalStringSchema, parentKey, 'db:getExclusions')

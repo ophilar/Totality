@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../shared/ipcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 // Import shared types from main process (type-only, no runtime code)
 import type { ConnectionTestResult } from '@main/types/ipc'
@@ -8,7 +9,8 @@ import type { TimelineFetchOptions, TimelineDefinition } from '@main/services/ti
 import type { PlexPlaylistSummary, PlexPlaylistSyncResult } from '@main/services/timelines/PlexPlaylistSyncService'
 import type { TranscodingCapabilities } from '@main/services/TranscodingCapabilities'
 import type { TranscodeOptions } from '@main/services/TranscodingService'
-import type { MediaDuplicate } from '@main/types/database'
+import type { MediaDuplicate, MediaSource as DatabaseMediaSource, WishlistFilters, WishlistItem } from '@main/types/database'
+import type { ActivityLogEntry, QueueState, QueuedTask, TaskDefinition, TaskQueueHistory } from '@main/types/taskQueue'
 import type { DuplicateResolutionOutcome } from '@shared/duplicateResolution'
 import type { ActivityOperation } from '@main/ipc/utils/OperationRequestRegistry'
 import type { PlaybackTargetProfile, PlaybackTargetDefinition } from '@main/types/playbackTarget'
@@ -19,11 +21,11 @@ export type { ConnectionTestResult } from '@main/types/ipc'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI = {
   // App lifecycle
-  appReady: () => ipcRenderer.send('app:ready'),
-  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
-  openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
+  appReady: () => ipcRenderer.send(IPC_CHANNELS.appReady),
+  getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
+  openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),
 
   // ============================================================================
   // MEDIA SOURCES (Multi-Provider Support)
@@ -35,92 +37,92 @@ contextBridge.exposeInMainWorld('electronAPI', {
     displayName: string
     connectionConfig: Record<string, unknown>
     isEnabled?: boolean
-  }) => ipcRenderer.invoke('sources:add', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.sourcesAdd, config),
   sourcesUpdate: (sourceId: string, updates: {
     displayName?: string
     connectionConfig?: Record<string, unknown>
     isEnabled?: boolean
-  }) => ipcRenderer.invoke('sources:update', sourceId, updates),
-  sourcesRemove: (sourceId: string) => ipcRenderer.invoke('sources:remove', sourceId),
-  sourcesList: (type?: string) => ipcRenderer.invoke('sources:list', type),
-  sourcesGet: (sourceId: string) => ipcRenderer.invoke('sources:get', sourceId),
-  sourcesGetEnabled: () => ipcRenderer.invoke('sources:getEnabled'),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.sourcesUpdate, sourceId, updates),
+  sourcesRemove: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.sourcesRemove, sourceId),
+  sourcesList: (type?: string) => ipcRenderer.invoke(IPC_CHANNELS.sourcesList, type),
+  sourcesGet: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.sourcesGet, sourceId),
+  sourcesGetEnabled: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesGetEnabled),
   sourcesToggle: (sourceId: string, enabled: boolean) =>
-    ipcRenderer.invoke('sources:toggle', sourceId, enabled),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesToggle, sourceId, enabled),
 
   // Connection Testing
   sourcesTestConnection: (sourceId: string) =>
-    ipcRenderer.invoke('sources:testConnection', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesTestConnection, sourceId),
 
   // Plex-specific Auth (new flow for multi-source)
-  plexStartAuth: () => ipcRenderer.invoke('plex:startAuth'),
-  plexCheckAuth: (pinId: number) => ipcRenderer.invoke('plex:checkAuth', pinId),
+  plexStartAuth: () => ipcRenderer.invoke(IPC_CHANNELS.plexStartAuth),
+  plexCheckAuth: (pinId: number) => ipcRenderer.invoke(IPC_CHANNELS.plexCheckAuth, pinId),
   plexAuthenticateAndDiscover: (token: string, displayName: string) =>
-    ipcRenderer.invoke('plex:authenticateAndDiscover', token, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.plexAuthenticateAndDiscover, token, displayName),
   plexSelectServerForSource: (sourceId: string, serverId: string) =>
-    ipcRenderer.invoke('plex:selectServer', sourceId, serverId),
+    ipcRenderer.invoke(IPC_CHANNELS.plexSelectServer, sourceId, serverId),
   plexGetServersForSource: (sourceId: string) =>
-    ipcRenderer.invoke('plex:getServers', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.plexGetServers, sourceId),
 
   // Library Operations
   sourcesGetLibraries: (sourceId: string) =>
-    ipcRenderer.invoke('sources:getLibraries', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesGetLibraries, sourceId),
   sourcesGetLibrariesWithStatus: (sourceId: string) =>
-    ipcRenderer.invoke('sources:getLibrariesWithStatus', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesGetLibrariesWithStatus, sourceId),
   sourcesToggleLibrary: (sourceId: string, libraryId: string, enabled: boolean) =>
-    ipcRenderer.invoke('sources:toggleLibrary', sourceId, libraryId, enabled),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesToggleLibrary, sourceId, libraryId, enabled),
   sourcesSetLibraryUpgradeTier: (sourceId: string, libraryId: string, minTier: string | null) =>
-    ipcRenderer.invoke('sources:setLibraryUpgradeTier', sourceId, libraryId, minTier),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesSetLibraryUpgradeTier, sourceId, libraryId, minTier),
   sourcesSetLibrariesEnabled: (sourceId: string, libraries: Array<{
     id: string
     name: string
     type: string
     enabled: boolean
-  }>) => ipcRenderer.invoke('sources:setLibrariesEnabled', sourceId, libraries),
+  }>) => ipcRenderer.invoke(IPC_CHANNELS.sourcesSetLibrariesEnabled, sourceId, libraries),
   sourcesGetEnabledLibraryIds: (sourceId: string) =>
-    ipcRenderer.invoke('sources:getEnabledLibraryIds', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesGetEnabledLibraryIds, sourceId),
   sourcesScanLibrary: (sourceId: string, libraryId: string) =>
-    ipcRenderer.invoke('sources:scanLibrary', sourceId, libraryId),
-  sourcesScanAll: () => ipcRenderer.invoke('sources:scanAll'),
-  sourcesStopScan: () => ipcRenderer.invoke('sources:stopScan'),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesScanLibrary, sourceId, libraryId),
+  sourcesScanAll: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesScanAll),
+  sourcesStopScan: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesStopScan),
 
   // Incremental Scanning (only new/changed items since last scan)
   sourcesScanLibraryIncremental: (sourceId: string, libraryId: string) =>
-    ipcRenderer.invoke('sources:scanLibraryIncremental', sourceId, libraryId),
-  sourcesScanAllIncremental: () => ipcRenderer.invoke('sources:scanAllIncremental'),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesScanLibraryIncremental, sourceId, libraryId),
+  sourcesScanAllIncremental: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesScanAllIncremental),
 
   // Single Item Scan (rescan a specific file)
   sourcesScanItem: (sourceId: string, libraryId: string | null, filePath: string) =>
-    ipcRenderer.invoke('sources:scanItem', sourceId, libraryId, filePath),
+    ipcRenderer.invoke(IPC_CHANNELS.sourcesScanItem, sourceId, libraryId, filePath),
 
   // Statistics
-  sourcesGetStats: () => ipcRenderer.invoke('sources:getStats'),
-  sourcesGetSupportedProviders: () => ipcRenderer.invoke('sources:getSupportedProviders'),
+  sourcesGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesGetStats),
+  sourcesGetSupportedProviders: () => ipcRenderer.invoke(IPC_CHANNELS.sourcesGetSupportedProviders),
 
   // Source Events
   onSourcesScanProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('sources:scanProgress', handler)
-    return () => ipcRenderer.removeListener('sources:scanProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.sourcesScanProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.sourcesScanProgress, handler)
   },
 
   // Library Update Events - fired when media items are updated during scans/analysis
   onLibraryUpdated: (callback: (data: { type: 'media' | 'music'; count?: number }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { type: 'media' | 'music'; count?: number }) => callback(data)
-    ipcRenderer.on('library:updated', handler)
-    return () => ipcRenderer.removeListener('library:updated', handler)
+    ipcRenderer.on(IPC_CHANNELS.libraryUpdated, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.libraryUpdated, handler)
   },
 
   // Auto-refresh Events - fired during incremental scan on app start
   onAutoRefreshStarted: (callback: () => void) => {
     const handler = () => callback()
-    ipcRenderer.on('scan:autoRefreshStarted', handler)
-    return () => ipcRenderer.removeListener('scan:autoRefreshStarted', handler)
+    ipcRenderer.on(IPC_CHANNELS.scanAutoRefreshStarted, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.scanAutoRefreshStarted, handler)
   },
   onAutoRefreshComplete: (callback: () => void) => {
     const handler = () => callback()
-    ipcRenderer.on('scan:autoRefreshComplete', handler)
-    return () => ipcRenderer.removeListener('scan:autoRefreshComplete', handler)
+    ipcRenderer.on(IPC_CHANNELS.scanAutoRefreshComplete, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.scanAutoRefreshComplete, handler)
   },
 
   // ============================================================================
@@ -128,33 +130,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ============================================================================
 
   // Detect local Kodi installation
-  kodiDetectLocal: () => ipcRenderer.invoke('kodi:detectLocal'),
-  kodiIsRunning: () => ipcRenderer.invoke('kodi:isRunning'),
+  kodiDetectLocal: () => ipcRenderer.invoke(IPC_CHANNELS.kodiDetectLocal),
+  kodiIsRunning: () => ipcRenderer.invoke(IPC_CHANNELS.kodiIsRunning),
 
   // Detect local MediaMonkey installation
-  mediamonkeyDetectLocal: () => ipcRenderer.invoke('mediamonkey:detectLocal'),
-  mediamonkeySelectDatabase: () => ipcRenderer.invoke('mediamonkey:selectDatabase'),
-  mediamonkeyIsRunning: () => ipcRenderer.invoke('mediamonkey:isRunning'),
+  mediamonkeyDetectLocal: () => ipcRenderer.invoke(IPC_CHANNELS.mediamonkeyDetectLocal),
+  mediamonkeySelectDatabase: () => ipcRenderer.invoke(IPC_CHANNELS.mediamonkeySelectDatabase),
+  mediamonkeyIsRunning: () => ipcRenderer.invoke(IPC_CHANNELS.mediamonkeyIsRunning),
 
   // Mood sync
-  moodCheckMediaMonkeyWrite: (sourceId: string) => ipcRenderer.invoke('mood:checkMediaMonkeyWrite', sourceId),
-  moodGetSources: (field?: 'mood' | 'genre') => ipcRenderer.invoke('mood:getSources', field),
-  moodGetComparison: (args: { sourceOfTruthId: string; field?: 'mood' | 'genre' }) => ipcRenderer.invoke('mood:getComparison', args),
+  moodCheckMediaMonkeyWrite: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.moodCheckMediaMonkeyWrite, sourceId),
+  moodGetSources: (field?: 'mood' | 'genre') => ipcRenderer.invoke(IPC_CHANNELS.moodGetSources, field),
+  moodGetComparison: (args: { sourceOfTruthId: string; field?: 'mood' | 'genre' }) => ipcRenderer.invoke(IPC_CHANNELS.moodGetComparison, args),
   moodSyncToTarget: (args: { sourceOfTruthId: string; targetSourceId: string; trackIds?: number[]; mode?: 'overwrite' | 'append'; field?: 'mood' | 'genre' }) =>
-    ipcRenderer.invoke('mood:syncToTarget', args),
+    ipcRenderer.invoke(IPC_CHANNELS.moodSyncToTarget, args),
   onMoodSyncProgress: (callback: (progress: { current: number; total: number; currentTrack: string; trackId?: number; status?: 'syncing' | 'done' | 'failed' }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: { current: number; total: number; currentTrack: string; trackId?: number; status?: 'done' | 'syncing' }) => callback(progress)
-    ipcRenderer.on('mood:syncProgress', handler)
-    return () => ipcRenderer.removeListener('mood:syncProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.moodSyncProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.moodSyncProgress, handler)
   },
 
   // Kodi Collections
-  kodiImportCollections: (sourceId: string) => ipcRenderer.invoke('kodi:importCollections', sourceId),
-  kodiGetCollections: (sourceId: string) => ipcRenderer.invoke('kodi:getCollections', sourceId),
+  kodiImportCollections: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.kodiImportCollections, sourceId),
+  kodiGetCollections: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.kodiGetCollections, sourceId),
   onKodiCollectionProgress: (callback: (progress: { current: number; total: number; currentItem: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: { current: number; total: number; currentItem: string }) => callback(progress)
-    ipcRenderer.on('kodi:collectionProgress', handler)
-    return () => ipcRenderer.removeListener('kodi:collectionProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.kodiCollectionProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.kodiCollectionProgress, handler)
   },
 
   // Kodi MySQL/MariaDB Connection
@@ -166,7 +168,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     databasePrefix?: string
     ssl?: boolean
     connectionTimeout?: number
-  }) => ipcRenderer.invoke('kodi:testMySQLConnection', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.kodiTestMySQLConnection, config),
 
   kodiDetectMySQLDatabases: (config: {
     host: string
@@ -174,7 +176,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     username: string
     password: string
     databasePrefix?: string
-  }) => ipcRenderer.invoke('kodi:detectMySQLDatabases', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.kodiDetectMySQLDatabases, config),
 
   kodiAuthenticateMySQL: (config: {
     host: string
@@ -186,53 +188,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
     musicDatabaseName?: string
     databasePrefix?: string
     ssl?: boolean
-  }) => ipcRenderer.invoke('kodi:authenticateMySQL', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.kodiAuthenticateMySQL, config),
 
   // ============================================================================
   // FFPROBE FILE ANALYSIS
   // ============================================================================
 
   // Check if FFprobe is available on the system
-  ffprobeIsAvailable: () => ipcRenderer.invoke('ffprobe:isAvailable'),
+  ffprobeIsAvailable: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeIsAvailable),
 
   // Get FFprobe version string
-  ffprobeGetVersion: () => ipcRenderer.invoke('ffprobe:getVersion'),
+  ffprobeGetVersion: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeGetVersion),
 
   // Analyze a media file with FFprobe
-  ffprobeAnalyzeFile: (filePath: string) => ipcRenderer.invoke('ffprobe:analyzeFile', filePath),
+  ffprobeAnalyzeFile: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.ffprobeAnalyzeFile, filePath),
 
   // Enable/disable FFprobe analysis for a source
   ffprobeSetEnabled: (sourceId: string, enabled: boolean) =>
-    ipcRenderer.invoke('ffprobe:setEnabled', sourceId, enabled),
+    ipcRenderer.invoke(IPC_CHANNELS.ffprobeSetEnabled, sourceId, enabled),
 
   // Check if FFprobe analysis is enabled for a source
-  ffprobeIsEnabled: (sourceId: string) => ipcRenderer.invoke('ffprobe:isEnabled', sourceId),
+  ffprobeIsEnabled: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.ffprobeIsEnabled, sourceId),
 
   // Check if FFprobe is available for a specific source (with reason)
   ffprobeIsAvailableForSource: (sourceId: string) =>
-    ipcRenderer.invoke('ffprobe:isAvailableForSource', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.ffprobeIsAvailableForSource, sourceId),
 
   // Check if FFprobe can be auto-installed on this platform
-  ffprobeCanInstall: () => ipcRenderer.invoke('ffprobe:canInstall'),
+  ffprobeCanInstall: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeCanInstall),
 
   // Install FFprobe automatically
-  ffprobeInstall: () => ipcRenderer.invoke('ffprobe:install'),
+  ffprobeInstall: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeInstall),
 
   // Uninstall bundled FFprobe
-  ffprobeUninstall: () => ipcRenderer.invoke('ffprobe:uninstall'),
+  ffprobeUninstall: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeUninstall),
 
   // Check if current FFprobe is the bundled version
-  ffprobeIsBundled: () => ipcRenderer.invoke('ffprobe:isBundled'),
-  ffmpegIsAvailable: () => ipcRenderer.invoke('ffmpeg:isAvailable'),
+  ffprobeIsBundled: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeIsBundled),
+  ffmpegIsAvailable: () => ipcRenderer.invoke(IPC_CHANNELS.ffmpegIsAvailable),
 
   // Check for FFprobe updates
-  ffprobeCheckForUpdate: () => ipcRenderer.invoke('ffprobe:checkForUpdate'),
+  ffprobeCheckForUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.ffprobeCheckForUpdate),
 
   // Listen for FFprobe install progress
   onFFprobeInstallProgress: (callback: (progress: { stage: string; percent: number }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: { stage: string; percent: number }) => callback(progress)
-    ipcRenderer.on('ffprobe:installProgress', handler)
-    return () => ipcRenderer.removeListener('ffprobe:installProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.ffprobeInstallProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.ffprobeInstallProgress, handler)
   },
 
   // ============================================================================
@@ -240,14 +242,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ============================================================================
 
   // Open folder picker dialog
-  localSelectFolder: () => ipcRenderer.invoke('local:selectFolder'),
+  localSelectFolder: () => ipcRenderer.invoke(IPC_CHANNELS.localSelectFolder),
 
   // Detect subfolders and their media types
-  localDetectSubfolders: (folderPath: string) => ipcRenderer.invoke('local:detectSubfolders', folderPath),
+  localDetectSubfolders: (folderPath: string) => ipcRenderer.invoke(IPC_CHANNELS.localDetectSubfolders, folderPath),
 
   // Add a local folder as a media source
   localAddSource: (config: { folderPath: string; displayName: string; mediaType: 'movies' | 'tvshows' | 'music' | 'mixed' }) =>
-    ipcRenderer.invoke('local:addSource', config),
+    ipcRenderer.invoke(IPC_CHANNELS.localAddSource, config),
 
   // Add a local folder with custom library configurations
   localAddSourceWithLibraries: (config: {
@@ -259,29 +261,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       mediaType: 'movies' | 'tvshows' | 'music'
       enabled: boolean
     }>
-  }) => ipcRenderer.invoke('local:addSourceWithLibraries', config),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.localAddSourceWithLibraries, config),
 
   // ============================================================================
   // JELLYFIN (Discovery & Quick Connect)
   // ============================================================================
 
   // Server Discovery
-  jellyfinDiscoverServers: () => ipcRenderer.invoke('jellyfin:discoverServers'),
-  jellyfinTestServerUrl: (url: string) => ipcRenderer.invoke('jellyfin:testServerUrl', url),
+  jellyfinDiscoverServers: () => ipcRenderer.invoke(IPC_CHANNELS.jellyfinDiscoverServers),
+  jellyfinTestServerUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.jellyfinTestServerUrl, url),
 
   // API Key Authentication
   jellyfinAuthenticateApiKey: (serverUrl: string, apiKey: string, displayName: string) =>
-    ipcRenderer.invoke('jellyfin:authenticateApiKey', serverUrl, apiKey, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinAuthenticateApiKey, serverUrl, apiKey, displayName),
 
   // Quick Connect
   jellyfinIsQuickConnectEnabled: (serverUrl: string) =>
-    ipcRenderer.invoke('jellyfin:isQuickConnectEnabled', serverUrl),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinIsQuickConnectEnabled, serverUrl),
   jellyfinInitiateQuickConnect: (serverUrl: string) =>
-    ipcRenderer.invoke('jellyfin:initiateQuickConnect', serverUrl),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinInitiateQuickConnect, serverUrl),
   jellyfinCheckQuickConnectStatus: (serverUrl: string, secret: string) =>
-    ipcRenderer.invoke('jellyfin:checkQuickConnectStatus', serverUrl, secret),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinCheckQuickConnectStatus, serverUrl, secret),
   jellyfinCompleteQuickConnect: (serverUrl: string, secret: string, displayName: string) =>
-    ipcRenderer.invoke('jellyfin:completeQuickConnect', serverUrl, secret, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinCompleteQuickConnect, serverUrl, secret, displayName),
   jellyfinAuthenticateCredentials: (
     serverUrl: string,
     username: string,
@@ -289,128 +291,128 @@ contextBridge.exposeInMainWorld('electronAPI', {
     displayName: string,
     isEmby: boolean = false
   ) =>
-    ipcRenderer.invoke('jellyfin:authenticateCredentials', serverUrl, username, password, displayName, isEmby),
+    ipcRenderer.invoke(IPC_CHANNELS.jellyfinAuthenticateCredentials, serverUrl, username, password, displayName, isEmby),
 
   // ============================================================================
   // EMBY (Discovery)
   // ============================================================================
 
   // Server Discovery
-  embyDiscoverServers: () => ipcRenderer.invoke('emby:discoverServers'),
-  embyTestServerUrl: (url: string) => ipcRenderer.invoke('emby:testServerUrl', url),
+  embyDiscoverServers: () => ipcRenderer.invoke(IPC_CHANNELS.embyDiscoverServers),
+  embyTestServerUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.embyTestServerUrl, url),
 
   // API Key Authentication
   embyAuthenticateApiKey: (serverUrl: string, apiKey: string, displayName: string) =>
-    ipcRenderer.invoke('emby:authenticateApiKey', serverUrl, apiKey, displayName),
+    ipcRenderer.invoke(IPC_CHANNELS.embyAuthenticateApiKey, serverUrl, apiKey, displayName),
 
   // Quality Analysis
-  qualityAnalyzeAll: () => ipcRenderer.invoke('quality:analyzeAll'),
-  qualityGetDistribution: () => ipcRenderer.invoke('quality:getDistribution'),
+  qualityAnalyzeAll: () => ipcRenderer.invoke(IPC_CHANNELS.qualityAnalyzeAll),
+  qualityGetDistribution: () => ipcRenderer.invoke(IPC_CHANNELS.qualityGetDistribution),
   qualityGetRecommendedFormat: (mediaItemId: number) =>
-    ipcRenderer.invoke('quality:getRecommendedFormat', mediaItemId),
+    ipcRenderer.invoke(IPC_CHANNELS.qualityGetRecommendedFormat, mediaItemId),
   onQualityAnalysisProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('quality:analysisProgress', handler)
-    return () => ipcRenderer.removeListener('quality:analysisProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.qualityAnalysisProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.qualityAnalysisProgress, handler)
   },
 
   // Database - Media Items
-  getMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:getMediaItems', filters),
-  countMediaItems: (filters?: unknown) => ipcRenderer.invoke('db:countMediaItems', filters),
-  getTVShows: (filters?: unknown) => ipcRenderer.invoke('db:getTVShows', filters),
-  countTVShows: (filters?: unknown) => ipcRenderer.invoke('db:countTVShows', filters),
-  countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke('db:countTVEpisodes', filters),
+  getMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbGetMediaItems, filters),
+  countMediaItems: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountMediaItems, filters),
+  getTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbGetTVShows, filters),
+  countTVShows: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountTVShows, filters),
+  countTVEpisodes: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbCountTVEpisodes, filters),
   getLetterOffset: (params: { table: 'movies' | 'tvshows' | 'artists' | 'albums'; letter: string; sourceId?: string; libraryId?: string }) =>
-    ipcRenderer.invoke('db:getLetterOffset', params),
-  getMediaItemById: (id: number) => ipcRenderer.invoke('db:getMediaItemById', id),
-  upsertMediaItem: (item: unknown) => ipcRenderer.invoke('db:upsertMediaItem', item),
-  deleteMediaItem: (id: number) => ipcRenderer.invoke('db:deleteMediaItem', id),
-  getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke('db:getMediaItemVersions', mediaItemId),
+    ipcRenderer.invoke(IPC_CHANNELS.dbGetLetterOffset, params),
+  getMediaItemById: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.dbGetMediaItemById, id),
+  upsertMediaItem: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbUpsertMediaItem, item),
+  deleteMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.dbDeleteMediaItem, id),
+  getMediaItemVersions: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.dbGetMediaItemVersions, mediaItemId),
 
   // Database - Quality Scores
-  getQualityScores: () => ipcRenderer.invoke('db:getQualityScores'),
+  getQualityScores: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetQualityScores),
   getQualityScoreByMediaId: (mediaItemId: number) =>
-    ipcRenderer.invoke('db:getQualityScoreByMediaId', mediaItemId),
-  upsertQualityScore: (score: unknown) => ipcRenderer.invoke('db:upsertQualityScore', score),
+    ipcRenderer.invoke(IPC_CHANNELS.dbGetQualityScoreByMediaId, mediaItemId),
+  upsertQualityScore: (score: unknown) => ipcRenderer.invoke(IPC_CHANNELS.dbUpsertQualityScore, score),
 
   // Database - Settings
-  getSetting: (key: string) => ipcRenderer.invoke('db:getSetting', key),
-  setSetting: (key: string, value: string) => ipcRenderer.invoke('db:setSetting', key, value),
-  getAllSettings: () => ipcRenderer.invoke('db:getAllSettings'),
+  getSetting: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.dbGetSetting, key),
+  setSetting: (key: string, value: string) => ipcRenderer.invoke(IPC_CHANNELS.dbSetSetting, key, value),
+  getAllSettings: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetAllSettings),
 
   // NFS Mount Mappings (for Kodi)
-  getNfsMappings: () => ipcRenderer.invoke('settings:getNfsMappings'),
-  setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke('settings:setNfsMappings', mappings),
-  testNfsMapping: (nfsPath: string, localPath: string) => ipcRenderer.invoke('settings:testNfsMapping', nfsPath, localPath),
+  getNfsMappings: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGetNfsMappings),
+  setNfsMappings: (mappings: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.settingsSetNfsMappings, mappings),
+  testNfsMapping: (nfsPath: string, localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.settingsTestNfsMapping, nfsPath, localPath),
 
   // Settings Change Events
   onSettingsChanged: (callback: (data: { key: string; hasValue: boolean }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { key: string; hasValue: boolean }) => callback(data)
-    ipcRenderer.on('settings:changed', handler)
-    return () => ipcRenderer.removeListener('settings:changed', handler)
+    ipcRenderer.on(IPC_CHANNELS.settingsChanged, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.settingsChanged, handler)
   },
 
   // Database - Data Management
-  dbGetPath: () => ipcRenderer.invoke('db:getPath'),
-  dbOpenFolder: () => ipcRenderer.invoke('db:openFolder'),
-  dbExport: () => ipcRenderer.invoke('db:export'),
+  dbGetPath: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetPath),
+  dbOpenFolder: () => ipcRenderer.invoke(IPC_CHANNELS.dbOpenFolder),
+  dbExport: () => ipcRenderer.invoke(IPC_CHANNELS.dbExport),
   dbExportCSV: (options: {
     includeUpgrades: boolean
     includeMissingMovies: boolean
     includeMissingEpisodes: boolean
     includeMissingAlbums: boolean
     includeMusicUpgrades: boolean
-  }) => ipcRenderer.invoke('db:exportCSV', options),
-  dbImport: () => ipcRenderer.invoke('db:import'),
-  dbReset: () => ipcRenderer.invoke('db:reset'),
-  dbResetLibraryData: () => ipcRenderer.invoke('db:resetLibraryData'),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.dbExportCSV, options),
+  dbImport: () => ipcRenderer.invoke(IPC_CHANNELS.dbImport),
+  dbReset: () => ipcRenderer.invoke(IPC_CHANNELS.dbReset),
+  dbResetLibraryData: () => ipcRenderer.invoke(IPC_CHANNELS.dbResetLibraryData),
 
   // Series Completeness
-  seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyzeAll', sourceId, libraryId),
-  seriesAnalyze: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:analyze', seriesIdentityKey, sourceId, libraryId),
-  seriesGetAll: (sourceId?: string) => ipcRenderer.invoke('series:getAll', sourceId),
-  seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('series:getIncomplete', sourceId),
-  seriesGetStats: () => ipcRenderer.invoke('series:getStats'),
-  seriesGetEpisodes: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke('series:getEpisodes', seriesIdentityKey, sourceId, undefined, libraryId),
-  seriesDelete: (id: number) => ipcRenderer.invoke('series:delete', id),
+  seriesAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyzeAll, sourceId, libraryId),
+  seriesAnalyze: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyze, seriesIdentityKey, sourceId, libraryId),
+  seriesGetAll: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetAll, sourceId),
+  seriesGetIncomplete: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetIncomplete, sourceId),
+  seriesGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.seriesGetStats),
+  seriesGetEpisodes: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetEpisodes, seriesIdentityKey, sourceId, undefined, libraryId),
+  seriesDelete: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.seriesDelete, id),
   tmdbGetMovieDetails: (tmdbId: string) =>
-    ipcRenderer.invoke('tmdb:getMovieDetails', tmdbId) as Promise<{ overview: string | null; releaseDate: string | null; runtime: number | null } | null>,
+    ipcRenderer.invoke(IPC_CHANNELS.tmdbGetMovieDetails, tmdbId) as Promise<{ overview: string | null; releaseDate: string | null; runtime: number | null } | null>,
   tmdbGetTVShowDetails: (tmdbId: string) =>
-    ipcRenderer.invoke('tmdb:getTVShowDetails', tmdbId) as Promise<{ overview: string | null } | null>,
+    ipcRenderer.invoke(IPC_CHANNELS.tmdbGetTVShowDetails, tmdbId) as Promise<{ overview: string | null } | null>,
   seriesGetSeasonDetails: (tmdbId: string, seasonNumber: number) =>
-    ipcRenderer.invoke('series:getSeasonDetails', tmdbId, seasonNumber) as Promise<{ overview: string | null; episodeCount: number; airDate: string | null; name: string | null } | null>,
+    ipcRenderer.invoke(IPC_CHANNELS.seriesGetSeasonDetails, tmdbId, seasonNumber) as Promise<{ overview: string | null; episodeCount: number; airDate: string | null; name: string | null } | null>,
   seriesGetSeasonPoster: (tmdbId: string, seasonNumber: number) =>
-    ipcRenderer.invoke('series:getSeasonPoster', tmdbId, seasonNumber),
+    ipcRenderer.invoke(IPC_CHANNELS.seriesGetSeasonPoster, tmdbId, seasonNumber),
   seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) =>
-    ipcRenderer.invoke('series:getEpisodeStill', tmdbId, seasonNumber, episodeNumber),
-  seriesCancelAnalysis: () => ipcRenderer.invoke('series:cancelAnalysis'),
+    ipcRenderer.invoke(IPC_CHANNELS.seriesGetEpisodeStill, tmdbId, seasonNumber, episodeNumber),
+  seriesCancelAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.seriesCancelAnalysis),
   onSeriesProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('series:progress', handler)
-    return () => ipcRenderer.removeListener('series:progress', handler)
+    ipcRenderer.on(IPC_CHANNELS.seriesProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.seriesProgress, handler)
   },
 
   // Series Match Fixing
-  seriesSearchTMDB: (query: string) => ipcRenderer.invoke('series:searchTMDB', query),
+  seriesSearchTMDB: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesSearchTMDB, query),
   seriesFixMatch: (seriesIdentityKey: string, sourceId: string, libraryId: string | undefined, tmdbId: number) =>
-    ipcRenderer.invoke('series:fixMatch', seriesIdentityKey, sourceId, libraryId, tmdbId),
+    ipcRenderer.invoke(IPC_CHANNELS.seriesFixMatch, seriesIdentityKey, sourceId, libraryId, tmdbId),
 
   // Movie Match Fixing
-  movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke('movie:searchTMDB', query, year),
+  movieSearchTMDB: (query: string, year?: number) => ipcRenderer.invoke(IPC_CHANNELS.movieSearchTMDB, query, year),
   movieFixMatch: (mediaItemId: number, tmdbId: number) =>
-    ipcRenderer.invoke('movie:fixMatch', mediaItemId, tmdbId),
+    ipcRenderer.invoke(IPC_CHANNELS.movieFixMatch, mediaItemId, tmdbId),
 
   // Movie Collections
-  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke('collections:analyzeAll', sourceId, libraryId),
-  collectionsGetAll: (sourceId?: string) => ipcRenderer.invoke('collections:getAll', sourceId),
-  collectionsGetIncomplete: (sourceId?: string) => ipcRenderer.invoke('collections:getIncomplete', sourceId),
-  collectionsGetStats: () => ipcRenderer.invoke('collections:getStats'),
-  collectionsDelete: (id: number) => ipcRenderer.invoke('collections:delete', id),
-  collectionsCancelAnalysis: () => ipcRenderer.invoke('collections:cancelAnalysis'),
+  collectionsAnalyzeAll: (sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.collectionsAnalyzeAll, sourceId, libraryId),
+  collectionsGetAll: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.collectionsGetAll, sourceId),
+  collectionsGetIncomplete: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.collectionsGetIncomplete, sourceId),
+  collectionsGetStats: () => ipcRenderer.invoke(IPC_CHANNELS.collectionsGetStats),
+  collectionsDelete: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.collectionsDelete, id),
+  collectionsCancelAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.collectionsCancelAnalysis),
   onCollectionsProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('collections:progress', handler)
-    return () => ipcRenderer.removeListener('collections:progress', handler)
+    ipcRenderer.on(IPC_CHANNELS.collectionsProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.collectionsProgress, handler)
   },
 
   // ============================================================================
@@ -419,129 +421,130 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Music Library Scanning
   musicScanLibrary: (sourceId: string, libraryId: string) =>
-    ipcRenderer.invoke('music:scanLibrary', sourceId, libraryId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicScanLibrary, sourceId, libraryId),
   onMusicScanProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('music:scanProgress', handler)
-    return () => ipcRenderer.removeListener('music:scanProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.musicScanProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.musicScanProgress, handler)
   },
 
   // Music Data Retrieval
-  musicGetArtists: (filters?: unknown) => ipcRenderer.invoke('music:getArtists', filters),
-  musicGetArtistById: (id: number) => ipcRenderer.invoke('music:getArtistById', id),
-  musicGetAlbums: (filters?: unknown) => ipcRenderer.invoke('music:getAlbums', filters),
-  musicGetAlbumsByArtist: (artistId: number) => ipcRenderer.invoke('music:getAlbumsByArtist', artistId),
-  musicGetAlbumById: (id: number) => ipcRenderer.invoke('music:getAlbumById', id),
-  musicGetTracks: (filters?: unknown) => ipcRenderer.invoke('music:getTracks', filters),
-  musicGetTracksByAlbum: (albumId: number) => ipcRenderer.invoke('music:getTracksByAlbum', albumId),
-  musicGetStats: (sourceId?: string) => ipcRenderer.invoke('music:getStats', sourceId),
-  musicCountArtists: (filters?: unknown) => ipcRenderer.invoke('music:countArtists', filters),
-  musicCountAlbums: (filters?: unknown) => ipcRenderer.invoke('music:countAlbums', filters),
-  musicCountTracks: (filters?: unknown) => ipcRenderer.invoke('music:countTracks', filters),
+  musicGetArtists: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicGetArtists, filters),
+  musicGetArtistById: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetArtistById, id),
+  musicGetAlbums: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbums, filters),
+  musicGetAlbumsByArtist: (artistId: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumsByArtist, artistId),
+  musicGetAlbumById: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumById, id),
+  musicGetTracks: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicGetTracks, filters),
+  musicGetTrackById: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetTrackById, id),
+  musicGetTracksByAlbum: (albumId: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetTracksByAlbum, albumId),
+  musicGetStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicGetStats, sourceId),
+  musicCountArtists: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicCountArtists, filters),
+  musicCountAlbums: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicCountAlbums, filters),
+  musicCountTracks: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.musicCountTracks, filters),
 
   // Music Quality Analysis
-  musicGetAlbumQuality: (albumId: number) => ipcRenderer.invoke('music:getAlbumQuality', albumId),
-  musicGetAlbumsNeedingUpgrade: (limit?: number, sourceId?: string) => ipcRenderer.invoke('music:getAlbumsNeedingUpgrade', limit, sourceId),
-  musicAnalyzeAllQuality: (sourceId?: string) => ipcRenderer.invoke('music:analyzeAllQuality', sourceId),
+  musicGetAlbumQuality: (albumId: number) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumQuality, albumId),
+  musicGetAlbumsNeedingUpgrade: (limit?: number, sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumsNeedingUpgrade, limit, sourceId),
+  musicAnalyzeAllQuality: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicAnalyzeAllQuality, sourceId),
   onMusicQualityProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('music:qualityProgress', handler)
-    return () => ipcRenderer.removeListener('music:qualityProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.musicQualityProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.musicQualityProgress, handler)
   },
 
   // MusicBrainz Completeness - Unified Analysis (artists + albums)
-  musicAnalyzeAll: (sourceId?: string) => ipcRenderer.invoke('music:analyzeAll', sourceId),
-  musicCancelAnalysis: () => ipcRenderer.invoke('music:cancelAnalysis'),
+  musicAnalyzeAll: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicAnalyzeAll, sourceId),
+  musicCancelAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.musicCancelAnalysis),
   onMusicAnalysisProgress: (callback: (progress: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
-    ipcRenderer.on('music:analysisProgress', handler)
-    return () => ipcRenderer.removeListener('music:analysisProgress', handler)
+    ipcRenderer.on(IPC_CHANNELS.musicAnalysisProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.musicAnalysisProgress, handler)
   },
   musicSearchMusicBrainzArtist: (name: string) =>
-    ipcRenderer.invoke('music:searchMusicBrainzArtist', name),
+    ipcRenderer.invoke(IPC_CHANNELS.musicSearchMusicBrainzArtist, name),
   musicAnalyzeArtistCompleteness: (artistId: number) =>
-    ipcRenderer.invoke('music:analyzeArtistCompleteness', artistId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicAnalyzeArtistCompleteness, artistId),
   musicGetArtistCompleteness: (artistName: string) =>
-    ipcRenderer.invoke('music:getArtistCompleteness', artistName),
-  musicGetAllArtistCompleteness: (sourceId?: string) => ipcRenderer.invoke('music:getAllArtistCompleteness', sourceId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicGetArtistCompleteness, artistName),
+  musicGetAllArtistCompleteness: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.musicGetAllArtistCompleteness, sourceId),
 
   // Music - Album Track Completeness
   musicAnalyzeAlbumTrackCompleteness: (albumId: number) =>
-    ipcRenderer.invoke('music:analyzeAlbumTrackCompleteness', albumId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicAnalyzeAlbumTrackCompleteness, albumId),
   musicGetAlbumCompleteness: (albumId: number) =>
-    ipcRenderer.invoke('music:getAlbumCompleteness', albumId),
-  musicGetAllAlbumCompleteness: () => ipcRenderer.invoke('music:getAllAlbumCompleteness'),
-  musicGetIncompleteAlbums: () => ipcRenderer.invoke('music:getIncompleteAlbums'),
+    ipcRenderer.invoke(IPC_CHANNELS.musicGetAlbumCompleteness, albumId),
+  musicGetAllAlbumCompleteness: () => ipcRenderer.invoke(IPC_CHANNELS.musicGetAllAlbumCompleteness),
+  musicGetIncompleteAlbums: () => ipcRenderer.invoke(IPC_CHANNELS.musicGetIncompleteAlbums),
 
   // Music - Match Fixing
   musicFixArtistMatch: (artistId: number, musicbrainzId: string) =>
-    ipcRenderer.invoke('music:fixArtistMatch', artistId, musicbrainzId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicFixArtistMatch, artistId, musicbrainzId),
   musicSearchMusicBrainzRelease: (artistName: string, albumTitle: string) =>
-    ipcRenderer.invoke('music:searchMusicBrainzRelease', artistName, albumTitle),
+    ipcRenderer.invoke(IPC_CHANNELS.musicSearchMusicBrainzRelease, artistName, albumTitle),
   musicFixAlbumMatch: (albumId: number, musicbrainzReleaseGroupId: string) =>
-    ipcRenderer.invoke('music:fixAlbumMatch', albumId, musicbrainzReleaseGroupId),
+    ipcRenderer.invoke(IPC_CHANNELS.musicFixAlbumMatch, albumId, musicbrainzReleaseGroupId),
 
   // Music - Cancellation
-  musicCancelScan: (sourceId: string) => ipcRenderer.invoke('music:cancelScan', sourceId),
+  musicCancelScan: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.musicCancelScan, sourceId),
 
   // Database - Statistics
-  getLibraryStats: (sourceId?: string) => ipcRenderer.invoke('db:getLibraryStats', sourceId),
-  getStorageAnalytics: () => ipcRenderer.invoke('db:getStorageAnalytics'),
+  getLibraryStats: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.dbGetLibraryStats, sourceId),
+  getStorageAnalytics: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetStorageAnalytics),
   // Person filmography completeness
-  personGetCompleteness: (personType?: string) => ipcRenderer.invoke('person:getCompleteness', personType),
-  personSearchTMDB: (query: string) => ipcRenderer.invoke('person:searchTMDB', query),
-  personAnalyze: (personName: string, personType: string) => ipcRenderer.invoke('person:analyze', personName, personType),
-  personDelete: (id: number) => ipcRenderer.invoke('person:delete', id),
+  personGetCompleteness: (personType?: string) => ipcRenderer.invoke(IPC_CHANNELS.personGetCompleteness, personType),
+  personSearchTMDB: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.personSearchTMDB, query),
+  personAnalyze: (personName: string, personType: string) => ipcRenderer.invoke(IPC_CHANNELS.personAnalyze, personName, personType),
+  personDelete: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.personDelete, id),
   // Watchlist sync
-  syncPlexWatchlist: () => ipcRenderer.invoke('sync:plex-watchlist'),
-  syncTrakt: (username: string) => ipcRenderer.invoke('sync:trakt', username),
-  fetchPlexWatchlist: () => ipcRenderer.invoke('sync:fetchPlex') as Promise<Array<{ title: string; media_type: string; year?: number; tmdb_id?: string; poster_url?: string }>>,
-  fetchTraktWatchlist: (username: string) => ipcRenderer.invoke('sync:fetchTrakt', username) as Promise<Array<{ title: string; media_type: string; year?: number; tmdb_id?: string; poster_url?: string }>>,
+  syncPlexWatchlist: () => ipcRenderer.invoke(IPC_CHANNELS.syncPlexWatchlist),
+  syncTrakt: (username: string) => ipcRenderer.invoke(IPC_CHANNELS.syncTrakt, username),
+  fetchPlexWatchlist: () => ipcRenderer.invoke(IPC_CHANNELS.syncFetchPlex) as Promise<Array<{ title: string; media_type: string; year?: number; tmdb_id?: string; poster_url?: string }>>,
+  fetchTraktWatchlist: (username: string) => ipcRenderer.invoke(IPC_CHANNELS.syncFetchTrakt, username) as Promise<Array<{ title: string; media_type: string; year?: number; tmdb_id?: string; poster_url?: string }>>,
   // Release alerts
-  releaseAlertsCheck: () => ipcRenderer.invoke('release-alerts:check'),
-  getDuplicateMedia: () => ipcRenderer.invoke('db:getDuplicateMedia'),
-  getLibraryHealthScores: () => ipcRenderer.invoke('db:getLibraryHealthScores'),
-  getRecentlyUpgraded: (days?: number) => ipcRenderer.invoke('db:getRecentlyUpgraded', days),
-  getRecentlyAdded: (days?: number, limit?: number) => ipcRenderer.invoke('db:getRecentlyAdded', days, limit),
+  releaseAlertsCheck: () => ipcRenderer.invoke(IPC_CHANNELS.releaseAlertsCheck),
+  getDuplicateMedia: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetDuplicateMedia),
+  getLibraryHealthScores: () => ipcRenderer.invoke(IPC_CHANNELS.dbGetLibraryHealthScores),
+  getRecentlyUpgraded: (days?: number) => ipcRenderer.invoke(IPC_CHANNELS.dbGetRecentlyUpgraded, days),
+  getRecentlyAdded: (days?: number, limit?: number) => ipcRenderer.invoke(IPC_CHANNELS.dbGetRecentlyAdded, days, limit),
 
   // Database - Global Search
-  mediaSearch: (query: string) => ipcRenderer.invoke('media:search', query),
+  mediaSearch: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.mediaSearch, query),
 
   // Database - Exclusions
   addExclusion: (exclusionType: string, referenceId?: number, referenceKey?: string, parentKey?: string, title?: string) =>
-    ipcRenderer.invoke('db:addExclusion', exclusionType, referenceId, referenceKey, parentKey, title),
-  removeExclusion: (id: number) => ipcRenderer.invoke('db:removeExclusion', id),
+    ipcRenderer.invoke(IPC_CHANNELS.dbAddExclusion, exclusionType, referenceId, referenceKey, parentKey, title),
+  removeExclusion: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.dbRemoveExclusion, id),
   getExclusions: (exclusionType?: string, parentKey?: string) =>
-    ipcRenderer.invoke('db:getExclusions', exclusionType, parentKey),
+    ipcRenderer.invoke(IPC_CHANNELS.dbGetExclusions, exclusionType, parentKey),
 
   // ============================================================================
   // WISHLIST / SHOPPING LIST
   // ============================================================================
 
   // Wishlist CRUD
-  wishlistAdd: (item: unknown) => ipcRenderer.invoke('wishlist:add', item),
-  wishlistUpdate: (id: number, updates: unknown) => ipcRenderer.invoke('wishlist:update', id, updates),
-  wishlistRemove: (id: number) => ipcRenderer.invoke('wishlist:remove', id),
-  wishlistGetAll: (filters?: unknown) => ipcRenderer.invoke('wishlist:getAll', filters),
-  wishlistGetById: (id: number) => ipcRenderer.invoke('wishlist:getById', id),
-  wishlistGetCount: () => ipcRenderer.invoke('wishlist:getCount'),
+  wishlistAdd: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.wishlistAdd, item),
+  wishlistUpdate: (id: number, updates: unknown) => ipcRenderer.invoke(IPC_CHANNELS.wishlistUpdate, id, updates),
+  wishlistRemove: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.wishlistRemove, id),
+  wishlistGetAll: (filters?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetAll, filters),
+  wishlistGetById: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetById, id),
+  wishlistGetCount: () => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetCount),
   wishlistCheckExists: (tmdbId?: string, musicbrainzId?: string, mediaItemId?: number) =>
-    ipcRenderer.invoke('wishlist:checkExists', tmdbId, musicbrainzId, mediaItemId),
-  wishlistAddBulk: (items: unknown[]) => ipcRenderer.invoke('wishlist:addBulk', items),
-  wishlistGetCountsByReason: () => ipcRenderer.invoke('wishlist:getCountsByReason'),
+    ipcRenderer.invoke(IPC_CHANNELS.wishlistCheckExists, tmdbId, musicbrainzId, mediaItemId),
+  wishlistAddBulk: (items: unknown[]) => ipcRenderer.invoke(IPC_CHANNELS.wishlistAddBulk, items),
+  wishlistGetCountsByReason: () => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetCountsByReason),
 
   // Store Search
-  wishlistGetStoreLinks: (item: unknown) => ipcRenderer.invoke('wishlist:getStoreLinks', item),
-  wishlistOpenStoreLink: (url: string) => ipcRenderer.invoke('wishlist:openStoreLink', url),
-  wishlistSetRegion: (region: string) => ipcRenderer.invoke('wishlist:setRegion', region),
-  wishlistGetRegion: () => ipcRenderer.invoke('wishlist:getRegion'),
-  wishlistExportCsv: () => ipcRenderer.invoke('wishlist:exportCsv'),
+  wishlistGetStoreLinks: (item: unknown) => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetStoreLinks, item),
+  wishlistOpenStoreLink: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.wishlistOpenStoreLink, url),
+  wishlistSetRegion: (region: string) => ipcRenderer.invoke(IPC_CHANNELS.wishlistSetRegion, region),
+  wishlistGetRegion: () => ipcRenderer.invoke(IPC_CHANNELS.wishlistGetRegion),
+  wishlistExportCsv: () => ipcRenderer.invoke(IPC_CHANNELS.wishlistExportCsv),
 
   // Notifications (legacy simple notification)
   onNotification: (callback: (message: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, message: string) => callback(message)
-    ipcRenderer.on('notification', handler)
-    return () => ipcRenderer.removeListener('notification', handler)
+    ipcRenderer.on(IPC_CHANNELS.notification, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.notification, handler)
   },
 
   // ============================================================================
@@ -549,56 +552,56 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ============================================================================
 
   // Monitoring Control
-  monitoringGetConfig: () => ipcRenderer.invoke('monitoring:getConfig'),
+  monitoringGetConfig: () => ipcRenderer.invoke(IPC_CHANNELS.monitoringGetConfig),
   monitoringSetConfig: (config: {
     enabled?: boolean
     startOnLaunch?: boolean
     pauseDuringManualScan?: boolean
     pollingIntervals?: Record<string, number>
-  }) => ipcRenderer.invoke('monitoring:setConfig', config),
-  monitoringStart: () => ipcRenderer.invoke('monitoring:start'),
-  monitoringStop: () => ipcRenderer.invoke('monitoring:stop'),
-  monitoringIsActive: () => ipcRenderer.invoke('monitoring:isActive'),
-  monitoringForceCheck: (sourceId: string) => ipcRenderer.invoke('monitoring:forceCheck', sourceId),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.monitoringSetConfig, config),
+  monitoringStart: () => ipcRenderer.invoke(IPC_CHANNELS.monitoringStart),
+  monitoringStop: () => ipcRenderer.invoke(IPC_CHANNELS.monitoringStop),
+  monitoringIsActive: () => ipcRenderer.invoke(IPC_CHANNELS.monitoringIsActive),
+  monitoringForceCheck: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.monitoringForceCheck, sourceId),
 
   // Monitoring Events
   onMonitoringStatusChanged: (callback: (status: { isActive: boolean; lastCheck?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: { isActive: boolean; lastCheck?: string }) => callback(status)
-    ipcRenderer.on('monitoring:statusChanged', handler)
-    return () => ipcRenderer.removeListener('monitoring:statusChanged', handler)
+    ipcRenderer.on(IPC_CHANNELS.monitoringStatusChanged, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.monitoringStatusChanged, handler)
   },
   onMonitoringSourceChecked: (callback: (data: { sourceId: string; hasChanges: boolean }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { sourceId: string; hasChanges: boolean }) => callback(data)
-    ipcRenderer.on('monitoring:sourceChecked', handler)
-    return () => ipcRenderer.removeListener('monitoring:sourceChecked', handler)
+    ipcRenderer.on(IPC_CHANNELS.monitoringSourceChecked, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.monitoringSourceChecked, handler)
   },
   onMonitoringStatus: (callback: (status: { isActive: boolean }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, status: { isActive: boolean }) => callback(status)
-    ipcRenderer.on('monitoring:status', handler)
-    return () => ipcRenderer.removeListener('monitoring:status', handler)
+    ipcRenderer.on(IPC_CHANNELS.monitoringStatus, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.monitoringStatus, handler)
   },
   onMonitoringEvent: (callback: (event: { type: string; message: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { type: string; message: string }) => callback(data)
-    ipcRenderer.on('monitoring:event', handler)
-    return () => ipcRenderer.removeListener('monitoring:event', handler)
+    ipcRenderer.on(IPC_CHANNELS.monitoringEvent, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.monitoringEvent, handler)
   },
-  getMonitoringStatus: () => ipcRenderer.invoke('monitoring:getStatus'),
+  getMonitoringStatus: () => ipcRenderer.invoke(IPC_CHANNELS.monitoringGetStatus),
 
   // ============================================================================
   // NOTIFICATIONS
   // ============================================================================
 
   notificationsGetAll: (options?: { limit?: number, offset?: number, type?: string, unreadOnly?: boolean }) =>
-    ipcRenderer.invoke('notifications:getAll', options),
-  notificationsGetCount: () => ipcRenderer.invoke('notifications:getCount'),
-  notificationsMarkRead: (ids: number[]) => ipcRenderer.invoke('notifications:markRead', ids),
-  notificationsMarkAllRead: () => ipcRenderer.invoke('notifications:markAllRead'),
-  notificationsDelete: (ids: number[]) => ipcRenderer.invoke('notifications:delete', ids),
-  notificationsClear: () => ipcRenderer.invoke('notifications:clear'),
+    ipcRenderer.invoke(IPC_CHANNELS.notificationsGetAll, options),
+  notificationsGetCount: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsGetCount),
+  notificationsMarkRead: (ids: number[]) => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkRead, ids),
+  notificationsMarkAllRead: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkAllRead),
+  notificationsDelete: (ids: number[]) => ipcRenderer.invoke(IPC_CHANNELS.notificationsDelete, ids),
+  notificationsClear: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsClear),
   onNotificationsNew: (callback: () => void) => {
     const handler = () => callback()
-    ipcRenderer.on('notifications:new', handler)
-    return () => ipcRenderer.removeListener('notifications:new', handler)
+    ipcRenderer.on(IPC_CHANNELS.notificationsNew, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationsNew, handler)
   },
 
   // ============================================================================
@@ -606,41 +609,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ============================================================================
 
   // Queue State
-  taskQueueGetState: () => ipcRenderer.invoke('taskQueue:getState'),
+  taskQueueGetState: (): Promise<QueueState> => ipcRenderer.invoke(IPC_CHANNELS.taskQueueGetState),
 
   // Task Management
-  taskQueueAddTask: (definition: {
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-    label: string
-    sourceId?: string
-    libraryId?: string
-    artistId?: number
-  }) => ipcRenderer.invoke('taskQueue:addTask', definition),
-  taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke('taskQueue:removeTask', taskId),
-  taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke('taskQueue:reorderQueue', taskIds),
-  taskQueueClearQueue: () => ipcRenderer.invoke('taskQueue:clearQueue'),
+  taskQueueAddTask: (definition: TaskDefinition) => ipcRenderer.invoke(IPC_CHANNELS.taskQueueAddTask, definition),
+  taskQueueRemoveTask: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.taskQueueRemoveTask, taskId),
+  taskQueueReorderQueue: (taskIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.taskQueueReorderQueue, taskIds),
+  taskQueueClearQueue: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueueClearQueue),
 
   // Queue Control
-  taskQueuePause: () => ipcRenderer.invoke('taskQueue:pause'),
-  taskQueueResume: () => ipcRenderer.invoke('taskQueue:resume'),
-  taskQueueCancelCurrent: () => ipcRenderer.invoke('taskQueue:cancelCurrent'),
+  taskQueuePause: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueuePause),
+  taskQueueResume: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueueResume),
+  taskQueueCancelCurrent: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueueCancelCurrent),
 
   // History
-  taskQueueGetTaskHistory: () => ipcRenderer.invoke('taskQueue:getTaskHistory'),
-  taskQueueGetMonitoringHistory: () => ipcRenderer.invoke('taskQueue:getMonitoringHistory'),
-  taskQueueClearTaskHistory: () => ipcRenderer.invoke('taskQueue:clearTaskHistory'),
-  taskQueueClearMonitoringHistory: () => ipcRenderer.invoke('taskQueue:clearMonitoringHistory'),
+  taskQueueGetTaskHistory: (): Promise<ActivityLogEntry[]> => ipcRenderer.invoke(IPC_CHANNELS.taskQueueGetTaskHistory),
+  taskQueueGetMonitoringHistory: (): Promise<ActivityLogEntry[]> => ipcRenderer.invoke(IPC_CHANNELS.taskQueueGetMonitoringHistory),
+  taskQueueClearTaskHistory: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueueClearTaskHistory),
+  taskQueueClearMonitoringHistory: () => ipcRenderer.invoke(IPC_CHANNELS.taskQueueClearMonitoringHistory),
 
   // Task Queue Events
-  onTaskQueueUpdated: (callback: (state: unknown) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
-    ipcRenderer.on('taskQueue:updated', handler)
-    return () => ipcRenderer.removeListener('taskQueue:updated', handler)
+  onTaskQueueUpdated: (callback: (state: QueueState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: QueueState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.taskQueueUpdated, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.taskQueueUpdated, handler)
   },
-  onTaskQueueTaskComplete: (callback: (task: unknown) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, task: unknown) => callback(task)
-    ipcRenderer.on('taskQueue:taskComplete', handler)
-    return () => ipcRenderer.removeListener('taskQueue:taskComplete', handler)
+  onTaskQueueTaskComplete: (callback: (task: QueuedTask) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, task: QueuedTask) => callback(task)
+    ipcRenderer.on(IPC_CHANNELS.taskQueueTaskComplete, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.taskQueueTaskComplete, handler)
   },
   onScanCompleted: (callback: (data: {
     sourceId?: string
@@ -660,39 +657,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
       itemsScanned: number
       isFirstScan: boolean
     }) => callback(data)
-    ipcRenderer.on('scan:completed', handler)
-    return () => ipcRenderer.removeListener('scan:completed', handler)
+    ipcRenderer.on(IPC_CHANNELS.scanCompleted, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.scanCompleted, handler)
   },
-  onTaskQueueHistoryUpdated: (callback: (history: { taskHistory: unknown[]; monitoringHistory: unknown[] }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, history: { taskHistory: unknown[]; monitoringHistory: unknown[] }) => callback(history)
-    ipcRenderer.on('taskQueue:historyUpdated', handler)
-    return () => ipcRenderer.removeListener('taskQueue:historyUpdated', handler)
+  onTaskQueueHistoryUpdated: (callback: (history: TaskQueueHistory) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, history: TaskQueueHistory) => callback(history)
+    ipcRenderer.on(IPC_CHANNELS.taskQueueHistoryUpdated, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.taskQueueHistoryUpdated, handler)
   },
   onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, items: Array<{ id: number; title: string; reason: string; media_type: string }>) => callback(items)
-    ipcRenderer.on('wishlist:autoCompleted', handler)
-    return () => ipcRenderer.removeListener('wishlist:autoCompleted', handler)
+    ipcRenderer.on(IPC_CHANNELS.wishlistAutoCompleted, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.wishlistAutoCompleted, handler)
   },
   onWishlistChanged: (callback: () => void) => {
     const handler = () => callback()
-    ipcRenderer.on('wishlist:changed', handler)
-    return () => ipcRenderer.removeListener('wishlist:changed', handler)
+    ipcRenderer.on(IPC_CHANNELS.wishlistChanged, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.wishlistChanged, handler)
   },
 
   // General
   onMessage: (callback: (message: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, message: string) => callback(message)
-    ipcRenderer.on('main-process-message', handler)
-    return () => ipcRenderer.removeListener('main-process-message', handler)
+    ipcRenderer.on(IPC_CHANNELS.mainProcessMessage, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.mainProcessMessage, handler)
   },
 
   // ============================================================================
   // AUTO UPDATE
   // ============================================================================
-  autoUpdateGetState: () => ipcRenderer.invoke('autoUpdate:getState'),
-  autoUpdateCheckForUpdates: () => ipcRenderer.invoke('autoUpdate:checkForUpdates'),
-  autoUpdateDownloadUpdate: () => ipcRenderer.invoke('autoUpdate:downloadUpdate'),
-  autoUpdateInstallUpdate: () => ipcRenderer.invoke('autoUpdate:installUpdate'),
+  autoUpdateGetState: () => ipcRenderer.invoke(IPC_CHANNELS.autoUpdateGetState),
+  autoUpdateCheckForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.autoUpdateCheckForUpdates),
+  autoUpdateDownloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.autoUpdateDownloadUpdate),
+  autoUpdateInstallUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.autoUpdateInstallUpdate),
   onAutoUpdateStateChanged: (callback: (state: {
     status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
     version?: string
@@ -709,36 +706,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
       error?: string
       lastChecked?: string
     }) => callback(state)
-    ipcRenderer.on('autoUpdate:stateChanged', handler)
-    return () => ipcRenderer.removeListener('autoUpdate:stateChanged', handler)
+    ipcRenderer.on(IPC_CHANNELS.autoUpdateStateChanged, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.autoUpdateStateChanged, handler)
   },
 
   // ============================================================================
   // AI (GEMINI)
   // ============================================================================
-  aiIsConfigured: () => ipcRenderer.invoke('ai:isConfigured'),
-  aiGetRateLimitInfo: () => ipcRenderer.invoke('ai:getRateLimitInfo'),
-  aiTestApiKey: (apiKey: string) => ipcRenderer.invoke('ai:testApiKey', apiKey),
+  aiIsConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.aiIsConfigured),
+  aiGetRateLimitInfo: () => ipcRenderer.invoke(IPC_CHANNELS.aiGetRateLimitInfo),
+  aiTestApiKey: (apiKey: string) => ipcRenderer.invoke(IPC_CHANNELS.aiTestApiKey, apiKey),
   aiSendMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     system?: string
     maxTokens?: number
-  }) => ipcRenderer.invoke('ai:sendMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.aiSendMessage, params),
   aiStreamMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
     system?: string
     maxTokens?: number
     requestId: string
-  }) => ipcRenderer.invoke('ai:streamMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.aiStreamMessage, params),
   onAiStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
-    ipcRenderer.on('ai:streamDelta', handler)
-    return () => ipcRenderer.removeListener('ai:streamDelta', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiStreamDelta, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiStreamDelta, handler)
   },
   onAiStreamComplete: (callback: (data: { requestId: string; usage?: { input_tokens: number; output_tokens: number } }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; usage?: { input_tokens: number; output_tokens: number } }) => callback(data)
-    ipcRenderer.on('ai:streamComplete', handler)
-    return () => ipcRenderer.removeListener('ai:streamComplete', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiStreamComplete, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiStreamComplete, handler)
   },
   aiChatMessage: (params: {
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -750,46 +747,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
       activeSourceId?: string
       activeFilters?: string
     }
-  }) => ipcRenderer.invoke('ai:chatMessage', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.aiChatMessage, params),
   onAiToolUse: (callback: (data: { requestId: string; toolName: string; input: Record<string, unknown> }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; toolName: string; input: Record<string, unknown> }) => callback(data)
-    ipcRenderer.on('ai:toolUse', handler)
-    return () => ipcRenderer.removeListener('ai:toolUse', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiToolUse, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiToolUse, handler)
   },
   onAiChatStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
-    ipcRenderer.on('ai:chatStreamDelta', handler)
-    return () => ipcRenderer.removeListener('ai:chatStreamDelta', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiChatStreamDelta, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiChatStreamDelta, handler)
   },
   onAiChatStreamComplete: (callback: (data: { requestId: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string }) => callback(data)
-    ipcRenderer.on('ai:chatStreamComplete', handler)
-    return () => ipcRenderer.removeListener('ai:chatStreamComplete', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiChatStreamComplete, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiChatStreamComplete, handler)
   },
 
   // AI Analysis Reports
   aiQualityReport: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:qualityReport', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiQualityReport, params),
   aiUpgradePriorities: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:upgradePriorities', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiUpgradePriorities, params),
   aiCompletenessInsights: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:completenessInsights', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiCompletenessInsights, params),
   onAiAnalysisStreamDelta: (callback: (data: { requestId: string; delta: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; delta: string }) => callback(data)
-    ipcRenderer.on('ai:analysisStreamDelta', handler)
-    return () => ipcRenderer.removeListener('ai:analysisStreamDelta', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiAnalysisStreamDelta, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiAnalysisStreamDelta, handler)
   },
   onAiAnalysisStreamComplete: (callback: (data: { requestId: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string }) => callback(data)
-    ipcRenderer.on('ai:analysisStreamComplete', handler)
-    return () => ipcRenderer.removeListener('ai:analysisStreamComplete', handler)
+    ipcRenderer.on(IPC_CHANNELS.aiAnalysisStreamComplete, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiAnalysisStreamComplete, handler)
   },
   aiWishlistAdvice: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:wishlistAdvice', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiWishlistAdvice, params),
   aiStorageOptimization: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:storageOptimization', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiStorageOptimization, params),
   aiMusicQualityReport: (params: { requestId: string }) =>
-    ipcRenderer.invoke('ai:musicQualityReport', params),
+    ipcRenderer.invoke(IPC_CHANNELS.aiMusicQualityReport, params),
   aiExplainQuality: (params: {
     title: string
     resolution?: string
@@ -801,119 +798,109 @@ contextBridge.exposeInMainWorld('electronAPI', {
     qualityTier?: string
     tierQuality?: string
     tierScore?: number
-  }) => ipcRenderer.invoke('ai:explainQuality', params),
+  }) => ipcRenderer.invoke(IPC_CHANNELS.aiExplainQuality, params),
 
   // ============================================================================
   // LOGGING
   // ============================================================================
-  getLogs: (limit?: number) => ipcRenderer.invoke('logs:getAll', limit),
-  clearLogs: () => ipcRenderer.invoke('logs:clear'),
-  exportLogs: () => ipcRenderer.invoke('logs:export'),
-  setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke('logs:setVerbose', enabled),
-  isVerboseLogging: () => ipcRenderer.invoke('logs:isVerbose'),
-  getFileLoggingSettings: () => ipcRenderer.invoke('logs:getFileLoggingSettings'),
+  getLogs: (limit?: number) => ipcRenderer.invoke(IPC_CHANNELS.logsGetAll, limit),
+  clearLogs: () => ipcRenderer.invoke(IPC_CHANNELS.logsClear),
+  exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.logsExport),
+  setVerboseLogging: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.logsSetVerbose, enabled),
+  isVerboseLogging: () => ipcRenderer.invoke(IPC_CHANNELS.logsIsVerbose),
+  getFileLoggingSettings: () => ipcRenderer.invoke(IPC_CHANNELS.logsGetFileLoggingSettings),
   setFileLoggingSettings: (settings: { enabled?: boolean; minLevel?: string; retentionDays?: number }) =>
-    ipcRenderer.invoke('logs:setFileLoggingSettings', settings),
-  openLogFolder: () => ipcRenderer.invoke('logs:openLogFolder'),
+    ipcRenderer.invoke(IPC_CHANNELS.logsSetFileLoggingSettings, settings),
+  openLogFolder: () => ipcRenderer.invoke(IPC_CHANNELS.logsOpenLogFolder),
   onNewLog: (callback: (entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, entry: { id: string; timestamp: string; level: 'verbose' | 'debug' | 'info' | 'warn' | 'error'; source: string; message: string; details?: string }) => callback(entry)
-    ipcRenderer.on('logs:new', handler)
-    return () => ipcRenderer.removeListener('logs:new', handler)
+    ipcRenderer.on(IPC_CHANNELS.logsNew, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.logsNew, handler)
   },
-  timelinesListRecipes: () => ipcRenderer.invoke('timelines:listRecipes'),
-  timelinesListParserPlugins: () => ipcRenderer.invoke('timelines:listParserPlugins'),
-  timelinesSaveParserPlugin: (plugin: unknown) => ipcRenderer.invoke('timelines:saveParserPlugin', plugin),
-  timelinesRemoveParserPlugin: (id: string) => ipcRenderer.invoke('timelines:removeParserPlugin', id),
-  timelinesGetRecipe: (recipeId: string, options?: { refresh?: boolean }) => ipcRenderer.invoke('timelines:getRecipe', recipeId, options),
-  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: { refresh?: boolean; snapshotId?: string } | undefined, requestId: string, showInActivity: boolean) => ipcRenderer.invoke('timelines:resolveTimeline', recipeId, sourceId, options, requestId, showInActivity),
-  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => ipcRenderer.invoke('timelines:syncPlexPlaylist', payload, requestId),
-  timelinesGetPlexPlaylists: (sourceId: string) => ipcRenderer.invoke('timelines:getPlexPlaylists', sourceId),
-  timelinesCancel: (requestId: string) => ipcRenderer.invoke('timelines:cancel', requestId),
-  transcodingGetCapabilities: (refresh = false) => ipcRenderer.invoke('transcoding:getCapabilities', refresh),
-  transcodingPreflightRemux: (mediaItemId: number) => ipcRenderer.invoke('transcoding:preflightRemux', mediaItemId),
-  transcodingTranscode: (mediaItemId: number, options: TranscodeOptions, requestId: string) => ipcRenderer.invoke('transcoding:transcode', mediaItemId, options, requestId),
-  transcodingCancel: (mediaItemId?: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  timelinesListRecipes: () => ipcRenderer.invoke(IPC_CHANNELS.timelinesListRecipes),
+  timelinesListParserPlugins: () => ipcRenderer.invoke(IPC_CHANNELS.timelinesListParserPlugins),
+  timelinesSaveParserPlugin: (plugin: unknown) => ipcRenderer.invoke(IPC_CHANNELS.timelinesSaveParserPlugin, plugin),
+  timelinesRemoveParserPlugin: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.timelinesRemoveParserPlugin, id),
+  timelinesGetRecipe: (recipeId: string, options?: { refresh?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.timelinesGetRecipe, recipeId, options),
+  timelinesResolveTimeline: (recipeId: string, sourceId: string | undefined, options: { refresh?: boolean; snapshotId?: string } | undefined, requestId: string, showInActivity: boolean) => ipcRenderer.invoke(IPC_CHANNELS.timelinesResolveTimeline, recipeId, sourceId, options, requestId, showInActivity),
+  timelinesSyncPlexPlaylist: (payload: { sourceId: string; recipeId: string; playlistTitle: string; snapshotId: string; playlistRatingKey?: string; allowStale?: boolean }, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.timelinesSyncPlexPlaylist, payload, requestId),
+  timelinesGetPlexPlaylists: (sourceId: string) => ipcRenderer.invoke(IPC_CHANNELS.timelinesGetPlexPlaylists, sourceId),
+  transcodingGetCapabilities: (refresh = false) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetCapabilities, refresh),
+  transcodingPreflightRemux: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightRemux, mediaItemId),
+  transcodingTranscode: (mediaItemId: number, options: TranscodeOptions, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingTranscode, mediaItemId, options, requestId),
+  transcodingCancel: (mediaItemId?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingCancel, mediaItemId),
   onTranscodingProgress: (callback: (data: { requestId: string; mediaItemId: number; progress: number }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { requestId: string; mediaItemId: number; progress: number }) => callback(data)
-    ipcRenderer.on('transcoding:progress', handler)
-    return () => ipcRenderer.removeListener('transcoding:progress', handler)
+    ipcRenderer.on(IPC_CHANNELS.transcodingProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.transcodingProgress, handler)
   },
   // Duplicates
-  duplicatesGetPending: (sourceId?: string) => ipcRenderer.invoke('duplicates:getPending', sourceId),
-  duplicatesScan: (sourceId: string | undefined, requestId: string) => ipcRenderer.invoke('duplicates:scan', sourceId, requestId),
-  duplicatesGetRecommendation: (mediaItemIds: number[]) => ipcRenderer.invoke('duplicates:getRecommendation', mediaItemIds),
-  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean) => ipcRenderer.invoke('duplicates:resolve', duplicateId, keepItemId, deleteOthers),
+  duplicatesGetPending: (sourceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.duplicatesGetPending, sourceId),
+  duplicatesScan: (sourceId: string | undefined, requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.duplicatesScan, sourceId, requestId),
+  duplicatesGetRecommendation: (mediaItemIds: number[]) => ipcRenderer.invoke(IPC_CHANNELS.duplicatesGetRecommendation, mediaItemIds),
+  duplicatesResolve: (duplicateId: number, keepItemId: number, deleteOthers: boolean) => ipcRenderer.invoke(IPC_CHANNELS.duplicatesResolve, duplicateId, keepItemId, deleteOthers),
 
   // ============================================================================
   // WEB ACCESS
   // ============================================================================
-  webAccessGetStatus: () => ipcRenderer.invoke('webAccess:getStatus'),
-  webAccessStart: () => ipcRenderer.invoke('webAccess:start'),
-  webAccessStop: () => ipcRenderer.invoke('webAccess:stop'),
+  webAccessGetStatus: () => ipcRenderer.invoke(IPC_CHANNELS.webAccessGetStatus),
+  webAccessStart: () => ipcRenderer.invoke(IPC_CHANNELS.webAccessStart),
+  webAccessStop: () => ipcRenderer.invoke(IPC_CHANNELS.webAccessStop),
 
   // Operations
-  dbCancelOperation: (requestId: string) => ipcRenderer.invoke('db:cancelOperation', requestId),
-  operationsGetActivity: () => ipcRenderer.invoke('operations:getActivity'),
-  operationsGetResult: (requestId: string) => ipcRenderer.invoke('operations:getResult', requestId),
-  operationsDismiss: (requestId: string) => ipcRenderer.invoke('operations:dismiss', requestId),
+  dbCancelOperation: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.dbCancelOperation, requestId),
+  operationsGetActivity: () => ipcRenderer.invoke(IPC_CHANNELS.operationsGetActivity),
+  operationsGetResult: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.operationsGetResult, requestId),
+  operationsDismiss: (requestId: string) => ipcRenderer.invoke(IPC_CHANNELS.operationsDismiss, requestId),
   onOperationsUpdated: (callback: (snapshot: { revision: number; operations: ActivityOperation[] }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: { revision: number; operations: ActivityOperation[] }) => callback(snapshot)
-    ipcRenderer.on('operations:updated', handler)
-    return () => ipcRenderer.removeListener('operations:updated', handler)
+    ipcRenderer.on(IPC_CHANNELS.operationsUpdated, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.operationsUpdated, handler)
   },
 
   // Playback Target Profiles & Compatibility
-  listPlaybackTargetProfiles: () => ipcRenderer.invoke('db:playbackTargetProfiles:list'),
-  createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke('db:playbackTargetProfiles:create', input),
-  updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke('db:playbackTargetProfiles:update', input),
-  duplicatePlaybackTargetProfile: (sourceId: string, name: string) => ipcRenderer.invoke('db:playbackTargetProfiles:duplicate', { sourceId, name }),
-  deletePlaybackTargetProfile: (id: string) => ipcRenderer.invoke('db:playbackTargetProfiles:delete', id),
-  evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => ipcRenderer.invoke('db:playbackCompatibility:evaluate', input),
+  listPlaybackTargetProfiles: () => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackTargetProfilesList),
+  createPlaybackTargetProfile: (input: { name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackTargetProfilesCreate, input),
+  updatePlaybackTargetProfile: (input: { id: string; name: string; definition: PlaybackTargetDefinition }) => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackTargetProfilesUpdate, input),
+  duplicatePlaybackTargetProfile: (sourceId: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackTargetProfilesDuplicate, { sourceId, name }),
+  deletePlaybackTargetProfile: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackTargetProfilesDelete, id),
+  evaluatePlaybackCompatibility: (input: { mediaItemId: number; profileId: string }) => ipcRenderer.invoke(IPC_CHANNELS.dbPlaybackCompatibilityEvaluate, input),
 
   // Optimization
-  optimizationGetPending: () => ipcRenderer.invoke('optimization:getPending'),
-  optimizationGetDecision: (mediaItemId: number) => ipcRenderer.invoke('optimization:getDecision', mediaItemId),
+  optimizationGetPending: () => ipcRenderer.invoke(IPC_CHANNELS.optimizationGetPending),
+  optimizationGetDecision: (mediaItemId: number) => ipcRenderer.invoke(IPC_CHANNELS.optimizationGetDecision, mediaItemId),
 
   // TV Show Optimization & Preflight
-  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('series:getEpisodesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
-  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('series:getAudioLanguagesByIdentity', seriesTitle, sourceId, seriesIdentityKey, libraryId),
-  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId: string, libraryId: string) => ipcRenderer.invoke('series:analyzeByIdentity', seriesIdentityKey, sourceId, libraryId),
-  preflightShow: (request: unknown) => ipcRenderer.invoke('transcoding:preflightShow', request),
-  queueShow: (preflightId: string) => ipcRenderer.invoke('transcoding:queueShow', preflightId),
-  approveShow: (preflightId: string) => ipcRenderer.invoke('transcoding:approveShow', preflightId),
-  discardShow: (preflightId: string) => ipcRenderer.invoke('transcoding:discardShow', preflightId),
-  openShowSample: (preflightId: string, mediaItemId: number, index: number) => ipcRenderer.invoke('transcoding:openShowSample', preflightId, mediaItemId, index),
-  listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:listShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
-  purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke('transcoding:purgeShowQuarantine', seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetEpisodesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesGetAudioLanguagesByIdentity, seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => ipcRenderer.invoke(IPC_CHANNELS.seriesAnalyzeByIdentity, seriesIdentityKey, sourceId, libraryId),
+  preflightShow: (request: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPreflightShow, request),
+  queueShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingQueueShow, preflightId),
+  approveShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingApproveShow, preflightId),
+  discardShow: (preflightId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingDiscardShow, preflightId),
+  openShowSample: (preflightId: string, mediaItemId: number, index: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingOpenShowSample, preflightId, mediaItemId, index),
+  listShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingListShowQuarantine, seriesTitle, sourceId, seriesIdentityKey, libraryId),
+  purgeShowQuarantine: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => ipcRenderer.invoke(IPC_CHANNELS.transcodingPurgeShowQuarantine, seriesTitle, sourceId, seriesIdentityKey, libraryId),
 
   // Single-Item Optimization & Transcoding Aliases
-  getMediaItem: (id: number) => ipcRenderer.invoke('db:getMediaItemById', id),
-  getCapabilities: () => ipcRenderer.invoke('transcoding:getCapabilities'),
-  refreshCapabilities: () => ipcRenderer.invoke('transcoding:refreshCapabilities'),
-  checkAvailability: () => ipcRenderer.invoke('transcoding:checkAvailability'),
-  setSelectedGpu: (gpuId: string | null) => ipcRenderer.invoke('transcoding:setSelectedGpu', gpuId),
-  getParameters: (mediaItemId: number, options?: unknown) => ipcRenderer.invoke('transcoding:getParameters', mediaItemId, options),
-  cancel: (mediaItemId?: number) => ipcRenderer.invoke('transcoding:cancel', mediaItemId),
+  getMediaItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.dbGetMediaItemById, id),
+  getCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetCapabilities),
+  refreshCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingRefreshCapabilities),
+  checkAvailability: () => ipcRenderer.invoke(IPC_CHANNELS.transcodingCheckAvailability),
+  setSelectedGpu: (gpuId: string | null) => ipcRenderer.invoke(IPC_CHANNELS.transcodingSetSelectedGpu, gpuId),
+  getParameters: (mediaItemId: number, options?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.transcodingGetParameters, mediaItemId, options),
+  cancel: (mediaItemId?: number) => ipcRenderer.invoke(IPC_CHANNELS.transcodingCancel, mediaItemId),
   onProgress: (callback: (data: any) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: any) => callback(progress)
-    ipcRenderer.on('transcoding:progress', handler)
-    return () => ipcRenderer.removeListener('transcoding:progress', handler)
+    ipcRenderer.on(IPC_CHANNELS.transcodingProgress, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.transcodingProgress, handler)
   },
-})
+}
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI)
 
 // Type definitions for multi-source support
-export interface MediaSourceResponse {
-  id?: number
-  source_id: string
-  source_type: string
-  display_name: string
-  connection_config: string
-  is_enabled: boolean
-  last_connected_at?: string
-  last_scan_at?: string
-  created_at: string
-  updated_at: string
-}
+export type MediaSourceResponse = DatabaseMediaSource
 
 // ConnectionTestResult - imported from shared types above
 
@@ -956,7 +943,7 @@ export interface DiscoveredServerResponse {
 }
 
 // Type definitions for window object
-export interface ElectronAPI {
+interface ExistingElectronAPI {
   // App lifecycle
   appReady: () => void
   getAppVersion: () => Promise<string>
@@ -1112,7 +1099,7 @@ export interface ElectronAPI {
     }>
   }>>
   moodSyncToTarget: (args: { sourceOfTruthId: string; targetSourceId: string; trackIds?: number[]; mode?: 'overwrite' | 'append'; field?: 'mood' | 'genre' }) =>
-    Promise<{ synced: number; failed: number; skipped: number; errors: string[] }>
+    Promise<{ synced: number; failed: number; cacheFailed: number; skipped: number; errors: string[] }>
   onMoodSyncProgress: (callback: (progress: { current: number; total: number; currentTrack: string; trackId?: number; status?: 'syncing' | 'done' | 'failed' }) => void) => () => void
 
   // Kodi Collections
@@ -1471,7 +1458,6 @@ export interface ElectronAPI {
   seriesGetEpisodeStill: (tmdbId: string, seasonNumber: number, episodeNumber: number) => Promise<string | null>
   seriesCancelAnalysis: () => Promise<{ success: boolean }>
   onSeriesProgress: (callback: (progress: unknown) => void) => () => void
-
   // Series Match Fixing
   seriesSearchTMDB: (query: string) => Promise<Array<{
     id: number
@@ -1524,7 +1510,6 @@ export interface ElectronAPI {
   // ============================================================================
   // MUSIC LIBRARY
   // ============================================================================
-
   // Music Library Scanning
   musicScanLibrary: (sourceId: string, libraryId: string) => Promise<{
     success: boolean
@@ -1674,7 +1659,7 @@ export interface ElectronAPI {
     episodes: Array<{ id: number; title: string; series_title: string; season_number: number; episode_number: number; poster_url?: string }>
     artists: Array<{ id: number; name: string; thumb_url?: string }>
     albums: Array<{ id: number; title: string; artist_name: string; year?: number; thumb_url?: string }>
-    tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string }>
+    tracks: Array<{ id: number; title: string; album_id?: number; album_title?: string; artist_name?: string; album_thumb_url?: string }>
   }>
 
   // Exclusions
@@ -1690,51 +1675,10 @@ export interface ElectronAPI {
   // ============================================================================
 
   // Wishlist CRUD
-  wishlistAdd: (item: {
-    media_type: 'movie' | 'episode' | 'season' | 'album' | 'track'
-    title: string
-    subtitle?: string
-    year?: number
-    reason?: 'missing' | 'upgrade'
-    tmdb_id?: string
-    imdb_id?: string
-    musicbrainz_id?: string
-    series_title?: string
-    season_number?: number
-    episode_number?: number
-    collection_name?: string
-    artist_name?: string
-    album_title?: string
-    poster_url?: string
-    priority?: 1 | 2 | 3 | 4 | 5
-    notes?: string
-    current_quality_tier?: string
-    current_quality_level?: string
-    current_resolution?: string
-    current_video_codec?: string
-    current_audio_codec?: string
-    media_item_id?: number
-  }) => Promise<number>
-  wishlistUpdate: (id: number, updates: {
-    priority?: 1 | 2 | 3 | 4 | 5
-    notes?: string
-    poster_url?: string
-    status?: 'active' | 'completed'
-  }) => Promise<{ success: boolean }>
+  wishlistAdd: (item: Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>) => Promise<number>
+  wishlistUpdate: (id: number, updates: Partial<WishlistItem>) => Promise<{ success: boolean }>
   wishlistRemove: (id: number) => Promise<{ success: boolean }>
-  wishlistGetAll: (filters?: {
-    media_type?: 'movie' | 'episode' | 'season' | 'album' | 'track'
-    priority?: 1 | 2 | 3 | 4 | 5
-    reason?: 'missing' | 'upgrade'
-    status?: 'active' | 'completed'
-    searchQuery?: string
-    series_title?: string
-    artist_name?: string
-    sortBy?: 'added_at' | 'priority' | 'title' | 'year' | 'completed_at'
-    sortOrder?: 'asc' | 'desc'
-    limit?: number
-    offset?: number
-  }) => Promise<Array<{
+  wishlistGetAll: (filters?: WishlistFilters) => Promise<Array<{
     id: number
     media_type: 'movie' | 'episode' | 'season' | 'album' | 'track'
     title: string
@@ -1793,35 +1737,10 @@ export interface ElectronAPI {
   wishlistGetCount: () => Promise<number>
   wishlistGetCountsByReason: () => Promise<{ missing: number; upgrade: number; active: number; completed: number; total: number }>
   wishlistCheckExists: (tmdbId?: string, musicbrainzId?: string, mediaItemId?: number) => Promise<boolean>
-  wishlistAddBulk: (items: Array<{
-    media_type: 'movie' | 'episode' | 'season' | 'album' | 'track'
-    title: string
-    subtitle?: string
-    year?: number
-    tmdb_id?: string
-    imdb_id?: string
-    musicbrainz_id?: string
-    series_title?: string
-    season_number?: number
-    episode_number?: number
-    collection_name?: string
-    artist_name?: string
-    album_title?: string
-    poster_url?: string
-    priority?: 1 | 2 | 3 | 4 | 5
-    notes?: string
-  }>) => Promise<{ success: boolean; added: number }>
+  wishlistAddBulk: (items: Array<Omit<WishlistItem, 'id' | 'added_at' | 'updated_at'>>) => Promise<{ success: boolean; added: number }>
 
   // Store Search
-  wishlistGetStoreLinks: (item: {
-    media_type: 'movie' | 'episode' | 'season' | 'album' | 'track'
-    title: string
-    year?: number
-    series_title?: string
-    season_number?: number
-    artist_name?: string
-    album_title?: string
-  }) => Promise<Array<{
+  wishlistGetStoreLinks: (item: Pick<WishlistItem, 'media_type' | 'title' | 'year' | 'series_title' | 'season_number' | 'artist_name' | 'album_title'>) => Promise<Array<{
     name: string
     url: string
     icon: string
@@ -1910,84 +1829,7 @@ export interface ElectronAPI {
   // ============================================================================
 
   // Queue State
-  taskQueueGetState: () => Promise<{
-    currentTask: {
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    } | null
-    queue: Array<{
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    }>
-    isPaused: boolean
-    completedTasks: Array<{
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    }>
-  }>
+  taskQueueGetState: () => Promise<QueueState>
 
   // Task Management
   taskQueueAddTask: (definition: {
@@ -2007,70 +1849,14 @@ export interface ElectronAPI {
   taskQueueCancelCurrent: () => Promise<{ success: boolean }>
 
   // History
-  taskQueueGetTaskHistory: () => Promise<Array<{
-    id: string
-    timestamp: string
-    type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
-    message: string
-    taskId?: string
-    taskType?: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-  }>>
-  taskQueueGetMonitoringHistory: () => Promise<Array<{
-    id: string
-    timestamp: string
-    type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
-    message: string
-    taskId?: string
-    taskType?: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-  }>>
+  taskQueueGetTaskHistory: () => Promise<ActivityLogEntry[]>
+  taskQueueGetMonitoringHistory: () => Promise<ActivityLogEntry[]>
   taskQueueClearTaskHistory: () => Promise<{ success: boolean }>
   taskQueueClearMonitoringHistory: () => Promise<{ success: boolean }>
 
   // Task Queue Events
-  onTaskQueueUpdated: (callback: (state: {
-    currentTask: {
-      id: string
-      type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-      label: string
-      sourceId?: string
-      libraryId?: string
-      status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-      progress?: {
-        current: number
-        total: number
-        percentage: number
-        phase: string
-        currentItem?: string
-      }
-      createdAt: string
-      startedAt?: string
-      completedAt?: string
-      error?: string
-      result?: {
-        itemsScanned?: number
-        itemsAdded?: number
-        itemsUpdated?: number
-        itemsRemoved?: number
-      }
-    } | null
-    queue: unknown[]
-    isPaused: boolean
-    completedTasks: unknown[]
-  }) => void) => () => void
-  onTaskQueueTaskComplete: (callback: (task: {
-    id: string
-    type: 'library-scan' | 'source-scan' | 'series-completeness' | 'collection-completeness' | 'music-completeness' | 'music-scan'
-    label: string
-    status: 'completed' | 'failed' | 'cancelled'
-    completedAt: string
-    error?: string
-    result?: {
-      itemsScanned?: number
-      itemsAdded?: number
-      itemsUpdated?: number
-      itemsRemoved?: number
-    }
-  }) => void) => () => void
+  onTaskQueueUpdated: (callback: (state: QueueState) => void) => () => void
+  onTaskQueueTaskComplete: (callback: (task: QueuedTask) => void) => () => void
   onScanCompleted: (callback: (data: {
     sourceId?: string
     libraryId?: string
@@ -2080,24 +1866,7 @@ export interface ElectronAPI {
     itemsScanned: number
     isFirstScan: boolean
   }) => void) => () => void
-  onTaskQueueHistoryUpdated: (callback: (history: {
-    taskHistory: Array<{
-      id: string
-      timestamp: string
-      type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
-      message: string
-      taskId?: string
-      taskType?: string
-    }>
-    monitoringHistory: Array<{
-      id: string
-      timestamp: string
-      type: 'task-complete' | 'task-failed' | 'task-cancelled' | 'monitoring'
-      message: string
-      taskId?: string
-      taskType?: string
-    }>
-  }) => void) => () => void
+  onTaskQueueHistoryUpdated: (callback: (history: TaskQueueHistory) => void) => () => void
   onWishlistAutoCompleted: (callback: (items: Array<{ id: number; title: string; reason: string; media_type: string }>) => void) => () => void
   onWishlistChanged: (callback: () => void) => () => void
 
@@ -2241,7 +2010,7 @@ export interface ElectronAPI {
   optimizationGetDecision: (mediaItemId: number) => Promise<any>
   seriesGetEpisodesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<any[]>
   seriesGetAudioLanguagesByIdentity: (seriesTitle: string, sourceId: string, seriesIdentityKey: string, libraryId: string) => Promise<string[]>
-  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId: string, libraryId: string) => Promise<any>
+  seriesAnalyzeByIdentity: (seriesIdentityKey: string, sourceId?: string, libraryId?: string) => Promise<any>
   preflightShow: (request: any) => Promise<any>
   queueShow: (preflightId: string) => Promise<any>
   approveShow: (preflightId: string) => Promise<any>
@@ -2258,6 +2027,10 @@ export interface ElectronAPI {
   cancel: (mediaItemId?: number) => Promise<boolean>
   onProgress: (callback: (data: any) => void) => () => void
 }
+
+export type ElectronAPI = Omit<typeof electronAPI, keyof ExistingElectronAPI> & ExistingElectronAPI
+
+
 
 declare global {
   interface Window {

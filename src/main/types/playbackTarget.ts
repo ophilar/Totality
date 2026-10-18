@@ -7,7 +7,6 @@ export type PlaybackFindingStatus = 'compatible' | 'incompatible' | 'not-applica
 export interface PlaybackTargetProfile {
   id: string
   name: string
-  isBuiltin: boolean
   definition: PlaybackTargetDefinition
   createdAt: string
   updatedAt: string
@@ -20,7 +19,7 @@ export interface PlaybackTargetDefinition {
   audio: { codecs: string[]; maxChannels: number; objectAudio: boolean; outputPath: 'device' | 'passthrough' | 'receiver' }
   subtitles: { formats: string[]; embedded: boolean; external: boolean; burnIn: boolean }
   network: { sustainableBitrate: number }
-  providers?: { plex?: { clientProduct: string; clientPlatform: string; clientVersion: string } }
+  client?: { product: string; platform: string; version: string }
 }
 
 export interface PlaybackFinding { status: PlaybackFindingStatus; rule: string; evidence: string; source: PlaybackSource }

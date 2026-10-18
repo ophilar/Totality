@@ -1,10 +1,11 @@
+import { IPC_CHANNELS } from '../../shared/ipcChannels'
 /**
  * IPC Handlers for Mood Sync
  *
  * Handles mood comparison, sync operations, and source listing.
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import * as path from 'path'
 import { getMoodSyncService } from '../services/MoodSyncService'
 import { getSourceManager } from '../services/SourceManager'
@@ -16,6 +17,8 @@ import { getMediaMonkeyDiscoveryService } from '../services/MediaMonkeyDiscovery
 import { getKodiLocalDiscoveryService } from '../services/KodiLocalDiscoveryService'
 import { getErrorMessage } from '../services/utils/errorUtils'
 import { safeSend } from './utils/safeSend'
+import { createIpcHandler } from './utils/createHandler'
+
 
 let mainWindow: BrowserWindow | null = null
 
@@ -26,13 +29,17 @@ export function setMoodMainWindow(win: BrowserWindow) {
 /**
  * Helper: update local DB moods for a batch of tracks
  */
-function updateLocalDbTags(tracks: Array<{ targetTrackId: number; moods: string[] }>, field: 'mood' | 'genre' = 'mood') {
+function updateLocalDbTags(tracks: Array<{ targetTrackId: number; moods: string[] }>, field: 'mood' | 'genre' = 'mood'): string[] {
   const db = getDatabase()
+  const errors: string[] = []
   for (const track of tracks) {
     try {
       db.updateMusicTrackTag(track.targetTrackId, field, JSON.stringify(track.moods))
-    } catch { /* best effort */ }
+    } catch (error) {
+      errors.push(`Track ${track.targetTrackId}: ${getErrorMessage(error)}`)
+    }
   }
+  return errors
 }
 
 export function registerMoodHandlers() {
@@ -41,7 +48,7 @@ export function registerMoodHandlers() {
    * Returns status info for the confirmation dialog.
    * Only sends basename of database path to renderer (not full filesystem path).
    */
-  ipcMain.handle('mood:checkMediaMonkeyWrite', async (_event, sourceId: string) => {
+  createIpcHandler(IPC_CHANNELS.moodCheckMediaMonkeyWrite, async (sourceId: string) => {
     try {
       const manager = getSourceManager()
       const provider = manager.getProvider(sourceId)
@@ -83,34 +90,23 @@ export function registerMoodHandlers() {
   /**
    * Get sources that have music tracks (with tag counts for a specific field)
    */
-  ipcMain.handle('mood:getSources', async (_event, field?: 'mood' | 'genre') => {
-    try {
-      return getMoodSyncService().getSources(field || 'mood')
-    } catch (error) {
-      console.error('[mood:getSources] Error:', getErrorMessage(error))
-      return []
-    }
+  createIpcHandler(IPC_CHANNELS.moodGetSources, async (field?: 'mood' | 'genre') => {
+    return getMoodSyncService().getSources(field || 'mood')
   })
 
   /**
    * Get tag comparison between source of truth and all other sources
    */
-  ipcMain.handle('mood:getComparison', async (_event, args: string | { sourceOfTruthId: string; field?: 'mood' | 'genre' }) => {
-    try {
-      // Support both old (string) and new (object) call signatures
-      const sourceOfTruthId = typeof args === 'string' ? args : args.sourceOfTruthId
-      const field = typeof args === 'string' ? 'mood' : (args.field || 'mood')
-      return getMoodSyncService().getComparison(sourceOfTruthId, field)
-    } catch (error) {
-      console.error('[mood:getComparison] Error:', getErrorMessage(error))
-      return []
-    }
+  createIpcHandler(IPC_CHANNELS.moodGetComparison, async (args: string | { sourceOfTruthId: string; field?: 'mood' | 'genre' }) => {
+    const sourceOfTruthId = typeof args === 'string' ? args : args.sourceOfTruthId
+    const field = typeof args === 'string' ? 'mood' : (args.field || 'mood')
+    return getMoodSyncService().getComparison(sourceOfTruthId, field)
   })
 
   /**
    * Sync moods from source of truth to a target source
    */
-  ipcMain.handle('mood:syncToTarget', async (_event, args: {
+  createIpcHandler(IPC_CHANNELS.moodSyncToTarget, async (args: {
     sourceOfTruthId: string
     targetSourceId: string
     trackIds?: number[]
@@ -118,15 +114,14 @@ export function registerMoodHandlers() {
     field?: 'mood' | 'genre'
   }) => {
     const { sourceOfTruthId, targetSourceId, trackIds, mode = 'overwrite', field = 'mood' } = args
-    const result = { synced: 0, failed: 0, skipped: 0, errors: [] as string[] }
+    const result = { synced: 0, failed: 0, cacheFailed: 0, skipped: 0, errors: [] as string[] }
 
-    try {
-      const comparison = getMoodSyncService().getComparison(sourceOfTruthId, field)
+    const comparison = getMoodSyncService().getComparison(sourceOfTruthId, field)
       const manager = getSourceManager()
       const provider = manager.getProvider(targetSourceId)
 
       if (!provider) {
-        return { ...result, errors: ['Target provider not found'] }
+        throw new Error(`Target provider not found: ${targetSourceId}`)
       }
 
       // Filter to only tracks targeting this source with mismatches
@@ -160,7 +155,7 @@ export function registerMoodHandlers() {
         const plexProvider = provider as PlexProvider
         for (let i = 0; i < tracksToSync.length; i++) {
           const track = tracksToSync[i]
-          safeSend(mainWindow, 'mood:syncProgress', {
+          safeSend(mainWindow, IPC_CHANNELS.moodSyncProgress, {
             current: i,
             total: tracksToSync.length,
             currentTrack: `${track.artist} - ${track.title}`,
@@ -175,10 +170,12 @@ export function registerMoodHandlers() {
               track.libraryId || '',
               field
             )
-            updateLocalDbTags([track], field)
+            const cacheErrors = updateLocalDbTags([track], field)
+            result.cacheFailed += cacheErrors.length
+            result.errors.push(...cacheErrors)
             result.synced++
 
-            safeSend(mainWindow, 'mood:syncProgress', {
+            safeSend(mainWindow, IPC_CHANNELS.moodSyncProgress, {
               current: i + 1,
               total: tracksToSync.length,
               currentTrack: `${track.artist} - ${track.title}`,
@@ -192,7 +189,7 @@ export function registerMoodHandlers() {
             result.failed++
             result.errors.push(`${track.artist} - ${track.title}: ${getErrorMessage(error)}`)
 
-            safeSend(mainWindow, 'mood:syncProgress', {
+            safeSend(mainWindow, IPC_CHANNELS.moodSyncProgress, {
               current: i + 1,
               total: tracksToSync.length,
               currentTrack: `${track.artist} - ${track.title}`,
@@ -224,9 +221,11 @@ export function registerMoodHandlers() {
         result.errors = writeResult.errors
 
         if (writeResult.written > 0) {
-          updateLocalDbTags(trackUpdates, field)
+          const cacheErrors = updateLocalDbTags(trackUpdates, field)
+          result.cacheFailed += cacheErrors.length
+          result.errors.push(...cacheErrors)
           for (let i = 0; i < trackUpdates.length; i++) {
-            safeSend(mainWindow, 'mood:syncProgress', {
+            safeSend(mainWindow, IPC_CHANNELS.moodSyncProgress, {
               current: i + 1,
               total: trackUpdates.length,
               currentTrack: `${trackUpdates[i].artist} - ${trackUpdates[i].title}`,
@@ -256,9 +255,11 @@ export function registerMoodHandlers() {
         result.errors = writeResult.errors
 
         if (writeResult.written > 0) {
-          updateLocalDbTags(trackUpdates, field)
+          const cacheErrors = updateLocalDbTags(trackUpdates, field)
+          result.cacheFailed += cacheErrors.length
+          result.errors.push(...cacheErrors)
           for (let i = 0; i < trackUpdates.length; i++) {
-            safeSend(mainWindow, 'mood:syncProgress', {
+            safeSend(mainWindow, IPC_CHANNELS.moodSyncProgress, {
               current: i + 1,
               total: trackUpdates.length,
               currentTrack: `${trackUpdates[i].artist} - ${trackUpdates[i].title}`,
@@ -268,13 +269,10 @@ export function registerMoodHandlers() {
           }
         }
       } else {
-        return { ...result, errors: [`Mood sync not yet supported for ${provider.providerType}`] }
+        throw new Error(`Mood sync not yet supported for ${provider.providerType}`)
       }
 
-      safeSend(mainWindow, 'library:updated', { type: 'music' })
+      safeSend(mainWindow, IPC_CHANNELS.libraryUpdated, { type: 'music' })
       return result
-    } catch (error) {
-      return { ...result, errors: [getErrorMessage(error)] }
-    }
   })
 }

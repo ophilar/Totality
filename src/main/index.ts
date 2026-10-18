@@ -1,5 +1,8 @@
 import { app, BrowserWindow, ipcMain, protocol, net, dialog, Tray, Menu, nativeImage, session } from 'electron'
+import { IPC_CHANNELS } from '../shared/ipcChannels'
+import { createSyncHandler, validateSenderFrame } from './ipc/utils/createHandler'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import * as os from 'os'
 import * as fs from 'fs'
 
@@ -48,7 +51,7 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ])
-import { getDatabaseServiceAsync, getDatabaseServiceSync } from './database/DatabaseFactory'
+import { getDatabaseServiceSync } from './database/DatabaseFactory'
 import { getDatabase } from './database/getDatabase'
 import { ApplicationShutdown } from './services/ApplicationShutdown'
 import { getSourceManager } from './services/SourceManager'
@@ -78,7 +81,7 @@ import { getTaskQueueService } from './services/TaskQueueService'
 import { getLoggingService } from './services/LoggingService'
 import { getAutoUpdateService } from './services/AutoUpdateService'
 import { getWishlistCompletionService } from './services/WishlistCompletionService'
-import { initWebServerService } from './services/WebServerService'
+import { getWebServerService, initWebServerService } from './services/WebServerService'
 import { registerWebAccessHandlers } from './ipc/webAccess'
 import { SETTING_KEYS } from '../shared/settingKeys'
 
@@ -162,13 +165,14 @@ function createWindow() {
 
   // Show window when React signals it's ready (via IPC)
   const fallbackTimer = setTimeout(() => win?.show(), 3000)
-  ipcMain.once('app:ready', () => {
+  ipcMain.once(IPC_CHANNELS.appReady, (event) => {
+    validateSenderFrame(event, IPC_CHANNELS.appReady)
     clearTimeout(fallbackTimer)
     win?.show()
   })
 
   // App version handler
-  ipcMain.handle('app:getVersion', () => app.getVersion())
+  createSyncHandler(IPC_CHANNELS.appGetVersion, () => app.getVersion())
 
   // Disable default menu
   win.removeMenu()
@@ -293,12 +297,7 @@ app.on('before-quit', async (event) => {
   isClosing = true
 
   // Stop web server
-  try {
-    const { getWebServerService } = await import('./services/WebServerService')
-    getWebServerService()?.stop()
-  } catch {
-    // Web server may not have been initialized
-  }
+  getWebServerService()?.stop()
   const db = getDatabaseServiceSync()
   const shutdown = new ApplicationShutdown({
     stopAcceptingWork: () => {
@@ -381,16 +380,7 @@ app.whenReady().then(async () => {
 
         const fileExists = await fs.promises.access(filePath).then(() => true).catch(() => false)
         if (fileExists) {
-          // Handle Windows UNC paths
-          if (filePath.startsWith('\\\\')) {
-            return net.fetch(`file:${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Windows drive letters
-          if (/^[A-Za-z]:/.test(filePath)) {
-            return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-          }
-          // Handle Unix paths
-          return net.fetch(`file://${filePath}`)
+          return net.fetch(pathToFileURL(filePath).href)
         }
         return new Response('Not found', { status: 404 })
       }
@@ -426,15 +416,12 @@ app.whenReady().then(async () => {
       }
 
       // Serve the file
-      if (process.platform === 'win32') {
-        return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
-      }
-      return net.fetch(`file://${filePath}`)
+      return net.fetch(pathToFileURL(filePath).href)
     })
     console.log('Local artwork protocol registered')
 
     // Initialize database
-    const db = await getDatabaseServiceAsync()
+    const db = getDatabaseServiceSync()
     await db.initialize()
     console.log('Database initialized successfully (better-sqlite3)')
 

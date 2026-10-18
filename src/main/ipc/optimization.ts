@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { IPC_CHANNELS } from '@main/constants/ipcChannels'
+import { IPC_CHANNELS } from '@shared/ipcChannels'
 import { createIpcHandler, createValidatedIpcHandler } from '@main/ipc/utils/createHandler'
 import { getDatabase } from '@main/database/getDatabase'
 import { getMediaFileAnalyzer, type AnalyzedAudioStream } from '@main/services/MediaFileAnalyzer'
@@ -10,6 +10,7 @@ import {
   type OptimizationDecisionAudioTrack,
 } from '@main/services/OptimizationDecisionService'
 import { getLoggingService } from '@main/services/LoggingService'
+import { getQualityAnalyzer } from '@main/services/QualityAnalyzer'
 
 const pendingRecord = z.object({
   requestedAt: z.string(),
@@ -47,7 +48,7 @@ function mapAnalysisAudioTracksToDecisionTracks(audioTracks: AnalyzedAudioStream
 export function registerOptimizationHandlers() {
   const db = getDatabase()
 
-  createIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_PENDING, async () => {
+  createIpcHandler(IPC_CHANNELS.optimizationGetPending, async () => {
     const settings = await db.config.getAllSettings()
     return Object.entries(settings)
       .filter(([key]) => key.startsWith('optimization.pending.'))
@@ -61,9 +62,9 @@ export function registerOptimizationHandlers() {
       })
   })
 
-  createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_REMUX_JOB, z.number().int().positive(), async mediaItemId => db.mediaRemuxJobs.getLatest(mediaItemId))
+  createValidatedIpcHandler(IPC_CHANNELS.optimizationGetRemuxJob, z.number().int().positive(), async mediaItemId => db.mediaRemuxJobs.getLatest(mediaItemId))
 
-  createValidatedIpcHandler(IPC_CHANNELS.OPTIMIZATION.GET_DECISION, z.number().int().positive(), async mediaItemId => {
+  createValidatedIpcHandler(IPC_CHANNELS.optimizationGetDecision, z.number().int().positive(), async mediaItemId => {
     const { item, source } = await getMediaItemAndSource(db, mediaItemId)
 
     try {
@@ -75,12 +76,12 @@ export function registerOptimizationHandlers() {
     const analysis = await getMediaFileAnalyzer().analyzeFile(item.file_path)
     if (!analysis.success) throw new Error(analysis.error || 'Fresh media analysis failed')
 
+    const savings = getQualityAnalyzer().getOptimizationSavingsBreakdown(item, analysis)
     return buildOptimizationDecision({
       originalLanguage: item.original_language,
       durationSeconds: analysis.duration == null ? undefined : analysis.duration / 1000,
       fileSize: analysis.fileSize || 0,
-      videoStorageDebtBytes: null,
-      legacyTotalRecoverableBytes: item.storage_debt_bytes,
+      videoSavingsBytes: savings.videoSavingsBytes,
       audioTranscodeSavingsBytes: null,
       audioTracks: mapAnalysisAudioTracksToDecisionTracks(analysis.audioTracks),
     })

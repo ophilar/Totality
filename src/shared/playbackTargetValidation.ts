@@ -13,7 +13,7 @@ export const playbackTargetDefinitionSchema = z.object({
   audio: z.object({ codecs: z.array(capabilityTokenSchema).min(1), maxChannels: z.number().positive(), objectAudio: z.boolean(), outputPath: z.enum(['device', 'passthrough', 'receiver']) }),
   subtitles: z.object({ formats: z.array(capabilityTokenSchema), embedded: z.boolean(), external: z.boolean(), burnIn: z.boolean() }),
   network: z.object({ sustainableBitrate: z.number().positive() }),
-  providers: z.object({ plex: z.object({ clientProduct: z.string().min(1), clientPlatform: z.string().min(1), clientVersion: z.string().min(1) }).optional() }).optional(),
+  client: z.object({ product: capabilityTokenSchema, platform: capabilityTokenSchema, version: capabilityTokenSchema }).optional(),
 })
 
 export const playbackTargetProfileInputSchema = z.object({ name: z.string().trim().min(1), definition: playbackTargetDefinitionSchema })

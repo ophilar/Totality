@@ -30,7 +30,7 @@ export { getErrorMessage, isNodeError }
  * Validates that an incoming IPC message originates from an authorized local frame.
  * Enforces fail-closed security: missing events, missing sender frames, or missing URLs are rejected.
  */
-export function validateSenderFrame(event: IpcMainInvokeEvent, channel: string): void {
+export function validateSenderFrame(event: Pick<IpcMainInvokeEvent, 'senderFrame'>, channel: string): void {
   if (!event || !event.senderFrame) {
     getLoggingService().error('[IPC Security]', `Rejected unauthorized IPC request on ${channel}: missing event or senderFrame`)
     throw new Error(`Unauthorized IPC request on ${channel}: missing sender frame`)
