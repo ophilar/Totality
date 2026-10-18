@@ -12,23 +12,13 @@ import { Loader2, Radio, Bell } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
 import { Button, Card, Select, Input } from '../../ui'
 import { SETTING_KEYS } from '../../../../../shared/settingKeys'
+import { DEFAULT_MONITORING_CONFIG, type MonitoringConfig, type ProviderType } from '@main/types/monitoring'
+import type { MediaSourceResponse } from '@preload/index'
 
-interface MonitoringConfig {
-  enabled: boolean
-  startOnLaunch: boolean
-  pauseDuringManualScan: boolean
-  pollingIntervals: Record<string, number>
-}
-
-interface MediaSource {
-  source_id: string
-  source_type: string
-  display_name: string
-  is_enabled: boolean
-}
+type EnabledMediaSource = Pick<MediaSourceResponse, 'source_id' | 'source_type' | 'is_enabled'>
 
 const PROVIDERS: Array<{
-  key: string
+  key: ProviderType
   name: string
   method: 'polling' | 'file-watching'
 }> = [
@@ -54,19 +44,7 @@ const INTERVAL_OPTIONS = [
 export function MonitoringTab() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [monitoringConfig, setMonitoringConfig] = useState<MonitoringConfig>({
-    enabled: false,
-    startOnLaunch: true,
-    pauseDuringManualScan: true,
-    pollingIntervals: {
-      plex: 300000,
-      jellyfin: 300000,
-      emby: 300000,
-      kodi: 300000,
-      'kodi-mysql': 300000,
-      mediamonkey: 60000,
-    },
-  })
+  const [monitoringConfig, setMonitoringConfig] = useState<MonitoringConfig>(DEFAULT_MONITORING_CONFIG)
   const [configuredProviders, setConfiguredProviders] = useState<Set<string>>(new Set())
 
   // Release alerts
@@ -87,7 +65,7 @@ export function MonitoringTab() {
         setReleaseAlertsEnabled(alertEnabled === 'true')
         setReleaseAlertDays((alertDays as string) || '30')
         const providerTypes = new Set<string>()
-        ;(sources as MediaSource[]).forEach((source) => {
+        ;(sources as EnabledMediaSource[]).forEach((source) => {
           if (source.is_enabled) providerTypes.add(source.source_type)
         })
         setConfiguredProviders(providerTypes)

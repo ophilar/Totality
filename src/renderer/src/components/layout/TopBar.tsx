@@ -10,6 +10,7 @@ import { Search, X, Home, Film, Tv, Music, Tags, ListChecks, Star, Settings, Ref
 import { useSources } from '../../contexts/SourceContext'
 import { useWishlist } from '../../contexts/WishlistContext'
 import { useNavigation } from '../../contexts/NavigationContext'
+import { useMenuClose } from '../../hooks/useMenuClose'
 import { NotificationBell } from '../ui/NotificationBell'
 import logoImage from '../../assets/totality_header_logo.png'
 import type { MediaViewType } from '../library/types'
@@ -132,11 +133,11 @@ export function TopBar({
   const [taskPendingCount, setTaskPendingCount] = useState(0)
   const [hasRunningTask, setHasRunningTask] = useState(false)
   useEffect(() => {
-    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state: { currentTask: unknown; queue: unknown[] }) => {
+    const unsubscribe = window.electronAPI.onTaskQueueUpdated?.((state) => {
       setTaskPendingCount(state.queue.length + (state.currentTask ? 1 : 0))
       setHasRunningTask(!!state.currentTask)
     })
-    window.electronAPI.taskQueueGetState?.().then((state: { currentTask: unknown; queue: unknown[] }) => {
+    window.electronAPI.taskQueueGetState?.().then((state) => {
       setTaskPendingCount(state.queue.length + (state.currentTask ? 1 : 0))
       setHasRunningTask(!!state.currentTask)
     })
@@ -152,8 +153,9 @@ export function TopBar({
   const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const [isSearching, setIsSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchDebounceRef = useRef<NodeJS.Timeout>()
+  const closeSearchResults = useCallback(() => setShowSearchResults(false), [])
+  const searchContainerRef = useMenuClose({ isOpen: showSearchResults, onClose: closeSearchResults })
+  const searchDebounceRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   // Debounced search
   const performSearch = useCallback(async (query: string) => {
@@ -271,17 +273,6 @@ export function TopBar({
         break
     }
   }
-
-  // Click outside to close
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
-        setShowSearchResults(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   const isDashboard = currentView === 'dashboard'
   const isLibrary = currentView === 'library'

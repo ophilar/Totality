@@ -142,28 +142,26 @@ export function useLibraryEventListeners({
     })
 
     // Listen for task queue state updates to sync analyzing state
-    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state: unknown) => {
-      if (state == null || typeof state !== 'object') return
-      const s = state as { currentTask: { type: string; progress?: AnalysisProgress } | null }
-      if (s.currentTask) {
-        const taskType = s.currentTask.type
+    const cleanupTaskQueueUpdated = window.electronAPI.onTaskQueueUpdated?.((state) => {
+      if (state.currentTask) {
+        const taskType = state.currentTask.type
         if (taskType === 'series-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('series')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else if (taskType === 'collection-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('collections')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else if (taskType === 'music-completeness') {
           setIsAnalyzing(true)
           setAnalysisType('music')
-          if (s.currentTask.progress) {
-            setAnalysisProgress(s.currentTask.progress)
+          if (state.currentTask.progress) {
+            setAnalysisProgress(state.currentTask.progress)
           }
         } else {
           // Non-completeness task running, reset completeness analyzing state

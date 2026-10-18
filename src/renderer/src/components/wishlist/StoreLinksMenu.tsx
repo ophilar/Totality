@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Star, ExternalLink, ChevronDown } from 'lucide-react'
 import type { StoreLink } from '../../contexts/WishlistContext'
+import { useMenuClose } from '../../hooks/useMenuClose'
 
 interface StoreLinksMenuProps {
   storeLinks: StoreLink[]
@@ -24,31 +25,8 @@ const storeIcons: Record<string, string> = {
 
 export function StoreLinksMenu({ storeLinks, onOpenLink, isLoading, compact = false }: StoreLinksMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  // Close on escape
-  useEffect(() => {
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setIsOpen(false)
-      }
-    }
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape)
-      return () => document.removeEventListener('keydown', handleEscape)
-    }
-  }, [isOpen])
+  const closeMenu = useCallback(() => setIsOpen(false), [])
+  const menuRef = useMenuClose({ isOpen, onClose: closeMenu })
 
   // Group stores by category
   const aggregators = storeLinks.filter(s => s.category === 'aggregator')

@@ -2,9 +2,10 @@
  * NotificationBell - Simple dropdown for app notifications in the TopBar.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Bell, X } from 'lucide-react'
-import { Button } from './Button'
+import { useMenuClose } from '../../hooks/useMenuClose'
+import { getActiveThemeClass } from '../../contexts/ThemeContext'
 
 interface AppNotification {
   id: number
@@ -19,8 +20,8 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const closeMenu = useCallback(() => setIsOpen(false), [])
+  const menuRef = useMenuClose({ isOpen, onClose: closeMenu })
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -50,31 +51,6 @@ export function NotificationBell() {
     return () => unsubscribe?.()
   }, [loadNotifications])
 
-  // Close on click outside
-  useEffect(() => {
-    if (!isOpen) return
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-        buttonRef.current && !buttonRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setIsOpen(false)
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen])
-
   const handleMarkAllRead = useCallback(async () => {
     await window.electronAPI.notificationsMarkAllRead()
     loadNotifications()
@@ -99,26 +75,9 @@ export function NotificationBell() {
     }
   }
 
-  // Get active theme to escape TopBar's forced dark mode
-  const getActiveTheme = () => {
-    const themes = [
-      'frost',
-      'slate-light', 'ember-light', 'midnight-light',
-      'velvet-light', 'emerald-light', 'cobalt-light', 'carbon-light',
-      'matrix-light', 'fury-light', 'gotham-light', 'neon-light', 'whimsy-light',
-      'slate', 'ember', 'midnight', 'oled', 'velvet', 'emerald', 'cobalt', 'carbon',
-      'matrix', 'fury', 'gotham', 'neon', 'whimsy', 'dark',
-    ]
-    for (const theme of themes) {
-      if (document.documentElement.classList.contains(theme)) return theme
-    }
-    return 'dark'
-  }
-
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
-        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={`relative p-2 rounded-lg transition-colors ${
           isOpen ? 'bg-white text-black' : 'text-white hover:bg-white/10'
@@ -135,9 +94,8 @@ export function NotificationBell() {
       </button>
 
       <div
-        ref={dropdownRef}
-        className={`${getActiveTheme()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card border border-border rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden transition-opacity duration-200 ease-out ${
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        className={`${getActiveThemeClass()} absolute right-0 top-full mt-2 w-80 max-h-96 bg-card rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden transition-all duration-200 ease-out ${
+          isOpen ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0 pointer-events-none'
         }`}
       >
         {/* Header */}
