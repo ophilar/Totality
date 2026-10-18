@@ -27,17 +27,10 @@ interface KodiLocalInstallation {
   kodiRunning: boolean
 }
 
-interface MediaLibrary {
-  id: string
-  name: string
-  type: 'movie' | 'show' | 'music' | 'unknown'
-  itemCount?: number
-}
-
-type ConnectionMode = 'detecting' | 'select-mode' | 'local' | 'mysql' | 'libraries'
+type ConnectionMode = 'detecting' | 'select-mode' | 'local' | 'mysql'
 
 export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProps) {
-  const { addSource, testConnection, getLibraries, refreshSources } = useSources()
+  const { addSource, testConnection, getLibraries } = useSources()
 
   // Detection state
   const [mode, setMode] = useState<ConnectionMode>('detecting')
@@ -51,14 +44,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
   // Common state
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isSuccess, setIsSuccess] = useState(false)
-
-  // Library selection state (setters kept for future library selection flow)
-   
-  const [sourceId, _setSourceId] = useState<string | null>(null)
-   
-  const [libraries, _setLibraries] = useState<MediaLibrary[]>([])
-  const [selectedLibraries, setSelectedLibraries] = useState<Set<string>>(new Set())
 
   // Auto-detect local Kodi on mount
   useEffect(() => {
@@ -194,72 +179,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
     }
   }
 
-  // Toggle library selection
-  const handleToggleLibrary = (libraryId: string) => {
-    setSelectedLibraries(prev => {
-      const next = new Set(prev)
-      if (next.has(libraryId)) {
-        next.delete(libraryId)
-      } else {
-        next.add(libraryId)
-      }
-      return next
-    })
-  }
-
-  // Select/deselect all libraries
-  const handleSelectAll = () => {
-    setSelectedLibraries(new Set(libraries.map(lib => lib.id)))
-  }
-
-  const handleDeselectAll = () => {
-    setSelectedLibraries(new Set())
-  }
-
-  // Complete setup with library selection
-  const handleComplete = async () => {
-    if (!sourceId) return
-
-    // Save library selection
-    try {
-      await window.electronAPI.sourcesSetLibrariesEnabled(
-        sourceId,
-        libraries.map(lib => ({
-          id: lib.id,
-          name: lib.name,
-          type: lib.type,
-          enabled: selectedLibraries.has(lib.id)
-        }))
-      )
-    } catch (err) {
-      console.error('Failed to save library selection:', err)
-    }
-
-    // Refresh sources list now that setup is complete
-    await refreshSources()
-
-    // Get the display name for task labels
-    const displayName = localDisplayName.trim() || 'Kodi (Local)'
-
-    // Queue library scans for all selected libraries
-    const selectedLibs = libraries.filter(l => selectedLibraries.has(l.id))
-    for (const lib of selectedLibs) {
-      try {
-        const taskType = lib.type === 'music' ? 'music-scan' : 'library-scan'
-        await window.electronAPI.taskQueueAddTask({
-          type: taskType,
-          label: `Scan ${lib.name} (${displayName})`,
-          sourceId,
-          libraryId: lib.id,
-        })
-      } catch (err) {
-        console.error('Failed to queue library scan:', err)
-      }
-    }
-
-    setIsSuccess(true)
-  }
-
   // MySQL mode - delegate to KodiMySQLFlow
   if (mode === 'mysql') {
     return (
@@ -269,104 +188,6 @@ export function KodiConnectionFlow({ onSuccess, onBack }: KodiConnectionFlowProp
           setMode('select-mode')
         }}
       />
-    )
-  }
-
-  // Libraries selection step
-  if (mode === 'libraries') {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <p className="font-medium">Connected to Kodi!</p>
-        </div>
-
-        {libraries.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-label font-medium">Select libraries to include:</p>
-              <div className="flex gap-2 text-caption">
-                <Button variant="tertiary" size="sm" onClick={handleSelectAll}>
-                  Select all
-                </Button>
-                <span className="text-muted-foreground">|</span>
-                <Button variant="tertiary" size="sm" onClick={handleDeselectAll}>
-                  Deselect all
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {libraries.map(lib => (
-                <label
-                  key={lib.id}
-                  className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                    selectedLibraries.has(lib.id)
-                      ? 'bg-blue-500/10 border border-blue-500/30'
-                      : 'bg-muted/50 border border-transparent hover:bg-muted'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedLibraries.has(lib.id)}
-                    onChange={() => handleToggleLibrary(lib.id)}
-                    className="w-4 h-4 rounded border-muted-foreground text-primary focus:ring-primary focus:ring-offset-0"
-                  />
-                  <span className="text-title">
-                    {lib.type === 'movie' ? '🎬' : lib.type === 'show' ? '📺' : lib.type === 'music' ? '🎵' : '📁'}
-                  </span>
-                  <span className="text-label">{lib.name}</span>
-                  {lib.itemCount !== undefined && (
-                    <span className="text-caption text-muted-foreground">({lib.itemCount} items)</span>
-                  )}
-                </label>
-              ))}
-            </div>
-            <p className="text-caption text-muted-foreground">
-              Only selected libraries will appear in your media browser. You can change this later by expanding the source card.
-            </p>
-          </div>
-        )}
-
-        <Button
-          onClick={handleComplete}
-          disabled={selectedLibraries.size === 0}
-          variant="primary"
-          className="w-full"
-        >
-          {selectedLibraries.size === 0 ? 'Select at least one library' : 'Continue'}
-        </Button>
-      </div>
-    )
-  }
-
-  // Success state
-  if (isSuccess) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-muted text-foreground rounded-full mb-3">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <p className="font-medium">Connected to Kodi!</p>
-          <p className="text-label text-muted-foreground mt-1">
-            Your Kodi installation has been added.
-          </p>
-        </div>
-
-        <Button
-          onClick={onSuccess}
-          variant="primary"
-          className="w-full"
-        >
-          Done
-        </Button>
-      </div>
     )
   }
 

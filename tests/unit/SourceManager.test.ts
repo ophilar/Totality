@@ -63,12 +63,6 @@ vi.mock('../../src/main/database/getDatabase', () => ({
   })),
 }))
 
-vi.mock('../../src/main/services/PlexService', () => ({
-  getPlexService: vi.fn(() => ({
-    createSource: vi.fn(),
-  })),
-}))
-
 vi.mock('../../src/main/services/LiveMonitoringService', () => ({
   getLiveMonitoringService: vi.fn(() => ({
     addSource: vi.fn(),
@@ -335,6 +329,34 @@ describe('SourceManager', () => {
       const result = await manager.testConnection('non-existent')
       expect(result.success).toBe(false)
       expect(result.error).toContain('not found')
+    })
+  })
+
+  describe('Plex library locations', () => {
+    it('persists Plex library paths with the selected source configuration', async () => {
+      mockMediaSources.push({
+        source_id: 'plex-source',
+        source_type: 'plex',
+        display_name: 'Plex Server',
+        connection_config: JSON.stringify({ token: 'plex-token' }) as unknown as Record<string, unknown>,
+        is_enabled: true,
+      })
+      await manager.initialize()
+
+      const provider = Object.assign(manager.getProvider('plex-source')!, {
+        providerType: 'plex',
+        selectServer: vi.fn(() => Promise.resolve(true)),
+        getSelectedServer: vi.fn(() => ({ machineIdentifier: 'server-id', uri: 'http://plex:32400', name: 'Plex Server' })),
+        getLibraries: vi.fn(() => Promise.resolve([{ id: '1', name: 'Shows', type: 'show' as const }])),
+        getLibraryPaths: vi.fn(() => Promise.resolve(['D:/Media/Shows'])),
+      })
+
+      await manager.plexSelectServer('plex-source', 'server-id')
+
+      const savedSource = mockMediaSources.find(source => source.source_id === 'plex-source')!
+      const savedConfig = JSON.parse(String(savedSource.connection_config)) as Record<string, unknown>
+      expect(savedConfig.plexLibraryPaths).toEqual(['D:/Media/Shows'])
+      expect(provider.getLibraryPaths).toHaveBeenCalledWith(['1'])
     })
   })
 

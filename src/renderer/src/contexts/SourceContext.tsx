@@ -15,19 +15,16 @@ import type {
   ScanResultResponse,
   ConnectionTestResult,
 } from '../../../preload/index'
+import type { ProviderType } from '@main/types/database'
+import type { ScanProgress as ProviderScanProgress } from '@main/providers/base/MediaProvider'
 
 // Types for source context
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+export type { ProviderType }
 
-export interface ScanProgress {
+export type ScanProgress = ProviderScanProgress & {
   sourceId: string
   sourceName?: string
   libraryId?: string
-  current: number
-  total: number
-  phase: 'fetching' | 'processing' | 'analyzing' | 'saving'
-  currentItem?: string
-  percentage: number
 }
 
 export interface SourceStats {

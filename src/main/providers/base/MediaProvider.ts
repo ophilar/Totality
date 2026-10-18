@@ -8,9 +8,8 @@
 // Import and re-export shared IPC types
 import type { ConnectionTestResult } from '../../types/ipc'
 export type { ConnectionTestResult }
-
-// Provider types supported by the application
-export type ProviderType = 'plex' | 'jellyfin' | 'emby' | 'kodi' | 'kodi-local' | 'kodi-mysql' | 'local' | 'mediamonkey'
+import type { ProviderType } from '../../types/database'
+export type { ProviderType } from '../../types/database'
 
 // Credentials for different provider types
 export interface ProviderCredentials {
@@ -311,79 +310,4 @@ export interface MediaProvider {
   // TV-specific operations (optional)
   getShowSeasons?(showId: string): Promise<{ seasonNumber: number; episodeCount: number }[]>
   getSeasonEpisodes?(showId: string, seasonNumber: number): Promise<MediaMetadata[]>
-}
-
-/**
- * Base class for providers with common functionality
- */
-export abstract class BaseMediaProvider implements MediaProvider {
-  abstract readonly providerType: ProviderType
-  readonly sourceId: string
-
-  protected config: SourceConfig
-  protected isConnected: boolean = false
-
-  constructor(config: SourceConfig) {
-    this.sourceId = config.sourceId || this.generateSourceId()
-    this.config = { ...config, sourceId: this.sourceId }
-  }
-
-  protected generateSourceId(): string {
-    return `${this.providerType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  abstract authenticate(credentials: ProviderCredentials): Promise<AuthResult>
-  abstract isAuthenticated(): Promise<boolean>
-  abstract disconnect(): Promise<void>
-  abstract testConnection(): Promise<ConnectionTestResult>
-  abstract getLibraries(): Promise<MediaLibrary[]>
-  abstract scanLibrary(libraryId: string, options?: ScanOptions): Promise<ScanResult>
-  abstract getItemMetadata(itemId: string): Promise<MediaMetadata>
-
-  // Helper to normalize resolution string
-  protected normalizeResolution(width: number, height: number): string {
-    if (height >= 2160 || width >= 3840) return '4K'
-    if (height >= 1080 || width >= 1920) return '1080p'
-    if (height >= 720 || width >= 1280) return '720p'
-    if (height >= 480 || width >= 720) return '480p'
-    return 'SD'
-  }
-
-  // Helper to detect HDR format
-  protected detectHdrFormat(colorSpace?: string, bitDepth?: number, profile?: string): string | undefined {
-    if (!colorSpace && !profile) return undefined
-
-    const colorSpaceLower = (colorSpace || '').toLowerCase()
-    const profileLower = (profile || '').toLowerCase()
-
-    if (profileLower.includes('dolby vision') || colorSpaceLower.includes('dv')) {
-      return 'Dolby Vision'
-    }
-    if (colorSpaceLower.includes('bt2020') || colorSpaceLower.includes('rec2020')) {
-      if (profileLower.includes('hdr10+') || colorSpaceLower.includes('hdr10+')) {
-        return 'HDR10+'
-      }
-      if (bitDepth && bitDepth >= 10) {
-        return 'HDR10'
-      }
-    }
-    if (colorSpaceLower.includes('hlg')) {
-      return 'HLG'
-    }
-
-    return undefined
-  }
-
-  // Helper to detect object-based audio
-  protected hasObjectAudio(codec?: string, profile?: string, title?: string): boolean {
-    const codecLower = (codec || '').toLowerCase()
-    const profileLower = (profile || '').toLowerCase()
-    const titleLower = (title || '').toLowerCase()
-
-    return (
-      codecLower.includes('truehd') && (profileLower.includes('atmos') || titleLower.includes('atmos')) ||
-      codecLower.includes('eac3') && (profileLower.includes('atmos') || titleLower.includes('atmos')) ||
-      codecLower.includes('dts') && (profileLower.includes('x') || titleLower.includes('dts:x') || titleLower.includes('dts-x'))
-    )
-  }
 }

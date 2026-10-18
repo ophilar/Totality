@@ -780,5 +780,21 @@ describe('PlexProvider', () => {
       expect(libraries[1]).toEqual(expect.objectContaining({ id: '2', name: 'TV Shows', type: 'show' }))
       expect(libraries[2]).toEqual(expect.objectContaining({ id: '3', name: 'Music', type: 'music' }))
     })
+
+    it('loads and deduplicates filesystem locations for selected libraries', async () => {
+      mockFetchJSON
+        .mockResolvedValueOnce({ MediaContainer: { Location: [{ id: 1, path: 'D:/Media/Movies' }] } })
+        .mockResolvedValueOnce({ MediaContainer: { Location: [{ id: 2, path: 'D:/Media/Shows' }, { id: 3, path: 'D:/Media/Movies' }] } })
+
+      const provider = createProviderWithServer()
+      const paths = await provider.getLibraryPaths(['1', '2'])
+
+      expect(paths).toEqual(['D:/Media/Movies', 'D:/Media/Shows'])
+      expect(mockFetchJSON).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('/library/sections/1/location'),
+        expect.objectContaining({ timeoutMs: 30_000 })
+      )
+    })
   })
 })

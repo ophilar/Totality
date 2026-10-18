@@ -109,6 +109,22 @@ describe('SimpleDelayRateLimiter', () => {
     const elapsed = limiter.getTimeSinceLastRequest()
     expect(elapsed).toBeGreaterThanOrEqual(500)
   })
+
+  it('backs off after service errors and recovers after successful requests', () => {
+    const limiter = new SimpleDelayRateLimiter(1500)
+
+    limiter.recordError(503)
+    expect(limiter.getCurrentDelay()).toBe(3000)
+
+    limiter.setDelay(45_000)
+    expect(limiter.getCurrentDelay()).toBe(45_000)
+
+    for (let i = 0; i < 5; i++) limiter.recordSuccess()
+    expect(limiter.getCurrentDelay()).toBe(44_500)
+
+    limiter.reset()
+    expect(limiter.getCurrentDelay()).toBe(1500)
+  })
 })
 
 // ============================================================================

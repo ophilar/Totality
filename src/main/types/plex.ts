@@ -32,6 +32,10 @@ export interface PlexLibrary {
   count?: number  // Number of items in the library (optional)
 }
 
+export interface PlexLibraryLocation {
+  path: string
+}
+
 export interface PlexMediaItem {
   ratingKey: string
   key: string
